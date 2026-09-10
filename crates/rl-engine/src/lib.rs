@@ -5,6 +5,7 @@
 
 #![deny(missing_docs)]
 
+pub use rl_ai;
 pub use rl_bevy;
 pub use rl_content;
 pub use rl_core;

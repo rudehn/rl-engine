@@ -15,6 +15,7 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 | 1 | `rl-world` | world graph, hydrology, sites, roads, chunk generation |
 | 1 | `rl-content` | registries and banded tables loaded from RON |
 | 1 | `rl-rules` | stats and modifiers, damage stages, statuses, factions |
+| 1 | `rl-ai` | movement profiles, snapshots, tactic-priority brains over Dijkstra maps |
 | 1 | `rl-test-support` | fixtures and property helpers |
 | 2 | `rl-bevy` | plugins, components, system sets, the turn loop, chunk streaming |
 | 2 | `rl-render` | the glyph grid renderer and the world view |

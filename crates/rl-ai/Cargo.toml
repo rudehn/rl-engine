@@ -1,0 +1,15 @@
+[package]
+name = "rl-ai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine tier 1: tactic-priority brains over Dijkstra maps. No Bevy."
+
+[dependencies]
+rl-core.workspace = true
+rl-grid.workspace = true
+rl-rules.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true
