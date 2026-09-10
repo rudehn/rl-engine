@@ -1,0 +1,18 @@
+[package]
+name = "rl-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine: rl-engine"
+
+[dependencies]
+rl-core.workspace = true
+rl-grid.workspace = true
+rl-mapgen.workspace = true
+rl-world.workspace = true
+rl-bevy.workspace = true
+rl-render.workspace = true
+rl-overworld.workspace = true
+rl-ui.workspace = true

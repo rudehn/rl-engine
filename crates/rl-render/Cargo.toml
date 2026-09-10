@@ -1,0 +1,14 @@
+[package]
+name = "rl-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine: rl-render"
+
+[dependencies]
+rl-core.workspace = true
+rl-grid.workspace = true
+rl-bevy.workspace = true
+bevy.workspace = true

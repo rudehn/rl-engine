@@ -1,0 +1,16 @@
+[package]
+name = "rl-world"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine: rl-world"
+
+[dependencies]
+rl-core.workspace = true
+rl-grid.workspace = true
+rl-mapgen.workspace = true
+noise.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true

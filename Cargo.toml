@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rudehn/rl-engine"
+rust-version = "1.88"
+
+[workspace.dependencies]
+rl-core = { path = "crates/rl-core" }
+rl-grid = { path = "crates/rl-grid" }
+rl-mapgen = { path = "crates/rl-mapgen" }
+rl-world = { path = "crates/rl-world" }
+rl-test-support = { path = "crates/rl-test-support" }
+rl-bevy = { path = "crates/rl-bevy" }
+rl-render = { path = "crates/rl-render" }
+rl-overworld = { path = "crates/rl-overworld" }
+rl-ui = { path = "crates/rl-ui" }
+
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+ron = "0.10"
+noise = "0.9"
+# `system_font_discovery` lets the terminal ask for a generic monospace family
+# instead of shipping a font asset; Bevy's built-in font lacks box-drawing glyphs.
+bevy = { version = "0.19", features = ["system_font_discovery"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Worldgen and pathfinding are math-heavy; an unoptimised debug run takes
+# seconds per map. Dependencies get full optimisation, workspace crates a
+# light pass so debug builds stay quick to compile.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+
+[profile.bench]
+debug = true

@@ -1,0 +1,15 @@
+[package]
+name = "rl-bevy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine: rl-bevy"
+
+[dependencies]
+rl-core.workspace = true
+rl-grid.workspace = true
+rl-mapgen.workspace = true
+rl-world.workspace = true
+bevy.workspace = true

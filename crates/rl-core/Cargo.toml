@@ -1,0 +1,15 @@
+[package]
+name = "rl-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine tier 0: grid, geometry, seeds, dice, ids and the turn queue. No Bevy."
+
+[dependencies]
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true
+
+[dev-dependencies]
+ron.workspace = true

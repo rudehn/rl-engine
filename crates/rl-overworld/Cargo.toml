@@ -1,0 +1,16 @@
+[package]
+name = "rl-overworld"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine: rl-overworld"
+
+[dependencies]
+rl-core.workspace = true
+rl-world.workspace = true
+rl-bevy.workspace = true
+bevy.workspace = true
+rl-grid.workspace = true
+rl-render.workspace = true
