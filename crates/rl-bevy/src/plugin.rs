@@ -6,7 +6,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{fov, turn, world};
+use crate::{combat, fov, turn, world};
 
 /// The stages of a frame while playing, in order.
 ///
@@ -52,6 +52,10 @@ impl Plugin for EnginePlugins {
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
             .add_message::<TurnEnd>()
+            .add_message::<combat::DamageEvent>()
+            .add_message::<combat::DeathEvent>()
+            .init_resource::<combat::FlowFields>()
+            .init_resource::<combat::DamageStages>()
             .configure_sets(
                 Update,
                 (
@@ -68,11 +72,24 @@ impl Plugin for EnginePlugins {
                     .run_if(resource_exists::<WorldMap>),
             )
             .add_systems(Update, (turn::admit_new_actors, turn::schedule).chain().in_set(EngineSet::Schedule))
-            .add_systems(Update, turn::resolve_intents.in_set(EngineSet::Resolve))
-            .add_systems(Update, (turn::cleanup_turns, turn::forget_removed_blockers).in_set(EngineSet::Cleanup))
+            // Combat is opt-in: a game that inserts no rules gets no combat
+            // systems, and the walking demo stays a walking demo.
+            .add_systems(Update, combat::decide_minds.in_set(EngineSet::Decide).run_if(combat_ready))
+            .add_systems(
+                Update,
+                (turn::resolve_intents, combat::resolve_attacks.run_if(combat_ready), combat::apply_damage.run_if(combat_ready))
+                    .chain()
+                    .in_set(EngineSet::Resolve),
+            )
+            .add_systems(Update, (combat::process_deaths, turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(EngineSet::Cleanup))
             .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
             .add_systems(Update, fov::update_viewsheds.in_set(EngineSet::Fov));
     }
+}
+
+/// Whether the game has inserted what combat needs.
+fn combat_ready(rules: Option<Res<combat::CombatRules>>, rng: Option<Res<combat::CombatRng>>) -> bool {
+    rules.is_some() && rng.is_some()
 }
 
 /// A headless app with the engine plugins and no window, for tests in the

@@ -211,6 +211,16 @@ impl DijkstraMap {
         best.map(|(_, n)| n)
     }
 
+    /// Copies the values of a map of the same shape, whatever its region
+    /// is, so a map can be re-addressed in another coordinate space.
+    ///
+    /// # Panics
+    /// Panics if the shapes differ.
+    pub fn copy_values_from(&mut self, other: &DijkstraMap) {
+        assert_eq!(self.values.len(), other.values.len(), "maps differ in shape");
+        self.values.copy_from_slice(&other.values);
+    }
+
     /// Every reached cell with its value, row-major within the region.
     pub fn iter(&self) -> impl Iterator<Item = (Point, i32)> + '_ {
         self.values

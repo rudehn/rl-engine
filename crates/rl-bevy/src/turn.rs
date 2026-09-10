@@ -39,6 +39,8 @@ pub struct Occupancy(pub SpatialGrid<Entity>);
 pub enum Action {
     /// Step one cell.
     Move(Direction),
+    /// Strike an adjacent actor. Resolved by the combat systems.
+    Attack(Entity),
     /// Do nothing for one action.
     Wait,
 }
@@ -166,6 +168,7 @@ pub fn resolve_intents(
     for intent in intents.read() {
         let Ok((mut pos, viewshed, blocks, is_player)) = actors.get_mut(intent.actor) else { continue };
         match intent.action {
+            Action::Attack(_) => {}
             Action::Wait => {
                 done.write(ActionDone { actor: intent.actor, cost: BASE_ACTION_COST });
             }

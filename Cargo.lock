@@ -4653,9 +4653,13 @@ name = "rl-bevy"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "rand 0.9.5",
+ "rl-ai",
+ "rl-content",
  "rl-core",
  "rl-grid",
  "rl-mapgen",
+ "rl-rules",
  "rl-world",
 ]
 
