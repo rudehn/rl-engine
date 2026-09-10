@@ -12,6 +12,7 @@ pub use rl_grid;
 pub use rl_mapgen;
 pub use rl_overworld;
 pub use rl_render;
+pub use rl_rules;
 pub use rl_ui;
 pub use rl_world;
 

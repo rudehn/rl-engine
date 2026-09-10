@@ -4678,6 +4678,7 @@ dependencies = [
  "rl-mapgen",
  "rl-overworld",
  "rl-render",
+ "rl-rules",
  "rl-ui",
  "rl-world",
 ]
@@ -4722,6 +4723,17 @@ dependencies = [
  "rl-bevy",
  "rl-core",
  "rl-grid",
+]
+
+[[package]]
+name = "rl-rules"
+version = "0.1.0"
+dependencies = [
+ "rand 0.9.5",
+ "rl-content",
+ "rl-core",
+ "ron 0.10.1",
+ "serde",
 ]
 
 [[package]]

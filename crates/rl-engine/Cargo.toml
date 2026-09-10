@@ -13,6 +13,7 @@ rl-grid.workspace = true
 rl-mapgen.workspace = true
 rl-world.workspace = true
 rl-content.workspace = true
+rl-rules.workspace = true
 rl-bevy.workspace = true
 rl-render.workspace = true
 rl-overworld.workspace = true
