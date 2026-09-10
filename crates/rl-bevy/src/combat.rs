@@ -154,12 +154,19 @@ impl FlowFields {
     }
 }
 
+/// What a mind reads about any actor.
+type ActorData = (Entity, &'static Position, &'static Health, &'static Faction, Option<&'static Perception>);
+/// The mind holding the turn.
+type MindData = (Entity, &'static Mind, Option<&'static Profile>);
+/// A defender as the damage system sees it.
+type DefenderData = (&'static mut Health, Option<&'static Armor>, Option<&'static Resists>, Has<Player>);
+
 /// Everyone a mind might see, and the mind whose turn it is.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Sight<'w, 's> {
     player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
-    actors: Query<'w, 's, (Entity, &'static Position, &'static Health, &'static Faction, Option<&'static Perception>), With<Actor>>,
-    minds: Query<'w, 's, (Entity, &'static Mind, Option<&'static Profile>), (With<MyTurn>, Without<Player>)>,
+    actors: Query<'w, 's, ActorData, With<Actor>>,
+    minds: Query<'w, 's, MindData, (With<MyTurn>, Without<Player>)>,
 }
 
 /// The shared state a mind reads and the stream it draws from.
@@ -280,7 +287,7 @@ pub fn apply_damage(
     mut deaths: MessageWriter<DeathEvent>,
     rules: Res<CombatRules>,
     stages: Res<DamageStages>,
-    mut targets: Query<(&mut Health, Option<&Armor>, Option<&Resists>, Has<Player>)>,
+    mut targets: Query<DefenderData>,
 ) {
     for ev in events.read() {
         let Ok((mut health, armor, resist, is_player)) = targets.get_mut(ev.target) else { continue };
