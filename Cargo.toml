@@ -15,6 +15,7 @@ rl-grid = { path = "crates/rl-grid" }
 rl-mapgen = { path = "crates/rl-mapgen" }
 rl-world = { path = "crates/rl-world" }
 rl-test-support = { path = "crates/rl-test-support" }
+rl-content = { path = "crates/rl-content" }
 rl-bevy = { path = "crates/rl-bevy" }
 rl-render = { path = "crates/rl-render" }
 rl-overworld = { path = "crates/rl-overworld" }

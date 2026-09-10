@@ -6,6 +6,7 @@
 #![deny(missing_docs)]
 
 pub use rl_bevy;
+pub use rl_content;
 pub use rl_core;
 pub use rl_grid;
 pub use rl_mapgen;

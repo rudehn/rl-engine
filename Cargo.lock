@@ -4649,6 +4649,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rl-content"
+version = "0.1.0"
+dependencies = [
+ "rand 0.9.5",
+ "rl-core",
+ "ron 0.10.1",
+ "serde",
+]
+
+[[package]]
 name = "rl-core"
 version = "0.1.0"
 dependencies = [
@@ -4662,6 +4672,7 @@ name = "rl-engine"
 version = "0.1.0"
 dependencies = [
  "rl-bevy",
+ "rl-content",
  "rl-core",
  "rl-grid",
  "rl-mapgen",

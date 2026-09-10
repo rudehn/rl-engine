@@ -3,7 +3,7 @@
 # hold this line in the repos rl-engine was extracted from; the build does.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-tier1=(rl-core rl-grid rl-mapgen rl-world rl-test-support)
+tier1=(rl-core rl-grid rl-mapgen rl-world rl-test-support rl-content)
 status=0
 for crate in "${tier1[@]}"; do
   if cargo tree -p "$crate" -e normal --prefix none 2>/dev/null | grep -qE '^bevy'; then
