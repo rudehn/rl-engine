@@ -174,11 +174,12 @@ impl WorldMap {
 
     /// Moves the window to cover `regions`, generating what is new and
     /// dropping what left. Edits to dropped chunks are kept as deltas.
-    pub fn load_window(&mut self, regions: Rect, world: &WorldGraph, rules: &dyn ChunkRules) -> Result<(), rl_mapgen::BuildError> {
+    pub fn load_window(&mut self, regions: Rect, world: &WorldGraph, rules: &dyn ChunkRules) -> Result<Vec<Point>, rl_mapgen::BuildError> {
         if regions == self.window && !self.chunks.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let mut next: Vec<Option<Chunk>> = Vec::with_capacity(regions.area().max(0) as usize);
+        let mut loaded = Vec::new();
         let mut kept = 0;
         for region in regions.cells() {
             match self.chunk_slot(region).and_then(|slot| self.chunks[slot].take()) {
@@ -197,6 +198,7 @@ impl WorldMap {
                         terrain.set_idx(*idx, *id);
                     }
                     next.push(Some(Chunk { terrain, delta }));
+                    loaded.push(region);
                 }
             }
         }
@@ -213,7 +215,7 @@ impl WorldMap {
         self.window = regions;
         self.chunks = next;
         self.generation += 1;
-        Ok(())
+        Ok(loaded)
     }
 
     /// Number of regions currently loaded.
@@ -266,6 +268,15 @@ impl CostSource for WindowView<'_> {
     }
 }
 
+/// A region's chunk was generated and entered the window. Fires once per
+/// load, so a game can populate a region the first time it sees it and
+/// remember not to again.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct ChunkLoaded {
+    /// Which region.
+    pub region: Point,
+}
+
 /// The window the player should have loaded.
 pub fn desired_window(player_region: Point, radius: i32, world: &WorldGraph) -> Rect {
     let wanted = Rect::new(player_region.x - radius, player_region.y - radius, 2 * radius + 1, 2 * radius + 1);
@@ -284,6 +295,7 @@ pub fn stream_chunks(
     settings: Res<WorldSettings>,
     player: Query<&Position, With<Player>>,
     mut viewsheds: Query<&mut Viewshed>,
+    mut loaded: MessageWriter<ChunkLoaded>,
 ) {
     let Ok(pos) = player.single() else { return };
     let region = map.region_of(pos.0);
@@ -291,9 +303,16 @@ pub fn stream_chunks(
     if wanted == map.window() && !map.chunks.is_empty() {
         return;
     }
-    if let Err(e) = map.load_window(wanted, &world, rules.0.as_ref()) {
-        error!("chunk generation failed: {e}");
-        return;
+    match map.load_window(wanted, &world, rules.0.as_ref()) {
+        Err(e) => {
+            error!("chunk generation failed: {e}");
+            return;
+        }
+        Ok(regions) => {
+            for region in regions {
+                loaded.write(ChunkLoaded { region });
+            }
+        }
     }
     for mut v in &mut viewsheds {
         v.dirty = true;

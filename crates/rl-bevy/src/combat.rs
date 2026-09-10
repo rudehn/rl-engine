@@ -107,6 +107,18 @@ pub struct DamageEvent {
     pub hit: Hit<Entity>,
 }
 
+/// Damage that actually landed, after mitigation, for narration and
+/// on-hit reactions. Zero means the hit was fully stopped; negative healed.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct DamageDealt {
+    /// Who took it.
+    pub target: Entity,
+    /// The hit as it arrived.
+    pub hit: Hit<Entity>,
+    /// What health lost.
+    pub dealt: i32,
+}
+
 /// An actor's health reached zero. Non-players are despawned by the
 /// engine after this is read; the player is left for the game.
 #[derive(Message, Debug, Clone, Copy)]
@@ -284,6 +296,7 @@ pub fn resolve_attacks(
 /// Runs the damage stages and applies what is left to health.
 pub fn apply_damage(
     mut events: MessageReader<DamageEvent>,
+    mut dealt: MessageWriter<DamageDealt>,
     mut deaths: MessageWriter<DeathEvent>,
     rules: Res<CombatRules>,
     stages: Res<DamageStages>,
@@ -299,6 +312,7 @@ pub fn apply_damage(
         let stage_refs: Vec<&dyn DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
         let amount = rl_rules::resolve(&ev.hit, &defender, resist.map(|r| &r.0).unwrap_or(&none), &rules.kinds, &stage_refs);
         health.hp = (health.hp - amount).min(health.max);
+        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount });
         if health.hp <= 0 {
             deaths.write(DeathEvent { entity: ev.target, credit: ev.hit.credit, was_player: is_player });
         }

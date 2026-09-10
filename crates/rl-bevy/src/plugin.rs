@@ -53,6 +53,8 @@ impl Plugin for EnginePlugins {
             .add_message::<ActionRefused>()
             .add_message::<TurnEnd>()
             .add_message::<combat::DamageEvent>()
+            .add_message::<combat::DamageDealt>()
+            .add_message::<world::ChunkLoaded>()
             .add_message::<combat::DeathEvent>()
             .init_resource::<combat::FlowFields>()
             .init_resource::<combat::DamageStages>()
