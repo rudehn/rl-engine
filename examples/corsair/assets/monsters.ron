@@ -1,0 +1,24 @@
+// Corsair's bestiary: what prowls the islands.
+//
+// Every field:
+//   name:       unique, referred to by spawn tables
+//   glyph:      one character
+//   color:      (r, g, b) in 0..=1
+//   hp:         maximum health
+//   armor:      flat damage removed from armored kinds
+//   attack:     dice notation, "NdS+B" or a flat number
+//   kind:       damage kind name: "cutlass" | "pistol" | "bite" | "claw"
+//   faction:    "beasts" | "cutthroats" | "navy"
+//   perception: tiles at which it notices you
+//   speed:      percent, 100 normal
+//   flee_at:    percent health at or below which it runs; 0 never flees
+//   wander:     percent chance per idle turn of drifting a step
+//   spawn:      (min_band, max_band, weight, min_group, max_group) where the
+//               band is the region's distance from your home port
+[
+    (name: "crab", glyph: 'c', color: (0.9, 0.4, 0.3), hp: 4, armor: 2, attack: "1d3", kind: "claw", faction: "beasts", perception: 4, speed: 80, flee_at: 0, wander: 30, spawn: (0, 8, 5, 2, 5)),
+    (name: "wild dog", glyph: 'd', color: (0.7, 0.6, 0.4), hp: 8, armor: 0, attack: "1d4", kind: "bite", faction: "beasts", perception: 9, speed: 130, flee_at: 30, wander: 35, spawn: (1, 40, 3, 2, 4)),
+    (name: "cutthroat", glyph: 'p', color: (0.8, 0.3, 0.3), hp: 12, armor: 1, attack: "1d6", kind: "cutlass", faction: "cutthroats", perception: 8, speed: 100, flee_at: 20, wander: 25, spawn: (3, 40, 3, 1, 3)),
+    (name: "marine", glyph: 'M', color: (0.3, 0.4, 0.9), hp: 14, armor: 2, attack: "1d8", kind: "pistol", faction: "navy", perception: 8, speed: 100, flee_at: 0, wander: 15, spawn: (5, 40, 2, 2, 3)),
+    (name: "jaguar", glyph: 'J', color: (0.9, 0.7, 0.2), hp: 24, armor: 1, attack: "2d4", kind: "claw", faction: "beasts", perception: 10, speed: 140, flee_at: 0, wander: 20, spawn: (8, 40, 1, 1, 1)),
+]

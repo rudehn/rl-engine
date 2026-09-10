@@ -2199,6 +2199,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "corsair"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "rand 0.9.5",
+ "rl-engine",
+ "serde",
+]
+
+[[package]]
 name = "cpal"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

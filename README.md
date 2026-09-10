@@ -26,6 +26,14 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 `docs/PLAN.md` is the design: what was decided, why, and which milestone each piece lands in.
 `docs/reviews/` holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
 
+## The worked example
+
+`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, a bestiary in RON, factions, bump-to-attack combat, a message log and the world map. It is what a game on this engine looks like.
+
+```sh
+cargo run -p corsair -- --seed 7
+```
+
 ## Principles
 
 - **Own the loop or leave it out.** A struct plus a `SystemSet` marker is not a subsystem.
