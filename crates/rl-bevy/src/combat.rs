@@ -154,22 +154,33 @@ impl FlowFields {
     }
 }
 
+/// Everyone a mind might see, and the mind whose turn it is.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Sight<'w, 's> {
+    player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
+    actors: Query<'w, 's, (Entity, &'static Position, &'static Health, &'static Faction, Option<&'static Perception>), With<Actor>>,
+    minds: Query<'w, 's, (Entity, &'static Mind, Option<&'static Profile>), (With<MyTurn>, Without<Player>)>,
+}
+
+/// The shared state a mind reads and the stream it draws from.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct MindWorld<'w> {
+    fields: ResMut<'w, FlowFields>,
+    rng: ResMut<'w, CombatRng>,
+    map: Res<'w, WorldMap>,
+    occupancy: Res<'w, Occupancy>,
+    rules: Res<'w, CombatRules>,
+    turns: Res<'w, Turns>,
+}
+
 /// Lets every non-player holding a turn decide it.
-pub fn decide_minds(
-    mut intents: MessageWriter<Intent>,
-    mut fields: ResMut<FlowFields>,
-    mut rng: ResMut<CombatRng>,
-    map: Res<WorldMap>,
-    occupancy: Res<Occupancy>,
-    rules: Res<CombatRules>,
-    turns: Res<Turns>,
-    player: Query<(&Position, &Viewshed), With<Player>>,
-    actors: Query<(Entity, &Position, &Health, &Faction, Option<&Perception>), With<Actor>>,
-    minds: Query<(Entity, &Mind, Option<&Profile>), (With<MyTurn>, Without<Player>)>,
-) {
-    let Ok((player_pos, player_sight)) = player.single() else { return };
-    let Ok((thinker, mind, profile)) = minds.single() else { return };
-    let Ok((_, my_pos, my_hp, my_faction, perception)) = actors.get(thinker) else { return };
+pub fn decide_minds(mut intents: MessageWriter<Intent>, mut world: MindWorld, sight: Sight) {
+    let Ok((player_pos, player_sight)) = sight.player.single() else { return };
+    let Ok((thinker, mind, profile)) = sight.minds.single() else { return };
+    let Ok((_, my_pos, my_hp, my_faction, perception)) = sight.actors.get(thinker) else { return };
+    let MindWorld { fields, rng, map, occupancy, rules, turns } = &mut world;
+    let (fields, rng, map, occupancy, rules, turns) = (&mut **fields, &mut **rng, &**map, &**occupancy, &**rules, &**turns);
+    let actors = &sight.actors;
     let profile = profile.map(|p| p.0).unwrap_or_default();
     let reach = perception.map(|p| p.0).unwrap_or(8);
 
@@ -179,7 +190,7 @@ pub fn decide_minds(
     // player's is the oracle: I see the player if the player sees me, and
     // I see anyone else if the player sees us both.
     let i_am_seen = player_sight.can_see(my_pos.0);
-    for (e, pos, hp, faction, _) in &actors {
+    for (e, pos, hp, faction, _) in actors.iter() {
         if e == thinker || geometry::chebyshev(pos.0, my_pos.0) > reach {
             continue;
         }
@@ -198,7 +209,7 @@ pub fn decide_minds(
 
     let wants_maps = !snapshot.enemies.is_empty();
     if wants_maps {
-        fields.ensure(profile, player_pos.0, &map);
+        fields.ensure(profile, player_pos.0, map);
     }
     let origin = map.window_tiles().origin();
     // Maps are window-local; translate through a local copy of the
@@ -206,7 +217,7 @@ pub fn decide_minds(
     let approach = fields.approach.get(&profile);
     let escape = fields.escape.get(&profile);
     let can_step = |p: Point| map.is_walkable(p) && !occupancy.is_occupied(p);
-    let mut turn_rng: StdRng = rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut **rng), my_pos.0.x, my_pos.0.y));
+    let mut turn_rng: StdRng = rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut rng.0), my_pos.0.x, my_pos.0.y));
     let shifted = |m: &DijkstraMap| shift_map(m, origin);
     let approach_world = approach.map(shifted);
     let escape_world = escape.map(shifted);
