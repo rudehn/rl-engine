@@ -415,7 +415,12 @@ mod tests {
         }
         rig.app.update();
         assert!(!rig.sees(brazier), "shadowed now");
-        assert_eq!(rig.app.world().resource::<Lighting>().at(Point::new(10, 4)).intensity, 0, "the light is cut too");
+        let light = rig.app.world().resource::<Lighting>();
+        assert_eq!(light.at(Point::new(10, 4)).intensity, 0, "the light is cut too");
+        // The brazier still lights its own side, but a lit tile the
+        // player has no line to is not seen and not drawn.
+        assert!(light.at(Point::new(13, 4)).intensity > 0);
+        assert!(!rig.in_line(Point::new(13, 4)) && !rig.sees(Point::new(13, 4)));
     }
 
     #[test]

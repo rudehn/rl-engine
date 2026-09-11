@@ -276,6 +276,16 @@ mod tests {
     }
 
     #[test]
+    fn two_colours_on_one_tile_blend_per_channel() {
+        let amber = Light::new(170, Rgb::new(255, 160, 50));
+        let blue = Light::new(110, Rgb::new(90, 170, 255));
+        let both = amber.screen(blue);
+        assert_eq!(both.color, Rgb::new(183, 149, 129));
+        assert!(both.color.r > amber.color.r && both.color.b > amber.color.b, "warmer and paler than either");
+        assert_eq!(both.intensity, screen(170, 110));
+    }
+
+    #[test]
     fn distance_rounds_to_whole_tiles() {
         let o = Point::ZERO;
         assert_eq!(distance(o, Point::new(3, 4)), 5);
