@@ -11,7 +11,9 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
 - 2026-09-10: the turn loop runs every actor due before the player's next turn inside one frame (the `Turn` schedule and `EngineSet::Input`), after a Corsair run showed one actor per frame.
 - 2026-09-10: M3 first slice: the slot graph in `rl-rules`, items in `rl-bevy` (ground, bag, slots, stacks, use as a game event), the list menu in `rl-ui`, and Corsair's armory, loot drops, rum and sea chest.
   Deferred from M3: affixes and enchant, throwing, the character sheet.
-- Next: M4 places (dungeon builders, settlements in chunks, map stack, portals into places), then the living-world-rogue conversion.
+- 2026-09-10: M4 first slice: `rl-mapgen` gains rooms, BSP, doors, random start, farthest exit and prefab stamping; `rl-bevy` gains places (`MapId`, `OnMap`, `Transition`, `WarpRequest`, `PlaceRules`, map-scoped occupancy and knowledge, frozen off-map actors); Corsair gains huts in its ports, cave mouths on its coves, two-level smugglers' caves with a treasure vault, and portals that warp out of a cave.
+  Deferred from M4: rivers and bridges inside chunks beyond the channel pass, cullers beyond keep-largest, a choke map, decoration rules, settlement passes richer than huts.
+- Next: M5 encounters and quests (`rl-events`), then M6 persistence and tools, then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.

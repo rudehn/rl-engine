@@ -124,6 +124,29 @@ impl Bestiary {
     }
 }
 
+impl Bestiary {
+    /// Spawns one `id` standing at `p` on the current map.
+    pub fn spawn(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
+        let m = self.defs.get(id);
+        commands
+            .spawn((
+                Actor,
+                Blocks,
+                Position(p),
+                Health::full(m.hp),
+                Armor(m.armor),
+                Faction(self.factions.expect(&m.faction)),
+                MeleeAttack { kind: self.kinds.expect(&m.kind), dice: m.attack },
+                Perception(m.perception),
+                Speed(m.speed),
+                Mind(self.brains[id.index()].clone()),
+                MonsterKind(id),
+                Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
+            ))
+            .id()
+    }
+}
+
 /// Populates each region the first time it streams in, by its distance
 /// from the starting town.
 pub fn spawn_on_load(
@@ -158,21 +181,7 @@ pub fn spawn_on_load(
                 if !map.is_walkable(p) || occupancy.is_occupied(p) || geometry::chebyshev(p, player_pos) < 6 {
                     continue;
                 }
-                let m = bestiary.defs.get(id);
-                commands.spawn((
-                    Actor,
-                    Blocks,
-                    Position(p),
-                    Health::full(m.hp),
-                    Armor(m.armor),
-                    Faction(bestiary.factions.expect(&m.faction)),
-                    MeleeAttack { kind: bestiary.kinds.expect(&m.kind), dice: m.attack },
-                    Perception(m.perception),
-                    Speed(m.speed),
-                    Mind(bestiary.brains[id.index()].clone()),
-                    MonsterKind(id),
-                    Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
-                ));
+                bestiary.spawn(&mut commands, id, p);
                 placed += 1;
             }
         }

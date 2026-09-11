@@ -18,6 +18,7 @@ pub mod components;
 pub mod fov;
 pub mod items;
 pub mod knowledge;
+pub mod places;
 pub mod plugin;
 pub mod state;
 pub mod turn;
@@ -30,10 +31,11 @@ pub use combat::{
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use items::{Equipped, Inventory, Item, ItemEvent, Stack, Wearable};
 pub use knowledge::Knowledge;
+pub use places::{Arrive, Destination, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest};
 pub use plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
 pub use state::EngineState;
 pub use turn::{Action, ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
-pub use world::{ChunkLoaded, ChunkRulesRes, WindowView, WorldMap, WorldRes, WorldSettings};
+pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, WindowView, WorldMap, WorldRes, WorldSettings};
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -44,8 +46,11 @@ pub mod prelude {
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack, Wearable};
     pub use crate::knowledge::Knowledge;
+    pub use crate::places::{
+        Arrive, Destination, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
+    };
     pub use crate::plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
     pub use crate::state::EngineState;
     pub use crate::turn::{Action, ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
-    pub use crate::world::{ChunkLoaded, ChunkRulesRes, WindowView, WorldMap, WorldRes, WorldSettings};
+    pub use crate::world::{ChunkLoaded, ChunkRulesRes, PlaceMap, WindowView, WorldMap, WorldRes, WorldSettings};
 }

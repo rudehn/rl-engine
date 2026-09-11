@@ -19,7 +19,9 @@
 
 pub mod chain;
 pub mod context;
+pub mod dungeon;
 pub mod passes;
+pub mod prefab;
 
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
@@ -28,5 +30,7 @@ pub use context::{BaseContext, BuildContext, Outputs};
 pub mod prelude {
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
     pub use crate::context::{BaseContext, BuildContext, Outputs};
+    pub use crate::dungeon;
     pub use crate::passes;
+    pub use crate::prefab::{Prefab, StampPrefab, Stamped};
 }

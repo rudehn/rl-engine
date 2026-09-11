@@ -8,7 +8,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{combat, fov, items, turn, world};
+use crate::{combat, fov, items, places, turn, world};
 
 /// The stages of a frame while playing, in order. All in `Update`.
 ///
@@ -108,6 +108,9 @@ impl Plugin for EnginePlugins {
             .add_message::<world::ChunkLoaded>()
             .add_message::<combat::DeathEvent>()
             .add_message::<items::ItemEvent>()
+            .add_message::<places::WarpRequest>()
+            .add_message::<places::MapChanged>()
+            .add_message::<places::PlaceEntered>()
             .init_resource::<combat::FlowFields>()
             .init_resource::<combat::DamageStages>()
             .init_schedule(Turn)
@@ -122,13 +125,19 @@ impl Plugin for EnginePlugins {
             .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
             .add_systems(Update, fov::update_viewsheds.in_set(EngineSet::Fov))
-            .add_systems(Turn, (turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
+            .add_systems(Turn, (places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
             // Combat is opt-in: a game that inserts no rules gets no combat
             // systems, and the walking demo stays a walking demo.
             .add_systems(Turn, combat::decide_minds.in_set(TurnSet::Decide).run_if(combat_ready))
             .add_systems(
                 Turn,
-                (turn::resolve_intents, items::resolve_items, combat::resolve_attacks.run_if(combat_ready), combat::apply_damage.run_if(combat_ready))
+                (
+                    turn::resolve_intents,
+                    places::resolve_warps,
+                    items::resolve_items,
+                    combat::resolve_attacks.run_if(combat_ready),
+                    combat::apply_damage.run_if(combat_ready),
+                )
                     .chain()
                     .in_set(TurnSet::Resolve),
             )

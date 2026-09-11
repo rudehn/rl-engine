@@ -69,10 +69,15 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: M
         } else {
             None
         }
+    } else if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma]) {
+        // `>` and `<`: through whatever stands here.
+        Some(Action::Enter)
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
         Some(Action::Wait)
     } else if keys.just_pressed(KeyCode::KeyG) || keys.just_pressed(KeyCode::Comma) {
         Some(Action::PickUp)
+    } else if keys.just_pressed(KeyCode::Enter) {
+        Some(Action::Enter)
     } else {
         *repeat = Repeat::default();
         None

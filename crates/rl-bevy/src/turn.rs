@@ -15,6 +15,7 @@ use rl_core::{Direction, Point, TurnQueue};
 use rl_grid::SpatialGrid;
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Speed, Viewshed};
+use crate::places::{MapId, OnMap};
 use crate::world::WorldMap;
 
 /// The scheduler.
@@ -36,9 +37,34 @@ impl Turns {
     }
 }
 
-/// Who is standing where. Only entities with [`Blocks`] are indexed.
+/// Who is standing where on the current map. Only entities with
+/// [`Blocks`] are indexed. Other maps' indexes are kept aside and swapped
+/// in when the player goes there.
 #[derive(Resource, Debug, Default, Deref, DerefMut)]
-pub struct Occupancy(pub SpatialGrid<Entity>);
+pub struct Occupancy {
+    #[deref]
+    grid: SpatialGrid<Entity>,
+    current: MapId,
+    stash: std::collections::BTreeMap<MapId, SpatialGrid<Entity>>,
+}
+
+impl Occupancy {
+    /// The map the index is of.
+    pub fn current(&self) -> MapId {
+        self.current
+    }
+
+    /// Swaps in the index for `map`, keeping the current one aside.
+    pub fn switch(&mut self, map: MapId) {
+        if map == self.current {
+            return;
+        }
+        let incoming = self.stash.remove(&map).unwrap_or_default();
+        let outgoing = std::mem::replace(&mut self.grid, incoming);
+        self.stash.insert(self.current, outgoing);
+        self.current = map;
+    }
+}
 
 /// What an actor does with its turn, as far as the engine knows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +86,9 @@ pub enum Action {
     /// Use a carried item. The engine charges the turn and reports
     /// [`ItemEvent::Used`](crate::items::ItemEvent::Used); the game does the rest.
     Use(Entity),
+    /// Go through the [`Transition`](crate::places::Transition) on the
+    /// actor's cell. Resolved by the place systems; refused off one.
+    Enter,
 }
 
 /// A decision for the actor holding [`MyTurn`]: written by the game's input
@@ -113,7 +142,7 @@ pub fn schedule(
     mut turns: ResMut<Turns>,
     mut ends: MessageWriter<TurnEnd>,
     holding: Query<Entity, With<MyTurn>>,
-    actors: Query<(&Position, Option<&Player>), With<Actor>>,
+    actors: Query<(&Position, Option<&OnMap>), With<Actor>>,
     map: Res<WorldMap>,
 ) {
     if !holding.is_empty() {
@@ -125,9 +154,10 @@ pub fn schedule(
     for _ in 0..64 {
         match turns.queue.pop_due(|e| actors.contains(e)) {
             Some(entity) => {
-                let Ok((pos, _)) = actors.get(entity) else { continue };
-                if !map.is_loaded(pos.0) {
-                    debug!("actor {entity:?} at {:?} is outside the loaded window; frozen", pos.0);
+                let Ok((pos, on)) = actors.get(entity) else { continue };
+                let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE) == map.current();
+                if !here || !map.is_loaded(pos.0) {
+                    debug!("actor {entity:?} at {:?} is on another map or outside the loaded window; frozen", pos.0);
                     turns.queue.insert_after(entity, BASE_ACTION_COST);
                     continue;
                 }
@@ -196,7 +226,7 @@ pub fn resolve_intents(
         }
         let Ok((mut pos, viewshed, blocks, is_player)) = actors.get_mut(intent.actor) else { continue };
         match intent.action {
-            Action::Attack(_) | Action::PickUp | Action::Drop(_) | Action::Equip(_) | Action::Unequip(_) | Action::Use(_) => {
+            Action::Attack(_) | Action::PickUp | Action::Drop(_) | Action::Equip(_) | Action::Unequip(_) | Action::Use(_) | Action::Enter => {
                 acted.push(intent.actor);
             }
             Action::Wait => {

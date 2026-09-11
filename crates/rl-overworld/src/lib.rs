@@ -183,23 +183,26 @@ struct Look<'w> {
     style: Res<'w, OverworldStyle>,
 }
 
-fn draw_overworld(
-    screen: Res<OverworldScreen>,
-    layout: Option<Res<OverworldLayout>>,
-    world: Res<WorldRes>,
-    knowledge: Res<Knowledge>,
-    look: Look,
-    mut terminal: ResMut<Terminal>,
-    player: Query<&Position, With<Player>>,
-) {
+/// Where the player is and what it knows.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Whereabouts<'w, 's> {
+    world: Res<'w, WorldRes>,
+    map: Res<'w, WorldMap>,
+    knowledge: Res<'w, Knowledge>,
+    player: Query<'w, 's, &'static Position, With<Player>>,
+}
+
+fn draw_overworld(screen: Res<OverworldScreen>, layout: Option<Res<OverworldLayout>>, whereabouts: Whereabouts, look: Look, mut terminal: ResMut<Terminal>) {
     let style = *look.style;
     let look = &look.bands;
     if !screen.open {
         return;
     }
+    let Whereabouts { world, map, knowledge, player } = whereabouts;
     let Some(layout) = layout else { return };
     let vp = layout.viewport;
-    let player_region = player.single().ok().map(|p| world.region_of_tile(p.0));
+    // Below the surface the player's tile position means nothing here.
+    let player_region = if map.current().is_surface() { player.single().ok().map(|p| world.region_of_tile(p.0)) } else { None };
     // Centre the view on the player's region when the world is bigger than
     // the viewport.
     let origin = player_region

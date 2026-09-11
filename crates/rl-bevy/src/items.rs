@@ -13,7 +13,9 @@ use rl_core::turn::BASE_ACTION_COST;
 use rl_rules::{EquipShape, Equipment};
 
 use crate::components::{MyTurn, Position};
+use crate::places::{MapId, OnMap};
 use crate::turn::{Action, ActionDone, ActionRefused, Intent};
+use crate::world::WorldMap;
 
 /// An item.
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -110,7 +112,7 @@ pub enum ItemEvent {
 type Carrier<'w, 's> = Query<'w, 's, (&'static Position, &'static mut Inventory, Option<&'static mut Equipped>), With<MyTurn>>;
 
 /// Items on the ground.
-type Ground<'w, 's> = Query<'w, 's, (Entity, &'static Position), With<Item>>;
+type Ground<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Item>>;
 
 /// What the item resolver reads and moves.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -120,6 +122,7 @@ pub struct ItemWorld<'w, 's> {
     stacks: Query<'w, 's, &'static Stack>,
     wearables: Query<'w, 's, &'static Wearable>,
     players: Query<'w, 's, (), With<crate::components::Player>>,
+    map: Res<'w, WorldMap>,
 }
 
 /// What the item resolver reports.
@@ -135,7 +138,8 @@ pub struct ItemReport<'w> {
 /// picking up from bare ground, is refused for the player and treated as
 /// a wait for anyone else, like an impossible move.
 pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>, world: ItemWorld, report: ItemReport) {
-    let ItemWorld { mut carriers, ground, stacks, wearables, players } = world;
+    let ItemWorld { mut carriers, ground, stacks, wearables, players, map } = world;
+    let this_map = map.current();
     let ItemReport { mut done, mut refused, mut events } = report;
     let mut acted: Vec<Entity> = Vec::new();
     for intent in intents.read() {
@@ -146,7 +150,8 @@ pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>,
         let ok = match intent.action {
             Action::PickUp => {
                 let Ok((pos, mut bag, _)) = carriers.get_mut(actor) else { continue };
-                let here: Vec<Entity> = ground.iter().filter(|(_, p)| p.0 == pos.0).map(|(e, _)| e).collect();
+                let here: Vec<Entity> =
+                    ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map).map(|(e, _, _)| e).collect();
                 for item in &here {
                     commands.entity(*item).remove::<Position>();
                     let merged_into = stacks.get(*item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));

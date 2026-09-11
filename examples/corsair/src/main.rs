@@ -6,13 +6,16 @@
 //! log, a status line, and the world map with a portal picker over the
 //! ports you have found.
 //!
-//! `CORSAIR_OPEN=inventory` starts with the inventory open, for screenshots.
+//! `CORSAIR_OPEN=inventory` starts with the inventory open, and
+//! `CORSAIR_START=cave` starts at the bottom of the nearest smugglers'
+//! cave, both for screenshots.
 
 mod content;
 mod input;
 mod inventory;
 mod items;
 mod monsters;
+mod places;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -78,13 +81,23 @@ fn main() -> AppExit {
     .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
     .insert_resource(OverworldLayout { viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS) })
     .init_resource::<inventory::InventoryScreen>()
+    .init_resource::<places::Entrances>()
     .add_systems(Startup, start_world)
     .add_systems(Update, (inventory::inventory_keys, input::player_input).chain().in_set(EngineSet::Input))
     .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
-    .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load).in_set(EngineSet::Stream))
+    .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
     .add_systems(
         Update,
-        (items::drop_loot, items::use_items, items::refresh_gear, note_discoveries, monsters::narrate, items::narrate_items, update_status)
+        (
+            places::populate_places,
+            items::drop_loot,
+            items::use_items,
+            items::refresh_gear,
+            note_discoveries,
+            monsters::narrate,
+            items::narrate_items,
+            update_status,
+        )
             .chain()
             .in_set(EngineSet::Present),
     )
@@ -105,6 +118,7 @@ fn start_world(
     mut next: ResMut<NextState<EngineState>>,
     mut log: ResMut<MessageLog>,
     mut screen: ResMut<inventory::InventoryScreen>,
+    mut warps: MessageWriter<WarpRequest>,
 ) {
     let content = Content::new();
     // Islands rather than a continent: less land, more of it coast.
@@ -132,23 +146,32 @@ fn start_world(
     let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
     let mut worn = Equipped(rl_engine::rl_rules::Equipment::for_slots(&armory.slots));
     worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
-    commands.spawn((
-        Actor,
-        Player,
-        Blocks,
-        Position(spawn),
-        Viewshed::new(12),
-        RevealsMap,
-        Speed(100),
-        Health::full(30),
-        Armor(0),
-        Faction(player_faction),
-        items::unarmed(&bestiary),
-        Inventory { items: vec![cutlass, rum] },
-        worn,
-        Sheet::default(),
-        Glyph::new('@', Color::WHITE).on_layer(10),
-    ));
+    let player = commands
+        .spawn((
+            Actor,
+            Player,
+            Blocks,
+            Position(spawn),
+            Viewshed::new(12),
+            RevealsMap,
+            Speed(100),
+            Health::full(30),
+            Armor(0),
+            Faction(player_faction),
+            items::unarmed(&bestiary),
+            Inventory { items: vec![cutlass, rum] },
+            worn,
+            Sheet::default(),
+            Glyph::new('@', Color::WHITE).on_layer(10),
+        ))
+        .id();
+    if std::env::var("CORSAIR_START").is_ok_and(|v| v == "cave") {
+        let coves = world.sites().iter().filter(|s| s.kind == content::COVE).count();
+        info!("starting in a cave: {coves} coves in the world");
+        if let Some(cove) = world.sites().iter().position(|s| s.kind == content::COVE) {
+            warps.write(WarpRequest { actor: player, to: Destination::Place { map: places::cave_id(cove, places::LEVELS - 1), arrive: Arrive::Entry } });
+        }
+    }
     commands.insert_resource(armory);
     commands.insert_resource(bestiary);
     commands.insert_resource(rules);
@@ -160,6 +183,7 @@ fn start_world(
     commands.insert_resource(WorldMap::new(region_size, content.tiles().tables()));
     commands.insert_resource(Knowledge::new(region_size));
     commands.insert_resource(WorldRes(world));
+    commands.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));
     commands.insert_resource(ChunkRulesRes(Box::new(content)));
     log.push(format!("Seed {}. You step off the gangplank onto the docks of a small port.", start.seed.0), LogCategory::Notice, 0);
     if std::env::var("CORSAIR_OPEN").is_ok_and(|v| v == "inventory") {
@@ -168,22 +192,21 @@ fn start_world(
     next.set(EngineState::Playing);
 }
 
-/// Moves the player to a discovered site when the overworld asks.
+/// Asks the engine to move the player to a discovered site when the
+/// overworld asks, from wherever the player is, a cave included.
 fn honour_portals(
     mut requests: MessageReader<PortalRequest>,
+    mut warps: MessageWriter<WarpRequest>,
     world: Res<WorldRes>,
-    mut occupancy: ResMut<Occupancy>,
     mut log: ResMut<MessageLog>,
     turns: Res<Turns>,
-    mut player: Query<(Entity, &mut Position, &mut Viewshed), With<Player>>,
+    player: Query<Entity, With<Player>>,
 ) {
-    let Ok((entity, mut pos, mut viewshed)) = player.single_mut() else { return };
+    let Ok(entity) = player.single() else { return };
     for req in requests.read() {
         let Some(site) = world.sites().get(req.site) else { continue };
         let target = world.region_tiles(site.position).center();
-        occupancy.relocate(entity, pos.0, target);
-        pos.0 = target;
-        viewshed.dirty = true;
+        warps.write(WarpRequest { actor: entity, to: Destination::Surface(target) });
         log.push("The portal takes you.", LogCategory::Notice, turns.turn_number());
     }
 }
@@ -210,6 +233,7 @@ struct StatusWorld<'w, 's> {
     world: Res<'w, WorldRes>,
     state: Res<'w, State<EngineState>>,
     armory: Res<'w, Armory>,
+    map: Res<'w, WorldMap>,
     player: Query<'w, 's, (&'static Position, &'static Health, &'static Armor, &'static Equipped), With<Player>>,
     ground: Query<'w, 's, (&'static Position, &'static ItemKind, Option<&'static Stack>), With<Item>>,
     kinds: Query<'w, 's, &'static ItemKind>,
@@ -221,7 +245,8 @@ fn update_status(mut status: ResMut<StatusLine>, w: StatusWorld) {
     }
     let Ok((pos, hp, armor, worn)) = w.player.single() else { return };
     let region = w.world.region_of_tile(pos.0);
-    let band = w.world.layers().band(region).map(content::band_name).unwrap_or("nowhere");
+    let below = places::place_name(w.map.current());
+    let band = below.as_deref().unwrap_or_else(|| w.world.layers().band(region).map(content::band_name).unwrap_or("nowhere"));
     let weapon =
         worn.in_slot(w.armory.slots.expect("main hand")).and_then(|e| w.kinds.get(e).ok()).map(|k| w.armory.defs.get(k.0).name.as_str()).unwrap_or("fists");
     let here = items::whats_here(pos.0, &w.armory, &w.ground).map(|s| format!("   here: {s} [g]")).unwrap_or_default();

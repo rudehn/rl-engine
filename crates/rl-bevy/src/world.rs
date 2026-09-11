@@ -5,6 +5,10 @@
 //! are dropped, and only their edits survive, as a delta replayed when
 //! they load again. Everything that reads tiles reads through
 //! [`WorldMap`], in world coordinates, and gets `None` outside the window.
+//!
+//! While the player is in a place (see [`places`](crate::places)), the
+//! same readers read the place's bounded terrain instead, in the place's
+//! own coordinates, and the surface window waits untouched underneath.
 
 use std::collections::BTreeMap;
 
@@ -15,6 +19,7 @@ use rl_mapgen::Outputs;
 use rl_world::{ChunkRules, WorldGraph};
 
 use crate::components::{Player, Position, Viewshed};
+use crate::places::{MapId, PlaceBuild, Spot};
 
 /// The coarse world.
 #[derive(Resource, Deref)]
@@ -45,7 +50,21 @@ struct Chunk {
     delta: Vec<(usize, TileId)>,
 }
 
-/// Every loaded chunk, addressable in world tile coordinates.
+/// A built place, kept whole.
+#[derive(Debug)]
+pub struct PlaceMap {
+    /// The tiles, edits included.
+    pub terrain: rl_grid::Terrain,
+    /// Where an arrival from above stands.
+    pub entry: Point,
+    /// Where an arrival from below stands, if it goes deeper.
+    pub exit: Option<Point>,
+    /// The builder's points of interest.
+    pub spots: Vec<Spot>,
+}
+
+/// Every loaded chunk, addressable in world tile coordinates, and every
+/// built place, one of which may be the map being read instead.
 #[derive(Resource, Debug)]
 pub struct WorldMap {
     region_size: i32,
@@ -55,12 +74,62 @@ pub struct WorldMap {
     tables: TileTables,
     /// Bumped every time the window moves, so viewsheds know to recompute.
     generation: u64,
+    current: MapId,
+    places: BTreeMap<MapId, PlaceMap>,
 }
 
 impl WorldMap {
     /// An empty map with no window loaded.
     pub fn new(region_size: i32, tables: TileTables) -> Self {
-        Self { region_size, window: Rect::new(0, 0, 0, 0), chunks: Vec::new(), deltas: BTreeMap::new(), tables, generation: 0 }
+        Self {
+            region_size,
+            window: Rect::new(0, 0, 0, 0),
+            chunks: Vec::new(),
+            deltas: BTreeMap::new(),
+            tables,
+            generation: 0,
+            current: MapId::SURFACE,
+            places: BTreeMap::new(),
+        }
+    }
+
+    /// The map every reader reads right now.
+    pub fn current(&self) -> MapId {
+        self.current
+    }
+
+    /// The place being read, if the current map is one.
+    fn active_place(&self) -> Option<&PlaceMap> {
+        (!self.current.is_surface()).then(|| self.places.get(&self.current)).flatten()
+    }
+
+    /// Whether `map` has been built.
+    pub fn has_place(&self, map: MapId) -> bool {
+        self.places.contains_key(&map)
+    }
+
+    /// A built place, current or not.
+    pub fn place(&self, map: MapId) -> Option<&PlaceMap> {
+        self.places.get(&map)
+    }
+
+    /// Keeps a freshly built place. Does not switch to it.
+    pub fn install_place(&mut self, map: MapId, build: PlaceBuild) {
+        assert!(!map.is_surface(), "the surface is not a place");
+        self.places.insert(map, PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots });
+    }
+
+    /// Makes `map` the one readers read: the surface, or a built place.
+    /// Returns whether it existed.
+    pub fn switch_to(&mut self, map: MapId) -> bool {
+        if !map.is_surface() && !self.places.contains_key(&map) {
+            return false;
+        }
+        if self.current != map {
+            self.current = map;
+            self.generation += 1;
+        }
+        true
     }
 
     /// Tiles per region.
@@ -73,8 +142,12 @@ impl WorldMap {
         self.window
     }
 
-    /// The loaded window, in world tiles.
+    /// The loaded window, in world tiles; a place's whole bounds while
+    /// the player is in one.
     pub fn window_tiles(&self) -> Rect {
+        if let Some(place) = self.active_place() {
+            return place.terrain.bounds();
+        }
         let s = self.region_size;
         Rect::new(self.window.x * s, self.window.y * s, self.window.width * s, self.window.height * s)
     }
@@ -108,6 +181,9 @@ impl WorldMap {
 
     /// The tile at world `p`, or `None` outside the loaded window.
     pub fn tile(&self, p: Point) -> Option<TileId> {
+        if let Some(place) = self.active_place() {
+            return place.terrain.get(p);
+        }
         let (slot, local) = self.locate(p)?;
         self.chunks[slot].as_ref().map(|c| c.terrain.get_idx(local))
     }
@@ -115,6 +191,9 @@ impl WorldMap {
     /// Sets the tile at world `p`, recording the edit so it survives the
     /// chunk being unloaded. Returns whether `p` was loaded.
     pub fn set_tile(&mut self, p: Point, id: TileId) -> bool {
+        if !self.current.is_surface() {
+            return self.places.get_mut(&self.current).is_some_and(|place| place.terrain.set(p, id));
+        }
         let Some((slot, local)) = self.locate(p) else { return false };
         let Some(chunk) = self.chunks[slot].as_mut() else { return false };
         if chunk.terrain.get_idx(local) == id {
@@ -143,6 +222,9 @@ impl WorldMap {
 
     /// Whether `p` is inside the loaded window.
     pub fn is_loaded(&self, p: Point) -> bool {
+        if let Some(place) = self.active_place() {
+            return place.terrain.bounds().contains(p);
+        }
         self.locate(p).is_some_and(|(slot, _)| self.chunks[slot].is_some())
     }
 
@@ -289,6 +371,9 @@ pub fn stream_chunks(
     mut loaded: MessageWriter<ChunkLoaded>,
 ) {
     let Ok(pos) = player.single() else { return };
+    if !map.current().is_surface() {
+        return;
+    }
     let region = map.region_of(pos.0);
     let wanted = desired_window(region, settings.window_radius, &world);
     if wanted == map.window() && !map.chunks.is_empty() {

@@ -19,6 +19,7 @@ use rl_rules::damage::{DamageKind, DamageKindId, Defender};
 use rl_rules::{DamageStage, Factions, Hit, Resistances};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
+use crate::places::{MapId, OnMap};
 use crate::turn::{Action, ActionDone, Intent, Occupancy, Turns};
 use crate::world::WorldMap;
 
@@ -167,10 +168,18 @@ impl FlowFields {
     pub fn approach(&self, profile: MovementProfile) -> Option<&DijkstraMap> {
         self.approach.get(&profile)
     }
+
+    /// Forgets every map, so the next mind rebuilds them: the player
+    /// changed maps, or the terrain changed under everyone.
+    pub fn invalidate(&mut self) {
+        self.built_at = None;
+        self.approach.clear();
+        self.escape.clear();
+    }
 }
 
 /// What a mind reads about any actor.
-type ActorData = (Entity, &'static Position, &'static Health, &'static Faction, Option<&'static Perception>);
+type ActorData = (Entity, &'static Position, &'static Health, &'static Faction, Option<&'static Perception>, Option<&'static OnMap>);
 /// The mind holding the turn.
 type MindData = (Entity, &'static Mind, Option<&'static Profile>);
 /// A defender as the damage system sees it.
@@ -199,7 +208,7 @@ pub struct MindWorld<'w> {
 pub fn decide_minds(mut intents: MessageWriter<Intent>, mut world: MindWorld, sight: Sight) {
     let Ok((player_pos, player_sight)) = sight.player.single() else { return };
     let Ok((thinker, mind, profile)) = sight.minds.single() else { return };
-    let Ok((_, my_pos, my_hp, my_faction, perception)) = sight.actors.get(thinker) else { return };
+    let Ok((_, my_pos, my_hp, my_faction, perception, _)) = sight.actors.get(thinker) else { return };
     let MindWorld { fields, rng, map, occupancy, rules, turns } = &mut world;
     let (fields, rng, map, occupancy, rules, turns) = (&mut **fields, &mut **rng, &**map, &**occupancy, &**rules, &**turns);
     let actors = &sight.actors;
@@ -212,8 +221,9 @@ pub fn decide_minds(mut intents: MessageWriter<Intent>, mut world: MindWorld, si
     // player's is the oracle: I see the player if the player sees me, and
     // I see anyone else if the player sees us both.
     let i_am_seen = player_sight.can_see(my_pos.0);
-    for (e, pos, hp, faction, _) in actors.iter() {
-        if e == thinker || geometry::chebyshev(pos.0, my_pos.0) > reach {
+    let here = map.current();
+    for (e, pos, hp, faction, _, on) in actors.iter() {
+        if e == thinker || on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || geometry::chebyshev(pos.0, my_pos.0) > reach {
             continue;
         }
         let visible = i_am_seen && (pos.0 == player_pos.0 || player_sight.can_see(pos.0));

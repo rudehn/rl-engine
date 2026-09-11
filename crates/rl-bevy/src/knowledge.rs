@@ -6,19 +6,41 @@ use bevy::prelude::*;
 use rl_core::{Grid2D, Point};
 use rl_grid::BitGrid;
 
+use crate::places::MapId;
+
 /// Explored tiles and discovered sites, kept per region so they survive a
 /// chunk being unloaded and never cost more than what was actually seen.
+/// Explored tiles are per map: the current map's are read, the others'
+/// kept aside.
 #[derive(Resource, Debug, Default)]
 pub struct Knowledge {
     region_size: i32,
     explored: BTreeMap<Point, BitGrid>,
     sites: BTreeSet<usize>,
+    current: MapId,
+    stash: BTreeMap<MapId, BTreeMap<Point, BitGrid>>,
 }
 
 impl Knowledge {
     /// Knowledge for a world whose regions are `region_size` tiles across.
     pub fn new(region_size: i32) -> Self {
-        Self { region_size, explored: BTreeMap::new(), sites: BTreeSet::new() }
+        Self { region_size, explored: BTreeMap::new(), sites: BTreeSet::new(), current: MapId::SURFACE, stash: BTreeMap::new() }
+    }
+
+    /// The map whose explored tiles are being read.
+    pub fn current(&self) -> MapId {
+        self.current
+    }
+
+    /// Swaps in the explored tiles of `map`, keeping the current ones aside.
+    pub fn switch(&mut self, map: MapId) {
+        if map == self.current {
+            return;
+        }
+        let incoming = self.stash.remove(&map).unwrap_or_default();
+        let outgoing = std::mem::replace(&mut self.explored, incoming);
+        self.stash.insert(self.current, outgoing);
+        self.current = map;
     }
 
     fn split(&self, p: Point) -> (Point, Point) {

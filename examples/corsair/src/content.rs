@@ -5,7 +5,7 @@
 
 use bevy::prelude::Color;
 use rand::Rng;
-use rl_engine::rl_core::{Grid, Point};
+use rl_engine::rl_core::{Grid, Grid2D, Point};
 use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::passes::Scatter;
 use rl_engine::rl_mapgen::{BuildContext, BuildError, Chain, Pass, Phase};
@@ -45,6 +45,7 @@ pub fn band_name(b: BandId) -> &'static str {
 }
 
 /// The game's tiles and the rules that place them.
+#[derive(Clone)]
 pub struct Content {
     tiles: TileRegistry,
     water: TileId,
@@ -55,6 +56,10 @@ pub struct Content {
     snow: TileId,
     road: TileId,
     plaza: TileId,
+    cave: TileId,
+    door: TileId,
+    timber: TileId,
+    plank: TileId,
 }
 
 impl Content {
@@ -69,7 +74,11 @@ impl Content {
         let snow = tiles.register(TileProps::floor("marsh").move_cost(160)).unwrap();
         let road = tiles.register(TileProps::floor("road").move_cost(80)).unwrap();
         let plaza = tiles.register(TileProps::floor("dock")).unwrap();
-        Self { tiles, water, sand, grass, tree, rock, snow, road, plaza }
+        let cave = tiles.register(TileProps::floor("cave")).unwrap();
+        let door = tiles.register(TileProps::floor("door").opaque(true)).unwrap();
+        let timber = tiles.register(TileProps::wall("timber")).unwrap();
+        let plank = tiles.register(TileProps::floor("plank")).unwrap();
+        Self { tiles, water, sand, grass, tree, rock, snow, road, plaza, cave, door, timber, plank }
     }
 
     pub fn tiles(&self) -> &TileRegistry {
@@ -86,6 +95,10 @@ impl Content {
         look.set(self.snow, Cell::new('"', Color::srgb(0.3, 0.5, 0.4)));
         look.set(self.road, Cell::new('+', Color::srgb(0.7, 0.6, 0.45)));
         look.set(self.plaza, Cell::new('=', Color::srgb(0.6, 0.45, 0.3)));
+        look.set(self.cave, Cell::new('.', Color::srgb(0.5, 0.45, 0.4)));
+        look.set(self.door, Cell::new('+', Color::srgb(0.75, 0.55, 0.3)));
+        look.set(self.timber, Cell::new('#', Color::srgb(0.6, 0.4, 0.2)));
+        look.set(self.plank, Cell::new('.', Color::srgb(0.65, 0.5, 0.3)));
         look
     }
 
@@ -153,15 +166,22 @@ impl WorldRules for Content {
 
     fn wilds(&self, layers: &Layers, _: &Roads, distance_to_road: &Grid<u16>, mut sites: Vec<Site>, seed: u64) -> Vec<Site> {
         let rules = PlacementRules {
-            cells_per_site: 200,
-            min: 0,
+            cells_per_site: 40,
+            min: 3,
             max: 30,
             jitter: 0.2,
             clearances: vec![Clearance { from: PORT, cells: 4 }, Clearance { from: COVE, cells: 6 }],
         };
+        // A cove is a hidden bit of coast: away from the roads, better
+        // still under hills.
         place_scored(&mut sites, COVE, &rules, seed, layers.width(), layers.height(), |p| {
             let f = layers.facts(p).unwrap();
-            if f.is_water() || !(1..=3).contains(&distance_to_road[p]) { 0.0 } else { 1.0 }
+            if f.is_water() || !f.is_coast {
+                return 0.0;
+            }
+            let quiet = if distance_to_road[p] >= 2 { 1.0 } else { 0.3 };
+            let hilly = if f.relief == Relief::Hill { 1.5 } else { 1.0 };
+            quiet * hilly
         });
         sites
     }
@@ -202,6 +222,63 @@ impl Pass<ChunkContext> for Paint {
                 };
                 ctx.terrain_mut().set(p, tile);
             }
+        }
+        Ok(())
+    }
+}
+
+/// Huts around the plaza of a port: timber walls, a plank floor, and a
+/// door facing the square.
+struct Huts {
+    wall: TileId,
+    floor: TileId,
+    door: TileId,
+    water: TileId,
+    plaza_half: i32,
+}
+
+impl Pass<ChunkContext> for Huts {
+    fn name(&self) -> &'static str {
+        "huts"
+    }
+    fn phase(&self) -> Phase {
+        Phase::Structures
+    }
+    fn apply(&self, ctx: &mut ChunkContext) -> Result<(), BuildError> {
+        use rl_engine::rl_core::Rect;
+        let c = ctx.center();
+        let keep_out = rl_engine::rl_core::geometry::square(c, self.plaza_half + 1).collect::<Vec<_>>();
+        let mut huts: Vec<Rect> = Vec::new();
+        for _ in 0..40 {
+            if huts.len() >= 6 {
+                break;
+            }
+            let w = ctx.rng().random_range(4..=6);
+            let h = ctx.rng().random_range(4..=5);
+            let dx = ctx.rng().random_range(-13..=13 - w);
+            let dy = ctx.rng().random_range(-11..=11 - h);
+            let hut = Rect::new(c.x + dx, c.y + dy, w, h);
+            let clear = hut
+                .inflate(1)
+                .cells()
+                .all(|p| ctx.terrain().get(p).is_some_and(|t| t != self.water) && !keep_out.contains(&p) && !ctx.terrain().bounds().is_border(p))
+                && huts.iter().all(|other| !other.too_close(&hut, 1));
+            if !clear {
+                continue;
+            }
+            for p in hut.cells() {
+                let tile = if hut.is_border(p) { self.wall } else { self.floor };
+                ctx.terrain_mut().set(p, tile);
+            }
+            // The door is on the side that faces the plaza.
+            let (cx, cy) = (hut.center().x, hut.center().y);
+            let door = if (c.x - cx).abs() > (c.y - cy).abs() {
+                Point::new(if c.x > cx { hut.right() - 1 } else { hut.x }, cy)
+            } else {
+                Point::new(cx, if c.y > cy { hut.bottom() - 1 } else { hut.y })
+            };
+            ctx.terrain_mut().set(door, self.door);
+            huts.push(hut);
         }
         Ok(())
     }
@@ -264,6 +341,47 @@ impl ChunkRules for Content {
         if around.here.site.is_some() {
             chain = chain.then(Plaza { tile: self.plaza, half: 4 });
         }
+        if around.here.site == Some(PORT) {
+            chain = chain.then(Huts { wall: self.timber, floor: self.plank, door: self.door, water: self.water, plaza_half: 5 });
+        }
         chain.then(RoadPave { tile: self.road })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rl_engine::rl_core::RunSeed;
+    use rl_engine::rl_world::WorldConfig;
+
+    #[test]
+    fn every_world_has_ports_and_coves() {
+        for seed in 1..=6 {
+            let content = Content::new();
+            let mut config = WorldConfig::regions(64, 64);
+            config.elevation.land_fraction = 0.22;
+            config.elevation.continent_frequency = 3.2;
+            let world = WorldGraph::generate(RunSeed(seed), config, &content);
+            let ports = world.sites().iter().filter(|s| s.kind == PORT).count();
+            let coves = world.sites().iter().filter(|s| s.kind == COVE).count();
+            assert!(ports >= 2, "seed {seed}: {ports} ports");
+            assert!(coves >= 3, "seed {seed}: {coves} coves");
+        }
+    }
+
+    #[test]
+    fn a_port_chunk_has_huts_with_doors_and_a_walkable_middle() {
+        let content = Content::new();
+        let mut config = WorldConfig::regions(32, 32);
+        config.elevation.land_fraction = 0.22;
+        let world = WorldGraph::generate(RunSeed(7), config, &content);
+        let port = world.sites().iter().find(|s| s.kind == PORT).expect("a port");
+        let (terrain, _) = world.build_chunk(port.position, &content).unwrap();
+        let tables = content.tiles().tables();
+        assert!(terrain.count(content.door) >= 2, "{} doors", terrain.count(content.door));
+        assert!(terrain.count(content.timber) >= 2 * 12, "{} timber", terrain.count(content.timber));
+        let c = terrain.bounds().center();
+        assert!(tables.walkable[terrain.get(c).unwrap().index()], "the plaza centre is open");
+        assert!(tables.walkable[content.door.index()] && tables.opaque[content.door.index()], "a door is walked through and blocks sight");
     }
 }

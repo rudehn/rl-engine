@@ -127,9 +127,10 @@ pub fn draw_map(
     look: Res<TileAppearance>,
     knowledge: Res<Knowledge>,
     player: Query<&Viewshed, With<Player>>,
-    glyphs: Query<(&Position, &Glyph)>,
+    glyphs: Query<(&Position, &Glyph, Option<&OnMap>)>,
 ) {
     let viewshed = player.single().ok();
+    let here = map.current();
     for s in view.viewport.cells() {
         let Some(p) = view.to_world(s) else { continue };
         let cell = match (map.tile(p), viewshed.is_some_and(|v| v.can_see(p))) {
@@ -140,8 +141,8 @@ pub fn draw_map(
         terminal.set(s.x, s.y, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
-    for (pos, glyph) in &glyphs {
-        if !viewshed.is_some_and(|v| v.can_see(pos.0)) {
+    for (pos, glyph, on) in &glyphs {
+        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !viewshed.is_some_and(|v| v.can_see(pos.0)) {
             continue;
         }
         let Some(s) = view.to_screen(pos.0) else { continue };
