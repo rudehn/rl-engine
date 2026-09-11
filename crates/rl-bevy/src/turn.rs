@@ -49,6 +49,17 @@ pub enum Action {
     Attack(Entity),
     /// Do nothing for one action.
     Wait,
+    /// Take everything lying on the actor's cell. Resolved by the item systems.
+    PickUp,
+    /// Put a carried item on the ground.
+    Drop(Entity),
+    /// Put a carried item on.
+    Equip(Entity),
+    /// Take a worn item off.
+    Unequip(Entity),
+    /// Use a carried item. The engine charges the turn and reports
+    /// [`ItemEvent::Used`](crate::items::ItemEvent::Used); the game does the rest.
+    Use(Entity),
 }
 
 /// A decision for the actor holding [`MyTurn`]: written by the game's input
@@ -185,7 +196,7 @@ pub fn resolve_intents(
         }
         let Ok((mut pos, viewshed, blocks, is_player)) = actors.get_mut(intent.actor) else { continue };
         match intent.action {
-            Action::Attack(_) => {
+            Action::Attack(_) | Action::PickUp | Action::Drop(_) | Action::Equip(_) | Action::Unequip(_) | Action::Use(_) => {
                 acted.push(intent.actor);
             }
             Action::Wait => {
@@ -230,6 +241,10 @@ fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
 
 /// Requeues actors that finished, keeps the turn of actors that were
 /// refused, and recovers any non-player still holding a turn nobody used.
+///
+/// One turn is requeued once: a second [`ActionDone`] for the same actor
+/// in one pass is ignored, so two resolvers answering two intents for one
+/// holder cannot put it in the queue twice.
 pub fn cleanup_turns(
     mut commands: Commands,
     mut turns: ResMut<Turns>,
@@ -239,6 +254,9 @@ pub fn cleanup_turns(
 ) {
     let mut handled: Vec<Entity> = Vec::new();
     for d in done.read() {
+        if handled.contains(&d.actor) {
+            continue;
+        }
         if let Ok((e, speed, _)) = holding.get(d.actor) {
             let cost = scaled_cost(d.cost, speed.map(|s| s.0).unwrap_or(100));
             debug!("actor {e:?} finished an action costing {cost}");

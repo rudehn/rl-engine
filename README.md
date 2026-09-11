@@ -28,11 +28,14 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 
 ## The worked example
 
-`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, a bestiary in RON, factions, bump-to-attack combat, a message log and the world map. It is what a game on this engine looks like.
+`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, a bestiary and an armory in RON, factions, bump-to-attack combat, loot on the sand and in the pockets of the dead, a sea chest to wear it from, a message log and the world map.
+It is what a game on this engine looks like.
 
 ```sh
 cargo run -p corsair -- --seed 7
 ```
+
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `i` for the sea chest, `m` for the map, `q` to quit.
 
 ## Principles
 

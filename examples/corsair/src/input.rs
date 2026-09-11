@@ -5,6 +5,8 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Direction;
 use rl_engine::rl_overworld::OverworldScreen;
 
+use crate::inventory::InventoryScreen;
+
 /// How long a held key waits before repeating, and between repeats.
 const REPEAT_DELAY: f32 = 0.25;
 const REPEAT_EVERY: f32 = 0.08;
@@ -35,18 +37,19 @@ pub struct InputWorld<'w, 's> {
     keys: Res<'w, ButtonInput<KeyCode>>,
     time: Res<'w, Time>,
     screen: Res<'w, OverworldScreen>,
+    chest: Res<'w, InventoryScreen>,
     occupancy: Res<'w, Occupancy>,
     player: PlayerTurn<'w, 's>,
 }
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
 pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: MessageWriter<Intent>, mut exit: MessageWriter<AppExit>) {
-    let InputWorld { keys, time, screen, occupancy, player } = world;
+    let InputWorld { keys, time, screen, chest, occupancy, player } = world;
     if keys.just_pressed(KeyCode::KeyQ) {
         exit.write(AppExit::Success);
         return;
     }
-    if screen.open {
+    if screen.open || chest.open {
         return;
     }
     let Ok((entity, pos)) = player.single() else { return };
@@ -68,6 +71,8 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: M
         }
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
         Some(Action::Wait)
+    } else if keys.just_pressed(KeyCode::KeyG) || keys.just_pressed(KeyCode::Comma) {
+        Some(Action::PickUp)
     } else {
         *repeat = Repeat::default();
         None

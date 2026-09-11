@@ -1,7 +1,18 @@
 # rl-engine extraction plan
 
-Status: proposal, revised 2026-09-09 after Nate's review.
-Decision not yet taken.
+Status: adopted, revised 2026-09-09 after Nate's review; being built.
+
+## Progress
+
+- 2026-09-10: M0, M1 and M2 are built and committed; every crate through `rl-ai` exists, tier 1 is Bevy-free by CI.
+- 2026-09-10: WildReach is abandoned as a repo.
+  Corsair, the pirate example inside this workspace, is the consumer the milestones are built against from here on.
+  The `wildreach` directory is left as it was and is not maintained.
+- 2026-09-10: the turn loop runs every actor due before the player's next turn inside one frame (the `Turn` schedule and `EngineSet::Input`), after a Corsair run showed one actor per frame.
+- 2026-09-10: M3 first slice: the slot graph in `rl-rules`, items in `rl-bevy` (ground, bag, slots, stacks, use as a game event), the list menu in `rl-ui`, and Corsair's armory, loot drops, rum and sea chest.
+  Deferred from M3: affixes and enchant, throwing, the character sheet.
+- Next: M4 places (dungeon builders, settlements in chunks, map stack, portals into places), then the living-world-rogue conversion.
+  That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.
 

@@ -125,6 +125,9 @@ pub struct DamageDealt {
 pub struct DeathEvent {
     /// Who died.
     pub entity: Entity,
+    /// Where. The entity is despawned before the game's systems run, so
+    /// anything it leaves behind goes here.
+    pub at: Point,
     /// Who gets the credit.
     pub credit: Option<Entity>,
     /// Whether it was the player.
@@ -171,7 +174,7 @@ type ActorData = (Entity, &'static Position, &'static Health, &'static Faction, 
 /// The mind holding the turn.
 type MindData = (Entity, &'static Mind, Option<&'static Profile>);
 /// A defender as the damage system sees it.
-type DefenderData = (&'static mut Health, Option<&'static Armor>, Option<&'static Resists>, Has<Player>);
+type DefenderData = (&'static mut Health, &'static Position, Option<&'static Armor>, Option<&'static Resists>, Has<Player>);
 
 /// Everyone a mind might see, and the mind whose turn it is.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -312,7 +315,7 @@ pub fn apply_damage(
     mut targets: Query<DefenderData>,
 ) {
     for ev in events.read() {
-        let Ok((mut health, armor, resist, is_player)) = targets.get_mut(ev.target) else { continue };
+        let Ok((mut health, pos, armor, resist, is_player)) = targets.get_mut(ev.target) else { continue };
         if health.hp <= 0 {
             continue;
         }
@@ -323,7 +326,7 @@ pub fn apply_damage(
         health.hp = (health.hp - amount).min(health.max);
         dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount });
         if health.hp <= 0 {
-            deaths.write(DeathEvent { entity: ev.target, credit: ev.hit.credit, was_player: is_player });
+            deaths.write(DeathEvent { entity: ev.target, at: pos.0, credit: ev.hit.credit, was_player: is_player });
         }
     }
 }

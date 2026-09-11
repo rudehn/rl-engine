@@ -8,7 +8,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{combat, fov, turn, world};
+use crate::{combat, fov, items, turn, world};
 
 /// The stages of a frame while playing, in order. All in `Update`.
 ///
@@ -107,6 +107,7 @@ impl Plugin for EnginePlugins {
             .add_message::<combat::DamageDealt>()
             .add_message::<world::ChunkLoaded>()
             .add_message::<combat::DeathEvent>()
+            .add_message::<items::ItemEvent>()
             .init_resource::<combat::FlowFields>()
             .init_resource::<combat::DamageStages>()
             .init_schedule(Turn)
@@ -127,11 +128,14 @@ impl Plugin for EnginePlugins {
             .add_systems(Turn, combat::decide_minds.in_set(TurnSet::Decide).run_if(combat_ready))
             .add_systems(
                 Turn,
-                (turn::resolve_intents, combat::resolve_attacks.run_if(combat_ready), combat::apply_damage.run_if(combat_ready))
+                (turn::resolve_intents, items::resolve_items, combat::resolve_attacks.run_if(combat_ready), combat::apply_damage.run_if(combat_ready))
                     .chain()
                     .in_set(TurnSet::Resolve),
             )
-            .add_systems(Turn, (combat::process_deaths, turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(TurnSet::Cleanup));
+            .add_systems(
+                Turn,
+                (combat::process_deaths, turn::cleanup_turns, turn::forget_removed_blockers, items::forget_removed_items).chain().in_set(TurnSet::Cleanup),
+            );
     }
 }
 

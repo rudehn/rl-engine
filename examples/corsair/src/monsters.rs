@@ -38,6 +38,8 @@ pub struct MonsterDef {
     pub flee_at: i32,
     pub wander: u32,
     pub spawn: (i32, i32, u32, u32, u32),
+    #[serde(default)]
+    pub drops: Vec<(String, u32)>,
 }
 
 impl Named for MonsterDef {
@@ -71,6 +73,7 @@ impl Bestiary {
             DamageKind::new("pistol"),
             DamageKind::new("bite"),
             DamageKind::new("claw"),
+            DamageKind::new("fist"),
         ])
         .unwrap();
         let factions = Registry::from_defs(vec![

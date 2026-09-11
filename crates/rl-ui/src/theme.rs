@@ -19,6 +19,12 @@ pub struct Theme {
     pub bad: Color,
     /// Something notable happened.
     pub notice: Color,
+    /// Box borders.
+    pub frame: Color,
+    /// Titles in borders.
+    pub title: Color,
+    /// The background of a selected row.
+    pub highlight_bg: Color,
 }
 
 impl Default for Theme {
@@ -30,6 +36,9 @@ impl Default for Theme {
             good: Color::srgb(0.4, 0.85, 0.4),
             bad: Color::srgb(0.9, 0.35, 0.3),
             notice: Color::srgb(0.95, 0.8, 0.3),
+            frame: Color::srgb(0.45, 0.45, 0.5),
+            title: Color::srgb(0.95, 0.9, 0.7),
+            highlight_bg: Color::srgb(0.2, 0.22, 0.3),
         }
     }
 }

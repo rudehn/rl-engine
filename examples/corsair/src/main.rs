@@ -1,11 +1,17 @@
-//! Corsair: walk the world.
+//! Corsair: a small pirate roguelike, and the worked example of the engine.
 //!
-//! Milestone 1. A seeded continuous world, an `@` that walks it with sight
-//! across chunk boundaries, a message log, a status line, and the world map
-//! with a portal picker over the towns you have found.
+//! A seeded continuous world of islands, an `@` that walks it with sight
+//! across chunk boundaries, monsters that hunt from RON, loot on the sand
+//! and in the pockets of the dead, a sea chest to wear it from, a message
+//! log, a status line, and the world map with a portal picker over the
+//! ports you have found.
+//!
+//! `CORSAIR_OPEN=inventory` starts with the inventory open, for screenshots.
 
 mod content;
 mod input;
+mod inventory;
+mod items;
 mod monsters;
 
 use bevy::prelude::*;
@@ -19,6 +25,7 @@ use rl_engine::rl_ui::{ChromeLayout, ChromePlugin, LogCategory, MessageLog, Stat
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
+use crate::items::{Armory, ItemKind, Sheet};
 
 /// Terminal size in cells.
 const COLS: i32 = 100;
@@ -80,11 +87,18 @@ fn main() -> AppExit {
     .insert_resource(OverworldLayout {
         viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS),
     })
+    .init_resource::<inventory::InventoryScreen>()
     .add_systems(Startup, start_world)
-    .add_systems(Update, input::player_input.in_set(EngineSet::Input))
+    .add_systems(Update, (inventory::inventory_keys, input::player_input).chain().in_set(EngineSet::Input))
     .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
-    .add_systems(Update, monsters::spawn_on_load.in_set(EngineSet::Stream))
-    .add_systems(Update, (note_discoveries, monsters::narrate, update_status).chain().in_set(EngineSet::Present));
+    .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load).in_set(EngineSet::Stream))
+    .add_systems(
+        Update,
+        (items::drop_loot, items::use_items, items::refresh_gear, note_discoveries, monsters::narrate, items::narrate_items, update_status)
+            .chain()
+            .in_set(EngineSet::Present),
+    )
+    .add_systems(Update, inventory::draw_inventory.in_set(EngineSet::Present).after(rl_engine::rl_ui::draw_chrome));
     app.run()
 }
 
@@ -95,7 +109,7 @@ struct StartSeed {
 }
 
 /// Generates the world, spawns the player at the first town, and starts play.
-fn start_world(mut commands: Commands, start: Res<StartSeed>, mut next: ResMut<NextState<EngineState>>, mut log: ResMut<MessageLog>) {
+fn start_world(mut commands: Commands, start: Res<StartSeed>, mut next: ResMut<NextState<EngineState>>, mut log: ResMut<MessageLog>, mut screen: ResMut<inventory::InventoryScreen>) {
     let content = Content::new();
     // Islands rather than a continent: less land, more of it coast.
     let mut config = WorldConfig::regions(start.regions.0, start.regions.1);
@@ -110,7 +124,18 @@ fn start_world(mut commands: Commands, start: Res<StartSeed>, mut next: ResMut<N
     let region_size = world.region_size();
 
     let (bestiary, rules) = monsters::Bestiary::load(start.seed, town.position);
+    let armory = Armory::load(start.seed, town.position, &bestiary.kinds);
+    bestiary
+        .defs
+        .validate(|m, _| m.drops.iter().find(|(name, _)| armory.defs.id(name).is_none()).map_or(Ok(()), |(name, _)| Err(format!("unknown drop {name:?}"))))
+        .unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
     let player_faction: FactionId = bestiary.factions.expect("player");
+
+    // The player starts with a cutlass in hand and a bottle in the bag.
+    let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
+    let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
+    let mut worn = Equipped(rl_engine::rl_rules::Equipment::for_slots(&armory.slots));
+    worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
     commands.spawn((
         Actor,
         Player,
@@ -120,11 +145,15 @@ fn start_world(mut commands: Commands, start: Res<StartSeed>, mut next: ResMut<N
         RevealsMap,
         Speed(100),
         Health::full(30),
-        Armor(1),
+        Armor(0),
         Faction(player_faction),
-        MeleeAttack { kind: bestiary.kinds.expect("cutlass"), dice: rl_engine::rl_core::DiceRoll::new(1, 6) },
+        items::unarmed(&bestiary),
+        Inventory { items: vec![cutlass, rum] },
+        worn,
+        Sheet::default(),
         Glyph::new('@', Color::WHITE).on_layer(10),
     ));
+    commands.insert_resource(armory);
     commands.insert_resource(bestiary);
     commands.insert_resource(rules);
     commands.insert_resource(monsters::stages());
@@ -137,6 +166,9 @@ fn start_world(mut commands: Commands, start: Res<StartSeed>, mut next: ResMut<N
     commands.insert_resource(WorldRes(world));
     commands.insert_resource(ChunkRulesRes(Box::new(content)));
     log.push(format!("Seed {}. You step off the gangplank onto the docks of a small port.", start.seed.0), LogCategory::Notice, 0);
+    if std::env::var("CORSAIR_OPEN").is_ok_and(|v| v == "inventory") {
+        screen.open = true;
+    }
     next.set(EngineState::Playing);
 }
 
@@ -175,22 +207,41 @@ fn note_discoveries(knowledge: Res<Knowledge>, world: Res<WorldRes>, turns: Res<
     }
 }
 
-fn update_status(mut status: ResMut<StatusLine>, turns: Res<Turns>, world: Res<WorldRes>, state: Res<State<EngineState>>, player: Query<(&Position, &Health), With<Player>>) {
-    if *state.get() != EngineState::Playing {
+/// What the status line reads.
+#[derive(bevy::ecs::system::SystemParam)]
+struct StatusWorld<'w, 's> {
+    turns: Res<'w, Turns>,
+    world: Res<'w, WorldRes>,
+    state: Res<'w, State<EngineState>>,
+    armory: Res<'w, Armory>,
+    player: Query<'w, 's, (&'static Position, &'static Health, &'static Armor, &'static Equipped), With<Player>>,
+    ground: Query<'w, 's, (&'static Position, &'static ItemKind, Option<&'static Stack>), With<Item>>,
+    kinds: Query<'w, 's, &'static ItemKind>,
+}
+
+fn update_status(mut status: ResMut<StatusLine>, w: StatusWorld) {
+    if *w.state.get() != EngineState::Playing {
         return;
     }
-    let Ok((pos, hp)) = player.single() else { return };
-    let region = world.region_of_tile(pos.0);
-    let band = world.layers().band(region).map(content::band_name).unwrap_or("nowhere");
+    let Ok((pos, hp, armor, worn)) = w.player.single() else { return };
+    let region = w.world.region_of_tile(pos.0);
+    let band = w.world.layers().band(region).map(content::band_name).unwrap_or("nowhere");
+    let weapon = worn
+        .in_slot(w.armory.slots.expect("main hand"))
+        .and_then(|e| w.kinds.get(e).ok())
+        .map(|k| w.armory.defs.get(k.0).name.as_str())
+        .unwrap_or("fists");
+    let here = items::whats_here(pos.0, &w.armory, &w.ground).map(|s| format!("   here: {s} [g]")).unwrap_or_default();
     status.0 = format!(
-        "HP {}/{}   Turn {}   ({}, {})   region ({}, {}) {}   [m]ap  [q]uit",
+        "HP {}/{}  AC {}  {}   Turn {}   ({}, {}) {}{}   [i]nventory [m]ap [q]uit",
         hp.hp,
         hp.max,
-        turns.turn_number(),
+        armor.0,
+        weapon,
+        w.turns.turn_number(),
         pos.0.x,
         pos.0.y,
-        region.x,
-        region.y,
-        band
+        band,
+        here
     );
 }
