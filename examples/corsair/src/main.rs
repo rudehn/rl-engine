@@ -81,8 +81,8 @@ fn main() -> AppExit {
         viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS),
     })
     .add_systems(Startup, start_world)
-    .add_systems(Update, input::player_input.in_set(EngineSet::Decide))
-    .add_systems(Update, honour_portals.in_set(EngineSet::Resolve))
+    .add_systems(Update, input::player_input.in_set(EngineSet::Input))
+    .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
     .add_systems(Update, monsters::spawn_on_load.in_set(EngineSet::Stream))
     .add_systems(Update, (note_discoveries, monsters::narrate, update_status).chain().in_set(EngineSet::Present));
     app.run()

@@ -175,15 +175,26 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     /// skip be proved with no world in sight. Dead entries are discarded as
     /// they are met, so the loop cannot spin.
     pub fn pop_due(&mut self, is_alive: impl Fn(Id) -> bool) -> Option<Id> {
+        let id = self.peek_due(is_alive)?;
+        self.entries.pop();
+        Some(id)
+    }
+
+    /// The actor [`pop_due`](Self::pop_due) would return, left in place.
+    ///
+    /// Dead entries ahead of it are discarded, so a `peek_due` followed by
+    /// `pop_due` with the same liveness answer pops exactly this actor. A
+    /// loop that must stop short of dealing a turn, without changing the
+    /// order of anyone tied with the head, looks here first.
+    pub fn peek_due(&mut self, is_alive: impl Fn(Id) -> bool) -> Option<Id> {
         loop {
             match self.entries.peek() {
                 Some(Reverse(head)) if head.time > self.now => return None,
-                Some(_) => {}
+                Some(Reverse(head)) if is_alive(head.id) => return Some(head.id),
+                Some(_) => {
+                    self.entries.pop();
+                }
                 None => return None,
-            }
-            let Reverse(entry) = self.entries.pop().expect("head was just seen");
-            if is_alive(entry.id) {
-                return Some(entry.id);
             }
         }
     }
@@ -304,6 +315,21 @@ mod tests {
         q.insert_now(3);
         assert_eq!(q.pop_due(|id| id == 3), Some(3));
         assert!(q.is_empty());
+    }
+
+    #[test]
+    fn peeking_discards_the_dead_but_keeps_the_head_and_its_place() {
+        let mut q = Q::new();
+        q.insert_now(1);
+        q.insert_now(2);
+        q.insert_now(3);
+        assert_eq!(q.peek_due(|id| id != 1), Some(2));
+        assert_eq!(q.len(), 2, "the dead head was discarded, the live one kept");
+        assert_eq!(q.peek_due(|_| true), Some(2));
+        assert_eq!(q.pop_due(|_| true), Some(2), "peeking did not reorder the tie");
+        assert_eq!(q.pop_due(|_| true), Some(3));
+        q.insert_at(4, 50);
+        assert_eq!(q.peek_due(|_| true), None, "due later is not due");
     }
 
     #[test]

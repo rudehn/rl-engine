@@ -137,7 +137,7 @@ impl Plugin for OverworldPlugin {
             .init_resource::<OverworldStyle>()
             .init_resource::<OverworldKeys>()
             .add_message::<PortalRequest>()
-            .add_systems(Update, handle_keys.in_set(EngineSet::Decide))
+            .add_systems(Update, handle_keys.in_set(EngineSet::Input))
             .add_systems(Update, draw_overworld.in_set(EngineSet::Present).after(rl_render::map_view::draw_map));
     }
 }

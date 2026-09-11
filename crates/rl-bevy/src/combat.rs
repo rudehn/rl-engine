@@ -268,6 +268,10 @@ fn shift_map(m: &DijkstraMap, origin: Point) -> DijkstraMap {
 }
 
 /// Turns attack intents into damage events.
+///
+/// One turn, one strike: a second attack intent for an actor that already
+/// struck this pass is dropped, as [`resolve_intents`](crate::turn::resolve_intents)
+/// drops a second move.
 pub fn resolve_attacks(
     mut intents: MessageReader<Intent>,
     mut damage: MessageWriter<DamageEvent>,
@@ -276,9 +280,14 @@ pub fn resolve_attacks(
     attackers: Query<(&Position, Option<&MeleeAttack>), With<MyTurn>>,
     targets: Query<&Position, With<Health>>,
 ) {
+    let mut struck: Vec<Entity> = Vec::new();
     for intent in intents.read() {
         let Action::Attack(target) = intent.action else { continue };
+        if struck.contains(&intent.actor) {
+            continue;
+        }
         let Ok((pos, melee)) = attackers.get(intent.actor) else { continue };
+        struck.push(intent.actor);
         let Ok(target_pos) = targets.get(target) else {
             done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
             continue;

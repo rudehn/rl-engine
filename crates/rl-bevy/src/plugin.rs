@@ -1,37 +1,88 @@
 //! Wiring: the sets, the plugins, and a headless app for tests.
 
+use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
 
+use crate::components::{MyTurn, Player};
 use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
 use crate::{combat, fov, turn, world};
 
-/// The stages of a frame while playing, in order.
+/// The stages of a frame while playing, in order. All in `Update`.
 ///
-/// Games put input and AI in `Decide`, their own action resolution in
-/// `Resolve` alongside the engine's, and drawing in `Present`. The engine
-/// never names a game system; games slot into these.
+/// Games read the player's keys in `Input` and draw in `Present`. The
+/// engine never names a game system; games slot into these.
 ///
 /// Streaming runs first so the window is loaded around wherever the player
-/// ended the previous frame before anyone is dealt a turn on it.
+/// ended the previous frame before anyone is dealt a turn on it. Input runs
+/// once per frame, before the turns, so a key pressed this frame becomes
+/// one [`Intent`] however many passes the turn loop takes.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EngineSet {
     /// Move the loaded window with the player.
     Stream,
+    /// Read the player's input, if the player holds [`MyTurn`].
+    Input,
+    /// Run the [`Turn`] schedule until the player holds a turn or nothing moves.
+    Turns,
+    /// Recompute sight.
+    Fov,
+    /// Draw.
+    Present,
+}
+
+/// One pass of the turn loop: deal, decide, resolve, requeue.
+///
+/// Runs inside [`EngineSet::Turns`] as many times per frame as it takes for
+/// every actor due before the player's next turn to act, so a player step
+/// costs one frame however many monsters are awake. Systems here must be
+/// safe to run several times in a frame: a `just_pressed` check is not,
+/// which is why player input lives in [`EngineSet::Input`] instead.
+#[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Turn;
+
+/// The stages of one [`Turn`] pass, in order.
+///
+/// Games put AI for their own kinds of actors in `Decide` and their own
+/// action resolution in `Resolve` alongside the engine's.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TurnSet {
     /// Deal a turn.
     Schedule,
-    /// Decide what to do with it: input for the player, AI for the rest.
+    /// Decide what to do with it: minds for the non-player actors.
     Decide,
     /// Apply the decisions.
     Resolve,
     /// Requeue and recover.
     Cleanup,
-    /// Recompute sight.
-    Fov,
-    /// Draw.
-    Present,
+}
+
+/// The most passes one frame may run. A frame that hits it has a queue that
+/// never reaches the player; the rest waits for the next frame rather than
+/// stalling the window.
+const MAX_PASSES: usize = 512;
+
+/// Runs [`Turn`] passes until the player holds a turn or a pass changes
+/// nothing.
+///
+/// The player holding a turn means the game's input system gets the next
+/// frame; a pass that neither dealt, advanced nor requeued means the queue
+/// is idle. Both leave at least one pass run, so an [`Intent`] written in
+/// [`EngineSet::Input`] is always resolved in the same frame.
+pub fn run_turns(world: &mut World) {
+    for pass in 0..MAX_PASSES {
+        world.resource_mut::<Turns>().progress = false;
+        world.run_schedule(Turn);
+        let player_holds = world.query_filtered::<(), (With<Player>, With<MyTurn>)>().iter(world).next().is_some();
+        if player_holds || !world.resource::<Turns>().progress {
+            return;
+        }
+        if pass + 1 == MAX_PASSES {
+            debug!("turn loop hit {MAX_PASSES} passes in one frame; the rest waits");
+        }
+    }
 }
 
 /// The engine's plugins, gated on [`EngineState::Playing`].
@@ -58,34 +109,29 @@ impl Plugin for EnginePlugins {
             .add_message::<combat::DeathEvent>()
             .init_resource::<combat::FlowFields>()
             .init_resource::<combat::DamageStages>()
+            .init_schedule(Turn)
             .configure_sets(
                 Update,
-                (
-                    EngineSet::Stream,
-                    EngineSet::Schedule,
-                    EngineSet::Decide,
-                    EngineSet::Resolve,
-                    EngineSet::Cleanup,
-                    EngineSet::Fov,
-                    EngineSet::Present,
-                )
+                (EngineSet::Stream, EngineSet::Input, EngineSet::Turns, EngineSet::Fov, EngineSet::Present)
                     .chain()
                     .run_if(in_state(EngineState::Playing))
                     .run_if(resource_exists::<WorldMap>),
             )
-            .add_systems(Update, (turn::admit_new_actors, turn::schedule).chain().in_set(EngineSet::Schedule))
+            .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Cleanup).chain())
+            .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
+            .add_systems(Update, run_turns.in_set(EngineSet::Turns))
+            .add_systems(Update, fov::update_viewsheds.in_set(EngineSet::Fov))
+            .add_systems(Turn, (turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
             // Combat is opt-in: a game that inserts no rules gets no combat
             // systems, and the walking demo stays a walking demo.
-            .add_systems(Update, combat::decide_minds.in_set(EngineSet::Decide).run_if(combat_ready))
+            .add_systems(Turn, combat::decide_minds.in_set(TurnSet::Decide).run_if(combat_ready))
             .add_systems(
-                Update,
+                Turn,
                 (turn::resolve_intents, combat::resolve_attacks.run_if(combat_ready), combat::apply_damage.run_if(combat_ready))
                     .chain()
-                    .in_set(EngineSet::Resolve),
+                    .in_set(TurnSet::Resolve),
             )
-            .add_systems(Update, (combat::process_deaths, turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(EngineSet::Cleanup))
-            .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
-            .add_systems(Update, fov::update_viewsheds.in_set(EngineSet::Fov));
+            .add_systems(Turn, (combat::process_deaths, turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(TurnSet::Cleanup));
     }
 }
 
@@ -195,10 +241,8 @@ mod tests {
         intend(&mut app, player, Action::Move(Direction::East));
         app.update();
         assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0));
-        assert_eq!(app.world().resource::<Turns>().now(), 0, "the clock waits for the requeue");
-        app.update();
-        assert!(app.world().get::<MyTurn>(player).is_some());
-        assert_eq!(app.world().resource::<Turns>().now(), 100);
+        assert_eq!(app.world().resource::<Turns>().now(), 100, "the clock ran on to the player's next turn within the frame");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "and dealt it");
         assert_eq!(app.world().resource::<Occupancy>().at(start.offset(1, 0)), &[player]);
     }
 
@@ -218,34 +262,48 @@ mod tests {
     }
 
     #[test]
-    fn a_stalled_non_player_is_charged_a_wait_within_the_frame_and_speed_scales_cost() {
+    fn everyone_due_before_the_player_acts_in_the_frame_the_player_did() {
         let (mut app, world) = app_with_world();
         let start = land_tile(&world);
         let player = spawn_player(&mut app, start);
+        // No mind, so nobody decides for it: the recovery net charges it a
+        // wait each time it is dealt a turn. At speed 200 a wait costs 50.
         let fast = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Speed(200))).id();
         app.update();
         app.update();
         assert!(app.world().get::<MyTurn>(player).is_some(), "the player was admitted first and holds the turn");
         intend(&mut app, player, Action::Wait);
         app.update();
-        // Frame 4: the other actor is dealt its turn, nobody decides for it,
-        // and the recovery net charges it a wait before the frame ends.
+        // One frame: the player waited (100), the other actor was dealt a
+        // turn at 0 and at 50, and the clock reached the player's turn at
+        // 100, where the player wins the tie as the earlier insertion.
+        let t = app.world().resource::<Turns>();
+        assert_eq!(t.now(), 100);
+        assert_eq!(t.peek_time(), Some(100), "the other actor is due at 100 too, behind the player");
+        assert!(app.world().get::<MyTurn>(player).is_some());
+        assert!(app.world().get::<MyTurn>(fast).is_none());
+        let mut ends = app.world_mut().resource_mut::<Messages<TurnEnd>>();
+        assert_eq!(ends.drain().map(|e| e.turn).collect::<Vec<_>>(), vec![1], "one whole turn passed");
+    }
+
+    #[test]
+    fn an_idle_frame_runs_one_pass_and_a_key_moves_the_player_once() {
+        let (mut app, world) = app_with_world();
+        let start = land_tile(&world);
+        let player = spawn_player(&mut app, start);
         app.update();
-        {
-            let t = app.world().resource::<Turns>();
-            assert!(app.world().get::<MyTurn>(fast).is_none());
-            assert_eq!(t.now(), 0);
-            assert_eq!(t.peek_time(), Some(50), "a wait at speed 200 costs 50");
-        }
-        // Frame 5: the clock advances to 50 and it happens again.
         app.update();
-        assert_eq!(app.world().resource::<Turns>().now(), 50);
-        assert!(app.world().get::<MyTurn>(player).is_none());
-        // Frame 6: at 100 the player, requeued earlier, wins the tie.
+        // Two intents for the same turn: only the first resolves, the second
+        // finds the player no longer holding the turn it was written for.
+        intend(&mut app, player, Action::Move(Direction::East));
+        intend(&mut app, player, Action::Move(Direction::East));
+        app.update();
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0));
+        // Idle frames leave the clock alone.
+        app.update();
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), 100);
         assert!(app.world().get::<MyTurn>(player).is_some());
-        let _ = TurnEnd { turn: 0 };
     }
 
     #[test]

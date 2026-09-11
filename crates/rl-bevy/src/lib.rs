@@ -3,7 +3,7 @@
 //! Everything below tier 2 is data and algorithms. This crate is where they
 //! run: the turn loop, chunk streaming, field of view, occupancy. A game
 //! adds these plugins, spawns actors with the components here, and writes
-//! its own systems into the named [`EngineSet`]s.
+//! its own systems into the named [`EngineSet`]s and [`TurnSet`]s.
 //!
 //! The rule from the previous engine's post-mortem: own the loop or leave
 //! the subsystem out. The scheduler here advances the clock, deals turns,
@@ -25,7 +25,7 @@ pub mod world;
 pub use combat::{Armor, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, DeathEvent, Faction, FlowFields, Health, MeleeAttack, Mind, Perception, Profile, Resists};
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use knowledge::Knowledge;
-pub use plugin::{EnginePlugins, EngineSet};
+pub use plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
 pub use state::EngineState;
 pub use turn::{Action, ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 pub use world::{ChunkLoaded, ChunkRulesRes, WindowView, WorldMap, WorldRes, WorldSettings};
@@ -35,7 +35,7 @@ pub mod prelude {
     pub use crate::combat::{Armor, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, DeathEvent, Faction, FlowFields, Health, MeleeAttack, Mind, Perception, Profile, Resists};
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::knowledge::Knowledge;
-    pub use crate::plugin::{EnginePlugins, EngineSet};
+    pub use crate::plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
     pub use crate::state::EngineState;
     pub use crate::turn::{Action, ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, WindowView, WorldMap, WorldRes, WorldSettings};

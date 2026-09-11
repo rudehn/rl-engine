@@ -1,9 +1,12 @@
 //! The turn loop.
 //!
-//! Four sets run in order every frame while playing: the scheduler deals a
-//! turn, the game decides what to do with it, the engine resolves what it
-//! knows how to resolve, and the scheduler puts the actor back. An actor
-//! holding [`MyTurn`] is out of the queue until something reports
+//! Four sets make one pass of the [`Turn`](crate::plugin::Turn) schedule:
+//! the scheduler deals a turn, minds decide what to do with it, the engine
+//! resolves what it knows how to resolve, and the scheduler puts the actor
+//! back. The runner in [`plugin`](crate::plugin) repeats the pass within a
+//! frame until the player holds a turn or nothing moves, so every monster
+//! due before the player's next turn acts in the frame the player did. An
+//! actor holding [`MyTurn`] is out of the queue until something reports
 //! [`ActionDone`] or [`ActionRefused`] for it.
 
 use bevy::prelude::*;
@@ -21,6 +24,9 @@ pub struct Turns {
     queue: TurnQueue<Entity>,
     /// The last whole turn a [`TurnEnd`] was emitted for.
     last_turn: u32,
+    /// Whether the current pass dealt, advanced or requeued anything. The
+    /// runner clears it before a pass and stops when a pass leaves it clear.
+    pub(crate) progress: bool,
 }
 
 impl Turns {
@@ -45,8 +51,10 @@ pub enum Action {
     Wait,
 }
 
-/// A decision, written in [`EngineSet::Decide`](crate::plugin::EngineSet::Decide)
-/// for the actor holding [`MyTurn`].
+/// A decision for the actor holding [`MyTurn`]: written by the game's input
+/// system in [`EngineSet::Input`](crate::plugin::EngineSet::Input) for the
+/// player, and by minds in [`TurnSet::Decide`](crate::plugin::TurnSet::Decide)
+/// for everyone else.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct Intent {
     /// Who.
@@ -85,10 +93,10 @@ pub struct TurnEnd {
 /// Deals the next turn if nobody holds one.
 ///
 /// Actors outside the loaded window are frozen: they are put back for a
-/// full step without acting, so a distant crowd costs nothing per frame.
-/// The clock advances at most once per frame, so a queue holding only
-/// frozen actors moves time forward at one step per frame rather than
-/// racing ahead inside the loop.
+/// full step without acting, so a distant crowd costs nothing per pass.
+/// The clock advances at most once per pass, so a queue holding only
+/// frozen actors moves time forward one step at a time rather than racing
+/// ahead inside the loop.
 pub fn schedule(
     mut commands: Commands,
     mut turns: ResMut<Turns>,
@@ -113,6 +121,7 @@ pub fn schedule(
                     continue;
                 }
                 commands.entity(entity).insert(MyTurn);
+                turns.progress = true;
                 return;
             }
             None => {
@@ -120,6 +129,7 @@ pub fn schedule(
                     return;
                 }
                 advanced = true;
+                turns.progress = true;
                 let turn = turns.queue.now() / BASE_ACTION_COST;
                 if turn > turns.last_turn {
                     turns.last_turn = turn;
@@ -156,7 +166,9 @@ type Holding<'w, 's> = Query<'w, 's, (Entity, Option<&'static Speed>, Has<Player
 /// Resolves the actions the engine understands: moves and waits.
 ///
 /// A move into an unwalkable or occupied cell is refused for the player
-/// and treated as a wait for anyone else.
+/// and treated as a wait for anyone else. One turn resolves one action: a
+/// second intent for an actor that already acted this pass is dropped,
+/// since the turn it was written for is spent.
 pub fn resolve_intents(
     mut intents: MessageReader<Intent>,
     mut done: MessageWriter<ActionDone>,
@@ -165,11 +177,19 @@ pub fn resolve_intents(
     mut occupancy: ResMut<Occupancy>,
     mut actors: TurnHolder,
 ) {
+    let mut acted: Vec<Entity> = Vec::new();
     for intent in intents.read() {
+        if acted.contains(&intent.actor) {
+            debug!("actor {:?} already acted this pass; dropped {:?}", intent.actor, intent.action);
+            continue;
+        }
         let Ok((mut pos, viewshed, blocks, is_player)) = actors.get_mut(intent.actor) else { continue };
         match intent.action {
-            Action::Attack(_) => {}
+            Action::Attack(_) => {
+                acted.push(intent.actor);
+            }
             Action::Wait => {
+                acted.push(intent.actor);
                 done.write(ActionDone { actor: intent.actor, cost: BASE_ACTION_COST });
             }
             Action::Move(dir) => {
@@ -192,6 +212,7 @@ pub fn resolve_intents(
                 if let Some(mut v) = viewshed {
                     v.dirty = true;
                 }
+                acted.push(intent.actor);
                 done.write(ActionDone { actor: intent.actor, cost });
             }
         }
@@ -222,6 +243,7 @@ pub fn cleanup_turns(
             let cost = scaled_cost(d.cost, speed.map(|s| s.0).unwrap_or(100));
             debug!("actor {e:?} finished an action costing {cost}");
             turns.queue.insert_after(e, cost);
+            turns.progress = true;
             commands.entity(e).remove::<MyTurn>();
             handled.push(e);
         }
@@ -239,6 +261,7 @@ pub fn cleanup_turns(
         let cost = scaled_cost(BASE_ACTION_COST, speed.map(|s| s.0).unwrap_or(100));
         debug!("actor {e:?} held a turn nobody used; charged a wait");
         turns.queue.insert_after(e, cost);
+        turns.progress = true;
         commands.entity(e).remove::<MyTurn>();
     }
 }
