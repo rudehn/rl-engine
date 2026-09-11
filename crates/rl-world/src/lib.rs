@@ -21,6 +21,7 @@ pub mod chunk;
 pub mod climate;
 pub mod elevation;
 pub mod facts;
+pub mod fine;
 pub mod graph;
 pub mod hydrology;
 pub mod noise;
@@ -31,6 +32,7 @@ pub use chunk::{ChunkContext, ChunkRules, RegionFacts, Surroundings, crossing_of
 pub use climate::{Climate, ClimateConfig};
 pub use elevation::{Elevation, ElevationConfig};
 pub use facts::{BandId, CellFacts, Classifier, Relief};
+pub use fine::{FineFields, bilinear};
 pub use graph::{Layers, WorldConfig, WorldGraph, WorldRules};
 pub use hydrology::{Hydrology, HydrologyConfig};
 pub use noise::{Fbm, SampleSpace};

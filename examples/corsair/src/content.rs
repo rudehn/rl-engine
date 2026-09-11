@@ -7,7 +7,7 @@ use bevy::prelude::Color;
 use rand::Rng;
 use rl_engine::rl_core::{Grid, Grid2D, Point};
 use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
-use rl_engine::rl_mapgen::passes::Scatter;
+use rl_engine::rl_mapgen::passes::ScatterBy;
 use rl_engine::rl_mapgen::{BuildContext, BuildError, Chain, Pass, Phase};
 use rl_engine::rl_overworld::BandAppearance;
 use rl_engine::rl_render::{Cell, TileAppearance};
@@ -53,7 +53,7 @@ pub struct Content {
     grass: TileId,
     tree: TileId,
     rock: TileId,
-    snow: TileId,
+    marsh: TileId,
     road: TileId,
     plaza: TileId,
     cave: TileId,
@@ -71,14 +71,14 @@ impl Content {
         let grass = tiles.register(TileProps::floor("grass")).unwrap();
         let tree = tiles.register(TileProps::named("palm").opaque(true).blocks_projectiles(true)).unwrap();
         let rock = tiles.register(TileProps::wall("rock")).unwrap();
-        let snow = tiles.register(TileProps::floor("marsh").move_cost(160)).unwrap();
+        let marsh = tiles.register(TileProps::floor("marsh").move_cost(160)).unwrap();
         let road = tiles.register(TileProps::floor("road").move_cost(80)).unwrap();
         let plaza = tiles.register(TileProps::floor("dock")).unwrap();
         let cave = tiles.register(TileProps::floor("cave")).unwrap();
         let door = tiles.register(TileProps::floor("door").opaque(true)).unwrap();
         let timber = tiles.register(TileProps::wall("timber")).unwrap();
         let plank = tiles.register(TileProps::floor("plank")).unwrap();
-        Self { tiles, water, sand, grass, tree, rock, snow, road, plaza, cave, door, timber, plank }
+        Self { tiles, water, sand, grass, tree, rock, marsh, road, plaza, cave, door, timber, plank }
     }
 
     pub fn tiles(&self) -> &TileRegistry {
@@ -92,7 +92,7 @@ impl Content {
         look.set(self.grass, Cell::new('.', Color::srgb(0.35, 0.65, 0.3)));
         look.set(self.tree, Cell::new('T', Color::srgb(0.2, 0.6, 0.25)));
         look.set(self.rock, Cell::new('#', Color::srgb(0.55, 0.52, 0.5)));
-        look.set(self.snow, Cell::new('"', Color::srgb(0.3, 0.5, 0.4)));
+        look.set(self.marsh, Cell::new('"', Color::srgb(0.3, 0.5, 0.4)));
         look.set(self.road, Cell::new('+', Color::srgb(0.7, 0.6, 0.45)));
         look.set(self.plaza, Cell::new('=', Color::srgb(0.6, 0.45, 0.3)));
         look.set(self.cave, Cell::new('.', Color::srgb(0.5, 0.45, 0.4)));
@@ -118,24 +118,29 @@ impl Content {
     }
 }
 
+/// The band for a set of facts, whether they are a region's or one tile's.
+pub fn classify_facts(f: &CellFacts) -> BandId {
+    if f.is_sea {
+        return SEA;
+    }
+    if f.is_lake {
+        return LAKE;
+    }
+    match f.relief {
+        Relief::Peak => VOLCANO,
+        Relief::Mountain => MOUNTAIN,
+        Relief::Hill => HILL,
+        _ if f.is_coast && f.moisture > 0.7 => MANGROVE,
+        _ if f.is_coast => BEACH,
+        _ if f.moisture < 0.2 => DUNES,
+        _ if f.moisture > 0.5 => JUNGLE,
+        _ => GRASS,
+    }
+}
+
 impl WorldRules for Content {
     fn classify(&self, f: &CellFacts) -> BandId {
-        if f.is_sea {
-            return SEA;
-        }
-        if f.is_lake {
-            return LAKE;
-        }
-        match f.relief {
-            Relief::Peak => VOLCANO,
-            Relief::Mountain => MOUNTAIN,
-            Relief::Hill => HILL,
-            _ if f.is_coast && f.moisture > 0.7 => MANGROVE,
-            _ if f.is_coast => BEACH,
-            _ if f.moisture < 0.2 => DUNES,
-            _ if f.moisture > 0.5 => JUNGLE,
-            _ => GRASS,
-        }
+        classify_facts(f)
     }
 
     fn road_friction(&self, band: BandId, _: &CellFacts) -> Option<f32> {
@@ -187,13 +192,15 @@ impl WorldRules for Content {
     }
 }
 
-/// Paints a chunk from the height samples the engine put in the context,
-/// so coastlines and rock run through it; the region's band decides the
-/// ground in between.
+/// Paints a chunk tile by tile from the facts the engine sampled for it:
+/// water and shore from the height, rock from the relief, and the ground
+/// between from the same classification the region got, so a forest edge
+/// follows the moisture field rather than the region grid.
 struct Paint {
     water: TileId,
     sand: TileId,
-    ground: TileId,
+    grass: TileId,
+    marsh: TileId,
     rock: TileId,
 }
 
@@ -218,7 +225,12 @@ impl Pass<ChunkContext> for Paint {
                 } else if ctx.land_height(p) >= rock_at {
                     self.rock
                 } else {
-                    self.ground
+                    match classify_facts(&ctx.facts[p]) {
+                        DUNES | BEACH => self.sand,
+                        MANGROVE => self.marsh,
+                        MOUNTAIN | VOLCANO => self.rock,
+                        _ => self.grass,
+                    }
                 };
                 ctx.terrain_mut().set(p, tile);
             }
@@ -317,27 +329,28 @@ impl ChunkRules for Content {
     }
 
     fn chain(&self, _: &WorldGraph, around: &Surroundings) -> Chain<ChunkContext> {
-        let band = around.here.band;
-        let ground = match band {
-            DUNES | BEACH => self.sand,
-            MANGROVE => self.snow,
-            MOUNTAIN | VOLCANO => self.rock,
-            _ => self.grass,
-        };
-        let mut chain = Chain::new().then(Paint { water: self.water, sand: self.sand, ground, rock: self.rock }).then(RiverChannel { water: self.water });
-        let tree_pct = match band {
-            JUNGLE => 35,
-            MANGROVE => 20,
-            GRASS | HILL => 5,
-            BEACH => 3,
-            _ => 0,
-        };
-        if tree_pct > 0 {
-            chain = chain.then(Scatter { name: "trees", tile: self.tree, on: self.grass, chance_pct: tree_pct });
-        }
-        if band == HILL {
-            chain = chain.then(Scatter { name: "boulders", tile: self.rock, on: self.grass, chance_pct: 6 });
-        }
+        let mut chain = Chain::new()
+            .then(Paint { water: self.water, sand: self.sand, grass: self.grass, marsh: self.marsh, rock: self.rock })
+            .then(RiverChannel { water: self.water });
+        // Trees follow the moisture, gathered into thickets and clearings
+        // by the clump field; the shore and the hills stay sparse.
+        chain = chain.then(ScatterBy {
+            name: "trees",
+            tile: self.tree,
+            on: self.grass,
+            chance_pct: Box::new(|ctx: &ChunkContext, p: Point| {
+                let f = &ctx.facts[p];
+                let base = ((f.moisture - 0.25) * 70.0).clamp(0.0, 40.0);
+                let shaped = base * (0.3 + ctx.clumps[p] * 1.4) * if f.relief == Relief::Hill { 0.4 } else { 1.0 };
+                shaped.round() as u32
+            }),
+        });
+        chain = chain.then(ScatterBy {
+            name: "boulders",
+            tile: self.rock,
+            on: self.grass,
+            chance_pct: Box::new(|ctx: &ChunkContext, p: Point| if ctx.facts[p].relief == Relief::Hill { 6 } else { 0 }),
+        });
         if around.here.site.is_some() {
             chain = chain.then(Plaza { tile: self.plaza, half: 4 });
         }
@@ -370,6 +383,28 @@ mod tests {
     }
 
     #[test]
+    fn land_chunks_mix_their_ground_instead_of_painting_one_block() {
+        let content = Content::new();
+        let mut config = WorldConfig::regions(32, 32);
+        config.elevation.land_fraction = 0.22;
+        let world = WorldGraph::generate(RunSeed(7), config, &content);
+        let (mut land, mut mixed) = (0, 0);
+        for (region, band) in world.layers().bands.iter() {
+            if matches!(*band, SEA | LAKE | MOUNTAIN | VOLCANO) {
+                continue;
+            }
+            let (terrain, _) = world.build_chunk(region, &content).unwrap();
+            let kinds = [content.grass, content.sand, content.marsh].iter().filter(|t| terrain.count(**t) > 40).count();
+            land += 1;
+            if kinds >= 2 {
+                mixed += 1;
+            }
+        }
+        assert!(land > 10, "{land} land regions");
+        assert!(mixed * 100 / land >= 30, "{mixed} of {land} land chunks mix their ground");
+    }
+
+    #[test]
     fn a_port_chunk_has_huts_with_doors_and_a_walkable_middle() {
         let content = Content::new();
         let mut config = WorldConfig::regions(32, 32);
@@ -383,5 +418,35 @@ mod tests {
         let c = terrain.bounds().center();
         assert!(tables.walkable[terrain.get(c).unwrap().index()], "the plaza centre is open");
         assert!(tables.walkable[content.door.index()] && tables.opaque[content.door.index()], "a door is walked through and blocks sight");
+    }
+}
+
+#[cfg(test)]
+mod dump {
+    use super::*;
+    use rl_engine::rl_core::RunSeed;
+    use rl_engine::rl_world::WorldConfig;
+
+    /// Prints a 2x2 neighbourhood of chunks around the first port, for
+    /// eyeballing how the ground blends across region edges:
+    /// `cargo test -p corsair dump -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn dump_a_neighbourhood() {
+        let content = Content::new();
+        let mut config = WorldConfig::regions(64, 64);
+        config.elevation.land_fraction = 0.22;
+        config.elevation.continent_frequency = 3.2;
+        let world = WorldGraph::generate(RunSeed(7), config, &content);
+        let port = world.sites().iter().find(|s| s.kind == PORT).expect("a port").position;
+        let size = world.region_size();
+        let glyph = |t: TileId| content.tile_appearance().lit(t).glyph;
+        let chunks: Vec<Vec<_>> = (0..2).map(|dy| (0..2).map(|dx| world.build_chunk(port.offset(dx, dy), &content).unwrap().0).collect()).collect();
+        for row_of_chunks in &chunks {
+            for y in 0..size {
+                let row: String = row_of_chunks.iter().flat_map(|chunk| (0..size).map(move |x| glyph(chunk.get(Point::new(x, y)).unwrap()))).collect();
+                println!("{row}");
+            }
+        }
     }
 }

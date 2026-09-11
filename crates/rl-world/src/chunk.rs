@@ -130,8 +130,11 @@ impl WorldGraph {
         let origin = self.tile_origin(region);
         let elevation = &self.layers().elevation;
         let heights = Grid::from_fn(size, size, |p| elevation.height_at_tile(origin + p, size));
-        let mut ctx =
-            ChunkContext::new(terrain, rules.tiles().clone(), around, size, self.seam_seed()).with_heights(heights, elevation.sea_level, elevation.relief);
+        let facts = Grid::from_fn(size, size, |p| self.tile_facts(origin + p));
+        let clumps = Grid::from_fn(size, size, |p| self.clump_at(origin + p));
+        let mut ctx = ChunkContext::new(terrain, rules.tiles().clone(), around, size, self.seam_seed())
+            .with_heights(heights, elevation.sea_level, elevation.relief)
+            .with_facts(facts, clumps);
         chain.run(&mut ctx, self.chunk_seed(region))?;
         Ok(ctx.finish())
     }
@@ -163,6 +166,11 @@ pub struct ChunkContext {
     pub sea_level: f32,
     /// Where land turns to hill, mountain and summit, in land-height units.
     pub relief: ReliefThresholds,
+    /// Everything the world knows about each tile: climate interpolated
+    /// between regions, relief and coast from the fine height.
+    pub facts: Grid<CellFacts>,
+    /// Where vegetation gathers, `[0, 1]` per tile.
+    pub clumps: Grid<f32>,
     region_size: i32,
     seam_seed: u64,
 }
@@ -177,9 +185,18 @@ impl ChunkContext {
             heights: Grid::filled(region_size, region_size, 0.5),
             sea_level: 0.0,
             relief: ReliefThresholds { hill: 1.0, mountain: 1.0, peak: 1.0 },
+            facts: Grid::filled(region_size, region_size, CellFacts::plain()),
+            clumps: Grid::filled(region_size, region_size, 0.5),
             region_size,
             seam_seed,
         }
+    }
+
+    /// Installs the per-tile facts and clump field.
+    pub fn with_facts(mut self, facts: Grid<CellFacts>, clumps: Grid<f32>) -> Self {
+        self.facts = facts;
+        self.clumps = clumps;
+        self
     }
 
     /// Installs the tile heights and the world's thresholds.

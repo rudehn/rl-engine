@@ -64,6 +64,8 @@ pub struct Layers {
     /// The game's band per region. Empty until classification runs.
     pub bands: Grid<BandId>,
     coast: BitGrid,
+    /// The water distance as floats, for interpolation.
+    pub(crate) distance_to_water_f: Grid<f32>,
 }
 
 impl Layers {
@@ -75,7 +77,8 @@ impl Layers {
                 coast.insert(p);
             }
         }
-        Self { elevation, hydrology, climate, bands: Grid::filled(w, h, BandId::default()), coast }
+        let distance_to_water_f = Grid::from_fn(w, h, |p| climate.distance_to_water[p] as f32);
+        Self { elevation, hydrology, climate, bands: Grid::filled(w, h, BandId::default()), coast, distance_to_water_f }
     }
 
     /// Regions across.
@@ -172,6 +175,7 @@ pub struct WorldGraph {
     sites: Vec<Site>,
     site_index: BTreeMap<Point, usize>,
     roads: Roads,
+    fine: crate::fine::FineFields,
 }
 
 impl WorldGraph {
@@ -201,8 +205,14 @@ impl WorldGraph {
         let distance_to_road = roads.distance_field();
         let sites = rules.wilds(&layers, &roads, &distance_to_road, towns, stream(b"world.wilds"));
         let site_index = sites.iter().enumerate().map(|(i, s)| (s.position, i)).collect();
+        let fine = crate::fine::FineFields::new(seed, layers.elevation.space(), config.region_size);
 
-        Self { seed, config, layers, sites, site_index, roads }
+        Self { seed, config, layers, sites, site_index, roads, fine }
+    }
+
+    /// The noise fields tiles are sampled with.
+    pub fn fine(&self) -> &crate::fine::FineFields {
+        &self.fine
     }
 
     /// The run seed.

@@ -23,6 +23,11 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Corsair's items carry tags and affixes from RON, found gear rolls a quality, the hoard is enchanted, the pistol fires on `f`, and the sea chest shows the folded numbers.
 - 2026-09-11: statuses in the Bevy layer: `StatBlock` and `Afflicted` components, `Afflict` and `Cure` requests, `StatusEvent`, and a tick on every whole turn for the actors on the current map whose damage goes through the damage pipeline; `is_status_source` and `Stats::retain_sources` let a game rebuild gear modifiers without losing a status's.
   Corsair's crabs and jaguars inflict bleeding and venom from RON, rum cures both and makes you hearty, and the status line wears badges.
+- 2026-09-11: chunks are painted per tile, not per region.
+  `rl-world` gains `fine.rs`: bilinear interpolation of climate and water distance between region centres, read at a position moved by a low-frequency warp so biome edges wander, plus a tile-scale clump field; `WorldGraph::tile_facts` and `clump_at`, and `ChunkContext` carries `facts` and `clumps` next to `heights`.
+  `rl-mapgen` gains `ScatterBy`, a scatter whose chance is a function of the context and the cell.
+  Corsair classifies each tile with the same rule the region got and grows trees from moisture shaped by the clumps; the region band remains the overworld's, the sites' and the spawn tables'.
+  Nate, 2026-09-11: "a forest just looks like a 64x64 block" was the prompt.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, lighting, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

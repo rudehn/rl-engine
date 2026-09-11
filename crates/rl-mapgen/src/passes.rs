@@ -85,6 +85,46 @@ impl<C: BuildContext> Pass<C> for Scatter {
     }
 }
 
+/// Replaces `on` cells with `tile` at a chance the caller computes per
+/// cell from the context: vegetation from moisture, boulders from slope,
+/// anything that should follow a field rather than a number.
+pub struct ScatterBy<C> {
+    /// A stable name, so two scatters in one chain draw different streams.
+    pub name: &'static str,
+    /// The tile to scatter.
+    pub tile: TileId,
+    /// Only cells currently holding this tile are candidates.
+    pub on: TileId,
+    /// The chance for a cell, in percent, from the context and the cell.
+    pub chance_pct: ChanceFn<C>,
+}
+
+/// A per-cell chance in percent, computed from the context.
+pub type ChanceFn<C> = Box<dyn Fn(&C, Point) -> u32 + Send + Sync>;
+
+impl<C: BuildContext> Pass<C> for ScatterBy<C> {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn phase(&self) -> Phase {
+        Phase::Growth
+    }
+    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+        let cells = ctx.terrain().len();
+        for idx in 0..cells {
+            if ctx.terrain().get_idx(idx) != self.on {
+                continue;
+            }
+            let p = ctx.terrain().idx_point(idx);
+            let chance = (self.chance_pct)(ctx, p);
+            if chance > 0 && ctx.rng().random_range(0..100) < chance {
+                ctx.terrain_mut().set_idx(idx, self.tile);
+            }
+        }
+        Ok(())
+    }
+}
+
 /// A cave carved by cellular automata: random fill, then smoothing rounds
 /// where a cell becomes `wall` if enough of its eight neighbours are.
 #[derive(Debug, Clone, Copy)]
