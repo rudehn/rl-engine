@@ -7,7 +7,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      # Bevy links against the Linux audio, input and windowing libraries,
+      # which the runner image does not ship.
+      - name: bevy system dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libx11-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
