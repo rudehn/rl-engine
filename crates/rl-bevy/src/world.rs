@@ -76,6 +76,9 @@ pub struct WorldMap {
     tables: TileTables,
     /// Bumped every time the window moves, so viewsheds know to recompute.
     generation: u64,
+    /// Bumped every time an edit changes what blocks sight, so viewsheds
+    /// and light know to recompute without anyone moving.
+    opacity_epoch: u64,
     current: MapId,
     places: BTreeMap<MapId, PlaceMap>,
 }
@@ -90,6 +93,7 @@ impl WorldMap {
             deltas: BTreeMap::new(),
             tables,
             generation: 0,
+            opacity_epoch: 0,
             current: MapId::SURFACE,
             places: BTreeMap::new(),
         }
@@ -159,6 +163,11 @@ impl WorldMap {
         self.generation
     }
 
+    /// Changes whenever an edit changes what blocks sight.
+    pub fn opacity_epoch(&self) -> u64 {
+        self.opacity_epoch
+    }
+
     /// The flag tables tiles are read through.
     pub fn tables(&self) -> &TileTables {
         &self.tables
@@ -193,15 +202,29 @@ impl WorldMap {
     /// Sets the tile at world `p`, recording the edit so it survives the
     /// chunk being unloaded. Returns whether `p` was loaded.
     pub fn set_tile(&mut self, p: Point, id: TileId) -> bool {
+        let opaque = |t: TileId| self.tables.opaque[t.index()];
+        let flips = |was: Option<TileId>| was.is_some_and(|w| opaque(w) != opaque(id));
         if !self.current.is_surface() {
-            return self.places.get_mut(&self.current).is_some_and(|place| place.terrain.set(p, id));
+            let Some(place) = self.places.get_mut(&self.current) else { return false };
+            let was = place.terrain.get(p);
+            if !place.terrain.set(p, id) {
+                return false;
+            }
+            if flips(was) {
+                self.opacity_epoch += 1;
+            }
+            return true;
         }
         let Some((slot, local)) = self.locate(p) else { return false };
         let Some(chunk) = self.chunks[slot].as_mut() else { return false };
-        if chunk.terrain.get_idx(local) == id {
+        let was = chunk.terrain.get_idx(local);
+        if was == id {
             return true;
         }
         chunk.terrain.set_idx(local, id);
+        if flips(Some(was)) {
+            self.opacity_epoch += 1;
+        }
         chunk.delta.push((local, id));
         true
     }

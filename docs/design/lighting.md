@@ -1,6 +1,6 @@
 # Lighting
 
-Status: proposed, not built.
+Status: phases A and B built 2026-09-11; C onward proposed.
 Written 2026-09-11 against `main` at `7df090a`.
 It adapts the fantasy-rogue lighting plan (v3) to the engine's shape: theme-agnostic, opt-in, split across the tiers, and integer throughout.
 
@@ -184,8 +184,9 @@ The surface window is up to nine regions, so the compose pass is the number to m
   Nothing on screen changes for either existing example.
 - **B. The gate and the lamplight example.**
   `Viewshed::line`, the threshold, `DarkSight`, the adjacency floor, the mind rule, the render tint.
-  Carried sources shed from the carrier, `Fuel`, `LightEvent`, and facts for quests and the ledger.
+  Carried sources shed from the carrier, `Fuel`, `LightEvent`.
   `examples/lamplight` lands in the same slice with its prop, monster and item lights and its tests.
+  Built: the static and dynamic layers are recast when their sorted emitter lists differ from the last cast, which needs no change detection and catches every add, move, pickup and removal; facts for the ledger were left to the game, which maps `LightEvent` as it maps any other event.
 - **C. The delve goes dark.**
   Ambient zero, bile pools as static green sources, the heart as a red one, the player starting with a burning brand, salt ghosts with dark sight.
   Play it before going on; this is the phase that changes the feel of an existing game.

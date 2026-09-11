@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after the delve.
+Last updated: 2026-09-11, after lighting.
 
 ## The shape
 
@@ -36,7 +36,8 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Region-bounded `DijkstraMap` with scale and rescan for flee maps.
 - `SpatialGrid`.
 - Targeting: own, adjacent, bolt, ball, beam and cone shapes resolved to a footprint against a caller-named blocker, and `clear_shot`.
-- Criterion benches on realistic maps.
+- Light: `Light` as an intensity and a landed colour, `Emitter`, integer falloff to zero at the rim, screen blending, and a `LightField` cast through the shadowcast in an order-independent way, with a flood for glowing areas and a compose over two layers and an ambient.
+- Criterion benches on realistic maps, lighting at twenty sources included.
 
 ### rl-mapgen
 
@@ -105,6 +106,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Places: bounded maps entered by transitions or warps, built on first arrival, kept whole, off-map actors frozen; `PlaceBuild::from_context` reads a finished chain; `WarpRequest::into_place` starts a run in one.
 - The surface is optional: a game with no world graph streams nothing and lives in its places.
 - Statuses ticked by the turn through the damage pipeline.
+- Lighting, opt-in by inserting `Lighting`: `LightSource` on a prop, an actor or an item, shed from the carrier once carried; static and dynamic layers recast only when their sources change; the map's `opacity_epoch` so an edit that changes what blocks sight refreshes light and every viewshed without anyone moving; `DarkSight`; `Fuel` ticked by the turn with `LightEvent::BurntOut`; the viewshed keeps its geometric `line` and its seen `visible`, and minds perceive along a line only what is lit, within their dark sight or adjacent.
 - Facts fed to quests and counters after the frame.
 - Save exports for the scheduler, the world's edits and places, and knowledge.
 - A headless app for tests.
@@ -112,7 +114,8 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 ### rl-render
 
 - A diffed terminal back buffer.
-- The map view with lit, remembered and unknown tiles.
+- The map view with lit, remembered and unknown tiles, tinted by the light that lands when lighting is on, down to a floor so what is seen in the dark still reads.
+- `LightOverlay`: intensity drawn as digits.
 - Glyph entities filtered to the current map.
 
 ### rl-ui
@@ -138,6 +141,11 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 
 - The facade re-exporting every crate.
 
+## The third example: Lamplight
+
+One dark cave: a lantern that burns oil and is lit or doused with a use action, a brazier, wisps that glow and drift, a torch on the floor, and lurkers with dark sight and no glow.
+`main.rs` is the whole game; it is the test that lighting is one resource and one component away.
+
 ## The second example: the Hollow Whale
 
 Five floors of a beached leviathan, mouth to heart, with no surface: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
@@ -154,8 +162,9 @@ It is built only on the public API, so it is the test that the seams are right.
 - Throwing.
 - A character sheet.
 - Abilities as data over the targeting shapes.
-- Tile fields for fire and gas.
-- Lighting.
+- Tile fields for fire and gas, and the glow they would shed.
+- The delve and Corsair with lighting turned on: dark floors, a lantern in the armory, nights on the open water.
+- Lit detection ranges, a light-averse tactic, and a ranged penalty in the dark once accuracy exists.
 - Scripted encounters.
 - The wasm unload bridge.
 - Seed replay.

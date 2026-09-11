@@ -8,7 +8,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{combat, events, fov, items, places, status, turn, world};
+use crate::{combat, events, fov, items, lighting, places, status, turn, world};
 
 /// The stages of a frame while playing, in order. All in `Update`.
 ///
@@ -27,6 +27,8 @@ pub enum EngineSet {
     Input,
     /// Run the [`Turn`] schedule until the player holds a turn or nothing moves.
     Turns,
+    /// Recast light, if the game has turned it on.
+    Light,
     /// Recompute sight.
     Fov,
     /// Draw.
@@ -116,12 +118,13 @@ impl Plugin for EnginePlugins {
             .add_message::<status::Afflict>()
             .add_message::<status::Cure>()
             .add_message::<status::StatusEvent>()
+            .add_message::<lighting::LightEvent>()
             .init_resource::<combat::FlowFields>()
             .init_resource::<combat::DamageStages>()
             .init_schedule(Turn)
             .configure_sets(
                 Update,
-                (EngineSet::Stream, EngineSet::Input, EngineSet::Turns, EngineSet::Fov, EngineSet::Present)
+                (EngineSet::Stream, EngineSet::Input, EngineSet::Turns, EngineSet::Light, EngineSet::Fov, EngineSet::Present)
                     .chain()
                     .run_if(in_state(EngineState::Playing))
                     .run_if(resource_exists::<WorldMap>),
@@ -129,6 +132,7 @@ impl Plugin for EnginePlugins {
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Cleanup).chain())
             .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
+            .add_systems(Update, lighting::update_lighting.in_set(EngineSet::Light))
             .add_systems(Update, fov::update_viewsheds.in_set(EngineSet::Fov))
             // After every game system of the frame has had its say, so a
             // fact written in Present is tracked the same frame.
@@ -144,6 +148,7 @@ impl Plugin for EnginePlugins {
                     turn::resolve_intents,
                     places::resolve_warps,
                     items::resolve_items,
+                    lighting::tick_fuel,
                     combat::resolve_attacks.run_if(combat_ready),
                     status::resolve_afflictions.run_if(status::statuses_ready),
                     status::tick_statuses.run_if(status::statuses_ready).run_if(combat_ready),

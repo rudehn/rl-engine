@@ -23,19 +23,21 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Data-driven content**: tiles, monsters, items, statuses and quests are registries loaded from RON files, with weighted spawn tables by depth band.
 - **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
-- **ASCII rendering and UI**: a diffed glyph grid renderer, a map view with remembered tiles, a message log, a status line, menus and an overworld map screen.
+- **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, fuel that burns down, dark sight, and a viewshed cut to what is lit; opt-in per game, with ambient a value the game writes.
+- **ASCII rendering and UI**: a diffed glyph grid renderer, a map view with remembered tiles and tinted by light, a message log, a status line, menus and an overworld map screen.
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
 - **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
 
 ## Quick start
 
-Clone the repository and run one of the two example games.
+Clone the repository and run one of the three example games.
 
 ```sh
 git clone https://github.com/rudehn/rl-engine
 cd rl-engine
 cargo run --release -p corsair -- --seed 7
 cargo run --release -p delve -- --seed 7
+cargo run --release -p lamplight -- --seed 7
 ```
 
 The first build compiles Bevy and takes a few minutes.
@@ -91,8 +93,8 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The two example games are the best guide to the Bevy side.
-`examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
+The three example games are the best guide to the Bevy side.
+`examples/delve/src/floors.rs` is a complete multi-floor map builder in one file, and `examples/lamplight/src/main.rs` is lighting turned on in one file.
 
 ## Crates
 
@@ -151,6 +153,17 @@ Two files; `floors.rs` is the whole map builder.
 ```sh
 cargo run -p delve -- --seed 7
 ```
+
+### Lamplight, the lighting example
+
+`examples/lamplight` is one dark cave and everything that glows in it: a lantern the player lights and douses that burns oil, a brazier that never moves, wisps that drift about with a glow of their own, a torch on the floor to pick up and drop, and lurkers that see in the dark and are found only when a light reaches them.
+One file, and the whole of turning lighting on is inserting the `Lighting` resource; one `LightSource` component serves the prop, the actors and the items.
+
+```sh
+cargo run -p lamplight -- --seed 7
+```
+
+Keys: walk as in the delve, `L` to light or douse the lantern, `g` to pick up, `d` to drop the torch, `h` to show light as digits, `.` to wait, `q` to quit.
 
 ## Design principles
 

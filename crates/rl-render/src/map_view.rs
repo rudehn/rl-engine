@@ -2,14 +2,16 @@
 //!
 //! Visible tiles are drawn lit, remembered tiles dimmed, unknown tiles
 //! blank. What a tile looks like is the game's business: it fills a
-//! [`TileAppearance`] table keyed by [`TileId`].
+//! [`TileAppearance`] table keyed by [`TileId`]. With lighting turned on,
+//! a visible tile and whatever stands on it are tinted by the light that
+//! lands there, down to a floor so that what is seen in the dark still reads.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, Rect};
 use rl_grid::TileId;
 
-use crate::terminal::{Cell, Terminal};
+use crate::terminal::{Cell, Terminal, tint};
 
 /// How an entity is drawn.
 #[derive(Component, Debug, Clone, Copy)]
@@ -41,12 +43,14 @@ pub struct TileAppearance {
     cells: Vec<Option<Cell>>,
     /// Brightness of a remembered tile, 0 to 1.
     pub remembered: f32,
+    /// Brightness kept by a seen but unlit tile when lighting is on, 0 to 1.
+    pub dark_floor: f32,
 }
 
 impl TileAppearance {
     /// An empty table.
     pub fn new() -> Self {
-        Self { cells: Vec::new(), remembered: 0.35 }
+        Self { cells: Vec::new(), remembered: 0.35, dark_floor: 0.22 }
     }
 
     /// Sets the appearance of `id`.
@@ -119,29 +123,49 @@ pub fn follow_player(mut view: ResMut<MapView>, player: Query<&Position, With<Pl
     }
 }
 
+/// Whether to draw light intensity as a digit over every visible tile.
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct LightOverlay(pub bool);
+
+/// What the map is drawn from.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Scene<'w, 's> {
+    view: Res<'w, MapView>,
+    map: Res<'w, WorldMap>,
+    look: Res<'w, TileAppearance>,
+    knowledge: Res<'w, Knowledge>,
+    lighting: Option<Res<'w, Lighting>>,
+    overlay: Option<Res<'w, LightOverlay>>,
+    player: Query<'w, 's, &'static Viewshed, With<Player>>,
+    glyphs: Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>)>,
+}
+
 /// Paints the viewport: lit where the player sees, dim where remembered.
-pub fn draw_map(
-    mut terminal: ResMut<Terminal>,
-    view: Res<MapView>,
-    map: Res<WorldMap>,
-    look: Res<TileAppearance>,
-    knowledge: Res<Knowledge>,
-    player: Query<&Viewshed, With<Player>>,
-    glyphs: Query<(&Position, &Glyph, Option<&OnMap>)>,
-) {
+pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
+    let Scene { view, map, look, knowledge, lighting, overlay, player, glyphs } = &scene;
     let viewshed = player.single().ok();
     let here = map.current();
+    let lighting = lighting.as_deref();
+    let overlay = overlay.as_deref().is_some_and(|o| o.0) && lighting.is_some();
     for s in view.viewport.cells() {
         let Some(p) = view.to_world(s) else { continue };
-        let cell = match (map.tile(p), viewshed.is_some_and(|v| v.can_see(p))) {
-            (Some(t), true) => look.lit(t),
+        let mut cell = match (map.tile(p), viewshed.is_some_and(|v| v.can_see(p))) {
+            (Some(t), true) => match lighting {
+                Some(l) => look.lit(t).lit_by(l.at(p).color, look.dark_floor),
+                None => look.lit(t),
+            },
             (Some(t), false) if knowledge.is_explored(p) => look.dim(t),
             _ => Cell::default(),
         };
+        if overlay && viewshed.is_some_and(|v| v.can_see(p)) {
+            let level = (lighting.map(|l| l.at(p).intensity).unwrap_or(0) as u32 * 10 / 256) as u8;
+            cell.glyph = (b'0' + level) as char;
+            cell.fg = Color::WHITE;
+        }
         terminal.set(s.x, s.y, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
-    for (pos, glyph, on) in &glyphs {
+    for (pos, glyph, on) in glyphs {
         if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !viewshed.is_some_and(|v| v.can_see(pos.0)) {
             continue;
         }
@@ -154,7 +178,11 @@ pub fn draw_map(
         } else {
             drawn.push((pos.0, glyph.layer));
         }
-        terminal.put(s.x, s.y, glyph.ch, glyph.fg);
+        let fg = match lighting {
+            Some(l) => tint(glyph.fg, l.at(pos.0).color, look.dark_floor),
+            None => glyph.fg,
+        };
+        terminal.put(s.x, s.y, glyph.ch, fg);
     }
 }
 

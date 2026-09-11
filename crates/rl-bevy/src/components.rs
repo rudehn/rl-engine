@@ -51,9 +51,13 @@ pub struct RevealsMap;
 
 /// What an actor can see.
 ///
-/// `visible` covers the loaded window, not the world, and `origin` says
-/// which world tile its bit 0 is. Only the FOV system clears `dirty`;
-/// anything that moves the actor or changes what blocks sight sets it.
+/// `line` is every tile the actor has an unobstructed line to; `visible`
+/// is what it actually sees, which is the same set unless the game has
+/// turned lighting on, and then only what is lit, within its dark sight
+/// or adjacent. Both cover the loaded window, not the world, and `origin`
+/// says which world tile their bit 0 is. Only the FOV system clears
+/// `dirty`; anything that moves the actor or changes what blocks sight
+/// or light sets it.
 #[derive(Component, Debug, Clone)]
 pub struct Viewshed {
     /// Sight radius in tiles.
@@ -62,19 +66,27 @@ pub struct Viewshed {
     pub dirty: bool,
     /// The world tile at the window's top-left.
     pub origin: Point,
-    /// One bit per window tile.
+    /// One bit per window tile: seen.
     pub visible: BitGrid,
+    /// One bit per window tile: in line of sight, lit or not.
+    pub line: BitGrid,
 }
 
 impl Viewshed {
     /// A viewshed of `range` that has never been computed.
     pub fn new(range: i32) -> Self {
-        Self { range, dirty: true, origin: Point::ZERO, visible: BitGrid::new(0, 0) }
+        Self { range, dirty: true, origin: Point::ZERO, visible: BitGrid::new(0, 0), line: BitGrid::new(0, 0) }
     }
 
-    /// Whether the world tile `p` is currently visible.
+    /// Whether the world tile `p` is currently seen.
     pub fn can_see(&self, p: Point) -> bool {
         self.visible.contains(p - self.origin)
+    }
+
+    /// Whether there is an unobstructed line to the world tile `p`,
+    /// whether or not it is lit.
+    pub fn in_line(&self, p: Point) -> bool {
+        self.line.contains(p - self.origin)
     }
 
     /// Every visible world tile, row-major.

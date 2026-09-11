@@ -16,11 +16,11 @@
 pub mod map_view;
 pub mod terminal;
 
-pub use map_view::{Glyph, MapView, MapViewPlugin, TileAppearance};
+pub use map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 pub use terminal::{Cell, Terminal, TerminalPlugin};
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::map_view::{Glyph, MapView, MapViewPlugin, TileAppearance};
+    pub use crate::map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
     pub use crate::terminal::{Cell, Terminal, TerminalPlugin};
 }

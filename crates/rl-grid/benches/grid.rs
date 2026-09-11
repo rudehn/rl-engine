@@ -1,10 +1,11 @@
 //! Benchmarks on the paths that actually cost something: FOV, A*, Dijkstra
-//! maps and region labelling, on maps shaped like the ones a game produces.
+//! maps, region labelling and lighting, on maps shaped like the ones a game
+//! produces.
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use rl_core::{Grid2D, Point, Rect, Steps};
-use rl_grid::{AStar, BitGrid, DijkstraMap, PathRules, Terrain, TileRegistry, fov, region};
+use rl_grid::{AStar, BitGrid, DijkstraMap, Emitter, LightField, PathRules, Rgb, Terrain, TileRegistry, fov, region};
 
 /// A cave-like map: 35% walls, then two smoothing passes so it has rooms
 /// and corridors rather than static.
@@ -121,5 +122,27 @@ fn bench_regions(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_fov, bench_astar, bench_dijkstra, bench_regions);
+fn bench_light(c: &mut Criterion) {
+    let mut group = c.benchmark_group("light");
+    let (t, r) = cave(96, 64, 1);
+    let view = t.view(&r);
+    let mut rng = StdRng::seed_from_u64(3);
+    let emitters: Vec<Emitter> =
+        (0..20).map(|i| Emitter { origin: open_cell(&t, &r, &mut rng), intensity: 150 + i * 5, radius: 8, color: Rgb::new(255, 150, 40) }).collect();
+    let mut field = LightField::new(96, 64);
+    let mut scratch = BitGrid::new(96, 64);
+    group.bench_function("20_sources_radius_8", |b| {
+        b.iter(|| {
+            field.clear();
+            field.cast_all(&view, &mut emitters.clone(), &mut scratch);
+            black_box(field.at(Point::new(48, 32)))
+        })
+    });
+    let statics = field.clone();
+    let mut out = LightField::new(96, 64);
+    group.bench_function("compose_96x64", |b| b.iter(|| out.compose(black_box(&statics), &field, rl_grid::Light::white(20))));
+    group.finish();
+}
+
+criterion_group!(benches, bench_fov, bench_astar, bench_dijkstra, bench_regions, bench_light);
 criterion_main!(benches);

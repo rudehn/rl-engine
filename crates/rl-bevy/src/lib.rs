@@ -19,6 +19,7 @@ pub mod events;
 pub mod fov;
 pub mod items;
 pub mod knowledge;
+pub mod lighting;
 pub mod places;
 pub mod plugin;
 pub mod state;
@@ -34,6 +35,7 @@ pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed,
 pub use events::{Counters, Happened, QuestChange, Quests};
 pub use items::{Enchant, Equipped, Inventory, Item, ItemEvent, Stack, Wearable};
 pub use knowledge::{Knowledge, KnowledgeSave};
+pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting};
 pub use places::{Arrive, Destination, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest};
 pub use plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
 pub use state::EngineState;
@@ -51,6 +53,7 @@ pub mod prelude {
     pub use crate::events::{Counters, Happened, QuestChange, Quests};
     pub use crate::items::{Enchant, Equipped, Inventory, Item, ItemEvent, Stack, Wearable};
     pub use crate::knowledge::Knowledge;
+    pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting};
     pub use crate::places::{
         Arrive, Destination, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };

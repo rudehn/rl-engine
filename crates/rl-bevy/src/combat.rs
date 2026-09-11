@@ -19,6 +19,7 @@ use rl_rules::damage::{DamageKind, DamageKindId, Defender};
 use rl_rules::{DamageStage, Factions, Hit, Resistances};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
+use crate::lighting::{DarkSight, Lighting, perceives};
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, ActionDone, Intent, Occupancy, Turns};
 use crate::world::WorldMap;
@@ -210,6 +211,8 @@ pub struct Sight<'w, 's> {
     player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
     actors: Query<'w, 's, ActorData, With<Actor>>,
     minds: Query<'w, 's, MindData, (With<MyTurn>, Without<Player>)>,
+    lighting: Option<Res<'w, Lighting>>,
+    dark: Query<'w, 's, &'static DarkSight>,
 }
 
 /// The shared state a mind reads and the stream it draws from.
@@ -236,17 +239,21 @@ pub fn decide_minds(mut intents: MessageWriter<Intent>, mut world: MindWorld, si
 
     let me = ActorView { id: thinker, pos: my_pos.0, hp: my_hp.hp, max_hp: my_hp.max, faction: my_faction.0 };
     let mut snapshot = Snapshot::alone(me);
-    // Sight is symmetric, and non-players carry no viewshed, so the
-    // player's is the oracle: I see the player if the player sees me, and
-    // I see anyone else if the player sees us both.
-    let i_am_seen = player_sight.can_see(my_pos.0);
+    // Lines of sight are symmetric, and non-players carry no viewshed, so
+    // the player's is the oracle: I have a line to the player if the
+    // player has one to me, and to anyone else if the player has one to
+    // us both. Light is not symmetric: what I then perceive along that
+    // line is whatever is lit, within my dark sight, or adjacent.
+    let i_am_in_line = player_sight.in_line(my_pos.0);
+    let dark_sight = sight.dark.get(thinker).map(|d| d.0).unwrap_or(0);
+    let lighting = sight.lighting.as_deref();
     let here = map.current();
     for (e, pos, hp, faction, _, on) in actors.iter() {
         if e == thinker || on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || geometry::chebyshev(pos.0, my_pos.0) > reach {
             continue;
         }
-        let visible = i_am_seen && (pos.0 == player_pos.0 || player_sight.can_see(pos.0));
-        if !visible {
+        let in_line = i_am_in_line && (pos.0 == player_pos.0 || player_sight.in_line(pos.0));
+        if !in_line || !perceives(lighting, my_pos.0, dark_sight, pos.0) {
             continue;
         }
         let view = ActorView { id: e, pos: pos.0, hp: hp.hp, max_hp: hp.max, faction: faction.0 };

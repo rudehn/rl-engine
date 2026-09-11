@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/corsair", "examples/delve"]
+members = ["crates/*", "examples/corsair", "examples/delve", "examples/lamplight"]
 
 [workspace.package]
 version = "0.1.0"
@@ -28,7 +28,10 @@ rl-render = { path = "crates/rl-render" }
 rl-overworld = { path = "crates/rl-overworld" }
 rl-ui = { path = "crates/rl-ui" }
 
-rand = "0.9"
+# Default features off: they include OS entropy through getrandom, which
+# does not build for wasm32-unknown-unknown, and engine code never seeds
+# from entropy. Each crate names the features it uses.
+rand = { version = "0.9", default-features = false }
 serde = { version = "1", features = ["derive"] }
 ron = "0.10"
 noise = "0.9"

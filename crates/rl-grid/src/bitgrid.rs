@@ -97,6 +97,14 @@ impl BitGrid {
         self.iter_indices().map(|i| self.idx_point(i))
     }
 
+    /// Becomes a copy of `other`, reusing this grid's storage.
+    pub fn copy_from(&mut self, other: &BitGrid) {
+        self.width = other.width;
+        self.height = other.height;
+        self.words.clear();
+        self.words.extend_from_slice(&other.words);
+    }
+
     /// Sets every bit that is set in `other`. Shapes must match.
     pub fn union_with(&mut self, other: &BitGrid) {
         debug_assert_eq!((self.width, self.height), (other.width, other.height));

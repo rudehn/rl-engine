@@ -32,7 +32,13 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `stream_chunks`, the viewshed's site discovery and the warp take the world graph as an option; `PlaceRules::build` gets `Option<&WorldGraph>`; `PlaceBuild::from_context` turns a finished chain into a build; `WarpRequest::into_place` starts a run in a place.
   The second example, `examples/delve`, is the Hollow Whale: five floors, no surface, one file of chains.
   Nate, 2026-09-11: dungeon map building should be first-class and easy.
-- Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, lighting, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
+- 2026-09-11: lighting, phases A and B of `docs/design/lighting.md`.
+  `rl-grid` gains `light`: intensity and colour as separate channels, integer falloff to zero at the rim, screen blending, order-independent casting through the shadowcast, a flood and a compose; benched at twenty sources.
+  `rl-bevy` gains `Lighting` (opt-in), `LightSource` for props, actors and items alike with carried items shed from the carrier, `DarkSight`, `Fuel` and `LightEvent`, the map's `opacity_epoch`, and the gate: a viewshed keeps its `line` and its `visible`, and minds perceive along a line only what is lit, within dark sight or adjacent.
+  `rl-render` tints by the landed colour and draws intensity as digits on request.
+  The third example, `examples/lamplight`, is one cave with a lantern, a brazier, wisps, a torch and lurkers.
+  Nate, 2026-09-11: no day cycle forced on a delve, lights on items, monsters and props, and a basic example.
+- Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, lighting in the delve and Corsair, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.

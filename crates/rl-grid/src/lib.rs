@@ -10,6 +10,8 @@
 //!   overlay smoke, hazards or knowledge without touching the map.
 //! - [`BitGrid`]: one bit per cell, for viewsheds and visited sets.
 //! - [`fov`]: symmetric shadowcasting into a [`BitGrid`].
+//! - [`light`]: point sources cast through the same shadows into a
+//!   [`LightField`] of intensity and colour.
 //! - [`AStar`]: point-to-point search with reusable scratch buffers.
 //! - [`DijkstraMap`]: one flood, any number of consumers.
 //! - [`SpatialGrid`]: who is standing where.
@@ -22,6 +24,7 @@ pub mod astar;
 pub mod bitgrid;
 pub mod dijkstra;
 pub mod fov;
+pub mod light;
 pub mod region;
 pub mod spatial;
 pub mod targeting;
@@ -31,6 +34,7 @@ pub mod tile;
 pub use astar::{AStar, PathRules};
 pub use bitgrid::BitGrid;
 pub use dijkstra::DijkstraMap;
+pub use light::{Emitter, Light, LightField, Rgb};
 pub use spatial::SpatialGrid;
 pub use targeting::{Footprint, TargetMode, clear_shot, footprint};
 pub use terrain::{CostSource, OpacitySource, Terrain, TerrainView};
@@ -42,6 +46,7 @@ pub mod prelude {
     pub use crate::bitgrid::BitGrid;
     pub use crate::dijkstra::DijkstraMap;
     pub use crate::fov;
+    pub use crate::light::{Emitter, Light, LightField, Rgb};
     pub use crate::region;
     pub use crate::spatial::SpatialGrid;
     pub use crate::targeting::{Footprint, TargetMode, clear_shot, footprint};
