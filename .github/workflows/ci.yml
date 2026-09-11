@@ -9,9 +9,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       # Bevy links against the Linux audio, input and windowing libraries,
-      # which the runner image does not ship.
+      # and system font discovery against fontconfig; the runner image
+      # ships none of them.
       - name: bevy system dependencies
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libx11-dev
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libx11-dev libfontconfig1-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
