@@ -89,6 +89,7 @@ impl Bestiary {
             DamageKind::new("bite"),
             DamageKind::new("claw"),
             DamageKind::new("fist"),
+            DamageKind::new("fire"),
         ])
         .unwrap();
         let factions = Registry::from_defs(vec![

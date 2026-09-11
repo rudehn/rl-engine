@@ -101,7 +101,7 @@ fn main() -> AppExit {
     .init_resource::<places::Entrances>()
     .init_resource::<quests::LedgerScreen>()
     .add_systems(Startup, start_world)
-    .add_systems(Update, (quests::ledger_keys, inventory::inventory_keys, input::player_input).chain().in_set(EngineSet::Input))
+    .add_systems(Update, (quests::ledger_keys, inventory::inventory_keys, input::player_input, input::fire).chain().in_set(EngineSet::Input))
     // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
     .add_systems(Update, save::save_keys.after(EngineSet::Present))
     .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
@@ -256,21 +256,18 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
         (faction, items::unarmed(bestiary))
     };
     world.spawn((
-        Actor,
-        Player,
-        Blocks,
-        Position(spawn),
-        Viewshed::new(12),
-        RevealsMap,
-        Speed(100),
-        Health::full(30),
-        Armor(0),
-        Faction(faction),
-        unarmed,
-        Inventory { items: vec![cutlass, rum] },
-        worn,
-        Sheet::default(),
-        Glyph::new('@', Color::WHITE).on_layer(10),
+        (Actor, Player, Blocks, Position(spawn), Viewshed::new(12), RevealsMap, Speed(100)),
+        (
+            Health::full(30),
+            Armor(0),
+            Faction(faction),
+            unarmed,
+            Inventory { items: vec![cutlass, rum] },
+            worn,
+            Sheet::default(),
+            Strikes::default(),
+            Glyph::new('@', Color::WHITE).on_layer(10),
+        ),
     ));
 }
 
@@ -317,7 +314,7 @@ struct StatusWorld<'w, 's> {
     armory: Res<'w, Armory>,
     map: Res<'w, WorldMap>,
     player: Query<'w, 's, (&'static Position, &'static Health, &'static Armor, &'static Equipped), With<Player>>,
-    ground: Query<'w, 's, (&'static Position, &'static ItemKind, Option<&'static Stack>), With<Item>>,
+    ground: Query<'w, 's, items::GroundData, With<Item>>,
     kinds: Query<'w, 's, &'static ItemKind>,
 }
 

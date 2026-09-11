@@ -6,20 +6,24 @@
 //   color:  (r, g, b) in 0..=1
 //   slot:   optional; where it is worn: "main hand" | "off hand" | "body" | "head"
 //   also:   optional; slots it also claims when worn, for two-handers
+//   tags:   optional; what affixes see: "weapon" | "blade" | "gun" | "armor" | "shield" | "hat"
+//           a "weapon" gains +1 damage per enchant level, "armor" +1 armor per level
 //   armor:  optional; flat armor while worn
 //   attack: optional; the damage roll while wielded, "NdS+B" or a flat number
-//   kind:   optional; the damage kind while wielded: "cutlass" | "pistol" | "bite" | "claw" | "fist"
+//   kind:   optional; the damage kind while wielded: "cutlass" | "pistol" | "bite" | "claw" | "fist" | "fire"
+//   ranged: optional; (range, roll, kind) for a shot while worn; `f` fires at the nearest foe in sight
 //   heal:   optional; health restored when used; a usable item is consumed
 //   stack:  optional; whether copies merge into one counted entry
 //   spawn:  optional; (min_band, max_band, weight) for lying on the ground,
 //           where the band is the region's distance from your home port
 #![enable(implicit_some)]
 [
-    (name: "cutlass", glyph: ')', color: (0.8, 0.8, 0.85), slot: "main hand", attack: "1d6", kind: "cutlass", spawn: (0, 40, 2)),
-    (name: "boarding axe", glyph: ')', color: (0.7, 0.5, 0.3), slot: "main hand", also: ["off hand"], attack: "1d10", kind: "cutlass", spawn: (4, 40, 1)),
-    (name: "buckler", glyph: '[', color: (0.6, 0.6, 0.5), slot: "off hand", armor: 1, spawn: (2, 40, 2)),
-    (name: "leather jerkin", glyph: '[', color: (0.6, 0.4, 0.2), slot: "body", armor: 1, spawn: (0, 40, 2)),
-    (name: "tricorne", glyph: '[', color: (0.3, 0.3, 0.35), slot: "head", armor: 1, spawn: (6, 40, 1)),
+    (name: "cutlass", glyph: ')', color: (0.8, 0.8, 0.85), slot: "main hand", tags: ["weapon", "blade"], attack: "1d6", kind: "cutlass", spawn: (0, 40, 2)),
+    (name: "boarding axe", glyph: ')', color: (0.7, 0.5, 0.3), slot: "main hand", also: ["off hand"], tags: ["weapon", "blade"], attack: "1d10", kind: "cutlass", spawn: (4, 40, 1)),
+    (name: "pistol", glyph: '}', color: (0.5, 0.5, 0.55), slot: "off hand", tags: ["weapon", "gun"], ranged: (6, "1d8", "pistol"), spawn: (3, 40, 2)),
+    (name: "buckler", glyph: '[', color: (0.6, 0.6, 0.5), slot: "off hand", tags: ["armor", "shield"], armor: 1, spawn: (2, 40, 2)),
+    (name: "leather jerkin", glyph: '[', color: (0.6, 0.4, 0.2), slot: "body", tags: ["armor"], armor: 1, spawn: (0, 40, 2)),
+    (name: "tricorne", glyph: '[', color: (0.3, 0.3, 0.35), slot: "head", tags: ["armor", "hat"], armor: 1, spawn: (6, 40, 1)),
     (name: "rum", glyph: '!', color: (0.9, 0.6, 0.2), heal: 8, stack: true, spawn: (0, 40, 4)),
     (name: "doubloons", glyph: '$', color: (1.0, 0.85, 0.2), stack: true, spawn: (0, 40, 4)),
 ]

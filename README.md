@@ -31,7 +31,7 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 
 ## The worked example
 
-`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, ports with huts, a bestiary and an armory in RON, factions, bump-to-attack combat, loot on the sand and in the pockets of the dead, a sea chest to wear it from, smugglers' caves under the coves with a treasure vault at the bottom, a ledger of tasks from RON that ends in a victory, a message log and the world map with a portal picker that works from anywhere.
+`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, ports with huts, a bestiary and an armory in RON, factions, bump-to-attack combat, loot on the sand and in the pockets of the dead with affixes and enchant levels from RON, a pistol that shoots along a clear line of fire, a sea chest to wear it from, smugglers' caves under the coves with a treasure vault at the bottom, a ledger of tasks from RON that ends in a victory, a message log and the world map with a portal picker that works from anywhere.
 It is what a game on this engine looks like.
 
 ```sh
@@ -40,7 +40,7 @@ cargo run -p corsair -- --continue   # resume the saved run
 cargo run -p corsair -- --balance    # the spawn table's threat by band
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `f` to fire a pistol at the nearest foe, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
 
 ## Principles
 

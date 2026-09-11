@@ -50,6 +50,10 @@ pub struct Equipped(pub Equipment<Entity>);
 #[derive(Component, Debug, Clone)]
 pub struct Wearable(pub EquipShape);
 
+/// An item's enchant level and affixes, for the game's stat folding.
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
+pub struct Enchant(pub rl_rules::Enchanted);
+
 /// A countable item: picking one up merges it into a carried item with the
 /// same key instead of adding an entry. The key is the game's, usually
 /// the definition id.

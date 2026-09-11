@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Point;
 use rl_engine::rl_events::Tracker;
-use rl_engine::rl_rules::Equipment;
+use rl_engine::rl_rules::{Enchanted, Equipment};
 use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, decode, encode};
 use rl_engine::rl_ui::{LogCategory, MessageLog};
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,8 @@ pub struct ItemSave {
     pub id: SaveId,
     pub def: String,
     pub count: Option<u32>,
+    #[serde(default)]
+    pub enchant: Enchanted,
     /// On the ground here, or `None` in the player's bag.
     pub at: Option<(Point, MapId)>,
 }
@@ -82,7 +84,7 @@ type PlayerData = (Entity, &'static Position, Option<&'static OnMap>, &'static H
 /// A monster as a capture sees it.
 type MonsterData = (Entity, &'static MonsterKind, &'static Position, Option<&'static OnMap>, &'static Health);
 /// An item as a capture sees it.
-type ItemData = (Entity, &'static ItemKind, Option<&'static Stack>, Option<&'static Position>, Option<&'static OnMap>);
+type ItemData = (Entity, &'static ItemKind, Option<&'static Stack>, Option<&'static Position>, Option<&'static OnMap>, Option<&'static Enchant>);
 
 /// The parts of the world a capture reads.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -132,11 +134,12 @@ fn capture_game(run: &Run, remap: &mut EntityRemap) -> Option<Captured> {
     let items = run
         .items
         .iter()
-        .filter(|(e, _, _, pos, _)| pos.is_some() || bag.contains(*e))
-        .map(|(e, kind, stack, pos, on)| ItemSave {
+        .filter(|(e, _, _, pos, _, _)| pos.is_some() || bag.contains(*e))
+        .map(|(e, kind, stack, pos, on, enchant)| ItemSave {
             id: remap.save_id(e),
             def: run.armory.defs.name(kind.0).to_string(),
             count: stack.map(|s| s.count),
+            enchant: enchant.map(|e| e.0.clone()).unwrap_or_default(),
             at: pos.map(|p| (p.0, map_of(on))),
         })
         .collect();
@@ -205,7 +208,7 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
         let at = item.at.map(|(p, _)| p);
         let e = {
             let mut commands = world.commands();
-            let e = armory.spawn(&mut commands, id, count, at);
+            let e = armory.spawn_with(&mut commands, id, count, at, item.enchant.clone());
             if let Some((_, map)) = item.at {
                 commands.entity(e).insert(OnMap(map));
             }
@@ -256,6 +259,7 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
                 Inventory { items: bag },
                 Equipped(worn),
                 Sheet::default(),
+                Strikes::default(),
                 rl_engine::rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
             ),
         ))

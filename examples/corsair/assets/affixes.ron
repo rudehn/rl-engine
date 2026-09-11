@@ -1,0 +1,18 @@
+// Corsair's affixes: what a found blade or coat can be besides plain.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:       the fragment: a prefix reads "Sharp cutlass", a suffix "cutlass of flame"
+//   kind:       Prefix | Suffix
+//   applies_to: item tags it may roll onto; any one match is enough: "weapon" | "blade" | "gun" | "armor" | "shield" | "hat"
+//   grants:     optional; stat bonuses while worn, each (stat, base, levels_per_point):
+//               "armor" | "attack", the bonus at +0, and levels per extra point (0 for none)
+//   strikes:    optional; extra dice on every hit while wielded, each (kind, base_dice, levels_per_die, sides):
+//               the damage kind "cutlass" | "pistol" | "bite" | "claw" | "fist" | "fire"
+//   weight:     optional; relative chance among what applies, 1 by default
+#![enable(implicit_some)]
+[
+    (name: "Sharp", kind: Prefix, applies_to: ["blade"], grants: [("attack", 1, 2)], weight: 3),
+    (name: "Stout", kind: Prefix, applies_to: ["armor"], grants: [("armor", 1, 3)], weight: 3),
+    (name: "flame", kind: Suffix, applies_to: ["weapon"], strikes: [("fire", 1, 3, 4)], weight: 1),
+    (name: "the deep", kind: Suffix, applies_to: ["armor", "weapon"], grants: [("armor", 1, 0), ("attack", 1, 0)], weight: 1),
+]

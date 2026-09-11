@@ -24,6 +24,7 @@ pub mod dijkstra;
 pub mod fov;
 pub mod region;
 pub mod spatial;
+pub mod targeting;
 pub mod terrain;
 pub mod tile;
 
@@ -31,6 +32,7 @@ pub use astar::{AStar, PathRules};
 pub use bitgrid::BitGrid;
 pub use dijkstra::DijkstraMap;
 pub use spatial::SpatialGrid;
+pub use targeting::{Footprint, TargetMode, clear_shot, footprint};
 pub use terrain::{CostSource, OpacitySource, Terrain, TerrainView};
 pub use tile::{TileId, TileProps, TileRegistry, TileTables};
 
@@ -42,6 +44,7 @@ pub mod prelude {
     pub use crate::fov;
     pub use crate::region;
     pub use crate::spatial::SpatialGrid;
+    pub use crate::targeting::{Footprint, TargetMode, clear_shot, footprint};
     pub use crate::terrain::{CostSource, OpacitySource, Terrain, TerrainView};
     pub use crate::tile::{TileId, TileProps, TileRegistry, TileTables};
 }

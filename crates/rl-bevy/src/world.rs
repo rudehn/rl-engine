@@ -214,6 +214,11 @@ impl WorldMap {
         self.tile(p).is_none_or(|t| self.tables.opaque[t.index()])
     }
 
+    /// Whether `p` stops a projectile. Unloaded tiles do.
+    pub fn blocks_projectiles(&self, p: Point) -> bool {
+        self.tile(p).is_none_or(|t| self.tables.blocks_projectiles[t.index()])
+    }
+
     /// Entry cost of `p`, or `None` if not walkable or not loaded.
     pub fn cost(&self, p: Point) -> Option<u32> {
         let t = self.tile(p)?;

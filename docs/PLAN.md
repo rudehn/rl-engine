@@ -19,7 +19,9 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
 - 2026-09-10: M6 first slice: `rl-save` (the `SaveBackend` seam with file, memory and `localStorage` backends, the `Versioned` envelope with an exact-match policy, `EntityRemap` and `SaveId`, and `EngineSave` capturing and restoring the scheduler, the world's edits and places, and knowledge), `rl-tools` (`ThreatSubject`, threat, and the spawn-band `Report`).
   Corsair saves with `S`, saves and quits with `q`, continues with `--continue`, deletes the save on death, and prints its balance report with `--balance`.
   Deferred from M6: the wasm `beforeunload` bridge, seed replay, the headless dump.
-- Next: the deferred pieces of M3 to M6 (affixes and enchant, throwing, a character sheet, abilities and targeting, `TileField<T>`, lighting, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
+- 2026-09-10: deferred pieces, first pass: `rl-rules` gains the affix and enchant model (tags, `AffixDef` with level-scaled stat grants and extra strikes, `EnhanceRule`, `Enchanted` per instance, weighted rolling); `rl-grid` gains targeting (`TargetMode` own, adjacent, bolt, ball, beam, cone; `footprint`; `clear_shot`); `rl-bevy` gains `RangedAttack`, `Strikes` and `line_of_fire`, and the attack resolver shoots at distant targets.
+  Corsair's items carry tags and affixes from RON, found gear rolls a quality, the hoard is enchanted, the pistol fires on `f`, and the sea chest shows the folded numbers.
+- Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, lighting, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.

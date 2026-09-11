@@ -165,14 +165,19 @@ pub fn populate_places(mut commands: Commands, mut entered: MessageReader<PlaceE
         }
         let Some(place) = stock.map.place(ev.map) else { continue };
         let mut rng = stock.world.seed().rng(SeedDomain::new(b"corsair.caves"), ev.map.0 as u64);
-        // Treasure where the vault marks it.
-        for spot in place.spots.iter().filter(|s| s.tag == TREASURE) {
-            let (id, n) = if rng.random_bool(0.7) {
+        // Treasure where the vault marks it: one piece of the smugglers'
+        // own gear, then coin and drink.
+        for (i, spot) in place.spots.iter().filter(|s| s.tag == TREASURE).enumerate() {
+            let (id, n) = if i == 0 {
+                let gear = ["cutlass", "boarding axe", "pistol", "buckler", "tricorne"];
+                (stock.armory.defs.expect(gear[rng.random_range(0..gear.len())]), 1)
+            } else if rng.random_bool(0.7) {
                 (stock.armory.defs.expect("doubloons"), rng.random_range(20..=60))
             } else {
                 (stock.armory.defs.expect("rum"), rng.random_range(1..=3))
             };
-            stock.armory.spawn(&mut commands, id, n, Some(spot.at));
+            let enchant = stock.armory.roll_quality(id, crate::items::Quality::HOARD, &mut rng);
+            stock.armory.spawn_with(&mut commands, id, n, Some(spot.at), enchant);
         }
         // Smugglers, deeper as you go, never next to the stairs.
         let band = 6 + 6 * depth as i32;

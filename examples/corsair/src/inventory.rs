@@ -11,6 +11,7 @@ use rl_engine::rl_render::Terminal;
 use rl_engine::rl_ui::{ListMenu, LogCategory, MenuRow, Theme, draw_menu};
 
 use crate::items::{Armory, ItemKind};
+use crate::monsters::Bestiary;
 
 /// The screen's state.
 #[derive(Resource)]
@@ -76,10 +77,11 @@ pub fn inventory_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<Invent
 pub fn draw_inventory(
     mut screen: ResMut<InventoryScreen>,
     armory: Res<Armory>,
+    bestiary: Res<Bestiary>,
     theme: Res<Theme>,
     mut terminal: ResMut<Terminal>,
     bag: Bag,
-    items: Query<(&ItemKind, Option<&Stack>)>,
+    items: Query<(&ItemKind, Option<&Stack>, Option<&Enchant>)>,
 ) {
     if !screen.open {
         return;
@@ -89,11 +91,25 @@ pub fn draw_inventory(
         .items
         .iter()
         .filter_map(|&item| {
-            let (kind, stack) = items.get(item).ok()?;
+            let (kind, stack, enchant) = items.get(item).ok()?;
             let d = armory.defs.get(kind.0);
             let mut detail = Vec::new();
-            if let (Some(dice), Some(kind)) = (&d.attack, &d.kind) {
-                detail.push(format!("{dice} {kind}"));
+            if let (Some(dice), Some(kind_name)) = (&d.attack, &d.kind) {
+                let dice = enchant.map(|e| e.0.strike(*dice, &armory.rule(kind.0))).unwrap_or(*dice);
+                detail.push(format!("{dice} {kind_name}"));
+            }
+            if let Some((range, dice, kind_name)) = &d.ranged {
+                detail.push(format!("shoots {dice} {kind_name} to {range}"));
+            }
+            if let Some(e) = enchant {
+                for (k, dice) in e.0.strikes(&armory.affixes) {
+                    detail.push(format!("+{dice} {}", bestiary.kinds.name(k)));
+                }
+                for m in e.0.modifiers(&armory.affixes, &armory.rule(kind.0), 0) {
+                    if let rl_engine::rl_rules::Op::Add(n) = m.op {
+                        detail.push(format!("{} {n:+}", armory.stats.name(m.stat)));
+                    }
+                }
             }
             if d.armor != 0 {
                 detail.push(format!("armor {:+}", d.armor));
@@ -106,7 +122,7 @@ pub fn draw_inventory(
             }
             let label = match stack {
                 Some(s) if s.count > 1 => format!("{} {}", s.count, d.name),
-                _ => d.name.clone(),
+                _ => armory.display_name(kind.0, enchant),
             };
             let tag = match worn.slot_of(item) {
                 Some(slot) => format!("({})", armory.slots.name(slot)),

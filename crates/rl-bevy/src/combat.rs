@@ -60,6 +60,23 @@ pub struct MeleeAttack {
     pub dice: DiceRoll,
 }
 
+/// What an actor's shot does, and how far it reaches. An attack on a
+/// target that is not adjacent uses this, if the line of fire is clear.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct RangedAttack {
+    /// Damage kind.
+    pub kind: DamageKindId,
+    /// Damage roll.
+    pub dice: DiceRoll,
+    /// Furthest cell it reaches.
+    pub range: i32,
+}
+
+/// Extra rolls every hit by this actor carries, each its own
+/// [`DamageEvent`]: a flaming blade's fire, a venomed edge's poison.
+#[derive(Component, Debug, Clone, Default)]
+pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
+
 /// How far a non-player notices things, in tiles. Sight is symmetric,
 /// so a monster sees the player exactly when the player sees it and it
 /// is within this range.
@@ -277,7 +294,22 @@ fn shift_map(m: &DijkstraMap, origin: Point) -> DijkstraMap {
     out
 }
 
-/// Turns attack intents into damage events.
+/// Where an attack happens: the map, who stands on it, and who strikes.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Arena<'w, 's> {
+    map: Res<'w, WorldMap>,
+    occupancy: Res<'w, Occupancy>,
+    attackers: Query<'w, 's, AttackerData, With<MyTurn>>,
+    targets: Query<'w, 's, &'static Position, With<Health>>,
+}
+
+/// An attacker as the attack resolver sees it.
+type AttackerData = (&'static Position, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>);
+
+/// Turns attack intents into damage events: a melee strike on an
+/// adjacent target, a shot on a distant one with a clear line of fire,
+/// each followed by the attacker's extra strikes. A shot at nothing in
+/// reach still costs the turn.
 ///
 /// One turn, one strike: a second attack intent for an actor that already
 /// struck this pass is dropped, as [`resolve_intents`](crate::turn::resolve_intents)
@@ -287,29 +319,42 @@ pub fn resolve_attacks(
     mut damage: MessageWriter<DamageEvent>,
     mut done: MessageWriter<ActionDone>,
     mut rng: ResMut<CombatRng>,
-    attackers: Query<(&Position, Option<&MeleeAttack>), With<MyTurn>>,
-    targets: Query<&Position, With<Health>>,
+    arena: Arena,
 ) {
+    let Arena { map, occupancy, attackers, targets } = arena;
     let mut struck: Vec<Entity> = Vec::new();
     for intent in intents.read() {
         let Action::Attack(target) = intent.action else { continue };
         if struck.contains(&intent.actor) {
             continue;
         }
-        let Ok((pos, melee)) = attackers.get(intent.actor) else { continue };
+        let Ok((pos, melee, ranged, strikes)) = attackers.get(intent.actor) else { continue };
         struck.push(intent.actor);
         let Ok(target_pos) = targets.get(target) else {
             done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
             continue;
         };
-        if geometry::is_adjacent(pos.0, target_pos.0)
-            && let Some(m) = melee
-        {
-            let amount = m.dice.roll(&mut **rng);
-            damage.write(DamageEvent { target, hit: Hit::by(intent.actor, m.kind, amount) });
+        let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
+            melee.map(|m| (m.kind, m.dice))
+        } else {
+            ranged.filter(|r| line_of_fire(&map, &occupancy, pos.0, target_pos.0, r.range)).map(|r| (r.kind, r.dice))
+        };
+        if let Some((kind, dice)) = weapon {
+            let amount = dice.roll(&mut **rng);
+            damage.write(DamageEvent { target, hit: Hit::by(intent.actor, kind, amount) });
+            for (kind, dice) in strikes.map(|s| s.0.as_slice()).unwrap_or(&[]) {
+                let amount = dice.roll(&mut **rng);
+                damage.write(DamageEvent { target, hit: Hit::by(intent.actor, *kind, amount) });
+            }
         }
         done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
     }
+}
+
+/// Whether a shot from `from` reaches `to` within `range`: nothing that
+/// stops projectiles and nobody standing in between.
+pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> bool {
+    rl_grid::clear_shot(from, to, range, map.window_tiles(), |p| p != to && (map.blocks_projectiles(p) || occupancy.is_occupied(p)))
 }
 
 /// Runs the damage stages and applies what is left to health.
@@ -495,5 +540,49 @@ mod tests {
         assert!(app.world().get_entity(monster).is_err(), "the monster despawned by the end of the frame");
         assert!(!app.world().resource::<Occupancy>().is_occupied(mpos));
         assert!(!app.world().resource::<Turns>().contains(monster));
+    }
+
+    #[test]
+    fn a_shot_needs_a_clear_line_of_fire_and_carries_extra_strikes() {
+        let (mut app, start, blunt) = arena();
+        let (us, them) = (rl_rules::FactionId::from_raw(0), rl_rules::FactionId::from_raw(1));
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(us),
+                RangedAttack { kind: blunt, dice: DiceRoll::flat(3), range: 6 },
+                Strikes(vec![(blunt, DiceRoll::flat(2))]),
+            ))
+            .id();
+        // A target four cells east with no mind: it never moves.
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 0)), Health::full(20), Faction(them))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent { actor: player, action: Action::Attack(target) });
+        app.update();
+        assert_eq!(app.world().get::<Health>(target).unwrap().hp, 20 - 3 - 2, "the shot and the extra strike both landed");
+        // A wall in between stops the next shot; the turn is still spent.
+        app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, 0), TileId(1));
+        app.update();
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent { actor: player, action: Action::Attack(target) });
+        app.update();
+        assert_eq!(app.world().get::<Health>(target).unwrap().hp, 15, "the wall took the shot");
+        assert!(app.world().resource::<Turns>().now() > before);
+        // Out of range is no shot either.
+        app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, 0), TileId(0));
+        let far = app.world_mut().spawn((Actor, Blocks, Position(start.offset(7, 0)), Health::full(20), Faction(them))).id();
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent { actor: player, action: Action::Attack(far) });
+        app.update();
+        assert_eq!(app.world().get::<Health>(far).unwrap().hp, 20);
     }
 }
