@@ -15,6 +15,7 @@
 
 pub mod combat;
 pub mod components;
+pub mod events;
 pub mod fov;
 pub mod items;
 pub mod knowledge;
@@ -25,10 +26,11 @@ pub mod turn;
 pub mod world;
 
 pub use combat::{
-    Armor, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, DeathEvent, Faction, FlowFields, Health, MeleeAttack, Mind, Perception, Profile,
-    Resists,
+    Armor, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health, MeleeAttack, Mind, Perception,
+    Profile, Resists,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+pub use events::{Counters, Happened, QuestChange, Quests};
 pub use items::{Equipped, Inventory, Item, ItemEvent, Stack, Wearable};
 pub use knowledge::Knowledge;
 pub use places::{Arrive, Destination, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest};
@@ -40,10 +42,11 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, WindowView, WorldMap, Worl
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::combat::{
-        Armor, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, DeathEvent, Faction, FlowFields, Health, MeleeAttack, Mind, Perception, Profile,
-        Resists,
+        Armor, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health, MeleeAttack, Mind, Perception,
+        Profile, Resists,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+    pub use crate::events::{Counters, Happened, QuestChange, Quests};
     pub use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack, Wearable};
     pub use crate::knowledge::Knowledge;
     pub use crate::places::{

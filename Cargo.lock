@@ -4667,6 +4667,7 @@ dependencies = [
  "rl-ai",
  "rl-content",
  "rl-core",
+ "rl-events",
  "rl-grid",
  "rl-mapgen",
  "rl-rules",
@@ -4700,6 +4701,7 @@ dependencies = [
  "rl-bevy",
  "rl-content",
  "rl-core",
+ "rl-events",
  "rl-grid",
  "rl-mapgen",
  "rl-overworld",
@@ -4707,6 +4709,15 @@ dependencies = [
  "rl-rules",
  "rl-ui",
  "rl-world",
+]
+
+[[package]]
+name = "rl-events"
+version = "0.1.0"
+dependencies = [
+ "rl-content",
+ "rl-core",
+ "serde",
 ]
 
 [[package]]

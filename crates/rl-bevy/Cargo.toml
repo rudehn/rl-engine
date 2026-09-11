@@ -15,5 +15,6 @@ rl-world.workspace = true
 rl-content.workspace = true
 rl-rules.workspace = true
 rl-ai.workspace = true
+rl-events.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 bevy.workspace = true

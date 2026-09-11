@@ -15,6 +15,7 @@ rl-world.workspace = true
 rl-content.workspace = true
 rl-rules.workspace = true
 rl-ai.workspace = true
+rl-events.workspace = true
 rl-bevy.workspace = true
 rl-render.workspace = true
 rl-overworld.workspace = true

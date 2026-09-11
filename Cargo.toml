@@ -18,6 +18,7 @@ rl-test-support = { path = "crates/rl-test-support" }
 rl-content = { path = "crates/rl-content" }
 rl-rules = { path = "crates/rl-rules" }
 rl-ai = { path = "crates/rl-ai" }
+rl-events = { path = "crates/rl-events" }
 rl-engine = { path = "crates/rl-engine" }
 rl-bevy = { path = "crates/rl-bevy" }
 rl-render = { path = "crates/rl-render" }

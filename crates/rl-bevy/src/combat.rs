@@ -120,8 +120,10 @@ pub struct DamageDealt {
     pub dealt: i32,
 }
 
-/// An actor's health reached zero. Non-players are despawned by the
-/// engine after this is read; the player is left for the game.
+/// An actor's health reached zero. A non-player is taken out of the
+/// world at once (no position, no turns, no cell) and despawned at the
+/// end of the frame, so the game's systems can still read what it was
+/// while they react to this; the player is left for the game.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct DeathEvent {
     /// Who died.
@@ -336,7 +338,12 @@ pub fn apply_damage(
     }
 }
 
-/// Removes dead non-players from the world, the queue and the index.
+/// Dead, and waiting for the end of the frame to be despawned.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Dead;
+
+/// Takes dead non-players out of the world, the queue and the index, and
+/// marks them [`Dead`] for [`bury_the_dead`].
 pub fn process_deaths(
     mut commands: Commands,
     mut deaths: MessageReader<DeathEvent>,
@@ -354,7 +361,14 @@ pub fn process_deaths(
             occupancy.remove(pos.0, d.entity);
         }
         turns.remove(d.entity);
-        commands.entity(d.entity).despawn();
+        commands.entity(d.entity).remove::<(Actor, Blocks, Position)>().insert(Dead);
+    }
+}
+
+/// Despawns whoever died this frame, once every system has seen them go.
+pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
+    for e in &dead {
+        commands.entity(e).despawn();
     }
 }
 
@@ -478,7 +492,7 @@ mod tests {
                 break;
             }
         }
-        assert!(app.world().get_entity(monster).is_err(), "the monster despawned");
+        assert!(app.world().get_entity(monster).is_err(), "the monster despawned by the end of the frame");
         assert!(!app.world().resource::<Occupancy>().is_occupied(mpos));
         assert!(!app.world().resource::<Turns>().contains(monster));
     }

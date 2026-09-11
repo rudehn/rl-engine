@@ -1,0 +1,48 @@
+// Corsair's tasks: what the ledger asks of you, and what wins the run.
+//
+// Every field:
+//   name:       unique, referred to by `after`
+//   title:      what the ledger shows
+//   text:       the pitch, shown under the title
+//   after:      names of tasks that must be done before this one opens
+//   objectives: a list of (text, on: (kind, subject), need)
+//     kind:     "killed" (subject: a monster name) | "killed_faction" (a faction name)
+//               | "picked_up" | "carrying" | "used" | "equipped" (an item name)
+//               | "entered_cave" (a level number, "1" is the top) | "entered_site" ("port" | "cove")
+//     subject:  optional; leave it out to match any
+//     need:     Total(n) counts matching facts (amounts add up) | Latest(n) needs one fact of amount n or more
+//   victory:    optional; finishing this task wins the run
+#![enable(implicit_some)]
+[
+    (
+        name: "sea_legs",
+        title: "Sea legs",
+        text: "Beasts prowl the scrub beyond the docks. Prove your blade on them.",
+        objectives: [(text: "Kill three beasts", on: (kind: "killed_faction", subject: "beasts"), need: Total(3))],
+    ),
+    (
+        name: "wet_blade",
+        title: "A wet blade",
+        text: "Cutthroats hold the coves. Thin them out.",
+        after: ["sea_legs"],
+        objectives: [(text: "Kill two cutthroats", on: (kind: "killed", subject: "cutthroat"), need: Total(2))],
+    ),
+    (
+        name: "hoard",
+        title: "The smugglers' hoard",
+        text: "Every cove hides a cave, and every cave a vault. Find one and fill your pockets.",
+        after: ["sea_legs"],
+        objectives: [
+            (text: "Reach a smugglers' vault", on: (kind: "entered_cave", subject: "2"), need: Total(1)),
+            (text: "Carry a hundred doubloons", on: (kind: "carrying", subject: "doubloons"), need: Latest(100)),
+        ],
+    ),
+    (
+        name: "retire",
+        title: "Retire rich",
+        text: "Bring the hoard back to any port and never work again.",
+        after: ["hoard"],
+        objectives: [(text: "Set foot in a port with the hoard", on: (kind: "entered_site", subject: "port"), need: Total(1))],
+        victory: true,
+    ),
+]

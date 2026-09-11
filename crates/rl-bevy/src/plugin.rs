@@ -8,7 +8,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{combat, fov, items, places, turn, world};
+use crate::{combat, events, fov, items, places, turn, world};
 
 /// The stages of a frame while playing, in order. All in `Update`.
 ///
@@ -111,6 +111,8 @@ impl Plugin for EnginePlugins {
             .add_message::<places::WarpRequest>()
             .add_message::<places::MapChanged>()
             .add_message::<places::PlaceEntered>()
+            .add_message::<events::Happened>()
+            .add_message::<events::QuestChange>()
             .init_resource::<combat::FlowFields>()
             .init_resource::<combat::DamageStages>()
             .init_schedule(Turn)
@@ -125,6 +127,10 @@ impl Plugin for EnginePlugins {
             .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
             .add_systems(Update, fov::update_viewsheds.in_set(EngineSet::Fov))
+            // After every game system of the frame has had its say, so a
+            // fact written in Present is tracked the same frame.
+            .add_systems(PostUpdate, events::track_facts.run_if(in_state(EngineState::Playing)).run_if(events::anyone_listening))
+            .add_systems(PostUpdate, combat::bury_the_dead.after(events::track_facts))
             .add_systems(Turn, (places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
             // Combat is opt-in: a game that inserts no rules gets no combat
             // systems, and the walking demo stays a walking demo.

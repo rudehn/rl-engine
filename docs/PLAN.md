@@ -13,7 +13,10 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Deferred from M3: affixes and enchant, throwing, the character sheet.
 - 2026-09-10: M4 first slice: `rl-mapgen` gains rooms, BSP, doors, random start, farthest exit and prefab stamping; `rl-bevy` gains places (`MapId`, `OnMap`, `Transition`, `WarpRequest`, `PlaceRules`, map-scoped occupancy and knowledge, frozen off-map actors); Corsair gains huts in its ports, cave mouths on its coves, two-level smugglers' caves with a treasure vault, and portals that warp out of a cave.
   Deferred from M4: rivers and bridges inside chunks beyond the channel pass, cullers beyond keep-largest, a choke map, decoration rules, settlement passes richer than huts.
-- Next: M5 encounters and quests (`rl-events`), then M6 persistence and tools, then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
+- 2026-09-10: M5 first slice: `rl-events` (facts with kind, subject, object and amount; matchers; a ledger of named counters; quests as objectives over facts with `after` chains and a `victory` flag, tracked purely), `rl-bevy` wraps it as the `Happened` message, the `Quests` and `Counters` resources and `QuestChange`, fed after the frame; the dead now linger until the end of the frame so reactions can read what they were.
+  Corsair reports kills, pickups, what it carries, cave levels and sites as facts, loads four tasks from RON that chain to "Retire rich", narrates them, draws a ledger on `t`, and wins the run when the hoard comes home.
+  Deferred from M5: scripted encounters, abilities and targeting, `TileField<T>`, lighting, a generated victory condition.
+- Next: M6 persistence and tools (`rl-save`, `rl-tools`), then the deferred pieces of M3 to M5, then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.

@@ -15,6 +15,7 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 | 1 | `rl-world` | world graph, hydrology, sites, roads, chunk generation |
 | 1 | `rl-content` | registries and banded tables loaded from RON |
 | 1 | `rl-rules` | stats and modifiers, damage stages, statuses, factions |
+| 1 | `rl-events` | facts, named counters, quests as objectives over facts |
 | 1 | `rl-ai` | movement profiles, snapshots, tactic-priority brains over Dijkstra maps |
 | 1 | `rl-test-support` | fixtures and property helpers |
 | 2 | `rl-bevy` | plugins, components, system sets, the turn loop, chunk streaming, items, places |
@@ -28,14 +29,14 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 
 ## The worked example
 
-`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, ports with huts, a bestiary and an armory in RON, factions, bump-to-attack combat, loot on the sand and in the pockets of the dead, a sea chest to wear it from, smugglers' caves under the coves with a treasure vault at the bottom, a message log and the world map with a portal picker that works from anywhere.
+`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, ports with huts, a bestiary and an armory in RON, factions, bump-to-attack combat, loot on the sand and in the pockets of the dead, a sea chest to wear it from, smugglers' caves under the coves with a treasure vault at the bottom, a ledger of tasks from RON that ends in a victory, a message log and the world map with a portal picker that works from anywhere.
 It is what a game on this engine looks like.
 
 ```sh
 cargo run -p corsair -- --seed 7
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `i` for the sea chest, `m` for the map, `q` to quit.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `q` to quit.
 
 ## Principles
 

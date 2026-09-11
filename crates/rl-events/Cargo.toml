@@ -1,0 +1,13 @@
+[package]
+name = "rl-events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine tier 1: facts, counters and quests as data over what happened. No Bevy."
+
+[dependencies]
+rl-core.workspace = true
+rl-content.workspace = true
+serde.workspace = true

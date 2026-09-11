@@ -9,6 +9,7 @@ pub use rl_ai;
 pub use rl_bevy;
 pub use rl_content;
 pub use rl_core;
+pub use rl_events;
 pub use rl_grid;
 pub use rl_mapgen;
 pub use rl_overworld;

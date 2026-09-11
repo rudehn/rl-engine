@@ -6,6 +6,7 @@ use rl_engine::rl_core::Direction;
 use rl_engine::rl_overworld::OverworldScreen;
 
 use crate::inventory::InventoryScreen;
+use crate::quests::LedgerScreen;
 
 /// How long a held key waits before repeating, and between repeats.
 const REPEAT_DELAY: f32 = 0.25;
@@ -38,18 +39,19 @@ pub struct InputWorld<'w, 's> {
     time: Res<'w, Time>,
     screen: Res<'w, OverworldScreen>,
     chest: Res<'w, InventoryScreen>,
+    ledger: Res<'w, LedgerScreen>,
     occupancy: Res<'w, Occupancy>,
     player: PlayerTurn<'w, 's>,
 }
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
 pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: MessageWriter<Intent>, mut exit: MessageWriter<AppExit>) {
-    let InputWorld { keys, time, screen, chest, occupancy, player } = world;
+    let InputWorld { keys, time, screen, chest, ledger, occupancy, player } = world;
     if keys.just_pressed(KeyCode::KeyQ) {
         exit.write(AppExit::Success);
         return;
     }
-    if screen.open || chest.open {
+    if screen.open || chest.open || ledger.open {
         return;
     }
     let Ok((entity, pos)) = player.single() else { return };

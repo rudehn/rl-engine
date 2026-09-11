@@ -6,7 +6,7 @@
 //! log, a status line, and the world map with a portal picker over the
 //! ports you have found.
 //!
-//! `CORSAIR_OPEN=inventory` starts with the inventory open, and
+//! `CORSAIR_OPEN=inventory` or `CORSAIR_OPEN=ledger` starts with that screen open, and
 //! `CORSAIR_START=cave` starts at the bottom of the nearest smugglers'
 //! cave, both for screenshots.
 
@@ -16,6 +16,7 @@ mod inventory;
 mod items;
 mod monsters;
 mod places;
+mod quests;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -82,8 +83,9 @@ fn main() -> AppExit {
     .insert_resource(OverworldLayout { viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS) })
     .init_resource::<inventory::InventoryScreen>()
     .init_resource::<places::Entrances>()
+    .init_resource::<quests::LedgerScreen>()
     .add_systems(Startup, start_world)
-    .add_systems(Update, (inventory::inventory_keys, input::player_input).chain().in_set(EngineSet::Input))
+    .add_systems(Update, (quests::ledger_keys, inventory::inventory_keys, input::player_input).chain().in_set(EngineSet::Input))
     .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
     .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
     .add_systems(
@@ -96,12 +98,14 @@ fn main() -> AppExit {
             note_discoveries,
             monsters::narrate,
             items::narrate_items,
+            quests::report_facts,
+            quests::narrate_quests,
             update_status,
         )
             .chain()
             .in_set(EngineSet::Present),
     )
-    .add_systems(Update, inventory::draw_inventory.in_set(EngineSet::Present).after(rl_engine::rl_ui::draw_chrome));
+    .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(EngineSet::Present).after(rl_engine::rl_ui::draw_chrome));
     app.run()
 }
 
@@ -118,6 +122,7 @@ fn start_world(
     mut next: ResMut<NextState<EngineState>>,
     mut log: ResMut<MessageLog>,
     mut screen: ResMut<inventory::InventoryScreen>,
+    mut ledger: ResMut<quests::LedgerScreen>,
     mut warps: MessageWriter<WarpRequest>,
 ) {
     let content = Content::new();
@@ -172,6 +177,9 @@ fn start_world(
             warps.write(WarpRequest { actor: player, to: Destination::Place { map: places::cave_id(cove, places::LEVELS - 1), arrive: Arrive::Entry } });
         }
     }
+    let (quest_log, facts) = quests::load(&bestiary, &armory);
+    commands.insert_resource(quest_log);
+    commands.insert_resource(facts);
     commands.insert_resource(armory);
     commands.insert_resource(bestiary);
     commands.insert_resource(rules);
@@ -186,8 +194,10 @@ fn start_world(
     commands.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));
     commands.insert_resource(ChunkRulesRes(Box::new(content)));
     log.push(format!("Seed {}. You step off the gangplank onto the docks of a small port.", start.seed.0), LogCategory::Notice, 0);
-    if std::env::var("CORSAIR_OPEN").is_ok_and(|v| v == "inventory") {
-        screen.open = true;
+    match std::env::var("CORSAIR_OPEN").as_deref() {
+        Ok("inventory") => screen.open = true,
+        Ok("ledger") => ledger.open = true,
+        _ => {}
     }
     next.set(EngineState::Playing);
 }
@@ -251,7 +261,7 @@ fn update_status(mut status: ResMut<StatusLine>, w: StatusWorld) {
         worn.in_slot(w.armory.slots.expect("main hand")).and_then(|e| w.kinds.get(e).ok()).map(|k| w.armory.defs.get(k.0).name.as_str()).unwrap_or("fists");
     let here = items::whats_here(pos.0, &w.armory, &w.ground).map(|s| format!("   here: {s} [g]")).unwrap_or_default();
     status.0 = format!(
-        "HP {}/{}  AC {}  {}   Turn {}   ({}, {}) {}{}   [i]nventory [m]ap [q]uit",
+        "HP {}/{}  AC {}  {}   Turn {}   ({}, {}) {}{}   [i]nventory [t]asks [m]ap [q]uit",
         hp.hp,
         hp.max,
         armor.0,
