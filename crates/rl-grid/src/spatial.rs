@@ -18,10 +18,7 @@ pub struct SpatialGrid<E> {
 
 impl<E> Default for SpatialGrid<E> {
     fn default() -> Self {
-        Self {
-            cells: BTreeMap::new(),
-            count: 0,
-        }
+        Self { cells: BTreeMap::new(), count: 0 }
     }
 }
 
@@ -76,11 +73,8 @@ impl<E: Copy + Eq> SpatialGrid<E> {
 
     /// Everything inside `rect`, row-major.
     pub fn in_rect(&self, rect: Rect) -> impl Iterator<Item = (Point, E)> + '_ {
-        (rect.y..rect.bottom()).flat_map(move |y| {
-            self.cells
-                .range(Point::new(rect.x, y)..Point::new(rect.right(), y))
-                .flat_map(|(p, list)| list.iter().map(move |e| (*p, *e)))
-        })
+        (rect.y..rect.bottom())
+            .flat_map(move |y| self.cells.range(Point::new(rect.x, y)..Point::new(rect.right(), y)).flat_map(|(p, list)| list.iter().map(move |e| (*p, *e))))
     }
 
     /// Everything within Chebyshev `radius` of `center`, row-major.
@@ -90,8 +84,7 @@ impl<E: Copy + Eq> SpatialGrid<E> {
 
     /// Everything within Euclidean `radius` of `center`, row-major.
     pub fn in_disc(&self, center: Point, radius: i32) -> impl Iterator<Item = (Point, E)> + '_ {
-        self.in_square(center, radius)
-            .filter(move |(p, _)| geometry::within_disc(center, *p, radius))
+        self.in_square(center, radius).filter(move |(p, _)| geometry::within_disc(center, *p, radius))
     }
 
     /// Every entity with its cell, row-major.

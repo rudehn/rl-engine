@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::rl_ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_ai::Brain;
+use rl_engine::rl_ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_content::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
@@ -120,19 +120,7 @@ impl Bestiary {
             brains.push(Arc::new(brain.then(Hunt).then(Wander { chance_pct: m.wander })));
         }
         let rules = CombatRules { kinds: kinds.clone(), factions: relations };
-        (
-            Self {
-                defs,
-                kinds,
-                factions,
-                table,
-                brains,
-                seed,
-                home,
-                spawned: BTreeSet::new(),
-            },
-            rules,
-        )
+        (Self { defs, kinds, factions, table, brains, seed, home, spawned: BTreeSet::new() }, rules)
     }
 }
 

@@ -19,11 +19,7 @@ fn cave(width: i32, height: i32, seed: u64) -> (Terrain, TileRegistry) {
     for _ in 0..2 {
         let prev = t.clone();
         for (p, _) in prev.iter() {
-            let walls = Steps::Eight
-                .directions()
-                .iter()
-                .filter(|d| prev.get(p + d.offset()).is_none_or(|id| id == wall))
-                .count();
+            let walls = Steps::Eight.directions().iter().filter(|d| prev.get(p + d.offset()).is_none_or(|id| id == wall)).count();
             t.set(p, if walls >= 5 { wall } else { floor });
         }
     }
@@ -66,9 +62,7 @@ fn bench_astar(c: &mut Criterion) {
         let (t, r) = cave(w, h, 3);
         let view = t.view(&r);
         let mut rng = StdRng::seed_from_u64(4);
-        let pairs: Vec<(Point, Point)> = (0..16)
-            .map(|_| (open_cell(&t, &r, &mut rng), open_cell(&t, &r, &mut rng)))
-            .collect();
+        let pairs: Vec<(Point, Point)> = (0..16).map(|_| (open_cell(&t, &r, &mut rng), open_cell(&t, &r, &mut rng))).collect();
         let mut astar = AStar::new();
         group.bench_with_input(BenchmarkId::new("16_searches", format!("{w}x{h}")), &(w, h), |b, _| {
             b.iter(|| {

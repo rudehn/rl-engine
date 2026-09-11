@@ -18,11 +18,7 @@ impl BitGrid {
     /// An all-clear grid.
     pub fn new(width: i32, height: i32) -> Self {
         let cells = (width.max(0) as usize) * (height.max(0) as usize);
-        Self {
-            width,
-            height,
-            words: vec![0; cells.div_ceil(64)],
-        }
+        Self { width, height, words: vec![0; cells.div_ceil(64)] }
     }
 
     /// Clears every bit.
@@ -147,10 +143,7 @@ mod tests {
         for p in [Point::new(70, 2), Point::new(3, 0), Point::new(99, 0), Point::new(0, 1)] {
             g.insert(p);
         }
-        assert_eq!(
-            g.iter().collect::<Vec<_>>(),
-            vec![Point::new(3, 0), Point::new(99, 0), Point::new(0, 1), Point::new(70, 2)]
-        );
+        assert_eq!(g.iter().collect::<Vec<_>>(), vec![Point::new(3, 0), Point::new(99, 0), Point::new(0, 1), Point::new(70, 2)]);
         assert_eq!(g.iter_indices().count(), 4);
     }
 

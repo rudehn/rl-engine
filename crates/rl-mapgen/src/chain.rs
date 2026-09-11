@@ -36,10 +36,7 @@ pub struct BuildError {
 impl BuildError {
     /// An error from `pass`.
     pub fn new(pass: &'static str, reason: impl Into<String>) -> Self {
-        Self {
-            pass,
-            reason: reason.into(),
-        }
+        Self { pass, reason: reason.into() }
     }
 }
 
@@ -100,20 +97,9 @@ impl<C: BuildContext> Chain<C> {
     /// and lay the same pattern twice.
     pub fn then(mut self, pass: impl Pass<C> + 'static) -> Self {
         if let Some(last) = self.passes.last() {
-            assert!(
-                pass.phase() >= last.phase(),
-                "pass `{}` is {:?} but follows `{}`, which is {:?}",
-                pass.name(),
-                pass.phase(),
-                last.name(),
-                last.phase()
-            );
+            assert!(pass.phase() >= last.phase(), "pass `{}` is {:?} but follows `{}`, which is {:?}", pass.name(), pass.phase(), last.name(), last.phase());
         }
-        assert!(
-            !self.passes.iter().any(|p| p.name() == pass.name()),
-            "two passes are both named `{}`; a name keys a random stream",
-            pass.name()
-        );
+        assert!(!self.passes.iter().any(|p| p.name() == pass.name()), "two passes are both named `{}`; a name keys a random stream", pass.name());
         self.passes.push(Box::new(pass));
         self
     }
@@ -233,9 +219,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "follows")]
     fn a_chain_refuses_to_go_backwards() {
-        let _ = Chain::new()
-            .then(Marker { name: "late", phase: Phase::Exits, row: 0, tile: TileId(1) })
-            .then(Marker { name: "early", phase: Phase::Ground, row: 0, tile: TileId(1) });
+        let _ = Chain::new().then(Marker { name: "late", phase: Phase::Exits, row: 0, tile: TileId(1) }).then(Marker {
+            name: "early",
+            phase: Phase::Ground,
+            row: 0,
+            tile: TileId(1),
+        });
     }
 
     #[test]
@@ -269,10 +258,12 @@ mod tests {
 
     #[test]
     fn a_failing_pass_stops_the_chain_and_names_itself() {
-        let chain = Chain::new()
-            .then(Marker { name: "a", phase: Phase::Ground, row: 0, tile: TileId(1) })
-            .then(Fails)
-            .then(Marker { name: "c", phase: Phase::Finish, row: 1, tile: TileId(3) });
+        let chain = Chain::new().then(Marker { name: "a", phase: Phase::Ground, row: 0, tile: TileId(1) }).then(Fails).then(Marker {
+            name: "c",
+            phase: Phase::Finish,
+            row: 1,
+            tile: TileId(3),
+        });
         let mut ctx = blank();
         let err = chain.run(&mut ctx, RunSeed(1)).unwrap_err();
         assert_eq!(err.pass, "fails");

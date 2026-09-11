@@ -38,12 +38,7 @@ pub struct HydrologyConfig {
 
 impl Default for HydrologyConfig {
     fn default() -> Self {
-        Self {
-            river_fraction: 0.035,
-            lake_fraction: 0.02,
-            min_lake_depth: 0.002,
-            width_classes: 3,
-        }
+        Self { river_fraction: 0.035, lake_fraction: 0.02, min_lake_depth: 0.002, width_classes: 3 }
     }
 }
 
@@ -104,10 +99,7 @@ impl Hydrology {
         // Lakes are the deepest-filled share of land, cut by proportion so
         // the same fraction of every world is lake and only the seed decides
         // where. A floor keeps a world of shallow dimples lake-free.
-        let depths: Vec<f32> = (0..cells)
-            .filter(|i| !elevation.is_water_idx(*i))
-            .map(|i| filled[i] - height[i])
-            .collect();
+        let depths: Vec<f32> = (0..cells).filter(|i| !elevation.is_water_idx(*i)).map(|i| filled[i] - height[i]).collect();
         let lake_depth = quantile(&depths, 1.0 - config.lake_fraction).max(config.min_lake_depth);
         let mut lakes = BitGrid::new(w, h);
         for idx in 0..cells {
@@ -132,10 +124,7 @@ impl Hydrology {
         }
 
         // Rivers are the top slice of land by accumulation, lakes excluded.
-        let land_flow: Vec<f32> = (0..cells)
-            .filter(|i| !elevation.is_water_idx(*i) && !lakes.get_idx(*i))
-            .map(|i| accumulation[i])
-            .collect();
+        let land_flow: Vec<f32> = (0..cells).filter(|i| !elevation.is_water_idx(*i) && !lakes.get_idx(*i)).map(|i| accumulation[i]).collect();
         let threshold = quantile(&land_flow, 1.0 - config.river_fraction).max(2.0);
         let is_river = |i: usize| !elevation.is_water_idx(i) && !lakes.get_idx(i) && accumulation[i] >= threshold;
 
@@ -164,14 +153,7 @@ impl Hydrology {
             1 + cuts.iter().filter(|c| accumulation[i] >= **c).count() as u8
         });
 
-        Self {
-            downstream,
-            filled,
-            accumulation,
-            rivers,
-            width,
-            lakes,
-        }
+        Self { downstream, filled, accumulation, rivers, width, lakes }
     }
 
     /// Whether a river runs through `p`.
@@ -196,9 +178,7 @@ impl Hydrology {
 
     /// The neighbours water reaches `p` from.
     pub fn upstream_of(&self, p: Point) -> impl Iterator<Item = Point> + '_ {
-        self.downstream.neighbours(p, Steps::Eight).filter(move |n| {
-            self.downstream[*n].is_some_and(|d| *n + d.offset() == p)
-        })
+        self.downstream.neighbours(p, Steps::Eight).filter(move |n| self.downstream[*n].is_some_and(|d| *n + d.offset() == p))
     }
 }
 

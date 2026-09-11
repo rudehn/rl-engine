@@ -74,11 +74,7 @@ pub trait Grid2D {
 
     /// The in-bounds neighbours of `p`, clockwise from north.
     fn neighbours(&self, p: Point, steps: Steps) -> impl Iterator<Item = Point> {
-        steps
-            .directions()
-            .iter()
-            .map(move |d| p + d.offset())
-            .filter(move |n| self.in_bounds(*n))
+        steps.directions().iter().map(move |d| p + d.offset()).filter(move |n| self.in_bounds(*n))
     }
 
     /// The in-bounds neighbours of `p` as flat indices, clockwise from north.
@@ -126,11 +122,7 @@ impl<T: Clone> Grid<T> {
     /// Panics if either dimension is negative.
     pub fn filled(width: i32, height: i32, fill: T) -> Self {
         assert!(width >= 0 && height >= 0, "grid dimensions must be non-negative");
-        Self {
-            width,
-            height,
-            cells: vec![fill; (width as usize) * (height as usize)],
-        }
+        Self { width, height, cells: vec![fill; (width as usize) * (height as usize)] }
     }
 
     /// Sets every cell to `value`.
@@ -161,11 +153,7 @@ impl<T> Grid<T> {
                 cells.push(f(Point::new(x, y)));
             }
         }
-        Self {
-            width,
-            height,
-            cells,
-        }
+        Self { width, height, cells }
     }
 
     /// A grid over an existing row-major vector.
@@ -173,16 +161,8 @@ impl<T> Grid<T> {
     /// # Panics
     /// Panics if `cells.len() != width * height`.
     pub fn from_vec(width: i32, height: i32, cells: Vec<T>) -> Self {
-        assert_eq!(
-            cells.len(),
-            (width.max(0) as usize) * (height.max(0) as usize),
-            "cell count must match the dimensions"
-        );
-        Self {
-            width,
-            height,
-            cells,
-        }
+        assert_eq!(cells.len(), (width.max(0) as usize) * (height.max(0) as usize), "cell count must match the dimensions");
+        Self { width, height, cells }
     }
 
     /// Borrows the cell at `p`, or `None` if out of bounds.
@@ -224,11 +204,10 @@ impl<T> Grid<T> {
     /// Iterates `(point, &cell)` row-major without a division per cell.
     pub fn iter(&self) -> impl Iterator<Item = (Point, &T)> {
         let width = self.width;
-        self.cells.chunks(width.max(1) as usize).enumerate().flat_map(move |(y, row)| {
-            row.iter()
-                .enumerate()
-                .map(move |(x, cell)| (Point::new(x as i32, y as i32), cell))
-        })
+        self.cells
+            .chunks(width.max(1) as usize)
+            .enumerate()
+            .flat_map(move |(y, row)| row.iter().enumerate().map(move |(x, cell)| (Point::new(x as i32, y as i32), cell)))
     }
 
     /// Iterates `(point, &mut cell)` row-major.
@@ -237,20 +216,12 @@ impl<T> Grid<T> {
         self.cells
             .chunks_mut(width.max(1) as usize)
             .enumerate()
-            .flat_map(move |(y, row)| {
-                row.iter_mut()
-                    .enumerate()
-                    .map(move |(x, cell)| (Point::new(x as i32, y as i32), cell))
-            })
+            .flat_map(move |(y, row)| row.iter_mut().enumerate().map(move |(x, cell)| (Point::new(x as i32, y as i32), cell)))
     }
 
     /// A new grid of the same shape with `f` applied to every cell.
     pub fn map<U>(&self, mut f: impl FnMut(&T) -> U) -> Grid<U> {
-        Grid {
-            width: self.width,
-            height: self.height,
-            cells: self.cells.iter().map(&mut f).collect(),
-        }
+        Grid { width: self.width, height: self.height, cells: self.cells.iter().map(&mut f).collect() }
     }
 
     /// The cell nearest `from` that `accept` approves of, searching outward
@@ -290,10 +261,7 @@ impl<T> Grid<T> {
     /// # Panics
     /// Panics if the shapes differ.
     pub fn swap_with(&mut self, other: &mut Grid<T>) {
-        assert!(
-            self.width == other.width && self.height == other.height,
-            "cannot swap grids of different shapes"
-        );
+        assert!(self.width == other.width && self.height == other.height, "cannot swap grids of different shapes");
         std::mem::swap(&mut self.cells, &mut other.cells);
     }
 }
@@ -409,10 +377,7 @@ mod tests {
         let n: Vec<Point> = grid.neighbours(Point::new(0, 0), Steps::Eight).collect();
         assert_eq!(n, vec![Point::new(1, 0), Point::new(1, 1), Point::new(0, 1)]);
         let n4: Vec<Point> = grid.neighbours(Point::new(1, 1), Steps::Four).collect();
-        assert_eq!(
-            n4,
-            vec![Point::new(1, 0), Point::new(2, 1), Point::new(1, 2), Point::new(0, 1)]
-        );
+        assert_eq!(n4, vec![Point::new(1, 0), Point::new(2, 1), Point::new(1, 2), Point::new(0, 1)]);
     }
 
     #[test]

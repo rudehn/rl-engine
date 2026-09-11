@@ -28,12 +28,7 @@ pub struct MenuRow {
 impl MenuRow {
     /// A plain row.
     pub fn new(label: impl Into<String>) -> Self {
-        Self {
-            label: label.into(),
-            tag: String::new(),
-            detail: String::new(),
-            category: LogCategory::Info,
-        }
+        Self { label: label.into(), tag: String::new(), detail: String::new(), category: LogCategory::Info }
     }
 
     /// Sets the note on the right.
@@ -74,10 +69,7 @@ pub struct ListMenu {
 impl ListMenu {
     /// An empty menu titled `title`.
     pub fn new(title: impl Into<String>) -> Self {
-        Self {
-            title: title.into(),
-            ..Self::default()
-        }
+        Self { title: title.into(), ..Self::default() }
     }
 
     /// Replaces the rows, keeping the cursor on the same index where it

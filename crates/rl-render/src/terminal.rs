@@ -21,22 +21,14 @@ pub struct Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Self {
-            glyph: ' ',
-            fg: Color::WHITE,
-            bg: Color::BLACK,
-        }
+        Self { glyph: ' ', fg: Color::WHITE, bg: Color::BLACK }
     }
 }
 
 impl Cell {
     /// A glyph in `fg` on black.
     pub fn new(glyph: char, fg: Color) -> Self {
-        Self {
-            glyph,
-            fg,
-            bg: Color::BLACK,
-        }
+        Self { glyph, fg, bg: Color::BLACK }
     }
 
     /// The same cell with `bg`.
@@ -52,11 +44,7 @@ impl Cell {
             let l = c.to_linear();
             Color::linear_rgb(l.red * factor, l.green * factor, l.blue * factor)
         };
-        Self {
-            glyph: self.glyph,
-            fg: dim(self.fg),
-            bg: dim(self.bg),
-        }
+        Self { glyph: self.glyph, fg: dim(self.fg), bg: dim(self.bg) }
     }
 }
 
@@ -99,12 +87,7 @@ impl Terminal {
     /// A terminal of `width` by `height` cells.
     pub fn new(width: i32, height: i32, cell_size: Vec2) -> Self {
         assert!(width > 0 && height > 0, "terminal must have cells");
-        Self {
-            width,
-            height,
-            cell_size,
-            cells: vec![Cell::default(); (width * height) as usize],
-        }
+        Self { width, height, cell_size, cells: vec![Cell::default(); (width * height) as usize] }
     }
 
     /// Width in cells.
@@ -183,10 +166,7 @@ impl Terminal {
     /// row 0 at the top.
     fn cell_center(&self, x: i32, y: i32) -> Vec2 {
         let half = self.pixel_size() * 0.5;
-        Vec2::new(
-            -half.x + (x as f32 + 0.5) * self.cell_size.x,
-            half.y - (y as f32 + 0.5) * self.cell_size.y,
-        )
+        Vec2::new(-half.x + (x as f32 + 0.5) * self.cell_size.x, half.y - (y as f32 + 0.5) * self.cell_size.y)
     }
 }
 
@@ -206,24 +186,13 @@ fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<Termina
     let pixel_size = terminal.pixel_size();
     commands.spawn((
         Camera2d,
-        Camera {
-            clear_color: ClearColorConfig::Custom(Color::BLACK),
-            ..default()
-        },
+        Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() },
         Projection::from(OrthographicProjection {
-            scaling_mode: bevy::camera::ScalingMode::AutoMin {
-                min_width: pixel_size.x,
-                min_height: pixel_size.y,
-            },
+            scaling_mode: bevy::camera::ScalingMode::AutoMin { min_width: pixel_size.x, min_height: pixel_size.y },
             ..OrthographicProjection::default_2d()
         }),
     ));
-    let text_font = TextFont {
-        font: FontSource::Monospace,
-        font_size: FontSize::Px(font.size),
-        font_smoothing: FontSmoothing::AntiAliased,
-        ..default()
-    };
+    let text_font = TextFont { font: FontSource::Monospace, font_size: FontSize::Px(font.size), font_smoothing: FontSmoothing::AntiAliased, ..default() };
     let count = (terminal.width() * terminal.height()) as usize;
     entities.background = Vec::with_capacity(count);
     entities.glyph = Vec::with_capacity(count);
@@ -231,18 +200,9 @@ fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<Termina
     for y in 0..terminal.height() {
         for x in 0..terminal.width() {
             let c = terminal.cell_center(x, y);
-            let background = commands
-                .spawn((Sprite::from_color(Color::BLACK, terminal.cell_size), Transform::from_xyz(c.x, c.y, BACKGROUND_Z)))
-                .id();
-            let glyph = commands
-                .spawn((
-                    Text2d::new(" "),
-                    text_font.clone(),
-                    TextColor(Color::WHITE),
-                    Anchor::CENTER,
-                    Transform::from_xyz(c.x, c.y, GLYPH_Z),
-                ))
-                .id();
+            let background = commands.spawn((Sprite::from_color(Color::BLACK, terminal.cell_size), Transform::from_xyz(c.x, c.y, BACKGROUND_Z))).id();
+            let glyph =
+                commands.spawn((Text2d::new(" "), text_font.clone(), TextColor(Color::WHITE), Anchor::CENTER, Transform::from_xyz(c.x, c.y, GLYPH_Z))).id();
             entities.background.push(background);
             entities.glyph.push(glyph);
         }

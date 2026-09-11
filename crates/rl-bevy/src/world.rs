@@ -60,14 +60,7 @@ pub struct WorldMap {
 impl WorldMap {
     /// An empty map with no window loaded.
     pub fn new(region_size: i32, tables: TileTables) -> Self {
-        Self {
-            region_size,
-            window: Rect::new(0, 0, 0, 0),
-            chunks: Vec::new(),
-            deltas: BTreeMap::new(),
-            tables,
-            generation: 0,
-        }
+        Self { region_size, window: Rect::new(0, 0, 0, 0), chunks: Vec::new(), deltas: BTreeMap::new(), tables, generation: 0 }
     }
 
     /// Tiles per region.
@@ -102,9 +95,7 @@ impl WorldMap {
     }
 
     fn chunk_slot(&self, region: Point) -> Option<usize> {
-        self.window
-            .contains(region)
-            .then(|| ((region.y - self.window.y) * self.window.width + (region.x - self.window.x)) as usize)
+        self.window.contains(region).then(|| ((region.y - self.window.y) * self.window.width + (region.x - self.window.x)) as usize)
     }
 
     fn locate(&self, p: Point) -> Option<(usize, usize)> {

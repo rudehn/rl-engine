@@ -19,16 +19,12 @@ pub struct Terrain {
 impl Terrain {
     /// A terrain of `width` by `height` filled with `fill`.
     pub fn filled(width: i32, height: i32, fill: TileId) -> Self {
-        Self {
-            tiles: Grid::filled(width, height, fill),
-        }
+        Self { tiles: Grid::filled(width, height, fill) }
     }
 
     /// A terrain built by evaluating `f` at every cell.
     pub fn from_fn(width: i32, height: i32, f: impl FnMut(Point) -> TileId) -> Self {
-        Self {
-            tiles: Grid::from_fn(width, height, f),
-        }
+        Self { tiles: Grid::from_fn(width, height, f) }
     }
 
     /// The tile at `p`, or `None` if out of bounds.
@@ -78,10 +74,7 @@ impl Terrain {
 
     /// A view that answers opacity and cost questions from `registry`.
     pub fn view<'a>(&'a self, registry: &TileRegistry) -> TerrainView<'a> {
-        TerrainView {
-            terrain: self,
-            tables: registry.tables(),
-        }
+        TerrainView { terrain: self, tables: registry.tables() }
     }
 }
 
@@ -234,12 +227,10 @@ pub(crate) mod fixtures {
         let floor = registry.expect("floor");
         let height = rows.len() as i32;
         let width = rows[0].len() as i32;
-        let terrain = Terrain::from_fn(width, height, |p| {
-            match rows[p.y as usize].as_bytes()[p.x as usize] {
-                b'#' => wall,
-                b'~' => slow,
-                _ => floor,
-            }
+        let terrain = Terrain::from_fn(width, height, |p| match rows[p.y as usize].as_bytes()[p.x as usize] {
+            b'#' => wall,
+            b'~' => slow,
+            _ => floor,
         });
         (terrain, registry)
     }

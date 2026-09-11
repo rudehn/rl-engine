@@ -160,8 +160,8 @@ mod tests {
     use crate::world::{ChunkRulesRes, WorldRes};
     use rl_core::{Direction, Point, RunSeed};
     use rl_grid::{TileId, TileProps, TileRegistry};
-    use rl_mapgen::passes::Fill;
     use rl_mapgen::Chain;
+    use rl_mapgen::passes::Fill;
     use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, Surroundings, WorldConfig, WorldGraph, WorldRules};
 
     struct Flat;
@@ -175,12 +175,7 @@ mod tests {
         }
         fn settlements(&self, layers: &Layers, _: u64) -> Vec<Site> {
             // One town on the first land region found, so discovery can be tested.
-            layers
-                .bands
-                .iter()
-                .find(|(_, b)| b.0 == 1)
-                .map(|(p, _)| vec![Site { kind: rl_world::SiteKindId(1), position: p }])
-                .unwrap_or_default()
+            layers.bands.iter().find(|(_, b)| b.0 == 1).map(|(p, _)| vec![Site { kind: rl_world::SiteKindId(1), position: p }]).unwrap_or_default()
         }
     }
 
@@ -221,10 +216,7 @@ mod tests {
     }
 
     fn spawn_player(app: &mut App, at: Point) -> Entity {
-        let e = app
-            .world_mut()
-            .spawn((Actor, Player, Blocks, Position(at), Viewshed::new(6), RevealsMap, Speed(100)))
-            .id();
+        let e = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(6), RevealsMap, Speed(100))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         e
     }

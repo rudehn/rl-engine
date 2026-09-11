@@ -125,17 +125,7 @@ impl Armory {
                 table.push(BandedEntry::new(id).bands(lo, hi).weight(w));
             }
         }
-        Self {
-            armor_stat: stats.expect("armor"),
-            defs,
-            slots,
-            stats,
-            shapes,
-            table,
-            seed,
-            home,
-            spawned: BTreeSet::new(),
-        }
+        Self { armor_stat: stats.expect("armor"), defs, slots, stats, shapes, table, seed, home, spawned: BTreeSet::new() }
     }
 
     /// The shape `id` is worn in, if it is worn at all.
@@ -194,7 +184,14 @@ pub fn scatter_on_load(mut commands: Commands, mut loaded: MessageReader<ChunkLo
 }
 
 /// What the dead leave behind, from the bestiary's drop lists.
-pub fn drop_loot(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, armory: Res<Armory>, bestiary: Res<crate::monsters::Bestiary>, mut rng: ResMut<CombatRng>, kinds: Query<&crate::monsters::MonsterKind>) {
+pub fn drop_loot(
+    mut commands: Commands,
+    mut deaths: MessageReader<DeathEvent>,
+    armory: Res<Armory>,
+    bestiary: Res<crate::monsters::Bestiary>,
+    mut rng: ResMut<CombatRng>,
+    kinds: Query<&crate::monsters::MonsterKind>,
+) {
     for d in deaths.read() {
         let Ok(kind) = kinds.get(d.entity) else { continue };
         for (name, pct) in &bestiary.defs.get(kind.0).drops {
@@ -208,7 +205,15 @@ pub fn drop_loot(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, 
 }
 
 /// Applies what using an item does, and consumes it.
-pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, armory: Res<Armory>, turns: Res<Turns>, mut log: ResMut<MessageLog>, mut users: Query<&mut Health>, mut items: Query<(&ItemKind, Option<&mut Stack>)>) {
+pub fn use_items(
+    mut commands: Commands,
+    mut events: MessageReader<ItemEvent>,
+    armory: Res<Armory>,
+    turns: Res<Turns>,
+    mut log: ResMut<MessageLog>,
+    mut users: Query<&mut Health>,
+    mut items: Query<(&ItemKind, Option<&mut Stack>)>,
+) {
     for ev in events.read() {
         let ItemEvent::Used { actor, item } = *ev else { continue };
         let Ok((kind, stack)) = items.get_mut(item) else { continue };
@@ -230,7 +235,12 @@ pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, a
 }
 
 /// Rebuilds a wearer's stats, armor and attack from what it wears.
-pub fn refresh_gear(armory: Res<Armory>, bestiary: Res<crate::monsters::Bestiary>, mut wearers: Query<(&Equipped, &mut Sheet, &mut Armor, &mut MeleeAttack), Changed<Equipped>>, kinds: Query<&ItemKind>) {
+pub fn refresh_gear(
+    armory: Res<Armory>,
+    bestiary: Res<crate::monsters::Bestiary>,
+    mut wearers: Query<(&Equipped, &mut Sheet, &mut Armor, &mut MeleeAttack), Changed<Equipped>>,
+    kinds: Query<&ItemKind>,
+) {
     let main_hand = armory.slots.expect("main hand");
     for (worn, mut sheet, mut armor, mut attack) in &mut wearers {
         let mut stats = Stats::new();
@@ -256,7 +266,14 @@ pub fn unarmed(bestiary: &crate::monsters::Bestiary) -> MeleeAttack {
 }
 
 /// Turns item events into log lines.
-pub fn narrate_items(mut events: MessageReader<ItemEvent>, armory: Res<Armory>, turns: Res<Turns>, mut log: ResMut<MessageLog>, items: Query<(&ItemKind, Option<&Stack>)>, players: Query<(), With<Player>>) {
+pub fn narrate_items(
+    mut events: MessageReader<ItemEvent>,
+    armory: Res<Armory>,
+    turns: Res<Turns>,
+    mut log: ResMut<MessageLog>,
+    items: Query<(&ItemKind, Option<&Stack>)>,
+    players: Query<(), With<Player>>,
+) {
     let turn = turns.turn_number();
     let describe = |item: Entity| -> String {
         match items.get(item) {

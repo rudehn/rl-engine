@@ -28,20 +28,10 @@ pub fn compute(source: &impl OpacitySource, origin: Point, range: i32, out: &mut
     if range <= 0 {
         return;
     }
-    let mut scanner = Scanner {
-        source,
-        out,
-        origin,
-        range,
-        quadrant: Quadrant::North,
-    };
+    let mut scanner = Scanner { source, out, origin, range, quadrant: Quadrant::North };
     for q in [Quadrant::North, Quadrant::East, Quadrant::South, Quadrant::West] {
         scanner.quadrant = q;
-        scanner.scan(Row {
-            depth: 1,
-            start: Slope { num: -1, den: 1 },
-            end: Slope { num: 1, den: 1 },
-        });
+        scanner.scan(Row { depth: 1, start: Slope { num: -1, den: 1 }, end: Slope { num: 1, den: 1 } });
     }
 }
 
@@ -77,10 +67,7 @@ struct Row {
 
 impl Row {
     fn next(self) -> Row {
-        Row {
-            depth: self.depth + 1,
-            ..self
-        }
+        Row { depth: self.depth + 1, ..self }
     }
 
     /// Columns whose centre lies in the arc: `round_ties_up(depth * start)`
@@ -107,10 +94,7 @@ fn ceil_div(a: i64, b: i64) -> i64 {
 
 /// The slope through the near edge of the tile at `(depth, col)`.
 fn slope(depth: i64, col: i64) -> Slope {
-    Slope {
-        num: 2 * col - 1,
-        den: 2 * depth,
-    }
+    Slope { num: 2 * col - 1, den: 2 * depth }
 }
 
 struct Scanner<'a, S: OpacitySource> {
@@ -239,9 +223,7 @@ mod tests {
         let (wall, floor) = (registry.expect("wall"), registry.expect("floor"));
         for seed in 0..12u64 {
             let mut rng = StdRng::seed_from_u64(seed);
-            let terrain = crate::terrain::Terrain::from_fn(24, 18, |_| {
-                if rng.random_range(0..100) < 30 { wall } else { floor }
-            });
+            let terrain = crate::terrain::Terrain::from_fn(24, 18, |_| if rng.random_range(0..100) < 30 { wall } else { floor });
             let view = terrain.view(&registry);
             let mut from_a = BitGrid::new(24, 18);
             let mut from_b = BitGrid::new(24, 18);

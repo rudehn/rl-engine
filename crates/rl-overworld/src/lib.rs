@@ -117,13 +117,7 @@ pub struct OverworldKeys {
 
 impl Default for OverworldKeys {
     fn default() -> Self {
-        Self {
-            toggle: KeyCode::KeyM,
-            close: KeyCode::Escape,
-            prev: KeyCode::ArrowLeft,
-            next: KeyCode::ArrowRight,
-            go: KeyCode::Enter,
-        }
+        Self { toggle: KeyCode::KeyM, close: KeyCode::Escape, prev: KeyCode::ArrowLeft, next: KeyCode::ArrowRight, go: KeyCode::Enter }
     }
 }
 
@@ -209,7 +203,9 @@ fn draw_overworld(
     // Centre the view on the player's region when the world is bigger than
     // the viewport.
     let origin = player_region
-        .map(|r| Point::new((r.x - vp.width / 2).clamp(0, (world.width() - vp.width).max(0)), (r.y - vp.height / 2).clamp(0, (world.height() - vp.height).max(0))))
+        .map(|r| {
+            Point::new((r.x - vp.width / 2).clamp(0, (world.width() - vp.width).max(0)), (r.y - vp.height / 2).clamp(0, (world.height() - vp.height).max(0)))
+        })
         .unwrap_or(Point::ZERO);
     let layers = world.layers();
     let discovered: Vec<usize> = knowledge.discovered_sites().collect();

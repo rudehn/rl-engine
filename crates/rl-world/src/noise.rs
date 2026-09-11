@@ -40,11 +40,7 @@ impl Fbm {
             total += amplitude;
             amplitude *= GAIN;
         }
-        Self {
-            octaves: sources,
-            frequency: 1.0,
-            normalizer: 1.0 / total,
-        }
+        Self { octaves: sources, frequency: 1.0, normalizer: 1.0 / total }
     }
 
     /// Sets the frequency of the first octave. Higher means smaller features.
@@ -105,11 +101,7 @@ impl SampleSpace {
     /// Panics if either dimension is not positive.
     pub fn new(width: i32, height: i32) -> Self {
         assert!(width > 0 && height > 0, "grid must be non-empty");
-        Self {
-            width,
-            height,
-            scale: width.max(height) as f64,
-        }
+        Self { width, height, scale: width.max(height) as f64 }
     }
 
     /// Width in cells.
@@ -144,10 +136,7 @@ impl SampleSpace {
 
     /// Position in `[-1, 1]` on each axis independently, for a fractional cell.
     pub fn unit_offset(&self, fx: f64, fy: f64) -> (f64, f64) {
-        (
-            fx / self.width as f64 * 2.0 - 1.0,
-            fy / self.height as f64 * 2.0 - 1.0,
-        )
+        (fx / self.width as f64 * 2.0 - 1.0, fy / self.height as f64 * 2.0 - 1.0)
     }
 
     /// Distance from the equator: 0 at the middle row, 1 at either pole.

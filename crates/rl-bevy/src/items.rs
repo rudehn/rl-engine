@@ -149,9 +149,7 @@ pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>,
                 let here: Vec<Entity> = ground.iter().filter(|(_, p)| p.0 == pos.0).map(|(e, _)| e).collect();
                 for item in &here {
                     commands.entity(*item).remove::<Position>();
-                    let merged_into = stacks.get(*item).ok().and_then(|s| {
-                        bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key))
-                    });
+                    let merged_into = stacks.get(*item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));
                     match merged_into {
                         Some(into) => {
                             let add = stacks.get(*item).map(|s| s.count).unwrap_or(1);
@@ -306,7 +304,17 @@ mod tests {
         let (main, off) = (slots.expect("main"), slots.expect("off"));
         let player = app
             .world_mut()
-            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Speed(100), Inventory::default(), Equipped(Equipment::for_slots(&slots))))
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(6),
+                RevealsMap,
+                Speed(100),
+                Inventory::default(),
+                Equipped(Equipment::for_slots(&slots)),
+            ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -344,7 +352,10 @@ mod tests {
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(sword), "still carried");
 
         let events = act(&mut r, Action::Drop(axe));
-        assert_eq!(events, vec![ItemEvent::Unequipped { actor: r.player, item: axe }, ItemEvent::Dropped { actor: r.player, item: axe, at: Position(r.start) }]);
+        assert_eq!(
+            events,
+            vec![ItemEvent::Unequipped { actor: r.player, item: axe }, ItemEvent::Dropped { actor: r.player, item: axe, at: Position(r.start) }]
+        );
         assert_eq!(r.app.world().get::<Position>(axe).unwrap().0, r.start);
         assert!(!r.app.world().get::<Inventory>(r.player).unwrap().contains(axe));
         assert!(r.app.world().get::<Equipped>(r.player).unwrap().is_free(r.main));

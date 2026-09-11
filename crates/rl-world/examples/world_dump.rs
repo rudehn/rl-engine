@@ -66,13 +66,7 @@ impl WorldRules for ExampleWorld {
 
     fn settlements(&self, layers: &Layers, seed: u64) -> Vec<Site> {
         let mut sites = Vec::new();
-        let rules = PlacementRules {
-            cells_per_site: 90,
-            min: 2,
-            max: 60,
-            jitter: 0.2,
-            clearances: vec![Clearance { from: TOWN, cells: 7 }],
-        };
+        let rules = PlacementRules { cells_per_site: 90, min: 2, max: 60, jitter: 0.2, clearances: vec![Clearance { from: TOWN, cells: 7 }] };
         place_scored(&mut sites, TOWN, &rules, seed, layers.width(), layers.height(), |p| {
             let f = layers.facts(p).unwrap();
             if f.is_water() || f.relief != Relief::Lowland {
@@ -275,11 +269,7 @@ fn main() {
             let grass = tiles.register(TileProps::floor("grass")).unwrap();
             let rock = tiles.register(TileProps::wall("rock")).unwrap();
             let road = tiles.register(TileProps::floor("road")).unwrap();
-            let rules = Chunks {
-                tiles,
-                paint: Paint { water, sand, grass, rock },
-                road,
-            };
+            let rules = Chunks { tiles, paint: Paint { water, sand, grass, rock }, road };
             let start = std::time::Instant::now();
             let (terrain, _) = world.build_chunk(r, &rules).expect("chunk");
             let took_chunk = start.elapsed();

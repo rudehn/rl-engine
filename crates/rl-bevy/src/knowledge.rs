@@ -18,11 +18,7 @@ pub struct Knowledge {
 impl Knowledge {
     /// Knowledge for a world whose regions are `region_size` tiles across.
     pub fn new(region_size: i32) -> Self {
-        Self {
-            region_size,
-            explored: BTreeMap::new(),
-            sites: BTreeSet::new(),
-        }
+        Self { region_size, explored: BTreeMap::new(), sites: BTreeSet::new() }
     }
 
     fn split(&self, p: Point) -> (Point, Point) {

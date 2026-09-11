@@ -72,15 +72,7 @@ impl CellFacts {
 
     /// Open sea.
     pub const fn sea() -> Self {
-        Self {
-            is_sea: true,
-            relief: Relief::Water,
-            height: 0.1,
-            land_height: 0.0,
-            moisture: 1.0,
-            distance_to_water: 0,
-            ..Self::plain()
-        }
+        Self { is_sea: true, relief: Relief::Water, height: 0.1, land_height: 0.0, moisture: 1.0, distance_to_water: 0, ..Self::plain() }
     }
 
     /// Sea or lake.

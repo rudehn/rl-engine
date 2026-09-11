@@ -52,18 +52,12 @@ pub struct EquipShape {
 impl EquipShape {
     /// An item that goes in exactly `slot`.
     pub fn in_slot(slot: SlotId) -> Self {
-        Self {
-            any_of: vec![slot],
-            also: Vec::new(),
-        }
+        Self { any_of: vec![slot], also: Vec::new() }
     }
 
     /// An item that goes in any of `slots`.
     pub fn in_any(slots: impl IntoIterator<Item = SlotId>) -> Self {
-        Self {
-            any_of: slots.into_iter().collect(),
-            also: Vec::new(),
-        }
+        Self { any_of: slots.into_iter().collect(), also: Vec::new() }
     }
 
     /// Also claims `slot`.
@@ -183,18 +177,12 @@ impl<I: Copy + Eq> Equipment<I> {
 
     /// The slot `item` was equipped into.
     pub fn slot_of(&self, item: I) -> Option<SlotId> {
-        self.slots
-            .iter()
-            .position(|s| s.is_some_and(|c| c.item == item && c.primary))
-            .map(|i| SlotId::from_raw(i as u32))
+        self.slots.iter().position(|s| s.is_some_and(|c| c.item == item && c.primary)).map(|i| SlotId::from_raw(i as u32))
     }
 
     /// Every worn item with the slot it was equipped into, in slot order.
     pub fn worn(&self) -> impl Iterator<Item = (SlotId, I)> + '_ {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(i, s)| s.filter(|c| c.primary).map(|c| (SlotId::from_raw(i as u32), c.item)))
+        self.slots.iter().enumerate().filter_map(|(i, s)| s.filter(|c| c.primary).map(|c| (SlotId::from_raw(i as u32), c.item)))
     }
 
     /// Whether `slot` is free.

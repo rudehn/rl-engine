@@ -239,17 +239,12 @@ pub fn decide_minds(mut intents: MessageWriter<Intent>, mut world: MindWorld, si
     let approach = fields.approach.get(&profile);
     let escape = fields.escape.get(&profile);
     let can_step = |p: Point| map.is_walkable(p) && !occupancy.is_occupied(p);
-    let mut turn_rng: StdRng = rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut rng.0), my_pos.0.x, my_pos.0.y));
+    let mut turn_rng: StdRng =
+        rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut rng.0), my_pos.0.x, my_pos.0.y));
     let shifted = |m: &DijkstraMap| shift_map(m, origin);
     let approach_world = approach.map(shifted);
     let escape_world = escape.map(shifted);
-    let mut ctx = TacticCtx {
-        snapshot: &snapshot,
-        approach: approach_world.as_ref(),
-        escape: escape_world.as_ref(),
-        can_step: &can_step,
-        rng: &mut turn_rng,
-    };
+    let mut ctx = TacticCtx { snapshot: &snapshot, approach: approach_world.as_ref(), escape: escape_world.as_ref(), can_step: &can_step, rng: &mut turn_rng };
     let (decision, _which) = mind.0.decide(&mut ctx);
     let action = match decision {
         Decision::Step(to) => match Direction::between(my_pos.0, to) {
@@ -420,12 +415,31 @@ mod tests {
         let them = rl_rules::FactionId::from_raw(1);
         let player = app
             .world_mut()
-            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us), Armor(1), MeleeAttack { kind: blunt, dice: DiceRoll::flat(50) }))
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(us),
+                Armor(1),
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(50) },
+            ))
             .id();
         let brain = Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt));
         let monster = app
             .world_mut()
-            .spawn((Actor, Blocks, Position(start.offset(4, 0)), Health::full(5), Faction(them), Perception(8), MeleeAttack { kind: blunt, dice: DiceRoll::flat(3) }, Mind(brain)))
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(4, 0)),
+                Health::full(5),
+                Faction(them),
+                Perception(8),
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(3) },
+                Mind(brain),
+            ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         // The player waits; the monster closes and strikes.

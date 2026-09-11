@@ -48,11 +48,7 @@ impl Default for WorldConfig {
 impl WorldConfig {
     /// The defaults at a given region count.
     pub fn regions(wide: i32, high: i32) -> Self {
-        Self {
-            regions_wide: wide,
-            regions_high: high,
-            ..Default::default()
-        }
+        Self { regions_wide: wide, regions_high: high, ..Default::default() }
     }
 }
 
@@ -79,13 +75,7 @@ impl Layers {
                 coast.insert(p);
             }
         }
-        Self {
-            elevation,
-            hydrology,
-            climate,
-            bands: Grid::filled(w, h, BandId::default()),
-            coast,
-        }
+        Self { elevation, hydrology, climate, bands: Grid::filled(w, h, BandId::default()), coast }
     }
 
     /// Regions across.
@@ -212,14 +202,7 @@ impl WorldGraph {
         let sites = rules.wilds(&layers, &roads, &distance_to_road, towns, stream(b"world.wilds"));
         let site_index = sites.iter().enumerate().map(|(i, s)| (s.position, i)).collect();
 
-        Self {
-            seed,
-            config,
-            layers,
-            sites,
-            site_index,
-            roads,
-        }
+        Self { seed, config, layers, sites, site_index, roads }
     }
 
     /// The run seed.
@@ -368,13 +351,7 @@ pub(crate) mod demo {
 
         fn settlements(&self, layers: &Layers, seed: u64) -> Vec<Site> {
             let mut sites = Vec::new();
-            let rules = PlacementRules {
-                cells_per_site: 60,
-                min: 2,
-                max: 40,
-                jitter: 0.2,
-                clearances: vec![Clearance { from: TOWN, cells: 6 }],
-            };
+            let rules = PlacementRules { cells_per_site: 60, min: 2, max: 40, jitter: 0.2, clearances: vec![Clearance { from: TOWN, cells: 6 }] };
             place_scored(&mut sites, TOWN, &rules, seed, layers.width(), layers.height(), |p| {
                 let f = layers.facts(p).unwrap();
                 if f.is_water() || f.relief != Relief::Lowland {

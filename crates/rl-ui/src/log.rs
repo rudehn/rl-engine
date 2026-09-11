@@ -47,10 +47,7 @@ impl Default for MessageLog {
 impl MessageLog {
     /// A log that keeps the last `capacity` entries.
     pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            entries: VecDeque::with_capacity(capacity),
-            capacity,
-        }
+        Self { entries: VecDeque::with_capacity(capacity), capacity }
     }
 
     /// Appends a message.
@@ -58,11 +55,7 @@ impl MessageLog {
         if self.entries.len() == self.capacity {
             self.entries.pop_front();
         }
-        self.entries.push_back(LogEntry {
-            text: text.into(),
-            category,
-            turn,
-        });
+        self.entries.push_back(LogEntry { text: text.into(), category, turn });
     }
 
     /// Appends plain narration.

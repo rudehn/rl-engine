@@ -47,13 +47,7 @@ pub struct PlacementRules {
 
 impl Default for PlacementRules {
     fn default() -> Self {
-        Self {
-            cells_per_site: 400,
-            min: 1,
-            max: 64,
-            jitter: 0.15,
-            clearances: Vec::new(),
-        }
+        Self { cells_per_site: 400, min: 1, max: 64, jitter: 0.15, clearances: Vec::new() }
     }
 }
 
@@ -107,10 +101,7 @@ pub fn place_scored(
 /// Whether `at` is far enough from everything already placed.
 pub fn has_clearance(placed: &[Site], at: Point, clearances: &[Clearance]) -> bool {
     placed.iter().all(|site| {
-        clearances
-            .iter()
-            .filter(|c| c.from == site.kind)
-            .all(|c| rl_core::geometry::euclidean_sq(site.position, at) as i64 >= (c.cells as i64).pow(2))
+        clearances.iter().filter(|c| c.from == site.kind).all(|c| rl_core::geometry::euclidean_sq(site.position, at) as i64 >= (c.cells as i64).pow(2))
     })
 }
 
@@ -129,13 +120,7 @@ mod tests {
 
     #[test]
     fn placement_respects_target_and_clearance() {
-        let rules = PlacementRules {
-            cells_per_site: 10,
-            min: 1,
-            max: 100,
-            jitter: 0.1,
-            clearances: vec![Clearance { from: TOWN, cells: 2 }],
-        };
+        let rules = PlacementRules { cells_per_site: 10, min: 1, max: 100, jitter: 0.1, clearances: vec![Clearance { from: TOWN, cells: 2 }] };
         let mut sites = Vec::new();
         let n = place_scored(&mut sites, TOWN, &rules, 7, 20, 20, |_| 1.0);
         assert_eq!(n, 40, "400 eligible cells at one per ten");
@@ -153,13 +138,7 @@ mod tests {
     #[test]
     fn clearances_only_apply_to_named_kinds() {
         let mut sites = vec![Site { kind: TOWN, position: Point::new(5, 5) }];
-        let near_town = PlacementRules {
-            cells_per_site: 1,
-            min: 1,
-            max: 1,
-            jitter: 0.0,
-            clearances: vec![Clearance { from: CAMP, cells: 50 }],
-        };
+        let near_town = PlacementRules { cells_per_site: 1, min: 1, max: 1, jitter: 0.0, clearances: vec![Clearance { from: CAMP, cells: 50 }] };
         let n = place_scored(&mut sites, CAMP, &near_town, 1, 10, 10, |p| if p == Point::new(5, 6) { 1.0 } else { 0.0 });
         assert_eq!(n, 1, "a clearance from camps does not keep a camp from a town");
         assert_eq!(place_scored(&mut sites, CAMP, &near_town, 1, 10, 10, |p| if p == Point::new(5, 7) { 1.0 } else { 0.0 }), 0);

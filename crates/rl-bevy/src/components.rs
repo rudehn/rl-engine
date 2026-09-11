@@ -69,12 +69,7 @@ pub struct Viewshed {
 impl Viewshed {
     /// A viewshed of `range` that has never been computed.
     pub fn new(range: i32) -> Self {
-        Self {
-            range,
-            dirty: true,
-            origin: Point::ZERO,
-            visible: BitGrid::new(0, 0),
-        }
+        Self { range, dirty: true, origin: Point::ZERO, visible: BitGrid::new(0, 0) }
     }
 
     /// Whether the world tile `p` is currently visible.

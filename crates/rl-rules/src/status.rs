@@ -59,13 +59,7 @@ fn refresh() -> Stacking {
 impl StatusDef {
     /// A status with no effects.
     pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            stacking: Stacking::Refresh,
-            modifiers: Vec::new(),
-            tick_damage: None,
-            badge: None,
-        }
+        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None }
     }
 
     /// Sets the stacking rule.
@@ -192,12 +186,7 @@ impl Statuses {
         let mut ticks = Vec::new();
         for s in &self.active {
             if let Some((kind, amount)) = defs.get(s.id).tick_damage {
-                ticks.push(Tick {
-                    status: s.id,
-                    kind,
-                    amount,
-                    source: s.source,
-                });
+                ticks.push(Tick { status: s.id, kind, amount, source: s.source });
             }
         }
         let mut expired = Vec::new();
@@ -297,7 +286,9 @@ mod tests {
 
     #[test]
     fn statuses_load_from_ron() {
-        let r: Registry<StatusDef> = Registry::from_ron_str(r#"[(name: "hasted", modifiers: [(stat: 2, op: MulPct(200))], badge: Some('H')), (name: "stunned", stacking: Ignore)]"#).unwrap();
+        let r: Registry<StatusDef> =
+            Registry::from_ron_str(r#"[(name: "hasted", modifiers: [(stat: 2, op: MulPct(200))], badge: Some('H')), (name: "stunned", stacking: Ignore)]"#)
+                .unwrap();
         assert_eq!(r.get(r.expect("hasted")).badge, Some('H'));
         assert_eq!(r.get(r.expect("stunned")).stacking, Stacking::Ignore);
     }

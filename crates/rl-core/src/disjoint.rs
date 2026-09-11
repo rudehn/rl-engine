@@ -14,11 +14,7 @@ pub struct DisjointSet {
 impl DisjointSet {
     /// `n` singleton groups.
     pub fn new(n: usize) -> Self {
-        Self {
-            parent: (0..n).collect(),
-            size: vec![1; n],
-            groups: n,
-        }
+        Self { parent: (0..n).collect(), size: vec![1; n], groups: n }
     }
 
     /// Number of elements.

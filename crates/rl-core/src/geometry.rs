@@ -47,10 +47,7 @@ pub const fn within_disc(center: Point, p: Point, radius: i32) -> bool {
 
 /// Clamps `p` into `bounds`.
 pub fn clamp_to(p: Point, bounds: Rect) -> Point {
-    Point::new(
-        p.x.clamp(bounds.x, bounds.right() - 1),
-        p.y.clamp(bounds.y, bounds.bottom() - 1),
-    )
+    Point::new(p.x.clamp(bounds.x, bounds.right() - 1), p.y.clamp(bounds.y, bounds.bottom() - 1))
 }
 
 /// The cells a straight line passes through from `a` to `b`, both ends
@@ -58,17 +55,7 @@ pub fn clamp_to(p: Point, bounds: Rect) -> Point {
 pub fn line(a: Point, b: Point) -> Line {
     let dx = (b.x - a.x).abs();
     let dy = -(b.y - a.y).abs();
-    Line {
-        x: a.x,
-        y: a.y,
-        end: b,
-        dx,
-        dy,
-        sx: if a.x < b.x { 1 } else { -1 },
-        sy: if a.y < b.y { 1 } else { -1 },
-        err: dx + dy,
-        done: false,
-    }
+    Line { x: a.x, y: a.y, end: b, dx, dy, sx: if a.x < b.x { 1 } else { -1 }, sy: if a.y < b.y { 1 } else { -1 }, err: dx + dy, done: false }
 }
 
 /// Iterator over a Bresenham line. See [`line()`].

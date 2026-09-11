@@ -21,10 +21,7 @@ impl<T> Id<T> {
     /// An id from its raw index. Registries hand these out; games should
     /// not construct them by hand.
     pub const fn from_raw(raw: u32) -> Self {
-        Self {
-            raw,
-            _marker: PhantomData,
-        }
+        Self { raw, _marker: PhantomData }
     }
 
     /// The raw index.
@@ -93,10 +90,7 @@ pub struct Interner<T> {
 
 impl<T> Default for Interner<T> {
     fn default() -> Self {
-        Self {
-            by_name: BTreeMap::new(),
-            names: Vec::new(),
-        }
+        Self { by_name: BTreeMap::new(), names: Vec::new() }
     }
 }
 
@@ -142,10 +136,7 @@ impl<T> Interner<T> {
 
     /// Every id in raw order, with its name.
     pub fn iter(&self) -> impl Iterator<Item = (Id<T>, &str)> {
-        self.names
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (Id::from_raw(i as u32), n.as_str()))
+        self.names.iter().enumerate().map(|(i, n)| (Id::from_raw(i as u32), n.as_str()))
     }
 }
 

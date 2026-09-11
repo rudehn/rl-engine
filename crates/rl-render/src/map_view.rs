@@ -46,10 +46,7 @@ pub struct TileAppearance {
 impl TileAppearance {
     /// An empty table.
     pub fn new() -> Self {
-        Self {
-            cells: Vec::new(),
-            remembered: 0.35,
-        }
+        Self { cells: Vec::new(), remembered: 0.35 }
     }
 
     /// Sets the appearance of `id`.
@@ -86,10 +83,7 @@ pub struct MapView {
 impl MapView {
     /// A view filling `viewport`.
     pub fn new(viewport: Rect) -> Self {
-        Self {
-            viewport,
-            origin: Point::ZERO,
-        }
+        Self { viewport, origin: Point::ZERO }
     }
 
     /// Centres the view on `p`.
@@ -114,8 +108,7 @@ pub struct MapViewPlugin;
 
 impl Plugin for MapViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TileAppearance>()
-            .add_systems(Update, (follow_player, draw_map).chain().in_set(EngineSet::Present));
+        app.init_resource::<TileAppearance>().add_systems(Update, (follow_player, draw_map).chain().in_set(EngineSet::Present));
     }
 }
 

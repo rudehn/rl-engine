@@ -31,10 +31,7 @@ impl Point {
 
     /// The point offset by `(dx, dy)`.
     pub const fn offset(self, dx: i32, dy: i32) -> Self {
-        Self {
-            x: self.x + dx,
-            y: self.y + dy,
-        }
+        Self { x: self.x + dx, y: self.y + dy }
     }
 
     /// `(x, y)` as a tuple.
@@ -115,24 +112,14 @@ impl Rect {
     /// Panics if either dimension is negative.
     pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
         assert!(width >= 0 && height >= 0, "rect dimensions must be non-negative");
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
+        Self { x, y, width, height }
     }
 
     /// The rectangle spanning two corners, inclusive of both.
     pub fn from_corners(a: Point, b: Point) -> Self {
         let x = a.x.min(b.x);
         let y = a.y.min(b.y);
-        Self {
-            x,
-            y,
-            width: (a.x - b.x).abs() + 1,
-            height: (a.y - b.y).abs() + 1,
-        }
+        Self { x, y, width: (a.x - b.x).abs() + 1, height: (a.y - b.y).abs() + 1 }
     }
 
     /// One past the right edge.
@@ -172,8 +159,7 @@ impl Rect {
 
     /// Whether `p` is on the one-cell border ring.
     pub const fn is_border(&self, p: Point) -> bool {
-        self.contains(p)
-            && (p.x == self.x || p.y == self.y || p.x + 1 == self.right() || p.y + 1 == self.bottom())
+        self.contains(p) && (p.x == self.x || p.y == self.y || p.x + 1 == self.right() || p.y + 1 == self.bottom())
     }
 
     /// Whether two rectangles share at least one cell.
@@ -186,10 +172,8 @@ impl Rect {
     /// Rooms placed without a margin share walls and read as one blob; this
     /// is what keeps them separate.
     pub fn too_close(&self, other: &Rect, margin: i32) -> bool {
-        let separated = self.right() + margin <= other.x
-            || other.right() + margin <= self.x
-            || self.bottom() + margin <= other.y
-            || other.bottom() + margin <= self.y;
+        let separated =
+            self.right() + margin <= other.x || other.right() + margin <= self.x || self.bottom() + margin <= other.y || other.bottom() + margin <= self.y;
         !separated
     }
 
@@ -199,12 +183,7 @@ impl Rect {
     pub fn inflate(&self, n: i32) -> Rect {
         let width = (self.width + 2 * n).max(0);
         let height = (self.height + 2 * n).max(0);
-        Rect {
-            x: self.x - n,
-            y: self.y - n,
-            width,
-            height,
-        }
+        Rect { x: self.x - n, y: self.y - n, width, height }
     }
 
     /// The overlap of two rectangles, or `None` if they do not touch.
@@ -213,11 +192,7 @@ impl Rect {
         let y = self.y.max(other.y);
         let right = self.right().min(other.right());
         let bottom = self.bottom().min(other.bottom());
-        if right > x && bottom > y {
-            Some(Rect::new(x, y, right - x, bottom - y))
-        } else {
-            None
-        }
+        if right > x && bottom > y { Some(Rect::new(x, y, right - x, bottom - y)) } else { None }
     }
 
     /// Every cell inside, row-major.
@@ -244,10 +219,7 @@ mod tests {
     fn points_order_row_major() {
         let mut pts = vec![Point::new(2, 1), Point::new(0, 2), Point::new(5, 0), Point::new(1, 1)];
         pts.sort();
-        assert_eq!(
-            pts,
-            vec![Point::new(5, 0), Point::new(1, 1), Point::new(2, 1), Point::new(0, 2)]
-        );
+        assert_eq!(pts, vec![Point::new(5, 0), Point::new(1, 1), Point::new(2, 1), Point::new(0, 2)]);
     }
 
     #[test]

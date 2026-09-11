@@ -29,25 +29,16 @@ pub struct PathRules {
 
 impl Default for PathRules {
     fn default() -> Self {
-        Self {
-            diagonals: true,
-            cut_corners: false,
-        }
+        Self { diagonals: true, cut_corners: false }
     }
 }
 
 impl PathRules {
     /// Four-way movement only.
-    pub const CARDINAL: PathRules = PathRules {
-        diagonals: false,
-        cut_corners: false,
-    };
+    pub const CARDINAL: PathRules = PathRules { diagonals: false, cut_corners: false };
 
     /// Eight-way movement that cannot cut corners.
-    pub const EIGHT_WAY: PathRules = PathRules {
-        diagonals: true,
-        cut_corners: false,
-    };
+    pub const EIGHT_WAY: PathRules = PathRules { diagonals: true, cut_corners: false };
 
     /// The directions a step may take.
     pub const fn directions(self) -> &'static [Direction] {
@@ -133,14 +124,7 @@ impl AStar {
 
     /// Like [`find`](Self::find) but gives up once every frontier cell costs
     /// more than `max_cost`, so a hopeless search on a big map stays cheap.
-    pub fn find_within(
-        &mut self,
-        source: &impl CostSource,
-        start: Point,
-        goal: Point,
-        rules: PathRules,
-        max_cost: u32,
-    ) -> Option<Path> {
+    pub fn find_within(&mut self, source: &impl CostSource, start: Point, goal: Point, rules: PathRules, max_cost: u32) -> Option<Path> {
         let start_idx = source.checked_idx(start)?;
         let goal_idx = source.checked_idx(goal)?;
         if !source.is_passable(goal) {
@@ -200,10 +184,7 @@ impl AStar {
             idx = self.came_from[idx] as usize;
         }
         steps.reverse();
-        Path {
-            steps,
-            cost: self.g[goal],
-        }
+        Path { steps, cost: self.g[goal] }
     }
 }
 
@@ -242,10 +223,7 @@ mod tests {
         let (t, r) = parse(&[".#", "#."]);
         let view = t.view(&r);
         assert!(AStar::new().find(&view, p(0, 0), p(1, 1), PathRules::default()).is_none());
-        let cutting = PathRules {
-            diagonals: true,
-            cut_corners: true,
-        };
+        let cutting = PathRules { diagonals: true, cut_corners: true };
         assert_eq!(AStar::new().find(&view, p(0, 0), p(1, 1), cutting).unwrap().steps, vec![p(1, 1)]);
     }
 

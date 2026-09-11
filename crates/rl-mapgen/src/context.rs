@@ -110,13 +110,7 @@ impl BaseContext {
     /// A context over `terrain`. The stream is a placeholder until the chain
     /// installs a pass's own.
     pub fn new(terrain: Terrain, tiles: TileRegistry) -> Self {
-        Self {
-            terrain,
-            tiles,
-            rng: StdRng::seed_from_u64(0),
-            outputs: Outputs::default(),
-            snapshots: None,
-        }
+        Self { terrain, tiles, rng: StdRng::seed_from_u64(0), outputs: Outputs::default(), snapshots: None }
     }
 
     /// A blank terrain of the given size filled with `fill`.

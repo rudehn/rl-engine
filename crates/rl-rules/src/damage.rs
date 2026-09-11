@@ -28,10 +28,7 @@ fn yes() -> bool {
 impl DamageKind {
     /// A kind that armor applies to.
     pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            armored: true,
-        }
+        Self { name: name.into(), armored: true }
     }
 
     /// A kind that ignores armor.
@@ -104,24 +101,12 @@ pub struct Hit<A: Copy> {
 impl<A: Copy> Hit<A> {
     /// A hit by `attacker` who also gets credit.
     pub fn by(attacker: A, kind: DamageKindId, amount: i32) -> Self {
-        Self {
-            attacker: Some(attacker),
-            credit: Some(attacker),
-            kind,
-            amount,
-            critical: false,
-        }
+        Self { attacker: Some(attacker), credit: Some(attacker), kind, amount, critical: false }
     }
 
     /// Damage with no attacker to trigger riders, crediting `credit`.
     pub fn from_source(credit: Option<A>, kind: DamageKindId, amount: i32) -> Self {
-        Self {
-            attacker: None,
-            credit,
-            kind,
-            amount,
-            critical: false,
-        }
+        Self { attacker: None, credit, kind, amount, critical: false }
     }
 }
 
@@ -176,13 +161,7 @@ impl<A: Copy> DamageStage<A> for HalveIfBlocked {
 
 /// Runs `stages` in order over `hit.amount`. The result is what to take
 /// from health: positive hurts, negative heals, zero was stopped.
-pub fn resolve<A: Copy>(
-    hit: &Hit<A>,
-    defender: &Defender,
-    resistances: &Resistances,
-    kinds: &Registry<DamageKind>,
-    stages: &[&dyn DamageStage<A>],
-) -> i32 {
+pub fn resolve<A: Copy>(hit: &Hit<A>, defender: &Defender, resistances: &Resistances, kinds: &Registry<DamageKind>, stages: &[&dyn DamageStage<A>]) -> i32 {
     let mut amount = hit.amount.max(0);
     for stage in stages {
         amount = stage.apply(hit, defender, resistances, kinds, amount);

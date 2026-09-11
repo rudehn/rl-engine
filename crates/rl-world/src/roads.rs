@@ -84,10 +84,7 @@ pub struct Roads {
 impl Roads {
     /// A world with no roads.
     pub fn empty(width: i32, height: i32) -> Self {
-        Self {
-            directions: Grid::filled(width, height, DirectionSet::NONE),
-            routes: Vec::new(),
-        }
+        Self { directions: Grid::filled(width, height, DirectionSet::NONE), routes: Vec::new() }
     }
 
     /// Which ways a road leaves `p`. Empty where there is none, or off map.
@@ -156,8 +153,7 @@ impl Roads {
             return Self::empty(width, height);
         }
         let space = *elevation.space();
-        let going = Fbm::new(seed.derive(SeedDomain::new(b"roads.wander"), 0), config.wander_octaves)
-            .with_frequency(config.wander_frequency);
+        let going = Fbm::new(seed.derive(SeedDomain::new(b"roads.wander"), 0), config.wander_octaves).with_frequency(config.wander_frequency);
         let terrain = Terrain {
             elevation,
             friction,
@@ -207,12 +203,7 @@ impl Roads {
                 directions[pair[0]].insert(d);
                 directions[pair[1]].insert(d.opposite());
             }
-            routes.push(Route {
-                from: c.a,
-                to: c.b,
-                cells,
-                cost,
-            });
+            routes.push(Route { from: c.a, to: c.b, cells, cost });
         }
         Self { directions, routes }
     }
@@ -351,9 +342,7 @@ fn neighbouring_pairs(sites: &[Site], region: &rl_grid::region::Regions) -> Vec<
                 continue;
             }
             let span = sep(a, b);
-            let blocked = (0..sites.len())
-                .filter(|c| *c != a && *c != b && at(*c) == at(a))
-                .any(|c| sep(a, c) < span && sep(b, c) < span);
+            let blocked = (0..sites.len()).filter(|c| *c != a && *c != b && at(*c) == at(a)).any(|c| sep(a, c) < span && sep(b, c) < span);
             if !blocked {
                 pairs.push((a, b));
             }
@@ -409,7 +398,13 @@ mod tests {
         crate::sites::place_scored(
             &mut sites,
             SiteKindId(1),
-            &crate::sites::PlacementRules { cells_per_site: 1, min: 1, max: n as u32, jitter: 0.2, clearances: vec![crate::sites::Clearance { from: SiteKindId(1), cells: 8 }] },
+            &crate::sites::PlacementRules {
+                cells_per_site: 1,
+                min: 1,
+                max: n as u32,
+                jitter: 0.2,
+                clearances: vec![crate::sites::Clearance { from: SiteKindId(1), cells: 8 }],
+            },
             9,
             60,
             40,

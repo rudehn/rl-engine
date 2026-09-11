@@ -61,31 +61,17 @@ pub struct TileProps {
 impl TileProps {
     /// A tile with the given name and every flag off.
     pub fn named(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            walkable: false,
-            passable: None,
-            opaque: false,
-            blocks_projectiles: false,
-            move_cost: NORMAL_MOVE_COST,
-        }
+        Self { name: name.into(), walkable: false, passable: None, opaque: false, blocks_projectiles: false, move_cost: NORMAL_MOVE_COST }
     }
 
     /// A walkable, transparent tile.
     pub fn floor(name: impl Into<String>) -> Self {
-        Self {
-            walkable: true,
-            ..Self::named(name)
-        }
+        Self { walkable: true, ..Self::named(name) }
     }
 
     /// An impassable, opaque, projectile-stopping tile.
     pub fn wall(name: impl Into<String>) -> Self {
-        Self {
-            opaque: true,
-            blocks_projectiles: true,
-            ..Self::named(name)
-        }
+        Self { opaque: true, blocks_projectiles: true, ..Self::named(name) }
     }
 
     /// Builder: sets `walkable`.
@@ -125,11 +111,7 @@ impl TileProps {
 
     /// The effective entry cost, never zero.
     pub fn effective_move_cost(&self) -> u32 {
-        if self.move_cost == 0 {
-            NORMAL_MOVE_COST as u32
-        } else {
-            self.move_cost as u32
-        }
+        if self.move_cost == 0 { NORMAL_MOVE_COST as u32 } else { self.move_cost as u32 }
     }
 }
 
@@ -177,13 +159,7 @@ impl TileRegistry {
         r.register(TileProps::wall("void")).expect("empty registry");
         r.register(TileProps::wall("wall")).expect("fresh name");
         r.register(TileProps::floor("floor")).expect("fresh name");
-        r.register(
-            TileProps::named("door_closed")
-                .passable(true)
-                .opaque(true)
-                .blocks_projectiles(true),
-        )
-        .expect("fresh name");
+        r.register(TileProps::named("door_closed").passable(true).opaque(true).blocks_projectiles(true)).expect("fresh name");
         r.register(TileProps::floor("door_open")).expect("fresh name");
         r
     }
@@ -325,8 +301,7 @@ mod tests {
         let p: TileProps = ron::from_str(r#"(name: "grass", walkable: true)"#).unwrap();
         assert!(p.walkable && !p.opaque && p.is_passable());
         assert_eq!(p.effective_move_cost(), 100);
-        let list: Vec<TileProps> =
-            ron::from_str(r#"[(name: "a", walkable: true), (name: "b", opaque: true, move_cost: 250)]"#).unwrap();
+        let list: Vec<TileProps> = ron::from_str(r#"[(name: "a", walkable: true), (name: "b", opaque: true, move_cost: 250)]"#).unwrap();
         let mut r = TileRegistry::new();
         r.register_all(list).unwrap();
         assert_eq!(r.get(r.expect("b")).effective_move_cost(), 250);

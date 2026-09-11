@@ -20,14 +20,7 @@ use rl_world::{BandId, CellFacts, RegionFacts, SiteKindId, Surroundings};
 ///
 /// `#` wall, `.` floor, `+` closed door, `/` open door, `~` mud (a slow
 /// floor), and a space for void.
-pub const STANDARD_LEGEND: &[(char, &str)] = &[
-    (' ', "void"),
-    ('#', "wall"),
-    ('.', "floor"),
-    ('+', "door_closed"),
-    ('/', "door_open"),
-    ('~', "mud"),
-];
+pub const STANDARD_LEGEND: &[(char, &str)] = &[(' ', "void"), ('#', "wall"), ('.', "floor"), ('+', "door_closed"), ('/', "door_open"), ('~', "mud")];
 
 /// The standard registry plus a slow `mud` floor, matching [`STANDARD_LEGEND`].
 pub fn standard_registry() -> TileRegistry {
@@ -116,15 +109,7 @@ impl Neighbourhood {
 
     /// A plain region record.
     pub fn region(at: Point, band: BandId) -> RegionFacts {
-        RegionFacts {
-            region: at,
-            band,
-            facts: CellFacts::plain(),
-            site: None,
-            roads: DirectionSet::NONE,
-            rivers: DirectionSet::NONE,
-            river_downstream: None,
-        }
+        RegionFacts { region: at, band, facts: CellFacts::plain(), site: None, roads: DirectionSet::NONE, rivers: DirectionSet::NONE, river_downstream: None }
     }
 
     /// Places the neighbourhood at `at`.

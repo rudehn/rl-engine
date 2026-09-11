@@ -90,11 +90,7 @@ impl Climate {
         // Flatten over land so every world gets the same share of dry and wet.
         rank_normalize_where(moisture.cells_mut(), |i| !is_water(i));
 
-        Self {
-            temperature,
-            moisture,
-            distance_to_water,
-        }
+        Self { temperature, moisture, distance_to_water }
     }
 }
 

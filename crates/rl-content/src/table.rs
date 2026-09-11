@@ -38,14 +38,7 @@ fn one() -> u32 {
 impl<T> BandedEntry<T> {
     /// A row that applies everywhere with weight 1 and a group of one.
     pub fn new(item: T) -> Self {
-        Self {
-            item,
-            min_band: i32::MIN,
-            max_band: i32::MAX,
-            weight: 1,
-            min_group: 1,
-            max_group: 1,
-        }
+        Self { item, min_band: i32::MIN, max_band: i32::MAX, weight: 1, min_group: 1, max_group: 1 }
     }
 
     /// Restricts the row to `min..=max`.

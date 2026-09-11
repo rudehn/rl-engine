@@ -46,20 +46,10 @@ impl Direction {
     ///
     /// Anything that has to be walked along in a line wants these: a row of
     /// diagonal neighbours is a row nothing can walk between.
-    pub const CARDINALS: [Direction; 4] = [
-        Direction::North,
-        Direction::East,
-        Direction::South,
-        Direction::West,
-    ];
+    pub const CARDINALS: [Direction; 4] = [Direction::North, Direction::East, Direction::South, Direction::West];
 
     /// The four diagonals, clockwise from north-east.
-    pub const DIAGONALS: [Direction; 4] = [
-        Direction::NorthEast,
-        Direction::SouthEast,
-        Direction::SouthWest,
-        Direction::NorthWest,
-    ];
+    pub const DIAGONALS: [Direction; 4] = [Direction::NorthEast, Direction::SouthEast, Direction::SouthWest, Direction::NorthWest];
 
     /// The one-cell step this direction represents.
     pub const fn delta(self) -> (i32, i32) {
@@ -131,10 +121,7 @@ impl Direction {
 
     /// The two directions square to this one, counter-clockwise first.
     pub const fn perpendicular(self) -> [Direction; 2] {
-        [
-            Direction::ALL[(self.index() + 6) % 8],
-            Direction::ALL[(self.index() + 2) % 8],
-        ]
+        [Direction::ALL[(self.index() + 6) % 8], Direction::ALL[(self.index() + 2) % 8]]
     }
 }
 
@@ -319,10 +306,7 @@ mod tests {
     #[test]
     fn a_set_iterates_clockwise_from_north() {
         let set: DirectionSet = [Direction::West, Direction::North, Direction::SouthEast].into_iter().collect();
-        assert_eq!(
-            set.iter().collect::<Vec<_>>(),
-            vec![Direction::North, Direction::SouthEast, Direction::West]
-        );
+        assert_eq!(set.iter().collect::<Vec<_>>(), vec![Direction::North, Direction::SouthEast, Direction::West]);
         assert_eq!(DirectionSet::ALL.len(), 8);
     }
 }

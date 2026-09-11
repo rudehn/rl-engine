@@ -52,9 +52,7 @@ struct Entry<Id> {
 // it carries no scheduling meaning and its bit order is arbitrary.
 impl<Id> Ord for Entry<Id> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.time
-            .cmp(&other.time)
-            .then(self.insertion_order.cmp(&other.insertion_order))
+        self.time.cmp(&other.time).then(self.insertion_order.cmp(&other.insertion_order))
     }
 }
 
@@ -84,11 +82,7 @@ pub struct TurnQueue<Id> {
 
 impl<Id> Default for TurnQueue<Id> {
     fn default() -> Self {
-        Self {
-            entries: BinaryHeap::new(),
-            next_insertion_order: 0,
-            now: 0,
-        }
+        Self { entries: BinaryHeap::new(), next_insertion_order: 0, now: 0 }
     }
 }
 
@@ -121,11 +115,7 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     /// a value worth repairing: it can only mean the caller assembled the
     /// loop wrongly.
     pub fn set_now(&mut self, time: u32) {
-        assert!(
-            time >= self.now,
-            "the clock cannot run backwards: asked to move from {} to {time}",
-            self.now
-        );
+        assert!(time >= self.now, "the clock cannot run backwards: asked to move from {} to {time}", self.now);
         self.now = time;
     }
 
@@ -133,11 +123,7 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     pub fn insert_at(&mut self, id: Id, time: u32) {
         let insertion_order = self.next_insertion_order;
         self.next_insertion_order += 1;
-        self.entries.push(Reverse(Entry {
-            time,
-            insertion_order,
-            id,
-        }));
+        self.entries.push(Reverse(Entry { time, insertion_order, id }));
     }
 
     /// Schedules `id` to act at the current clock reading.
@@ -205,12 +191,7 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     /// Strict schedule order. A batch stops when it reaches the player, and
     /// the player is returned alone on the next call; a player at the head
     /// is returned at once. Dead entries are discarded.
-    pub fn dequeue_batch(
-        &mut self,
-        is_player: impl Fn(Id) -> bool,
-        is_alive: impl Fn(Id) -> bool,
-        max_batch: usize,
-    ) -> DequeueOutcome<Id> {
+    pub fn dequeue_batch(&mut self, is_player: impl Fn(Id) -> bool, is_alive: impl Fn(Id) -> bool, max_batch: usize) -> DequeueOutcome<Id> {
         let mut batch = Vec::new();
         while let Some(Reverse(head)) = self.entries.peek() {
             if head.time > self.now {
@@ -233,11 +214,7 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
             let Reverse(e) = self.entries.pop().expect("head was just seen");
             batch.push(e.id);
         }
-        if batch.is_empty() {
-            DequeueOutcome::Idle
-        } else {
-            DequeueOutcome::Batch(batch)
-        }
+        if batch.is_empty() { DequeueOutcome::Idle } else { DequeueOutcome::Batch(batch) }
     }
 
     /// How many entries are waiting.
@@ -259,10 +236,7 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     /// Removes every entry for `id`. Returns how many were removed.
     pub fn remove(&mut self, id: Id) -> usize {
         let before = self.entries.len();
-        let kept: Vec<Reverse<Entry<Id>>> = std::mem::take(&mut self.entries)
-            .into_iter()
-            .filter(|Reverse(e)| e.id != id)
-            .collect();
+        let kept: Vec<Reverse<Entry<Id>>> = std::mem::take(&mut self.entries).into_iter().filter(|Reverse(e)| e.id != id).collect();
         self.entries = kept.into_iter().collect();
         before - self.entries.len()
     }

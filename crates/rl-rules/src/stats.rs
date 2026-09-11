@@ -29,12 +29,7 @@ pub struct StatDef {
 impl StatDef {
     /// A stat with a base and no bounds.
     pub fn new(name: impl Into<String>, base: i32) -> Self {
-        Self {
-            name: name.into(),
-            base,
-            min: None,
-            max: None,
-        }
+        Self { name: name.into(), base, min: None, max: None }
     }
 
     /// Bounds the final value.

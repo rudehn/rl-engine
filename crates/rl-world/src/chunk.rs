@@ -6,8 +6,8 @@
 //! compute the crossing from the same unordered pair of regions.
 
 use rand::rngs::StdRng;
-use rl_core::{Direction, DirectionSet, Grid, Point, RunSeed, SeedDomain, geometry, seed};
 use rl_core::Grid2D;
+use rl_core::{Direction, DirectionSet, Grid, Point, RunSeed, SeedDomain, geometry, seed};
 use rl_grid::{AStar, CostSource, PathRules, Terrain, TileId, TileRegistry};
 use rl_mapgen::{BaseContext, BuildContext, BuildError, Chain, Outputs, Pass, Phase};
 
@@ -123,17 +123,15 @@ impl WorldGraph {
 
     /// Generates the chunk for `region` with the game's rules.
     pub fn build_chunk(&self, region: Point, rules: &(impl ChunkRules + ?Sized)) -> Result<(Terrain, Outputs), BuildError> {
-        let around = self
-            .surroundings(region)
-            .ok_or_else(|| BuildError::new("chunk", format!("region {region:?} is off the world")))?;
+        let around = self.surroundings(region).ok_or_else(|| BuildError::new("chunk", format!("region {region:?} is off the world")))?;
         let size = self.region_size();
         let terrain = Terrain::filled(size, size, rules.fill(&around));
         let chain = rules.chain(self, &around);
         let origin = self.tile_origin(region);
         let elevation = &self.layers().elevation;
         let heights = Grid::from_fn(size, size, |p| elevation.height_at_tile(origin + p, size));
-        let mut ctx = ChunkContext::new(terrain, rules.tiles().clone(), around, size, self.seam_seed())
-            .with_heights(heights, elevation.sea_level, elevation.relief);
+        let mut ctx =
+            ChunkContext::new(terrain, rules.tiles().clone(), around, size, self.seam_seed()).with_heights(heights, elevation.sea_level, elevation.relief);
         chain.run(&mut ctx, self.chunk_seed(region))?;
         Ok(ctx.finish())
     }
@@ -178,11 +176,7 @@ impl ChunkContext {
             around,
             heights: Grid::filled(region_size, region_size, 0.5),
             sea_level: 0.0,
-            relief: ReliefThresholds {
-                hill: 1.0,
-                mountain: 1.0,
-                peak: 1.0,
-            },
+            relief: ReliefThresholds { hill: 1.0, mountain: 1.0, peak: 1.0 },
             region_size,
             seam_seed,
         }
@@ -333,13 +327,7 @@ fn inset(bounds: rl_core::Rect, p: Point) -> Point {
 /// are only ever the first or last cell, so a crossing is exactly the cell
 /// the neighbouring chunk expects.
 fn route_in_chunk(ctx: &ChunkContext, from: Point, to: Point, height_weight: f32, wander: u32, salt: u64) -> Vec<Point> {
-    let going = Going {
-        heights: &ctx.heights,
-        sea_level: ctx.sea_level,
-        seed: ctx.seam_seed ^ salt,
-        height_weight,
-        wander,
-    };
+    let going = Going { heights: &ctx.heights, sea_level: ctx.sea_level, seed: ctx.seam_seed ^ salt, height_weight, wander };
     let bounds = ctx.heights.bounds();
     let (a, b) = (inset(bounds, from), inset(bounds, to));
     let mut cells = Vec::new();
@@ -424,11 +412,8 @@ impl Pass<ChunkContext> for RiverChannel {
         // than the exact centre, so two rivers through neighbouring regions
         // do not all kink at the same spot.
         let center = ctx.center();
-        let low = ctx
-            .heights
-            .nearest_from(center, |h| *h <= ctx.sea_level)
-            .filter(|p| geometry::chebyshev(*p, center) < ctx.region_size() / 4)
-            .unwrap_or(center);
+        let low =
+            ctx.heights.nearest_from(center, |h| *h <= ctx.sea_level).filter(|p| geometry::chebyshev(*p, center) < ctx.region_size() / 4).unwrap_or(center);
         for d in here.rivers.iter() {
             if Some(d) == here.river_downstream {
                 continue;
@@ -450,8 +435,8 @@ impl Pass<ChunkContext> for RiverChannel {
 mod tests {
     use super::*;
     use crate::graph::demo::{Demo, SEA};
-    use rl_core::Grid2D;
     use crate::graph::{WorldConfig, WorldGraph};
+    use rl_core::Grid2D;
     use rl_mapgen::passes::Fill;
 
     struct Chunks {
@@ -531,19 +516,14 @@ mod tests {
     fn a_river_region_carries_water_across_the_chunk() {
         let w = world();
         let rules = Chunks::new();
-        let (p, _) = w
-            .layers()
-            .hydrology
-            .rivers
-            .iter()
-            .find(|(_, s)| s.len() >= 2)
-            .expect("a river cell with an upstream and a downstream");
+        let (p, _) = w.layers().hydrology.rivers.iter().find(|(_, s)| s.len() >= 2).expect("a river cell with an upstream and a downstream");
         let (terrain, _) = w.build_chunk(p, &rules).unwrap();
         let water = rules.tiles.expect("water");
         assert!(terrain.count(water) >= w.region_size() as usize);
         let facts = w.region_facts(p).unwrap();
         for d in facts.rivers.iter() {
-            let edge = ChunkContext::new(Terrain::filled(1, 1, TileId(0)), rules.tiles.clone(), w.surroundings(p).unwrap(), w.region_size(), w.seam_seed()).edge_cell(d);
+            let edge = ChunkContext::new(Terrain::filled(1, 1, TileId(0)), rules.tiles.clone(), w.surroundings(p).unwrap(), w.region_size(), w.seam_seed())
+                .edge_cell(d);
             assert_eq!(terrain.get(edge), Some(water), "no water at the {d:?} crossing");
         }
     }

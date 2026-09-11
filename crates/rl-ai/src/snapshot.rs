@@ -41,12 +41,7 @@ pub struct Snapshot<A: Copy> {
 impl<A: Copy> Snapshot<A> {
     /// A snapshot with nothing in sight.
     pub fn alone(me: ActorView<A>) -> Self {
-        Self {
-            me,
-            enemies: Vec::new(),
-            allies: Vec::new(),
-            came_from: None,
-        }
+        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None }
     }
 
     /// Sorts enemies and allies nearest first, ties by position, so two

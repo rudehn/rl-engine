@@ -104,13 +104,7 @@ pub struct CellularCave {
 
 impl Default for CellularCave {
     fn default() -> Self {
-        Self {
-            wall: TileId(0),
-            floor: TileId(0),
-            fill_pct: 45,
-            rounds: 4,
-            threshold: 5,
-        }
+        Self { wall: TileId(0), floor: TileId(0), fill_pct: 45, rounds: 4, threshold: 5 }
     }
 }
 
@@ -123,17 +117,12 @@ impl<C: BuildContext> Pass<C> for CellularCave {
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
-        let mut solid: Grid<bool> = Grid::from_fn(w, h, |p| {
-            p.x == 0 || p.y == 0 || p.x == w - 1 || p.y == h - 1 || ctx.rng().random_range(0..100) < self.fill_pct
-        });
+        let mut solid: Grid<bool> =
+            Grid::from_fn(w, h, |p| p.x == 0 || p.y == 0 || p.x == w - 1 || p.y == h - 1 || ctx.rng().random_range(0..100) < self.fill_pct);
         let mut next = solid.clone();
         for _ in 0..self.rounds {
             for (p, cell) in next.iter_mut() {
-                let walls = Steps::Eight
-                    .directions()
-                    .iter()
-                    .filter(|d| solid.get(p + d.offset()).copied().unwrap_or(true))
-                    .count() as u32;
+                let walls = Steps::Eight.directions().iter().filter(|d| solid.get(p + d.offset()).copied().unwrap_or(true)).count() as u32;
                 *cell = walls >= self.threshold;
             }
             solid.swap_with(&mut next);
@@ -164,14 +153,8 @@ impl<C: BuildContext> Pass<C> for KeepLargestRegion {
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
         let terrain = ctx.terrain();
-        let regions = rl_grid::region::label_regions(
-            terrain,
-            |i| tables.walkable[terrain.get_idx(i).index()],
-            Steps::Eight,
-        );
-        let keep = regions
-            .largest()
-            .ok_or_else(|| BuildError::new("keep_largest_region", "no open cell to keep"))?;
+        let regions = rl_grid::region::label_regions(terrain, |i| tables.walkable[terrain.get_idx(i).index()], Steps::Eight);
+        let keep = regions.largest().ok_or_else(|| BuildError::new("keep_largest_region", "no open cell to keep"))?;
         let t = ctx.terrain_mut();
         for idx in 0..t.len() {
             if let Some(label) = regions.label_idx(idx)
@@ -203,11 +186,8 @@ impl<C: BuildContext> Pass<C> for CentralStart {
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
         let center = ctx.terrain().bounds().center();
-        let found = ctx
-            .terrain()
-            .grid()
-            .nearest_from(center, |id| tables.walkable[id.index()])
-            .ok_or_else(|| BuildError::new("central_start", "no walkable cell"))?;
+        let found =
+            ctx.terrain().grid().nearest_from(center, |id| tables.walkable[id.index()]).ok_or_else(|| BuildError::new("central_start", "no walkable cell"))?;
         ctx.emit(StartPoint(found));
         Ok(())
     }
@@ -269,11 +249,7 @@ mod tests {
             let open = c.terrain().count(floor);
             assert!(open > 200, "seed {seed}: only {open} open cells");
             let tables = c.tiles().tables();
-            let regions = rl_grid::region::label_regions(
-                c.terrain(),
-                |i| tables.walkable[c.terrain().get_idx(i).index()],
-                Steps::Eight,
-            );
+            let regions = rl_grid::region::label_regions(c.terrain(), |i| tables.walkable[c.terrain().get_idx(i).index()], Steps::Eight);
             assert_eq!(regions.count(), 1, "seed {seed}");
             let start = c.outputs().first::<StartPoint>().unwrap();
             assert_eq!(c.terrain().get(start.0), Some(floor));

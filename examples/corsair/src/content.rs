@@ -11,9 +11,9 @@ use rl_engine::rl_mapgen::passes::Scatter;
 use rl_engine::rl_mapgen::{BuildContext, BuildError, Chain, Pass, Phase};
 use rl_engine::rl_overworld::BandAppearance;
 use rl_engine::rl_render::{Cell, TileAppearance};
+use rl_engine::rl_world::WorldGraph;
 use rl_engine::rl_world::chunk::{RiverChannel, RoadPave};
 use rl_engine::rl_world::prelude::*;
-use rl_engine::rl_world::WorldGraph;
 
 pub const SEA: BandId = BandId(0);
 pub const LAKE: BandId = BandId(1);
@@ -69,17 +69,7 @@ impl Content {
         let snow = tiles.register(TileProps::floor("marsh").move_cost(160)).unwrap();
         let road = tiles.register(TileProps::floor("road").move_cost(80)).unwrap();
         let plaza = tiles.register(TileProps::floor("dock")).unwrap();
-        Self {
-            tiles,
-            water,
-            sand,
-            grass,
-            tree,
-            rock,
-            snow,
-            road,
-            plaza,
-        }
+        Self { tiles, water, sand, grass, tree, rock, snow, road, plaza }
     }
 
     pub fn tiles(&self) -> &TileRegistry {
@@ -149,13 +139,7 @@ impl WorldRules for Content {
 
     fn settlements(&self, layers: &Layers, seed: u64) -> Vec<Site> {
         let mut sites = Vec::new();
-        let rules = PlacementRules {
-            cells_per_site: 90,
-            min: 2,
-            max: 60,
-            jitter: 0.2,
-            clearances: vec![Clearance { from: PORT, cells: 7 }],
-        };
+        let rules = PlacementRules { cells_per_site: 90, min: 2, max: 60, jitter: 0.2, clearances: vec![Clearance { from: PORT, cells: 7 }] };
         place_scored(&mut sites, PORT, &rules, seed, layers.width(), layers.height(), |p| {
             let f = layers.facts(p).unwrap();
             if f.is_water() || f.relief != Relief::Lowland {
@@ -263,14 +247,7 @@ impl ChunkRules for Content {
             MOUNTAIN | VOLCANO => self.rock,
             _ => self.grass,
         };
-        let mut chain = Chain::new()
-            .then(Paint {
-                water: self.water,
-                sand: self.sand,
-                ground,
-                rock: self.rock,
-            })
-            .then(RiverChannel { water: self.water });
+        let mut chain = Chain::new().then(Paint { water: self.water, sand: self.sand, ground, rock: self.rock }).then(RiverChannel { water: self.water });
         let tree_pct = match band {
             JUNGLE => 35,
             MANGROVE => 20,
@@ -290,4 +267,3 @@ impl ChunkRules for Content {
         chain.then(RoadPave { tile: self.road })
     }
 }
-

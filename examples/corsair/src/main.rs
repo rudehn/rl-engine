@@ -18,9 +18,9 @@ use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
-use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::{Glyph, MapView, MapViewPlugin, TerminalPlugin};
+use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{ChromeLayout, ChromePlugin, LogCategory, MessageLog, StatusLine};
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -71,22 +71,12 @@ fn main() -> AppExit {
             })
             .set(ImagePlugin::default_nearest()),
     )
-    .add_plugins(TerminalPlugin {
-        width: COLS,
-        height: ROWS,
-        cell_size: CELL,
-        font_size: FONT,
-    })
+    .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: FONT })
     .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, OverworldPlugin))
     .insert_resource(StartSeed { seed, regions })
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .insert_resource(ChromeLayout {
-        log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS),
-        status_row: 0,
-    })
-    .insert_resource(OverworldLayout {
-        viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS),
-    })
+    .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
+    .insert_resource(OverworldLayout { viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS) })
     .init_resource::<inventory::InventoryScreen>()
     .add_systems(Startup, start_world)
     .add_systems(Update, (inventory::inventory_keys, input::player_input).chain().in_set(EngineSet::Input))
@@ -109,7 +99,13 @@ struct StartSeed {
 }
 
 /// Generates the world, spawns the player at the first town, and starts play.
-fn start_world(mut commands: Commands, start: Res<StartSeed>, mut next: ResMut<NextState<EngineState>>, mut log: ResMut<MessageLog>, mut screen: ResMut<inventory::InventoryScreen>) {
+fn start_world(
+    mut commands: Commands,
+    start: Res<StartSeed>,
+    mut next: ResMut<NextState<EngineState>>,
+    mut log: ResMut<MessageLog>,
+    mut screen: ResMut<inventory::InventoryScreen>,
+) {
     let content = Content::new();
     // Islands rather than a continent: less land, more of it coast.
     let mut config = WorldConfig::regions(start.regions.0, start.regions.1);
@@ -226,11 +222,8 @@ fn update_status(mut status: ResMut<StatusLine>, w: StatusWorld) {
     let Ok((pos, hp, armor, worn)) = w.player.single() else { return };
     let region = w.world.region_of_tile(pos.0);
     let band = w.world.layers().band(region).map(content::band_name).unwrap_or("nowhere");
-    let weapon = worn
-        .in_slot(w.armory.slots.expect("main hand"))
-        .and_then(|e| w.kinds.get(e).ok())
-        .map(|k| w.armory.defs.get(k.0).name.as_str())
-        .unwrap_or("fists");
+    let weapon =
+        worn.in_slot(w.armory.slots.expect("main hand")).and_then(|e| w.kinds.get(e).ok()).map(|k| w.armory.defs.get(k.0).name.as_str()).unwrap_or("fists");
     let here = items::whats_here(pos.0, &w.armory, &w.ground).map(|s| format!("   here: {s} [g]")).unwrap_or_default();
     status.0 = format!(
         "HP {}/{}  AC {}  {}   Turn {}   ({}, {}) {}{}   [i]nventory [m]ap [q]uit",

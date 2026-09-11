@@ -52,10 +52,7 @@ pub struct Registry<T> {
 
 impl<T> Default for Registry<T> {
     fn default() -> Self {
-        Self {
-            defs: Vec::new(),
-            names: Interner::new(),
-        }
+        Self { defs: Vec::new(), names: Interner::new() }
     }
 }
 
@@ -91,10 +88,7 @@ impl<T: Named> Registry<T> {
     /// Runs `check` over every definition and collects every failure, so a
     /// content file with three typos reports three, not one.
     pub fn validate(&self, check: impl Fn(&T, &Self) -> Result<(), String>) -> Result<(), ContentError> {
-        let errors: Vec<String> = self
-            .iter()
-            .filter_map(|(_, d)| check(d, self).err().map(|e| format!("{}: {e}", d.name())))
-            .collect();
+        let errors: Vec<String> = self.iter().filter_map(|(_, d)| check(d, self).err().map(|e| format!("{}: {e}", d.name()))).collect();
         if errors.is_empty() { Ok(()) } else { Err(ContentError::Invalid(errors)) }
     }
 }
@@ -190,10 +184,7 @@ mod tests {
 
     #[test]
     fn validation_lists_every_failure_with_its_name() {
-        let r: Registry<Monster> = Registry::from_ron_str(
-            r#"[(name: "a", hp: 0, summons: Some("ghost")), (name: "b", hp: 1), (name: "c", hp: 0)]"#,
-        )
-        .unwrap();
+        let r: Registry<Monster> = Registry::from_ron_str(r#"[(name: "a", hp: 0, summons: Some("ghost")), (name: "b", hp: 1), (name: "c", hp: 0)]"#).unwrap();
         let err = r
             .validate(|m, reg| {
                 if m.hp == 0 {

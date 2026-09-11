@@ -120,8 +120,7 @@ impl Elevation {
         let space = SampleSpace::new(width, height);
         let d = |name: &[u8]| seed.derive(SeedDomain::new(name), 0);
         let fields = Fields {
-            continents: Fbm::new(d(b"elevation.continents"), config.continent_octaves)
-                .with_frequency(config.continent_frequency),
+            continents: Fbm::new(d(b"elevation.continents"), config.continent_octaves).with_frequency(config.continent_frequency),
             ridges: Fbm::new(d(b"elevation.ridges"), config.ridge_octaves).with_frequency(config.ridge_frequency),
             warp: Fbm::new(d(b"elevation.warp"), config.warp_octaves).with_frequency(config.warp_frequency),
             coast: Fbm::new(d(b"elevation.coast"), config.coast_octaves).with_frequency(config.coast_frequency),
@@ -139,11 +138,7 @@ impl Elevation {
         let mut elevation = Self {
             height: field,
             sea_level,
-            relief: ReliefThresholds {
-                hill: 1.0,
-                mountain: 1.0,
-                peak: 1.0,
-            },
+            relief: ReliefThresholds { hill: 1.0, mountain: 1.0, peak: 1.0 },
             space,
             fields,
             config: *config,
@@ -155,14 +150,7 @@ impl Elevation {
     }
 
     fn relief_thresholds(&self) -> ReliefThresholds {
-        let land: Vec<f32> = self
-            .height
-            .cells()
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !self.is_water_idx(*i))
-            .map(|(_, h)| self.land_height_of(*h))
-            .collect();
+        let land: Vec<f32> = self.height.cells().iter().enumerate().filter(|(i, _)| !self.is_water_idx(*i)).map(|(_, h)| self.land_height_of(*h)).collect();
         ReliefThresholds {
             hill: quantile(&land, 1.0 - self.config.hill_fraction),
             mountain: quantile(&land, 1.0 - self.config.mountain_fraction),

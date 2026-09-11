@@ -35,11 +35,7 @@ pub struct DijkstraMap {
 impl DijkstraMap {
     /// An unreached map over `region`.
     pub fn new(region: Rect) -> Self {
-        Self {
-            region,
-            values: vec![UNREACHED; region.area().max(0) as usize],
-            heap: BinaryHeap::new(),
-        }
+        Self { region, values: vec![UNREACHED; region.area().max(0) as usize], heap: BinaryHeap::new() }
     }
 
     /// A map over a whole grid.
@@ -62,9 +58,7 @@ impl DijkstraMap {
     }
 
     fn local(&self, p: Point) -> Option<usize> {
-        self.region
-            .contains(p)
-            .then(|| ((p.y - self.region.y) * self.region.width + (p.x - self.region.x)) as usize)
+        self.region.contains(p).then(|| ((p.y - self.region.y) * self.region.width + (p.x - self.region.x)) as usize)
     }
 
     fn point(&self, local: usize) -> Point {
@@ -223,11 +217,7 @@ impl DijkstraMap {
 
     /// Every reached cell with its value, row-major within the region.
     pub fn iter(&self) -> impl Iterator<Item = (Point, i32)> + '_ {
-        self.values
-            .iter()
-            .enumerate()
-            .filter(|(_, v)| **v != UNREACHED)
-            .map(|(i, v)| (self.point(i), *v))
+        self.values.iter().enumerate().filter(|(_, v)| **v != UNREACHED).map(|(i, v)| (self.point(i), *v))
     }
 
     /// The reached cell with the lowest value, lowest point on a tie.
@@ -337,14 +327,9 @@ mod tests {
         let mut astar = AStar::new();
         for seed in 0..10u64 {
             let mut rng = StdRng::seed_from_u64(seed);
-            let terrain = crate::terrain::Terrain::from_fn(20, 15, |_| {
-                if rng.random_range(0..100) < 30 { wall } else { floor }
-            });
+            let terrain = crate::terrain::Terrain::from_fn(20, 15, |_| if rng.random_range(0..100) < 30 { wall } else { floor });
             let view = terrain.view(&registry);
-            let goal = (0..)
-                .map(|_| p(rng.random_range(0..20), rng.random_range(0..15)))
-                .find(|g| view.is_passable(*g))
-                .unwrap();
+            let goal = (0..).map(|_| p(rng.random_range(0..20), rng.random_range(0..15))).find(|g| view.is_passable(*g)).unwrap();
             let mut map = DijkstraMap::covering(&view);
             map.build(&view, [goal], PathRules::default());
             for (start, _) in terrain.iter() {

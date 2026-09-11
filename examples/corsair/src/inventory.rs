@@ -73,7 +73,14 @@ pub fn inventory_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<Invent
 }
 
 /// Fills the rows from the bag and draws the screen over the map.
-pub fn draw_inventory(mut screen: ResMut<InventoryScreen>, armory: Res<Armory>, theme: Res<Theme>, mut terminal: ResMut<Terminal>, bag: Bag, items: Query<(&ItemKind, Option<&Stack>)>) {
+pub fn draw_inventory(
+    mut screen: ResMut<InventoryScreen>,
+    armory: Res<Armory>,
+    theme: Res<Theme>,
+    mut terminal: ResMut<Terminal>,
+    bag: Bag,
+    items: Query<(&ItemKind, Option<&Stack>)>,
+) {
     if !screen.open {
         return;
     }

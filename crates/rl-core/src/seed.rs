@@ -82,10 +82,7 @@ impl RunSeed {
         use std::sync::atomic::{AtomicU64, Ordering};
         static RUNS_THIS_PROCESS: AtomicU64 = AtomicU64::new(0);
         let nth = RUNS_THIS_PROCESS.fetch_add(1, Ordering::Relaxed);
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0);
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
         RunSeed::from_entropy(nanos ^ mix64(nth))
     }
 }

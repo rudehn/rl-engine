@@ -84,12 +84,8 @@ mod tests {
 
     #[test]
     fn relations_default_and_can_be_asymmetric() {
-        let r = Registry::from_defs(vec![
-            FactionDef { name: "navy".into() },
-            FactionDef { name: "pirates".into() },
-            FactionDef { name: "merchants".into() },
-        ])
-        .unwrap();
+        let r = Registry::from_defs(vec![FactionDef { name: "navy".into() }, FactionDef { name: "pirates".into() }, FactionDef { name: "merchants".into() }])
+            .unwrap();
         let (navy, pirates, merchants) = (r.expect("navy"), r.expect("pirates"), r.expect("merchants"));
         let mut f = Factions::new(&r);
         assert!(f.is_allied(navy, navy));

@@ -28,11 +28,7 @@ pub struct DiceRoll {
 impl DiceRoll {
     /// A constant with no dice.
     pub const fn flat(value: i32) -> Self {
-        Self {
-            num: 0,
-            sides: 0,
-            bonus: value,
-        }
+        Self { num: 0, sides: 0, bonus: value }
     }
 
     /// `num`d`sides` with no modifier.
@@ -80,11 +76,7 @@ pub struct DiceParseError(pub String);
 
 impl fmt::Display for DiceParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "invalid dice notation {:?} (expected NdS, NdS+B, NdS-B, or a flat number)",
-            self.0
-        )
+        write!(f, "invalid dice notation {:?} (expected NdS, NdS+B, NdS-B, or a flat number)", self.0)
     }
 }
 

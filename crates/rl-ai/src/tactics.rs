@@ -162,7 +162,10 @@ mod tests {
         let (d, who) = b.decide(&mut TacticCtx { snapshot: &alone, approach: None, escape: None, can_step: &can_step, rng: &mut rng });
         assert!(matches!(d, Decision::Step(_)));
         assert_eq!(who, Some("wander"));
-        assert_eq!(Brain::<u32>::new().decide(&mut TacticCtx { snapshot: &alone, approach: None, escape: None, can_step: &can_step, rng: &mut rng }), (Decision::Wait, None));
+        assert_eq!(
+            Brain::<u32>::new().decide(&mut TacticCtx { snapshot: &alone, approach: None, escape: None, can_step: &can_step, rng: &mut rng }),
+            (Decision::Wait, None)
+        );
     }
 
     #[test]
