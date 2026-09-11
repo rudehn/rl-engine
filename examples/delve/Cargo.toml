@@ -1,0 +1,15 @@
+[package]
+name = "delve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The Hollow Whale: a five-floor dungeon delve with no surface, the engine's second worked example."
+publish = false
+
+[dependencies]
+rl-engine.workspace = true
+bevy.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true

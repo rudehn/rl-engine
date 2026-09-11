@@ -56,7 +56,8 @@ impl Caves {
 }
 
 impl PlaceRules for Caves {
-    fn build(&self, map: MapId, world: &WorldGraph) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+        let world = world.ok_or_else(|| BuildError::new("caves", "a cave lies under a world"))?;
         let (_, depth) = cave_of(map).ok_or_else(|| BuildError::new("caves", format!("{map:?} is not a cave")))?;
         let tiles = self.content.tiles().clone();
         let (rock, cave, door) = (tiles.expect("rock"), tiles.expect("cave"), tiles.expect("door"));
@@ -217,7 +218,7 @@ mod tests {
             let caves = Caves::new(content);
             for depth in 0..LEVELS {
                 let map = cave_id(0, depth);
-                let built = caves.build(map, &world).unwrap_or_else(|e| panic!("seed {seed} depth {depth}: {e}"));
+                let built = caves.build(map, Some(&world)).unwrap_or_else(|e| panic!("seed {seed} depth {depth}: {e}"));
                 let walkable = |p: Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]);
                 assert!(walkable(built.entry), "seed {seed} depth {depth}: entry on rock");
                 if depth + 1 == LEVELS {

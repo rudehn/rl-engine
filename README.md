@@ -43,6 +43,16 @@ cargo run -p corsair -- --balance    # the spawn table's threat by band
 
 Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `f` to fire a pistol at the nearest foe, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
 
+## The second example: a delve
+
+`examples/delve` is the Hollow Whale: five floors down a beached leviathan, mouth to heart, with no surface at all.
+No world graph, no streaming, no overworld: each floor is a place built by a chain of engine passes the first time its stairs are taken, and the run is won when the heart warden dies.
+Two files; `floors.rs` is the whole map builder.
+
+```sh
+cargo run -p delve -- --seed 7
+```
+
 ## Principles
 
 - **Own the loop or leave it out.** A struct plus a `SystemSet` marker is not a subsystem.

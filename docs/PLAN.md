@@ -28,6 +28,10 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `rl-mapgen` gains `ScatterBy`, a scatter whose chance is a function of the context and the cell.
   Corsair classifies each tile with the same rule the region got and grows trees from moisture shaped by the clumps; the region band remains the overworld's, the sites' and the spawn tables'.
   Nate, 2026-09-11: "a forest just looks like a 64x64 block" was the prompt.
+- 2026-09-11: the surface is optional and a delve is first-class.
+  `stream_chunks`, the viewshed's site discovery and the warp take the world graph as an option; `PlaceRules::build` gets `Option<&WorldGraph>`; `PlaceBuild::from_context` turns a finished chain into a build; `WarpRequest::into_place` starts a run in a place.
+  The second example, `examples/delve`, is the Hollow Whale: five floors, no surface, one file of chains.
+  Nate, 2026-09-11: dungeon map building should be first-class and easy.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, lighting, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

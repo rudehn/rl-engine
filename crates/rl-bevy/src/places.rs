@@ -100,11 +100,28 @@ pub struct PlaceBuild {
     pub spots: Vec<Spot>,
 }
 
+impl PlaceBuild {
+    /// A build from a finished chain: the entry is the chain's
+    /// [`StartPoint`](rl_mapgen::passes::StartPoint), the exit its
+    /// [`ExitPoint`](rl_mapgen::dungeon::ExitPoint) if one was emitted,
+    /// and every prefab mark becomes a spot tagged with its character.
+    /// Fails if no start was emitted.
+    pub fn from_context(ctx: rl_mapgen::BaseContext) -> Result<Self, BuildError> {
+        use rl_mapgen::BuildContext;
+        let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
+        let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
+        let spots = ctx.outputs().iter::<rl_mapgen::prefab::Stamped>().flat_map(|s| s.marks.iter().map(|(c, p)| Spot { tag: *c as u32, at: *p })).collect();
+        let (terrain, _) = ctx.finish();
+        Ok(Self { terrain, entry, exit, spots })
+    }
+}
+
 /// How the game builds a place the first time it is entered.
 pub trait PlaceRules: Send + Sync {
-    /// Builds `map`. The world is there for the seed and for whatever the
-    /// place is under.
-    fn build(&self, map: MapId, world: &WorldGraph) -> Result<PlaceBuild, BuildError>;
+    /// Builds `map`. The world, when the game has one, is there for the
+    /// seed and for whatever the place is under; a delve with no surface
+    /// gets `None` and seeds itself.
+    fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError>;
 }
 
 /// The game's place builder.
@@ -120,6 +137,13 @@ pub struct WarpRequest {
     pub actor: Entity,
     /// Where to.
     pub to: Destination,
+}
+
+impl WarpRequest {
+    /// Into `map` at its entry: how a delve starts on its first floor.
+    pub fn into_place(actor: Entity, map: MapId) -> Self {
+        Self { actor, to: Destination::Place { map, arrive: Arrive::Entry } }
+    }
 }
 
 /// The player changed maps.
@@ -152,7 +176,7 @@ pub struct Maps<'w> {
     occupancy: ResMut<'w, Occupancy>,
     knowledge: ResMut<'w, Knowledge>,
     fields: ResMut<'w, FlowFields>,
-    world: Res<'w, WorldRes>,
+    world: Option<Res<'w, WorldRes>>,
     rules: Option<Res<'w, PlaceRulesRes>>,
 }
 
@@ -244,7 +268,7 @@ fn warp(
     let mut first = false;
     if !target_map.is_surface() && !maps.map.has_place(target_map) {
         let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("warp", "no PlaceRulesRes to build a place with"))?;
-        let build = rules.0.build(target_map, &maps.world)?;
+        let build = rules.0.build(target_map, maps.world.as_deref().map(|w| &w.0))?;
         maps.map.install_place(target_map, build);
         first = true;
     }
@@ -334,9 +358,10 @@ mod tests {
     }
     struct Caves(TileRegistry);
     impl PlaceRules for Caves {
-        fn build(&self, map: MapId, world: &WorldGraph) -> Result<PlaceBuild, BuildError> {
+        fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let mut ctx = BaseContext::blank(40, 30, self.0.clone(), wall);
+            let world = world.expect("the test has a world");
             Chain::new()
                 .then(Rooms { floor, ..Default::default() })
                 .then(RandomStart)

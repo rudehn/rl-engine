@@ -13,7 +13,7 @@ use crate::world::{WorldMap, WorldRes};
 /// The only system that clears `Viewshed::dirty`.
 pub fn update_viewsheds(
     map: Res<WorldMap>,
-    world: Res<WorldRes>,
+    world: Option<Res<WorldRes>>,
     mut knowledge: ResMut<Knowledge>,
     mut viewers: Query<(&Position, &mut Viewshed, Has<RevealsMap>)>,
 ) {
@@ -38,7 +38,10 @@ pub fn update_viewsheds(
         if reveals {
             for p in viewshed.iter() {
                 knowledge.mark(p);
-                if let Some(site) = world.site_index_at(world.region_of_tile(p)) {
+                if let Some(world) = &world
+                    && map.current().is_surface()
+                    && let Some(site) = world.site_index_at(world.region_of_tile(p))
+                {
                     knowledge.discover_site(site);
                 }
             }

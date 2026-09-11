@@ -9,6 +9,8 @@
 //! While the player is in a place (see [`places`](crate::places)), the
 //! same readers read the place's bounded terrain instead, in the place's
 //! own coordinates, and the surface window waits untouched underneath.
+//! A game with no surface at all, a dungeon delve, inserts no world graph
+//! and starts the player in a place; nothing here minds.
 
 use std::collections::BTreeMap;
 
@@ -422,14 +424,16 @@ pub fn desired_window(player_region: Point, radius: i32, world: &WorldGraph) -> 
 /// stale when it moves.
 pub fn stream_chunks(
     mut map: ResMut<WorldMap>,
-    world: Res<WorldRes>,
-    rules: Res<ChunkRulesRes>,
+    world: Option<Res<WorldRes>>,
+    rules: Option<Res<ChunkRulesRes>>,
     settings: Res<WorldSettings>,
     player: Query<&Position, With<Player>>,
     mut viewsheds: Query<&mut Viewshed>,
     mut loaded: MessageWriter<ChunkLoaded>,
 ) {
     let Ok(pos) = player.single() else { return };
+    // A game with no surface, places only, streams nothing.
+    let (Some(world), Some(rules)) = (world, rules) else { return };
     if !map.current().is_surface() {
         return;
     }

@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11.
+Last updated: 2026-09-11, after the delve.
 
 ## The shape
 
@@ -102,7 +102,8 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Chunk streaming with edit deltas, per-map occupancy and knowledge, field of view.
 - Combat: health, armor, resists, factions, melee and ranged attacks down a line of fire, extra strikes, the damage event pipeline, deaths that linger until the frame ends, flow fields per movement profile feeding the minds.
 - Items on the ground, in bags and in slots, with stacks and enchantments.
-- Places: bounded maps entered by transitions or warps, built on first arrival, kept whole, off-map actors frozen.
+- Places: bounded maps entered by transitions or warps, built on first arrival, kept whole, off-map actors frozen; `PlaceBuild::from_context` reads a finished chain; `WarpRequest::into_place` starts a run in one.
+- The surface is optional: a game with no world graph streams nothing and lives in its places.
 - Statuses ticked by the turn through the damage pipeline.
 - Facts fed to quests and counters after the frame.
 - Save exports for the scheduler, the world's edits and places, and knowledge.
@@ -136,6 +137,11 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 ## Tier 3: rl-engine
 
 - The facade re-exporting every crate.
+
+## The second example: the Hollow Whale
+
+Five floors of a beached leviathan, mouth to heart, with no surface: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
+`floors.rs` is the whole map builder; it is the test that a dungeon delve is first-class.
 
 ## The worked example: Corsair
 
