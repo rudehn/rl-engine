@@ -11,6 +11,7 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 
 - Tier 0 and 1 crates (`rl-core`, `rl-grid`, `rl-mapgen`, `rl-world`, `rl-test-support`) must not depend on Bevy. `scripts/check-tiers.sh` checks it; CI runs it.
 - `#![deny(missing_docs)]` on every crate. Doc-tests compile and run; never fence an example as `ignore`.
+- `docs/OVERVIEW.md` is the inventory of what the engine has; a slice that adds or removes a system updates it in the same commit.
 - `cargo fmt --all --check` must pass; `rustfmt.toml` pins the width, so do not hand-wrap.
 - `cargo clippy --workspace --all-targets -- -D warnings` must pass. Do not add crate-wide `#![allow(clippy::too_many_arguments)]`; a system with sixteen parameters is a system to split.
 - Tier-1 crates build on `wasm32-unknown-unknown`. No `std::time::Instant` in them.
