@@ -1,6 +1,100 @@
-# rl-engine
+# rl-engine: a roguelike engine for Rust and Bevy
 
-A reusable engine for turn-based grid roguelikes, in Rust, on Bevy.
+[![CI](https://github.com/rudehn/rl-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/rudehn/rl-engine/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
+[![Bevy 0.19](https://img.shields.io/badge/bevy-0.19-232326.svg)](https://bevyengine.org)
+
+**rl-engine** is an open source engine for turn-based, grid-based roguelike games, written in Rust on the Bevy game engine.
+It gives you procedural dungeon and world generation, field of view, A* pathfinding, Dijkstra maps, monster AI, combat, items, quests and save games as small tested crates you depend on, not code you copy.
+The core algorithms have no Bevy dependency, so map generation, pathfinding and game rules run headless, test in milliseconds and build for WebAssembly.
+
+![Corsair, the worked example: a procedurally generated island port with docks, water and grassland, drawn as an ASCII glyph grid](docs/images/corsair.png)
+
+## Features
+
+- **Procedural map generation**: a chain of seeded passes with rooms and corridors, BSP, cellular automata caves, doors, largest-region cleanup and ASCII prefabs.
+- **Procedural world generation**: FBM noise, elevation, priority-flood hydrology with rivers and lakes, climate, site placement, road routing and seamless infinite chunk streaming.
+- **Field of view**: symmetric shadowcasting over any `OpacitySource`, plus line of fire and targeting shapes for bolts, balls, beams and cones.
+- **Pathfinding**: A* with reusable scratch buffers, region-bounded Dijkstra maps, flee maps and flow fields per movement profile.
+- **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt and wander, reading snapshots of what each actor can see.
+- **A turn loop the engine owns**: an integer-clock energy scheduler, speed-scaled action costs and every due turn resolved inside one frame.
+- **RPG rules**: stats and modifiers, a staged damage pipeline with resistances, status effects that tick by the turn, factions, equipment slots, affixes and enchantments.
+- **Data-driven content**: tiles, monsters, items, statuses and quests are registries loaded from RON files, with weighted spawn tables by depth band.
+- **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
+- **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
+- **ASCII rendering and UI**: a diffed glyph grid renderer, a map view with remembered tiles, a message log, a status line, menus and an overworld map screen.
+- **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
+- **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
+
+## Quick start
+
+Clone the repository and run one of the two example games.
+
+```sh
+git clone https://github.com/rudehn/rl-engine
+cd rl-engine
+cargo run --release -p corsair -- --seed 7
+cargo run --release -p delve -- --seed 7
+```
+
+The first build compiles Bevy and takes a few minutes.
+
+## Use it in your game
+
+rl-engine is not on crates.io yet, so depend on it from git.
+The `rl-engine` crate is the facade that re-exports every other crate.
+
+```toml
+[dependencies]
+rl-engine = { git = "https://github.com/rudehn/rl-engine" }
+bevy = "0.19"
+```
+
+A tool or a server that needs no window can depend on a single tier-1 crate, such as `rl-grid` for field of view and pathfinding, and never compile Bevy.
+
+```toml
+[dependencies]
+rl-grid = { git = "https://github.com/rudehn/rl-engine" }
+```
+
+This builds a dungeon floor from a seed, computes what is visible from the start, and finds the path to the exit, all without Bevy.
+
+```rust
+use rl_engine::rl_core::RunSeed;
+use rl_engine::rl_grid::{AStar, BitGrid, PathRules, TileRegistry, fov};
+use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart, Rooms};
+use rl_engine::rl_mapgen::passes::StartPoint;
+use rl_engine::rl_mapgen::{BaseContext, BuildContext, Chain};
+
+// A 60 by 40 map of solid wall, with the standard wall and floor tiles.
+let tiles = TileRegistry::standard();
+let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+let mut map = BaseContext::blank(60, 40, tiles, wall);
+
+// Carve rooms, place the start, and put the exit as far from it as possible.
+// The same seed always builds the same floor.
+Chain::new()
+    .then(Rooms { floor, ..Default::default() })
+    .then(RandomStart)
+    .then(FarthestExit)
+    .run(&mut map, RunSeed(7))
+    .expect("a floor with rooms");
+let start = map.outputs().first::<StartPoint>().unwrap().0;
+let exit = map.outputs().first::<ExitPoint>().unwrap().0;
+
+// Field of view from the start, and the cheapest walk to the exit.
+let view = map.terrain().view(map.tiles());
+let mut seen = BitGrid::new(60, 40);
+fov::compute(&view, start, 8, &mut seen);
+let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("rooms connect");
+println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
+```
+
+The two example games are the best guide to the Bevy side.
+`examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
+
+## Crates
 
 The engine is a workspace of small crates in tiers.
 Tiers 0 and 1 know nothing about Bevy and are what make generation, pathfinding and rules testable in milliseconds and benchmarkable without a window.
@@ -26,13 +120,16 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 | 2 | `rl-ui` | theme tokens, widgets, key hints, the log view |
 | 3 | `rl-engine` | facade and prelude |
 
-`docs/OVERVIEW.md` is the inventory of what exists, kept current.
-`docs/PLAN.md` is the design: what was decided, why, and which milestone each piece lands in.
-`docs/reviews/` holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
+## Example games
 
-## The worked example
+### Corsair, an open-world roguelike
 
-`examples/corsair` is a small pirate roguelike built only on the public API: islands from the world graph, ports with huts, a bestiary and an armory in RON, factions, bump-to-attack combat, loot on the sand and in the pockets of the dead with affixes and enchant levels from RON, a pistol that shoots along a clear line of fire, venom and bleeding from RON that tick by the turn and rum that cures them, a sea chest to wear it from, smugglers' caves under the coves with a treasure vault at the bottom, a ledger of tasks from RON that ends in a victory, a message log and the world map with a portal picker that works from anywhere.
+`examples/corsair` is a small pirate roguelike built only on the public API.
+It has islands from the world graph, ports with huts, a bestiary and an armory in RON, factions and bump-to-attack combat.
+Loot lies on the sand and in the pockets of the dead, with affixes and enchant levels from RON.
+A pistol shoots along a clear line of fire, venom and bleeding tick by the turn, and rum cures them.
+Smugglers' caves under the coves lead down to a treasure vault, and a ledger of tasks from RON ends in a victory.
+A message log, a sea chest to equip from, and a world map with a portal picker round it out.
 It is what a game on this engine looks like.
 
 ```sh
@@ -43,7 +140,9 @@ cargo run -p corsair -- --balance    # the spawn table's threat by band
 
 Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `f` to fire a pistol at the nearest foe, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
 
-## The second example: a delve
+### The Hollow Whale, a dungeon delve
+
+![The Hollow Whale: a multi-floor dungeon crawl generated from engine passes](docs/images/delve.png)
 
 `examples/delve` is the Hollow Whale: five floors down a beached leviathan, mouth to heart, with no surface at all.
 No world graph, no streaming, no overworld: each floor is a place built by a chain of engine passes the first time its stairs are taken, and the run is won when the heart warden dies.
@@ -53,7 +152,7 @@ Two files; `floors.rs` is the whole map builder.
 cargo run -p delve -- --seed 7
 ```
 
-## Principles
+## Design principles
 
 - **Own the loop or leave it out.** A struct plus a `SystemSet` marker is not a subsystem.
 - **No theme in the engine.** Content is an opaque id in a registry the game fills. No `#[non_exhaustive]` enums with a `Custom` variant, and no closed taxonomy enums.
@@ -61,7 +160,14 @@ cargo run -p delve -- --seed 7
 - **Determinism within a build.** One `RunSeed`, named domains, per-pass streams, no hash containers in gameplay paths.
 - **Measure the hot paths.** Every algorithm crate carries criterion benches on realistic maps.
 
-## Building
+## Documentation
+
+- `docs/OVERVIEW.md` is the inventory of what exists and what is not built yet, kept current.
+- `docs/PLAN.md` is the design: what was decided, why, and which milestone each piece lands in.
+- `docs/reviews/` holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
+- `cargo doc --open -p rl-engine` builds the API reference; every public item is documented and every doc example runs as a test.
+
+## Building and testing
 
 ```sh
 cargo test -p rl-core -p rl-grid      # tier 0 and 1, seconds
@@ -70,4 +176,13 @@ scripts/check-tiers.sh                # the tier boundary
 cargo test --workspace                # everything, builds Bevy
 ```
 
-Dual-licensed under MIT or Apache-2.0.
+## Status
+
+rl-engine is pre-1.0 and its API still moves.
+Two complete example games run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

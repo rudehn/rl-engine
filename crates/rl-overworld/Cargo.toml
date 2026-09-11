@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "rl-engine: rl-overworld"
+description = "rl-engine tier 2: an opt-in Bevy overworld map screen with rivers, roads, discovered sites and a portal picker."
+homepage.workspace = true
+keywords = ["roguelike", "bevy", "overworld", "world-map", "gamedev"]
+categories = ["game-development"]
 
 [dependencies]
 rl-core.workspace = true

@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "rl-engine tier 1: tactic-priority brains over Dijkstra maps. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "ai", "dijkstra-map", "monster-ai", "gamedev"]
+categories = ["game-development", "algorithms"]
 
 [dependencies]
 rl-core.workspace = true

@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "rl-engine: rl-bevy"
+description = "rl-engine tier 2: Bevy plugins for a turn-based roguelike, with the turn loop, actions, combat, items, places and chunk streaming."
+homepage.workspace = true
+keywords = ["roguelike", "bevy", "turn-based", "ecs", "gamedev"]
+categories = ["game-development", "game-engines"]
 
 [dependencies]
 rl-core.workspace = true

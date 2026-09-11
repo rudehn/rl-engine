@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "rl-engine tier 1: facts, counters and quests as data over what happened. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "quests", "gamedev", "events", "achievements"]
+categories = ["game-development"]
 
 [dependencies]
 rl-core.workspace = true

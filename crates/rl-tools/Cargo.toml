@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "rl-engine tier 1: the balance checker and other headless tools over content. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "balance", "gamedev", "spawn-table", "headless"]
+categories = ["game-development", "development-tools"]
 
 [dependencies]
 rl-core.workspace = true

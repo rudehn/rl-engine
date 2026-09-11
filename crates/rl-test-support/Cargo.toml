@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "rl-engine: rl-test-support"
+description = "rl-engine tier 1: ASCII map fixtures, seed sweeps and property helpers for testing roguelike code. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "testing", "fixtures", "property-testing", "gamedev"]
+categories = ["development-tools::testing", "game-development"]
 
 [dependencies]
 rl-core.workspace = true

@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "rl-engine tier 1: content registries and banded tables loaded from RON. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "gamedev", "ron", "registry", "loot-table"]
+categories = ["game-development", "config"]
 
 [dependencies]
 rl-core.workspace = true

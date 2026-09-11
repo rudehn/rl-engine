@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "rl-engine: rl-render"
+description = "rl-engine tier 2: an ASCII glyph grid renderer for Bevy, with a map view of lit, remembered and unknown tiles."
+homepage.workspace = true
+keywords = ["roguelike", "bevy", "ascii", "terminal", "glyph"]
+categories = ["game-development", "rendering"]
 
 [dependencies]
 rl-core.workspace = true

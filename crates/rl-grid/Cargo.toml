@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "rl-engine tier 1: tile registry, terrain, FOV, pathfinding, Dijkstra maps, spatial index. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "fov", "pathfinding", "astar", "dijkstra"]
+categories = ["game-development", "algorithms"]
 
 [dependencies]
 rl-core.workspace = true

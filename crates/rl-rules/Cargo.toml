@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "rl-engine tier 1: stats, damage, statuses and factions as shapes the game fills. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "rpg", "combat", "stats", "status-effects"]
+categories = ["game-development"]
 
 [dependencies]
 rl-core.workspace = true

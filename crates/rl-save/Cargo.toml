@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "rl-engine tier 2: a save backend seam, a versioned schema policy, entity remapping, and the engine's own state captured and restored."
+homepage.workspace = true
+keywords = ["roguelike", "bevy", "save-game", "serialization", "persistence"]
+categories = ["game-development", "encoding"]
 
 [dependencies]
 rl-core.workspace = true

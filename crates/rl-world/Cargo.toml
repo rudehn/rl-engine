@@ -5,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "rl-engine: rl-world"
+description = "rl-engine tier 1: procedural world generation with noise, hydrology, climate, sites, roads and seamless chunks. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "procgen", "worldgen", "terrain", "noise"]
+categories = ["game-development", "simulation"]
 
 [dependencies]
 rl-core.workspace = true
