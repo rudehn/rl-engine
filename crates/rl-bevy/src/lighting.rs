@@ -37,16 +37,26 @@ pub struct LightSource {
     pub radius: i32,
     /// Its hue at full strength.
     pub color: Rgb,
+    /// How far it flickers when drawn, 0 for steady to 255 for a flame
+    /// that can dip to nothing. Gameplay never reads it.
+    #[serde(default)]
+    pub flicker: u8,
 }
 
 impl LightSource {
-    /// A source of `intensity` reaching `radius` tiles in `color`.
+    /// A steady source of `intensity` reaching `radius` tiles in `color`.
     pub const fn new(intensity: u8, radius: i32, color: Rgb) -> Self {
-        Self { intensity, radius, color }
+        Self { intensity, radius, color, flicker: 0 }
+    }
+
+    /// The same source, flickering by `amount` when drawn.
+    pub const fn flickering(mut self, amount: u8) -> Self {
+        self.flicker = amount;
+        self
     }
 
     fn at(&self, origin: Point) -> Emitter {
-        Emitter { origin, intensity: self.intensity, radius: self.radius, color: self.color }
+        Emitter { origin, intensity: self.intensity, radius: self.radius, color: self.color, flicker: self.flicker }
     }
 }
 

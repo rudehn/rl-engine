@@ -10,7 +10,7 @@ use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::passes::ScatterBy;
 use rl_engine::rl_mapgen::{BuildContext, BuildError, Chain, Pass, Phase};
 use rl_engine::rl_overworld::BandAppearance;
-use rl_engine::rl_render::{Cell, TileAppearance};
+use rl_engine::rl_render::{Cell, TileAppearance, Vary};
 use rl_engine::rl_world::WorldGraph;
 use rl_engine::rl_world::chunk::{RiverChannel, RoadPave};
 use rl_engine::rl_world::prelude::*;
@@ -87,18 +87,23 @@ impl Content {
 
     pub fn tile_appearance(&self) -> TileAppearance {
         let mut look = TileAppearance::new();
-        look.set(self.water, Cell::new('~', Color::srgb(0.25, 0.45, 0.9)).on(Color::srgb(0.05, 0.12, 0.3)));
-        look.set(self.sand, Cell::new('.', Color::srgb(0.85, 0.78, 0.5)));
-        look.set(self.grass, Cell::new('.', Color::srgb(0.35, 0.65, 0.3)));
-        look.set(self.tree, Cell::new('T', Color::srgb(0.2, 0.6, 0.25)));
-        look.set(self.rock, Cell::new('#', Color::srgb(0.55, 0.52, 0.5)));
-        look.set(self.marsh, Cell::new('"', Color::srgb(0.3, 0.5, 0.4)));
-        look.set(self.road, Cell::new('+', Color::srgb(0.7, 0.6, 0.45)));
-        look.set(self.plaza, Cell::new('=', Color::srgb(0.6, 0.45, 0.3)));
-        look.set(self.cave, Cell::new('.', Color::srgb(0.5, 0.45, 0.4)));
-        look.set(self.door, Cell::new('+', Color::srgb(0.75, 0.55, 0.3)));
-        look.set(self.timber, Cell::new('#', Color::srgb(0.6, 0.4, 0.2)));
-        look.set(self.plank, Cell::new('.', Color::srgb(0.65, 0.5, 0.3)));
+        // Both colours in full light, and how each varies from cell to
+        // cell: daylight shows these as they are, a lantern warms them.
+        let ground = Vary::new(0.22, 0.06);
+        let stone = Vary::new(0.16, 0.04);
+        let c = |r, g, b| Color::srgb(r, g, b);
+        look.set_varied(self.water, Cell::new('~', c(0.4, 0.62, 1.0)).on(c(0.05, 0.16, 0.42)), Vary::new(0.12, 0.04).shimmering(0.3));
+        look.set_varied(self.sand, Cell::new('.', c(0.95, 0.88, 0.62)).on(c(0.6, 0.52, 0.32)), ground);
+        look.set_varied(self.grass, Cell::new('.', c(0.55, 0.85, 0.4)).on(c(0.14, 0.32, 0.11)), ground);
+        look.set_varied(self.tree, Cell::new('T', c(0.3, 0.8, 0.35)).on(c(0.07, 0.24, 0.08)), ground);
+        look.set_varied(self.rock, Cell::new('#', c(0.8, 0.77, 0.72)).on(c(0.45, 0.43, 0.4)), stone);
+        look.set_varied(self.marsh, Cell::new('"', c(0.45, 0.72, 0.55)).on(c(0.1, 0.24, 0.17)), ground);
+        look.set_varied(self.road, Cell::new('+', c(0.82, 0.72, 0.55)).on(c(0.38, 0.3, 0.21)), stone);
+        look.set_varied(self.plaza, Cell::new('=', c(0.78, 0.62, 0.45)).on(c(0.38, 0.27, 0.18)), stone);
+        look.set_varied(self.cave, Cell::new('.', c(0.72, 0.67, 0.6)).on(c(0.22, 0.2, 0.18)), Vary::new(0.3, 0.07));
+        look.set_varied(self.door, Cell::new('+', c(0.95, 0.7, 0.4)).on(c(0.42, 0.26, 0.12)), stone);
+        look.set_varied(self.timber, Cell::new('#', c(0.88, 0.62, 0.35)).on(c(0.48, 0.3, 0.15)), stone);
+        look.set_varied(self.plank, Cell::new('.', c(0.82, 0.64, 0.4)).on(c(0.34, 0.23, 0.12)), Vary::new(0.2, 0.05));
         look
     }
 

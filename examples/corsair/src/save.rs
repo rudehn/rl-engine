@@ -225,7 +225,7 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
         let id = bestiary.defs.expect(&m.def);
         let e = {
             let mut commands = world.commands();
-            let e = bestiary.spawn(&mut commands, id, m.at);
+            let e = if m.map.is_surface() { bestiary.spawn(&mut commands, id, m.at) } else { bestiary.spawn_underground(&mut commands, id, m.at) };
             commands.entity(e).insert((OnMap(m.map), Health { hp: m.hp, max: bestiary.defs.get(id).hp }));
             e
         };

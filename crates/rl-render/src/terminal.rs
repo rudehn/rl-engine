@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::text::{FontSize, FontSmoothing, FontSource};
 use rl_core::Rect;
-use rl_grid::Rgb;
 
 const BACKGROUND_Z: f32 = 0.0;
 const GLYPH_Z: f32 = 1.0;
@@ -47,20 +46,6 @@ impl Cell {
         };
         Self { glyph: self.glyph, fg: dim(self.fg), bg: dim(self.bg) }
     }
-
-    /// The cell under `light`: both colours multiplied by the light's
-    /// colour, with `floor` of their own brightness kept so that a tile
-    /// seen in the dark by touch or dark sight still reads.
-    pub fn lit_by(self, light: Rgb, floor: f32) -> Self {
-        Self { glyph: self.glyph, fg: tint(self.fg, light, floor), bg: tint(self.bg, light, floor) }
-    }
-}
-
-/// `color` under `light`, keeping `floor` of its own brightness.
-pub fn tint(color: Color, light: Rgb, floor: f32) -> Color {
-    let l = color.to_linear();
-    let f = |c: f32, ch: u8| c * (floor + (1.0 - floor) * ch as f32 / 255.0);
-    Color::linear_rgb(f(l.red, light.r), f(l.green, light.g), f(l.blue, light.b))
 }
 
 /// Sets up the terminal grid and keeps it on screen.

@@ -6,7 +6,11 @@
 //! the fifth floor dies. Everything the delve needs from the engine fits
 //! in this file and `floors.rs`.
 //!
-//! `cargo run -p delve -- --seed 7`
+//! It is also the first game here with the lights off: below the Maw the
+//! only light is the brand the player carries, the bile that pools on the
+//! floor, and whatever the bestiary says a beast sheds.
+//!
+//! `cargo run -p delve -- --seed 7`, or `--floor 3` to start deeper.
 
 mod floors;
 
@@ -20,14 +24,15 @@ use rl_engine::rl_ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_content::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_core::{DiceRoll, Direction, Grid2D, Id, Point, Rect, RunSeed, SeedDomain, geometry};
-use rl_engine::rl_render::{Glyph, MapView, MapViewPlugin, TerminalPlugin};
+use rl_engine::rl_grid::Rgb;
+use rl_engine::rl_render::{CapturePlugin, Glyph, MapView, MapViewPlugin, TerminalPlugin, capture};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{Factions, Relation};
 use rl_engine::rl_ui::{ChromeLayout, ChromePlugin, LogCategory, MessageLog, StatusLine};
 use serde::Deserialize;
 
-use crate::floors::{FLOORS, Whale, floor_of, map_of, name_of};
+use crate::floors::{FLOORS, Whale, ambient_of, floor_of, map_of, name_of};
 
 const COLS: i32 = 90;
 const ROWS: i32 = 46;
@@ -41,32 +46,42 @@ fn main() -> AppExit {
     if let Some(i) = args.iter().position(|a| a == "--seed") {
         seed = RunSeed(args[i + 1].parse().expect("seed"));
     }
+    let first = args.iter().position(|a| a == "--floor").map(|i| args[i + 1].parse::<u32>().expect("floor").clamp(1, FLOORS)).unwrap_or(1);
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
-                primary_window: Some(Window {
+                primary_window: Some(capture::prepare(Window {
                     title: "The Hollow Whale".into(),
                     resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
                     ..default()
-                }),
+                })),
                 ..default()
             })
             .set(ImagePlugin::default_nearest()),
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin))
+    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, CapturePlugin))
     .insert_resource(Seed(seed))
+    .insert_resource(FirstFloor(first))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
     .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
     .add_systems(Startup, start)
     .add_systems(Update, player_input.in_set(EngineSet::Input))
+    .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
     .add_systems(Update, (populate_floor, narrate, update_status).chain().in_set(EngineSet::Present));
     app.run()
 }
 
 #[derive(Resource, Clone, Copy)]
 struct Seed(RunSeed);
+
+/// The floor the run starts on.
+#[derive(Resource, Clone, Copy)]
+struct FirstFloor(u32);
+
+/// What the player's brand sheds: a whale-oil flame.
+const BRAND: LightSource = LightSource::new(200, 8, Rgb::new(255, 190, 120)).flickering(60);
 
 /// One kind of beast, as authored.
 #[derive(Debug, Clone, Deserialize)]
@@ -81,6 +96,10 @@ struct BeastDef {
     speed: u32,
     flee_at: i32,
     spawn: (i32, i32, u32, u32, u32),
+    #[serde(default)]
+    glow: Option<LightSource>,
+    #[serde(default)]
+    dark_sight: Option<i32>,
 }
 
 impl Named for BeastDef {
@@ -106,19 +125,24 @@ struct Beasts {
 impl Beasts {
     fn spawn(&self, commands: &mut Commands, id: Id<BeastDef>, at: Point) -> Entity {
         let d = self.defs.get(id);
-        commands
-            .spawn((
-                (Actor, Blocks, Position(at), Health::full(d.hp), Armor(d.armor), Faction(self.whale)),
-                (
-                    MeleeAttack { kind: self.bite, dice: d.attack },
-                    Perception(d.perception),
-                    Speed(d.speed),
-                    Mind(self.brains[id.index()].clone()),
-                    Kind(id),
-                    Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5),
-                ),
-            ))
-            .id()
+        let mut beast = commands.spawn((
+            (Actor, Blocks, Position(at), Health::full(d.hp), Armor(d.armor), Faction(self.whale)),
+            (
+                MeleeAttack { kind: self.bite, dice: d.attack },
+                Perception(d.perception),
+                Speed(d.speed),
+                Mind(self.brains[id.index()].clone()),
+                Kind(id),
+                Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5),
+            ),
+        ));
+        if let Some(glow) = d.glow {
+            beast.insert(glow);
+        }
+        if let Some(reach) = d.dark_sight {
+            beast.insert(DarkSight(reach));
+        }
+        beast.id()
     }
 }
 
@@ -126,6 +150,7 @@ impl Beasts {
 fn start(
     mut commands: Commands,
     seed: Res<Seed>,
+    first: Option<Res<FirstFloor>>,
     mut warps: MessageWriter<WarpRequest>,
     mut log: ResMut<MessageLog>,
     mut next: ResMut<NextState<EngineState>>,
@@ -155,36 +180,55 @@ fn start(
     commands.insert_resource(whale.appearance());
     commands.insert_resource(WorldMap::new(64, whale.tiles().tables()));
     commands.insert_resource(Knowledge::new(64));
+    commands.insert_resource(Bile(whale.bile()));
     commands.insert_resource(PlaceRulesRes(Box::new(whale)));
+    // The lights go off; each floor sets its own ambient as it is entered.
+    commands.insert_resource(Lighting::dark());
 
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(9), RevealsMap, Speed(100)),
+            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(30), RevealsMap, Speed(100)),
             (
                 Health::full(30),
                 Armor(1),
                 Faction(you),
                 MeleeAttack { kind: kinds.expect("blade"), dice: DiceRoll::new(1, 6) },
+                BRAND,
                 Glyph::new('@', Color::WHITE).on_layer(10),
             ),
         ))
         .id();
     // No surface: the first floor is the first place, and the run starts in it.
-    warps.write(WarpRequest::into_place(player, map_of(1)));
-    log.push(format!("Seed {}. The whale's jaw is propped open with a mast. You climb in.", seed.0.0), LogCategory::Notice, 0);
+    warps.write(WarpRequest::into_place(player, map_of(first.map(|f| f.0).unwrap_or(1))));
+    log.push(format!("Seed {}. The whale's jaw is propped open with a mast. You light a brand and climb in.", seed.0.0), LogCategory::Notice, 0);
     next.set(EngineState::Playing);
 }
 
-/// Stairs and beasts, the first time a floor is entered.
-fn populate_floor(
-    mut commands: Commands,
-    mut entered: MessageReader<PlaceEntered>,
-    beasts: Res<Beasts>,
-    map: Res<WorldMap>,
-    seed: Res<Seed>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
-) {
+/// Each floor's own ambient, set between the turns and the light so the
+/// frame the stairs land on is drawn in the right light.
+fn set_ambient(map: Res<WorldMap>, mut lighting: ResMut<Lighting>) {
+    let ambient = ambient_of(floor_of(map.current()));
+    if lighting.ambient != ambient {
+        lighting.ambient = ambient;
+    }
+}
+
+/// The tile that glows, kept from the whale once it is handed to the engine.
+#[derive(Resource, Clone, Copy)]
+struct Bile(rl_engine::rl_grid::TileId);
+
+/// What a floor is populated from.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Stock<'w> {
+    beasts: Res<'w, Beasts>,
+    map: Res<'w, WorldMap>,
+    bile: Res<'w, Bile>,
+    seed: Res<'w, Seed>,
+}
+
+/// Stairs, glowing bile and beasts, the first time a floor is entered.
+fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
+    let Stock { beasts, map, bile, seed } = &stock;
     for ev in entered.read() {
         let floor = floor_of(ev.map);
         log.push(format!("Floor {floor}: {}.", name_of(floor)), LogCategory::Notice, turns.turn_number());
@@ -207,6 +251,10 @@ fn populate_floor(
             ));
         }
         let Some(place) = map.place(ev.map) else { continue };
+        // Bile glows: a faint steady source on every pooled tile.
+        for (p, _) in place.terrain.iter().filter(|(_, t)| *t == bile.0) {
+            commands.spawn((Position(p), LightSource::new(70, 2, Rgb::new(160, 255, 70))));
+        }
         // The warden stands where the heart's prefab marked it.
         for spot in place.spots.iter().filter(|s| s.tag == 'W' as u32) {
             beasts.spawn(&mut commands, beasts.defs.expect("heart warden"), spot.at);

@@ -5,11 +5,17 @@
 //! builds each level through [`PlaceRules`] the first time the player
 //! goes down, and this module puts the stairs, the smugglers and the
 //! treasure in on that first arrival.
+//!
+//! Caves are dark. The surface is lit by the sun, which is nothing but an
+//! ambient light the size of the map; underground the ambient is nothing,
+//! the player lights a lantern on the way down, and the smugglers carry
+//! their own.
 
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{Grid2D, Point, RunSeed, SeedDomain, geometry};
+use rl_engine::rl_grid::{Light, Rgb};
 use rl_engine::rl_mapgen::dungeon::{Doors, ExitPoint, FarthestExit, RandomStart, Rooms};
 use rl_engine::rl_mapgen::passes::{CellularCave, KeepLargestRegion, StartPoint};
 use rl_engine::rl_mapgen::prefab::{Placement, Prefab, StampPrefab, Stamped};
@@ -27,6 +33,36 @@ pub const LEVELS: u32 = 2;
 
 /// Spot tags the builder reports.
 const TREASURE: u32 = 1;
+
+/// The sun: warm white at the level a tile shows its authored colours.
+pub fn daylight() -> Light {
+    Light::new(170, Rgb::new(255, 250, 236))
+}
+
+/// What the player's lantern sheds underground.
+const LANTERN: LightSource = LightSource::new(200, 8, Rgb::new(255, 205, 140)).flickering(30);
+
+/// Keeps the light right for the map the player is on: the sun and no
+/// lantern on the surface, darkness and a lit lantern below. Runs between
+/// the turns and the light, so the frame a warp lands on is drawn in the
+/// right light.
+pub fn light_the_way(mut commands: Commands, map: Res<WorldMap>, mut lighting: ResMut<Lighting>, player: Query<(Entity, Has<LightSource>), With<Player>>) {
+    let Ok((player, lit)) = player.single() else { return };
+    let underground = !map.current().is_surface();
+    let ambient = if underground { Light::DARK } else { daylight() };
+    if lighting.ambient != ambient {
+        lighting.ambient = ambient;
+    }
+    match (underground, lit) {
+        (true, false) => {
+            commands.entity(player).insert(LANTERN);
+        }
+        (false, true) => {
+            commands.entity(player).remove::<LightSource>();
+        }
+        _ => {}
+    }
+}
 
 /// The map id of a cave level under site `site`.
 pub fn cave_id(site: usize, depth: u32) -> MapId {
@@ -195,7 +231,7 @@ pub fn populate_places(mut commands: Commands, mut entered: MessageReader<PlaceE
                 if !stock.map.is_walkable(p) || stock.occupancy.is_occupied(p) || geometry::chebyshev(p, ev.entry) < 8 {
                     continue;
                 }
-                stock.bestiary.spawn(&mut commands, id, p);
+                stock.bestiary.spawn_underground(&mut commands, id, p);
                 placed += 1;
             }
         }

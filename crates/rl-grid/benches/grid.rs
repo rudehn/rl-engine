@@ -127,8 +127,9 @@ fn bench_light(c: &mut Criterion) {
     let (t, r) = cave(96, 64, 1);
     let view = t.view(&r);
     let mut rng = StdRng::seed_from_u64(3);
-    let emitters: Vec<Emitter> =
-        (0..20).map(|i| Emitter { origin: open_cell(&t, &r, &mut rng), intensity: 150 + i * 5, radius: 8, color: Rgb::new(255, 150, 40) }).collect();
+    let emitters: Vec<Emitter> = (0..20)
+        .map(|i| Emitter { origin: open_cell(&t, &r, &mut rng), intensity: 150 + i * 5, radius: 8, color: Rgb::new(255, 150, 40), flicker: 0 })
+        .collect();
     let mut field = LightField::new(96, 64);
     let mut scratch = BitGrid::new(96, 64);
     group.bench_function("20_sources_radius_8", |b| {

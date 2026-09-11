@@ -42,6 +42,8 @@ pub struct MonsterDef {
     pub drops: Vec<(String, u32)>,
     #[serde(default)]
     pub inflicts: Option<(String, u32, u32)>,
+    #[serde(default)]
+    pub lantern: Option<LightSource>,
 }
 
 impl Named for MonsterDef {
@@ -151,6 +153,16 @@ impl Bestiary {
     /// Marks regions as populated, when continuing a run.
     pub fn restore_spawned(&mut self, regions: impl IntoIterator<Item = Point>) {
         self.spawned = regions.into_iter().collect();
+    }
+
+    /// Spawns one `id` standing at `p` on the current map, underground, where
+    /// whatever carries a lantern has it lit.
+    pub fn spawn_underground(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
+        let e = self.spawn(commands, id, p);
+        if let Some(lantern) = self.defs.get(id).lantern {
+            commands.entity(e).insert(lantern);
+        }
+        e
     }
 
     /// Spawns one `id` standing at `p` on the current map.

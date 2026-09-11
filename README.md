@@ -9,7 +9,7 @@
 It gives you procedural dungeon and world generation, field of view, A* pathfinding, Dijkstra maps, monster AI, combat, items, quests and save games as small tested crates you depend on, not code you copy.
 The core algorithms have no Bevy dependency, so map generation, pathfinding and game rules run headless, test in milliseconds and build for WebAssembly.
 
-![Corsair, the worked example: a procedurally generated island port with docks, water and grassland, drawn as an ASCII glyph grid](docs/images/corsair.png)
+![Corsair, the worked example: a procedurally generated island port with docks, water and mangrove in daylight, each cell its own shade of its tile](docs/images/corsair.png)
 
 ## Features
 
@@ -24,7 +24,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
 - **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, fuel that burns down, dark sight, and a viewshed cut to what is lit; opt-in per game, with ambient a value the game writes.
-- **ASCII rendering and UI**: a diffed glyph grid renderer, a map view with remembered tiles and tinted by light, a message log, a status line, menus and an overworld map screen.
+- **ASCII rendering and UI**: a diffed glyph grid renderer; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory fades to a cold blue; a message log, a status line, menus and an overworld map screen; and a capture tool that plays keys and photographs the window.
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
 - **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
 
@@ -144,26 +144,40 @@ Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>`
 
 ### The Hollow Whale, a dungeon delve
 
-![The Hollow Whale: a multi-floor dungeon crawl generated from engine passes](docs/images/delve.png)
+![The Hollow Whale: the Maw, a cavern of flesh and teeth lit by a brand in the player's hand and grey daylight through the jaw](docs/images/delve.png)
 
 `examples/delve` is the Hollow Whale: five floors down a beached leviathan, mouth to heart, with no surface at all.
 No world graph, no streaming, no overworld: each floor is a place built by a chain of engine passes the first time its stairs are taken, and the run is won when the heart warden dies.
+Below the Maw the lights are off: the only light is the brand the player carries, the bile pooled on the floor, and what the bestiary says a beast sheds.
 Two files; `floors.rs` is the whole map builder.
 
 ```sh
 cargo run -p delve -- --seed 7
+cargo run -p delve -- --seed 7 --floor 3    # start deeper
 ```
 
 ### Lamplight, the lighting example
 
-`examples/lamplight` is one dark cave and everything that glows in it: a lantern the player lights and douses that burns oil, a brazier that never moves, wisps that drift about with a glow of their own, a torch on the floor to pick up and drop, and lurkers that see in the dark and are found only when a light reaches them.
+![Lamplight: a dark cave lit by a lantern, a brazier, glowing fungus and a wisp, with remembered passages in cold blue](docs/images/lamplight.png)
+
+`examples/lamplight` is one dark cave and everything that glows in it: a lantern the player lights and douses that burns oil, a brazier that never moves, wisps that drift about with a glow of their own, a torch on the floor to pick up and drop, fungus and still water, and lurkers that see in the dark and are found only when a light reaches them.
 One file, and the whole of turning lighting on is inserting the `Lighting` resource; one `LightSource` component serves the prop, the actors and the items.
 
 ```sh
 cargo run -p lamplight -- --seed 7
 ```
 
-Keys: walk as in the delve, `L` to light or douse the lantern, `g` to pick up, `d` to drop the torch, `h` to show light as digits, `.` to wait, `q` to quit.
+Keys: walk as in the delve, `L` to light or douse the lantern, `g` to pick up, `d` to drop the torch, `v` to show light as digits, `.` to wait, `q` to quit.
+
+### Pictures of your own
+
+Any of the three photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
+
+```sh
+RL_CAPTURE=shot.png RL_CAPTURE_KEYS="j*4 l*6 ." cargo run -p lamplight -- --seed 7
+```
+
+The window opens above the others without taking focus, and the screen must be unlocked; a frame that comes back black is refused rather than saved.
 
 ## Design principles
 

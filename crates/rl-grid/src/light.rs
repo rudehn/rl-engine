@@ -9,6 +9,10 @@
 //! brightness from colour would make a red light count as darkness, so
 //! nothing here ever does.
 //!
+//! A third channel, `waver`, says how much of a tile's intensity comes
+//! from flickering sources. It is for the renderer alone: gameplay reads
+//! the steady `intensity`, so a guttering torch never changes what is seen.
+//!
 //! Everything is integer, so a field is a deterministic function of tile
 //! opacity and emitter placement, and emitters are sorted before they are
 //! cast so the order they arrived in cannot leak into the result.
@@ -62,15 +66,18 @@ pub struct Light {
     pub intensity: u8,
     /// The colour landing on the tile. What the renderer reads.
     pub color: Rgb,
+    /// How much of `intensity` may dip when its flickering sources do,
+    /// never more than `intensity`. What the renderer reads, and nothing else.
+    pub waver: u8,
 }
 
 impl Light {
     /// No light at all.
-    pub const DARK: Self = Self { intensity: 0, color: Rgb::new(0, 0, 0) };
+    pub const DARK: Self = Self { intensity: 0, color: Rgb::new(0, 0, 0), waver: 0 };
 
-    /// Light of `intensity` in `color`, with the colour scaled to match.
+    /// Steady light of `intensity` in `color`, with the colour scaled to match.
     pub fn new(intensity: u8, color: Rgb) -> Self {
-        Self { intensity, color: color.scaled(intensity) }
+        Self { intensity, color: color.scaled(intensity), waver: 0 }
     }
 
     /// Uncoloured light: white at `intensity`.
@@ -78,9 +85,20 @@ impl Light {
         Self::new(intensity, Rgb::WHITE)
     }
 
+    /// The same light with `flicker / 255` of it wavering.
+    pub fn flickering(mut self, flicker: u8) -> Self {
+        self.waver = ((self.intensity as u32 * flicker as u32) / 255) as u8;
+        self
+    }
+
     /// Both lights on one tile.
+    ///
+    /// The waver of the blend is exact at both ends: the blend of the two
+    /// at full strength, less the blend of their steady parts alone.
     pub fn screen(self, other: Self) -> Self {
-        Self { intensity: screen(self.intensity, other.intensity), color: self.color.screen(other.color) }
+        let intensity = screen(self.intensity, other.intensity);
+        let steady = screen(self.intensity - self.waver, other.intensity - other.waver);
+        Self { intensity, color: self.color.screen(other.color), waver: intensity - steady }
     }
 }
 
@@ -95,12 +113,15 @@ pub struct Emitter {
     pub radius: i32,
     /// Its hue at full strength.
     pub color: Rgb,
+    /// How far it flickers, 0 for steady to 255 for a flame that can dip
+    /// to nothing. Drawn, never played.
+    pub flicker: u8,
 }
 
 impl Emitter {
     /// The light this emitter lands on a tile `d` away, before shadows.
     pub fn light_at(&self, d: i32) -> Light {
-        Light::new(falloff(self.intensity, self.radius, d), self.color)
+        Light::new(falloff(self.intensity, self.radius, d), self.color).flickering(self.flicker)
     }
 }
 
@@ -286,6 +307,18 @@ mod tests {
     }
 
     #[test]
+    fn waver_blends_exactly_at_both_ends() {
+        let steady = Light::white(200);
+        let flame = Light::white(200).flickering(255);
+        assert_eq!(flame.waver, 200);
+        let both = steady.screen(flame);
+        assert_eq!(both.intensity, screen(200, 200));
+        assert_eq!(both.intensity - both.waver, 200, "at its lowest the flame adds nothing to the steady light");
+        assert_eq!(steady.screen(steady).waver, 0);
+        assert_eq!(Light::DARK.screen(flame), flame);
+    }
+
+    #[test]
     fn distance_rounds_to_whole_tiles() {
         let o = Point::ZERO;
         assert_eq!(distance(o, Point::new(3, 4)), 5);
@@ -313,7 +346,7 @@ mod tests {
         // Wall at x=10 with a gap at y=4; light at (8,2) does not reach (12,2).
         let mut field = LightField::new(20, 9);
         let mut scratch = BitGrid::new(20, 9);
-        field.cast(&t.view(&r), &Emitter { origin: Point::new(8, 2), intensity: 200, radius: 8, color: Rgb::WHITE }, &mut scratch);
+        field.cast(&t.view(&r), &Emitter { origin: Point::new(8, 2), intensity: 200, radius: 8, color: Rgb::WHITE, flicker: 0 }, &mut scratch);
         assert_eq!(field.at(Point::new(8, 2)).intensity, 200);
         assert!(field.at(Point::new(9, 2)).intensity > 0);
         assert_eq!(field.at(Point::new(12, 2)).intensity, 0, "behind the wall");
@@ -331,6 +364,7 @@ mod tests {
                 intensity: 120 + i as u8 * 10,
                 radius: 6,
                 color: Rgb::new(255, 150, 40),
+                flicker: (i * 20) as u8,
             })
             .collect();
         let mut scratch = BitGrid::new(30, 20);

@@ -1,6 +1,6 @@
 # Lighting
 
-Status: phases A and B built 2026-09-11; C onward proposed.
+Status: phases A to C built 2026-09-11, with a Brogue-style renderer and Corsair's dark caves; the rest proposed.
 Written 2026-09-11 against `main` at `7df090a`.
 It adapts the fantasy-rogue lighting plan (v3) to the engine's shape: theme-agnostic, opt-in, split across the tiers, and integer throughout.
 
@@ -141,9 +141,12 @@ That one change is what makes a dark-sighted hunter dangerous and a doused playe
 
 ### rl-render
 
-`draw_map` tints a visible tile by its `Light`: pigment scaled by intensity and multiplied toward the light colour, with a legibility floor so a green glyph under amber light does not vanish.
-Remembered tiles keep the memory wash they have now.
-Glyphs are tinted the same way.
+Built in the manner of Brogue, after Nate pointed at a Brogue screenshot on 2026-09-11.
+A tile is authored with a glyph, both colours and a `Vary`: each cell is jittered by a hash of its position, and restless tiles shimmer over time.
+`draw_map` multiplies both colours of a visible tile channel by channel by the light that lands, from a dark floor up to a gain cap, so light paints the background as well as the glyph.
+The wavering part of the light dips on a smooth noise that neighbouring cells share, so a flame ripples instead of strobing.
+Remembered tiles fade to a darker, greyer, cooler colour, so memory and sight never look alike.
+Glyphs are lit the same way.
 A heat-map toggle draws the intensity as digits, which is how phase A is inspected before anything else changes.
 
 ## 4. The example: lamplight
@@ -157,7 +160,7 @@ The delve and Corsair adopt lighting only after it works there.
 - A wisp: a harmless monster with a faint blue glow that wanders, so the player watches light move through the dark.
 - A lurker: a dark-sighted hunter with no glow, visible only when the player's light reaches it, which is the whole lesson of the gate.
 - A torch on the floor: lit where it lies, shed from the player once picked up, and lit on the floor again when dropped.
-- A heat-map toggle on `h` that draws intensity as digits.
+- A heat-map toggle on `v` that draws intensity as digits.
 - Headless tests that walk the player into the dark and assert what is and is not seen.
 
 It exists to show the system, so it does nothing else: no combat rules beyond what spawning a monster needs, no items beyond the two lights, no save.
@@ -167,7 +170,9 @@ It exists to show the system, so it does nothing else: no combat rules beyond wh
 `Lighting` is derived and never persisted; a load marks the static layer dirty and rebuilds.
 `Fuel` and the presence of a `LightSource` on an item are the game's to save with its item state.
 Nothing in lighting draws from any RNG.
-A flicker, if ever wanted, is cosmetic and lives in the renderer on its own stream.
+Flicker is cosmetic.
+A source's `flicker` becomes a `waver` channel in the field, the part of a tile's intensity that may dip, and only the renderer reads it, dipping it on a noise over the frame clock.
+Gameplay reads the steady intensity, so a guttering torch never changes what is seen and a replay is unaffected.
 
 ## 6. Cost
 
@@ -187,7 +192,7 @@ The surface window is up to nine regions, so the compose pass is the number to m
   Carried sources shed from the carrier, `Fuel`, `LightEvent`.
   `examples/lamplight` lands in the same slice with its prop, monster and item lights and its tests.
   Built: the static and dynamic layers are recast when their sorted emitter lists differ from the last cast, which needs no change detection and catches every add, move, pickup and removal; facts for the ledger were left to the game, which maps `LightEvent` as it maps any other event.
-- **C. The delve goes dark.**
+- **C. The delve goes dark.** Built, with Corsair's caves in the same slice.
   Ambient zero, bile pools as static green sources, the heart as a red one, the player starting with a burning brand, salt ghosts with dark sight.
   Play it before going on; this is the phase that changes the feel of an existing game.
 - **D. Corsair, at its own pace.**

@@ -27,6 +27,7 @@ use bevy::window::WindowResolution;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
 use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
+use rl_engine::rl_render::{CapturePlugin, capture};
 use rl_engine::rl_render::{Glyph, MapView, MapViewPlugin, TerminalPlugin};
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{ChromeLayout, ChromePlugin, LogCategory, MessageLog, StatusLine};
@@ -82,17 +83,17 @@ fn main() -> AppExit {
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
-                primary_window: Some(Window {
+                primary_window: Some(capture::prepare(Window {
                     title: "Corsair".to_string(),
                     resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
                     ..default()
-                }),
+                })),
                 ..default()
             })
             .set(ImagePlugin::default_nearest()),
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: FONT })
-    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, OverworldPlugin))
+    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, OverworldPlugin, CapturePlugin))
     .insert_resource(StartSeed { seed, regions, resume })
     .insert_resource(Saves::platform_default("corsair"))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
@@ -106,6 +107,7 @@ fn main() -> AppExit {
     // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
     .add_systems(Update, save::save_keys.after(EngineSet::Present))
     .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
+    .add_systems(Update, places::light_the_way.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
     .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
     .add_systems(
         Update,
@@ -201,6 +203,7 @@ fn start_world(world: &mut World) {
     world.insert_resource(content.band_appearance());
     world.insert_resource(WorldMap::new(region_size, content.tiles().tables()));
     world.insert_resource(Knowledge::new(region_size));
+    world.insert_resource(Lighting::new(places::daylight()));
     world.insert_resource(WorldRes(graph));
     world.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));
     world.insert_resource(ChunkRulesRes(Box::new(content)));

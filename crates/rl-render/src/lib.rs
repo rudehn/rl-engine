@@ -13,14 +13,20 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod capture;
 pub mod map_view;
+pub mod shade;
 pub mod terminal;
 
+pub use capture::CapturePlugin;
 pub use map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+pub use shade::{Memory, Shading, Vary};
 pub use terminal::{Cell, Terminal, TerminalPlugin};
 
 /// The names most callers want in scope.
 pub mod prelude {
+    pub use crate::capture::CapturePlugin;
     pub use crate::map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+    pub use crate::shade::{Memory, Shading, Vary};
     pub use crate::terminal::{Cell, Terminal, TerminalPlugin};
 }

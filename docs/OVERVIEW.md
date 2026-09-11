@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after lighting.
+Last updated: 2026-09-11, after the Brogue-style shading.
 
 ## The shape
 
@@ -36,7 +36,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Region-bounded `DijkstraMap` with scale and rescan for flee maps.
 - `SpatialGrid`.
 - Targeting: own, adjacent, bolt, ball, beam and cone shapes resolved to a footprint against a caller-named blocker, and `clear_shot`.
-- Light: `Light` as an intensity and a landed colour, `Emitter`, integer falloff to zero at the rim, screen blending, and a `LightField` cast through the shadowcast in an order-independent way, with a flood for glowing areas and a compose over two layers and an ambient.
+- Light: `Light` as an intensity, a landed colour and a waver the renderer alone reads, `Emitter` with a flicker, integer falloff to zero at the rim, screen blending, and a `LightField` cast through the shadowcast in an order-independent way, with a flood for glowing areas and a compose over two layers and an ambient.
 - Criterion benches on realistic maps, lighting at twenty sources included.
 
 ### rl-mapgen
@@ -114,8 +114,10 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 ### rl-render
 
 - A diffed terminal back buffer.
-- The map view with lit, remembered and unknown tiles, tinted by the light that lands when lighting is on, down to a floor so what is seen in the dark still reads.
+- The map view with lit, remembered and unknown tiles.
+- Shading, in the manner of Brogue: each tile authored with both colours and a `Vary` that jitters every cell by a hash of its position and can shimmer over time; light multiplies glyph and background channel by channel, down to a dark floor and up to a gain cap; the wavering part of a light dips on a smooth noise so flames ripple; `Memory` fades what was seen to a darker, greyer, cooler colour.
 - `LightOverlay`: intensity drawn as digits.
+- `CapturePlugin`: `RL_CAPTURE` plays `RL_CAPTURE_KEYS` through the real keyboard input, photographs the window without taking focus, refuses a black frame, and exits.
 - Glyph entities filtered to the current map.
 
 ### rl-ui
@@ -143,17 +145,17 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 
 ## The third example: Lamplight
 
-One dark cave: a lantern that burns oil and is lit or doused with a use action, a brazier, wisps that glow and drift, a torch on the floor, and lurkers with dark sight and no glow.
+One dark cave: a lantern that burns oil and is lit or doused with a use action, a brazier, wisps that glow and drift, fungus that glows, pools that shimmer, a torch on the floor, and lurkers with dark sight and no glow.
 `main.rs` is the whole game; it is the test that lighting is one resource and one component away.
 
 ## The second example: the Hollow Whale
 
-Five floors of a beached leviathan, mouth to heart, with no surface: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
+Five floors of a beached leviathan, mouth to heart, with no surface and, below the Maw's grey daylight, no light but a brand, the bile and whatever a beast sheds: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
 `floors.rs` is the whole map builder; it is the test that a dungeon delve is first-class.
 
 ## The worked example: Corsair
 
-Islands from the world graph, ports with huts, a bestiary, armory, affixes, statuses and quests from RON, caves with a treasure vault, a pistol, a ledger, saving and continuing, and a balance report.
+Islands in daylight from the world graph, dark caves lit by the player's lantern and the smugglers' own, ports with huts, a bestiary, armory, affixes, statuses and quests from RON, caves with a treasure vault, a pistol, a ledger, saving and continuing, and a balance report.
 It is built only on the public API, so it is the test that the seams are right.
 
 ## Not built yet
@@ -163,7 +165,7 @@ It is built only on the public API, so it is the test that the seams are right.
 - A character sheet.
 - Abilities as data over the targeting shapes.
 - Tile fields for fire and gas, and the glow they would shed.
-- The delve and Corsair with lighting turned on: dark floors, a lantern in the armory, nights on the open water.
+- Nights on Corsair's open water, and a lantern the player can douse or run out of.
 - Lit detection ranges, a light-averse tactic, and a ranged penalty in the dark once accuracy exists.
 - Scripted encounters.
 - The wasm unload bridge.

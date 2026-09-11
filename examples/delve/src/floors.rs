@@ -7,12 +7,13 @@
 
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{Grid2D, RunSeed};
+use rl_engine::rl_grid::{Light, Rgb};
 use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::dungeon::{Bsp, Doors, FarthestExit, RandomStart, Rooms};
 use rl_engine::rl_mapgen::passes::{CellularCave, KeepLargestRegion, Scatter};
 use rl_engine::rl_mapgen::prefab::{Placement, Prefab, StampPrefab};
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
-use rl_engine::rl_render::{Cell, TileAppearance};
+use rl_engine::rl_render::{Cell, TileAppearance, Vary};
 use rl_engine::rl_world::WorldGraph;
 
 /// How deep the whale goes.
@@ -26,6 +27,15 @@ pub fn floor_of(map: MapId) -> u32 {
 /// The map id of a floor.
 pub fn map_of(floor: u32) -> MapId {
     MapId(floor)
+}
+
+/// The light everywhere on a floor before anything glows: grey daylight
+/// through the propped jaw in the Maw, nothing at all deeper in.
+pub fn ambient_of(floor: u32) -> Light {
+    match floor {
+        1 => Light::new(40, Rgb::new(190, 205, 255)),
+        _ => Light::DARK,
+    }
 }
 
 /// What a floor is called.
@@ -67,15 +77,24 @@ impl Whale {
         &self.tiles
     }
 
+    /// Each tile in full light, both colours, and how it varies from cell
+    /// to cell. The brand's light and the dark do the rest.
     pub fn appearance(&self) -> TileAppearance {
         let mut look = TileAppearance::new();
-        look.set(self.blubber, Cell::new('#', Color::srgb(0.55, 0.3, 0.35)));
-        look.set(self.flesh, Cell::new('.', Color::srgb(0.6, 0.35, 0.4)));
-        look.set(self.tooth, Cell::new('^', Color::srgb(0.9, 0.9, 0.8)));
-        look.set(self.bile, Cell::new('~', Color::srgb(0.6, 0.75, 0.2)).on(Color::srgb(0.15, 0.2, 0.05)));
-        look.set(self.bone, Cell::new('#', Color::srgb(0.85, 0.85, 0.75)));
-        look.set(self.sinew, Cell::new('+', Color::srgb(0.8, 0.5, 0.5)));
+        let flesh = Vary::new(0.28, 0.07);
+        let bone = Vary::new(0.14, 0.03);
+        look.set_varied(self.blubber, Cell::new('#', Color::srgb(0.88, 0.58, 0.58)).on(Color::srgb(0.52, 0.25, 0.29)), flesh);
+        look.set_varied(self.flesh, Cell::new('.', Color::srgb(0.88, 0.6, 0.58)).on(Color::srgb(0.3, 0.13, 0.15)), flesh);
+        look.set_varied(self.tooth, Cell::new('^', Color::srgb(1.0, 0.97, 0.88)).on(Color::srgb(0.56, 0.52, 0.45)), bone);
+        look.set_varied(self.bile, Cell::new('~', Color::srgb(0.78, 0.98, 0.32)).on(Color::srgb(0.2, 0.3, 0.05)), Vary::new(0.2, 0.05).shimmering(0.25));
+        look.set_varied(self.bone, Cell::new('#', Color::srgb(0.96, 0.94, 0.86)).on(Color::srgb(0.62, 0.6, 0.52)), bone);
+        look.set_varied(self.sinew, Cell::new('+', Color::srgb(1.0, 0.66, 0.62)).on(Color::srgb(0.46, 0.15, 0.18)), flesh);
         look
+    }
+
+    /// The tile that glows: bile gives off its own faint green light.
+    pub fn bile(&self) -> TileId {
+        self.bile
     }
 
     /// The heart chamber: the warden at the `W`, sinew curtains for doors.
@@ -137,7 +156,9 @@ impl rl_engine::rl_mapgen::Pass<BaseContext> for Pools {
 impl PlaceRules for Whale {
     fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
         let floor = floor_of(map);
-        let (wall, open) = (self.blubber, self.flesh);
+        // The ribcage is walled in bone; everywhere else is blubber.
+        let wall = if floor == 4 { self.bone } else { self.blubber };
+        let open = self.flesh;
         let mut ctx = BaseContext::blank(70, 40, self.tiles.clone(), wall);
         let seed = RunSeed(self.seed.0 ^ (floor as u64) << 32);
         let chain = match floor {

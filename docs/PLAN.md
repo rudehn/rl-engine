@@ -38,7 +38,13 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `rl-render` tints by the landed colour and draws intensity as digits on request.
   The third example, `examples/lamplight`, is one cave with a lantern, a brazier, wisps, a torch and lurkers.
   Nate, 2026-09-11: no day cycle forced on a delve, lights on items, monsters and props, and a basic example.
-- Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, lighting in the delve and Corsair, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
+- 2026-09-11: the map is drawn the way Brogue draws one, and the examples go dark.
+  `rl-grid`'s `Light` gains a `waver` channel that only the renderer reads, fed by a source's `flicker`.
+  `rl-render` gains `shade`: tiles authored with both colours and a per-cell `Vary` that can shimmer, light that multiplies glyph and background, flicker on a smooth noise, and `Memory` that fades to cold blue; and `capture`, which plays keys through the real input, photographs the window and refuses a black frame.
+  The delve turns lighting on (grey daylight in the Maw, darkness below, a brand, glowing bile, beasts' glow and dark sight from RON, `--floor`); Corsair's surface is daylit and its caves dark, with the player's lantern lit on the way down and lanterns on cutthroats and marines from RON; Lamplight gains fungus, pools and flames.
+  Found on the way: Lamplight's `h` toggled the heat map before movement read it, so walking west with `h` never worked; the heat map is on `v` now.
+  Nate, 2026-09-11: "I want the lighting to look like this screenshot", a Brogue screenshot.
+- Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.

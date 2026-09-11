@@ -3,9 +3,11 @@
 //! The engine's third example, small enough to read in one sitting, and
 //! the one that shows lighting. There is no surface, one map, and no goal
 //! beyond seeing: the player carries a lantern that burns oil, a brazier
-//! stands lit in the largest chamber, wisps drift about with a glow of
-//! their own, a torch lies on the floor to be picked up and dropped, and
-//! lurkers hunt in the dark, seen only when a light reaches them.
+//! burns in a chamber nearby, wisps drift about with a glow of their own,
+//! patches of fungus glow green, a torch lies on the floor to be picked up
+//! and dropped, and lurkers hunt in the dark, seen only when a light
+//! reaches them. Every tile varies from cell to cell and flames flicker,
+//! all of it authored in `Cave::appearance` and the light sources below.
 //!
 //! Everything lighting-shaped is one component, [`LightSource`], on a
 //! prop, an actor or an item; the engine casts it, gates sight by it and
@@ -14,7 +16,7 @@
 //! `cargo run -p lamplight -- --seed 7`
 //!
 //! Keys: move with arrows, vi keys or the numpad; `L` lights or douses the
-//! lantern; `g` picks up; `d` drops the torch; `h` shows light as digits;
+//! lantern; `g` picks up; `d` drops the torch; `v` shows light as digits;
 //! `.` waits; `q` quits.
 
 use std::sync::Arc;
@@ -27,10 +29,11 @@ use rl_engine::rl_ai::tactics::{Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_content::Registry;
 use rl_engine::rl_core::{DiceRoll, Direction, Grid2D, Point, Rect, RunSeed, SeedDomain, geometry};
+use rl_engine::rl_grid::TileId;
 use rl_engine::rl_grid::{Rgb, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::passes::{CellularCave, CentralStart, KeepLargestRegion};
-use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
-use rl_engine::rl_render::{Cell, Glyph, LightOverlay, MapView, MapViewPlugin, TerminalPlugin, TileAppearance};
+use rl_engine::rl_mapgen::{BaseContext, BuildContext, BuildError, Chain, Pass, Phase};
+use rl_engine::rl_render::{CapturePlugin, Cell, Glyph, LightOverlay, MapView, MapViewPlugin, TerminalPlugin, TileAppearance, Vary, capture};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{Factions, Relation};
@@ -43,9 +46,10 @@ const CELL: Vec2 = Vec2::new(10.0, 16.0);
 const LOG_ROWS: i32 = 4;
 const CAVE: MapId = MapId(1);
 
-const AMBER: Rgb = Rgb::new(255, 160, 50);
-const FLAME: Rgb = Rgb::new(255, 120, 30);
-const WISP: Rgb = Rgb::new(90, 170, 255);
+const LANTERN: Rgb = Rgb::new(255, 205, 140);
+const FLAME: Rgb = Rgb::new(255, 115, 35);
+const WISP: Rgb = Rgb::new(95, 165, 255);
+const SPORES: Rgb = Rgb::new(70, 235, 130);
 
 fn main() -> AppExit {
     let mut seed = RunSeed::fresh();
@@ -57,17 +61,17 @@ fn main() -> AppExit {
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
-                primary_window: Some(Window {
+                primary_window: Some(capture::prepare(Window {
                     title: "Lamplight".into(),
                     resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
                     ..default()
-                }),
+                })),
                 ..default()
             })
             .set(ImagePlugin::default_nearest()),
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin))
+    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, CapturePlugin))
     .insert_resource(Seed(seed))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
     .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
@@ -92,25 +96,67 @@ impl Cave {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("rock")).unwrap();
         tiles.register(TileProps::floor("floor")).unwrap();
+        tiles.register(TileProps::floor("fungus")).unwrap();
+        tiles.register(TileProps::floor("water").move_cost(200)).unwrap();
         Self { tiles, seed }
     }
 
+    /// Each tile in full light, both colours, and how it varies from cell
+    /// to cell. The light does the rest: these are the colours a torch at
+    /// full strength shows, and darkness and memory are derived from them.
     fn appearance(&self) -> TileAppearance {
         let mut look = TileAppearance::new();
-        look.set(self.tiles.expect("rock"), Cell::new('#', Color::srgb(0.75, 0.7, 0.6)));
-        look.set(self.tiles.expect("floor"), Cell::new('.', Color::srgb(0.8, 0.78, 0.7)));
+        let t = |name| self.tiles.expect(name);
+        look.set_varied(t("rock"), Cell::new('#', Color::srgb(0.8, 0.74, 0.66)).on(Color::srgb(0.47, 0.42, 0.38)), Vary::new(0.2, 0.05));
+        look.set_varied(t("floor"), Cell::new('.', Color::srgb(0.74, 0.7, 0.62)).on(Color::srgb(0.23, 0.2, 0.18)), Vary::new(0.3, 0.07));
+        look.set_varied(t("fungus"), Cell::new('"', Color::srgb(0.45, 0.95, 0.6)).on(Color::srgb(0.07, 0.2, 0.12)), Vary::new(0.25, 0.1));
+        look.set_varied(t("water"), Cell::new('~', Color::srgb(0.4, 0.6, 1.0)).on(Color::srgb(0.06, 0.14, 0.38)), Vary::new(0.15, 0.05).shimmering(0.3));
         look
+    }
+}
+
+/// Blobs of one tile laid over another after the cave is carved: pools
+/// and fungus. A finish-phase pass, since growth may not follow structures.
+struct Patches {
+    name: &'static str,
+    tile: TileId,
+    on: TileId,
+    count: u32,
+    radius: i32,
+}
+
+impl Pass<BaseContext> for Patches {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn phase(&self) -> Phase {
+        Phase::Finish
+    }
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
+        let bounds = ctx.terrain().bounds();
+        for _ in 0..self.count {
+            let centre = Point::new(ctx.rng().random_range(bounds.x..bounds.right()), ctx.rng().random_range(bounds.y..bounds.bottom()));
+            for p in geometry::disc(centre, self.radius) {
+                if ctx.terrain().get(p) == Some(self.on) && ctx.rng().random_range(0..100) < 70 {
+                    ctx.terrain_mut().set(p, self.tile);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 impl PlaceRules for Cave {
     fn build(&self, _: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
-        let (wall, floor) = (self.tiles.expect("rock"), self.tiles.expect("floor"));
+        let t = |name| self.tiles.expect(name);
+        let (wall, floor) = (t("rock"), t("floor"));
         let mut ctx = BaseContext::blank(70, 30, self.tiles.clone(), wall);
         Chain::new()
             .then(CellularCave { wall, floor, fill_pct: 42, ..Default::default() })
             .then(KeepLargestRegion { wall })
             .then(CentralStart)
+            .then(Patches { name: "pools", tile: t("water"), on: floor, count: 4, radius: 3 })
+            .then(Patches { name: "fungus", tile: t("fungus"), on: floor, count: 6, radius: 2 })
             .run(&mut ctx, self.seed)?;
         PlaceBuild::from_context(ctx)
     }
@@ -150,6 +196,8 @@ struct Creatures {
     bite: rl_engine::rl_rules::damage::DamageKindId,
     cave: rl_engine::rl_rules::FactionId,
     wisps: rl_engine::rl_rules::FactionId,
+    /// The tile that glows.
+    fungus: TileId,
 }
 
 /// Rules, the player and its lantern, and the warp into the cave.
@@ -172,6 +220,7 @@ fn start(
         bite: kinds.expect("bite"),
         cave: cave_side,
         wisps,
+        fungus: cave.tiles.expect("fungus"),
     });
     commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
@@ -183,7 +232,7 @@ fn start(
     // The whole of turning lighting on. Ambient stays dark for good.
     commands.insert_resource(Lighting::dark());
 
-    let lantern = LightSource::new(170, 7, AMBER);
+    let lantern = LightSource::new(200, 8, LANTERN).flickering(30);
     let lamp = commands.spawn((Item, Thing::Lantern, Lamp(lantern), lantern, Fuel(400))).id();
     let player = commands
         .spawn((
@@ -194,10 +243,11 @@ fn start(
         .id();
     warps.write(WarpRequest::into_place(player, CAVE));
     log.push(format!("Seed {}. The lantern is lit. Something moves in the dark.", seed.0.0), LogCategory::Notice, 0);
+    log.push("L lantern   g pick up   d drop torch   v show light   q quit", LogCategory::Info, 0);
     next.set(EngineState::Playing);
 }
 
-/// The brazier, the torch, the wisps and the lurkers, once the cave exists.
+/// The brazier, the fungus, the torch, the wisps and the lurkers, once the cave exists.
 fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, creatures: Res<Creatures>, map: Res<WorldMap>, seed: Res<Seed>) {
     for ev in entered.read() {
         if !ev.first {
@@ -214,14 +264,34 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, cr
             }
         };
         // A prop: a fixture that never moves, so it lives in the static layer.
-        commands.spawn((Position(spot(10, 18)), Thing::Brazier, LightSource::new(220, 7, FLAME), Glyph::new('*', Color::srgb(1.0, 0.6, 0.2)).on_layer(1)));
+        commands.spawn((
+            Position(spot(8, 14)),
+            Thing::Brazier,
+            LightSource::new(235, 9, FLAME).flickering(150),
+            Glyph::new('*', Color::srgb(1.0, 0.75, 0.3)).on_layer(1),
+        ));
+        // Tiles that glow are props too: one faint source on each.
+        for (p, _) in place.terrain.iter().filter(|(_, t)| *t == creatures.fungus) {
+            commands.spawn((Position(p), LightSource::new(60, 3, SPORES)));
+        }
         // An item: lit where it lies, shed from whoever carries it.
-        commands.spawn((Position(spot(3, 6)), Item, Thing::Torch, LightSource::new(180, 5, FLAME), Glyph::new('!', Color::srgb(1.0, 0.7, 0.3)).on_layer(2)));
+        commands.spawn((
+            Position(spot(3, 6)),
+            Item,
+            Thing::Torch,
+            LightSource::new(190, 6, FLAME).flickering(120),
+            Glyph::new('!', Color::srgb(1.0, 0.7, 0.3)).on_layer(2),
+        ));
         // Actors that glow: their light moves with them.
         for _ in 0..3 {
             commands.spawn((
                 (Actor, Blocks, Position(spot(6, 30)), Thing::Wisp, Health::full(4), Faction(creatures.wisps), Speed(120)),
-                (Perception(6), Mind(creatures.wisp.clone()), LightSource::new(110, 4, WISP), Glyph::new('o', Color::srgb(0.6, 0.85, 1.0)).on_layer(5)),
+                (
+                    Perception(6),
+                    Mind(creatures.wisp.clone()),
+                    LightSource::new(130, 4, WISP).flickering(70),
+                    Glyph::new('o', Color::srgb(0.7, 0.9, 1.0)).on_layer(5),
+                ),
             ));
         }
         // Actors that see in the dark and shed nothing: only a light finds them.
@@ -269,7 +339,7 @@ fn player_input(
         exit.write(AppExit::Success);
         return;
     }
-    if keys.just_pressed(KeyCode::KeyH) && !keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+    if keys.just_pressed(KeyCode::KeyV) {
         overlay.0 = !overlay.0;
         return;
     }
@@ -392,16 +462,10 @@ fn update_status(
         .find_map(|i| lamps.get(*i).ok())
         .map(|(lit, fuel)| {
             let oil = fuel.map(|f| f.0).unwrap_or(0);
-            if lit.is_some() { format!("lit, {oil} oil") } else { format!("doused, {oil} oil") }
+            if lit.is_some() { format!("lit, {oil} oil") } else { format!("out, {oil} oil") }
         })
         .unwrap_or_else(|| "gone".into());
-    status.0 = format!(
-        "HP {}/{}   Turn {}   Lantern {lantern}   Light here {}   [L] lantern [g]et [d]rop torch [h]eat map [.] wait [q]uit",
-        hp.hp,
-        hp.max,
-        turns.turn_number(),
-        lighting.at(pos.0).intensity
-    );
+    status.0 = format!("HP {}/{}   Turn {}   Lantern {lantern}   Light here {}", hp.hp, hp.max, turns.turn_number(), lighting.at(pos.0).intensity);
 }
 
 #[cfg(test)]

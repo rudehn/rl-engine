@@ -1,17 +1,20 @@
 //! The map, drawn from the player's point of view.
 //!
-//! Visible tiles are drawn lit, remembered tiles dimmed, unknown tiles
-//! blank. What a tile looks like is the game's business: it fills a
-//! [`TileAppearance`] table keyed by [`TileId`]. With lighting turned on,
-//! a visible tile and whatever stands on it are tinted by the light that
-//! lands there, down to a floor so that what is seen in the dark still reads.
+//! Visible tiles are drawn lit, remembered tiles in the colours of
+//! memory, unknown tiles blank. What a tile looks like is the game's
+//! business: it fills a [`TileAppearance`] table keyed by [`TileId`], with
+//! a glyph, both colours, and how the tile varies from cell to cell. With
+//! lighting turned on, a visible tile's glyph and background and whatever
+//! stands on it are coloured by the light that lands there; see
+//! [`shade`](crate::shade) for how.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, Rect};
-use rl_grid::TileId;
+use rl_grid::{Light, TileId};
 
-use crate::terminal::{Cell, Terminal, tint};
+use crate::shade::{Memory, Shading, Vary};
+use crate::terminal::{Cell, Terminal};
 
 /// How an entity is drawn.
 #[derive(Component, Debug, Clone, Copy)]
@@ -37,40 +40,64 @@ impl Glyph {
     }
 }
 
-/// What each tile looks like when lit, indexed by [`TileId`].
+/// What each tile looks like in full light, indexed by [`TileId`], and
+/// how light and memory change it.
 #[derive(Resource, Debug, Clone, Default)]
 pub struct TileAppearance {
-    cells: Vec<Option<Cell>>,
-    /// Brightness of a remembered tile, 0 to 1.
-    pub remembered: f32,
-    /// Brightness kept by a seen but unlit tile when lighting is on, 0 to 1.
-    pub dark_floor: f32,
+    looks: Vec<Option<(Cell, Vary)>>,
+    /// How a remembered tile is drawn.
+    pub memory: Memory,
+    /// How light, flicker and jitter become colour.
+    pub shading: Shading,
 }
 
 impl TileAppearance {
     /// An empty table.
     pub fn new() -> Self {
-        Self { cells: Vec::new(), remembered: 0.35, dark_floor: 0.22 }
+        Self { looks: Vec::new(), memory: Memory::default(), shading: Shading::default() }
     }
 
-    /// Sets the appearance of `id`.
+    /// Sets the appearance of `id`, the same in every cell.
     pub fn set(&mut self, id: TileId, cell: Cell) {
+        self.set_varied(id, cell, Vary::NONE);
+    }
+
+    /// Sets the appearance of `id`, varying from cell to cell by `vary`.
+    pub fn set_varied(&mut self, id: TileId, cell: Cell, vary: Vary) {
         let i = id.index();
-        if self.cells.len() <= i {
-            self.cells.resize(i + 1, None);
+        if self.looks.len() <= i {
+            self.looks.resize(i + 1, None);
         }
-        self.cells[i] = Some(cell);
+        self.looks[i] = Some((cell, vary));
     }
 
-    /// The lit appearance of `id`; a magenta question mark for an id the
-    /// game never described, so the gap is visible rather than blank.
+    /// The authored appearance of `id`; a magenta question mark for an id
+    /// the game never described, so the gap is visible rather than blank.
     pub fn lit(&self, id: TileId) -> Cell {
-        self.cells.get(id.index()).copied().flatten().unwrap_or(Cell::new('?', Color::srgb(1.0, 0.0, 1.0)))
+        self.look(id).0
     }
 
-    /// The remembered appearance of `id`.
-    pub fn dim(&self, id: TileId) -> Cell {
-        self.lit(id).dimmed(self.remembered)
+    fn look(&self, id: TileId) -> (Cell, Vary) {
+        self.looks.get(id.index()).copied().flatten().unwrap_or((Cell::new('?', Color::srgb(1.0, 0.0, 1.0)), Vary::NONE))
+    }
+
+    /// `id` as seen at `p` at time `t`, before light: jittered per cell.
+    pub fn seen(&self, id: TileId, p: Point, t: f32) -> Cell {
+        let (cell, vary) = self.look(id);
+        Cell { glyph: cell.glyph, fg: self.shading.vary(cell.fg, vary, p, t), bg: self.shading.vary(cell.bg, vary, p, t) }
+    }
+
+    /// `id` as remembered at `p`: jittered as it was seen, then faded.
+    pub fn remembered(&self, id: TileId, p: Point) -> Cell {
+        let (cell, vary) = self.look(id);
+        let still = Vary { shimmer: 0.0, ..vary };
+        let fade = |c| self.memory.recall(self.shading.vary(c, still, p, 0.0));
+        Cell { glyph: cell.glyph, fg: fade(cell.fg), bg: fade(cell.bg) }
+    }
+
+    /// `cell` under `light` at `p` at time `t`: both colours coloured by it.
+    pub fn under(&self, cell: Cell, light: Light, p: Point, t: f32) -> Cell {
+        Cell { glyph: cell.glyph, fg: self.shading.light(cell.fg, light, p, t), bg: self.shading.light(cell.bg, light, p, t) }
     }
 }
 
@@ -127,9 +154,14 @@ pub fn follow_player(mut view: ResMut<MapView>, player: Query<&Position, With<Pl
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct LightOverlay(pub bool);
 
+/// How often per second flickering and shimmering cells are redrawn: fast
+/// enough to read as motion, slow enough that a still frame costs nothing.
+const ANIMATION_RATE: f32 = 12.0;
+
 /// What the map is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Scene<'w, 's> {
+    time: Res<'w, Time>,
     view: Res<'w, MapView>,
     map: Res<'w, WorldMap>,
     look: Res<'w, TileAppearance>,
@@ -142,7 +174,8 @@ pub struct Scene<'w, 's> {
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
 pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
-    let Scene { view, map, look, knowledge, lighting, overlay, player, glyphs } = &scene;
+    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs } = &scene;
+    let t = (time.elapsed_secs() * ANIMATION_RATE).floor() / ANIMATION_RATE;
     let viewshed = player.single().ok();
     let here = map.current();
     let lighting = lighting.as_deref();
@@ -150,11 +183,11 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
     for s in view.viewport.cells() {
         let Some(p) = view.to_world(s) else { continue };
         let mut cell = match (map.tile(p), viewshed.is_some_and(|v| v.can_see(p))) {
-            (Some(t), true) => match lighting {
-                Some(l) => look.lit(t).lit_by(l.at(p).color, look.dark_floor),
-                None => look.lit(t),
+            (Some(id), true) => match lighting {
+                Some(l) => look.under(look.seen(id, p, t), l.at(p), p, t),
+                None => look.seen(id, p, t),
             },
-            (Some(t), false) if knowledge.is_explored(p) => look.dim(t),
+            (Some(id), false) if knowledge.is_explored(p) => look.remembered(id, p),
             _ => Cell::default(),
         };
         if overlay && viewshed.is_some_and(|v| v.can_see(p)) {
@@ -179,7 +212,7 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             drawn.push((pos.0, glyph.layer));
         }
         let fg = match lighting {
-            Some(l) => tint(glyph.fg, l.at(pos.0).color, look.dark_floor),
+            Some(l) => look.shading.light(glyph.fg, l.at(pos.0), pos.0, t),
             None => glyph.fg,
         };
         terminal.put(s.x, s.y, glyph.ch, fg);
@@ -202,11 +235,16 @@ mod tests {
     }
 
     #[test]
-    fn appearance_table_grows_and_dims() {
+    fn appearance_table_grows_varies_and_remembers() {
         let mut look = TileAppearance::new();
         look.set(TileId(3), Cell::new('.', Color::WHITE));
+        look.set_varied(TileId(4), Cell::new('#', Color::WHITE).on(Color::srgb(0.3, 0.3, 0.3)), Vary::new(0.2, 0.0));
         assert_eq!(look.lit(TileId(3)).glyph, '.');
         assert_eq!(look.lit(TileId(1)).glyph, '?');
-        assert!(look.dim(TileId(3)).fg.to_linear().red < 0.5);
+        assert!(look.remembered(TileId(3), Point::ZERO).fg.to_linear().red < 0.5);
+        let a = look.seen(TileId(4), Point::new(1, 1), 0.0);
+        let b = look.seen(TileId(4), Point::new(2, 1), 0.0);
+        assert_ne!(a.bg, b.bg, "each cell its own shade");
+        assert_eq!(look.seen(TileId(3), Point::new(1, 1), 0.0), look.seen(TileId(3), Point::new(2, 1), 0.0));
     }
 }

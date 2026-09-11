@@ -17,11 +17,14 @@
 //               band is the region's distance from your home port
 //   drops:      optional; [(item name, percent chance)] rolled on death
 //   inflicts:   optional; (status name, turns, percent chance) on a hit that lands
+//   lantern:    optional; the light it carries underground, as (intensity: 0..=255, radius: tiles,
+//               color: (r: 0..=255, g: 0..=255, b: 0..=255), flicker: 0..=255, 0 steady, may be left out);
+//               nothing carries one in daylight
 #![enable(implicit_some)]
 [
     (name: "crab", glyph: 'c', color: (0.9, 0.4, 0.3), hp: 4, armor: 2, attack: "1d3", kind: "claw", faction: "beasts", perception: 4, speed: 80, flee_at: 0, wander: 30, spawn: (0, 8, 5, 2, 5), inflicts: ("bleeding", 3, 40)),
     (name: "wild dog", glyph: 'd', color: (0.7, 0.6, 0.4), hp: 8, armor: 0, attack: "1d4", kind: "bite", faction: "beasts", perception: 9, speed: 130, flee_at: 30, wander: 35, spawn: (1, 40, 3, 2, 4)),
-    (name: "cutthroat", glyph: 'p', color: (0.8, 0.3, 0.3), hp: 12, armor: 1, attack: "1d6", kind: "cutlass", faction: "cutthroats", perception: 8, speed: 100, flee_at: 20, wander: 25, spawn: (3, 40, 3, 1, 3), drops: [("doubloons", 60), ("rum", 25), ("cutlass", 10)]),
-    (name: "marine", glyph: 'M', color: (0.3, 0.4, 0.9), hp: 14, armor: 2, attack: "1d8", kind: "pistol", faction: "navy", perception: 8, speed: 100, flee_at: 0, wander: 15, spawn: (5, 40, 2, 2, 3), drops: [("doubloons", 40), ("tricorne", 15), ("buckler", 15)]),
+    (name: "cutthroat", glyph: 'p', color: (0.8, 0.3, 0.3), hp: 12, armor: 1, attack: "1d6", kind: "cutlass", faction: "cutthroats", perception: 8, speed: 100, flee_at: 20, wander: 25, spawn: (3, 40, 3, 1, 3), drops: [("doubloons", 60), ("rum", 25), ("cutlass", 10)], lantern: (intensity: 150, radius: 5, color: (r: 255, g: 185, b: 105), flicker: 60)),
+    (name: "marine", glyph: 'M', color: (0.3, 0.4, 0.9), hp: 14, armor: 2, attack: "1d8", kind: "pistol", faction: "navy", perception: 8, speed: 100, flee_at: 0, wander: 15, spawn: (5, 40, 2, 2, 3), drops: [("doubloons", 40), ("tricorne", 15), ("buckler", 15)], lantern: (intensity: 170, radius: 6, color: (r: 255, g: 225, b: 170), flicker: 25)),
     (name: "jaguar", glyph: 'J', color: (0.9, 0.7, 0.2), hp: 24, armor: 1, attack: "2d4", kind: "claw", faction: "beasts", perception: 10, speed: 140, flee_at: 0, wander: 20, spawn: (8, 40, 1, 1, 1), drops: [("rum", 50)], inflicts: ("venom", 5, 60)),
 ]
