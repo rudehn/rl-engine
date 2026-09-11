@@ -6,6 +6,8 @@
 //! log, a status line, and the world map with a portal picker over the
 //! ports you have found.
 //!
+//! `--seed N` picks the world, `--continue` resumes the saved run,
+//! `--balance` prints the spawn table's threat by band and exits.
 //! `CORSAIR_OPEN=inventory` or `CORSAIR_OPEN=ledger` starts with that screen open, and
 //! `CORSAIR_START=cave` starts at the bottom of the nearest smugglers'
 //! cave, both for screenshots.
@@ -17,6 +19,7 @@ mod items;
 mod monsters;
 mod places;
 mod quests;
+mod save;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -30,6 +33,8 @@ use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
 use crate::items::{Armory, ItemKind, Sheet};
+use crate::monsters::Bestiary;
+use rl_engine::rl_save::Saves;
 
 /// Terminal size in cells.
 const COLS: i32 = 100;
@@ -42,6 +47,7 @@ const LOG_ROWS: i32 = 4;
 fn main() -> AppExit {
     let mut seed = RunSeed::fresh();
     let mut regions = (64, 64);
+    let mut resume = false;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     while i < args.len() {
@@ -55,8 +61,17 @@ fn main() -> AppExit {
                 regions = (w.parse().expect("w"), h.parse().expect("h"));
                 i += 2;
             }
+            "--continue" => {
+                resume = true;
+                i += 1;
+            }
+            "--balance" => {
+                print!("{}", balance_report());
+                return AppExit::Success;
+            }
             other => {
                 eprintln!("unknown argument {other}");
+                eprintln!("usage: corsair [--seed N] [--regions WxH] [--continue] [--balance]");
                 return AppExit::error();
             }
         }
@@ -67,7 +82,7 @@ fn main() -> AppExit {
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: format!("Corsair - seed {}", seed.0),
+                    title: "Corsair".to_string(),
                     resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
                     ..default()
                 }),
@@ -77,7 +92,8 @@ fn main() -> AppExit {
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: FONT })
     .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, OverworldPlugin))
-    .insert_resource(StartSeed { seed, regions })
+    .insert_resource(StartSeed { seed, regions, resume })
+    .insert_resource(Saves::platform_default("corsair"))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
     .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
     .insert_resource(OverworldLayout { viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS) })
@@ -86,6 +102,8 @@ fn main() -> AppExit {
     .init_resource::<quests::LedgerScreen>()
     .add_systems(Startup, start_world)
     .add_systems(Update, (quests::ledger_keys, inventory::inventory_keys, input::player_input).chain().in_set(EngineSet::Input))
+    // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
+    .add_systems(Update, save::save_keys.after(EngineSet::Present))
     .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
     .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
     .add_systems(
@@ -100,6 +118,7 @@ fn main() -> AppExit {
             items::narrate_items,
             quests::report_facts,
             quests::narrate_quests,
+            save::delete_on_death,
             update_status,
         )
             .chain()
@@ -109,97 +128,150 @@ fn main() -> AppExit {
     app.run()
 }
 
-#[derive(Resource)]
+/// The spawn table scored band by band, for `--balance`.
+fn balance_report() -> String {
+    let (bestiary, _) = monsters::Bestiary::load(RunSeed(0), rl_engine::rl_core::Point::ZERO);
+    let report = rl_engine::rl_tools::Report::over(&bestiary.table, 0..=40, |id| {
+        let m = bestiary.defs.get(*id);
+        (m.name.clone(), rl_engine::rl_tools::threat(m))
+    });
+    format!("Corsair spawn bands (distance from the home port)\n{}", report.render())
+}
+
+#[derive(Resource, Clone, Copy)]
 struct StartSeed {
     seed: RunSeed,
     regions: (i32, i32),
+    resume: bool,
 }
 
-/// Generates the world, spawns the player at the first town, and starts play.
-fn start_world(
-    mut commands: Commands,
-    start: Res<StartSeed>,
-    mut next: ResMut<NextState<EngineState>>,
-    mut log: ResMut<MessageLog>,
-    mut screen: ResMut<inventory::InventoryScreen>,
-    mut ledger: ResMut<quests::LedgerScreen>,
-    mut warps: MessageWriter<WarpRequest>,
-) {
+/// Generates the world and either spawns a fresh player at the first
+/// port or restores the saved run into it, then starts play.
+fn start_world(world: &mut World) {
+    let start = *world.resource::<StartSeed>();
+    let saved = if start.resume {
+        match save::load_run(world.resource::<Saves>()) {
+            Ok(Some(s)) => Some(s),
+            Ok(None) => {
+                warn!("no save to continue; starting a new run");
+                None
+            }
+            Err(e) => {
+                error!("the save could not be read: {e}; starting a new run");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let (seed, regions) = saved.as_ref().map(|s| (s.engine.seed, s.regions)).unwrap_or((start.seed, start.regions));
+
     let content = Content::new();
     // Islands rather than a continent: less land, more of it coast.
-    let mut config = WorldConfig::regions(start.regions.0, start.regions.1);
+    let mut config = WorldConfig::regions(regions.0, regions.1);
     config.elevation.land_fraction = 0.22;
     config.elevation.continent_frequency = 3.2;
     let began = std::time::Instant::now();
-    let world = WorldGraph::generate(start.seed, config, &content);
-    info!("world {}x{} regions in {:?}", world.width(), world.height(), began.elapsed());
+    let graph = WorldGraph::generate(seed, config, &content);
+    info!("world {}x{} regions in {:?}", graph.width(), graph.height(), began.elapsed());
 
-    let town = world.sites().iter().find(|s| s.kind == PORT).expect("a world with a town");
-    let spawn = world.region_tiles(town.position).center();
-    let region_size = world.region_size();
+    let town = graph.sites().iter().find(|s| s.kind == PORT).expect("a world with a town");
+    let spawn = graph.region_tiles(town.position).center();
+    let region_size = graph.region_size();
 
-    let (bestiary, rules) = monsters::Bestiary::load(start.seed, town.position);
-    let armory = Armory::load(start.seed, town.position, &bestiary.kinds);
+    let (bestiary, rules) = monsters::Bestiary::load(seed, town.position);
+    let armory = Armory::load(seed, town.position, &bestiary.kinds);
     bestiary
         .defs
         .validate(|m, _| m.drops.iter().find(|(name, _)| armory.defs.id(name).is_none()).map_or(Ok(()), |(name, _)| Err(format!("unknown drop {name:?}"))))
         .unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
-    let player_faction: FactionId = bestiary.factions.expect("player");
+    let (quest_log, facts) = quests::load(&bestiary, &armory);
+    let cove = graph.sites().iter().position(|s| s.kind == content::COVE);
 
-    // The player starts with a cutlass in hand and a bottle in the bag.
-    let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
-    let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
-    let mut worn = Equipped(rl_engine::rl_rules::Equipment::for_slots(&armory.slots));
-    worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
-    let player = commands
-        .spawn((
-            Actor,
-            Player,
-            Blocks,
-            Position(spawn),
-            Viewshed::new(12),
-            RevealsMap,
-            Speed(100),
-            Health::full(30),
-            Armor(0),
-            Faction(player_faction),
-            items::unarmed(&bestiary),
-            Inventory { items: vec![cutlass, rum] },
-            worn,
-            Sheet::default(),
-            Glyph::new('@', Color::WHITE).on_layer(10),
-        ))
-        .id();
-    if std::env::var("CORSAIR_START").is_ok_and(|v| v == "cave") {
-        let coves = world.sites().iter().filter(|s| s.kind == content::COVE).count();
-        info!("starting in a cave: {coves} coves in the world");
-        if let Some(cove) = world.sites().iter().position(|s| s.kind == content::COVE) {
-            warps.write(WarpRequest { actor: player, to: Destination::Place { map: places::cave_id(cove, places::LEVELS - 1), arrive: Arrive::Entry } });
+    world.insert_resource(quest_log);
+    world.insert_resource(facts);
+    world.insert_resource(rules);
+    world.insert_resource(monsters::stages());
+    world.insert_resource(CombatRng::for_run(seed));
+    world.insert_resource(content.tile_appearance());
+    world.insert_resource(content.band_appearance());
+    world.insert_resource(WorldMap::new(region_size, content.tiles().tables()));
+    world.insert_resource(Knowledge::new(region_size));
+    world.insert_resource(WorldRes(graph));
+    world.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));
+    world.insert_resource(ChunkRulesRes(Box::new(content)));
+    world.insert_resource(armory);
+    world.insert_resource(bestiary);
+
+    match saved {
+        Some(saved) => {
+            save::restore_run(world, &saved);
+            let text = save::describe(&saved);
+            world.resource_mut::<MessageLog>().push(text, LogCategory::Notice, saved.turn);
+        }
+        None => {
+            spawn_fresh_player(world, spawn);
+            world.resource_mut::<MessageLog>().push(
+                format!("Seed {}. You step off the gangplank onto the docks of a small port.", seed.0),
+                LogCategory::Notice,
+                0,
+            );
+            if std::env::var("CORSAIR_START").is_ok_and(|v| v == "cave")
+                && let Some(cove) = cove
+            {
+                let mut players = world.query_filtered::<Entity, With<Player>>();
+                let player = players.single(world).expect("the player was just spawned");
+                world.write_message(WarpRequest {
+                    actor: player,
+                    to: Destination::Place { map: places::cave_id(cove, places::LEVELS - 1), arrive: Arrive::Entry },
+                });
+            }
         }
     }
-    let (quest_log, facts) = quests::load(&bestiary, &armory);
-    commands.insert_resource(quest_log);
-    commands.insert_resource(facts);
-    commands.insert_resource(armory);
-    commands.insert_resource(bestiary);
-    commands.insert_resource(rules);
-    commands.insert_resource(monsters::stages());
-    commands.insert_resource(CombatRng::for_run(start.seed));
-
-    commands.insert_resource(content.tile_appearance());
-    commands.insert_resource(content.band_appearance());
-    commands.insert_resource(WorldMap::new(region_size, content.tiles().tables()));
-    commands.insert_resource(Knowledge::new(region_size));
-    commands.insert_resource(WorldRes(world));
-    commands.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));
-    commands.insert_resource(ChunkRulesRes(Box::new(content)));
-    log.push(format!("Seed {}. You step off the gangplank onto the docks of a small port.", start.seed.0), LogCategory::Notice, 0);
     match std::env::var("CORSAIR_OPEN").as_deref() {
-        Ok("inventory") => screen.open = true,
-        Ok("ledger") => ledger.open = true,
+        Ok("inventory") => world.resource_mut::<inventory::InventoryScreen>().open = true,
+        Ok("ledger") => world.resource_mut::<quests::LedgerScreen>().open = true,
         _ => {}
     }
-    next.set(EngineState::Playing);
+    world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+}
+
+/// A new player at `spawn` with a cutlass in hand and a bottle in the bag.
+fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
+    // The armory comes out while its spawner borrows commands.
+    let armory = world.remove_resource::<Armory>().expect("the armory is inserted first");
+    let (cutlass, rum, worn) = {
+        let mut commands = world.commands();
+        let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
+        let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
+        let mut worn = Equipped(rl_engine::rl_rules::Equipment::for_slots(&armory.slots));
+        worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
+        (cutlass, rum, worn)
+    };
+    world.flush();
+    world.insert_resource(armory);
+    let (faction, unarmed) = {
+        let bestiary = world.resource::<Bestiary>();
+        let faction: FactionId = bestiary.factions.expect("player");
+        (faction, items::unarmed(bestiary))
+    };
+    world.spawn((
+        Actor,
+        Player,
+        Blocks,
+        Position(spawn),
+        Viewshed::new(12),
+        RevealsMap,
+        Speed(100),
+        Health::full(30),
+        Armor(0),
+        Faction(faction),
+        unarmed,
+        Inventory { items: vec![cutlass, rum] },
+        worn,
+        Sheet::default(),
+        Glyph::new('@', Color::WHITE).on_layer(10),
+    ));
 }
 
 /// Asks the engine to move the player to a discovered site when the

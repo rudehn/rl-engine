@@ -27,7 +27,7 @@ use crate::world::{WorldMap, WorldRes};
 
 /// Which map an entity is on. Zero is the surface; a game numbers its
 /// places however it likes above that.
-#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MapId(pub u32);
 
 impl MapId {
@@ -42,11 +42,11 @@ impl MapId {
 
 /// The map an entity with a position is on. Missing means the surface;
 /// the engine fills it in for anything that gains a position.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref, serde::Serialize, serde::Deserialize)]
 pub struct OnMap(pub MapId);
 
 /// Where in a place an arrival stands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Arrive {
     /// At the place's entry, as built.
     Entry,
@@ -57,7 +57,7 @@ pub enum Arrive {
 }
 
 /// The far side of a transition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Destination {
     /// A cell of the surface.
     Surface(Point),
@@ -72,14 +72,14 @@ pub enum Destination {
 
 /// A way through: stairs, a cave mouth, a hatch. Stands on a cell of one
 /// map and leads to a cell of another.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Transition {
     /// Where it leads.
     pub to: Destination,
 }
 
 /// A point of interest the builder reports, for the game to populate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Spot {
     /// What kind, in the game's own numbering.
     pub tag: u32,

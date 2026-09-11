@@ -1,0 +1,12 @@
+[package]
+name = "rl-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine tier 1: the balance checker and other headless tools over content. No Bevy."
+
+[dependencies]
+rl-core.workspace = true
+rl-content.workspace = true

@@ -104,7 +104,7 @@ impl PlaceRules for Caves {
 
 /// Regions whose cave mouth has been placed.
 #[derive(Resource, Default)]
-pub struct Entrances(std::collections::BTreeSet<Point>);
+pub struct Entrances(pub std::collections::BTreeSet<Point>);
 
 /// Puts a cave mouth in the middle of each cove the first time it streams in.
 pub fn mark_entrances(mut commands: Commands, mut loaded: MessageReader<ChunkLoaded>, mut done: ResMut<Entrances>, world: Res<WorldRes>) {

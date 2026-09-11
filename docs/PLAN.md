@@ -16,7 +16,10 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
 - 2026-09-10: M5 first slice: `rl-events` (facts with kind, subject, object and amount; matchers; a ledger of named counters; quests as objectives over facts with `after` chains and a `victory` flag, tracked purely), `rl-bevy` wraps it as the `Happened` message, the `Quests` and `Counters` resources and `QuestChange`, fed after the frame; the dead now linger until the end of the frame so reactions can read what they were.
   Corsair reports kills, pickups, what it carries, cave levels and sites as facts, loads four tasks from RON that chain to "Retire rich", narrates them, draws a ledger on `t`, and wins the run when the hoard comes home.
   Deferred from M5: scripted encounters, abilities and targeting, `TileField<T>`, lighting, a generated victory condition.
-- Next: M6 persistence and tools (`rl-save`, `rl-tools`), then the deferred pieces of M3 to M5, then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
+- 2026-09-10: M6 first slice: `rl-save` (the `SaveBackend` seam with file, memory and `localStorage` backends, the `Versioned` envelope with an exact-match policy, `EntityRemap` and `SaveId`, and `EngineSave` capturing and restoring the scheduler, the world's edits and places, and knowledge), `rl-tools` (`ThreatSubject`, threat, and the spawn-band `Report`).
+  Corsair saves with `S`, saves and quits with `q`, continues with `--continue`, deletes the save on death, and prints its balance report with `--balance`.
+  Deferred from M6: the wasm `beforeunload` bridge, seed replay, the headless dump.
+- Next: the deferred pieces of M3 to M6 (affixes and enchant, throwing, a character sheet, abilities and targeting, `TileField<T>`, lighting, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.

@@ -45,12 +45,8 @@ pub struct InputWorld<'w, 's> {
 }
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
-pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: MessageWriter<Intent>, mut exit: MessageWriter<AppExit>) {
+pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: MessageWriter<Intent>) {
     let InputWorld { keys, time, screen, chest, ledger, occupancy, player } = world;
-    if keys.just_pressed(KeyCode::KeyQ) {
-        exit.write(AppExit::Success);
-        return;
-    }
     if screen.open || chest.open || ledger.open {
         return;
     }

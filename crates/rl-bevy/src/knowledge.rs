@@ -93,10 +93,43 @@ impl Knowledge {
         self.explored.values().map(|g| g.count()).sum()
     }
 
+    /// Everything known, for saving.
+    pub fn export(&self) -> KnowledgeSave {
+        let mut explored: Vec<(MapId, Vec<(Point, BitGrid)>)> =
+            self.stash.iter().map(|(m, e)| (*m, e.iter().map(|(p, g)| (*p, g.clone())).collect())).collect();
+        explored.push((self.current, self.explored.iter().map(|(p, g)| (*p, g.clone())).collect()));
+        KnowledgeSave { region_size: self.region_size, current: self.current, explored, sites: self.sites.iter().copied().collect() }
+    }
+
+    /// Replaces everything known with a save.
+    pub fn import(&mut self, save: KnowledgeSave) {
+        self.region_size = save.region_size;
+        self.sites = save.sites.into_iter().collect();
+        self.stash = save.explored.into_iter().map(|(m, e)| (m, e.into_iter().collect())).collect();
+        self.explored = BTreeMap::new();
+        self.current = save.current;
+        if let Some(e) = self.stash.remove(&save.current) {
+            self.explored = e;
+        }
+    }
+
     /// Whether the explored grid for a region exists at all.
     pub fn has_region(&self, region: Point) -> bool {
         self.explored.get(&region).is_some_and(|g| g.len() > 0)
     }
+}
+
+/// What [`Knowledge::export`] produces.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KnowledgeSave {
+    /// Tiles per region.
+    pub region_size: i32,
+    /// The map being read.
+    pub current: MapId,
+    /// Explored tiles per map, per region.
+    pub explored: Vec<(MapId, Vec<(Point, BitGrid)>)>,
+    /// Discovered site indexes.
+    pub sites: Vec<usize>,
 }
 
 #[cfg(test)]

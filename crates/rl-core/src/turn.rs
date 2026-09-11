@@ -217,6 +217,12 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
         if batch.is_empty() { DequeueOutcome::Idle } else { DequeueOutcome::Batch(batch) }
     }
 
+    /// Every waiting entry as `(id, time)`, in no particular order. For
+    /// saving; the order is the heap's, not the schedule's.
+    pub fn entries(&self) -> impl Iterator<Item = (Id, u32)> + '_ {
+        self.entries.iter().map(|Reverse(e)| (e.id, e.time))
+    }
+
     /// How many entries are waiting.
     pub fn len(&self) -> usize {
         self.entries.len()

@@ -291,6 +291,36 @@ impl WorldMap {
         Ok(loaded)
     }
 
+    /// Every edit to the surface, loaded chunks included, and every built
+    /// place, for saving.
+    pub fn export(&self) -> WorldMapSave {
+        let mut deltas: Vec<(Point, Vec<(usize, TileId)>)> = self.deltas.iter().map(|(r, d)| (*r, d.clone())).collect();
+        for (slot, chunk) in self.chunks.iter().enumerate() {
+            if let Some(chunk) = chunk
+                && !chunk.delta.is_empty()
+            {
+                let region = self.window.origin() + Point::new(slot as i32 % self.window.width, slot as i32 / self.window.width);
+                deltas.push((region, chunk.delta.clone()));
+            }
+        }
+        let places =
+            self.places.iter().map(|(id, p)| (*id, PlaceSave { terrain: p.terrain.clone(), entry: p.entry, exit: p.exit, spots: p.spots.clone() })).collect();
+        WorldMapSave { current: self.current, deltas, places }
+    }
+
+    /// Restores edits and places from a save and switches to its current
+    /// map. Loaded chunks are dropped so the next stream replays the
+    /// edits onto fresh generation.
+    pub fn import(&mut self, save: WorldMapSave) {
+        self.chunks.clear();
+        self.window = Rect::new(0, 0, 0, 0);
+        self.deltas = save.deltas.into_iter().collect();
+        self.places = save.places.into_iter().map(|(id, p)| (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots })).collect();
+        self.current = MapId::SURFACE;
+        self.switch_to(save.current);
+        self.generation += 1;
+    }
+
     /// Number of regions currently loaded.
     pub fn loaded_count(&self) -> usize {
         self.chunks.iter().filter(|c| c.is_some()).count()
@@ -300,6 +330,30 @@ impl WorldMap {
     pub fn stored_deltas(&self) -> usize {
         self.deltas.len()
     }
+}
+
+/// A place as saved.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PlaceSave {
+    /// The tiles.
+    pub terrain: rl_grid::Terrain,
+    /// The entry.
+    pub entry: Point,
+    /// The exit.
+    pub exit: Option<Point>,
+    /// The builder's spots.
+    pub spots: Vec<Spot>,
+}
+
+/// What [`WorldMap::export`] produces.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorldMapSave {
+    /// The map being read.
+    pub current: MapId,
+    /// Edits to surface regions.
+    pub deltas: Vec<(Point, Vec<(usize, TileId)>)>,
+    /// Every built place.
+    pub places: Vec<(MapId, PlaceSave)>,
 }
 
 /// The loaded window as a grid in window-local coordinates.

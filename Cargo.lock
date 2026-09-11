@@ -4672,6 +4672,7 @@ dependencies = [
  "rl-mapgen",
  "rl-rules",
  "rl-world",
+ "serde",
 ]
 
 [[package]]
@@ -4707,6 +4708,8 @@ dependencies = [
  "rl-overworld",
  "rl-render",
  "rl-rules",
+ "rl-save",
+ "rl-tools",
  "rl-ui",
  "rl-world",
 ]
@@ -4774,12 +4777,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "rl-save"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "rl-bevy",
+ "rl-core",
+ "rl-grid",
+ "rl-mapgen",
+ "rl-world",
+ "ron 0.10.1",
+ "serde",
+ "web-sys",
+]
+
+[[package]]
 name = "rl-test-support"
 version = "0.1.0"
 dependencies = [
  "rl-core",
  "rl-grid",
  "rl-world",
+]
+
+[[package]]
+name = "rl-tools"
+version = "0.1.0"
+dependencies = [
+ "rl-content",
+ "rl-core",
 ]
 
 [[package]]

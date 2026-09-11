@@ -32,12 +32,12 @@ pub use combat::{
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use events::{Counters, Happened, QuestChange, Quests};
 pub use items::{Equipped, Inventory, Item, ItemEvent, Stack, Wearable};
-pub use knowledge::Knowledge;
+pub use knowledge::{Knowledge, KnowledgeSave};
 pub use places::{Arrive, Destination, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest};
 pub use plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
 pub use state::EngineState;
 pub use turn::{Action, ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
-pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, WindowView, WorldMap, WorldRes, WorldSettings};
+pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names most callers want in scope.
 pub mod prelude {

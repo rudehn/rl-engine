@@ -16,11 +16,13 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 | 1 | `rl-content` | registries and banded tables loaded from RON |
 | 1 | `rl-rules` | stats and modifiers, damage stages, statuses, factions |
 | 1 | `rl-events` | facts, named counters, quests as objectives over facts |
+| 1 | `rl-tools` | threat scoring and the spawn-band balance report |
 | 1 | `rl-ai` | movement profiles, snapshots, tactic-priority brains over Dijkstra maps |
 | 1 | `rl-test-support` | fixtures and property helpers |
 | 2 | `rl-bevy` | plugins, components, system sets, the turn loop, chunk streaming, items, places |
 | 2 | `rl-render` | the glyph grid renderer and the world view |
 | 2 | `rl-overworld` | opt-in overworld screen with a portal picker |
+| 2 | `rl-save` | save backends, the versioned schema policy, entity remapping, the engine's state as a save |
 | 2 | `rl-ui` | theme tokens, widgets, key hints, the log view |
 | 3 | `rl-engine` | facade and prelude |
 
@@ -34,9 +36,11 @@ It is what a game on this engine looks like.
 
 ```sh
 cargo run -p corsair -- --seed 7
+cargo run -p corsair -- --continue   # resume the saved run
+cargo run -p corsair -- --balance    # the spawn table's threat by band
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `q` to quit.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
 
 ## Principles
 

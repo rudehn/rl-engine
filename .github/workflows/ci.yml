@@ -24,6 +24,6 @@ jobs:
       - name: doc tests and missing docs
         run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
       - name: tier-1 builds on wasm
-        run: cargo check -p rl-core -p rl-grid -p rl-mapgen -p rl-world -p rl-content -p rl-rules -p rl-ai -p rl-events --target wasm32-unknown-unknown
+        run: cargo check -p rl-core -p rl-grid -p rl-mapgen -p rl-world -p rl-content -p rl-rules -p rl-ai -p rl-events -p rl-tools --target wasm32-unknown-unknown
       - name: benches compile
         run: cargo bench --workspace --no-run

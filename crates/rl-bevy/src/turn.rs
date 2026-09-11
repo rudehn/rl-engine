@@ -35,6 +35,22 @@ impl Turns {
     pub fn turn_number(&self) -> u32 {
         self.queue.now() / BASE_ACTION_COST
     }
+
+    /// The clock and every waiting entry, for saving.
+    pub fn export(&self) -> (u32, Vec<(Entity, u32)>) {
+        (self.queue.now(), self.queue.entries().collect())
+    }
+
+    /// Replaces the clock and the queue with a saved one. Entries keep
+    /// their times; ties among them fall back to the order given.
+    pub fn import(&mut self, now: u32, entries: impl IntoIterator<Item = (Entity, u32)>) {
+        self.queue = TurnQueue::new();
+        self.queue.set_now(now);
+        for (e, time) in entries {
+            self.queue.insert_at(e, time);
+        }
+        self.last_turn = self.turn_number();
+    }
 }
 
 /// Who is standing where on the current map. Only entities with
@@ -52,6 +68,15 @@ impl Occupancy {
     /// The map the index is of.
     pub fn current(&self) -> MapId {
         self.current
+    }
+
+    /// Indexes `e` at `p` on `map`, whether or not that is the current map.
+    pub fn insert_on(&mut self, map: MapId, p: Point, e: Entity) {
+        if map == self.current {
+            self.grid.insert(p, e);
+        } else {
+            self.stash.entry(map).or_default().insert(p, e);
+        }
     }
 
     /// Swaps in the index for `map`, keeping the current one aside.
@@ -186,15 +211,16 @@ pub fn admit_new_actors(
     mut turns: ResMut<Turns>,
     mut occupancy: ResMut<Occupancy>,
     added_actors: Query<Entity, Added<Actor>>,
-    added_blockers: Query<(Entity, &Position), Added<Blocks>>,
+    added_blockers: Query<(Entity, &Position, Option<&OnMap>), Added<Blocks>>,
 ) {
     for e in &added_actors {
         if !turns.queue.contains(e) {
             turns.queue.insert_now(e);
         }
     }
-    for (e, pos) in &added_blockers {
-        occupancy.insert(pos.0, e);
+    let here = occupancy.current();
+    for (e, pos, on) in &added_blockers {
+        occupancy.insert_on(on.map(|m| m.0).unwrap_or(here), pos.0, e);
     }
 }
 

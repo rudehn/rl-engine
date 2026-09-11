@@ -128,6 +128,16 @@ impl Armory {
         Self { armor_stat: stats.expect("armor"), defs, slots, stats, shapes, table, seed, home, spawned: BTreeSet::new() }
     }
 
+    /// Regions already scattered over.
+    pub fn spawned(&self) -> impl Iterator<Item = &Point> {
+        self.spawned.iter()
+    }
+
+    /// Marks regions as scattered over, when continuing a run.
+    pub fn restore_spawned(&mut self, regions: impl IntoIterator<Item = Point>) {
+        self.spawned = regions.into_iter().collect();
+    }
+
     /// The shape `id` is worn in, if it is worn at all.
     pub fn shape(&self, id: Id<ItemDef>) -> Option<&EquipShape> {
         self.shapes[id.index()].as_ref()

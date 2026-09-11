@@ -1,0 +1,23 @@
+[package]
+name = "rl-save"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "rl-engine tier 2: a save backend seam, a versioned schema policy, entity remapping, and the engine's own state captured and restored."
+
+[dependencies]
+rl-core.workspace = true
+rl-grid.workspace = true
+rl-bevy.workspace = true
+bevy.workspace = true
+serde.workspace = true
+ron.workspace = true
+
+[dev-dependencies]
+rl-mapgen.workspace = true
+rl-world.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Storage"] }

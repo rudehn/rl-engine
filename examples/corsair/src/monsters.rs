@@ -48,6 +48,21 @@ impl Named for MonsterDef {
     }
 }
 
+impl rl_engine::rl_tools::ThreatSubject for MonsterDef {
+    fn hp(&self) -> i32 {
+        self.hp
+    }
+    fn armor(&self) -> i32 {
+        self.armor
+    }
+    fn damage_per_hit(&self) -> f32 {
+        self.attack.avg()
+    }
+    fn speed_pct(&self) -> u32 {
+        self.speed
+    }
+}
+
 /// Marks a monster with the def it came from.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct MonsterKind(pub rl_engine::rl_core::Id<MonsterDef>);
@@ -125,6 +140,16 @@ impl Bestiary {
 }
 
 impl Bestiary {
+    /// Regions already populated.
+    pub fn spawned(&self) -> impl Iterator<Item = &Point> {
+        self.spawned.iter()
+    }
+
+    /// Marks regions as populated, when continuing a run.
+    pub fn restore_spawned(&mut self, regions: impl IntoIterator<Item = Point>) {
+        self.spawned = regions.into_iter().collect();
+    }
+
     /// Spawns one `id` standing at `p` on the current map.
     pub fn spawn(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
         let m = self.defs.get(id);

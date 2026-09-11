@@ -19,6 +19,8 @@ rl-content = { path = "crates/rl-content" }
 rl-rules = { path = "crates/rl-rules" }
 rl-ai = { path = "crates/rl-ai" }
 rl-events = { path = "crates/rl-events" }
+rl-tools = { path = "crates/rl-tools" }
+rl-save = { path = "crates/rl-save" }
 rl-engine = { path = "crates/rl-engine" }
 rl-bevy = { path = "crates/rl-bevy" }
 rl-render = { path = "crates/rl-render" }
