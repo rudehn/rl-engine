@@ -8,7 +8,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{combat, events, fov, items, places, turn, world};
+use crate::{combat, events, fov, items, places, status, turn, world};
 
 /// The stages of a frame while playing, in order. All in `Update`.
 ///
@@ -113,6 +113,9 @@ impl Plugin for EnginePlugins {
             .add_message::<places::PlaceEntered>()
             .add_message::<events::Happened>()
             .add_message::<events::QuestChange>()
+            .add_message::<status::Afflict>()
+            .add_message::<status::Cure>()
+            .add_message::<status::StatusEvent>()
             .init_resource::<combat::FlowFields>()
             .init_resource::<combat::DamageStages>()
             .init_schedule(Turn)
@@ -142,6 +145,8 @@ impl Plugin for EnginePlugins {
                     places::resolve_warps,
                     items::resolve_items,
                     combat::resolve_attacks.run_if(combat_ready),
+                    status::resolve_afflictions.run_if(status::statuses_ready),
+                    status::tick_statuses.run_if(status::statuses_ready).run_if(combat_ready),
                     combat::apply_damage.run_if(combat_ready),
                 )
                     .chain()

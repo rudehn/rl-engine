@@ -21,6 +21,8 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Deferred from M6: the wasm `beforeunload` bridge, seed replay, the headless dump.
 - 2026-09-10: deferred pieces, first pass: `rl-rules` gains the affix and enchant model (tags, `AffixDef` with level-scaled stat grants and extra strikes, `EnhanceRule`, `Enchanted` per instance, weighted rolling); `rl-grid` gains targeting (`TargetMode` own, adjacent, bolt, ball, beam, cone; `footprint`; `clear_shot`); `rl-bevy` gains `RangedAttack`, `Strikes` and `line_of_fire`, and the attack resolver shoots at distant targets.
   Corsair's items carry tags and affixes from RON, found gear rolls a quality, the hoard is enchanted, the pistol fires on `f`, and the sea chest shows the folded numbers.
+- 2026-09-11: statuses in the Bevy layer: `StatBlock` and `Afflicted` components, `Afflict` and `Cure` requests, `StatusEvent`, and a tick on every whole turn for the actors on the current map whose damage goes through the damage pipeline; `is_status_source` and `Stats::retain_sources` let a game rebuild gear modifiers without losing a status's.
+  Corsair's crabs and jaguars inflict bleeding and venom from RON, rum cures both and makes you hearty, and the status line wears badges.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, lighting, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

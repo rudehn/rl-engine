@@ -22,6 +22,7 @@ pub mod knowledge;
 pub mod places;
 pub mod plugin;
 pub mod state;
+pub mod status;
 pub mod turn;
 pub mod world;
 
@@ -36,6 +37,7 @@ pub use knowledge::{Knowledge, KnowledgeSave};
 pub use places::{Arrive, Destination, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest};
 pub use plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
 pub use state::EngineState;
+pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusRules};
 pub use turn::{Action, ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
@@ -54,6 +56,7 @@ pub mod prelude {
     };
     pub use crate::plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
     pub use crate::state::EngineState;
+    pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusRules};
     pub use crate::turn::{Action, ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, PlaceMap, WindowView, WorldMap, WorldRes, WorldSettings};
 }

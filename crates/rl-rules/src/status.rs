@@ -129,10 +129,19 @@ pub struct Statuses {
     active: Vec<ActiveStatus>,
 }
 
+/// The high bits every status source tag carries.
+const STATUS_TAG: u64 = 0x5747_0000_0000_0000;
+
 /// The source tag under which a status's modifiers sit in [`Stats`]:
 /// unique per status id so removal is exact.
 fn source_tag(id: StatusId, instance: usize) -> u64 {
-    0x5747_0000_0000_0000 | ((id.raw() as u64) << 16) | instance as u64
+    STATUS_TAG | ((id.raw() as u64) << 16) | instance as u64
+}
+
+/// Whether a modifier source is a status's, so a game rebuilding its
+/// gear modifiers can leave the statuses' in place.
+pub fn is_status_source(source: u64) -> bool {
+    source & 0xFFFF_0000_0000_0000 == STATUS_TAG
 }
 
 impl Statuses {

@@ -24,7 +24,7 @@ pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use faction::{FactionId, Factions, Relation};
 pub use stats::{Modifier, Op, StatDef, StatId, Stats};
-pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
+pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -33,5 +33,5 @@ pub mod prelude {
     pub use crate::equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
     pub use crate::faction::{FactionId, Factions, Relation};
     pub use crate::stats::{Modifier, Op, StatDef, StatId, Stats};
-    pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
+    pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 }

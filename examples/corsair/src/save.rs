@@ -15,7 +15,7 @@ use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId
 use rl_engine::rl_ui::{LogCategory, MessageLog};
 use serde::{Deserialize, Serialize};
 
-use crate::items::{Armory, ItemKind, Sheet};
+use crate::items::{Armory, ItemKind};
 use crate::monsters::{Bestiary, MonsterKind};
 use crate::places::Entrances;
 
@@ -50,6 +50,8 @@ pub struct PlayerSave {
     pub hp: i32,
     pub bag: Vec<SaveId>,
     pub worn: Vec<(String, SaveId)>,
+    #[serde(default)]
+    pub statuses: Vec<(String, u32)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +82,7 @@ pub struct TransitionSave {
 }
 
 /// The player as a capture sees it.
-type PlayerData = (Entity, &'static Position, Option<&'static OnMap>, &'static Health, &'static Inventory, &'static Equipped);
+type PlayerData = (Entity, &'static Position, Option<&'static OnMap>, &'static Health, &'static Inventory, &'static Equipped, &'static Afflicted);
 /// A monster as a capture sees it.
 type MonsterData = (Entity, &'static MonsterKind, &'static Position, Option<&'static OnMap>, &'static Health);
 /// An item as a capture sees it.
@@ -98,6 +100,7 @@ pub struct Run<'w, 's> {
     entrances: Res<'w, Entrances>,
     quests: Res<'w, Quests>,
     turns: Res<'w, Turns>,
+    statuses: Res<'w, StatusRules>,
 }
 
 /// The game's entities, captured.
@@ -111,7 +114,7 @@ struct Captured {
 /// Captures the game's entities; the engine's state is added by the caller.
 fn capture_game(run: &Run, remap: &mut EntityRemap) -> Option<Captured> {
     let map_of = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE);
-    let (entity, pos, on, hp, bag, worn) = run.player.single().ok()?;
+    let (entity, pos, on, hp, bag, worn, afflicted) = run.player.single().ok()?;
     let player = PlayerSave {
         id: remap.save_id(entity),
         at: pos.0,
@@ -119,6 +122,7 @@ fn capture_game(run: &Run, remap: &mut EntityRemap) -> Option<Captured> {
         hp: hp.hp,
         bag: bag.items.iter().map(|i| remap.save_id(*i)).collect(),
         worn: worn.worn().map(|(slot, item)| (run.armory.slots.name(slot).to_string(), remap.save_id(item))).collect(),
+        statuses: afflicted.iter().map(|s| (run.statuses.defs.name(s.id).to_string(), s.turns)).collect(),
     };
     let monsters = run
         .monsters
@@ -258,13 +262,20 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
                 unarmed,
                 Inventory { items: bag },
                 Equipped(worn),
-                Sheet::default(),
+                StatBlock::default(),
+                Afflicted::default(),
                 Strikes::default(),
                 rl_engine::rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
             ),
         ))
         .id();
     remap.bind(p.id, player);
+    // Statuses go back on by request, so their modifiers are installed
+    // the same way they were the first time.
+    for (name, turns) in &p.statuses {
+        let status = world.resource::<StatusRules>().defs.expect(name);
+        world.write_message(Afflict { target: player, status, turns: *turns, by: None });
+    }
     save.engine.restore(world, &remap);
     let mut bestiary = bestiary;
     let mut armory = armory;

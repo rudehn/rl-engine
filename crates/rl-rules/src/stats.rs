@@ -121,6 +121,13 @@ impl Stats {
         before - self.modifiers.len()
     }
 
+    /// Removes every modifier whose source fails `keep`. Returns how many went.
+    pub fn retain_sources(&mut self, keep: impl Fn(u64) -> bool) -> usize {
+        let before = self.modifiers.len();
+        self.modifiers.retain(|m| keep(m.source));
+        before - self.modifiers.len()
+    }
+
     /// Every active modifier.
     pub fn modifiers(&self) -> &[Modifier] {
         &self.modifiers

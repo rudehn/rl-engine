@@ -15,7 +15,7 @@ use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::damage::DamageKind;
 use rl_engine::rl_rules::{
-    AffixDef, AffixKind, Enchanted, EnhanceRule, EquipShape, Modifier, Op, Scaled, ScaledStrike, SlotDef, StatDef, StatId, Stats, TagDef, TagId, roll_affixes,
+    AffixDef, AffixKind, Enchanted, EnhanceRule, EquipShape, Modifier, Op, Scaled, ScaledStrike, SlotDef, StatDef, StatId, TagDef, TagId, roll_affixes,
 };
 use rl_engine::rl_ui::{LogCategory, MessageLog};
 use serde::Deserialize;
@@ -110,10 +110,6 @@ impl Quality {
 /// Marks an item with the def it came from.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ItemKind(pub Id<ItemDef>);
-
-/// A wearer's stat block, rebuilt from what it wears.
-#[derive(Component, Debug, Clone, Default)]
-pub struct Sheet(pub Stats);
 
 /// The item definitions and the vocabulary they use.
 #[derive(Resource)]
@@ -388,15 +384,23 @@ pub fn drop_loot(
 }
 
 /// Applies what using an item does, and consumes it.
-pub fn use_items(
-    mut commands: Commands,
-    mut events: MessageReader<ItemEvent>,
-    armory: Res<Armory>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
-    mut users: Query<&mut Health>,
-    mut items: Query<(&ItemKind, Option<&mut Stack>)>,
-) {
+/// What using an item reaches.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Using<'w, 's> {
+    armory: Res<'w, Armory>,
+    statuses: Res<'w, StatusRules>,
+    turns: Res<'w, Turns>,
+    log: ResMut<'w, MessageLog>,
+    afflict: MessageWriter<'w, Afflict>,
+    cure: MessageWriter<'w, Cure>,
+    users: Query<'w, 's, &'static mut Health>,
+    items: Query<'w, 's, (&'static ItemKind, Option<&'static mut Stack>)>,
+}
+
+/// Applies what using an item does, and consumes it. Drink heals, cures
+/// what a bite left and makes you hearty for a while.
+pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, mut using: Using) {
+    let Using { armory, statuses, turns, log, afflict, cure, users, items } = &mut using;
     for ev in events.read() {
         let ItemEvent::Used { actor, item } = *ev else { continue };
         let Ok((kind, stack)) = items.get_mut(item) else { continue };
@@ -409,6 +413,10 @@ pub fn use_items(
             let before = hp.hp;
             hp.hp = (hp.hp + d.heal).min(hp.max);
             log.push(format!("You drink the {}. It restores {} health.", d.name, hp.hp - before), LogCategory::Good, turns.turn_number());
+            for name in ["venom", "bleeding"] {
+                cure.write(Cure { target: actor, status: statuses.defs.expect(name) });
+            }
+            afflict.write(Afflict { target: actor, status: statuses.defs.expect("hearty"), turns: 10, by: None });
         }
         match stack {
             Some(mut s) if s.count > 1 => s.count -= 1,
@@ -418,7 +426,7 @@ pub fn use_items(
 }
 
 /// A wearer as the gear refresh sees it.
-type WearerData = (Entity, &'static Equipped, &'static mut Sheet, &'static mut Armor, &'static mut MeleeAttack, &'static mut Strikes);
+type WearerData = (Entity, &'static Equipped, &'static mut StatBlock, &'static mut Armor, &'static mut MeleeAttack, &'static mut Strikes);
 
 /// Rebuilds a wearer's stats, armor, attack, extra strikes and shot from
 /// what it wears: the items' own numbers, their affixes and their levels.
@@ -431,7 +439,9 @@ pub fn refresh_gear(
 ) {
     let main_hand = armory.slots.expect("main hand");
     for (wearer, worn, mut sheet, mut armor, mut attack, mut strikes) in &mut wearers {
-        let mut stats = Stats::new();
+        // Gear is rebuilt from scratch; what statuses put there stays.
+        let mut stats = std::mem::take(&mut sheet.0);
+        stats.retain_sources(rl_engine::rl_rules::is_status_source);
         let mut shot = None;
         for (_, item) in worn.worn() {
             let Ok((kind, enchant)) = items.get(item) else { continue };

@@ -40,6 +40,8 @@ pub struct MonsterDef {
     pub spawn: (i32, i32, u32, u32, u32),
     #[serde(default)]
     pub drops: Vec<(String, u32)>,
+    #[serde(default)]
+    pub inflicts: Option<(String, u32, u32)>,
 }
 
 impl Named for MonsterDef {
@@ -167,6 +169,8 @@ impl Bestiary {
                 Speed(m.speed),
                 Mind(self.brains[id.index()].clone()),
                 MonsterKind(id),
+                StatBlock::default(),
+                Afflicted::default(),
                 Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
             ))
             .id()

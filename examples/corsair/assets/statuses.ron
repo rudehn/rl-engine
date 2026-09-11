@@ -1,0 +1,14 @@
+// Corsair's statuses: what a bite leaves behind and what a bottle does.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:      unique, referred to by monsters' `inflicts` and by the code that cures
+//   stacking:  optional; what a second application does: Refresh (longer wins, default) | Extend (durations add) | Stack | Ignore
+//   modifies:  optional; stat changes while it lasts, each (stat, op): stat "armor" | "attack", op Add(n) | MulPct(n) | AtLeast(n) | AtMost(n)
+//   ticks:     optional; (damage kind, amount) dealt every whole turn: kind "cutlass" | "pistol" | "bite" | "claw" | "fist" | "fire"
+//   badge:     optional; one character for the status line
+#![enable(implicit_some)]
+[
+    (name: "venom", ticks: ("bite", 1), badge: 'v'),
+    (name: "bleeding", stacking: Extend, ticks: ("claw", 1), badge: 'b'),
+    (name: "hearty", modifies: [("armor", Add(1))], badge: 'h'),
+]

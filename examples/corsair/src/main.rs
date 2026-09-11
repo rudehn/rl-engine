@@ -20,6 +20,7 @@ mod monsters;
 mod places;
 mod quests;
 mod save;
+mod statuses;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -32,7 +33,7 @@ use rl_engine::rl_ui::{ChromeLayout, ChromePlugin, LogCategory, MessageLog, Stat
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
-use crate::items::{Armory, ItemKind, Sheet};
+use crate::items::{Armory, ItemKind};
 use crate::monsters::Bestiary;
 use rl_engine::rl_save::Saves;
 
@@ -116,6 +117,8 @@ fn main() -> AppExit {
             note_discoveries,
             monsters::narrate,
             items::narrate_items,
+            statuses::inflict_on_hit,
+            statuses::narrate_statuses,
             quests::report_facts,
             quests::narrate_quests,
             save::delete_on_death,
@@ -186,6 +189,7 @@ fn start_world(world: &mut World) {
         .validate(|m, _| m.drops.iter().find(|(name, _)| armory.defs.id(name).is_none()).map_or(Ok(()), |(name, _)| Err(format!("unknown drop {name:?}"))))
         .unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
     let (quest_log, facts) = quests::load(&bestiary, &armory);
+    world.insert_resource(statuses::load(&armory, &bestiary));
     let cove = graph.sites().iter().position(|s| s.kind == content::COVE);
 
     world.insert_resource(quest_log);
@@ -264,7 +268,8 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             unarmed,
             Inventory { items: vec![cutlass, rum] },
             worn,
-            Sheet::default(),
+            StatBlock::default(),
+            Afflicted::default(),
             Strikes::default(),
             Glyph::new('@', Color::WHITE).on_layer(10),
         ),
@@ -313,7 +318,8 @@ struct StatusWorld<'w, 's> {
     state: Res<'w, State<EngineState>>,
     armory: Res<'w, Armory>,
     map: Res<'w, WorldMap>,
-    player: Query<'w, 's, (&'static Position, &'static Health, &'static Armor, &'static Equipped), With<Player>>,
+    statuses: Res<'w, StatusRules>,
+    player: Query<'w, 's, (&'static Position, &'static Health, &'static Armor, &'static Equipped, &'static Afflicted), With<Player>>,
     ground: Query<'w, 's, items::GroundData, With<Item>>,
     kinds: Query<'w, 's, &'static ItemKind>,
 }
@@ -322,7 +328,9 @@ fn update_status(mut status: ResMut<StatusLine>, w: StatusWorld) {
     if *w.state.get() != EngineState::Playing {
         return;
     }
-    let Ok((pos, hp, armor, worn)) = w.player.single() else { return };
+    let Ok((pos, hp, armor, worn, afflicted)) = w.player.single() else { return };
+    let badges = statuses::badges(afflicted, &w.statuses);
+    let badges = if badges.is_empty() { String::new() } else { format!("  [{badges}]") };
     let region = w.world.region_of_tile(pos.0);
     let below = places::place_name(w.map.current());
     let band = below.as_deref().unwrap_or_else(|| w.world.layers().band(region).map(content::band_name).unwrap_or("nowhere"));
@@ -330,11 +338,12 @@ fn update_status(mut status: ResMut<StatusLine>, w: StatusWorld) {
         worn.in_slot(w.armory.slots.expect("main hand")).and_then(|e| w.kinds.get(e).ok()).map(|k| w.armory.defs.get(k.0).name.as_str()).unwrap_or("fists");
     let here = items::whats_here(pos.0, &w.armory, &w.ground).map(|s| format!("   here: {s} [g]")).unwrap_or_default();
     status.0 = format!(
-        "HP {}/{}  AC {}  {}   Turn {}   ({}, {}) {}{}   [i]nventory [t]asks [m]ap [q]uit",
+        "HP {}/{}  AC {}  {}{}   Turn {}   ({}, {}) {}{}   [i]nventory [t]asks [m]ap [q]uit",
         hp.hp,
         hp.max,
         armor.0,
         weapon,
+        badges,
         w.turns.turn_number(),
         pos.0.x,
         pos.0.y,
