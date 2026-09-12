@@ -22,6 +22,8 @@ jobs:
         run: cargo fmt --all --check
       - name: tier boundaries
         run: scripts/check-tiers.sh
+      - name: the guide's links into the code
+        run: scripts/check-guide.sh
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: tests

@@ -184,6 +184,7 @@ The window opens above the others without taking focus, and the screen must be u
 
 ## Documentation
 
+- **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable steps, from a map on screen to an action of your own. Start here. Every step is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
 - `docs/OVERVIEW.md` is the inventory of what exists and what is not built yet, kept current.
 - `docs/PLAN.md` is the design: what was decided, why, and which milestone each piece lands in.
 - `docs/reviews/` holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
@@ -196,6 +197,8 @@ cargo test -p rl-core -p rl-grid      # tier 0 and 1, seconds
 cargo bench -p rl-grid                # FOV, A*, Dijkstra, regions
 scripts/check-tiers.sh                # the tier boundaries
 scripts/check-tiers.sh --wasm         # tiers 0 and 1 build for WebAssembly
+scripts/check-guide.sh                # the guide's links into the code
+mdbook serve docs/guide               # read the guide at localhost:3000
 cargo test --workspace                # everything, builds Bevy
 ```
 

@@ -1,0 +1,20 @@
+[book]
+title = "The rl-engine guide"
+description = "Build a roguelike on rl-engine, one runnable step at a time."
+authors = ["The rl-engine contributors"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/rudehn/rl-engine"
+edit-url-template = "https://github.com/rudehn/rl-engine/edit/main/docs/guide/{path}"
+no-section-label = false
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.playground]
+runnable = false
