@@ -59,6 +59,12 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Minds claim their decision too, so a game that decides for an actor in `TurnSet::Decide` keeps the mind from overriding it: a monster can now take an action the engine has never heard of, which the closed enum made impossible.
   Two names dodge Bevy's prelude: `Move` and `Enter` are taken by `bevy_picking`, so the engine's are `Step` and `GoThrough`.
   Nate, 2026-09-11: the architecture review's closed-taxonomy finding.
+- 2026-09-11: a game's rules move inside the turn.
+  `TurnSet::React` runs between the sweep and the requeue, and `PresentSet` names the drawing layers: narrate, map, chrome, overlay.
+  Corsair's drink, loot, gear and venom, and the floor and cave population of all three games, ran in `EngineSet::Present`, which is after every pass of the turn loop; a potion drunk at one hit point healed a corpse.
+  Reproduced first as a Corsair test with a cutthroat at the player's elbow, which died before the fix and lives after it.
+  `rl-ui` and `rl-overworld` ordered themselves after `rl_render::map_view::draw_map` by name; they name a sub-phase now, and the overworld's own systems are public so a game can reason about them at all.
+  Nate, 2026-09-11: the architecture review's reaction-phase finding.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

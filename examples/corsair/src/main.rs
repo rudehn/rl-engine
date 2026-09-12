@@ -21,6 +21,8 @@ mod places;
 mod quests;
 mod save;
 mod statuses;
+#[cfg(test)]
+mod testing;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -109,17 +111,21 @@ fn main() -> AppExit {
     .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
     .add_systems(Update, places::light_the_way.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
     .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
+    // What this turn caused, answered inside the turn: the floor that
+    // fills on first arrival, what the dead leave, what a drink does,
+    // what gear is worth, what a bite leaves behind. Inside the pass, so
+    // a drink heals before the next blow lands.
+    .add_systems(
+        Turn,
+        (places::populate_places, items::drop_loot, items::use_items, items::refresh_gear, statuses::inflict_on_hit).chain().in_set(TurnSet::React),
+    )
+    // Once a frame, in words: everything the chrome is about to draw.
     .add_systems(
         Update,
         (
-            places::populate_places,
-            items::drop_loot,
-            items::use_items,
-            items::refresh_gear,
             note_discoveries,
             monsters::narrate,
             items::narrate_items,
-            statuses::inflict_on_hit,
             statuses::narrate_statuses,
             quests::report_facts,
             quests::narrate_quests,
@@ -127,9 +133,9 @@ fn main() -> AppExit {
             update_status,
         )
             .chain()
-            .in_set(EngineSet::Present),
+            .in_set(PresentSet::Narrate),
     )
-    .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(EngineSet::Present).after(rl_engine::rl_ui::draw_chrome));
+    .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
     app.run()
 }
 

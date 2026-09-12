@@ -35,7 +35,7 @@ impl bevy::prelude::Plugin for ChromePlugin {
         app.init_resource::<MessageLog>()
             .init_resource::<Theme>()
             .init_resource::<StatusLine>()
-            .add_systems(Update, draw_chrome.in_set(rl_bevy::EngineSet::Present).after(rl_render::map_view::draw_map));
+            .add_systems(Update, draw_chrome.in_set(rl_bevy::PresentSet::Chrome));
     }
 }
 

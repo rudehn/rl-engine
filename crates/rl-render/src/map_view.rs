@@ -139,7 +139,7 @@ pub struct MapViewPlugin;
 
 impl Plugin for MapViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TileAppearance>().add_systems(Update, (follow_player, draw_map).chain().in_set(EngineSet::Present));
+        app.init_resource::<TileAppearance>().add_systems(Update, (follow_player, draw_map).chain().in_set(PresentSet::Map));
     }
 }
 

@@ -78,7 +78,8 @@ fn main() -> AppExit {
     .init_resource::<LightOverlay>()
     .add_systems(Startup, start)
     .add_systems(Update, player_input.in_set(EngineSet::Input))
-    .add_systems(Update, (populate, narrate, update_status).chain().in_set(EngineSet::Present));
+    .add_systems(Turn, populate.in_set(TurnSet::React))
+    .add_systems(Update, (narrate, update_status).chain().in_set(PresentSet::Narrate));
     app.run()
 }
 
@@ -487,7 +488,8 @@ mod tests {
             .init_resource::<MessageLog>()
             .init_resource::<StatusLine>()
             .add_systems(Startup, start)
-            .add_systems(Update, (populate, narrate).chain().in_set(EngineSet::Present));
+            .add_systems(Turn, populate.in_set(TurnSet::React))
+            .add_systems(Update, narrate.in_set(PresentSet::Narrate));
         app.update();
         app.update();
         app.update();

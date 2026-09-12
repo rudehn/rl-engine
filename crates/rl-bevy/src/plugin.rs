@@ -18,7 +18,7 @@ use crate::{combat, events, fov, items, lighting, places, status, turn, world};
 /// Streaming runs first so the window is loaded around wherever the player
 /// ended the previous frame before anyone is dealt a turn on it. Input runs
 /// once per frame, before the turns, so a key pressed this frame becomes
-/// one [`Intent`] however many passes the turn loop takes.
+/// one [`Intent`](crate::turn::Intent) however many passes the turn loop takes.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EngineSet {
     /// Step the loaded window with the player.
@@ -33,6 +33,24 @@ pub enum EngineSet {
     Fov,
     /// Draw.
     Present,
+}
+
+/// The order the frame is drawn in.
+///
+/// Every set is inside [`EngineSet::Present`]. Drawing is layered, and the
+/// layers belong to different crates, so they are named here rather than
+/// each crate ordering itself after another crate's function.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PresentSet {
+    /// Words first: log lines and the status line the chrome will draw,
+    /// and anything else a game works out once a frame.
+    Narrate,
+    /// The map view.
+    Map,
+    /// The status line and the log over it.
+    Chrome,
+    /// Whatever covers the map: the overworld screen, menus, modals.
+    Overlay,
 }
 
 /// One pass of the turn loop: deal, decide, resolve, requeue.
@@ -60,6 +78,18 @@ pub enum TurnSet {
     /// Refuse whatever no resolver claimed, so an action with no resolver
     /// reads as a refusal and a warning rather than a frozen game.
     Sweep,
+    /// Where a game answers what just happened: the drink that heals, the
+    /// bite that poisons, the loot the dead leave, the floor that fills
+    /// the first time it is entered.
+    ///
+    /// Inside the pass, so an effect lands before the next actor acts. A
+    /// reaction that writes a request rather than a change, an affliction
+    /// or a warp, has it resolved on the next pass, which is still before
+    /// the player acts again. Only reactions to what the turn produced
+    /// belong here: a system that scans the world every frame belongs in
+    /// [`PresentSet::Narrate`] instead, since this runs once per pass and
+    /// a frame may hold hundreds.
+    React,
     /// Requeue and recover.
     Cleanup,
 }
@@ -74,7 +104,7 @@ const MAX_PASSES: usize = 512;
 ///
 /// The player holding a turn means the game's input system gets the next
 /// frame; a pass that neither dealt, advanced nor requeued means the queue
-/// is idle. Both leave at least one pass run, so an [`Intent`] written in
+/// is idle. Both leave at least one pass run, so an [`Intent`](crate::turn::Intent) written in
 /// [`EngineSet::Input`] is always resolved in the same frame.
 pub fn run_turns(world: &mut World) {
     for pass in 0..MAX_PASSES {
@@ -132,7 +162,8 @@ impl Plugin for EnginePlugins {
                     .run_if(in_state(EngineState::Playing))
                     .run_if(resource_exists::<WorldMap>),
             )
-            .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::Cleanup).chain())
+            .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
+            .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
             // The actions the engine resolves itself. A game registers its
             // own the same way and resolves them in `TurnSet::Resolve`.
             .add_action::<turn::Step>()

@@ -132,7 +132,7 @@ impl Plugin for OverworldPlugin {
             .init_resource::<OverworldKeys>()
             .add_message::<PortalRequest>()
             .add_systems(Update, handle_keys.in_set(EngineSet::Input))
-            .add_systems(Update, draw_overworld.in_set(EngineSet::Present).after(rl_render::map_view::draw_map));
+            .add_systems(Update, draw_overworld.in_set(PresentSet::Overlay));
     }
 }
 
@@ -141,7 +141,9 @@ pub fn overworld_open(screen: Res<OverworldScreen>) -> bool {
     screen.open
 }
 
-fn handle_keys(
+/// Opens and closes the screen, moves the cursor over discovered sites,
+/// and asks for a portal to the one chosen.
+pub fn handle_keys(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<OverworldKeys>,
     mut screen: ResMut<OverworldScreen>,
@@ -178,21 +180,29 @@ fn handle_keys(
 
 /// The two tables the overworld is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
-struct Look<'w> {
+pub struct Look<'w> {
     bands: Res<'w, BandAppearance>,
     style: Res<'w, OverworldStyle>,
 }
 
 /// Where the player is and what it knows.
 #[derive(bevy::ecs::system::SystemParam)]
-struct Whereabouts<'w, 's> {
+pub struct Whereabouts<'w, 's> {
     world: Res<'w, WorldRes>,
     map: Res<'w, WorldMap>,
     knowledge: Res<'w, Knowledge>,
     player: Query<'w, 's, &'static Position, With<Player>>,
 }
 
-fn draw_overworld(screen: Res<OverworldScreen>, layout: Option<Res<OverworldLayout>>, whereabouts: Whereabouts, look: Look, mut terminal: ResMut<Terminal>) {
+/// Draws the world's bands, rivers, roads, discovered sites and the
+/// player's own region, over whatever the map view drew.
+pub fn draw_overworld(
+    screen: Res<OverworldScreen>,
+    layout: Option<Res<OverworldLayout>>,
+    whereabouts: Whereabouts,
+    look: Look,
+    mut terminal: ResMut<Terminal>,
+) {
     let style = *look.style;
     let look = &look.bands;
     if !screen.open {

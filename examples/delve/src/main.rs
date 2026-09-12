@@ -69,7 +69,9 @@ fn main() -> AppExit {
     .add_systems(Startup, start)
     .add_systems(Update, player_input.in_set(EngineSet::Input))
     .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
-    .add_systems(Update, (populate_floor, narrate, update_status).chain().in_set(EngineSet::Present));
+    // A floor fills the moment it is entered, inside the turn.
+    .add_systems(Turn, populate_floor.in_set(TurnSet::React))
+    .add_systems(Update, (narrate, update_status).chain().in_set(PresentSet::Narrate));
     app.run()
 }
 
@@ -408,7 +410,8 @@ mod tests {
             .init_resource::<MessageLog>()
             .init_resource::<StatusLine>()
             .add_systems(Startup, start)
-            .add_systems(Update, (populate_floor, narrate).chain().in_set(EngineSet::Present));
+            .add_systems(Turn, populate_floor.in_set(TurnSet::React))
+            .add_systems(Update, narrate.in_set(PresentSet::Narrate));
         app
     }
 

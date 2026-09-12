@@ -571,4 +571,51 @@ mod tests {
         }
         assert_eq!(armory.roll_quality(armory.defs.expect("rum"), Quality::HOARD, &mut rng), Enchanted::plain(), "drink is never enchanted");
     }
+
+    /// A drink is a reaction to an item event, and reactions run after the
+    /// whole turn loop, so the healing lands after every monster due this
+    /// frame has already struck. At one hit point that is the difference
+    /// between a close call and a death.
+    #[test]
+    fn a_drink_at_deaths_door_lands_before_the_next_blow() {
+        let dir = std::env::temp_dir().join(format!("corsair-drink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        app.add_systems(Turn, use_items.in_set(TurnSet::React));
+        app.update();
+        app.update();
+
+        let me = {
+            let w = app.world_mut();
+            let mut q = w.query_filtered::<Entity, With<Player>>();
+            q.single(w).unwrap()
+        };
+        let rum_kind = app.world().resource::<Armory>().defs.expect("rum");
+        let rum = {
+            let w = app.world();
+            let bag = w.get::<Inventory>(me).expect("a bag");
+            bag.items.iter().copied().find(|i| w.get::<ItemKind>(*i).is_some_and(|k| k.0 == rum_kind)).expect("a bottle of rum")
+        };
+        app.world_mut().get_mut::<Health>(me).expect("health").hp = 1;
+
+        // A cutthroat at the player's elbow, due the moment the player's
+        // turn is spent.
+        let at = app.world().get::<Position>(me).expect("a position").0.offset(1, 0);
+        let kind = app.world().resource::<crate::monsters::Bestiary>().defs.expect("cutthroat");
+        app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<crate::monsters::Bestiary>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            bestiary.spawn(&mut commands, kind, at);
+            queue.apply(world);
+        });
+        app.update();
+
+        app.world_mut().write_message(Intent::new(me, UseItem(rum)));
+        app.update();
+
+        let died = app.world_mut().resource_mut::<Messages<DeathEvent>>().drain().any(|d| d.was_player);
+        let hp = app.world().get::<Health>(me).map(|h| h.hp);
+        assert!(!died, "the drink landed after the blow: {hp:?}");
+        assert!(hp.is_some_and(|hp| hp > 1), "the drink healed: {hp:?}");
+    }
 }

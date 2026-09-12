@@ -39,7 +39,7 @@ pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
-pub use plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
+pub use plugin::{EnginePlugins, EngineSet, PresentSet, Turn, TurnSet};
 pub use state::EngineState;
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusRules};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
@@ -59,7 +59,7 @@ pub mod prelude {
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
-    pub use crate::plugin::{EnginePlugins, EngineSet, Turn, TurnSet};
+    pub use crate::plugin::{EnginePlugins, EngineSet, PresentSet, Turn, TurnSet};
     pub use crate::state::EngineState;
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusRules};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
