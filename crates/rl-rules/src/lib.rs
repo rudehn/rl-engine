@@ -1,10 +1,25 @@
 //! The rules layer: shapes in the engine, vocabulary in the game.
 //!
 //! Nothing here names a stat, a damage type, a status, a faction, an
-//! equipment slot, an item tag or an affix. The engine ships the
-//! accumulator, the mitigation pipeline, the tick and expiry machinery,
-//! the relation matrix, the slot graph and the affix and enchant model; a
-//! game registers what exists and the numbers that go with it.
+//! equipment slot, an item tag, an affix, a fact or a quest. The engine
+//! ships the machinery; a game registers what exists and the numbers that
+//! go with it.
+//!
+//! - [`content`]: registries and banded tables loaded from RON, which hand
+//!   out the ids everything else is keyed by.
+//! - [`stats`], [`damage`], [`status`], [`faction`], [`equip`] and
+//!   [`affix`]: the modifier accumulator, the mitigation pipeline, the tick
+//!   and expiry machinery, the relation matrix, the slot graph and the
+//!   affix and enchant model.
+//! - [`ai`]: tactic-priority brains over Dijkstra maps.
+//! - [`events`]: facts, counters and quests as data over what happened.
+//! - [`balance`]: threat scoring and the spawn-band report, so content is
+//!   checked from the command line.
+//!
+//! One crate rather than five, because crate boundaries are drawn on
+//! dependency weight and these all weigh the same: core, grid, serde and
+//! ron. The modules keep the seams the crates had, and every item is also
+//! re-exported at the root.
 //!
 //! Everything is pure. The Bevy layer turns these into components and
 //! systems; a balance tool or a test runs them on plain values.
@@ -13,15 +28,23 @@
 #![forbid(unsafe_code)]
 
 pub mod affix;
+pub mod ai;
+pub mod balance;
+pub mod content;
 pub mod damage;
 pub mod equip;
+pub mod events;
 pub mod faction;
 pub mod stats;
 pub mod status;
 
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
+pub use ai::{ActorView, Brain, Decision, MovementProfile, Snapshot, Tactic, TacticCtx};
+pub use balance::{BandRow, Report, ThreatSubject, threat};
+pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry};
 pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
+pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
 pub use stats::{Modifier, Op, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
@@ -29,8 +52,15 @@ pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, Ti
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
+    pub use crate::ai::tactics;
+    pub use crate::ai::{ActorView, Brain, Decision, MovementProfile, Snapshot, Tactic, TacticCtx};
+    pub use crate::balance::{BandRow, Report, ThreatSubject, threat};
+    pub use crate::content::{BandedEntry, BandedTable, ContentError, Named, Registry};
     pub use crate::damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
     pub use crate::equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
+    pub use crate::events::{
+        Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker,
+    };
     pub use crate::faction::{FactionId, Factions, Relation};
     pub use crate::stats::{Modifier, Op, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};

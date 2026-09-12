@@ -11,7 +11,7 @@
 //! Generic over the item handle: the Bevy layer uses entities, a balance
 //! tool can use definition ids, and the tests here use integers.
 
-use rl_content::{Named, Registry};
+use crate::content::{Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 

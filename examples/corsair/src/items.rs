@@ -10,13 +10,13 @@ use std::collections::BTreeSet;
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_content::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::damage::DamageKind;
 use rl_engine::rl_rules::{
     AffixDef, AffixKind, Enchanted, EnhanceRule, EquipShape, Modifier, Op, Scaled, ScaledStrike, SlotDef, StatDef, StatId, TagDef, TagId, roll_affixes,
 };
+use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_ui::{LogCategory, MessageLog};
 use serde::Deserialize;
 

@@ -7,7 +7,7 @@
 //! run in order; the engine ships the common ones and a game inserts its
 //! own anywhere in the list.
 
-use rl_content::{Named, Registry};
+use crate::content::{Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 

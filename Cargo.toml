@@ -15,12 +15,7 @@ rl-core = { path = "crates/rl-core" }
 rl-grid = { path = "crates/rl-grid" }
 rl-mapgen = { path = "crates/rl-mapgen" }
 rl-world = { path = "crates/rl-world" }
-rl-test-support = { path = "crates/rl-test-support" }
-rl-content = { path = "crates/rl-content" }
 rl-rules = { path = "crates/rl-rules" }
-rl-ai = { path = "crates/rl-ai" }
-rl-events = { path = "crates/rl-events" }
-rl-tools = { path = "crates/rl-tools" }
 rl-save = { path = "crates/rl-save" }
 rl-engine = { path = "crates/rl-engine" }
 rl-bevy = { path = "crates/rl-bevy" }

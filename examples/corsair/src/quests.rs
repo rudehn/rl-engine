@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_content::{Named, Registry};
 use rl_engine::rl_core::{Point, Rect};
-use rl_engine::rl_events::{Fact, FactDef, FactKind, Matcher, Need, Objective, QuestDef, QuestState};
 use rl_engine::rl_render::Terminal;
+use rl_engine::rl_rules::{Fact, FactDef, FactKind, Matcher, Need, Objective, QuestDef, QuestState};
+use rl_engine::rl_rules::{Named, Registry};
 use rl_engine::rl_ui::{ListMenu, LogCategory, MenuRow, MessageLog, StatusLine, Theme, draw_menu};
 
 use crate::content::{COVE, PORT};
@@ -237,11 +237,11 @@ pub fn narrate_quests(
     let turn = turns.turn_number();
     for c in changes.read() {
         match c.0 {
-            rl_engine::rl_events::Change::Progress { .. } => {}
-            rl_engine::rl_events::Change::ObjectiveDone { quest, objective } => {
+            rl_engine::rl_rules::Change::Progress { .. } => {}
+            rl_engine::rl_rules::Change::ObjectiveDone { quest, objective } => {
                 log.push(format!("{}: done.", quests.defs.get(quest).objectives[objective].text), LogCategory::Good, turn);
             }
-            rl_engine::rl_events::Change::QuestDone { quest, victory } => {
+            rl_engine::rl_rules::Change::QuestDone { quest, victory } => {
                 let q = quests.defs.get(quest);
                 log.push(format!("Task complete: {}.", q.title), LogCategory::Notice, turn);
                 if victory {
@@ -250,7 +250,7 @@ pub fn narrate_quests(
                     next.set(EngineState::Idle);
                 }
             }
-            rl_engine::rl_events::Change::QuestOpened { quest } => {
+            rl_engine::rl_rules::Change::QuestOpened { quest } => {
                 log.push(format!("New task: {}. [t]", quests.defs.get(quest).title), LogCategory::Notice, turn);
             }
         }

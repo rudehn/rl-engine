@@ -7,11 +7,11 @@
 //! holds the state and reports every change as it feeds facts, so a game
 //! narrates, rewards or ends the run from the changes and nothing else.
 
-use rl_content::{Named, Registry};
+use crate::content::{Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 
-use crate::fact::{Fact, Matcher};
+use crate::events::fact::{Fact, Matcher};
 
 /// What an objective needs of the facts it matches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,7 +203,7 @@ impl Tracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fact::FactDef;
+    use crate::events::fact::FactDef;
 
     fn quests() -> (Registry<FactDef>, Registry<QuestDef>) {
         let facts = Registry::from_defs(vec![FactDef::new("killed"), FactDef::new("carrying"), FactDef::new("entered")]).unwrap();

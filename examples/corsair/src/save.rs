@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Point;
-use rl_engine::rl_events::Tracker;
+use rl_engine::rl_rules::Tracker;
 use rl_engine::rl_rules::{Enchanted, Equipment};
 use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, decode, encode};
 use rl_engine::rl_ui::{LogCategory, MessageLog};

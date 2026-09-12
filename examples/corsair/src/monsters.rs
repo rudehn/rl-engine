@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::rl_ai::Brain;
-use rl_engine::rl_ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_content::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
+use rl_engine::rl_rules::Brain;
+use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_rules::{Factions, Relation};
 use rl_engine::rl_ui::{LogCategory, MessageLog, StatusLine};
 use serde::Deserialize;
@@ -52,7 +52,7 @@ impl Named for MonsterDef {
     }
 }
 
-impl rl_engine::rl_tools::ThreatSubject for MonsterDef {
+impl rl_engine::rl_rules::ThreatSubject for MonsterDef {
     fn hp(&self) -> i32 {
         self.hp
     }

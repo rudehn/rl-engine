@@ -1,6 +1,6 @@
 //! Who is hostile to whom.
 
-use rl_content::{Named, Registry};
+use crate::content::{Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 

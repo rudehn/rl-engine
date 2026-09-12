@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after the Brogue-style shading.
+Last updated: 2026-09-11, after the crate merge.
 
 ## The shape
 
@@ -60,39 +60,20 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Per-tile sampling: warped bilinear climate, a clump field, `tile_facts`.
 - A headless `world_dump` example.
 
-### rl-content
-
-- `Registry<T>` loaded from RON with validate-on-load.
-- `BandedTable` with weights, groups and gap detection.
-
 ### rl-rules
 
+One crate, in modules: crate boundaries follow dependency weight, and content, rules, AI, events and tools all weighed the same.
+
+- `content`: `Registry<T>` loaded from RON with validate-on-load, and `BandedTable` with weights, groups and gap detection.
 - Stats with a modifier accumulator.
 - The damage pipeline: kinds, resistances, hits with the attacker and credit split, composable stages.
 - Statuses with stacking rules, per-turn ticks and cures.
 - A faction relation matrix.
 - The equipment slot graph with displacement.
 - The affix and enchant model: item tags, prefix and suffix affixes with level-scaled stat grants and extra strikes, an enhance rule for what a level buys, per-instance state, weighted rolling.
-
-### rl-ai
-
-- Movement profiles.
-- Snapshots of what an actor sees.
-- A tactic-priority brain with melee, flee-when-hurt, hunt and wander tactics.
-
-### rl-events
-
-- Facts with kind, subject, object and amount, and matchers.
-- A ledger of named counters.
-- Quests as objectives over facts, with prerequisite chains and a victory flag.
-
-### rl-tools
-
-- Threat scoring and the spawn-band balance report.
-
-### rl-test-support
-
-- ASCII map fixtures, renders, seed sweeps, a neighbourhood builder.
+- `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt and wander tactics.
+- `events`: facts with kind, subject, object and amount, matchers, a ledger of named counters, and quests as objectives over facts with prerequisite chains and a victory flag.
+- `balance`: threat scoring and the spawn-band report.
 
 ## Tier 2: the Bevy layer
 

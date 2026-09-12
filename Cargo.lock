@@ -4667,40 +4667,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
-name = "rl-ai"
-version = "0.1.0"
-dependencies = [
- "rand 0.9.5",
- "rl-core",
- "rl-grid",
- "rl-rules",
- "serde",
-]
-
-[[package]]
 name = "rl-bevy"
 version = "0.1.0"
 dependencies = [
  "bevy",
  "rand 0.9.5",
- "rl-ai",
- "rl-content",
  "rl-core",
- "rl-events",
  "rl-grid",
  "rl-mapgen",
  "rl-rules",
  "rl-world",
- "serde",
-]
-
-[[package]]
-name = "rl-content"
-version = "0.1.0"
-dependencies = [
- "rand 0.9.5",
- "rl-core",
- "ron 0.10.1",
  "serde",
 ]
 
@@ -4717,29 +4693,16 @@ dependencies = [
 name = "rl-engine"
 version = "0.1.0"
 dependencies = [
- "rl-ai",
  "rl-bevy",
- "rl-content",
  "rl-core",
- "rl-events",
  "rl-grid",
  "rl-mapgen",
  "rl-overworld",
  "rl-render",
  "rl-rules",
  "rl-save",
- "rl-tools",
  "rl-ui",
  "rl-world",
-]
-
-[[package]]
-name = "rl-events"
-version = "0.1.0"
-dependencies = [
- "rl-content",
- "rl-core",
- "serde",
 ]
 
 [[package]]
@@ -4789,8 +4752,8 @@ name = "rl-rules"
 version = "0.1.0"
 dependencies = [
  "rand 0.9.5",
- "rl-content",
  "rl-core",
+ "rl-grid",
  "ron 0.10.1",
  "serde",
 ]
@@ -4808,23 +4771,6 @@ dependencies = [
  "ron 0.10.1",
  "serde",
  "web-sys",
-]
-
-[[package]]
-name = "rl-test-support"
-version = "0.1.0"
-dependencies = [
- "rl-core",
- "rl-grid",
- "rl-world",
-]
-
-[[package]]
-name = "rl-tools"
-version = "0.1.0"
-dependencies = [
- "rl-content",
- "rl-core",
 ]
 
 [[package]]

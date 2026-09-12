@@ -1,6 +1,6 @@
 //! What happened, as a record.
 
-use rl_content::Named;
+use crate::content::Named;
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 

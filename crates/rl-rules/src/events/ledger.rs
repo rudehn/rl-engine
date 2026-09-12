@@ -1,10 +1,10 @@
 //! Named counters fed by facts.
 
-use rl_content::{Named, Registry};
+use crate::content::{Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 
-use crate::fact::{Fact, Matcher};
+use crate::events::fact::{Fact, Matcher};
 
 /// A registered counter: "kills", "doubloons found", "turns below".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,7 +93,7 @@ impl Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fact::FactDef;
+    use crate::events::fact::FactDef;
 
     #[test]
     fn tallies_sum_amounts_of_matching_facts() {

@@ -3,7 +3,7 @@
 use rand::Rng;
 use rl_core::{Direction, Point, geometry};
 
-use crate::brain::{Decision, Tactic, TacticCtx};
+use crate::ai::brain::{Decision, Tactic, TacticCtx};
 
 /// Attack an adjacent enemy, the nearest by position on a tie.
 #[derive(Debug, Clone, Copy, Default)]
@@ -114,8 +114,8 @@ impl<A: Copy> Tactic<A> for Wander {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::brain::Brain;
-    use crate::snapshot::{ActorView, Snapshot};
+    use crate::ai::brain::Brain;
+    use crate::ai::snapshot::{ActorView, Snapshot};
     use rand::{SeedableRng, rngs::StdRng};
     use rl_core::Id;
     use rl_grid::{DijkstraMap, PathRules, Terrain, TileRegistry};

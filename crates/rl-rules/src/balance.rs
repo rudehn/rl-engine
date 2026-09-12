@@ -1,5 +1,11 @@
 //! Threat scoring and the spawn-band report.
 //!
+//! A game's monsters, items and spawn tables are its own types; the
+//! engine cannot read them. What it can do is score anything that answers
+//! [`ThreatSubject`] and roll a spawn table into a [`Report`] of what the
+//! player meets at each band, so a content change is checked with a
+//! command rather than a playthrough.
+//!
 //! Threat is effective hit points times damage per turn: how long a
 //! thing takes to kill, times how much it hurts while it lives. Armor
 //! counts as extra hit points at a fixed rate and speed scales the
@@ -8,7 +14,7 @@
 
 use std::fmt::Write;
 
-use rl_content::BandedTable;
+use crate::content::BandedTable;
 
 /// Anything that can be scored.
 pub trait ThreatSubject {
@@ -103,7 +109,7 @@ impl Report {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_content::BandedEntry;
+    use crate::content::BandedEntry;
 
     struct Mob {
         hp: i32,

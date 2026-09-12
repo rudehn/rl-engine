@@ -536,6 +536,7 @@ Crates are listed in the order they come into existence; the milestone column sa
 | 3 | `corsair` | the pirate example game, a workspace member with its own assets | everything | M7 |
 
 Sixteen crates, of which nine exist after the first milestone.
+Revised 2026-09-11: `rl-content`, `rl-events`, `rl-ai` and `rl-tools` are modules of `rl-rules`, and `rl-test-support` is gone; see the progress entry for why.
 `rl-grid` may later split into `rl-fov`, `rl-path` and `rl-field` without breaking consumers.
 
 Workspace `Cargo.toml` ships `lwr`'s profile trick: dependencies at `opt-level = 3`, workspace crates at `1` in dev.

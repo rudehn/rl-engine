@@ -4,7 +4,7 @@ use rand::rngs::StdRng;
 use rl_core::Point;
 use rl_grid::DijkstraMap;
 
-use crate::snapshot::Snapshot;
+use crate::ai::snapshot::Snapshot;
 
 /// What an actor decided to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

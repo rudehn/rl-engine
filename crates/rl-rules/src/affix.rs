@@ -10,8 +10,8 @@
 //! registered stats and dice of a registered damage kind. The names, the
 //! tags, the stats and the kinds are the game's; the shape is here.
 
+use crate::content::{Named, Registry};
 use rand::Rng;
-use rl_content::{Named, Registry};
 use rl_core::{DiceRoll, Id};
 use serde::{Deserialize, Serialize};
 

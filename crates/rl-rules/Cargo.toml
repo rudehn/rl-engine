@@ -5,16 +5,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "rl-engine tier 1: stats, damage, statuses and factions as shapes the game fills. No Bevy."
+description = "rl-engine tier 1: content registries, stats, damage, statuses, factions, equipment, monster AI, quests and balance scoring, as shapes the game fills. No Bevy."
 homepage.workspace = true
-keywords = ["roguelike", "rpg", "combat", "stats", "status-effects"]
+keywords = ["roguelike", "rpg", "monster-ai", "quests", "gamedev"]
 categories = ["game-development"]
 
 [dependencies]
 rl-core.workspace = true
-rl-content.workspace = true
+rl-grid.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
-
-[dev-dependencies]
 ron.workspace = true

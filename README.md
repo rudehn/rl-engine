@@ -109,12 +109,7 @@ Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
 | 1 | `rl-grid` | tile registry, terrain, FOV, A*, Dijkstra maps, spatial index, regions |
 | 1 | `rl-mapgen` | the pass pipeline and the builders that run in it |
 | 1 | `rl-world` | world graph, hydrology, sites, roads, chunk generation |
-| 1 | `rl-content` | registries and banded tables loaded from RON |
-| 1 | `rl-rules` | stats and modifiers, damage stages, statuses, factions |
-| 1 | `rl-events` | facts, named counters, quests as objectives over facts |
-| 1 | `rl-tools` | threat scoring and the spawn-band balance report |
-| 1 | `rl-ai` | movement profiles, snapshots, tactic-priority brains over Dijkstra maps |
-| 1 | `rl-test-support` | fixtures and property helpers |
+| 1 | `rl-rules` | registries and banded tables from RON, stats, damage, statuses, factions, equipment, affixes, monster AI, facts and quests, balance scoring |
 | 2 | `rl-bevy` | plugins, components, system sets, the turn loop, chunk streaming, items, places |
 | 2 | `rl-render` | the glyph grid renderer and the world view |
 | 2 | `rl-overworld` | opt-in overworld screen with a portal picker |

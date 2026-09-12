@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rand::rngs::StdRng;
-use rl_ai::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx};
-use rl_content::Registry;
+use rl_rules::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx};
+use rl_rules::Registry;
 use rl_core::{DiceRoll, Direction, Point, RunSeed, SeedDomain, geometry};
 use rl_grid::{DijkstraMap, PathRules};
 use rl_rules::damage::{DamageKind, DamageKindId, Defender};
@@ -430,7 +430,7 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::world::{ChunkRulesRes, WorldRes};
-    use rl_ai::tactics::{Hunt, MeleeAdjacent};
+    use rl_rules::ai::tactics::{Hunt, MeleeAdjacent};
     use rl_grid::{TileId, TileRegistry};
     use rl_mapgen::Chain;
     use rl_mapgen::passes::Fill;

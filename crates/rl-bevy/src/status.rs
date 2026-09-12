@@ -10,7 +10,7 @@
 //! Opt-in: a game that inserts no [`StatusRules`] pays nothing.
 
 use bevy::prelude::*;
-use rl_content::Registry;
+use rl_rules::Registry;
 use rl_core::Id;
 use rl_rules::{Hit, Stats, StatusDef, StatusId, Statuses};
 

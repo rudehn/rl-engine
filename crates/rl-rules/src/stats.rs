@@ -6,7 +6,7 @@
 //! adds, then multipliers compounded, then floors and caps. Adding a stat
 //! is a registry entry, not a code change.
 
-use rl_content::{Named, Registry};
+use crate::content::{Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 

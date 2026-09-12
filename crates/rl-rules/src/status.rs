@@ -5,7 +5,7 @@
 //! apply and remove, plus an optional damage-over-time the game's damage
 //! pipeline resolves. Anything richer is the game's, keyed by the id.
 
-use rl_content::{Named, Registry};
+use crate::content::{Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 

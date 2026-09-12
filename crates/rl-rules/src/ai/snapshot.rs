@@ -1,7 +1,7 @@
 //! What an actor knows this turn.
 
+use crate::FactionId;
 use rl_core::{Point, geometry};
-use rl_rules::FactionId;
 
 /// One actor as another sees it.
 #[derive(Debug, Clone, Copy, PartialEq)]

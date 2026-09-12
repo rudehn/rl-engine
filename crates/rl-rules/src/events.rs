@@ -10,11 +10,13 @@
 //! A quest, an achievement or a generated victory condition is then a
 //! definition, not a system.
 //!
+//! - [`fact`]: [`Fact`], [`FactDef`], [`FactKind`] and [`Matcher`].
+//! - [`ledger`]: [`Ledger`], [`CounterDef`], [`CounterId`] and [`Tally`].
+//! - [`quest`]: [`Tracker`], [`QuestDef`], [`QuestId`], [`QuestState`],
+//!   [`Objective`], [`Need`] and [`Change`].
+//!
 //! Nothing here names a fact, a counter or a quest. Pure; the Bevy layer
 //! wraps it in a resource and a message.
-
-#![deny(missing_docs)]
-#![forbid(unsafe_code)]
 
 pub mod fact;
 pub mod ledger;
@@ -23,10 +25,3 @@ pub mod quest;
 pub use fact::{Fact, FactDef, FactKind, Matcher};
 pub use ledger::{CounterDef, CounterId, Ledger, Tally};
 pub use quest::{Change, Need, Objective, QuestDef, QuestId, QuestState, Tracker};
-
-/// The names most callers want in scope.
-pub mod prelude {
-    pub use crate::fact::{Fact, FactDef, FactKind, Matcher};
-    pub use crate::ledger::{CounterDef, CounterId, Ledger, Tally};
-    pub use crate::quest::{Change, Need, Objective, QuestDef, QuestId, QuestState, Tracker};
-}

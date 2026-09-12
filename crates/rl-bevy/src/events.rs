@@ -8,8 +8,8 @@
 //! with no quests inserts neither and pays nothing.
 
 use bevy::prelude::*;
-use rl_content::Registry;
-use rl_events::{Change, Fact, Ledger, QuestDef, Tracker};
+use rl_rules::Registry;
+use rl_rules::{Change, Fact, Ledger, QuestDef, Tracker};
 
 /// Something happened that facts should record.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq, Deref)]
@@ -72,7 +72,7 @@ mod tests {
     use super::*;
     use crate::plugin::headless_app;
     use crate::state::EngineState;
-    use rl_events::{FactDef, FactKind, Matcher, Objective, QuestId, QuestState};
+    use rl_rules::{FactDef, FactKind, Matcher, Objective, QuestId, QuestState};
 
     #[test]
     fn facts_move_quests_and_counters_between_frames() {
@@ -88,7 +88,7 @@ mod tests {
             victory: true,
         }])
         .unwrap();
-        let counters = Registry::from_defs(vec![rl_events::CounterDef::new("kills")]).unwrap();
+        let counters = Registry::from_defs(vec![rl_rules::CounterDef::new("kills")]).unwrap();
         let kills = counters.expect("kills");
         app.insert_resource(Quests::new(defs));
         app.insert_resource(Counters(Ledger::new(&counters).tally(Matcher::any(killed), kills)));

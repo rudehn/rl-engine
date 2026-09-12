@@ -258,7 +258,7 @@ mod tests {
     use crate::state::EngineState;
     use crate::turn::Turns;
     use crate::world::{ChunkRulesRes, WorldMap, WorldRes};
-    use rl_content::Registry;
+    use rl_rules::Registry;
     use rl_core::{Point, RunSeed};
     use rl_grid::{TileId, TileRegistry};
     use rl_mapgen::Chain;

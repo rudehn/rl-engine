@@ -4,7 +4,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_content::{Named, Registry};
+use rl_engine::rl_rules::{Named, Registry};
 use rl_engine::rl_rules::{Op, Stacking, StatusDef};
 use rl_engine::rl_ui::{LogCategory, MessageLog};
 use serde::Deserialize;

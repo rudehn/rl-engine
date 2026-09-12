@@ -136,9 +136,9 @@ fn main() -> AppExit {
 /// The spawn table scored band by band, for `--balance`.
 fn balance_report() -> String {
     let (bestiary, _) = monsters::Bestiary::load(RunSeed(0), rl_engine::rl_core::Point::ZERO);
-    let report = rl_engine::rl_tools::Report::over(&bestiary.table, 0..=40, |id| {
+    let report = rl_engine::rl_rules::Report::over(&bestiary.table, 0..=40, |id| {
         let m = bestiary.defs.get(*id);
-        (m.name.clone(), rl_engine::rl_tools::threat(m))
+        (m.name.clone(), rl_engine::rl_rules::threat(m))
     });
     format!("Corsair spawn bands (distance from the home port)\n{}", report.render())
 }
