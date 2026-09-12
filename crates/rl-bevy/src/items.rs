@@ -14,7 +14,7 @@ use rl_rules::{EquipShape, Equipment};
 
 use crate::components::{MyTurn, Position};
 use crate::places::{MapId, OnMap};
-use crate::turn::{Action, ActionDone, ActionRefused, Intent};
+use crate::turn::{Acting, Action, ActionDone, ActionRefused, Intent};
 use crate::world::WorldMap;
 
 /// An item.
@@ -137,22 +137,77 @@ pub struct ItemReport<'w> {
     events: MessageWriter<'w, ItemEvent>,
 }
 
+/// Take everything lying on the actor's cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PickUp;
+impl Action for PickUp {}
+
+/// Put a carried item on the ground.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DropItem(pub Entity);
+impl Action for DropItem {}
+
+/// Put a carried item on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Equip(pub Entity);
+impl Action for Equip {}
+
+/// Take a worn item off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Unequip(pub Entity);
+impl Action for Unequip {}
+
+/// Use a carried item. The engine charges the turn and reports
+/// [`ItemEvent::Used`]; the game does the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UseItem(pub Entity);
+impl Action for UseItem {}
+
+/// This module's actions as its resolver sees them, in one list, so that
+/// one turn spends one of them whichever kind it is.
+enum Which {
+    PickUp,
+    Drop(Entity),
+    Equip(Entity),
+    Unequip(Entity),
+    Use(Entity),
+}
+
+/// Every item intent written this pass.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ItemIntents<'w, 's> {
+    pick_ups: MessageReader<'w, 's, Intent<PickUp>>,
+    drops: MessageReader<'w, 's, Intent<DropItem>>,
+    equips: MessageReader<'w, 's, Intent<Equip>>,
+    unequips: MessageReader<'w, 's, Intent<Unequip>>,
+    uses: MessageReader<'w, 's, Intent<UseItem>>,
+}
+
+impl ItemIntents<'_, '_> {
+    fn drain(&mut self) -> Vec<(Entity, Which)> {
+        let mut out: Vec<(Entity, Which)> = self.pick_ups.read().map(|i| (i.actor, Which::PickUp)).collect();
+        out.extend(self.drops.read().map(|i| (i.actor, Which::Drop(i.action.0))));
+        out.extend(self.equips.read().map(|i| (i.actor, Which::Equip(i.action.0))));
+        out.extend(self.unequips.read().map(|i| (i.actor, Which::Unequip(i.action.0))));
+        out.extend(self.uses.read().map(|i| (i.actor, Which::Use(i.action.0))));
+        out
+    }
+}
+
 /// Resolves pickups, drops, equips, unequips and uses for the actor
 /// holding the turn. Each costs one action. An impossible one, such as
 /// picking up from bare ground, is refused for the player and treated as
 /// a wait for anyone else, like an impossible move.
-pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>, world: ItemWorld, report: ItemReport) {
+pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut acting: ResMut<Acting>, world: ItemWorld, report: ItemReport) {
     let ItemWorld { mut carriers, ground, stacks, wearables, players, map } = world;
     let this_map = map.current();
     let ItemReport { mut done, mut refused, mut events } = report;
-    let mut acted: Vec<Entity> = Vec::new();
-    for intent in intents.read() {
-        let actor = intent.actor;
-        if acted.contains(&actor) {
+    for (actor, which) in intents.drain() {
+        if acting.has_acted(actor) {
             continue;
         }
-        let ok = match intent.action {
-            Action::PickUp => {
+        let ok = match which {
+            Which::PickUp => {
                 let Ok((pos, mut bag, _)) = carriers.get_mut(actor) else { continue };
                 let here: Vec<Entity> =
                     ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map).map(|(e, _, _)| e).collect();
@@ -171,7 +226,7 @@ pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>,
                 }
                 !here.is_empty()
             }
-            Action::Drop(item) => {
+            Which::Drop(item) => {
                 let Ok((pos, mut bag, worn)) = carriers.get_mut(actor) else { continue };
                 if !bag.remove(item) {
                     false
@@ -186,7 +241,7 @@ pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>,
                     true
                 }
             }
-            Action::Equip(item) => {
+            Which::Equip(item) => {
                 let Ok((_, bag, worn)) = carriers.get_mut(actor) else { continue };
                 match (worn, wearables.get(item)) {
                     (Some(mut worn), Ok(shape)) if bag.contains(item) => match worn.equip(item, &shape.0) {
@@ -205,7 +260,7 @@ pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>,
                     _ => false,
                 }
             }
-            Action::Unequip(item) => {
+            Which::Unequip(item) => {
                 let Ok((_, _, worn)) = carriers.get_mut(actor) else { continue };
                 let taken_off = worn.is_some_and(|mut worn| worn.unequip(item));
                 if taken_off {
@@ -213,7 +268,7 @@ pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>,
                 }
                 taken_off
             }
-            Action::Use(item) => {
+            Which::Use(item) => {
                 let Ok((_, bag, _)) = carriers.get_mut(actor) else { continue };
                 if bag.contains(item) {
                     events.write(ItemEvent::Used { actor, item });
@@ -222,9 +277,8 @@ pub fn resolve_items(mut commands: Commands, mut intents: MessageReader<Intent>,
                     false
                 }
             }
-            _ => continue,
         };
-        acted.push(actor);
+        acting.claim_action(actor);
         if ok || players.get(actor).is_err() {
             done.write(ActionDone { actor, cost: BASE_ACTION_COST });
         } else {
@@ -330,7 +384,7 @@ mod tests {
         Rig { app, player, start, main, off }
     }
 
-    fn act(rig: &mut Rig, action: Action) -> Vec<ItemEvent> {
+    fn act<A: Action>(rig: &mut Rig, action: A) -> Vec<ItemEvent> {
         rig.app.world_mut().write_message(Intent { actor: rig.player, action });
         rig.app.update();
         let mut events = rig.app.world_mut().resource_mut::<Messages<ItemEvent>>();
@@ -342,15 +396,15 @@ mod tests {
         let mut r = rig();
         let sword = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
         let axe = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main).and_claims(r.off)))).id();
-        let events = act(&mut r, Action::PickUp);
+        let events = act(&mut r, PickUp);
         assert_eq!(events.len(), 2);
         assert!(r.app.world().get::<Position>(sword).is_none(), "off the ground");
         assert_eq!(r.app.world().get::<Inventory>(r.player).unwrap().items, vec![sword, axe]);
         assert_eq!(r.app.world().resource::<Turns>().now(), 100, "picking up cost a turn");
 
-        assert_eq!(act(&mut r, Action::Equip(sword)), vec![ItemEvent::Equipped { actor: r.player, item: sword }]);
+        assert_eq!(act(&mut r, Equip(sword)), vec![ItemEvent::Equipped { actor: r.player, item: sword }]);
         assert_eq!(
-            act(&mut r, Action::Equip(axe)),
+            act(&mut r, Equip(axe)),
             vec![ItemEvent::Unequipped { actor: r.player, item: sword }, ItemEvent::Equipped { actor: r.player, item: axe }],
             "the two-hander pushed the sword out"
         );
@@ -358,7 +412,7 @@ mod tests {
         assert_eq!(worn.in_slot(r.off), Some(axe));
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(sword), "still carried");
 
-        let events = act(&mut r, Action::Drop(axe));
+        let events = act(&mut r, DropItem(axe));
         assert_eq!(
             events,
             vec![ItemEvent::Unequipped { actor: r.player, item: axe }, ItemEvent::Dropped { actor: r.player, item: axe, at: Position(r.start) }]
@@ -372,21 +426,21 @@ mod tests {
     fn stacks_merge_and_impossible_actions_are_refused_for_free() {
         let mut r = rig();
         let coins = r.app.world_mut().spawn((Item, Position(r.start), Stack { key: 7, count: 5 })).id();
-        act(&mut r, Action::PickUp);
+        act(&mut r, PickUp);
         let more = r.app.world_mut().spawn((Item, Position(r.start), Stack { key: 7, count: 3 })).id();
-        let events = act(&mut r, Action::PickUp);
+        let events = act(&mut r, PickUp);
         assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: more, merged_into: Some(coins) }]);
         assert_eq!(r.app.world().get::<Stack>(coins).unwrap().count, 8);
         assert!(r.app.world().get_entity(more).is_err(), "the merged stack is gone");
         assert_eq!(r.app.world().get::<Inventory>(r.player).unwrap().items, vec![coins]);
 
         let before = r.app.world().resource::<Turns>().now();
-        assert!(act(&mut r, Action::PickUp).is_empty(), "nothing here");
-        assert!(act(&mut r, Action::Equip(coins)).is_empty(), "not wearable");
+        assert!(act(&mut r, PickUp).is_empty(), "nothing here");
+        assert!(act(&mut r, Equip(coins)).is_empty(), "not wearable");
         assert_eq!(r.app.world().resource::<Turns>().now(), before, "refusals cost nothing");
         assert!(r.app.world().get::<MyTurn>(r.player).is_some());
 
-        assert_eq!(act(&mut r, Action::Use(coins)), vec![ItemEvent::Used { actor: r.player, item: coins }]);
+        assert_eq!(act(&mut r, UseItem(coins)), vec![ItemEvent::Used { actor: r.player, item: coins }]);
         assert_eq!(r.app.world().resource::<Turns>().now(), before + 100, "using is the game's, the turn is ours");
     }
 
@@ -394,8 +448,8 @@ mod tests {
     fn a_despawned_item_leaves_the_bag_and_the_slots() {
         let mut r = rig();
         let sword = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
-        act(&mut r, Action::PickUp);
-        act(&mut r, Action::Equip(sword));
+        act(&mut r, PickUp);
+        act(&mut r, Equip(sword));
         r.app.world_mut().entity_mut(sword).despawn();
         r.app.update();
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().items.is_empty());

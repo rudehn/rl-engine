@@ -9,7 +9,7 @@
 //! see them.
 //!
 //! Only the player travels. A [`Transition`] is an entity standing on a
-//! cell; [`Action::Enter`] on that cell takes the player through it. A
+//! cell; [`GoThrough`] on that cell takes the player through it. A
 //! [`WarpRequest`] does the same from anywhere, for portals.
 
 use bevy::prelude::*;
@@ -22,7 +22,7 @@ use rl_world::WorldGraph;
 use crate::combat::FlowFields;
 use crate::components::{Blocks, MyTurn, Player, Position, Viewshed};
 use crate::knowledge::Knowledge;
-use crate::turn::{Action, ActionDone, ActionRefused, Intent, Occupancy};
+use crate::turn::{Acting, Action, ActionDone, ActionRefused, Intent, Occupancy};
 use crate::world::{WorldMap, WorldRes};
 
 /// Which map an entity is on. Zero is the surface; a game numbers its
@@ -128,6 +128,11 @@ pub trait PlaceRules: Send + Sync {
 #[derive(Resource)]
 pub struct PlaceRulesRes(pub Box<dyn PlaceRules>);
 
+/// Go through the [`Transition`] on the actor's cell. Refused off one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GoThrough;
+impl Action for GoThrough {}
+
 /// Asks the engine to move the player somewhere, building the place if
 /// needed. Resolved in [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve)
 /// without costing a turn; a game charges what it likes.
@@ -205,11 +210,12 @@ pub struct Travel<'w, 's> {
 }
 
 /// Takes the player through the transition it stands on for an
-/// [`Action::Enter`], and anywhere a [`WarpRequest`] asks.
+/// [`GoThrough`], and anywhere a [`WarpRequest`] asks.
 pub fn resolve_warps(
     mut commands: Commands,
-    mut intents: MessageReader<Intent>,
+    mut intents: MessageReader<Intent<GoThrough>>,
     mut requests: MessageReader<WarpRequest>,
+    mut acting: ResMut<Acting>,
     mut maps: Maps,
     mut report: WarpReport,
     travel: Travel,
@@ -217,7 +223,7 @@ pub fn resolve_warps(
     let Travel { mut travellers, transitions, holding } = travel;
     let mut trips: Vec<(Entity, Destination, bool)> = Vec::new();
     for intent in intents.read() {
-        if intent.action != Action::Enter || holding.get(intent.actor).is_err() {
+        if holding.get(intent.actor).is_err() || !acting.claim_action(intent.actor) {
             continue;
         }
         let Ok((pos, _, on, _)) = travellers.get(intent.actor) else { continue };
@@ -320,10 +326,11 @@ pub fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fresh: Quer
 mod tests {
     use super::*;
     use crate::components::{Actor, RevealsMap, Speed};
-    use crate::items::{Inventory, Item, ItemEvent};
+    use crate::items::{Inventory, Item, ItemEvent, PickUp};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::Turns;
+    use crate::turn::Wait;
     use crate::world::ChunkRulesRes;
     use rl_core::{Rect, RunSeed};
     use rl_grid::{TileId, TileRegistry};
@@ -397,7 +404,7 @@ mod tests {
         Rig { app, player, start }
     }
 
-    fn intend(rig: &mut Rig, action: Action) {
+    fn intend<A: Action>(rig: &mut Rig, action: A) {
         rig.app.world_mut().write_message(Intent { actor: rig.player, action });
         rig.app.update();
     }
@@ -411,7 +418,7 @@ mod tests {
         r.app.update();
         assert_eq!(r.app.world().get::<OnMap>(watcher).map(|m| m.0), Some(MapId::SURFACE), "tagged on arrival");
 
-        intend(&mut r, Action::Enter);
+        intend(&mut r, GoThrough);
         {
             let w = r.app.world();
             let map = w.resource::<WorldMap>();
@@ -434,8 +441,8 @@ mod tests {
         }
         // Time passes below; the watcher above is frozen, not dealt a turn.
         let before = r.app.world().resource::<Turns>().now();
-        intend(&mut r, Action::Wait);
-        intend(&mut r, Action::Wait);
+        intend(&mut r, Wait);
+        intend(&mut r, Wait);
         assert!(r.app.world().resource::<Turns>().now() > before);
         assert!(r.app.world().get::<MyTurn>(watcher).is_none());
 
@@ -451,7 +458,7 @@ mod tests {
         assert!(r.app.world().resource::<WorldMap>().is_loaded(r.start), "the surface window is back");
         assert!(r.app.world().resource::<Knowledge>().is_explored(r.start), "surface knowledge survived the trip");
         assert!(r.app.world().resource::<Occupancy>().is_occupied(r.start.offset(2, 0)), "the watcher is indexed again");
-        intend(&mut r, Action::Enter);
+        intend(&mut r, GoThrough);
         {
             let w = r.app.world();
             assert_eq!(w.resource::<WorldMap>().current(), cave);
@@ -462,7 +469,7 @@ mod tests {
             assert_eq!(w.get::<Position>(coin).unwrap().0, entry);
         }
         // And the coin can be picked up: ground lookups see this map.
-        intend(&mut r, Action::PickUp);
+        intend(&mut r, PickUp);
         let events: Vec<ItemEvent> = r.app.world_mut().resource_mut::<Messages<ItemEvent>>().drain().collect();
         assert_eq!(events.len(), 1);
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin));
@@ -472,7 +479,7 @@ mod tests {
     fn entering_off_a_transition_is_refused_for_free() {
         let mut r = rig();
         let before = r.app.world().resource::<Turns>().now();
-        intend(&mut r, Action::Enter);
+        intend(&mut r, GoThrough);
         assert_eq!(r.app.world().resource::<Turns>().now(), before);
         assert!(r.app.world().get::<MyTurn>(r.player).is_some());
         assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::SURFACE);

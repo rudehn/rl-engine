@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use crate::components::{MyTurn, Player};
 use crate::knowledge::Knowledge;
 use crate::state::EngineState;
-use crate::turn::{ActionDone, ActionRefused, Intent, Occupancy, TurnEnd, Turns};
+use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
 use crate::{combat, events, fov, items, lighting, places, status, turn, world};
 
@@ -21,7 +21,7 @@ use crate::{combat, events, fov, items, lighting, places, status, turn, world};
 /// one [`Intent`] however many passes the turn loop takes.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EngineSet {
-    /// Move the loaded window with the player.
+    /// Step the loaded window with the player.
     Stream,
     /// Read the player's input, if the player holds [`MyTurn`].
     Input,
@@ -57,6 +57,9 @@ pub enum TurnSet {
     Decide,
     /// Apply the decisions.
     Resolve,
+    /// Refuse whatever no resolver claimed, so an action with no resolver
+    /// reads as a refusal and a warning rather than a frozen game.
+    Sweep,
     /// Requeue and recover.
     Cleanup,
 }
@@ -99,9 +102,9 @@ impl Plugin for EnginePlugins {
         app.init_state::<EngineState>()
             .init_resource::<Turns>()
             .init_resource::<Occupancy>()
+            .init_resource::<Acting>()
             .init_resource::<WorldSettings>()
             .init_resource::<Knowledge>()
-            .add_message::<Intent>()
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
             .add_message::<TurnEnd>()
@@ -129,7 +132,18 @@ impl Plugin for EnginePlugins {
                     .run_if(in_state(EngineState::Playing))
                     .run_if(resource_exists::<WorldMap>),
             )
-            .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Cleanup).chain())
+            .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::Cleanup).chain())
+            // The actions the engine resolves itself. A game registers its
+            // own the same way and resolves them in `TurnSet::Resolve`.
+            .add_action::<turn::Step>()
+            .add_action::<turn::Wait>()
+            .add_action::<combat::Attack>()
+            .add_action::<places::GoThrough>()
+            .add_action::<items::PickUp>()
+            .add_action::<items::DropItem>()
+            .add_action::<items::Equip>()
+            .add_action::<items::Unequip>()
+            .add_action::<items::UseItem>()
             .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
             .add_systems(Update, lighting::update_lighting.in_set(EngineSet::Light))
@@ -138,14 +152,15 @@ impl Plugin for EnginePlugins {
             // fact written in Present is tracked the same frame.
             .add_systems(PostUpdate, events::track_facts.run_if(in_state(EngineState::Playing)).run_if(events::anyone_listening))
             .add_systems(PostUpdate, combat::bury_the_dead.after(events::track_facts))
-            .add_systems(Turn, (places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
+            .add_systems(Turn, (turn::start_pass, places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
             // Combat is opt-in: a game that inserts no rules gets no combat
             // systems, and the walking demo stays a walking demo.
             .add_systems(Turn, combat::decide_minds.in_set(TurnSet::Decide).run_if(combat_ready))
             .add_systems(
                 Turn,
                 (
-                    turn::resolve_intents,
+                    turn::resolve_moves,
+                    turn::resolve_waits,
                     places::resolve_warps,
                     items::resolve_items,
                     lighting::tick_fuel,
@@ -181,7 +196,7 @@ pub fn headless_app() -> App {
 mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    use crate::turn::Action;
+    use crate::turn::{Action, Intent, Step, Wait};
     use crate::world::{ChunkRulesRes, WorldRes};
     use rl_core::{Direction, Point, RunSeed};
     use rl_grid::{TileId, TileProps, TileRegistry};
@@ -245,8 +260,8 @@ mod tests {
         e
     }
 
-    fn intend(app: &mut App, actor: Entity, action: Action) {
-        app.world_mut().write_message(Intent { actor, action });
+    fn intend<A: Action>(app: &mut App, actor: Entity, action: A) {
+        app.world_mut().write_message(Intent::new(actor, action));
     }
 
     #[test]
@@ -258,7 +273,7 @@ mod tests {
         app.update();
         assert!(app.world().get::<MyTurn>(player).is_some(), "the player holds the first turn");
         assert!(app.world().resource::<WorldMap>().is_loaded(start), "the window loaded around the player");
-        intend(&mut app, player, Action::Move(Direction::East));
+        intend(&mut app, player, Step(Direction::East));
         app.update();
         assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0));
         assert_eq!(app.world().resource::<Turns>().now(), 100, "the clock ran on to the player's next turn within the frame");
@@ -274,7 +289,7 @@ mod tests {
         app.update();
         app.update();
         app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(1, 0), TileId(1));
-        intend(&mut app, player, Action::Move(Direction::East));
+        intend(&mut app, player, Step(Direction::East));
         app.update();
         assert_eq!(app.world().get::<Position>(player).unwrap().0, start);
         assert!(app.world().get::<MyTurn>(player).is_some());
@@ -292,7 +307,7 @@ mod tests {
         app.update();
         app.update();
         assert!(app.world().get::<MyTurn>(player).is_some(), "the player was admitted first and holds the turn");
-        intend(&mut app, player, Action::Wait);
+        intend(&mut app, player, Wait);
         app.update();
         // One frame: the player waited (100), the other actor was dealt a
         // turn at 0 and at 50, and the clock reached the player's turn at
@@ -315,8 +330,8 @@ mod tests {
         app.update();
         // Two intents for the same turn: only the first resolves, the second
         // finds the player no longer holding the turn it was written for.
-        intend(&mut app, player, Action::Move(Direction::East));
-        intend(&mut app, player, Action::Move(Direction::East));
+        intend(&mut app, player, Step(Direction::East));
+        intend(&mut app, player, Step(Direction::East));
         app.update();
         assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0));
         // Idle frames leave the clock alone.
@@ -324,6 +339,64 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), 100);
         assert!(app.world().get::<MyTurn>(player).is_some());
+    }
+
+    /// An action of a game's own. The engine has never heard of it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct Shout;
+    impl Action for Shout {}
+
+    /// How many shouts the game's own resolver heard.
+    #[derive(Resource, Default)]
+    struct Heard(u32);
+
+    fn resolve_shouts(
+        mut intents: MessageReader<Intent<Shout>>,
+        mut done: MessageWriter<ActionDone>,
+        mut acting: ResMut<crate::turn::Acting>,
+        mut heard: ResMut<Heard>,
+    ) {
+        for intent in intents.read() {
+            if !acting.claim_action(intent.actor) {
+                continue;
+            }
+            heard.0 += 1;
+            done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
+        }
+    }
+
+    #[test]
+    fn a_game_action_the_engine_never_heard_of_spends_the_turn() {
+        let (mut app, world) = app_with_world();
+        app.init_resource::<Heard>().add_action::<Shout>().add_systems(Turn, resolve_shouts.in_set(TurnSet::Resolve));
+        let start = land_tile(&world);
+        let player = spawn_player(&mut app, start);
+        app.update();
+        app.update();
+
+        intend(&mut app, player, Shout);
+        app.update();
+        assert_eq!(app.world().resource::<Heard>().0, 1, "the game's resolver saw it");
+        assert_eq!(app.world().resource::<Turns>().now(), 100, "and it cost a turn");
+    }
+
+    #[test]
+    fn an_action_nobody_resolves_is_refused_rather_than_left_to_hang() {
+        let (mut app, world) = app_with_world();
+        // Registered, and no resolver: the mistake a game makes.
+        app.add_action::<Shout>();
+        let start = land_tile(&world);
+        let player = spawn_player(&mut app, start);
+        app.update();
+        app.update();
+
+        let before = app.world().resource::<Turns>().now();
+        intend(&mut app, player, Shout);
+        app.update();
+        let refused: Vec<Entity> = app.world_mut().resource_mut::<Messages<ActionRefused>>().drain().map(|r| r.actor).collect();
+        assert_eq!(refused, vec![player], "the sweep refused it");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "no time passed");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "and the player still holds the turn");
     }
 
     #[test]
@@ -338,7 +411,7 @@ mod tests {
         assert!(app.world_mut().resource_mut::<WorldMap>().set_tile(edited, TileId(1)));
         // Walk 16 tiles east, one region over.
         for _ in 0..16 {
-            intend(&mut app, player, Action::Move(Direction::East));
+            intend(&mut app, player, Step(Direction::East));
             app.update();
             app.update();
         }
@@ -347,7 +420,7 @@ mod tests {
         assert!(map.is_loaded(app.world().get::<Position>(player).unwrap().0));
         // Walk back far enough that the edited region unloads, then return.
         for _ in 0..32 {
-            intend(&mut app, player, Action::Move(Direction::East));
+            intend(&mut app, player, Step(Direction::East));
             app.update();
             app.update();
         }
@@ -355,7 +428,7 @@ mod tests {
         assert!(!map.is_loaded(edited), "the edited region left the window");
         assert_eq!(map.stored_deltas(), 1);
         for _ in 0..48 {
-            intend(&mut app, player, Action::Move(Direction::West));
+            intend(&mut app, player, Step(Direction::West));
             app.update();
             app.update();
         }

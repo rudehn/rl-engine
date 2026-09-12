@@ -52,6 +52,13 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   A delve now names no region size anywhere.
   Found on the way: the overworld's fog read the explored tiles of whatever map was current, so a player underground saw a cave's buckets drawn as surface regions; the regions seen are now recorded apart from the per-map tiles, and the places test asserts it.
   Nate, 2026-09-11: the architecture review's crate-layout and region-size findings.
+- 2026-09-11: actions stop being an enum.
+  `Action` is a trait, `Intent<A>` the message that carries one, and each action is a type owned by the module that resolves it: `Step` and `Wait` in the turn loop, `Attack` in combat, the five item actions in items, `GoThrough` in places.
+  A game registers its own with `App::add_action`, resolves it in `TurnSet::Resolve`, and claims the actor through the `Acting` resource, which is what keeps one turn to one action now that the resolvers are separate.
+  The new `TurnSet::Sweep` refuses an intent no resolver claimed and says which type it was, so a forgotten resolver reads as a refusal and a warning rather than a player frozen holding a turn nothing will spend.
+  Minds claim their decision too, so a game that decides for an actor in `TurnSet::Decide` keeps the mind from overriding it: a monster can now take an action the engine has never heard of, which the closed enum made impossible.
+  Two names dodge Bevy's prelude: `Move` and `Enter` are taken by `bevy_picking`, so the engine's are `Step` and `GoThrough`.
+  Nate, 2026-09-11: the architecture review's closed-taxonomy finding.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

@@ -299,33 +299,38 @@ const MOVES: [(&[KeyCode], Direction); 8] = [
     (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
 ];
 
+/// What the player's keys can ask for.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlayerIntents<'w> {
+    steps: MessageWriter<'w, Intent<Step>>,
+    attacks: MessageWriter<'w, Intent<Attack>>,
+    waits: MessageWriter<'w, Intent<Wait>>,
+    stairs: MessageWriter<'w, Intent<GoThrough>>,
+}
+
 /// Keys to intents: walk, bump to attack, `.` to wait, `>` `<` or Enter for stairs, `q` to quit.
-fn player_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    occupancy: Res<Occupancy>,
-    player: PlayerTurn,
-    mut intents: MessageWriter<Intent>,
-    mut exit: MessageWriter<AppExit>,
-) {
+fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(KeyCode::KeyQ) {
         exit.write(AppExit::Success);
         return;
     }
     let Ok((entity, pos)) = player.single() else { return };
     let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let action = if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
+    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
+        // Bump to attack: walking into someone is a strike.
         match occupancy.first_at(pos.0 + dir.offset()) {
-            Some(other) => Action::Attack(other),
-            None => Action::Move(*dir),
+            Some(other) => {
+                intents.attacks.write(Intent::new(entity, Attack(other)));
+            }
+            None => {
+                intents.steps.write(Intent::new(entity, Step(*dir)));
+            }
         }
     } else if keys.just_pressed(KeyCode::Enter) || (shifted && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma])) {
-        Action::Enter
+        intents.stairs.write(Intent::new(entity, GoThrough));
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        Action::Wait
-    } else {
-        return;
-    };
-    intents.write(Intent { actor: entity, action });
+        intents.waits.write(Intent::new(entity, Wait));
+    }
 }
 
 /// Hits, deaths, and the end of the run either way.
@@ -419,7 +424,7 @@ mod tests {
             let exit = app.world().resource::<WorldMap>().place(map_of(floor)).unwrap().exit.expect("stairs down");
             app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(floor), arrive: Arrive::At(exit) } });
             app.update();
-            app.world_mut().write_message(Intent { actor: player, action: Action::Enter });
+            app.world_mut().write_message(Intent::new(player, GoThrough));
             app.update();
             assert_eq!(app.world().resource::<WorldMap>().current(), map_of(floor + 1), "took the stairs from floor {floor}");
         }
@@ -430,7 +435,7 @@ mod tests {
         let on_heart = wardens.iter(app.world()).filter(|(k, on)| beasts.defs.get(k.0).name == "heart warden" && on.0 == map_of(FLOORS)).count();
         assert_eq!(on_heart, 1);
         // And back up: the stairs up land on the floor above's stairs down.
-        app.world_mut().write_message(Intent { actor: player, action: Action::Enter });
+        app.world_mut().write_message(Intent::new(player, GoThrough));
         app.update();
         assert_eq!(app.world().resource::<WorldMap>().current(), map_of(FLOORS - 1));
     }

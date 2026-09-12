@@ -115,7 +115,7 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
-        app.world_mut().write_message(Intent { actor: player, action: Action::Move(Direction::East) });
+        app.world_mut().write_message(Intent::new(player, Step(Direction::East)));
         app.update();
         let edited = start.offset(0, 2);
         assert!(app.world_mut().resource_mut::<WorldMap>().set_tile(edited, TileId(1)));

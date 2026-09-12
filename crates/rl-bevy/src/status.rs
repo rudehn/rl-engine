@@ -152,7 +152,8 @@ mod tests {
     use crate::components::{Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
-    use crate::turn::{Action, Intent, Turns};
+    use crate::turn::Wait;
+    use crate::turn::{Intent, Turns};
     use crate::world::{ChunkRulesRes, WorldRes};
     use rl_core::RunSeed;
     use rl_grid::{TileId, TileRegistry};
@@ -244,7 +245,7 @@ mod tests {
         // lasts two.
         for turn in 1..=3u32 {
             assert!(app.world().get::<MyTurn>(player).is_some());
-            app.world_mut().write_message(Intent { actor: player, action: Action::Wait });
+            app.world_mut().write_message(Intent::new(player, Wait));
             app.update();
             assert_eq!(app.world().resource::<Turns>().turn_number(), turn);
             assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30 - 2 * turn as i32, "turn {turn}");

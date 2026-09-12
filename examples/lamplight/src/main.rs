@@ -322,7 +322,18 @@ const MOVES: [(&[KeyCode], Direction); 8] = [
     (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
 ];
 
-/// Keys to intents. The lantern is used with `Action::Use`, so lighting
+/// What the player's keys can ask for.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlayerIntents<'w> {
+    steps: MessageWriter<'w, Intent<Step>>,
+    attacks: MessageWriter<'w, Intent<Attack>>,
+    waits: MessageWriter<'w, Intent<Wait>>,
+    pick_ups: MessageWriter<'w, Intent<PickUp>>,
+    drops: MessageWriter<'w, Intent<DropItem>>,
+    uses: MessageWriter<'w, Intent<UseItem>>,
+}
+
+/// Keys to intents. The lantern is used with [`UseItem`], so lighting
 /// and dousing cost a turn like anything else and come back as an
 /// [`ItemEvent::Used`] for the game to act on.
 fn player_input(
@@ -331,7 +342,7 @@ fn player_input(
     things: Query<&Thing>,
     player: PlayerTurn,
     mut overlay: ResMut<LightOverlay>,
-    mut intents: MessageWriter<Intent>,
+    mut intents: PlayerIntents,
     mut exit: MessageWriter<AppExit>,
 ) {
     if keys.just_pressed(KeyCode::KeyQ) {
@@ -345,29 +356,28 @@ fn player_input(
     let Ok((entity, pos, bag)) = player.single() else { return };
     let carried = |thing: Thing| bag.items.iter().copied().find(|i| things.get(*i) == Ok(&thing));
     let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let action = if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| !shifted && keys.any_just_pressed(codes.iter().copied())) {
+    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| !shifted && keys.any_just_pressed(codes.iter().copied())) {
         match occupancy.first_at(pos.0 + dir.offset()) {
-            Some(other) => Action::Attack(other),
-            None => Action::Move(*dir),
+            Some(other) => {
+                intents.attacks.write(Intent::new(entity, Attack(other)));
+            }
+            None => {
+                intents.steps.write(Intent::new(entity, Step(*dir)));
+            }
         }
     } else if shifted && keys.just_pressed(KeyCode::KeyL) {
-        match carried(Thing::Lantern) {
-            Some(lamp) => Action::Use(lamp),
-            None => return,
+        if let Some(lamp) = carried(Thing::Lantern) {
+            intents.uses.write(Intent::new(entity, UseItem(lamp)));
         }
     } else if keys.just_pressed(KeyCode::KeyG) {
-        Action::PickUp
+        intents.pick_ups.write(Intent::new(entity, PickUp));
     } else if keys.just_pressed(KeyCode::KeyD) {
-        match carried(Thing::Torch) {
-            Some(torch) => Action::Drop(torch),
-            None => return,
+        if let Some(torch) = carried(Thing::Torch) {
+            intents.drops.write(Intent::new(entity, DropItem(torch)));
         }
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        Action::Wait
-    } else {
-        return;
-    };
-    intents.write(Intent { actor: entity, action });
+        intents.waits.write(Intent::new(entity, Wait));
+    }
 }
 
 /// What narration reads and writes.
@@ -490,8 +500,8 @@ mod tests {
         app.world().get::<Viewshed>(player).unwrap().visible.count()
     }
 
-    fn act(app: &mut App, player: Entity, action: Action) {
-        app.world_mut().write_message(Intent { actor: player, action });
+    fn act<A: Action>(app: &mut App, player: Entity, action: A) {
+        app.world_mut().write_message(Intent::new(player, action));
         app.update();
     }
 
@@ -501,12 +511,12 @@ mod tests {
         assert!(app.world().get::<MyTurn>(player).is_some());
         let lit = seen(&mut app, player);
         assert!(lit > 9, "the lantern shows more than what you touch: {lit}");
-        act(&mut app, player, Action::Use(lamp));
+        act(&mut app, player, UseItem(lamp));
         app.update();
         let doused = seen(&mut app, player);
         assert!(doused < lit, "doused {doused} < lit {lit}");
         assert!(app.world().get::<LightSource>(lamp).is_none());
-        act(&mut app, player, Action::Use(lamp));
+        act(&mut app, player, UseItem(lamp));
         app.update();
         assert!(app.world().get::<LightSource>(lamp).is_some());
         assert!(seen(&mut app, player) > doused, "the wisps have drifted, but the lantern's reach is back");

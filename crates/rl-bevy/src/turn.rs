@@ -91,41 +91,97 @@ impl Occupancy {
     }
 }
 
-/// What an actor does with its turn, as far as the engine knows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
-    /// Step one cell.
-    Move(Direction),
-    /// Strike an adjacent actor. Resolved by the combat systems.
-    Attack(Entity),
-    /// Do nothing for one action.
-    Wait,
-    /// Take everything lying on the actor's cell. Resolved by the item systems.
-    PickUp,
-    /// Put a carried item on the ground.
-    Drop(Entity),
-    /// Put a carried item on.
-    Equip(Entity),
-    /// Take a worn item off.
-    Unequip(Entity),
-    /// Use a carried item. The engine charges the turn and reports
-    /// [`ItemEvent::Used`](crate::items::ItemEvent::Used); the game does the rest.
-    Use(Entity),
-    /// Go through the [`Transition`](crate::places::Transition) on the
-    /// actor's cell. Resolved by the place systems; refused off one.
-    Enter,
-}
+/// One thing an actor can do with its turn.
+///
+/// The engine ships the actions every roguelike needs, each owned by the
+/// module that owns the mechanic: [`Step`] and [`Wait`] here,
+/// [`Attack`](crate::combat::Attack) in combat, the item actions in
+/// items, [`GoThrough`](crate::places::GoThrough) in places. A game adds its own
+/// by implementing this on a type of its own, registering it with
+/// [`AddAction::add_action`], and resolving it in
+/// [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve). There is no
+/// list of actions anywhere for a new one to be added to.
+pub trait Action: Send + Sync + 'static {}
 
 /// A decision for the actor holding [`MyTurn`]: written by the game's input
 /// system in [`EngineSet::Input`](crate::plugin::EngineSet::Input) for the
 /// player, and by minds in [`TurnSet::Decide`](crate::plugin::TurnSet::Decide)
 /// for everyone else.
-#[derive(Message, Debug, Clone, Copy)]
-pub struct Intent {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Intent<A: Action> {
     /// Who.
     pub actor: Entity,
     /// What.
-    pub action: Action,
+    pub action: A,
+}
+
+impl<A: Action> Message for Intent<A> {}
+
+impl<A: Action> Intent<A> {
+    /// An intent for `actor` to do `action`.
+    pub fn new(actor: Entity, action: A) -> Self {
+        Self { actor, action }
+    }
+}
+
+/// Step one cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Step(pub Direction);
+impl Action for Step {}
+
+/// Do nothing for one action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Wait;
+impl Action for Wait {}
+
+/// Who has already chosen and who has already acted, this pass.
+///
+/// One turn is one action. A resolver claims the actor before it resolves,
+/// so a second intent in the same pass finds the turn spent, whatever kind
+/// of action it is. A game's own decider claims in
+/// [`TurnSet::Decide`](crate::plugin::TurnSet::Decide) so the minds leave
+/// that actor alone.
+#[derive(Resource, Debug, Default)]
+pub struct Acting {
+    decided: Vec<Entity>,
+    acted: Vec<Entity>,
+}
+
+impl Acting {
+    /// Claims the right to choose for `actor` this pass. False if
+    /// something already chose.
+    pub fn claim_decision(&mut self, actor: Entity) -> bool {
+        Self::mark(&mut self.decided, actor)
+    }
+
+    /// Whether something has already chosen for `actor` this pass.
+    pub fn has_decided(&self, actor: Entity) -> bool {
+        self.decided.contains(&actor)
+    }
+
+    /// Claims the actor's turn for resolution. False if it already acted.
+    pub fn claim_action(&mut self, actor: Entity) -> bool {
+        Self::mark(&mut self.acted, actor)
+    }
+
+    /// Whether `actor` has already acted this pass.
+    pub fn has_acted(&self, actor: Entity) -> bool {
+        self.acted.contains(&actor)
+    }
+
+    fn mark(list: &mut Vec<Entity>, actor: Entity) -> bool {
+        if list.contains(&actor) {
+            return false;
+        }
+        list.push(actor);
+        true
+    }
+}
+
+/// Forgets the pass that just ended. First thing in every pass.
+pub fn start_pass(mut acting: ResMut<Acting>) {
+    acting.decided.clear();
+    acting.acted.clear();
 }
 
 /// An actor finished an action and owes `cost` of game time.
@@ -230,59 +286,47 @@ type TurnHolder<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static 
 /// The actor holding the turn, as the cleanup sees it.
 type Holding<'w, 's> = Query<'w, 's, (Entity, Option<&'static Speed>, Has<Player>), With<MyTurn>>;
 
-/// Resolves the actions the engine understands: moves and waits.
+/// Resolves a move.
 ///
 /// A move into an unwalkable or occupied cell is refused for the player
-/// and treated as a wait for anyone else. One turn resolves one action: a
-/// second intent for an actor that already acted this pass is dropped,
-/// since the turn it was written for is spent.
-pub fn resolve_intents(
-    mut intents: MessageReader<Intent>,
+/// and treated as a wait for anyone else, which is what keeps a blocked
+/// monster from retrying forever.
+pub fn resolve_moves(
+    mut intents: MessageReader<Intent<Step>>,
     mut done: MessageWriter<ActionDone>,
     mut refused: MessageWriter<ActionRefused>,
+    mut acting: ResMut<Acting>,
     map: Res<WorldMap>,
     mut occupancy: ResMut<Occupancy>,
     mut actors: TurnHolder,
 ) {
-    let mut acted: Vec<Entity> = Vec::new();
     for intent in intents.read() {
-        if acted.contains(&intent.actor) {
+        let Ok((mut pos, viewshed, blocks, is_player)) = actors.get_mut(intent.actor) else { continue };
+        if !acting.claim_action(intent.actor) {
             debug!("actor {:?} already acted this pass; dropped {:?}", intent.actor, intent.action);
             continue;
         }
-        let Ok((mut pos, viewshed, blocks, is_player)) = actors.get_mut(intent.actor) else { continue };
-        match intent.action {
-            Action::Attack(_) | Action::PickUp | Action::Drop(_) | Action::Equip(_) | Action::Unequip(_) | Action::Use(_) | Action::Enter => {
-                acted.push(intent.actor);
-            }
-            Action::Wait => {
-                acted.push(intent.actor);
+        let dir = intent.action.0;
+        let target = pos.0 + dir.offset();
+        let open = map.is_walkable(target) && !occupancy.is_occupied(target) && corner_ok(&map, pos.0, dir);
+        if !open {
+            if is_player {
+                refused.write(ActionRefused { actor: intent.actor });
+            } else {
                 done.write(ActionDone { actor: intent.actor, cost: BASE_ACTION_COST });
             }
-            Action::Move(dir) => {
-                let target = pos.0 + dir.offset();
-                let open = map.is_walkable(target) && !occupancy.is_occupied(target) && corner_ok(&map, pos.0, dir);
-                if !open {
-                    if is_player {
-                        refused.write(ActionRefused { actor: intent.actor });
-                    } else {
-                        done.write(ActionDone { actor: intent.actor, cost: BASE_ACTION_COST });
-                    }
-                    continue;
-                }
-                let cost = map.cost(target).unwrap_or(BASE_ACTION_COST);
-                let cost = if dir.is_diagonal() { cost * 1414 / 1000 } else { cost };
-                if blocks {
-                    occupancy.relocate(intent.actor, pos.0, target);
-                }
-                pos.0 = target;
-                if let Some(mut v) = viewshed {
-                    v.dirty = true;
-                }
-                acted.push(intent.actor);
-                done.write(ActionDone { actor: intent.actor, cost });
-            }
+            continue;
         }
+        let cost = map.cost(target).unwrap_or(BASE_ACTION_COST);
+        let cost = if dir.is_diagonal() { cost * 1414 / 1000 } else { cost };
+        if blocks {
+            occupancy.relocate(intent.actor, pos.0, target);
+        }
+        pos.0 = target;
+        if let Some(mut v) = viewshed {
+            v.dirty = true;
+        }
+        done.write(ActionDone { actor: intent.actor, cost });
     }
 }
 
@@ -293,6 +337,46 @@ fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
     }
     let (dx, dy) = dir.delta();
     map.is_walkable(from.offset(dx, 0)) && map.is_walkable(from.offset(0, dy))
+}
+
+/// Resolves a wait: the turn passes and nothing else happens.
+pub fn resolve_waits(
+    mut intents: MessageReader<Intent<Wait>>,
+    mut done: MessageWriter<ActionDone>,
+    mut acting: ResMut<Acting>,
+    holding: Query<(), With<MyTurn>>,
+) {
+    for intent in intents.read() {
+        if holding.get(intent.actor).is_err() || !acting.claim_action(intent.actor) {
+            continue;
+        }
+        done.write(ActionDone { actor: intent.actor, cost: BASE_ACTION_COST });
+    }
+}
+
+/// Refuses an action nobody resolved.
+///
+/// Registered once per action type by [`AddAction::add_action`]. Without
+/// it a game that registers an action and forgets its resolver leaves the
+/// player holding a turn nothing will ever spend, which reads as a frozen
+/// game rather than a mistake.
+pub fn sweep_unclaimed<A: Action>(
+    mut intents: MessageReader<Intent<A>>,
+    acting: Res<Acting>,
+    mut refused: MessageWriter<ActionRefused>,
+    players: Query<(), With<Player>>,
+) {
+    for intent in intents.read() {
+        if acting.has_acted(intent.actor) {
+            continue;
+        }
+        warn!("nothing resolved {} for actor {:?}", std::any::type_name::<A>(), intent.actor);
+        // Only the player may keep its turn; the recovery net in
+        // `cleanup_turns` charges anyone else a wait.
+        if players.contains(intent.actor) {
+            refused.write(ActionRefused { actor: intent.actor });
+        }
+    }
 }
 
 /// Requeues actors that finished, keeps the turn of actors that were
@@ -349,5 +433,18 @@ pub fn forget_removed_blockers(mut occupancy: ResMut<Occupancy>, mut removed: Re
     let stale: Vec<(Point, Entity)> = occupancy.iter().filter(|(_, e)| gone.contains(e)).collect();
     for (p, e) in stale {
         occupancy.remove(p, e);
+    }
+}
+
+/// Registers an action with the engine.
+pub trait AddAction {
+    /// Registers `A` as an action: its intents become a message, and an
+    /// intent nobody resolves is refused rather than left to hang.
+    fn add_action<A: Action>(&mut self) -> &mut Self;
+}
+
+impl AddAction for App {
+    fn add_action<A: Action>(&mut self) -> &mut Self {
+        self.add_message::<Intent<A>>().add_systems(crate::plugin::Turn, sweep_unclaimed::<A>.in_set(crate::plugin::TurnSet::Sweep))
     }
 }

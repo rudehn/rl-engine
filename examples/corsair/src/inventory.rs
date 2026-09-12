@@ -37,7 +37,16 @@ type Bag<'w, 's> = Query<'w, 's, (&'static Inventory, &'static Equipped), With<P
 
 /// Opens, closes and drives the screen; item actions become intents when
 /// the player holds the turn, and close the screen.
-pub fn inventory_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<InventoryScreen>, player: PlayerTurn, bag: Bag, mut intents: MessageWriter<Intent>) {
+/// What the sea chest can ask for.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ChestIntents<'w> {
+    equips: MessageWriter<'w, Intent<Equip>>,
+    unequips: MessageWriter<'w, Intent<Unequip>>,
+    drops: MessageWriter<'w, Intent<DropItem>>,
+    uses: MessageWriter<'w, Intent<UseItem>>,
+}
+
+pub fn inventory_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<InventoryScreen>, player: PlayerTurn, bag: Bag, mut intents: ChestIntents) {
     if keys.just_pressed(KeyCode::KeyI) {
         screen.open = !screen.open;
         return;
@@ -58,17 +67,23 @@ pub fn inventory_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<Invent
     let Ok(entity) = player.single() else { return };
     let Ok((inventory, worn)) = bag.single() else { return };
     let Some(item) = inventory.items.get(screen.menu.selected).copied() else { return };
-    let action = if keys.just_pressed(KeyCode::KeyE) {
-        Some(if worn.contains(item) { Action::Unequip(item) } else { Action::Equip(item) })
+    let asked = if keys.just_pressed(KeyCode::KeyE) {
+        if worn.contains(item) {
+            intents.unequips.write(Intent::new(entity, Unequip(item)));
+        } else {
+            intents.equips.write(Intent::new(entity, Equip(item)));
+        }
+        true
     } else if keys.just_pressed(KeyCode::KeyD) {
-        Some(Action::Drop(item))
+        intents.drops.write(Intent::new(entity, DropItem(item)));
+        true
     } else if keys.any_just_pressed([KeyCode::KeyU, KeyCode::Enter]) {
-        Some(Action::Use(item))
+        intents.uses.write(Intent::new(entity, UseItem(item)));
+        true
     } else {
-        None
+        false
     };
-    if let Some(action) = action {
-        intents.write(Intent { actor: entity, action });
+    if asked {
         screen.open = false;
     }
 }

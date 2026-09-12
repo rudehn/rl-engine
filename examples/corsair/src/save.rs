@@ -378,11 +378,11 @@ mod tests {
         app.update();
         let me = player(&mut app);
         for _ in 0..3 {
-            app.world_mut().write_message(Intent { actor: me, action: Action::Move(Direction::East) });
+            app.world_mut().write_message(Intent::new(me, Step(Direction::East)));
             app.update();
         }
         let bottle = app.world().get::<Inventory>(me).unwrap().items[1];
-        app.world_mut().write_message(Intent { actor: me, action: Action::Drop(bottle) });
+        app.world_mut().write_message(Intent::new(me, DropItem(bottle)));
         app.update();
         let (pos, hp, bag, turn) = {
             let w = app.world();

@@ -290,11 +290,13 @@ pub fn tick_fuel(
 mod tests {
     use super::*;
     use crate::components::{Blocks, MyTurn, Player, RevealsMap, Speed};
+    use crate::items::{DropItem, PickUp};
     use crate::knowledge::Knowledge;
     use crate::places::{PlaceBuild, PlaceRules, PlaceRulesRes, WarpRequest};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::{Action, Intent};
+    use crate::turn::{Step, Wait};
     use rl_grid::{Terrain, TileId, TileRegistry};
     use rl_mapgen::BuildError;
     use rl_world::WorldGraph;
@@ -352,7 +354,7 @@ mod tests {
             Self { app, player, wall }
         }
 
-        fn act(&mut self, action: Action) {
+        fn act<A: Action>(&mut self, action: A) {
             self.app.world_mut().write_message(Intent { actor: self.player, action });
             self.app.update();
         }
@@ -409,7 +411,7 @@ mod tests {
         let mut rig = Rig::new(Some(Lighting::dark()), None);
         let brazier = Point::new(14, 4);
         rig.app.world_mut().spawn((Position(brazier), LightSource::new(200, 5, amber())));
-        rig.act(Action::Wait);
+        rig.act(Wait);
         assert!(rig.sees(brazier), "the brazier's own tile is lit");
         assert!(rig.sees(Point::new(12, 4)));
         assert!(!rig.sees(Point::new(8, 4)), "beyond its radius");
@@ -436,21 +438,21 @@ mod tests {
     fn a_carried_light_moves_with_the_carrier_and_lies_where_dropped() {
         let mut rig = Rig::new(Some(Lighting::dark()), None);
         let torch = rig.app.world_mut().spawn((Item, Position(Point::new(7, 4)), LightSource::new(180, 4, amber()))).id();
-        rig.act(Action::Wait);
+        rig.act(Wait);
         assert!(rig.sees(Point::new(9, 4)), "lit by the torch on the floor");
-        rig.act(Action::Move(rl_core::Direction::East));
-        rig.act(Action::Move(rl_core::Direction::East));
-        rig.act(Action::PickUp);
+        rig.act(Step(rl_core::Direction::East));
+        rig.act(Step(rl_core::Direction::East));
+        rig.act(PickUp);
         assert!(rig.app.world().get::<Inventory>(rig.player).unwrap().contains(torch));
         assert_eq!(rig.app.world().resource::<Lighting>().at(Point::new(7, 4)).intensity, 180, "shed from the carrier");
-        rig.act(Action::Move(rl_core::Direction::West));
-        rig.act(Action::Move(rl_core::Direction::West));
+        rig.act(Step(rl_core::Direction::West));
+        rig.act(Step(rl_core::Direction::West));
         assert_eq!(rig.app.world().resource::<Lighting>().at(Point::new(5, 4)).intensity, 180);
         assert!(rig.sees(Point::new(8, 4)) && !rig.sees(Point::new(10, 4)));
-        rig.act(Action::Drop(torch));
-        rig.act(Action::Move(rl_core::Direction::West));
-        rig.act(Action::Move(rl_core::Direction::West));
-        rig.act(Action::Move(rl_core::Direction::West));
+        rig.act(DropItem(torch));
+        rig.act(Step(rl_core::Direction::West));
+        rig.act(Step(rl_core::Direction::West));
+        rig.act(Step(rl_core::Direction::West));
         let light = rig.app.world().resource::<Lighting>();
         assert_eq!(light.at(Point::new(5, 4)).intensity, 180, "still burning where it lies");
         assert_eq!(light.at(Point::new(1, 4)).intensity, 0, "four tiles off, the rim");
@@ -461,10 +463,10 @@ mod tests {
         let mut rig = Rig::new(Some(Lighting::dark()), None);
         let lamp = rig.app.world_mut().spawn((Item, LightSource::new(150, 4, amber()), Fuel(2))).id();
         rig.app.world_mut().get_mut::<Inventory>(rig.player).unwrap().items.push(lamp);
-        rig.act(Action::Wait);
+        rig.act(Wait);
         assert!(rig.seen_count() > 9, "lit while it burns");
-        rig.act(Action::Wait);
-        rig.act(Action::Wait);
+        rig.act(Wait);
+        rig.act(Wait);
         assert!(rig.app.world().get::<LightSource>(lamp).is_none(), "out");
         assert_eq!(rig.app.world().get::<Fuel>(lamp), Some(&Fuel(0)));
         assert_eq!(rig.seen_count(), 9);
@@ -472,8 +474,8 @@ mod tests {
         // what is there: one report now, and never a second one.
         let burnt = |app: &App| app.world().resource::<Messages<LightEvent>>().iter_current_update_messages().count();
         assert_eq!(burnt(&rig.app), 1);
-        rig.act(Action::Wait);
-        rig.act(Action::Wait);
+        rig.act(Wait);
+        rig.act(Wait);
         assert!(burnt(&rig.app) <= 1, "reported once, not every turn");
     }
 

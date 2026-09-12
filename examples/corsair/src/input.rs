@@ -64,7 +64,7 @@ type Shooter = (Entity, &'static Position, &'static Viewshed, &'static Faction, 
 type Mark = (Entity, &'static Position, &'static Faction, Option<&'static OnMap>);
 
 /// `f`: shoot the nearest foe in sight with a clear line of fire.
-pub fn fire(mut aim: Aim, mut intents: MessageWriter<Intent>) {
+pub fn fire(mut aim: Aim, mut intents: MessageWriter<Intent<Attack>>) {
     if !aim.keys.just_pressed(KeyCode::KeyF) {
         return;
     }
@@ -88,14 +88,24 @@ pub fn fire(mut aim: Aim, mut intents: MessageWriter<Intent>) {
         .map(|(e, _, _, _)| e);
     match target {
         Some(target) => {
-            intents.write(Intent { actor: me, action: Action::Attack(target) });
+            intents.write(Intent::new(me, Attack(target)));
         }
         None => aim.log.push("Nothing in range to shoot.", LogCategory::Muted, turn),
     }
 }
 
+/// What the player's keys can ask for.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct PlayerIntents<'w> {
+    steps: MessageWriter<'w, Intent<Step>>,
+    attacks: MessageWriter<'w, Intent<Attack>>,
+    waits: MessageWriter<'w, Intent<Wait>>,
+    transits: MessageWriter<'w, Intent<GoThrough>>,
+    pick_ups: MessageWriter<'w, Intent<PickUp>>,
+}
+
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
-pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: MessageWriter<Intent>) {
+pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: PlayerIntents) {
     let InputWorld { keys, time, screen, chest, ledger, occupancy, player } = world;
     if screen.open || chest.open || ledger.open {
         return;
@@ -104,42 +114,44 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: M
 
     let held = MOVES.iter().find(|(codes, _)| keys.any_pressed(codes.iter().copied()));
     let fresh = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied()));
-    let action = if let Some((_, dir)) = fresh {
+    let walk = if let Some((_, dir)) = fresh {
         repeat.held_for = 0.0;
         repeat.since_last = 0.0;
-        Some(Action::Move(*dir))
+        Some(*dir)
     } else if let Some((_, dir)) = held {
         repeat.held_for += time.delta_secs();
         repeat.since_last += time.delta_secs();
         if repeat.held_for >= REPEAT_DELAY && repeat.since_last >= REPEAT_EVERY {
             repeat.since_last = 0.0;
-            Some(Action::Move(*dir))
+            Some(*dir)
         } else {
             None
         }
-    } else if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma]) {
-        // `>` and `<`: through whatever stands here.
-        Some(Action::Enter)
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        Some(Action::Wait)
-    } else if keys.just_pressed(KeyCode::KeyG) || keys.just_pressed(KeyCode::Comma) {
-        Some(Action::PickUp)
-    } else if keys.just_pressed(KeyCode::Enter) {
-        Some(Action::Enter)
     } else {
         *repeat = Repeat::default();
         None
     };
-    if let Some(action) = action {
+    if let Some(dir) = walk {
+        debug!("player walks {dir:?} (fresh {:?}, held {:?})", fresh.map(|m| m.1), held.map(|m| m.1));
         // Bump to attack: walking into someone is a strike.
-        let action = match action {
-            Action::Move(dir) => match occupancy.first_at(pos.0 + dir.offset()) {
-                Some(other) => Action::Attack(other),
-                None => Action::Move(dir),
-            },
-            other => other,
-        };
-        debug!("player intent {action:?} (fresh {:?}, held {:?})", fresh.map(|m| m.1), held.map(|m| m.1));
-        intents.write(Intent { actor: entity, action });
+        match occupancy.first_at(pos.0 + dir.offset()) {
+            Some(other) => {
+                intents.attacks.write(Intent::new(entity, Attack(other)));
+            }
+            None => {
+                intents.steps.write(Intent::new(entity, Step(dir)));
+            }
+        }
+        return;
+    }
+    if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma]) {
+        // `>` and `<`: through whatever stands here.
+        intents.transits.write(Intent::new(entity, GoThrough));
+    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
+        intents.waits.write(Intent::new(entity, Wait));
+    } else if keys.just_pressed(KeyCode::KeyG) || keys.just_pressed(KeyCode::Comma) {
+        intents.pick_ups.write(Intent::new(entity, PickUp));
+    } else if keys.just_pressed(KeyCode::Enter) {
+        intents.transits.write(Intent::new(entity, GoThrough));
     }
 }

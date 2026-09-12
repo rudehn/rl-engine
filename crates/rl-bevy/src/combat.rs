@@ -21,7 +21,7 @@ use rl_rules::{DamageStage, Factions, Hit, Resistances};
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
 use crate::lighting::{DarkSight, Lighting, perceives};
 use crate::places::{MapId, OnMap};
-use crate::turn::{Action, ActionDone, Intent, Occupancy, Turns};
+use crate::turn::{Acting, Action, ActionDone, Intent, Occupancy, Step, Turns, Wait};
 use crate::world::WorldMap;
 
 /// Hit points.
@@ -226,8 +226,27 @@ pub struct MindWorld<'w> {
     turns: Res<'w, Turns>,
 }
 
+/// Strike an actor: adjacent with a melee weapon, at range with a ranged
+/// one down a clear line of fire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Attack(pub Entity);
+impl Action for Attack {}
+
+/// What a mind writes when it decides.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct MindIntents<'w> {
+    moves: MessageWriter<'w, Intent<Step>>,
+    attacks: MessageWriter<'w, Intent<Attack>>,
+    waits: MessageWriter<'w, Intent<Wait>>,
+}
+
 /// Lets every non-player holding a turn decide it.
-pub fn decide_minds(mut intents: MessageWriter<Intent>, mut world: MindWorld, sight: Sight) {
+///
+/// A game that decides for an actor itself claims it in
+/// [`TurnSet::Decide`](crate::plugin::TurnSet::Decide), and the mind
+/// leaves that actor alone, so a monster can take an action the engine
+/// has never heard of.
+pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut world: MindWorld, sight: Sight) {
     let Ok((player_pos, player_sight)) = sight.player.single() else { return };
     let Ok((thinker, mind, profile)) = sight.minds.single() else { return };
     let Ok((_, my_pos, my_hp, my_faction, perception, _)) = sight.actors.get(thinker) else { return };
@@ -282,15 +301,25 @@ pub fn decide_minds(mut intents: MessageWriter<Intent>, mut world: MindWorld, si
     let escape_world = escape.map(shifted);
     let mut ctx = TacticCtx { snapshot: &snapshot, approach: approach_world.as_ref(), escape: escape_world.as_ref(), can_step: &can_step, rng: &mut turn_rng };
     let (decision, _which) = mind.0.decide(&mut ctx);
-    let action = match decision {
+    if !acting.claim_decision(thinker) {
+        return;
+    }
+    match decision {
         Decision::Step(to) => match Direction::between(my_pos.0, to) {
-            Some(d) => Action::Move(d),
-            None => Action::Wait,
+            Some(d) => {
+                intents.moves.write(Intent::new(thinker, Step(d)));
+            }
+            None => {
+                intents.waits.write(Intent::new(thinker, Wait));
+            }
         },
-        Decision::Attack(target) => Action::Attack(target),
-        Decision::Wait => Action::Wait,
-    };
-    intents.write(Intent { actor: thinker, action });
+        Decision::Attack(target) => {
+            intents.attacks.write(Intent::new(thinker, Attack(target)));
+        }
+        Decision::Wait => {
+            intents.waits.write(Intent::new(thinker, Wait));
+        }
+    }
 }
 
 /// A copy of a window-local map re-addressed in world coordinates.
@@ -318,25 +347,23 @@ type AttackerData = (&'static Position, Option<&'static MeleeAttack>, Option<&'s
 /// each followed by the attacker's extra strikes. A shot at nothing in
 /// reach still costs the turn.
 ///
-/// One turn, one strike: a second attack intent for an actor that already
-/// struck this pass is dropped, as [`resolve_intents`](crate::turn::resolve_intents)
-/// drops a second move.
+/// One turn, one strike: an attack by an actor that already acted this
+/// pass finds the turn spent, whatever spent it.
 pub fn resolve_attacks(
-    mut intents: MessageReader<Intent>,
+    mut intents: MessageReader<Intent<Attack>>,
     mut damage: MessageWriter<DamageEvent>,
     mut done: MessageWriter<ActionDone>,
     mut rng: ResMut<CombatRng>,
+    mut acting: ResMut<Acting>,
     arena: Arena,
 ) {
     let Arena { map, occupancy, attackers, targets } = arena;
-    let mut struck: Vec<Entity> = Vec::new();
     for intent in intents.read() {
-        let Action::Attack(target) = intent.action else { continue };
-        if struck.contains(&intent.actor) {
+        let target = intent.action.0;
+        let Ok((pos, melee, ranged, strikes)) = attackers.get(intent.actor) else { continue };
+        if !acting.claim_action(intent.actor) {
             continue;
         }
-        let Ok((pos, melee, ranged, strikes)) = attackers.get(intent.actor) else { continue };
-        struck.push(intent.actor);
         let Ok(target_pos) = targets.get(target) else {
             done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
             continue;
@@ -521,7 +548,7 @@ mod tests {
         let mut hits = 0;
         for _ in 0..40 {
             if app.world().get::<MyTurn>(player).is_some() {
-                app.world_mut().write_message(Intent { actor: player, action: Action::Wait });
+                app.world_mut().write_message(Intent::new(player, Wait));
             }
             app.update();
             let hp = app.world().get::<Health>(player).unwrap().hp;
@@ -536,7 +563,7 @@ mod tests {
         // The player strikes back and the monster is removed.
         for _ in 0..10 {
             if app.world().get::<MyTurn>(player).is_some() {
-                app.world_mut().write_message(Intent { actor: player, action: Action::Attack(monster) });
+                app.world_mut().write_message(Intent::new(player, Attack(monster)));
             }
             app.update();
             if app.world().get_entity(monster).is_err() {
@@ -571,14 +598,14 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
-        app.world_mut().write_message(Intent { actor: player, action: Action::Attack(target) });
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
         assert_eq!(app.world().get::<Health>(target).unwrap().hp, 20 - 3 - 2, "the shot and the extra strike both landed");
         // A wall in between stops the next shot; the turn is still spent.
         app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, 0), TileId(1));
         app.update();
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent { actor: player, action: Action::Attack(target) });
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
         assert_eq!(app.world().get::<Health>(target).unwrap().hp, 15, "the wall took the shot");
         assert!(app.world().resource::<Turns>().now() > before);
@@ -587,7 +614,7 @@ mod tests {
         let far = app.world_mut().spawn((Actor, Blocks, Position(start.offset(7, 0)), Health::full(20), Faction(them))).id();
         app.update();
         app.update();
-        app.world_mut().write_message(Intent { actor: player, action: Action::Attack(far) });
+        app.world_mut().write_message(Intent::new(player, Attack(far)));
         app.update();
         assert_eq!(app.world().get::<Health>(far).unwrap().hp, 20);
     }

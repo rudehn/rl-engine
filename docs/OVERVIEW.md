@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after the crate merge and the region-free map.
+Last updated: 2026-09-11, after actions became types.
 
 ## The shape
 
@@ -80,7 +80,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 ### rl-bevy
 
 - The engine-owned loop: a `Turn` schedule run as many passes per frame as it takes, input once per frame, refusals that cost nothing, stall recovery.
-- Actions: move, attack, wait, pick up, drop, equip, unequip, use, enter.
+- Actions are types, not a list: `Step`, `Attack`, `Wait`, `PickUp`, `DropItem`, `Equip`, `Unequip`, `UseItem` and `GoThrough` ship with the engine, each resolved by the module that owns the mechanic. A game registers its own with `add_action`, resolves it in `TurnSet::Resolve` by claiming the actor and reporting a cost, and the sweep refuses whatever no resolver claimed.
 - Chunk streaming with edit deltas, per-map occupancy and knowledge, field of view.
 - Combat: health, armor, resists, factions, melee and ranged attacks down a line of fire, extra strikes, the damage event pipeline, deaths that linger until the frame ends, flow fields per movement profile feeding the minds.
 - Items on the ground, in bags and in slots, with stacks and enchantments.
