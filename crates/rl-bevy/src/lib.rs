@@ -29,7 +29,7 @@ pub mod world;
 
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health, MeleeAttack,
-    Mind, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
+    Mind, MindChose, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
@@ -40,7 +40,7 @@ pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingP
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
-pub use plugin::{CorePlugin, EngineSet, PresentSet, ResolveSet, Turn, TurnSet};
+pub use plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
 pub use state::EngineState;
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin, StatusRules};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
@@ -50,7 +50,7 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 pub mod prelude {
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health,
-        MeleeAttack, Mind, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
+        MeleeAttack, Mind, MindChose, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
@@ -61,7 +61,7 @@ pub mod prelude {
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
-    pub use crate::plugin::{CorePlugin, EngineSet, PresentSet, ResolveSet, Turn, TurnSet};
+    pub use crate::plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
     pub use crate::state::EngineState;
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin, StatusRules};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};

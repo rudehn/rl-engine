@@ -32,7 +32,8 @@ pub struct ChromePlugin;
 impl bevy::prelude::Plugin for ChromePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         use bevy::prelude::*;
-        app.init_resource::<MessageLog>()
+        app.add_systems(bevy::prelude::OnEnter(rl_bevy::EngineState::Playing), rl_bevy::needs::<ChromeLayout>("ChromePlugin"))
+            .init_resource::<MessageLog>()
             .init_resource::<Theme>()
             .init_resource::<StatusLine>()
             .add_systems(Update, draw_chrome.in_set(rl_bevy::PresentSet::Chrome));

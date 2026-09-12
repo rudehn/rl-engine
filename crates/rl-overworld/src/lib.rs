@@ -126,13 +126,18 @@ pub struct OverworldPlugin;
 
 impl Plugin for OverworldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<OverworldScreen>()
+        app.add_systems(OnEnter(EngineState::Playing), rl_bevy::needs::<OverworldLayout>("OverworldPlugin"))
+            .init_resource::<OverworldScreen>()
             .init_resource::<BandAppearance>()
             .init_resource::<OverworldStyle>()
             .init_resource::<OverworldKeys>()
             .add_message::<PortalRequest>()
             .add_systems(Update, handle_keys.in_set(EngineSet::Input))
             .add_systems(Update, draw_overworld.in_set(PresentSet::Overlay));
+    }
+
+    fn finish(&self, app: &mut App) {
+        rl_bevy::depends_on::<rl_bevy::CorePlugin>(app, "OverworldPlugin");
     }
 }
 

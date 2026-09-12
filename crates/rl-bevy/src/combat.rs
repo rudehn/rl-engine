@@ -226,6 +226,22 @@ pub struct MindWorld<'w> {
     turns: Res<'w, Turns>,
 }
 
+/// A mind chose something of the game's own: whatever number its tactic
+/// returned, and who chose it.
+///
+/// Written in [`DecideSet::Minds`](crate::plugin::DecideSet::Minds) and
+/// answered by the game in [`DecideSet::Game`](crate::plugin::DecideSet::Game),
+/// which is where it turns the number into one of its own actions. The
+/// actor's decision is already claimed, so nothing else will decide for
+/// it this pass.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MindChose {
+    /// Who chose.
+    pub actor: Entity,
+    /// What, in the game's own numbering.
+    pub choice: u32,
+}
+
 /// Strike an actor: adjacent with a melee weapon, at range with a ranged
 /// one down a clear line of fire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,6 +254,7 @@ pub struct MindIntents<'w> {
     moves: MessageWriter<'w, Intent<Step>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
     waits: MessageWriter<'w, Intent<Wait>>,
+    chose: MessageWriter<'w, MindChose>,
 }
 
 /// Lets every non-player holding a turn decide it.
@@ -318,6 +335,10 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
         }
         Decision::Wait => {
             intents.waits.write(Intent::new(thinker, Wait));
+        }
+        // The game's own: hand the number back and let it act.
+        Decision::Game(choice) => {
+            intents.chose.write(MindChose { actor: thinker, choice });
         }
     }
 }
@@ -467,10 +488,11 @@ impl Plugin for CombatPlugin {
         app.add_message::<DamageEvent>()
             .add_message::<DamageDealt>()
             .add_message::<DeathEvent>()
+            .add_message::<MindChose>()
             .init_resource::<DamageStages>()
             .add_action::<Attack>()
             .add_systems(OnEnter(EngineState::Playing), (needs::<CombatRules>("CombatPlugin"), needs::<CombatRng>("CombatPlugin")))
-            .add_systems(Turn, decide_minds.in_set(TurnSet::Decide))
+            .add_systems(Turn, decide_minds.in_set(crate::plugin::DecideSet::Minds))
             .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act).after(crate::items::resolve_items).after(crate::places::resolve_warps))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
             .add_systems(Turn, process_deaths.in_set(TurnSet::Cleanup).before(crate::turn::cleanup_turns))
@@ -541,6 +563,102 @@ mod tests {
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
         app.insert_resource(CombatRng::for_run(RunSeed(5)));
         (app, start, blunt)
+    }
+
+    /// A tactic of the game's own, at the top of the priority list.
+    struct Shove;
+    impl rl_rules::ai::Tactic<Entity> for Shove {
+        fn name(&self) -> &'static str {
+            "shove"
+        }
+        fn evaluate(&self, ctx: &mut rl_rules::ai::TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+            ctx.snapshot.enemies.first().map(|_| Decision::Game(SHOVE))
+        }
+    }
+
+    /// The game's number for a shove.
+    const SHOVE: u32 = 7;
+
+    /// The game's action, which the engine has never heard of.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct Shoved(Entity);
+    impl crate::turn::Action for Shoved {}
+
+    #[derive(Resource, Default)]
+    struct Shoves(u32);
+
+    /// The game's half of the decision.
+    fn answer_the_choice(mut chose: MessageReader<MindChose>, mut shoves: MessageWriter<Intent<Shoved>>, players: Query<Entity, With<Player>>) {
+        for c in chose.read() {
+            if c.choice == SHOVE
+                && let Ok(player) = players.single()
+            {
+                shoves.write(Intent::new(c.actor, Shoved(player)));
+            }
+        }
+    }
+
+    fn resolve_shoves(
+        mut intents: MessageReader<Intent<Shoved>>,
+        mut done: MessageWriter<ActionDone>,
+        mut acting: ResMut<crate::turn::Acting>,
+        mut count: ResMut<Shoves>,
+    ) {
+        for intent in intents.read() {
+            if !acting.claim_action(intent.actor) {
+                continue;
+            }
+            count.0 += 1;
+            done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
+        }
+    }
+
+    #[test]
+    fn a_mind_can_choose_an_action_the_engine_never_heard_of() {
+        use crate::turn::AddAction;
+        let (mut app, start, blunt) = arena();
+        app.init_resource::<Shoves>()
+            .add_action::<Shoved>()
+            .add_systems(crate::plugin::Turn, answer_the_choice.in_set(crate::plugin::DecideSet::Game))
+            .add_systems(crate::plugin::Turn, resolve_shoves.in_set(crate::plugin::ResolveSet::Act));
+        let us = rl_rules::FactionId::from_raw(0);
+        let them = rl_rules::FactionId::from_raw(1);
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(us),
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(1) },
+            ))
+            .id();
+        // Shove first, strike second: the game's tactic outranks the
+        // engine's, which is what the priority list is for.
+        let brain = Arc::new(Brain::new().then(Shove).then(MeleeAdjacent));
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(start.offset(1, 0)),
+            Health::full(5),
+            Faction(them),
+            Perception(8),
+            MeleeAttack { kind: blunt, dice: DiceRoll::flat(3) },
+            Mind(brain),
+        ));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+
+        for _ in 0..6 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        assert!(app.world().resource::<Shoves>().0 > 0, "the monster shoved");
+        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30, "and never struck, because shoving outranks it");
     }
 
     #[test]

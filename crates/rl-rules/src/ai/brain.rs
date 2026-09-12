@@ -15,6 +15,12 @@ pub enum Decision<A: Copy> {
     Attack(A),
     /// Do nothing this turn.
     Wait,
+    /// Something of the game's own, in the game's own numbering, the way
+    /// a map's spots are tagged. The engine carries the number back to
+    /// the game and lets it decide what the actor actually does, so a
+    /// game's tactic can sit anywhere in the priority list beside the
+    /// engine's.
+    Game(u32),
 }
 
 /// Everything a tactic may consult.

@@ -160,6 +160,7 @@ impl Plugin for CorePlugin {
             )
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
+            .configure_sets(Turn, (DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
             .configure_sets(Turn, (ResolveSet::Act, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve))
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
@@ -169,6 +170,19 @@ impl Plugin for CorePlugin {
             .add_systems(Turn, (turn::resolve_moves, turn::resolve_waits, places::resolve_warps).chain().in_set(ResolveSet::Act))
             .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(TurnSet::Cleanup));
     }
+}
+
+/// The stages of [`TurnSet::Decide`], in order.
+///
+/// The minds choose first. A game that gave its brains a decision of its
+/// own answers it in [`DecideSet::Game`], where the choice has been made
+/// and written but nothing has acted on it yet.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DecideSet {
+    /// The engine's minds, deciding for everyone but the player.
+    Minds,
+    /// The game's answer to whatever its own tactics chose.
+    Game,
 }
 
 /// The stages of [`TurnSet::Resolve`], in order.
@@ -189,14 +203,14 @@ pub enum ResolveSet {
 /// Asserts, when play begins, that a plugin has what it cannot work
 /// without. A missing rule table is a mistake in the game's setup, and it
 /// says so rather than quietly doing nothing all run.
-pub(crate) fn needs<R: Resource>(plugin: &'static str) -> impl Fn(Option<Res<R>>) {
+pub fn needs<R: Resource>(plugin: &'static str) -> impl Fn(Option<Res<R>>) {
     move |res: Option<Res<R>>| {
         assert!(res.is_some(), "{plugin} needs {} inserted before EngineState::Playing", std::any::type_name::<R>());
     }
 }
 
 /// Asserts that a plugin this one depends on was added too.
-pub(crate) fn depends_on<P: Plugin>(app: &App, plugin: &'static str) {
+pub fn depends_on<P: Plugin>(app: &App, plugin: &'static str) {
     assert!(app.is_plugin_added::<P>(), "{plugin} needs {} added as well", std::any::type_name::<P>());
 }
 

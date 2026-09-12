@@ -82,6 +82,11 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `Rect` is left out on purpose, since Bevy's prelude has its own and a game globbing both would disambiguate every use; a doc test globs both preludes and names a type from each crate, so the next collision fails there.
   The delve and Lamplight glob it, and their engine imports collapse to one line; Corsair still names what each of its ten modules uses, which is its own documentation.
   Nate, 2026-09-11: the architecture review's prelude finding.
+- 2026-09-11: the two loose ends of the review.
+  A brain could only choose from the engine's three decisions, so an action a game added could only ever be taken by the player; `Decision::Game(u32)` carries a number in the game's own numbering, the way a map's spots are tagged, `MindChose` reports it, and `DecideSet` splits the decide phase so the game answers after the minds have chosen.
+  A monster can now shove, and a game's tactic sits anywhere in the priority list beside the engine's.
+  `OverworldPlugin` and `ChromePlugin` drew nothing at all when their layout resource was missing; they say so on entering play now, through the same `needs` helper the engine's own plugins use, which is public for that reason.
+  Nate, 2026-09-11: the last two findings from the architecture review.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

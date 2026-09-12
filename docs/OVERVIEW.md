@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after the prelude.
+Last updated: 2026-09-11, after the loose ends.
 
 ## The shape
 
@@ -81,6 +81,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 
 - One plugin per subsystem, each opt-in: `CorePlugin` holds the loop, the map and its places; field of view, combat, statuses, items, lighting, streaming and facts are added by name. A plugin says what it needs, so a missing rule table or a missing plugin it depends on panics naming both, rather than a subsystem quietly doing nothing all run.
 - The engine-owned loop: a `Turn` schedule run as many passes per frame as it takes, input once per frame, refusals that cost nothing, stall recovery.
+- A mind may choose an action the engine has never heard of: a tactic returns a number of the game's own, the engine reports it as `MindChose`, and the game answers it in `DecideSet::Game`. A game's tactic can sit anywhere in the priority list beside the engine's.
 - A reaction phase inside the turn: `TurnSet::React` runs after the actions of a pass resolve and before the turn is requeued, which is where a game answers what just happened. A drink heals before the next blow lands, a bite poisons on the bite, gear counts from the moment it is worn.
 - Drawing is layered by `PresentSet`: narration, then the map, then the chrome, then whatever covers them. No crate orders itself after another crate's draw function.
 - Actions are types, not a list: `Step`, `Attack`, `Wait`, `PickUp`, `DropItem`, `Equip`, `Unequip`, `UseItem` and `GoThrough` ship with the engine, each resolved by the module that owns the mechanic. A game registers its own with `add_action`, resolves it in `TurnSet::Resolve` by claiming the actor and reporting a cost, and the sweep refuses whatever no resolver claimed.
@@ -114,6 +115,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 
 ### rl-overworld
 
+- Says what it needs: no layout, no screen, and it says so when play begins rather than drawing nothing.
 - The world drawn from its bands with rivers, roads, discovered sites and the player.
 - A portal picker.
 

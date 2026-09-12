@@ -1,0 +1,19 @@
+[package]
+name = "tutorial"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Warren: the game the guide in docs/guide builds, one runnable binary per chapter."
+publish = false
+
+[package.metadata.rl-engine]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 3
+
+[dependencies]
+rl-engine.workspace = true
+bevy.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true
