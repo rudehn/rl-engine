@@ -95,7 +95,8 @@ fn main() -> AppExit {
             .set(ImagePlugin::default_nearest()),
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: FONT })
-    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, OverworldPlugin, CapturePlugin))
+    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin))
+    .add_plugins((MapViewPlugin, ChromePlugin, OverworldPlugin, CapturePlugin))
     .insert_resource(StartSeed { seed, regions, resume })
     .insert_resource(Saves::platform_default("corsair"))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))

@@ -61,7 +61,8 @@ fn main() -> AppExit {
             .set(ImagePlugin::default_nearest()),
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    .add_plugins((EnginePlugins, MapViewPlugin, ChromePlugin, CapturePlugin))
+    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, LightingPlugin))
+    .add_plugins((MapViewPlugin, ChromePlugin, CapturePlugin))
     .insert_resource(Seed(seed))
     .insert_resource(FirstFloor(first))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
@@ -406,6 +407,7 @@ mod tests {
     /// A headless whale: the engine plugins and the delve's own systems.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, CombatPlugin, LightingPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
             .init_resource::<MessageLog>()
             .init_resource::<StatusLine>()

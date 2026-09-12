@@ -520,3 +520,24 @@ pub fn stream_chunks(
         v.dirty = true;
     }
 }
+
+/// Chunk streaming: the window of the world kept loaded around the
+/// player.
+///
+/// Needs a [`WorldRes`] and a [`ChunkRulesRes`] before play begins. A
+/// game with no surface leaves this one out.
+pub struct StreamingPlugin;
+
+impl Plugin for StreamingPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::plugin::{EngineSet, needs};
+        use crate::state::EngineState;
+        app.add_message::<ChunkLoaded>()
+            .add_systems(OnEnter(EngineState::Playing), (needs::<WorldRes>("StreamingPlugin"), needs::<ChunkRulesRes>("StreamingPlugin")))
+            .add_systems(Update, stream_chunks.in_set(EngineSet::Stream));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "StreamingPlugin");
+    }
+}

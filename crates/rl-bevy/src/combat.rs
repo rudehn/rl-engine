@@ -451,6 +451,38 @@ pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
     }
 }
 
+/// Combat: health, factions, strikes down a line of fire, the damage
+/// pipeline, deaths, and the minds that decide for everyone but the
+/// player.
+///
+/// Needs [`CombatRules`] and [`CombatRng`] before play begins, and the
+/// minds read the player's viewshed, so the field of view comes with it.
+pub struct CombatPlugin;
+
+impl Plugin for CombatPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::plugin::{ResolveSet, Turn, TurnSet, needs};
+        use crate::state::EngineState;
+        use crate::turn::AddAction;
+        app.add_message::<DamageEvent>()
+            .add_message::<DamageDealt>()
+            .add_message::<DeathEvent>()
+            .init_resource::<DamageStages>()
+            .add_action::<Attack>()
+            .add_systems(OnEnter(EngineState::Playing), (needs::<CombatRules>("CombatPlugin"), needs::<CombatRng>("CombatPlugin")))
+            .add_systems(Turn, decide_minds.in_set(TurnSet::Decide))
+            .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act).after(crate::items::resolve_items).after(crate::places::resolve_warps))
+            .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
+            .add_systems(Turn, process_deaths.in_set(TurnSet::Cleanup).before(crate::turn::cleanup_turns))
+            .add_systems(PostUpdate, bury_the_dead.after(crate::events::track_facts));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "CombatPlugin");
+        crate::plugin::depends_on::<crate::fov::FovPlugin>(app, "CombatPlugin");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +524,7 @@ mod tests {
 
     fn arena() -> (App, Point, DamageKindId) {
         let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
         let tiles = TileRegistry::standard();
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");

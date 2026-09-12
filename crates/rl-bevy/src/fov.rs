@@ -71,3 +71,17 @@ pub fn update_viewsheds(
         }
     }
 }
+
+/// Sight: every stale viewshed recomputed, and what a revealer saw
+/// written into [`Knowledge`].
+pub struct FovPlugin;
+
+impl Plugin for FovPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, update_viewsheds.in_set(crate::plugin::EngineSet::Fov));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "FovPlugin");
+    }
+}

@@ -389,6 +389,7 @@ mod tests {
 
     fn rig() -> Rig {
         let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
         let tiles = TileRegistry::standard();
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");

@@ -65,6 +65,17 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Reproduced first as a Corsair test with a cutthroat at the player's elbow, which died before the fix and lives after it.
   `rl-ui` and `rl-overworld` ordered themselves after `rl_render::map_view::draw_map` by name; they name a sub-phase now, and the overworld's own systems are public so a game can reason about them at all.
   Nate, 2026-09-11: the architecture review's reaction-phase finding.
+- 2026-09-11: `docs/design/ui.md`, the UI plan, written and section 3.12 revised to match it.
+  Every panel splits into a view, a collector and a presenter, so what a game reuses is the query into a model and not the drawing; the engine names no content and no colour, `LogCategory` becomes an interned `ToneId` over a palette a game extends, and a row carries facets the game pushes for what the engine cannot know.
+  The backend question that section 3.12 answered with Bevy UI and the built code answered with the glyph terminal is settled by not being decided first: the views do not know which backend draws them, terminal presenters ship now, node presenters ship when a game asks.
+  Opt-in is per panel, not per crate, and `EnginePlugins` gains nothing.
+  Nate, 2026-09-11: the nearby list, equipment and stats, inspect and the log should be common features of the engine, without the theming being common too.
+- 2026-09-11: the engine's subsystems become plugins, and opt-in means opt-in.
+  `EnginePlugins` registered everything and three subsystems decided for themselves whether to run by looking for a resource, so a game that forgot `CombatRng` got monsters that stood still and no word about why.
+  `CorePlugin` now holds the loop, the clock, the map, its places and the three actions that need nothing else; `FovPlugin`, `CombatPlugin`, `StatusPlugin`, `ItemsPlugin`, `LightingPlugin`, `StreamingPlugin` and `FactsPlugin` are added by name.
+  Each says what it needs: a missing rule table panics on entering play naming the plugin and the resource, and a plugin whose dependency is absent panics at build naming both.
+  `TurnSet::Resolve` gains `ResolveSet` (act, effects, damage) because the systems that fill it now come from different plugins and cannot chain themselves.
+  Nate, 2026-09-11: the architecture review's implicit-configuration finding.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
@@ -510,12 +521,16 @@ Specific ports:
 `rl-render` owns the world view: a `GlyphGrid` drawn as one instanced mesh over a font atlas, a `Renderable` trait with an engine-owned `Cell`, the lit / remembered / occluded rules from this repo, camera follow, particles and screenshot capture.
 Both games spawn one text entity per cell; that backing store is rewritten, the rules are kept.
 
-`rl-ui` owns chrome and modals as Bevy UI, ported from this repo's `src/ui/`: theme tokens (spacing scale, z-ladder, semantic palette, single font installer), the list-to-detail widget, key hints and keybinds, the tabbed window, the framed modal, the semantic log view, and the side panel skeleton (stat bars, status badges).
+`rl-ui` owns chrome and modals, ported from this repo's `src/ui/`: semantic palette tokens, the list-to-detail widget, key hints and keybinds, the framed modal, the semantic log view, and the side panel skeleton (stat bars, status badges).
 The `ActiveModal` closed enum becomes a registry of modal ids the game populates.
 The widget must not import its consumer; today `list_detail` re-exports helpers from `inventory_preview`.
 
-Bevy UI rather than drawing chrome on the glyph grid, because that is the code that exists, it already handles wrapping and layout, and this repo's visual verification flow works against it.
-The map view stays a glyph grid because an ASCII game's map is a glyph grid.
+Revised 2026-09-11: this section said Bevy UI, and what was built draws on the glyph terminal.
+`docs/design/ui.md` settles it, and the answer is that the backend was the wrong thing to decide first.
+Every panel splits into a view (the data), a collector (the system that keeps it fresh) and a presenter (one way of drawing it); the views and collectors are the reusable half and do not know which backend draws them.
+Terminal presenters ship first because that is what the three examples want and because an exact-text assertion is a better test than a node tree.
+Bevy UI presenters come later, over the same views, when a game asks for wrapping, hover or sub-cell bars.
+The map view stays a glyph grid in either case, because an ASCII game's map is a glyph grid.
 
 ### 3.13 Documentation and test rules
 
@@ -546,7 +561,7 @@ Crates are listed in the order they come into existence; the milestone column sa
 | 2 | `rl-bevy` | plugins, `Position` / `Viewshed` / `Collider`, `ProcessingPhase` and `CombatPhase` sets, the turn loop, active region and chunk streaming, occupancy index, map stack and `MapBound`, mutation messages, `ReactionQueue`, `TestApp` | all above, `bevy` | M1 |
 | 2 | `rl-render` | `GlyphGrid` instanced renderer, engine-owned `Cell`, `Renderable`, the `WorldGraph` view, camera, particles, screenshot | bevy | M1 |
 | 2 | `rl-overworld` | opt-in: overworld screen with a portal picker over discovered sites; reads `WorldGraph` and discovery, writes a portal request, owns nothing else | bevy, world | M1 |
-| 2 | `rl-ui` | theme tokens, list-detail widget, key hints, tab chrome, framed modal, semantic log view, side panel skeleton, modal registry | bevy | M1 (shell), M3 (inventory widgets) |
+| 2 | `rl-ui` | tone registry and palette, panel views and collectors, terminal presenters, list-detail widget, key hints, framed modal, semantic log view, modal stack | bevy | M1 (shell), M3 (inventory widgets), UI phases in `docs/design/ui.md` |
 | 1 | `rl-content` | `ContentRegistry<T>`, `BandedWeightedTable<T>`, validate hook, RON loading, `include_str!` convention | core, `serde`, `ron` | M2 |
 | 1 | `rl-rules` | stat / modifier stack, damage stages and `DamageEvent` shape, status registry with generic tick and expire, hook vocabulary, targeting and AoE footprints, factions matrix; later the slot graph and the affix and enchant model | core, grid, content | M2 (combat), M3 (equipment) |
 | 1 | `rl-ai` | `Tactic` + registry + `TacticCtx`, `MovementProfile`, pure decisions, ability scorer, stealth and awareness; later the auto-explore and travel pure half | core, grid, rules | M2 |

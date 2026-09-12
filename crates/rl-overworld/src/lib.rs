@@ -277,6 +277,7 @@ mod tests {
 
     fn app() -> App {
         let mut app = headless_app();
+        app.add_plugins(rl_bevy::FovPlugin);
         app.add_plugins((bevy::input::InputPlugin, rl_render::MapViewPlugin, OverworldPlugin))
             .init_resource::<Script>()
             .add_systems(PreUpdate, play_script.after(bevy::input::InputSystems));

@@ -303,6 +303,29 @@ pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: 
     }
 }
 
+/// Items: on the ground, in a bag, in a slot, and the five actions that
+/// move them between the three.
+pub struct ItemsPlugin;
+
+impl Plugin for ItemsPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::plugin::{ResolveSet, Turn, TurnSet};
+        use crate::turn::AddAction;
+        app.add_message::<ItemEvent>()
+            .add_action::<PickUp>()
+            .add_action::<DropItem>()
+            .add_action::<Equip>()
+            .add_action::<Unequip>()
+            .add_action::<UseItem>()
+            .add_systems(Turn, resolve_items.in_set(ResolveSet::Act).after(crate::places::resolve_warps))
+            .add_systems(Turn, forget_removed_items.in_set(TurnSet::Cleanup).after(crate::turn::cleanup_turns));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "ItemsPlugin");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,6 +377,7 @@ mod tests {
 
     fn rig() -> Rig {
         let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, ItemsPlugin, crate::world::StreamingPlugin));
         let tiles = TileRegistry::standard();
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");

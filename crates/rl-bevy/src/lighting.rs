@@ -286,6 +286,25 @@ pub fn tick_fuel(
     }
 }
 
+/// Lighting: what each source sheds, what fuel costs, and the gate that
+/// decides what a viewshed actually sees. Dark until a game says
+/// otherwise.
+pub struct LightingPlugin;
+
+impl Plugin for LightingPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::plugin::{EngineSet, ResolveSet, Turn};
+        app.add_message::<LightEvent>()
+            .insert_resource(Lighting::dark())
+            .add_systems(Update, update_lighting.in_set(EngineSet::Light))
+            .add_systems(Turn, tick_fuel.in_set(ResolveSet::Effects));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "LightingPlugin");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,11 +352,15 @@ mod tests {
     impl Rig {
         fn new(lighting: Option<Lighting>, dark_sight: Option<i32>) -> Self {
             let mut app = headless_app();
+            app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin));
             let tiles = TileRegistry::standard();
             let wall = tiles.expect("wall");
             app.insert_resource(WorldMap::new(tiles.tables()));
             app.insert_resource(PlaceRulesRes(Box::new(Room(tiles))));
+            // Lighting is a plugin: without it there is no gate at all,
+            // which is what a game that never lights anything gets.
             if let Some(l) = lighting {
+                app.add_plugins(LightingPlugin);
                 app.insert_resource(l);
             }
             let mut player =

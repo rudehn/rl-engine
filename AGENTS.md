@@ -23,6 +23,7 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 - **No `#[non_exhaustive]` + `Custom { id }`** and no closed taxonomy enums for content. Registries and traits are the only extension mechanisms.
 - **Randomness** comes from `rand`, through `RunSeed::derive(domain, index)`. Functions take `&mut impl Rng`. Never construct a generator from a constant or from entropy inside engine code.
 - **No `HashMap` or `HashSet` in gameplay or generation paths.** `BTreeMap`, `Vec`, or a `BitGrid`, with the reason stated.
+- **A subsystem is a plugin, and a plugin is opt-in.** Nothing decides whether to run by looking for a resource. A plugin declares what it needs, and says so loudly when it is missing.
 - **A game's rules answer the turn inside it.** Anything that reacts to what a turn caused goes in `TurnSet::React`, not in the drawing phase; drawing goes in its `PresentSet` layer. Never order a system after another crate's system function.
 - **Costs and clocks are integers.** Hundredths of a step, the same unit everywhere.
 - **Doc comments say why and why-not**, at the density of `rl-core/src/turn.rs`, not more.

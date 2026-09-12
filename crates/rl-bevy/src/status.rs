@@ -145,6 +145,28 @@ pub fn statuses_ready(rules: Option<Res<StatusRules>>) -> bool {
     rules.is_some()
 }
 
+/// Statuses: what is afflicted, what it costs each turn, what cures it.
+///
+/// Ticks go through the damage pipeline, so combat comes with it, and
+/// [`StatusRules`] must be in place before play begins.
+pub struct StatusPlugin;
+
+impl Plugin for StatusPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::plugin::{ResolveSet, Turn, needs};
+        use crate::state::EngineState;
+        app.add_message::<Afflict>()
+            .add_message::<Cure>()
+            .add_message::<StatusEvent>()
+            .add_systems(OnEnter(EngineState::Playing), needs::<StatusRules>("StatusPlugin"))
+            .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "StatusPlugin");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,6 +213,7 @@ mod tests {
     #[test]
     fn a_status_ticks_damage_each_turn_modifies_stats_and_expires() {
         let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, StatusPlugin, crate::world::StreamingPlugin));
         let tiles = TileRegistry::standard();
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");

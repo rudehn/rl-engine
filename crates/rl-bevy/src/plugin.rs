@@ -8,7 +8,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{combat, events, fov, items, lighting, places, status, turn, world};
+use crate::{combat, places, turn};
 
 /// The stages of a frame while playing, in order. All in `Update`.
 ///
@@ -125,9 +125,17 @@ pub fn run_turns(world: &mut World) {
 /// Insert [`WorldRes`](crate::world::WorldRes), [`ChunkRulesRes`](crate::world::ChunkRulesRes)
 /// and a [`WorldMap`] before entering `Playing`; the streaming system does
 /// the rest.
-pub struct EnginePlugins;
+/// The engine's core, and the only plugin every game needs.
+///
+/// The state, the system sets, the turn schedule and the loop that runs
+/// it, the clock, the occupancy index, the map and its places, and the
+/// three actions that need nothing else: step, wait, and go through what
+/// stands here. Everything else is a plugin of its own, and a game adds
+/// the ones it wants: nothing turns itself on because a resource happens
+/// to exist.
+pub struct CorePlugin;
 
-impl Plugin for EnginePlugins {
+impl Plugin for CorePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<EngineState>()
             .init_resource::<Turns>()
@@ -135,25 +143,13 @@ impl Plugin for EnginePlugins {
             .init_resource::<Acting>()
             .init_resource::<WorldSettings>()
             .init_resource::<Knowledge>()
+            .init_resource::<combat::FlowFields>()
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
             .add_message::<TurnEnd>()
-            .add_message::<combat::DamageEvent>()
-            .add_message::<combat::DamageDealt>()
-            .add_message::<world::ChunkLoaded>()
-            .add_message::<combat::DeathEvent>()
-            .add_message::<items::ItemEvent>()
             .add_message::<places::WarpRequest>()
             .add_message::<places::MapChanged>()
             .add_message::<places::PlaceEntered>()
-            .add_message::<events::Happened>()
-            .add_message::<events::QuestChange>()
-            .add_message::<status::Afflict>()
-            .add_message::<status::Cure>()
-            .add_message::<status::StatusEvent>()
-            .add_message::<lighting::LightEvent>()
-            .init_resource::<combat::FlowFields>()
-            .init_resource::<combat::DamageStages>()
             .init_schedule(Turn)
             .configure_sets(
                 Update,
@@ -164,62 +160,51 @@ impl Plugin for EnginePlugins {
             )
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
-            // The actions the engine resolves itself. A game registers its
-            // own the same way and resolves them in `TurnSet::Resolve`.
+            .configure_sets(Turn, (ResolveSet::Act, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve))
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
-            .add_action::<combat::Attack>()
             .add_action::<places::GoThrough>()
-            .add_action::<items::PickUp>()
-            .add_action::<items::DropItem>()
-            .add_action::<items::Equip>()
-            .add_action::<items::Unequip>()
-            .add_action::<items::UseItem>()
-            .add_systems(Update, world::stream_chunks.in_set(EngineSet::Stream))
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
-            .add_systems(Update, lighting::update_lighting.in_set(EngineSet::Light))
-            .add_systems(Update, fov::update_viewsheds.in_set(EngineSet::Fov))
-            // After every game system of the frame has had its say, so a
-            // fact written in Present is tracked the same frame.
-            .add_systems(PostUpdate, events::track_facts.run_if(in_state(EngineState::Playing)).run_if(events::anyone_listening))
-            .add_systems(PostUpdate, combat::bury_the_dead.after(events::track_facts))
             .add_systems(Turn, (turn::start_pass, places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
-            // Combat is opt-in: a game that inserts no rules gets no combat
-            // systems, and the walking demo stays a walking demo.
-            .add_systems(Turn, combat::decide_minds.in_set(TurnSet::Decide).run_if(combat_ready))
-            .add_systems(
-                Turn,
-                (
-                    turn::resolve_moves,
-                    turn::resolve_waits,
-                    places::resolve_warps,
-                    items::resolve_items,
-                    lighting::tick_fuel,
-                    combat::resolve_attacks.run_if(combat_ready),
-                    status::resolve_afflictions.run_if(status::statuses_ready),
-                    status::tick_statuses.run_if(status::statuses_ready).run_if(combat_ready),
-                    combat::apply_damage.run_if(combat_ready),
-                )
-                    .chain()
-                    .in_set(TurnSet::Resolve),
-            )
-            .add_systems(
-                Turn,
-                (combat::process_deaths, turn::cleanup_turns, turn::forget_removed_blockers, items::forget_removed_items).chain().in_set(TurnSet::Cleanup),
-            );
+            .add_systems(Turn, (turn::resolve_moves, turn::resolve_waits, places::resolve_warps).chain().in_set(ResolveSet::Act))
+            .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(TurnSet::Cleanup));
     }
 }
 
-/// Whether the game has inserted what combat needs.
-fn combat_ready(rules: Option<Res<combat::CombatRules>>, rng: Option<Res<combat::CombatRng>>) -> bool {
-    rules.is_some() && rng.is_some()
+/// The stages of [`TurnSet::Resolve`], in order.
+///
+/// Actions first, then what ticks because a turn passed, then the damage
+/// both of them produced. Named because the systems that fill them come
+/// from different plugins, which cannot chain themselves together.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ResolveSet {
+    /// Actions: a step, a strike, a drink, a door.
+    Act,
+    /// What a turn costs whoever is standing in it: statuses, fuel.
+    Effects,
+    /// The damage the pass produced, applied once.
+    Damage,
+}
+
+/// Asserts, when play begins, that a plugin has what it cannot work
+/// without. A missing rule table is a mistake in the game's setup, and it
+/// says so rather than quietly doing nothing all run.
+pub(crate) fn needs<R: Resource>(plugin: &'static str) -> impl Fn(Option<Res<R>>) {
+    move |res: Option<Res<R>>| {
+        assert!(res.is_some(), "{plugin} needs {} inserted before EngineState::Playing", std::any::type_name::<R>());
+    }
+}
+
+/// Asserts that a plugin this one depends on was added too.
+pub(crate) fn depends_on<P: Plugin>(app: &App, plugin: &'static str) {
+    assert!(app.is_plugin_added::<P>(), "{plugin} needs {} added as well", std::any::type_name::<P>());
 }
 
 /// A headless app with the engine plugins and no window, for tests in the
 /// engine and in games.
 pub fn headless_app() -> App {
     let mut app = App::new();
-    app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin, EnginePlugins));
+    app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin, CorePlugin));
     app
 }
 
@@ -270,6 +255,7 @@ mod tests {
 
     fn app_with_world() -> (App, WorldGraph) {
         let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
         let mut tiles = TileRegistry::standard();
         tiles.register(TileProps::floor("mud").move_cost(200)).unwrap();
         let config = WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) };
@@ -370,6 +356,23 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), 100);
         assert!(app.world().get::<MyTurn>(player).is_some());
+    }
+
+    #[test]
+    #[should_panic(expected = "CombatPlugin needs")]
+    fn combat_without_its_rules_says_so_when_play_begins() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+    }
+
+    #[test]
+    #[should_panic(expected = "StatusPlugin needs")]
+    fn a_plugin_without_the_plugin_it_depends_on_says_so_at_build() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin, CorePlugin, crate::status::StatusPlugin));
+        app.finish();
     }
 
     /// An action of a game's own. The engine has never heard of it.

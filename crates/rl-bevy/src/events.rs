@@ -67,6 +67,28 @@ pub fn anyone_listening(quests: Option<Res<Quests>>, counters: Option<Res<Counte
     quests.is_some() || counters.is_some()
 }
 
+/// Facts: what happened, tallied into counters and matched against
+/// quests. Needs one of [`Quests`] or [`Counters`] before play begins;
+/// a game that wants both inserts both.
+pub struct FactsPlugin;
+
+impl Plugin for FactsPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::state::EngineState;
+        app.add_message::<Happened>()
+            .add_message::<QuestChange>()
+            // Either will do: a game may track quests, counters, or both.
+            .add_systems(OnEnter(EngineState::Playing), |quests: Option<Res<Quests>>, counters: Option<Res<Counters>>| {
+                assert!(quests.is_some() || counters.is_some(), "FactsPlugin needs Quests or Counters inserted before EngineState::Playing");
+            })
+            .add_systems(PostUpdate, track_facts.run_if(in_state(EngineState::Playing)));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "FactsPlugin");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,6 +99,7 @@ mod tests {
     #[test]
     fn facts_move_quests_and_counters_between_frames() {
         let mut app = headless_app();
+        app.add_plugins(FactsPlugin);
         let facts = Registry::from_defs(vec![FactDef::new("killed")]).unwrap();
         let killed: FactKind = facts.expect("killed");
         let defs = Registry::from_defs(vec![QuestDef {

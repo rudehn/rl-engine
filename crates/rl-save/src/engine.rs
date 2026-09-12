@@ -97,6 +97,7 @@ mod tests {
 
     fn fresh() -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((rl_bevy::FovPlugin, rl_bevy::StreamingPlugin));
         let tiles = TileRegistry::standard();
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
