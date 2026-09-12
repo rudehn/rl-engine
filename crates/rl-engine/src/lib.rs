@@ -31,9 +31,45 @@ pub use rl_ui;
 pub use rl_world;
 
 /// The curated set of names a game needs most of the time.
+/// Everything a game reaches for, in one glob.
+///
+/// ```
+/// use bevy::prelude::*;
+/// use rl_engine::prelude::*;
+/// ```
+///
+/// `Rect` is deliberately left out. Bevy's prelude has a `Rect` of its
+/// own, so a game that globs both would have to disambiguate every use of
+/// the name; import [`rl_core::Rect`] where you want the grid one. That is
+/// the only name the two preludes would have fought over, and the doc test
+/// below is what keeps it that way.
+///
+/// ```
+/// use bevy::prelude::*;
+/// use rl_engine::prelude::*;
+///
+/// // One name from each crate the prelude covers, named rather than
+/// // glob-imported, so a future collision with Bevy fails here.
+/// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain<BaseContext>, _: WorldGraph) {}
+/// fn rules(_: Registry<StatDef>, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
+/// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
+/// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Theme, _: MessageLog, _: OverworldPlugin, _: Saves) {}
+/// ```
 pub mod prelude {
-    pub use rl_core::prelude::*;
+    // Core, minus `Rect`: see the note above.
+    pub use rl_bevy::prelude::*;
+    pub use rl_core::prelude::{
+        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, DirectionSet, DisjointSet, Grid, Grid2D, Id, Interner, Point, RunSeed, SeedDomain, Steps,
+        TurnQueue, geometry,
+    };
     pub use rl_grid::prelude::*;
+    pub use rl_mapgen::prelude::*;
+    pub use rl_overworld::prelude::*;
+    pub use rl_render::prelude::*;
+    pub use rl_rules::prelude::*;
+    pub use rl_save::prelude::*;
+    pub use rl_ui::prelude::*;
+    pub use rl_world::prelude::*;
 }
 
 /// The README's code samples, compiled and run as doc-tests so the

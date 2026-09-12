@@ -26,3 +26,8 @@ rl-bevy.workspace = true
 rl-render.workspace = true
 rl-overworld.workspace = true
 rl-ui.workspace = true
+
+# The facade's doc tests show a game globbing both preludes, which is the
+# only place a name collision with Bevy would show up.
+[dev-dependencies]
+bevy.workspace = true

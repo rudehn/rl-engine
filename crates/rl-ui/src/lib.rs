@@ -66,6 +66,14 @@ pub fn draw_chrome(
     terminal.print_on(1, layout.status_row, &status.0, theme.text, theme.panel_bg);
 }
 
+/// The names most callers want in scope.
+pub mod prelude {
+    pub use crate::log::{LogCategory, LogEntry, MessageLog};
+    pub use crate::menu::{ListMenu, MenuRow, draw_frame, draw_menu};
+    pub use crate::theme::Theme;
+    pub use crate::{ChromeLayout, ChromePlugin, StatusLine};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

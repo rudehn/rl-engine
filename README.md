@@ -45,7 +45,7 @@ The first build compiles Bevy and takes a few minutes.
 ## Use it in your game
 
 rl-engine is not on crates.io yet, so depend on it from git.
-The `rl-engine` crate is the facade that re-exports every other crate.
+The `rl-engine` crate is the facade that re-exports every other crate, and `rl_engine::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.
 
 ```toml
 [dependencies]

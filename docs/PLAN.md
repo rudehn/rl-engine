@@ -76,6 +76,12 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Each says what it needs: a missing rule table panics on entering play naming the plugin and the resource, and a plugin whose dependency is absent panics at build naming both.
   `TurnSet::Resolve` gains `ResolveSet` (act, effects, damage) because the systems that fill it now come from different plugins and cannot chain themselves.
   Nate, 2026-09-11: the architecture review's implicit-configuration finding.
+- 2026-09-11: the facade's prelude is worth globbing.
+  It re-exported core and grid only, and nothing in the workspace used it: the games imported from eight or more paths each.
+  It now covers core, grid, mapgen, world, rules, the Bevy layer, render, UI, overworld and save, and `rl-ui` and `rl-overworld` gained the preludes they never had.
+  `Rect` is left out on purpose, since Bevy's prelude has its own and a game globbing both would disambiguate every use; a doc test globs both preludes and names a type from each crate, so the next collision fails there.
+  The delve and Lamplight glob it, and their engine imports collapse to one line; Corsair still names what each of its ten modules uses, which is its own documentation.
+  Nate, 2026-09-11: the architecture review's prelude finding.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

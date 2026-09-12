@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after the plugin split.
+Last updated: 2026-09-11, after the prelude.
 
 ## The shape
 
@@ -127,6 +127,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 ## Tier 3: rl-engine
 
 - The facade re-exporting every crate.
+- A prelude worth globbing: core, grid, mapgen, world, rules, the Bevy layer, render, UI, overworld and save, in one `use`. It leaves out `Rect`, because Bevy's prelude has one of its own and a game that globs both would have to disambiguate every use; a doc test globs both preludes and names a type from each crate, so the next collision fails there rather than in someone's game.
 
 ## The third example: Lamplight
 

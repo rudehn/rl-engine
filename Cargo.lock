@@ -4693,6 +4693,7 @@ dependencies = [
 name = "rl-engine"
 version = "0.1.0"
 dependencies = [
+ "bevy",
  "rl-bevy",
  "rl-core",
  "rl-grid",
