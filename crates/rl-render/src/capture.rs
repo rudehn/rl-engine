@@ -203,7 +203,7 @@ fn shoot(mut commands: Commands, mut state: ResMut<Capture>, time: Res<Time<Real
     state.shot = true;
     let mut save = save_to_disk(state.path.clone());
     commands.spawn(Screenshot::primary_window()).observe(move |shot: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
-        let drawn = shot.image.data.as_ref().is_some_and(|px| px.chunks_exact(4).any(|p| p[0] != 0 || p[1] != 0 || p[2] != 0));
+        let drawn = shot.image.data.as_ref().is_some_and(|px| px.as_chunks::<4>().0.iter().any(|p| p[0] != 0 || p[1] != 0 || p[2] != 0));
         if drawn {
             save(shot);
             exit.write(AppExit::Success);
