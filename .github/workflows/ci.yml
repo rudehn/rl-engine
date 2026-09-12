@@ -28,7 +28,7 @@ jobs:
         run: cargo test --workspace
       - name: doc tests and missing docs
         run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-      - name: tier-1 builds on wasm
-        run: cargo check -p rl-core -p rl-grid -p rl-mapgen -p rl-world -p rl-rules --target wasm32-unknown-unknown
+      - name: tiers 0 and 1 build on wasm
+        run: scripts/check-tiers.sh --wasm
       - name: benches compile
         run: cargo bench --workspace --no-run

@@ -10,6 +10,10 @@ homepage.workspace = true
 keywords = ["roguelike", "bevy", "overworld", "world-map", "gamedev"]
 categories = ["game-development"]
 
+[package.metadata.rl-engine]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 2
+
 [dependencies]
 rl-core.workspace = true
 rl-world.workspace = true

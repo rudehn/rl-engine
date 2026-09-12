@@ -8,6 +8,10 @@ rust-version.workspace = true
 publish = false
 description = "The worked example: a pirate roguelike on rl-engine."
 
+[package.metadata.rl-engine]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 3
+
 [dependencies]
 rl-engine.workspace = true
 bevy.workspace = true

@@ -101,7 +101,7 @@ The three example games are the best guide to the Bevy side.
 The engine is a workspace of small crates in tiers.
 Tiers 0 and 1 know nothing about Bevy and are what make generation, pathfinding and rules testable in milliseconds and benchmarkable without a window.
 Tier 2 is the Bevy layer: plugins, the turn loop, rendering, UI.
-`scripts/check-tiers.sh` fails the build if a tier-1 crate ever grows a Bevy dependency.
+Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` fails the build if a tier-0 or tier-1 crate ever grows a Bevy dependency or any crate depends on a higher tier.
 
 | Tier | Crate | What it holds |
 |---|---|---|
@@ -194,7 +194,8 @@ The window opens above the others without taking focus, and the screen must be u
 ```sh
 cargo test -p rl-core -p rl-grid      # tier 0 and 1, seconds
 cargo bench -p rl-grid                # FOV, A*, Dijkstra, regions
-scripts/check-tiers.sh                # the tier boundary
+scripts/check-tiers.sh                # the tier boundaries
+scripts/check-tiers.sh --wasm         # tiers 0 and 1 build for WebAssembly
 cargo test --workspace                # everything, builds Bevy
 ```
 

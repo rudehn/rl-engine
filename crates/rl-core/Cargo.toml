@@ -10,6 +10,10 @@ homepage.workspace = true
 keywords = ["roguelike", "gamedev", "grid", "rng", "turn-based"]
 categories = ["game-development", "data-structures"]
 
+[package.metadata.rl-engine]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 0
+
 [dependencies]
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
