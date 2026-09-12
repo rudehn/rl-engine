@@ -386,11 +386,10 @@ mod tests {
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
         let start = world.tile_origin(region).offset(8, 8);
-        app.insert_resource(WorldMap::new(16, tiles.tables()));
+        app.insert_resource(WorldMap::new(tiles.tables()));
         app.insert_resource(WorldRes(world));
         app.insert_resource(ChunkRulesRes(Box::new(Open(tiles.clone()))));
         app.insert_resource(PlaceRulesRes(Box::new(Caves(tiles))));
-        app.insert_resource(Knowledge::new(16));
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Speed(100), Inventory::default())).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -430,6 +429,8 @@ mod tests {
             let v = w.get::<Viewshed>(r.player).unwrap();
             assert!(!v.dirty && v.can_see(place.entry), "sight was recomputed in the place");
             assert!(w.resource::<Knowledge>().is_explored(place.entry));
+            let surface_region = w.resource::<WorldRes>().region_of_tile(r.start);
+            assert!(w.resource::<Knowledge>().region_touched(surface_region), "the overworld's fog of the surface survives going underground");
         }
         // Time passes below; the watcher above is frozen, not dealt a turn.
         let before = r.app.world().resource::<Turns>().now();

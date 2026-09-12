@@ -56,11 +56,16 @@ pub fn update_viewsheds(
         if reveals {
             for p in viewshed.iter() {
                 knowledge.mark(p);
+                // Regions and sites are the surface's, and the world
+                // graph is the only thing that knows either.
                 if let Some(world) = &world
                     && map.current().is_surface()
-                    && let Some(site) = world.site_index_at(world.region_of_tile(p))
                 {
-                    knowledge.discover_site(site);
+                    let region = world.region_of_tile(p);
+                    knowledge.touch_region(region);
+                    if let Some(site) = world.site_index_at(region) {
+                        knowledge.discover_site(site);
+                    }
                 }
             }
         }

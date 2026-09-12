@@ -228,10 +228,9 @@ mod tests {
         tiles.register(TileProps::floor("mud").move_cost(200)).unwrap();
         let config = WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) };
         let world = WorldGraph::generate(RunSeed(5), config, &Flat);
-        app.insert_resource(WorldMap::new(16, tiles.tables()));
+        app.insert_resource(WorldMap::new(tiles.tables()));
         app.insert_resource(WorldRes(world.clone()));
         app.insert_resource(ChunkRulesRes(Box::new(Open { tiles })));
-        app.insert_resource(Knowledge::new(16));
         (app, world)
     }
 

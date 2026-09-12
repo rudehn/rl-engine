@@ -9,8 +9,12 @@
 //! While the player is in a place (see [`places`](crate::places)), the
 //! same readers read the place's bounded terrain instead, in the place's
 //! own coordinates, and the surface window waits untouched underneath.
-//! A game with no surface at all, a dungeon delve, inserts no world graph
-//! and starts the player in a place; nothing here minds.
+//!
+//! The surface owns everything regional, and it is optional. A game with
+//! no world graph, a dungeon delve, never names a region size:
+//! [`WorldMap::new`] takes the tile tables and nothing else, and how big
+//! a region is stays the world graph's business, read from it when the
+//! first window loads.
 
 use std::collections::BTreeMap;
 
@@ -52,6 +56,135 @@ struct Chunk {
     delta: Vec<(usize, TileId)>,
 }
 
+/// The streamed surface: the window of chunks around the player, and the
+/// edits of chunks that have left it.
+///
+/// Everything that counts in regions lives here, which is what keeps
+/// regions out of a delve's vocabulary: with no world graph nothing ever
+/// loads, and every method answers `None`.
+#[derive(Debug)]
+struct Surface {
+    /// Tiles per region, learned from the world graph the first time a
+    /// window loads. `None` until then, and forever in a delve.
+    region_size: Option<i32>,
+    window: Rect,
+    chunks: Vec<Option<Chunk>>,
+    deltas: BTreeMap<Point, Vec<(usize, TileId)>>,
+}
+
+impl Default for Surface {
+    fn default() -> Self {
+        Self { region_size: None, window: Rect::new(0, 0, 0, 0), chunks: Vec::new(), deltas: BTreeMap::new() }
+    }
+}
+
+impl Surface {
+    /// Whether a window has ever loaded. A window of nothing but ocean
+    /// still counts, so an all-unbuilt window is not reloaded every frame.
+    fn is_windowed(&self) -> bool {
+        !self.chunks.is_empty()
+    }
+
+    fn slot(&self, region: Point) -> Option<usize> {
+        self.window.contains(region).then(|| ((region.y - self.window.y) * self.window.width + (region.x - self.window.x)) as usize)
+    }
+
+    fn locate(&self, p: Point) -> Option<(usize, usize)> {
+        let s = self.region_size?;
+        let slot = self.slot(Point::new(p.x.div_euclid(s), p.y.div_euclid(s)))?;
+        let local = (p.y.rem_euclid(s) * s + p.x.rem_euclid(s)) as usize;
+        Some((slot, local))
+    }
+
+    fn tile(&self, p: Point) -> Option<TileId> {
+        let (slot, local) = self.locate(p)?;
+        self.chunks[slot].as_ref().map(|c| c.terrain.get_idx(local))
+    }
+
+    /// Writes a tile and records the edit, answering what was there, or
+    /// `None` if `p` is not loaded.
+    fn set_tile(&mut self, p: Point, id: TileId) -> Option<TileId> {
+        let (slot, local) = self.locate(p)?;
+        let chunk = self.chunks[slot].as_mut()?;
+        let was = chunk.terrain.get_idx(local);
+        if was != id {
+            chunk.terrain.set_idx(local, id);
+            chunk.delta.push((local, id));
+        }
+        Some(was)
+    }
+
+    fn is_loaded(&self, p: Point) -> bool {
+        self.locate(p).is_some_and(|(slot, _)| self.chunks[slot].is_some())
+    }
+
+    /// The window in world tiles; empty until one loads.
+    fn window_tiles(&self) -> Rect {
+        match self.region_size {
+            Some(s) => Rect::new(self.window.x * s, self.window.y * s, self.window.width * s, self.window.height * s),
+            None => Rect::new(0, 0, 0, 0),
+        }
+    }
+
+    /// Moves the window to cover `regions`, generating what is new and
+    /// dropping what left. Edits to dropped chunks are kept as deltas.
+    fn load(&mut self, regions: Rect, world: &WorldGraph, rules: &dyn ChunkRules) -> Result<Vec<Point>, rl_mapgen::BuildError> {
+        if regions == self.window && self.is_windowed() {
+            return Ok(Vec::new());
+        }
+        // The world graph is the only thing that knows how big a region
+        // is; nobody had to say so to build the map.
+        self.region_size = Some(world.region_size());
+        let mut next: Vec<Option<Chunk>> = Vec::with_capacity(regions.area().max(0) as usize);
+        let mut loaded = Vec::new();
+        for region in regions.cells() {
+            match self.slot(region).and_then(|slot| self.chunks[slot].take()) {
+                Some(chunk) => next.push(Some(chunk)),
+                None => {
+                    if !world.layers().contains(region) {
+                        next.push(None);
+                        continue;
+                    }
+                    let (mut terrain, _outputs): (rl_grid::Terrain, Outputs) = world.build_chunk(region, rules)?;
+                    let delta = self.deltas.remove(&region).unwrap_or_default();
+                    for (idx, id) in &delta {
+                        terrain.set_idx(*idx, *id);
+                    }
+                    next.push(Some(Chunk { terrain, delta }));
+                    loaded.push(region);
+                }
+            }
+        }
+        // Whatever was not taken has left the window.
+        let window = self.window;
+        for (slot, chunk) in self.chunks.drain(..).enumerate() {
+            if let Some(chunk) = chunk
+                && !chunk.delta.is_empty()
+            {
+                let region = window.origin() + Point::new(slot as i32 % window.width, slot as i32 / window.width);
+                self.deltas.insert(region, chunk.delta);
+            }
+        }
+        self.window = regions;
+        self.chunks = next;
+        Ok(loaded)
+    }
+
+    /// Every edit, from chunks in the window and out of it alike.
+    fn edits(&self) -> Vec<(Point, Vec<(usize, TileId)>)> {
+        let mut deltas: Vec<(Point, Vec<(usize, TileId)>)> = self.deltas.iter().map(|(r, d)| (*r, d.clone())).collect();
+        for (slot, chunk) in self.chunks.iter().enumerate() {
+            if let Some(chunk) = chunk
+                && !chunk.delta.is_empty()
+            {
+                let region = self.window.origin() + Point::new(slot as i32 % self.window.width, slot as i32 / self.window.width);
+                deltas.push((region, chunk.delta.clone()));
+            }
+        }
+        deltas
+    }
+}
+
 /// A built place, kept whole.
 #[derive(Debug)]
 pub struct PlaceMap {
@@ -65,38 +198,28 @@ pub struct PlaceMap {
     pub spots: Vec<Spot>,
 }
 
-/// Every loaded chunk, addressable in world tile coordinates, and every
-/// built place, one of which may be the map being read instead.
+/// The map every reader reads: the streamed surface, when the game has
+/// one, and every built place, one of which may be the current map.
 #[derive(Resource, Debug)]
 pub struct WorldMap {
-    region_size: i32,
-    window: Rect,
-    chunks: Vec<Option<Chunk>>,
-    deltas: BTreeMap<Point, Vec<(usize, TileId)>>,
     tables: TileTables,
-    /// Bumped every time the window moves, so viewsheds know to recompute.
+    /// Bumped every time the window moves or the current map changes, so
+    /// viewsheds know to recompute.
     generation: u64,
     /// Bumped every time an edit changes what blocks sight, so viewsheds
     /// and light know to recompute without anyone moving.
     opacity_epoch: u64,
     current: MapId,
+    surface: Surface,
     places: BTreeMap<MapId, PlaceMap>,
 }
 
 impl WorldMap {
-    /// An empty map with no window loaded.
-    pub fn new(region_size: i32, tables: TileTables) -> Self {
-        Self {
-            region_size,
-            window: Rect::new(0, 0, 0, 0),
-            chunks: Vec::new(),
-            deltas: BTreeMap::new(),
-            tables,
-            generation: 0,
-            opacity_epoch: 0,
-            current: MapId::SURFACE,
-            places: BTreeMap::new(),
-        }
+    /// An empty map: nothing streamed, no place built. A game with a
+    /// world graph gets its surface on the first stream, region size and
+    /// all; a delve never gets one and never asks for one.
+    pub fn new(tables: TileTables) -> Self {
+        Self { tables, generation: 0, opacity_epoch: 0, current: MapId::SURFACE, surface: Surface::default(), places: BTreeMap::new() }
     }
 
     /// The map every reader reads right now.
@@ -138,27 +261,22 @@ impl WorldMap {
         true
     }
 
-    /// Tiles per region.
-    pub fn region_size(&self) -> i32 {
-        self.region_size
-    }
-
-    /// The loaded window, in regions.
+    /// The loaded surface window, in regions. Empty in a game that
+    /// streams nothing.
     pub fn window(&self) -> Rect {
-        self.window
+        self.surface.window
     }
 
     /// The loaded window, in world tiles; a place's whole bounds while
     /// the player is in one.
     pub fn window_tiles(&self) -> Rect {
-        if let Some(place) = self.active_place() {
-            return place.terrain.bounds();
+        match self.active_place() {
+            Some(place) => place.terrain.bounds(),
+            None => self.surface.window_tiles(),
         }
-        let s = self.region_size;
-        Rect::new(self.window.x * s, self.window.y * s, self.window.width * s, self.window.height * s)
     }
 
-    /// Changes whenever the window moves.
+    /// Changes whenever the window moves or the current map changes.
     pub fn generation(&self) -> u64 {
         self.generation
     }
@@ -173,59 +291,31 @@ impl WorldMap {
         &self.tables
     }
 
-    /// The region a world tile lies in.
-    pub fn region_of(&self, p: Point) -> Point {
-        Point::new(p.x.div_euclid(self.region_size), p.y.div_euclid(self.region_size))
-    }
-
-    fn chunk_slot(&self, region: Point) -> Option<usize> {
-        self.window.contains(region).then(|| ((region.y - self.window.y) * self.window.width + (region.x - self.window.x)) as usize)
-    }
-
-    fn locate(&self, p: Point) -> Option<(usize, usize)> {
-        let region = self.region_of(p);
-        let slot = self.chunk_slot(region)?;
-        let s = self.region_size;
-        let local = (p.y.rem_euclid(s) * s + p.x.rem_euclid(s)) as usize;
-        Some((slot, local))
-    }
-
-    /// The tile at world `p`, or `None` outside the loaded window.
+    /// The tile at `p`, or `None` outside the current map.
     pub fn tile(&self, p: Point) -> Option<TileId> {
-        if let Some(place) = self.active_place() {
-            return place.terrain.get(p);
+        match self.active_place() {
+            Some(place) => place.terrain.get(p),
+            None => self.surface.tile(p),
         }
-        let (slot, local) = self.locate(p)?;
-        self.chunks[slot].as_ref().map(|c| c.terrain.get_idx(local))
     }
 
-    /// Sets the tile at world `p`, recording the edit so it survives the
-    /// chunk being unloaded. Returns whether `p` was loaded.
+    /// Sets the tile at `p`, recording a surface edit so it survives the
+    /// chunk being unloaded. Returns whether `p` was there to write.
     pub fn set_tile(&mut self, p: Point, id: TileId) -> bool {
-        let opaque = |t: TileId| self.tables.opaque[t.index()];
-        let flips = |was: Option<TileId>| was.is_some_and(|w| opaque(w) != opaque(id));
-        if !self.current.is_surface() {
+        let was = if self.current.is_surface() {
+            self.surface.set_tile(p, id)
+        } else {
             let Some(place) = self.places.get_mut(&self.current) else { return false };
             let was = place.terrain.get(p);
             if !place.terrain.set(p, id) {
                 return false;
             }
-            if flips(was) {
-                self.opacity_epoch += 1;
-            }
-            return true;
-        }
-        let Some((slot, local)) = self.locate(p) else { return false };
-        let Some(chunk) = self.chunks[slot].as_mut() else { return false };
-        let was = chunk.terrain.get_idx(local);
-        if was == id {
-            return true;
-        }
-        chunk.terrain.set_idx(local, id);
-        if flips(Some(was)) {
+            was
+        };
+        let Some(was) = was else { return false };
+        if self.tables.opaque[was.index()] != self.tables.opaque[id.index()] {
             self.opacity_epoch += 1;
         }
-        chunk.delta.push((local, id));
         true
     }
 
@@ -250,12 +340,12 @@ impl WorldMap {
         self.tables.walkable[t.index()].then(|| self.tables.move_cost[t.index()])
     }
 
-    /// Whether `p` is inside the loaded window.
+    /// Whether `p` is inside the current map.
     pub fn is_loaded(&self, p: Point) -> bool {
-        if let Some(place) = self.active_place() {
-            return place.terrain.bounds().contains(p);
+        match self.active_place() {
+            Some(place) => place.terrain.bounds().contains(p),
+            None => self.surface.is_loaded(p),
         }
-        self.locate(p).is_some_and(|(slot, _)| self.chunks[slot].is_some())
     }
 
     /// World coordinates of window-local `local`.
@@ -275,48 +365,10 @@ impl WorldMap {
         WindowView { map: self }
     }
 
-    /// Moves the window to cover `regions`, generating what is new and
-    /// dropping what left. Edits to dropped chunks are kept as deltas.
+    /// Moves the surface window to cover `regions`, generating what is
+    /// new and dropping what left. The region size comes from `world`.
     pub fn load_window(&mut self, regions: Rect, world: &WorldGraph, rules: &dyn ChunkRules) -> Result<Vec<Point>, rl_mapgen::BuildError> {
-        if regions == self.window && !self.chunks.is_empty() {
-            return Ok(Vec::new());
-        }
-        let mut next: Vec<Option<Chunk>> = Vec::with_capacity(regions.area().max(0) as usize);
-        let mut loaded = Vec::new();
-        let mut kept = 0;
-        for region in regions.cells() {
-            match self.chunk_slot(region).and_then(|slot| self.chunks[slot].take()) {
-                Some(chunk) => {
-                    kept += 1;
-                    next.push(Some(chunk));
-                }
-                None => {
-                    if !world.layers().contains(region) {
-                        next.push(None);
-                        continue;
-                    }
-                    let (mut terrain, _outputs): (rl_grid::Terrain, Outputs) = world.build_chunk(region, rules)?;
-                    let delta = self.deltas.remove(&region).unwrap_or_default();
-                    for (idx, id) in &delta {
-                        terrain.set_idx(*idx, *id);
-                    }
-                    next.push(Some(Chunk { terrain, delta }));
-                    loaded.push(region);
-                }
-            }
-        }
-        // Whatever was not taken has left the window.
-        for (slot, chunk) in self.chunks.drain(..).enumerate() {
-            if let Some(chunk) = chunk
-                && !chunk.delta.is_empty()
-            {
-                let region = self.window.origin() + Point::new(slot as i32 % self.window.width, slot as i32 / self.window.width);
-                self.deltas.insert(region, chunk.delta);
-            }
-        }
-        let _ = kept;
-        self.window = regions;
-        self.chunks = next;
+        let loaded = self.surface.load(regions, world, rules)?;
         self.generation += 1;
         Ok(loaded)
     }
@@ -324,27 +376,16 @@ impl WorldMap {
     /// Every edit to the surface, loaded chunks included, and every built
     /// place, for saving.
     pub fn export(&self) -> WorldMapSave {
-        let mut deltas: Vec<(Point, Vec<(usize, TileId)>)> = self.deltas.iter().map(|(r, d)| (*r, d.clone())).collect();
-        for (slot, chunk) in self.chunks.iter().enumerate() {
-            if let Some(chunk) = chunk
-                && !chunk.delta.is_empty()
-            {
-                let region = self.window.origin() + Point::new(slot as i32 % self.window.width, slot as i32 / self.window.width);
-                deltas.push((region, chunk.delta.clone()));
-            }
-        }
         let places =
             self.places.iter().map(|(id, p)| (*id, PlaceSave { terrain: p.terrain.clone(), entry: p.entry, exit: p.exit, spots: p.spots.clone() })).collect();
-        WorldMapSave { current: self.current, deltas, places }
+        WorldMapSave { current: self.current, deltas: self.surface.edits(), places }
     }
 
     /// Restores edits and places from a save and switches to its current
     /// map. Loaded chunks are dropped so the next stream replays the
     /// edits onto fresh generation.
     pub fn import(&mut self, save: WorldMapSave) {
-        self.chunks.clear();
-        self.window = Rect::new(0, 0, 0, 0);
-        self.deltas = save.deltas.into_iter().collect();
+        self.surface = Surface { deltas: save.deltas.into_iter().collect(), ..Surface::default() };
         self.places = save.places.into_iter().map(|(id, p)| (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots })).collect();
         self.current = MapId::SURFACE;
         self.switch_to(save.current);
@@ -353,12 +394,12 @@ impl WorldMap {
 
     /// Number of regions currently loaded.
     pub fn loaded_count(&self) -> usize {
-        self.chunks.iter().filter(|c| c.is_some()).count()
+        self.surface.chunks.iter().filter(|c| c.is_some()).count()
     }
 
     /// Number of unloaded regions with edits kept.
     pub fn stored_deltas(&self) -> usize {
-        self.deltas.len()
+        self.surface.deltas.len()
     }
 }
 
@@ -460,9 +501,8 @@ pub fn stream_chunks(
     if !map.current().is_surface() {
         return;
     }
-    let region = map.region_of(pos.0);
-    let wanted = desired_window(region, settings.window_radius, &world);
-    if wanted == map.window() && !map.chunks.is_empty() {
+    let wanted = desired_window(world.region_of_tile(pos.0), settings.window_radius, &world);
+    if wanted == map.window() && map.surface.is_windowed() {
         return;
     }
     match map.load_window(wanted, &world, rules.0.as_ref()) {

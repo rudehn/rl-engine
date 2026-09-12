@@ -21,7 +21,9 @@ use crate::places::Entrances;
 
 /// Bump when the shape below changes so an old save would parse wrongly.
 // v1: the first shape.
-pub const VERSION: u32 = 1;
+// v2: the engine's knowledge keeps its own bucket size and records the
+//     surface regions seen, rather than taking the world's region size.
+pub const VERSION: u32 = 2;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "corsair";

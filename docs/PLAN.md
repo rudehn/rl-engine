@@ -44,6 +44,14 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   The delve turns lighting on (grey daylight in the Maw, darkness below, a brand, glowing bile, beasts' glow and dark sight from RON, `--floor`); Corsair's surface is daylit and its caves dark, with the player's lantern lit on the way down and lanterns on cutthroats and marines from RON; Lamplight gains fungus, pools and flames.
   Found on the way: Lamplight's `h` toggled the heat map before movement read it, so walking west with `h` never worked; the heat map is on `v` now.
   Nate, 2026-09-11: "I want the lighting to look like this screenshot", a Brogue screenshot.
+- 2026-09-11: the crate layout follows its own rule, and places leave the overworld.
+  `rl-content`, `rl-events`, `rl-ai` and `rl-tools` become the `content`, `events`, `ai` and `balance` modules of `rl-rules`: boundaries are drawn on dependency weight (section 4), and all five weighed the same, core and grid and serde and ron.
+  Every item is re-exported at the crate root, so a path loses a crate and gains a module at most.
+  `rl-test-support` is deleted rather than kept: nothing had used it in six milestones, `rl-grid` already carries its own ASCII fixtures, and the seed loops already name the seed they failed on.
+  `WorldMap::new` takes the tile tables alone; the streamed surface is an inner part that learns its region size from the world graph on the first load, and `Knowledge` needs no construction at all.
+  A delve now names no region size anywhere.
+  Found on the way: the overworld's fog read the explored tiles of whatever map was current, so a player underground saw a cave's buckets drawn as surface regions; the regions seen are now recorded apart from the per-map tiles, and the places test asserts it.
+  Nate, 2026-09-11: the architecture review's crate-layout and region-size findings.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

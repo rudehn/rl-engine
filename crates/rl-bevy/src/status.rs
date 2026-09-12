@@ -10,8 +10,8 @@
 //! Opt-in: a game that inserts no [`StatusRules`] pays nothing.
 
 use bevy::prelude::*;
-use rl_rules::Registry;
 use rl_core::Id;
+use rl_rules::Registry;
 use rl_rules::{Hit, Stats, StatusDef, StatusId, Statuses};
 
 use crate::combat::DamageEvent;
@@ -150,7 +150,6 @@ mod tests {
     use super::*;
     use crate::combat::{Armor, CombatRng, CombatRules, DamageStages, Health};
     use crate::components::{Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    use crate::knowledge::Knowledge;
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::{Action, Intent, Turns};
@@ -206,10 +205,9 @@ mod tests {
         ])
         .unwrap();
         let (venom, hearty) = (defs.expect("venom"), defs.expect("hearty"));
-        app.insert_resource(WorldMap::new(16, tiles.tables()));
+        app.insert_resource(WorldMap::new(tiles.tables()));
         app.insert_resource(WorldRes(world));
         app.insert_resource(ChunkRulesRes(Box::new(Open(tiles))));
-        app.insert_resource(Knowledge::new(16));
         app.insert_resource(CombatRules { kinds, factions: Factions::new(&facs) });
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
         app.insert_resource(CombatRng::for_run(RunSeed(5)));

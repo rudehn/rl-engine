@@ -19,15 +19,15 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use rand::Rng;
-use rl_engine::rl_rules::Brain;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_core::{DiceRoll, Direction, Grid2D, Id, Point, Rect, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_grid::Rgb;
 use rl_engine::rl_render::{CapturePlugin, Glyph, MapView, MapViewPlugin, TerminalPlugin, capture};
+use rl_engine::rl_rules::Brain;
+use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_rules::{Factions, Relation};
 use rl_engine::rl_ui::{ChromeLayout, ChromePlugin, LogCategory, MessageLog, StatusLine};
 use serde::Deserialize;
@@ -178,8 +178,7 @@ fn start(
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(CombatRng::for_run(seed.0));
     commands.insert_resource(whale.appearance());
-    commands.insert_resource(WorldMap::new(64, whale.tiles().tables()));
-    commands.insert_resource(Knowledge::new(64));
+    commands.insert_resource(WorldMap::new(whale.tiles().tables()));
     commands.insert_resource(Bile(whale.bile()));
     commands.insert_resource(PlaceRulesRes(Box::new(whale)));
     // The lights go off; each floor sets its own ambient as it is entered.

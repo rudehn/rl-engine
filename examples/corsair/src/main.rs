@@ -182,7 +182,6 @@ fn start_world(world: &mut World) {
 
     let town = graph.sites().iter().find(|s| s.kind == PORT).expect("a world with a town");
     let spawn = graph.region_tiles(town.position).center();
-    let region_size = graph.region_size();
 
     let (bestiary, rules) = monsters::Bestiary::load(seed, town.position);
     let armory = Armory::load(seed, town.position, &bestiary.kinds);
@@ -201,8 +200,7 @@ fn start_world(world: &mut World) {
     world.insert_resource(CombatRng::for_run(seed));
     world.insert_resource(content.tile_appearance());
     world.insert_resource(content.band_appearance());
-    world.insert_resource(WorldMap::new(region_size, content.tiles().tables()));
-    world.insert_resource(Knowledge::new(region_size));
+    world.insert_resource(WorldMap::new(content.tiles().tables()));
     world.insert_resource(Lighting::new(places::daylight()));
     world.insert_resource(WorldRes(graph));
     world.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));

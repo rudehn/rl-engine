@@ -253,16 +253,15 @@ pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: 
 mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, Player, RevealsMap, Speed, Viewshed};
-    use crate::knowledge::Knowledge;
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::Turns;
     use crate::world::{ChunkRulesRes, WorldMap, WorldRes};
-    use rl_rules::Registry;
     use rl_core::{Point, RunSeed};
     use rl_grid::{TileId, TileRegistry};
     use rl_mapgen::Chain;
     use rl_mapgen::passes::Fill;
+    use rl_rules::Registry;
     use rl_rules::SlotDef;
     use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, Surroundings, WorldConfig, WorldGraph, WorldRules};
 
@@ -305,10 +304,9 @@ mod tests {
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
         let start = world.tile_origin(region).offset(8, 8);
-        app.insert_resource(WorldMap::new(16, tiles.tables()));
+        app.insert_resource(WorldMap::new(tiles.tables()));
         app.insert_resource(WorldRes(world));
         app.insert_resource(ChunkRulesRes(Box::new(Open(tiles))));
-        app.insert_resource(Knowledge::new(16));
         let slots = Registry::from_defs(vec![SlotDef::new("main"), SlotDef::new("off")]).unwrap();
         let (main, off) = (slots.expect("main"), slots.expect("off"));
         let player = app

@@ -333,8 +333,7 @@ mod tests {
             let mut app = headless_app();
             let tiles = TileRegistry::standard();
             let wall = tiles.expect("wall");
-            app.insert_resource(WorldMap::new(64, tiles.tables()));
-            app.insert_resource(Knowledge::new(64));
+            app.insert_resource(WorldMap::new(tiles.tables()));
             app.insert_resource(PlaceRulesRes(Box::new(Room(tiles))));
             if let Some(l) = lighting {
                 app.insert_resource(l);

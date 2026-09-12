@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after the crate merge.
+Last updated: 2026-09-11, after the crate merge and the region-free map.
 
 ## The shape
 
@@ -85,7 +85,8 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - Combat: health, armor, resists, factions, melee and ranged attacks down a line of fire, extra strikes, the damage event pipeline, deaths that linger until the frame ends, flow fields per movement profile feeding the minds.
 - Items on the ground, in bags and in slots, with stacks and enchantments.
 - Places: bounded maps entered by transitions or warps, built on first arrival, kept whole, off-map actors frozen; `PlaceBuild::from_context` reads a finished chain; `WarpRequest::into_place` starts a run in one.
-- The surface is optional: a game with no world graph streams nothing and lives in its places.
+- The surface is optional, and everything regional belongs to it: `WorldMap::new` takes the tile tables alone, the region size is read from the world graph when the first window loads, and `Knowledge` is initialised by the engine. A delve names neither.
+- Knowledge: explored tiles per map in buckets of its own, and the surface's seen regions and discovered sites kept apart from them, so going underground never hides the overworld's fog.
 - Statuses ticked by the turn through the damage pipeline.
 - Lighting, opt-in by inserting `Lighting`: `LightSource` on a prop, an actor or an item, shed from the carrier once carried; static and dynamic layers recast only when their sources change; the map's `opacity_epoch` so an edit that changes what blocks sight refreshes light and every viewshed without anyone moving; `DarkSight`; `Fuel` ticked by the turn with `LightEvent::BurntOut`; the viewshed keeps its geometric `line` and its seen `visible`, and minds perceive along a line only what is lit, within their dark sight or adjacent.
 - Facts fed to quests and counters after the frame.

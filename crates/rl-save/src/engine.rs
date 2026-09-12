@@ -101,10 +101,9 @@ mod tests {
         let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
         let start = world.tile_origin(region).offset(8, 8);
-        app.insert_resource(WorldMap::new(16, tiles.tables()));
+        app.insert_resource(WorldMap::new(tiles.tables()));
         app.insert_resource(WorldRes(world));
         app.insert_resource(ChunkRulesRes(Box::new(Open(tiles))));
-        app.insert_resource(Knowledge::new(16));
         (app, start)
     }
 

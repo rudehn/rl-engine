@@ -11,11 +11,11 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rand::rngs::StdRng;
-use rl_rules::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx};
-use rl_rules::Registry;
 use rl_core::{DiceRoll, Direction, Point, RunSeed, SeedDomain, geometry};
 use rl_grid::{DijkstraMap, PathRules};
+use rl_rules::Registry;
 use rl_rules::damage::{DamageKind, DamageKindId, Defender};
+use rl_rules::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx};
 use rl_rules::{DamageStage, Factions, Hit, Resistances};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
@@ -430,10 +430,10 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::world::{ChunkRulesRes, WorldRes};
-    use rl_rules::ai::tactics::{Hunt, MeleeAdjacent};
     use rl_grid::{TileId, TileRegistry};
     use rl_mapgen::Chain;
     use rl_mapgen::passes::Fill;
+    use rl_rules::ai::tactics::{Hunt, MeleeAdjacent};
     use rl_rules::damage::SubtractArmor;
     use rl_rules::faction::FactionDef;
     use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, Surroundings, WorldConfig, WorldGraph, WorldRules};
@@ -474,10 +474,9 @@ mod tests {
         let facs = Registry::from_defs(vec![FactionDef { name: "us".into() }, FactionDef { name: "them".into() }]).unwrap();
         let mut factions = Factions::new(&facs);
         factions.set_mutual(facs.expect("us"), facs.expect("them"), rl_rules::Relation::Hostile);
-        app.insert_resource(WorldMap::new(16, tiles.tables()));
+        app.insert_resource(WorldMap::new(tiles.tables()));
         app.insert_resource(WorldRes(world));
         app.insert_resource(ChunkRulesRes(Box::new(Open(tiles))));
-        app.insert_resource(crate::knowledge::Knowledge::new(16));
         app.insert_resource(CombatRules { kinds, factions });
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
         app.insert_resource(CombatRng::for_run(RunSeed(5)));
