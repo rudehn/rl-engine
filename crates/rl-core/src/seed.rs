@@ -74,9 +74,11 @@ impl RunSeed {
     ///
     /// Either source alone has a degenerate case: a coarse or frozen clock
     /// repeats between two quick restarts, and a counter alone repeats across
-    /// processes. Together they do not. Not available on wasm, which has no
-    /// `SystemTime`; the Bevy layer reads the browser clock and calls
-    /// [`RunSeed::from_entropy`].
+    /// processes. Together they do not. Not compiled on wasm, which has no
+    /// `SystemTime`: a game there reads whatever clock its host offers and
+    /// passes the reading to [`RunSeed::from_entropy`]. That is why the
+    /// constructor takes a reading rather than taking one itself, and it is
+    /// the same reason no engine crate seeds a generator from entropy.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn fresh() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
