@@ -75,6 +75,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt, wander and use-ability tactics. The ability tactic scores a footprint by what the ability's `Aim` wants under it, so a mind fires something it cannot understand and never learns the theme.
 - `events`: facts with kind, subject, object and amount, matchers, a ledger of named counters, and quests as objectives over facts with prerequisite chains and a victory flag.
 - `balance`: threat scoring and the spawn-band report.
+- `ai::awareness`: `NoticeStats` (a certain radius, a chance beyond it, a light bonus and a memory) and `StealthStats`, the pure `notices` roll, and `Awareness`, which goes `Unaware` to `Alert` on a sighting and back once its memory runs out; plus the `SearchLastKnown` tactic, which walks to where an enemy was last seen.
 - `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, and an `Outlook` read off the two counts. Pure, so an inspect panel's numbers cannot drift from the fight.
 
 ## Tier 2: the Bevy layer
@@ -95,6 +96,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - The surface is optional, and everything regional belongs to it: `WorldMap::new` takes the tile tables alone, the region size is read from the world graph when the first window loads, and `Knowledge` is initialised by the engine. A delve names neither.
 - Knowledge: explored tiles per map in buckets of its own, and the surface's seen regions and discovered sites kept apart from them, so going underground never hides the overworld's fog.
 - Statuses ticked by the turn through the damage pipeline.
+- Stealth, opt-in by adding `StealthPlugin`: `Notice` on observers and `Stealth` on subjects, `Aware` remembering who has noticed whom, a roll to notice in `DecideSet::Notice` for the actor about to decide, waking on a blow in `TurnSet::React`, and a `Noticed` message on the flip; the minds act only on hiders they have noticed, search where they last saw them, and never descend a flow field toward a player they have not seen.
 - Lighting, opt-in by inserting `Lighting`: `LightSource` on a prop, an actor or an item, shed from the carrier once carried; static and dynamic layers recast only when their sources change; the map's `opacity_epoch` so an edit that changes what blocks sight refreshes light and every viewshed without anyone moving; `DarkSight`; `Fuel` ticked by the turn with `LightEvent::BurntOut`; the viewshed keeps its geometric `line` and its seen `visible`, and minds perceive along a line only what is lit, within their dark sight or adjacent.
 - Facts fed to quests and counters after the frame.
 - Save exports for the scheduler, the world's edits and places, and knowledge.
@@ -126,6 +128,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
   It opens on the nearest thing the ability's `Aim` wants, which is the choice a mind's tactic would make, previews the footprint with the same call the resolver will make, and writes the `Use` intent on confirm.
   An ability that wants no cursor is used at once, so a game binds every ability the same way.
   The overlay repaints the backgrounds the map already drew, keeping every glyph: the cells hit, the flight to them, and the whole footprint in the bad tone with the reason in the banner when the resolver would refuse.
+- Awareness on the panels: `Row::aware` says whether each actor in sight has noticed the player, the rail mutes the ones that have not and marks the ones that have, and `VitalsView::seen` reads hidden or seen.
 - `Modals`: a stack of interned modal ids with `modal_is`, `modal_open` and `no_modal` run conditions, so one gate covers every screen a game adds.
 - `DirectionKeys`: arrows, vi keys and the numpad to the eight directions, in one resource a game may replace.
 - A message log carrying a tone per line, folding a repeat into a count, filterable by tone.
@@ -172,6 +175,7 @@ One dark cave: a lantern that burns oil and is lit or doused with a use action, 
 
 Five floors of a beached leviathan, mouth to heart, with no surface and, below the Maw's grey daylight, no light but a brand, the bile and whatever a beast sheds: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
 `floors.rs` is the whole map builder; it is the test that a dungeon delve is first-class.
+Its beasts notice from RON and the player is quiet, so smothering the brand with shift and `L` is a way past a salt ghost rather than only a way to see less.
 
 ## The worked example: Corsair
 

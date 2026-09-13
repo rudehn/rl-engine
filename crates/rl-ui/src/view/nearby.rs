@@ -85,6 +85,8 @@ pub struct Around<'w, 's> {
     rules: Res<'w, CombatRules>,
     player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed, Option<&'static Faction>), With<Player>>,
     seen: Query<'w, 's, Seen, Without<Dead>>,
+    aware: Query<'w, 's, &'static Aware>,
+    stealth: StealthRunning<'w>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed.
@@ -103,6 +105,9 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
             (Some(mine), Some(theirs)) => Some(around.rules.factions.relation(mine.0, theirs.0)),
             _ => None,
         };
+        if is_actor && around.stealth.get() {
+            row.aware = around.aware.get(entity).ok().map(|a| a.knows(me));
+        }
         if is_actor { view.actors.push(row) } else { view.things.push(row) }
     }
     // Nearest first, then by name, so a row does not jump between two of
@@ -147,6 +152,33 @@ mod tests {
         assert_eq!(view.things[0].label, "a coin");
         assert_eq!(view.things[0].health, None);
         assert_eq!(view.threats(), 2);
+    }
+
+    #[test]
+    fn a_row_says_whether_it_has_noticed_the_player_only_when_stealth_is_running() {
+        let mut stage = Stage::new((NearbyViewPlugin, rl_bevy::StealthPlugin));
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Stealth::default());
+        let hunting = stage.actor("hunting", 'h', 2, 0);
+        let idle = stage.actor("idle", 'i', 3, 0);
+        let blunt = stage.actor("blunt", 'b', 4, 0);
+        for watcher in [hunting, idle] {
+            stage.app.world_mut().entity_mut(watcher).insert(Notice(rl_rules::NoticeStats { certain: 1, chance_pct: 0, lit_bonus: 0, memory: 6 }));
+        }
+        let at = stage.at;
+        stage.app.world_mut().get_mut::<Aware>(hunting).unwrap().0.insert(player, rl_rules::Awareness::Alert { at, stale_turns: 0 });
+        stage.tick();
+
+        let view = stage.app.world().resource::<NearbyView>();
+        let aware = |e: Entity| view.actors.iter().find(|r| r.entity == e).map(|r| r.aware);
+        assert_eq!(aware(hunting), Some(Some(true)));
+        assert_eq!(aware(idle), Some(Some(false)));
+        assert_eq!(aware(blunt), Some(None), "something with no Notice sees on sight and says nothing");
+
+        let mut plain = Stage::new(NearbyViewPlugin);
+        plain.actor("anyone", 'a', 2, 0);
+        plain.tick();
+        assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].aware, None, "no stealth, no reading");
     }
 
     #[test]

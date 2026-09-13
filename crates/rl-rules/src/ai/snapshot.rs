@@ -40,12 +40,16 @@ pub struct Snapshot<A: Copy> {
     /// The abilities it could use this turn, already narrowed to what it
     /// can afford. Empty for an actor with none, which is most of them.
     pub usable: Vec<Usable>,
+    /// Where the freshest enemy it knows about but cannot see was last
+    /// seen: what a search walks toward. `None` for an actor that is
+    /// tracking nothing, and always `None` in a game without stealth.
+    pub last_known: Option<Point>,
 }
 
 impl<A: Copy> Snapshot<A> {
     /// A snapshot with nothing in sight.
     pub fn alone(me: ActorView<A>) -> Self {
-        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None, usable: Vec::new() }
+        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None, usable: Vec::new(), last_known: None }
     }
 
     /// Sorts enemies and allies nearest first, ties by position, so two

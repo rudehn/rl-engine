@@ -101,6 +101,11 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
         terminal.print_on(rect.x, y, &clip(&view.label, rect.width as usize), palette.get(Tones::TITLE), bg);
         y += 1;
     }
+    // A one-row strip keeps everything on the same line.
+    if rect.height == 1 {
+        draw_line(&mut terminal, rect, &view, &layout, &palette);
+        return;
+    }
     for gauge in &view.bars {
         if y >= bottom {
             break;
@@ -111,19 +116,19 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
         if bar_x + layout.bar_width < rect.right() {
             bar(&mut terminal, bar_x, y, layout.bar_width, gauge.fraction(), gauge.tone, &palette);
         }
-        // A one-row strip keeps everything on the same line.
-        if rect.height > 1 {
-            y += 1;
-        } else {
-            let after = bar_x + layout.bar_width + 2;
-            draw_tail(&mut terminal, rect, y, after, &view, &layout, &palette);
-            return;
-        }
+        y += 1;
     }
     if let Some(armor) = view.armor
         && y < bottom
     {
         terminal.print_on(rect.x, y, &format!("armor {armor}"), text, bg);
+        y += 1;
+    }
+    if let Some(seen) = view.seen
+        && y < bottom
+    {
+        let (word, tone) = if seen { ("seen", Tones::BAD) } else { ("hidden", Tones::GOOD) };
+        terminal.print_on(rect.x, y, word, palette.get(tone), bg);
         y += 1;
     }
     if !view.badges.is_empty() && y < bottom {
@@ -148,31 +153,76 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
     }
 }
 
-/// The rest of a one-row strip, after the health bar.
-fn draw_tail(terminal: &mut Terminal, rect: Rect, y: i32, x: i32, view: &VitalsView, layout: &VitalsLayout, palette: &Palette) {
+/// One thing on a one-row strip.
+enum Part {
+    /// A reading and its gauge.
+    Gauge(String, f32, crate::tone::ToneId),
+    /// Plain text in a colour.
+    Text(String, bevy::prelude::Color),
+}
+
+impl Part {
+    fn width(&self, bar_width: i32) -> i32 {
+        match self {
+            Part::Gauge(reading, _, _) => reading.chars().count() as i32 + 1 + bar_width,
+            Part::Text(text, _) => text.chars().count() as i32,
+        }
+    }
+}
+
+/// A one-row strip: every bar, then armor, badges, facets and the
+/// whereabouts, in that order, with the hints at the right.
+///
+/// Bars and everything else follow one rule: each is drawn whole, in
+/// order, until the next would not fit before the hints, and then nothing
+/// more. So a bar a game pushed is never silently dropped while there is
+/// room for it, and nothing later jumps ahead of something that did not
+/// fit. The first bar is the exception, clipped rather than dropped, so a
+/// strip too narrow for health still says something.
+fn draw_line(terminal: &mut Terminal, rect: Rect, view: &VitalsView, layout: &VitalsLayout, palette: &Palette) {
     let bg = palette.get(Tones::SURFACE);
-    let mut parts: Vec<(String, bevy::prelude::Color)> = Vec::new();
+    let mut parts: Vec<Part> = Vec::new();
+    for gauge in &view.bars {
+        parts.push(Part::Gauge(format!("{} {}/{}", gauge.label, gauge.value, gauge.max), gauge.fraction(), gauge.tone));
+    }
     if let Some(armor) = view.armor {
-        parts.push((format!("armor {armor}"), palette.get(Tones::TEXT)));
+        parts.push(Part::Text(format!("armor {armor}"), palette.get(Tones::TEXT)));
+    }
+    if let Some(seen) = view.seen {
+        let (word, tone) = if seen { ("seen", Tones::BAD) } else { ("hidden", Tones::GOOD) };
+        parts.push(Part::Text(word.into(), palette.get(tone)));
     }
     if !view.badges.is_empty() {
-        parts.push((view.badges.iter().map(|b| b.text.as_str()).collect(), palette.get(Tones::NOTICE)));
+        parts.push(Part::Text(view.badges.iter().map(|b| b.text.as_str()).collect(), palette.get(Tones::NOTICE)));
     }
     for facet in &view.facets {
-        parts.push((facet.text.clone(), palette.get(facet.tone)));
+        parts.push(Part::Text(facet.text.clone(), palette.get(facet.tone)));
     }
     if layout.show_whereabouts {
-        parts.push((format!("turn {}  ({}, {})", view.turn, view.position.x, view.position.y), palette.get(Tones::MUTED)));
+        parts.push(Part::Text(format!("turn {}  ({}, {})", view.turn, view.position.x, view.position.y), palette.get(Tones::MUTED)));
     }
+
     let hints = layout.hints.chars().count() as i32;
     let limit = rect.right() - if hints > 0 { hints + 2 } else { 0 };
-    let mut x = x;
-    for (text, color) in parts {
-        let width = text.chars().count() as i32;
+    let y = rect.y;
+    let mut x = rect.x;
+    for (i, part) in parts.iter().enumerate() {
+        let width = part.width(layout.bar_width);
         if x + width > limit {
+            if i == 0
+                && let Part::Gauge(reading, _, _) = part
+            {
+                terminal.print_on(x, y, &clip(reading, (limit - x).max(0) as usize), palette.get(Tones::TEXT), bg);
+            }
             break;
         }
-        terminal.print_on(x, y, &text, color, bg);
+        match part {
+            Part::Gauge(reading, fraction, tone) => {
+                terminal.print_on(x, y, reading, palette.get(Tones::TEXT), bg);
+                bar(terminal, x + 1 + reading.chars().count() as i32, y, layout.bar_width, *fraction, *tone, palette);
+            }
+            Part::Text(text, color) => terminal.print_on(x, y, text, *color, bg),
+        }
         x += width + 2;
     }
     if hints > 0 {
@@ -207,6 +257,22 @@ mod tests {
     }
 
     #[test]
+    fn a_player_that_can_hide_is_told_whether_it_has_been_seen() {
+        let mut stage = Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), rl_bevy::StealthPlugin)).screen(24, 8);
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(rl_bevy::Stealth::default());
+        stage.tick();
+        assert!(stage.rows().contains(&"hidden".to_string()), "nothing has noticed it: {:?}", stage.rows());
+
+        let guard = stage.actor("guard", 'g', 2, 0);
+        stage.app.world_mut().entity_mut(guard).insert(rl_bevy::Notice::default());
+        let at = stage.at;
+        stage.app.world_mut().get_mut::<rl_bevy::Aware>(guard).unwrap().0.insert(player, rl_rules::Awareness::Alert { at, stale_turns: 0 });
+        stage.tick();
+        assert!(stage.rows().contains(&"seen".to_string()), "a guard has: {:?}", stage.rows());
+    }
+
+    #[test]
     fn a_facet_a_game_pushed_is_drawn_in_the_tone_it_asked_for() {
         let mut stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 24, 6))).screen(24, 6);
         stage.app.add_systems(
@@ -222,5 +288,47 @@ mod tests {
         let cell = stage.app.world().resource::<rl_render::Terminal>().get(0, 3).unwrap();
         let palette = stage.app.world().resource::<Palette>();
         assert_eq!(cell.fg, palette.get(crate::Tones::NOTICE), "in the tone the game asked for");
+    }
+
+    /// A game's annotate system pushing a second bar, the way the view's
+    /// docs invite it to.
+    fn with_bar(stage: &mut Stage, label: &'static str, value: i32, max: i32) {
+        stage.app.add_systems(
+            Update,
+            (move |mut view: ResMut<VitalsView>| {
+                view.bars.push(crate::view::Bar::new(label, value, max, crate::Tones::NOTICE));
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        stage.tick();
+    }
+
+    /// A bar a game pushed is drawn on a one-row strip, after health and
+    /// before everything else, rather than silently dropped.
+    #[test]
+    fn a_second_bar_on_a_one_row_strip_is_drawn_after_health() {
+        let mut stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 80, 1)).bars(6).hints("[q]uit")).screen(80, 3);
+        with_bar(&mut stage, "mana", 12, 40);
+        let row = stage.row(0);
+        let health = row.find("health 30/30").expect("health first");
+        let mana = row.find("mana 12/40").unwrap_or_else(|| panic!("the second bar is drawn: {row:?}"));
+        let armor = row.find("armor 0").unwrap_or_else(|| panic!("armor still fits: {row:?}"));
+        assert!(health < mana && mana < armor, "bars in order, then the rest: {row:?}");
+        assert!(row.matches('\u{2588}').count() >= 2, "both bars have their gauge: {row:?}");
+        assert!(row.ends_with("[q]uit"), "hints still last: {row:?}");
+    }
+
+    /// Bars follow the rule facets already follow on one row: drawn in
+    /// order until the next would not fit, then nothing more, and never a
+    /// half-drawn one or one printed over the hints.
+    #[test]
+    fn a_bar_that_does_not_fit_stops_the_line_rather_than_overlapping_it() {
+        let mut stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 40, 1)).bars(6).hints("[q]uit")).screen(40, 3);
+        with_bar(&mut stage, "stamina", 9, 30);
+        let row = stage.row(0);
+        assert!(row.starts_with("health 30/30"), "{row:?}");
+        assert!(!row.contains("stamina"), "no room, so not drawn at all: {row:?}");
+        assert!(!row.contains("armor"), "and nothing after it jumps the queue: {row:?}");
+        assert!(row.ends_with("[q]uit"), "{row:?}");
     }
 }

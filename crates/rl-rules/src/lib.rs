@@ -47,7 +47,7 @@ pub mod status;
 
 pub use ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Lookup, Purse, Requirement, blocked, read_args};
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
-pub use ai::{ActorView, Brain, Decision, MovementProfile, Snapshot, Tactic, TacticCtx};
+pub use ai::{ActorView, Awareness, Brain, Decision, MovementProfile, NoticeStats, Snapshot, StealthStats, Tactic, TacticCtx, notices};
 pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry};
 pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
@@ -63,7 +63,7 @@ pub mod prelude {
     pub use crate::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Lookup, Purse, Requirement, blocked, read_args};
     pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
     pub use crate::ai::tactics;
-    pub use crate::ai::{ActorView, Brain, Decision, MovementProfile, Snapshot, Tactic, TacticCtx};
+    pub use crate::ai::{ActorView, Awareness, Brain, Decision, MovementProfile, NoticeStats, Snapshot, StealthStats, Tactic, TacticCtx, notices};
     pub use crate::balance::{BandRow, Report, ThreatSubject, threat};
     pub use crate::content::{BandedEntry, BandedTable, ContentError, Named, Registry};
     pub use crate::damage::{DamageKind, DamageStage, Hit, Resistances, resolve};

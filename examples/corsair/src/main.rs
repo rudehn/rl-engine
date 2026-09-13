@@ -183,6 +183,7 @@ fn main() -> AppExit {
     // collector.
     .add_systems(Update, (note_what_they_wield, note_where_you_are).in_set(ViewSet::Annotate))
     .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
+    app.add_plugins(StealthPlugin);
     // Corsair's own screens, declared while building so the lookups in
     // `inventory` and `quests` find them.
     {
@@ -332,6 +333,9 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             Inventory { items: vec![cutlass, rum] },
             worn,
             Name::new("you"),
+            // Quiet enough that a smuggler in the dark has to be close,
+            // or catch you in your own lantern light, to be sure of you.
+            Stealth(rl_engine::rl_rules::ai::awareness::StealthStats { quiet: 1, subtlety: 10 }),
             StatBlock::default(),
             Afflicted::default(),
             Strikes::default(),

@@ -87,6 +87,38 @@ impl<A: Copy> Tactic<A> for Hunt {
     }
 }
 
+/// Walk to where an enemy was last seen, and stop mattering on arrival.
+///
+/// Fires only when nothing is in sight, so it belongs below [`Hunt`] and
+/// above [`Wander`]: hunt what you see, search what you lost, drift when you
+/// have nothing. Steps greedily rather than down a flow field, because the
+/// shared fields point at where the enemy is, and a search that followed
+/// them would be a search that cheats. On the remembered tile it returns
+/// `None`, so the next tactic mills about there until the memory runs out.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SearchLastKnown;
+
+impl<A: Copy> Tactic<A> for SearchLastKnown {
+    fn name(&self) -> &'static str {
+        "search_last_known"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        if !ctx.snapshot.enemies.is_empty() {
+            return None;
+        }
+        let target = ctx.snapshot.last_known?;
+        let me = ctx.snapshot.me.pos;
+        let toward = Direction::between(me, target)?;
+        for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
+            let step = me + d.offset();
+            if (ctx.can_step)(step) && geometry::chebyshev(step, target) < geometry::chebyshev(me, target) {
+                return Some(Decision::Step(step));
+            }
+        }
+        None
+    }
+}
+
 /// Drift: some chance of a random step, otherwise wait.
 #[derive(Debug, Clone, Copy)]
 pub struct Wander {
@@ -236,6 +268,40 @@ mod tests {
     fn open() -> (Terrain, TileRegistry) {
         let r = TileRegistry::standard();
         (Terrain::filled(12, 12, r.expect("floor")), r)
+    }
+
+    #[test]
+    fn a_lost_enemy_is_searched_for_where_it_was_seen_and_hunting_outranks_it() {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(1);
+        let b: Brain<u32> = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 0 });
+        let mut decide = |snapshot: &Snapshot<u32>| {
+            b.decide(&mut TacticCtx {
+                snapshot,
+                approach: None,
+                escape: None,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                bounds: arena(),
+                rng: &mut rng,
+            })
+        };
+
+        let mut lost = Snapshot::alone(view(1, 5, 5, 10));
+        lost.last_known = Some(Point::new(9, 5));
+        assert_eq!(decide(&lost), (Decision::Step(Point::new(6, 5)), Some("search_last_known")));
+
+        let mut seen = lost.clone();
+        seen.enemies.push(view(2, 5, 8, 10));
+        assert_eq!(decide(&seen).1, Some("hunt"), "something in sight is hunted, not searched for");
+
+        let mut arrived = Snapshot::alone(view(1, 9, 5, 10));
+        arrived.last_known = Some(Point::new(9, 5));
+        assert_eq!(decide(&arrived), (Decision::Wait, Some("wander")), "on the tile the search has nothing left to do");
+
+        assert_eq!(decide(&Snapshot::alone(view(1, 5, 5, 10))).1, Some("wander"), "tracking nothing, it drifts");
     }
 
     #[test]

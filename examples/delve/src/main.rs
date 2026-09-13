@@ -22,6 +22,8 @@ use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::capture;
+use rl_engine::rl_rules::ai::awareness::{NoticeStats, StealthStats};
+use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
@@ -65,11 +67,12 @@ fn main() -> AppExit {
     .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
     .add_systems(Update, note_floor.in_set(ViewSet::Annotate))
     .add_systems(Startup, start)
-    .add_systems(Update, player_input.in_set(EngineSet::Input))
+    .add_systems(Update, (tend_brand, player_input).chain().in_set(EngineSet::Input))
     .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
     // A floor fills the moment it is entered, inside the turn.
     .add_systems(Turn, populate_floor.in_set(TurnSet::React))
     .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    app.add_plugins(StealthPlugin);
     app.run()
 }
 
@@ -100,6 +103,8 @@ struct BeastDef {
     glow: Option<LightSource>,
     #[serde(default)]
     dark_sight: Option<i32>,
+    #[serde(default)]
+    notice: Option<NoticeStats>,
 }
 
 impl Named for BeastDef {
@@ -142,6 +147,9 @@ impl Beasts {
         if let Some(reach) = d.dark_sight {
             beast.insert(DarkSight(reach));
         }
+        if let Some(notice) = d.notice {
+            beast.insert(Notice(notice));
+        }
         beast.id()
     }
 }
@@ -171,7 +179,8 @@ fn start(
         if b.flee_at > 0 {
             brain = brain.then(FleeWhenHurt { at_pct: b.flee_at });
         }
-        brains.push(Arc::new(brain.then(Hunt).then(Wander { chance_pct: 30 })));
+        // Hunt what it sees, search where it last saw you, then drift.
+        brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 30 })));
     }
     commands.insert_resource(Beasts { defs, table, brains, bite: kinds.expect("bite"), whale: whale_side });
     commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
@@ -193,13 +202,17 @@ fn start(
                 Faction(you),
                 MeleeAttack { kind: kinds.expect("blade"), dice: DiceRoll::new(1, 6) },
                 BRAND,
+                // Quiet, and a little subtle: enough that a beast has to be
+                // close, or the brand has to be lit, before it is sure.
+                Stealth(StealthStats { quiet: 1, subtlety: 10 }),
                 Glyph::new('@', Color::WHITE).on_layer(10),
             ),
         ))
         .id();
     // No surface: the first floor is the first place, and the run starts in it.
     warps.write(WarpRequest::into_place(player, map_of(first.map(|f| f.0).unwrap_or(1))));
-    log.push(format!("Seed {}. The whale's jaw is propped open with a mast. You light a brand and climb in.", seed.0.0), Tones::NOTICE, 0);
+    log.push(format!("Seed {}. The whale's jaw is propped open with a mast.", seed.0.0), Tones::NOTICE, 0);
+    log.push("You light a brand and climb in.", Tones::NOTICE, 0);
     next.set(EngineState::Playing);
 }
 
@@ -316,6 +329,10 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, play
     }
     let Ok((entity, pos)) = player.single() else { return };
     let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    // Shift and L is the brand, not a step east.
+    if shifted && keys.just_pressed(KeyCode::KeyL) {
+        return;
+    }
     if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
         // Bump to attack: walking into someone is a strike.
         match occupancy.first_at(pos.0 + dir.offset()) {
@@ -331,6 +348,37 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, play
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
         intents.waits.write(Intent::new(entity, Wait));
     }
+}
+
+/// The player holding the turn, and whether its brand is lit.
+type BrandBearer = (Entity, Has<LightSource>);
+
+/// `L` smothers the brand or lights it again, and spends the turn.
+///
+/// Its own system rather than a branch of `player_input`, which is at the
+/// argument limit, and because the brand is the one thing in the delve the
+/// player chooses to be seen by.
+fn tend_brand(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    player: Query<BrandBearer, (With<Player>, With<MyTurn>)>,
+    mut waits: MessageWriter<Intent<Wait>>,
+    mut log: ResMut<MessageLog>,
+    turns: Res<Turns>,
+) {
+    let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    if !(shifted && keys.just_pressed(KeyCode::KeyL)) {
+        return;
+    }
+    let Ok((entity, lit)) = player.single() else { return };
+    if lit {
+        commands.entity(entity).remove::<LightSource>();
+        log.muted("You smother the brand. The dark closes in, and hides you.", turns.turn_number());
+    } else {
+        commands.entity(entity).insert(BRAND);
+        log.notice("The brand catches again.", turns.turn_number());
+    }
+    waits.write(Intent::new(entity, Wait));
 }
 
 /// Hits, deaths, and the end of the run either way.

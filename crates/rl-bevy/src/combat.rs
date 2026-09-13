@@ -213,6 +213,26 @@ pub struct Sight<'w, 's> {
     minds: Query<'w, 's, MindData, (With<MyTurn>, Without<Player>)>,
     lighting: Option<Res<'w, Lighting>>,
     dark: Query<'w, 's, &'static DarkSight>,
+    /// Who is hiding, and what the thinker has noticed of them. Both empty
+    /// in a game without stealth, and then everything is seen on sight.
+    hidden: Query<'w, 's, (), With<crate::stealth::Stealth>>,
+    aware: Query<'w, 's, &'static crate::stealth::Aware>,
+    stealth: crate::stealth::StealthRunning<'w>,
+}
+
+/// Whether an observer at `from` perceives `to`: a line through the
+/// player's viewshed, then light, dark sight or adjacency.
+///
+/// Lines of sight are symmetric and non-players carry no viewshed, so the
+/// player's is the oracle: the observer has a line to the player if the
+/// player has one to it, and to anyone else if the player has one to them
+/// both. Light is not symmetric, so what it then perceives along that line
+/// is whatever is lit, within its dark sight, or adjacent. Shared by the
+/// minds and by noticing, so the two can never disagree about who could be
+/// seen.
+pub fn perceivable(player_pos: Point, player_sight: &Viewshed, lighting: Option<&Lighting>, from: Point, dark_sight: i32, to: Point) -> bool {
+    let in_line = player_sight.in_line(from) && (to == player_pos || player_sight.in_line(to));
+    in_line && perceives(lighting, from, dark_sight, to)
 }
 
 /// The shared state a mind reads and the stream it draws from.
@@ -280,38 +300,54 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
 
     let me = ActorView { id: thinker, pos: my_pos.0, hp: my_hp.hp, max_hp: my_hp.max, faction: my_faction.0 };
     let mut snapshot = Snapshot::alone(me);
-    // Lines of sight are symmetric, and non-players carry no viewshed, so
-    // the player's is the oracle: I have a line to the player if the
-    // player has one to me, and to anyone else if the player has one to
-    // us both. Light is not symmetric: what I then perceive along that
-    // line is whatever is lit, within my dark sight, or adjacent.
-    let i_am_in_line = player_sight.in_line(my_pos.0);
     let dark_sight = sight.dark.get(thinker).map(|d| d.0).unwrap_or(0);
     let lighting = sight.lighting.as_deref();
     let here = map.current();
+    // With stealth running, what this mind has noticed; without it, `None`
+    // and everything it can perceive is seen.
+    let aware = sight.aware.get(thinker).ok().filter(|_| sight.stealth.get());
     for (e, pos, hp, faction, _, on) in actors.iter() {
         if e == thinker || on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || geometry::chebyshev(pos.0, my_pos.0) > reach {
             continue;
         }
-        let in_line = i_am_in_line && (pos.0 == player_pos.0 || player_sight.in_line(pos.0));
-        if !in_line || !perceives(lighting, my_pos.0, dark_sight, pos.0) {
+        if !perceivable(player_pos.0, player_sight, lighting, my_pos.0, dark_sight, pos.0) {
             continue;
         }
         let view = ActorView { id: e, pos: pos.0, hp: hp.hp, max_hp: hp.max, faction: faction.0 };
         if rules.factions.is_hostile(my_faction.0, faction.0) {
+            // A hider it has not noticed is not an enemy it can act on.
+            if aware.is_some_and(|a| sight.hidden.contains(e) && !a.knows(e)) {
+                continue;
+            }
             snapshot.enemies.push(view);
         } else if rules.factions.is_allied(my_faction.0, faction.0) {
             snapshot.allies.push(view);
         }
     }
     snapshot.sort();
+    // The freshest trail it is on but cannot see the end of: what a search
+    // walks toward.
+    if let Some(aware) = aware {
+        snapshot.last_known = aware
+            .0
+            .iter()
+            .filter(|(subject, _)| !snapshot.enemies.iter().any(|e| e.id == **subject))
+            .filter_map(|(_, state)| Some((state.stale_turns()?, state.last_known()?)))
+            .min_by_key(|(stale, at)| (*stale, *at))
+            .map(|(_, at)| at);
+    }
     if let Some(offered) = offered.as_deref()
         && offered.actor == Some(thinker)
     {
         snapshot.usable = offered.usable.clone();
     }
 
-    let wants_maps = !snapshot.enemies.is_empty();
+    // The shared flow fields are built toward the player. Where stealth is
+    // running, a mind that has not seen the player must not descend them,
+    // or it would walk straight to a player it never noticed.
+    let player_seen = snapshot.enemies.iter().any(|e| e.pos == player_pos.0);
+    let maps_allowed = aware.is_none() || player_seen;
+    let wants_maps = !snapshot.enemies.is_empty() && maps_allowed;
     if wants_maps {
         fields.ensure(profile, player_pos.0, map);
     }
@@ -327,8 +363,8 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
     let mut turn_rng: StdRng =
         rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut rng.0), my_pos.0.x, my_pos.0.y));
     let shifted = |m: &DijkstraMap| shift_map(m, origin);
-    let approach_world = approach.map(shifted);
-    let escape_world = escape.map(shifted);
+    let approach_world = approach.filter(|_| maps_allowed).map(shifted);
+    let escape_world = escape.filter(|_| maps_allowed).map(shifted);
     let mut ctx = TacticCtx {
         snapshot: &snapshot,
         approach: approach_world.as_ref(),

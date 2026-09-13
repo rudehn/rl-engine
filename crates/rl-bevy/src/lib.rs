@@ -25,6 +25,7 @@ pub mod places;
 pub mod plugin;
 pub mod state;
 pub mod status;
+pub mod stealth;
 pub mod turn;
 pub mod world;
 
@@ -48,6 +49,7 @@ pub use places::{
 pub use plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
 pub use state::EngineState;
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
+pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
@@ -75,6 +77,7 @@ pub mod prelude {
     pub use crate::plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
     pub use crate::state::EngineState;
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
+    pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, PlaceMap, StreamingPlugin, WindowView, WorldMap, WorldRes, WorldSettings};
 }

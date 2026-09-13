@@ -6,6 +6,7 @@
 //! what the actor knows this turn and the shared [`DijkstraMap`](rl_grid::DijkstraMap)s for its
 //! movement class, so fifty hunters cost one flood, not fifty searches.
 //!
+//! - [`awareness`]: [`NoticeStats`], [`StealthStats`], [`notices`] and [`Awareness`]: who has noticed whom.
 //! - [`brain`]: [`Brain`], [`Tactic`], [`TacticCtx`] and [`Decision`].
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
 //! - [`snapshot`]: [`Snapshot`] and [`ActorView`].
@@ -14,11 +15,13 @@
 //! A game adds its own by implementing [`Tactic`] and inserting it
 //! anywhere in the list.
 
+pub mod awareness;
 pub mod brain;
 pub mod profile;
 pub mod snapshot;
 pub mod tactics;
 
+pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Decision, Tactic, TacticCtx};
 pub use profile::MovementProfile;
 pub use snapshot::{ActorView, Snapshot};

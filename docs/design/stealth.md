@@ -1,8 +1,7 @@
 # Stealth and awareness
 
-Status: proposed 2026-09-12, not built.
-Written against `main` at `5b12d0a`, with the abilities slice in flight across `ai/snapshot.rs`, `ai/brain.rs`, `ai/tactics.rs` and `combat.rs`.
-Those are the four files section 3 edits, so this waits for that slice to land and then threads through whatever `decide_minds` looks like by then.
+Status: phases A to D built 2026-09-12, on top of the abilities slice; E proposed.
+Written against `main` at `5b12d0a` while that slice was in flight, and built once it had landed; section 12b records where the build differs.
 
 ## 0. Summary
 
@@ -201,15 +200,15 @@ The vitals strip reads hidden or seen off the same data.
 
 ## 10. Phases
 
-- **A. The pure half.**
+- **A. The pure half.** Built.
   `Notice`, `Stealth`, `notices`, `Awareness` and its transitions, in `rl-rules::ai::awareness`, with the property tests of section 11.
   Nothing behaves differently.
-- **B. The Bevy half.**
+- **B. The Bevy half.** Built.
   The components, `Aware`, `StealthPlugin`, `DecideSet::Notice`, `update_awareness`, `wake_on_damage`, `Noticed`, the `Snapshot::last_known` field and the `SearchLastKnown` tactic.
   Waits on the abilities slice, which is in flight in the same four files.
-- **C. The delve, and Corsair's caves.**
+- **C. The delve, and Corsair's caves.** Built.
   Play it before going on.
-- **D. The panels.**
+- **D. The panels.** Built.
   `Row::aware`, the rail showing who has noticed you, the vitals reading.
 - **E. Sneak attacks.**
   `Defender` gains `unaware`, so a game can write its own damage stage for it.
@@ -238,6 +237,27 @@ Headless, in `rl-bevy`:
 One roll per aware-able subject per actor-turn, which is one roll per monster-turn in a game with a player and no other hiders.
 `Aware` is a `BTreeMap` whose realistic length is one.
 Nothing here runs per frame, and nothing here allocates per turn beyond the map's single entry.
+
+## 12b. What the build changed
+
+- **Two names per idea, one per tier.**
+  The tier-1 data is `NoticeStats` and `StealthStats`; the components are `Notice` and `Stealth`.
+  One name for both would have put two types called `Notice` into the facade's prelude, which globs `rl-rules` and `rl-bevy` together.
+- **`memory` lives on `NoticeStats`.**
+  Section 4 had `forget_after` as an argument.
+  It is authored per kind of observer, so a salt ghost that searches for eight turns and a crab that gives up after three are data rather than code.
+- **`notices` does not take perception.**
+  The cap is `within_reach`, applied by the caller beside the line-of-sight check, so the pure function answers only whether the observer paid attention.
+- **An alert observer keeps its subject for as long as it can perceive it.**
+  The roll decides only whether an unaware observer becomes aware.
+  Rolling every turn would let a monster in plain view lose you to a bad number, which is the flicker section 13 warned of; this way losing takes `memory` turns out of sight and noticing takes one.
+- **Whether stealth runs is asked of the plugin, not of the components.**
+  `Notice` brings an `Aware` with it, so a game that authors observers and never adds `StealthPlugin` would have got monsters that notice nothing, forever, rather than the old behaviour.
+  `StealthRunning` is true only when the plugin was added, and the delve's own test harness, which does not add it, is what caught this.
+- **The line-of-sight oracle is one function.**
+  `perceivable` in `combat.rs` is shared by `decide_minds` and by noticing, so the two can never disagree about who could be seen.
+
+Found on the way, both fixed: a mind that had not noticed the player could still descend the shared flow fields, which are built toward the player, and so walk straight to someone it never saw; and the delve had no way to put the brand out, so a quiet player carrying a lit brand was never quiet at all. Shift and `L` now smothers it and spends the turn.
 
 ## 13. Risks
 

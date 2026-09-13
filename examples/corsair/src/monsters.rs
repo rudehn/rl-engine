@@ -10,6 +10,8 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::Brain;
+use rl_engine::rl_rules::ai::awareness::NoticeStats;
+use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
@@ -44,6 +46,8 @@ pub struct MonsterDef {
     pub inflicts: Option<(String, u32, u32)>,
     #[serde(default)]
     pub lantern: Option<LightSource>,
+    #[serde(default)]
+    pub notice: Option<NoticeStats>,
 }
 
 impl Named for MonsterDef {
@@ -137,7 +141,7 @@ impl Bestiary {
             if m.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: m.flee_at });
             }
-            brains.push(Arc::new(brain.then(Hunt).then(Wander { chance_pct: m.wander })));
+            brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: m.wander })));
         }
         let rules = CombatRules { kinds: kinds.clone(), factions: relations };
         (Self { defs, kinds, factions, table, brains, seed, home, spawned: BTreeSet::new() }, rules)
@@ -161,6 +165,11 @@ impl Bestiary {
         let e = self.spawn(commands, id, p);
         if let Some(lantern) = self.defs.get(id).lantern {
             commands.entity(e).insert(lantern);
+        }
+        // Only below: the caves are dark and have somewhere to hide, and
+        // the islands in daylight deliberately do not.
+        if let Some(notice) = self.defs.get(id).notice {
+            commands.entity(e).insert(Notice(notice));
         }
         e
     }

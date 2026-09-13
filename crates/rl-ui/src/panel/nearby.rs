@@ -119,7 +119,13 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, bar_width: 
         name.push_str(" \u{00b7} ");
         name.push_str(&facet.text);
     }
-    terminal.print_on(inner.x + 2, y, &clip(&name, name_width.max(0) as usize), palette.get(relation_tone(row.relation)), bg);
+    // Something that has not noticed you reads muted, so the names in its
+    // colour are the ones hunting you; one that has, carries a mark.
+    let tone = if row.aware == Some(false) { Tones::MUTED } else { relation_tone(row.relation) };
+    if row.aware == Some(true) {
+        terminal.print_on(inner.x + 1, y, "!", palette.get(Tones::BAD), bg);
+    }
+    terminal.print_on(inner.x + 2, y, &clip(&name, name_width.max(0) as usize), palette.get(tone), bg);
     if has_bar {
         let tone = match row.health_fraction() {
             f if f <= 0.25 => Tones::BAD,

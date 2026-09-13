@@ -160,7 +160,7 @@ impl Plugin for CorePlugin {
             )
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
-            .configure_sets(Turn, (DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
+            .configure_sets(Turn, (DecideSet::Notice, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
             .configure_sets(Turn, (ResolveSet::Act, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve))
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
@@ -174,11 +174,15 @@ impl Plugin for CorePlugin {
 
 /// The stages of [`TurnSet::Decide`], in order.
 ///
-/// The minds choose first. A game that gave its brains a decision of its
-/// own answers it in [`DecideSet::Game`], where the choice has been made
-/// and written but nothing has acted on it yet.
+/// What an actor has noticed is settled first, so the mind that then
+/// chooses is choosing on this turn's knowledge. A game that gave its
+/// brains a decision of its own answers it in [`DecideSet::Game`], where
+/// the choice has been made and written but nothing has acted on it yet.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DecideSet {
+    /// Who has noticed whom, for the actor about to decide. Empty unless
+    /// the game added [`StealthPlugin`](crate::stealth::StealthPlugin).
+    Notice,
     /// The engine's minds, deciding for everyone but the player.
     Minds,
     /// The game's answer to whatever its own tactics chose.

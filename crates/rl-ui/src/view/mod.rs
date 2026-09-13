@@ -56,6 +56,11 @@ pub struct Row {
     pub relation: Option<Relation>,
     /// Current and maximum health, if it has any.
     pub health: Option<(i32, i32)>,
+    /// Whether it has noticed the player: `None` for something that does not
+    /// notice at all, or in a game without stealth. In the view rather than
+    /// a facet because the engine knows it and it reads the same in every
+    /// game.
+    pub aware: Option<bool>,
     /// What the game added. Empty until an annotate system pushes.
     pub facets: Vec<Facet>,
 }
@@ -63,7 +68,7 @@ pub struct Row {
 impl Row {
     /// A row for `entity` with nothing but a name and a glyph.
     pub fn new(entity: Entity, label: impl Into<String>, glyph: Glyph) -> Self {
-        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, facets: Vec::new() }
+        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, aware: None, facets: Vec::new() }
     }
 
     /// The same row, `distance` tiles away.

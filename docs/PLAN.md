@@ -111,7 +111,17 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `Offered` now covers whoever holds the turn and lists what was refused and why, so the minds, the menu and the preview read one answer from one gate.
   Knacks lost its stand-in aiming code and gained two tests that drive the cursor through key presses.
   Found on the way: the first capture said "fireball at nothing" over a brute, because the target query required a `Name` and Knacks' monsters had none; the targeting view now counts a target without a `Name` or a `Glyph`, since the ability hits it anyway, and Knacks names its monsters.
+  Found after it: a one-row vitals strip drew health and then returned, so every bar a game pushed after it was dropped without a word, though `VitalsView`'s docs invite a game to push one; Knacks had shown its pools as facets to get round it.
+  A one-row strip now lays bars out in order with armor, badges, facets and the whereabouts, each drawn whole until the next would not fit, the rule facets already followed; Knacks' pools are bars again.
   Nate, 2026-09-12: "check the rl-ui slice, i think its done. if it is, proceed with phase D."
+- 2026-09-12: stealth and awareness, phases A to D of `docs/design/stealth.md`, built on the abilities slice.
+  `rl-rules` gains `ai::awareness`: `NoticeStats` and `StealthStats`, the pure `notices` roll against a certain radius and a chance beyond it with light as one bonus, and `Awareness`, whose memory decays so losing the trail means searching rather than forgetting on the spot; `Snapshot` gains `last_known` and the tactics gain `SearchLastKnown`.
+  `rl-bevy` gains `stealth`: `Notice`, `Stealth`, `Aware`, `Noticed`, `StealthPlugin` and `StealthRunning`, a `DecideSet::Notice` slot before the minds, and `perceivable`, the one line-of-sight oracle both the minds and noticing read.
+  `rl-ui` shows it: `Row::aware` on the nearby rail, and `VitalsView::seen`.
+  The delve's beasts notice from RON and its player can smother the brand; Corsair's cave dwellers notice and its islands deliberately do not.
+  Found on the way: `Notice` brings an `Aware` with it, so a game that authored observers without the plugin got monsters that never noticed anything, which the delve's own test harness caught; a mind that had not seen the player could descend the flow fields toward it anyway; and nothing in the delve could put the brand out.
+  Deferred: sneak attack damage (phase E), two-way stealth, squad alerting, noise.
+  Nate, 2026-09-12: "Let's add the stealth awareness."
 - Next: the rest of the deferred pieces (throwing, a character sheet, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

@@ -34,6 +34,9 @@ pub struct VitalsView {
     pub turn: u32,
     /// Where the player is standing.
     pub position: Point,
+    /// Whether anything at odds with the player has noticed it: `None` for a
+    /// player that cannot hide, or in a game without stealth.
+    pub seen: Option<bool>,
 }
 
 impl VitalsView {
@@ -62,7 +65,7 @@ impl Plugin for VitalsViewPlugin {
 }
 
 /// What the collector reads off the player.
-type Vitals = (Entity, &'static Position, Option<&'static Name>, Option<&'static Health>, Option<&'static Armor>, Option<&'static Afflicted>);
+type Vitals = (Entity, &'static Position, Option<&'static Name>, Option<&'static Health>, Option<&'static Armor>, Option<&'static Afflicted>, Has<Stealth>);
 
 /// What the player is made of.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -70,6 +73,8 @@ pub struct Me<'w, 's> {
     turns: Res<'w, Turns>,
     statuses: Option<Res<'w, StatusRules>>,
     facets: ResMut<'w, crate::facet::Facets>,
+    aware: Query<'w, 's, &'static Aware>,
+    stealth: StealthRunning<'w>,
     player: Query<'w, 's, Vitals, With<Player>>,
 }
 
@@ -78,7 +83,7 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.bars.clear();
     view.badges.clear();
     view.facets.clear();
-    let Ok((entity, pos, name, health, armor, afflicted)) = me.player.single() else {
+    let Ok((entity, pos, name, health, armor, afflicted, hides)) = me.player.single() else {
         view.entity = None;
         return;
     };
@@ -87,6 +92,7 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.position = pos.0;
     view.turn = me.turns.turn_number();
     view.armor = armor.map(|a| a.0);
+    view.seen = (hides && me.stealth.get()).then(|| me.aware.iter().any(|a| a.knows(entity)));
     if let Some(health) = health {
         // Tone by how close to death, so a panel needs no thresholds of
         // its own and every panel agrees on when it is bad.
@@ -130,6 +136,25 @@ mod tests {
         stage.app.world_mut().get_mut::<Health>(player).unwrap().hp = 5;
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().health().unwrap().tone, Tones::BAD, "a sixth is bad news");
+    }
+
+    #[test]
+    fn seen_is_none_for_a_player_that_cannot_hide_and_tracks_every_watcher_otherwise() {
+        let mut stage = Stage::new((VitalsViewPlugin, rl_bevy::StealthPlugin));
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<VitalsView>().seen, None, "no Stealth on the player");
+
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Stealth::default());
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<VitalsView>().seen, Some(false));
+
+        let guard = stage.actor("guard", 'g', 3, 0);
+        stage.app.world_mut().entity_mut(guard).insert(Notice::default());
+        let at = stage.at;
+        stage.app.world_mut().get_mut::<Aware>(guard).unwrap().0.insert(player, rl_rules::Awareness::Alert { at, stale_turns: 0 });
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<VitalsView>().seen, Some(true));
     }
 
     #[test]
