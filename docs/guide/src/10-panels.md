@@ -114,6 +114,22 @@ One gate on `player_input` covers the look cursor and every screen Warren might 
 A stack rather than a "return to" slot, because a slot can be pushed twice and lose the first target.
 An action that spends a turn calls `close_all`: the turn loop assumes nothing is open.
 
+## Two presenters, one view
+
+Press `p` and the whole log opens, scrollable, ruled off by turn, and filterable by tone with `tab`.
+
+```rust,no_run
+        ScrollbackPanel::new(screen.scrollback),
+```
+
+Nothing about the log changed to make that work.
+`LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same `MessageLog`, and neither knows the other exists.
+The scrollback keeps its own cursor and filter in a `Scrollback` resource, because where you have scrolled to is not something the log should know.
+
+It wraps its lines rather than clipping them.
+On the strip a cut line is a cut line; on a screen you opened in order to read, losing the end of a sentence is worse than spending a second row on it.
+`panel::wrap` is the same function your own presenter would want.
+
 ## What the forecast is made of
 
 Point the cursor at a rat and the panel says how the fight goes: how many turns to fell it, how many for it to fell you, and a word for the two together.
@@ -128,3 +144,4 @@ It is pure and lives in tier 1, which means it is tested without an `App` and a 
 - Drop `NearbyPanel` and keep `NearbyViewPlugin`, then draw the rows yourself with `panel::bar` and `panel::section`.
 - Give a rat no `Name` and watch it vanish from the rail while staying on the map.
 - Push a facet keyed `mood` from two different systems and see both print, in order.
+- Log fifty lines, open `p`, and hold `tab`: the filter offers only the tones Warren actually logs in.

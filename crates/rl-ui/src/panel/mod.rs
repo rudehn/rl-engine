@@ -21,12 +21,14 @@ pub mod gear;
 pub mod inspect;
 pub mod log;
 pub mod nearby;
+pub mod scrollback;
 pub mod vitals;
 
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
 pub use log::LogPanel;
 pub use nearby::NearbyPanel;
+pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
 pub use vitals::VitalsPanel;
 
 use rl_core::Rect;
@@ -114,6 +116,52 @@ pub fn clip(text: &str, width: usize) -> String {
     out
 }
 
+/// Breaks `text` into lines of at most `width` characters, on spaces.
+///
+/// A word longer than the whole width is cut rather than allowed to run
+/// off the edge, since a line that runs off is a line that overwrites
+/// whatever a panel drew beside it. Used by the scrollback, where losing
+/// the end of a sentence is worse than spending a second row on it, and
+/// public because a game writing its own presenter wants the same.
+pub fn wrap(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut len = 0;
+    for word in text.split_whitespace() {
+        let word_len = word.chars().count();
+        if word_len > width {
+            if len > 0 {
+                lines.push(std::mem::take(&mut line));
+                len = 0;
+            }
+            for chunk in word.chars().collect::<Vec<_>>().chunks(width) {
+                lines.push(chunk.iter().collect());
+            }
+            continue;
+        }
+        if len > 0 && len + 1 + word_len > width {
+            lines.push(std::mem::take(&mut line));
+            len = 0;
+        }
+        if len > 0 {
+            line.push(' ');
+            len += 1;
+        }
+        line.push_str(word);
+        len += word_len;
+    }
+    if len > 0 {
+        lines.push(line);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
 /// Splits `rect` into everything left of a column `width` wide and that
 /// column. For a game laying a rail beside the map.
 pub fn split_right(rect: Rect, width: i32) -> (Rect, Rect) {
@@ -154,6 +202,16 @@ mod tests {
         assert_eq!(row(&t, 1, 10).matches('\u{2588}').count(), 10);
         bar(&mut t, 0, 2, 10, 0.0, Tones::GOOD, &palette);
         assert_eq!(row(&t, 2, 10).matches('\u{2588}').count(), 0, "dead is empty");
+    }
+
+    #[test]
+    fn wrapping_breaks_on_spaces_and_cuts_only_a_word_that_never_fits() {
+        assert_eq!(wrap("the crab nips you", 20), vec!["the crab nips you"]);
+        assert_eq!(wrap("the crab nips you", 9), vec!["the crab", "nips you"]);
+        assert_eq!(wrap("", 10), vec![""], "an empty line is still a line");
+        assert_eq!(wrap("antidisestablishmentarianism", 10), vec!["antidisest", "ablishment", "arianism"]);
+        assert_eq!(wrap("you hit antidisestablishmentarianism", 10), vec!["you hit", "antidisest", "ablishment", "arianism"]);
+        assert!(wrap("anything", 0).is_empty());
     }
 
     #[test]

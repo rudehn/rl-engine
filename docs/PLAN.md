@@ -94,7 +94,8 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Corsair takes the full set with a rail down the right and a facet for what an enemy wields; the delve and Lamplight take vitals and a log and nothing else, which is the point.
   The guide gains `10-panels.md` and `examples/tutorial/src/bin/step10_panels.rs`; testing and where-to-go-next renumber to 11 and 12.
   Found on the way: `VitalsViewPlugin` asserted on `StatusRules`, so a game with no statuses had to insert an empty registry to get a health bar; and the look cursor settled on the player when nothing else was in sight, so the panel forecast a duel with yourself. Both fixed, both tested.
-  Deferred: the log's turn separators and a scrollback screen (phase G), and Bevy UI presenters over the same views (phase H), which waits for a game that asks.
+  Phase G in the same slice: the scrollback, a second presenter over the same `MessageLog` the strip draws, with its own cursor and filter, lines wrapped rather than clipped, each turn ruled off with its number, and a filter that cycles only the tones the log holds. Two screens over one view, neither aware of the other, is the split proving itself.
+  Deferred: Bevy UI presenters over the same views (phase H), which waits for a game that asks for wrapping, hover or sub-cell bars.
   Nate, 2026-09-11: the nearby list, equipment and stats, inspect and the log should be common features, without the theming being common too.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.

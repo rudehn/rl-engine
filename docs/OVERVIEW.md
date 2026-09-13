@@ -116,13 +116,14 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 - Tones: a semantic role interned as a `ToneId` over a `Palette` a game extends with roles the engine never heard of, warned about by name at startup if one has no colour. No widget takes a `Color`.
 - Facets: `Facet { key, text, tone }` pushed onto a row in `ViewSet::Annotate`, so a game's vocabulary reaches a panel without an engine type learning a word.
 - Views and their collectors: `NearbyView` (actors and things in the viewshed, nearest first, with health and a relation), `VitalsView` (bars, armor, status badges, turn, position), `GearView` (every registered slot, filled or not), `InspectView` (the look cursor's subject and a duel forecast).
-- Panels: `NearbyPanel`, `VitalsPanel`, `GearPanel`, `InspectPanel`, `LogPanel`, each a plugin holding its rectangle and its headings.
+- Panels: `NearbyPanel`, `VitalsPanel`, `GearPanel`, `InspectPanel`, `LogPanel` and `ScrollbackPanel`, each a plugin holding its rectangle and its headings.
+- The scrollback: the whole log on a modal screen, wrapped rather than clipped, ruled off per turn, scrolled by line and by page with both ends clamped, and filtered by cycling only the tones the log actually holds. A second presenter over the same `MessageLog` the strip draws, with its cursor and filter in a `Scrollback` resource of its own.
 - The look cursor: opens on the nearest actor, steps with the direction keys, cycles what is in sight, stays inside the loaded window, and owns input as a modal.
 - `Modals`: a stack of interned modal ids with `modal_is`, `modal_open` and `no_modal` run conditions, so one gate covers every screen a game adds.
 - `DirectionKeys`: arrows, vi keys and the numpad to the eight directions, in one resource a game may replace.
 - A message log carrying a tone per line, folding a repeat into a count, filterable by tone.
 - A framed scrolling list menu.
-- Drawing helpers a game writing its own presenter reuses: frames, section headings, bars, clipping, and rectangle splits.
+- Drawing helpers a game writing its own presenter reuses: frames, section headings, bars, clipping, word wrapping, and rectangle splits.
 
 ### rl-overworld
 

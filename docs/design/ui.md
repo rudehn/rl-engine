@@ -1,6 +1,6 @@
 # UI
 
-Status: phases A to F built 2026-09-12; G and H proposed.
+Status: phases A to G built 2026-09-12; H proposed.
 Written 2026-09-11 against `main` at `1264a69`, when `rl-ui` held a message log, a status line and a list menu.
 It reads the 17.6k lines across 31 modules of `fantasy-rogue/src/ui/` as the evidence of what a roguelike UI is made of, and decides which third of that belongs to an engine.
 
@@ -232,8 +232,10 @@ The look cursor is the same shape: moving the cursor, cycling to the next visibl
   `EquipView` over the slot graph, and the sea chest's folded numbers come from it.
 - **F. Inspect.**
   The derivations into `rl-rules` with their property tests, `InspectView`, the look cursor, the panel.
-- **G. The log grows up.**
+- **G. The log grows up.** Built.
   Run-length folding, turn separators, a scrollback modal on the stack from D, filtering by tone.
+  The scrollback is a second presenter over `MessageLog` and keeps its own cursor and filter, which is the split proving itself: two screens, one view, neither aware of the other.
+  Lines wrap rather than clip, since a screen opened in order to read should not lose the end of a sentence, and the filter cycles only the tones the log holds rather than every role declared.
 - **H. Node presenters.**
   Only when a game asks.
 

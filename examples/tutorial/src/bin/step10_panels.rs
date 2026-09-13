@@ -9,7 +9,7 @@
 //! `cargo run -p tutorial --bin step10_panels`, and `WARREN_SEED=19` picks
 //! another warren, which is how this chapter's screenshot was taken.
 //!
-//! Keys: as step 9, plus `x` for the look cursor.
+//! Keys: as step 9, plus `x` for the look cursor and `p` for the log.
 
 use std::sync::Arc;
 
@@ -72,6 +72,7 @@ struct Screen {
     vitals: Rect,
     nearby: Rect,
     inspect: Rect,
+    scrollback: Rect,
 }
 
 impl Screen {
@@ -81,7 +82,7 @@ impl Screen {
         let (vitals, nearby) = panel::split_top(rail, 9);
         // Over the map, because a modal covers what it is about.
         let inspect = Rect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
-        Self { map, log, vitals, nearby, inspect }
+        Self { map, log, vitals, nearby, inspect, scrollback: map.inflate(-2) }
     }
 }
 // ANCHOR_END: layout
@@ -122,6 +123,9 @@ fn main() -> AppExit {
         NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect),
+        // A second presenter over the log the strip already draws: `p`
+        // opens all of it, scrollable and filterable by tone.
+        ScrollbackPanel::new(screen.scrollback),
     ))
     // What the engine cannot know about a row. Named by set, never by
     // ordering after a collector function.
@@ -341,7 +345,7 @@ fn start(
         .id();
     warps.write(WarpRequest::into_place(player, map_of(1)));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("g gets, e eats, > descends, x looks, shift+dir shoves.", Tones::MUTED, 0);
+    log.push("g gets, e eats, > descends, x looks, p reads back.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start

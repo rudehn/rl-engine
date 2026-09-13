@@ -15,6 +15,11 @@
 //! sentence in every roguelike; a gold-ruled rail with small-caps headings
 //! is one game's taste. So the engine owns the first and offers the second.
 //!
+//! One view may have more than one presenter: [`LogPanel`] draws the last
+//! few lines along the bottom of the map and [`ScrollbackPanel`] draws all
+//! of them on a screen, over the same [`MessageLog`], and neither knows the
+//! other exists.
+//!
 //! A game picks its level of involvement, cheapest first:
 //!
 //! 1. Add the panel. `app.add_plugins(NearbyPanel::new(rect))` and it draws
@@ -96,7 +101,7 @@ pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{Modal, ModalId, Modals, modal_is, modal_open, no_modal};
-pub use panel::{GearPanel, InspectPanel, LogPanel, NearbyPanel, VitalsPanel};
+pub use panel::{GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, VitalsPanel};
 pub use tone::{Palette, Tone, ToneId, Tones};
 pub use view::{
     Bar, GearSlot, GearView, GearViewPlugin, InspectKeys, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin, Row, VitalsView, VitalsViewPlugin,
@@ -154,7 +159,7 @@ pub mod prelude {
     // The module itself, for `panel::split_right` and the drawing
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
-    pub use crate::panel::{GearPanel, InspectPanel, LogPanel, NearbyPanel, VitalsPanel};
+    pub use crate::panel::{GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, VitalsPanel};
     pub use crate::tone::{Palette, ToneId, Tones};
     pub use crate::view::{Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin, Row, VitalsView, VitalsViewPlugin};
     pub use crate::{UiPlugin, ViewSet};

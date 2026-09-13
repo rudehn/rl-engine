@@ -32,7 +32,9 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::{CapturePlugin, capture};
 use rl_engine::rl_render::{Glyph, MapView, MapViewPlugin, TerminalPlugin};
 use rl_engine::rl_rules::FactionId;
-use rl_engine::rl_ui::{Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, Tones, UiPlugin, ViewSet, VitalsPanel, panel};
+use rl_engine::rl_ui::{
+    Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, Tones, UiPlugin, ViewSet, VitalsPanel, panel,
+};
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
@@ -61,6 +63,7 @@ struct Screen {
     gear: Rect,
     nearby: Rect,
     inspect: Rect,
+    scrollback: Rect,
 }
 
 impl Screen {
@@ -70,7 +73,9 @@ impl Screen {
         let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
         let inspect = Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10);
-        Self { map, log, vitals, gear, nearby, inspect }
+        // The whole map area, since reading back is all you are doing.
+        let scrollback = map.inflate(-2);
+        Self { map, log, vitals, gear, nearby, inspect, scrollback }
     }
 }
 
@@ -132,6 +137,9 @@ fn main() -> AppExit {
         NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the ground"),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close"),
+        // A second presenter over the same log the strip draws: `p` opens
+        // all of it, scrollable and filterable by tone.
+        ScrollbackPanel::new(screen.scrollback).titled("Ship's log"),
     ))
     .insert_resource(StartSeed { seed, regions, resume })
     .insert_resource(Saves::platform_default("corsair"))
