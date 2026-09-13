@@ -176,4 +176,6 @@ It is built only on the public API, so it is the test that the seams are right.
 - Scripted encounters.
 - The wasm unload bridge.
 - Seed replay.
+- Bevy UI presenters over the panel views (phase H of `docs/design/ui.md`). The views and collectors already do not know which backend draws them; what a node tree would add is wrapping, proportional text, mouse hover and sub-cell bars. Deferred until a game asks for one of those, since it is a second set of presenters to keep and its tests are node trees rather than the exact-text ones that have caught the bugs so far.
+- Mouse-to-tile in `rl-render`, which hover, tooltips and click-to-travel all wait on.
 - Instanced terminal rendering; one sprite per cell is the known scaling limit.

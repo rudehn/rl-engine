@@ -97,7 +97,7 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Phase G in the same slice: the scrollback, a second presenter over the same `MessageLog` the strip draws, with its own cursor and filter, lines wrapped rather than clipped, each turn ruled off with its number, and a filter that cycles only the tones the log holds. Two screens over one view, neither aware of the other, is the split proving itself.
   Deferred: Bevy UI presenters over the same views (phase H), which waits for a game that asks for wrapping, hover or sub-cell bars.
   Nate, 2026-09-11: the nearby list, equipment and stats, inspect and the log should be common features, without the theming being common too.
-- Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
+- Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
 Inputs: four Opus code reviews of the three source repos, kept beside this file.
