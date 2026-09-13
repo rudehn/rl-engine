@@ -13,6 +13,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod ability;
 pub mod combat;
 pub mod components;
 pub mod events;
@@ -27,6 +28,10 @@ pub mod status;
 pub mod turn;
 pub mod world;
 
+pub use ability::{
+    Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants,
+    Known, Landing, Pools, Pull, Shove, Teleport, Use,
+};
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health, MeleeAttack,
     Mind, MindChose, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
@@ -34,7 +39,7 @@ pub use combat::{
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fov::FovPlugin;
-pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Unequip, UseItem, Wearable};
+pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Tagged, Unequip, UseItem, Wearable};
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
 pub use places::{
@@ -42,12 +47,16 @@ pub use places::{
 };
 pub use plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
 pub use state::EngineState;
-pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin, StatusRules};
+pub use status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names most callers want in scope.
 pub mod prelude {
+    pub use crate::ability::{
+        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs,
+        Grants, Known, Landing, Offered, Pools, Pull, Shove, Teleport, Use,
+    };
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health,
         MeleeAttack, Mind, MindChose, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
@@ -55,7 +64,9 @@ pub mod prelude {
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fov::FovPlugin;
-    pub use crate::items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Unequip, UseItem, Wearable};
+    pub use crate::items::{
+        DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Tagged, Unequip, UseItem, Wearable,
+    };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
     pub use crate::places::{
@@ -63,7 +74,7 @@ pub mod prelude {
     };
     pub use crate::plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
     pub use crate::state::EngineState;
-    pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin, StatusRules};
+    pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, PlaceMap, StreamingPlugin, WindowView, WorldMap, WorldRes, WorldSettings};
 }

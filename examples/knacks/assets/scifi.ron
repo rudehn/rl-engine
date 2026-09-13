@@ -1,0 +1,36 @@
+// Sci-fi: a power cell is a stat, and a hack is the game's own effect.
+// The full option space is listed at the top of `fantasy.ron`.
+#![enable(implicit_some)]
+[
+    (
+        name: "overload",
+        mode: Bolt(range: 9),
+        costs: [Pool("power", 8)],
+        effects: [
+            (kind: "Harm", args: (kind: "shock", roll: "2d6")),
+            (kind: "Inflict", chance: 60, args: (status: "stunned", turns: 2)),
+        ],
+    ),
+    (
+        name: "cloak",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Pool("power", 15)],
+        cooldown: 1500,
+        effects: [(kind: "Inflict", args: (status: "cloaked", turns: 10))],
+    ),
+    (
+        name: "medspray",
+        aim: Ally,
+        mode: Adjacent,
+        costs: [Pool("power", 4)],
+        effects: [(kind: "Mend", args: (kind: "care", roll: "2d4"))],
+    ),
+    (
+        name: "hack",
+        mode: Bolt(range: 6),
+        costs: [Pool("power", 10)],
+        cooldown: 800,
+        effects: [(kind: "Hack")],
+    ),
+]

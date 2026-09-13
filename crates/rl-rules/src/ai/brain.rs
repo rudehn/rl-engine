@@ -1,8 +1,10 @@
 //! The brain: tactics in priority order.
 
 use rand::rngs::StdRng;
-use rl_core::Point;
+use rl_core::{Point, Rect};
 use rl_grid::DijkstraMap;
+
+use crate::ability::AbilityId;
 
 use crate::ai::snapshot::Snapshot;
 
@@ -13,6 +15,14 @@ pub enum Decision<A: Copy> {
     Step(Point),
     /// Attack an adjacent actor.
     Attack(A),
+    /// Use an ability, pointed at a cell. One of the engine's own, the
+    /// way an attack is: the resolver that owns abilities answers it.
+    Ability {
+        /// Which.
+        ability: AbilityId,
+        /// Where it is pointed.
+        aim: Point,
+    },
     /// Do nothing this turn.
     Wait,
     /// Something of the game's own, in the game's own numbering, the way
@@ -34,6 +44,12 @@ pub struct TacticCtx<'a, A: Copy> {
     pub escape: Option<&'a DijkstraMap>,
     /// Whether `p` can be stepped onto right now: walkable and unoccupied.
     pub can_step: &'a dyn Fn(Point) -> bool,
+    /// Whether `p` stops a projectile: a wall, or somebody standing.
+    /// The same predicate the ability resolver uses, so what a tactic
+    /// thinks an ability will cover is what it does cover.
+    pub blocks_shot: &'a dyn Fn(Point) -> bool,
+    /// The tiles a shape may be resolved within.
+    pub bounds: Rect,
     /// This actor's stream for the turn.
     pub rng: &'a mut StdRng,
 }

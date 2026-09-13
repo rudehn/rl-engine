@@ -27,6 +27,14 @@ pub struct StatusRules {
     pub defs: Registry<StatusDef>,
 }
 
+/// The stat definitions every [`StatBlock`] is read against.
+///
+/// Apart from [`StatusRules`] because a game may have stats and no
+/// statuses, and because an ability's requirements need it whether or not
+/// anything is ever afflicted.
+#[derive(Resource, Debug, Clone, Deref)]
+pub struct StatRules(pub Registry<rl_rules::StatDef>);
+
 /// An actor's stats: base values and every modifier from gear, statuses
 /// and whatever else the game folds in.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
@@ -279,5 +287,67 @@ mod tests {
         assert_eq!(w.get::<StatBlock>(player).unwrap().value(armor_stat, &stats), 0, "hearty's modifier left with it");
         let expired: Vec<StatusEvent> = w.resource::<Messages<StatusEvent>>().iter_current_update_messages().copied().collect();
         assert!(expired.contains(&StatusEvent::Expired { target: player, status: venom }), "{expired:?}");
+    }
+}
+
+/// Put a status on everyone under the footprint.
+///
+/// Named for what it does rather than for the message it writes, because
+/// [`Afflict`] is already the request and an effect is not a request.
+#[derive(Debug, Clone, Copy)]
+pub struct Inflict {
+    /// Which status.
+    pub status: StatusId,
+    /// For how many whole turns.
+    pub turns: u32,
+}
+
+impl crate::ability::Effect for Inflict {
+    fn apply(&self, landing: &crate::ability::Landing, world: &mut crate::ability::EffectWorld<'_, '_>) {
+        for target in &landing.targets {
+            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns, by: Some(landing.user) });
+        }
+    }
+}
+
+impl crate::ability::FromArgs for Inflict {
+    const KIND: &'static str = "Inflict";
+
+    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        struct Args {
+            status: String,
+            turns: u32,
+        }
+        let a: Args = rl_rules::ability::read_args(args)?;
+        Ok(Self { status: look.status(&a.status).ok_or_else(|| format!("unknown status {:?}", a.status))?, turns: a.turns })
+    }
+}
+
+/// Take a status off everyone under the footprint.
+#[derive(Debug, Clone, Copy)]
+pub struct Cleanse {
+    /// Which status.
+    pub status: StatusId,
+}
+
+impl crate::ability::Effect for Cleanse {
+    fn apply(&self, landing: &crate::ability::Landing, world: &mut crate::ability::EffectWorld<'_, '_>) {
+        for target in &landing.targets {
+            world.cure.write(Cure { target: *target, status: self.status });
+        }
+    }
+}
+
+impl crate::ability::FromArgs for Cleanse {
+    const KIND: &'static str = "Cleanse";
+
+    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        struct Args {
+            status: String,
+        }
+        let a: Args = rl_rules::ability::read_args(args)?;
+        Ok(Self { status: look.status(&a.status).ok_or_else(|| format!("unknown status {:?}", a.status))? })
     }
 }

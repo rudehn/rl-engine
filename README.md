@@ -151,6 +151,20 @@ cargo run -p delve -- --seed 7
 cargo run -p delve -- --seed 7 --floor 3    # start deeper
 ```
 
+### Knacks, five genres of ability
+
+`examples/knacks` is one arena and five sets of abilities: a fantasy caster, a pirate, a marine, a man-at-arms and a thief.
+All eighteen load into one registry from five RON files that differ in nothing but their words, and `Tab` changes which set the player knows.
+Nothing else about the run changes, because nothing else can: a fireball, a broadside and a smoke bomb are rows of the same table, fired by the same resolver, and mana, powder, power cells, stamina and nerve are one mechanism the engine cannot tell apart.
+`src/effects.rs` holds the five effects the engine does not ship, one per genre, and is the honest half of the claim: everything else is data.
+
+```sh
+cargo run -p knacks -- --seed 7 --set pirates
+```
+
+Keys: walk as in the delve, `1` to `4` to aim an ability, `a` to list them with the reasons any cannot be used, `Tab` to change set, `.` to wait, `q` to quit.
+While aiming, the direction keys step the cursor, `Tab` cycles what the ability wants, `Enter` or space fires, and `Esc` puts it away; an ability aimed at yourself fires at once.
+
 ### Lamplight, the lighting example
 
 ![Lamplight: a dark cave lit by a lantern, a brazier, glowing fungus and a wisp, with remembered passages in cold blue](docs/images/lamplight.png)
@@ -166,7 +180,7 @@ Keys: walk as in the delve, `L` to light or douse the lantern, `g` to pick up, `
 
 ### Pictures of your own
 
-Any of the three photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
+Any of the four photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
 
 ```sh
 RL_CAPTURE=shot.png RL_CAPTURE_KEYS="j*4 l*6 ." cargo run -p lamplight -- --seed 7

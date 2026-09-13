@@ -1,0 +1,30 @@
+// City crime: nerve, cash in the bag, and smoke that edits the map.
+// The full option space is listed at the top of `fantasy.ron`.
+#![enable(implicit_some)]
+[
+    (
+        name: "shiv",
+        mode: Adjacent,
+        requires: [Lacks("spotted")],
+        effects: [(kind: "Harm", args: (kind: "pierce", roll: "2d4"))],
+    ),
+    (
+        name: "smoke bomb",
+        aim: Ground,
+        mode: Ball(range: 5, radius: 2),
+        costs: [Item("cash", 1)],
+        cooldown: 600,
+        effects: [
+            (kind: "Smoke"),
+            (kind: "Inflict", args: (status: "blinded", turns: 4)),
+        ],
+    ),
+    (
+        name: "vanish",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Pool("nerve", 5)],
+        cooldown: 800,
+        effects: [(kind: "Inflict", args: (status: "cloaked", turns: 6))],
+    ),
+]

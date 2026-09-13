@@ -1,0 +1,36 @@
+// Pirates: the same machinery, with powder in the bag where mana was.
+// The full option space is listed at the top of `fantasy.ron`.
+#![enable(implicit_some)]
+[
+    (
+        name: "broadside",
+        mode: Cone(length: 5),
+        costs: [Item("powder", 1)],
+        cooldown: 400,
+        effects: [
+            (kind: "Harm", args: (kind: "shot", roll: "2d6")),
+            (kind: "Inflict", chance: 40, args: (status: "deafened", turns: 3)),
+        ],
+    ),
+    (
+        name: "grapnel",
+        mode: Bolt(range: 7),
+        cooldown: 300,
+        effects: [(kind: "Pull", args: (cells: 3))],
+    ),
+    (
+        name: "swig",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Item("rum", 1)],
+        effects: [
+            (kind: "Mend", args: (kind: "care", roll: "2d4")),
+            (kind: "Cleanse", args: (status: "bleeding")),
+        ],
+    ),
+    (
+        name: "plunder",
+        mode: Adjacent,
+        effects: [(kind: "Plunder", args: (share: 100))],
+    ),
+]

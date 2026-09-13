@@ -11,6 +11,9 @@
 //!   [`affix`]: the modifier accumulator, the mitigation pipeline, the tick
 //!   and expiry machinery, the relation matrix, the slot graph and the
 //!   affix and enchant model.
+//! - [`ability`]: what an actor can spend a turn on besides a step and a
+//!   swing, as data: a shape, costs, requirements and a list of effects
+//!   the layer above resolves.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
 //! - [`events`]: facts, counters and quests as data over what happened.
 //! - [`balance`]: threat scoring and the spawn-band report, so content is
@@ -29,6 +32,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod ability;
 pub mod affix;
 pub mod ai;
 pub mod balance;
@@ -41,6 +45,7 @@ pub mod forecast;
 pub mod stats;
 pub mod status;
 
+pub use ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Lookup, Purse, Requirement, blocked, read_args};
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
 pub use ai::{ActorView, Brain, Decision, MovementProfile, Snapshot, Tactic, TacticCtx};
 pub use balance::{BandRow, Report, ThreatSubject, threat};
@@ -55,6 +60,7 @@ pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, Ti
 
 /// The names most callers want in scope.
 pub mod prelude {
+    pub use crate::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Lookup, Purse, Requirement, blocked, read_args};
     pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
     pub use crate::ai::tactics;
     pub use crate::ai::{ActorView, Brain, Decision, MovementProfile, Snapshot, Tactic, TacticCtx};

@@ -20,6 +20,7 @@ use rl_rules::Relation;
 use rl_rules::damage::DamageKindId;
 use rl_rules::forecast::{Combatant, Duel, duel};
 
+use crate::cursor;
 use crate::facet::Facet;
 use crate::keys::DirectionKeys;
 use crate::modal::{ModalId, Modals};
@@ -124,9 +125,10 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, lo
     let modal = inspect_modal(&modals);
     let Ok((origin, viewshed)) = look.player.single() else { return };
     let here = look.map.current();
-    let mut in_sight: Vec<Point> =
-        look.actors.iter().filter(|(pos, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && viewshed.can_see(pos.0)).map(|(pos, _)| pos.0).collect();
-    in_sight.sort_by_key(|p| (geometry::chebyshev(origin.0, *p), p.x, p.y));
+    let in_sight = cursor::ordered(
+        origin.0,
+        look.actors.iter().filter(|(pos, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && viewshed.can_see(pos.0)).map(|(pos, _)| pos.0),
+    );
 
     if look.keys.just_pressed(look.binds.toggle) && !modals.any_open() {
         modals.open(modal);
@@ -140,18 +142,14 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, lo
         modals.close_one(modal);
         return;
     }
-    if look.keys.just_pressed(look.binds.next) && !in_sight.is_empty() {
-        let next = in_sight.iter().position(|p| *p == view.cursor).map(|i| (i + 1) % in_sight.len()).unwrap_or(0);
-        view.cursor = in_sight[next];
+    if look.keys.just_pressed(look.binds.next)
+        && let Some(next) = cursor::next_of(&in_sight, view.cursor)
+    {
+        view.cursor = next;
         return;
     }
     if let Some(step) = look.steps.just_pressed(&look.keys) {
-        let moved = view.cursor + step.offset();
-        // Inside the loaded window, because a cursor outside it is over
-        // tiles the engine cannot answer questions about.
-        if look.map.window_tiles().contains(moved) {
-            view.cursor = moved;
-        }
+        view.cursor = cursor::stepped(view.cursor, step, look.map.window_tiles());
     }
 }
 

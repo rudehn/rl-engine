@@ -1,0 +1,32 @@
+// Medieval: stamina, and a requirement that reads the slot graph.
+// The full option space is listed at the top of `fantasy.ron`.
+#![enable(implicit_some)]
+[
+    (
+        name: "shield bash",
+        mode: Adjacent,
+        requires: [InSlot("off hand", "shield")],
+        costs: [Pool("stamina", 6)],
+        effects: [
+            (kind: "Harm", args: (kind: "blunt", roll: "1d6")),
+            (kind: "Shove", args: (cells: 1)),
+            (kind: "Inflict", chance: 70, args: (status: "dazed", turns: 2)),
+        ],
+    ),
+    (
+        name: "rally",
+        aim: Ally,
+        mode: Cone(length: 4),
+        costs: [Pool("stamina", 10)],
+        cooldown: 1200,
+        effects: [(kind: "Inflict", args: (status: "inspired", turns: 8))],
+    ),
+    (
+        name: "banner",
+        aim: Ground,
+        mode: Own,
+        costs: [Pool("stamina", 8)],
+        cooldown: 2000,
+        effects: [(kind: "Banner")],
+    ),
+]

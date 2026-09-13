@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-12, after the panels.
+Last updated: 2026-09-12, after the targeting cursor.
 
 ## The shape
 
@@ -71,7 +71,8 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - A faction relation matrix.
 - The equipment slot graph with displacement.
 - The affix and enchant model: item tags, prefix and suffix affixes with level-scaled stat grants and extra strikes, an enhance rule for what a level buys, per-instance state, weighted rolling.
-- `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt and wander tactics.
+- `ability`: what an actor can spend a turn on besides a step and a swing, as data. A shape from the targeting module, an [`Aim`] saying what it wants under it, costs against a pool, an item charge, health or a tagged item, requirements over statuses, slots and stats, an integer time and cooldown, and a list of named effects with their arguments left unparsed for whoever registered them. `load` resolves every name in a file through a `Lookup` the game implements over its own registries, and reports every unknown one at once; `blocked` answers whether a use is permitted and lists every reason it is not.
+- `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt, wander and use-ability tactics. The ability tactic scores a footprint by what the ability's `Aim` wants under it, so a mind fires something it cannot understand and never learns the theme.
 - `events`: facts with kind, subject, object and amount, matchers, a ledger of named counters, and quests as objectives over facts with prerequisite chains and a victory flag.
 - `balance`: threat scoring and the spawn-band report.
 - `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, and an `Outlook` read off the two counts. Pure, so an inspect panel's numbers cannot drift from the fight.
@@ -88,7 +89,8 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - Actions are types, not a list: `Step`, `Attack`, `Wait`, `PickUp`, `DropItem`, `Equip`, `Unequip`, `UseItem` and `GoThrough` ship with the engine, each resolved by the module that owns the mechanic. A game registers its own with `add_action`, resolves it in `TurnSet::Resolve` by claiming the actor and reporting a cost, and the sweep refuses whatever no resolver claimed.
 - Chunk streaming with edit deltas, per-map occupancy and knowledge, field of view.
 - Combat: health, armor, resists, factions, melee and ranged attacks down a line of fire, extra strikes, the damage event pipeline, deaths that linger until the frame ends, flow fields per movement profile feeding the minds.
-- Items on the ground, in bags and in slots, with stacks and enchantments.
+- Items on the ground, in bags and in slots, with stacks, tags and enchantments.
+- Abilities, opt-in: the `Use` action, `Known` rebuilt every turn from what an actor is and wears, `Pools` for whatever a game calls its fuel, `Cooldowns` as absolute times on the turn clock so a save restores them for nothing, `Grants` and `Charges` on the things that lend an ability, `Offered`, the gate's answer for whoever holds the turn, which the minds and a menu both read, and a resolver that gates, pays, resolves the footprint and lands the effects inside the pass. Effects are types, not a list: one per subsystem the engine owns, each in the module that owns the mechanic, and a game registers its own with `add_effect`. An effect asks for damage, a status or a move through `EffectWorld`, and reaches anything else through `Commands`.
 - Places: bounded maps entered by transitions or warps, built on first arrival, kept whole, off-map actors frozen; `PlaceBuild::from_context` reads a finished chain; `WarpRequest::into_place` starts a run in one.
 - The surface is optional, and everything regional belongs to it: `WorldMap::new` takes the tile tables alone, the region size is read from the world graph when the first window loads, and `Knowledge` is initialised by the engine. A delve names neither.
 - Knowledge: explored tiles per map in buckets of its own, and the surface's seen regions and discovered sites kept apart from them, so going underground never hides the overworld's fog.
@@ -115,10 +117,15 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 
 - Tones: a semantic role interned as a `ToneId` over a `Palette` a game extends with roles the engine never heard of, warned about by name at startup if one has no colour. No widget takes a `Color`.
 - Facets: `Facet { key, text, tone }` pushed onto a row in `ViewSet::Annotate`, so a game's vocabulary reaches a panel without an engine type learning a word.
-- Views and their collectors: `NearbyView` (actors and things in the viewshed, nearest first, with health and a relation), `VitalsView` (bars, armor, status badges, turn, position), `GearView` (every registered slot, filled or not), `InspectView` (the look cursor's subject and a duel forecast).
-- Panels: `NearbyPanel`, `VitalsPanel`, `GearPanel`, `InspectPanel`, `LogPanel` and `ScrollbackPanel`, each a plugin holding its rectangle and its headings.
+- Views and their collectors: `NearbyView` (actors and things in the viewshed, nearest first, with health and a relation), `VitalsView` (bars, armor, status badges, turn, position), `GearView` (every registered slot, filled or not), `InspectView` (the look cursor's subject and a duel forecast), `TargetView` (the ability being aimed, the footprint it would cover, whether the resolver would accept it and why not, and what is under it), `AbilityView` (every ability the turn-holder knows, in registration order, with the gate's reasons for the ones it cannot use).
+- Panels: `NearbyPanel`, `VitalsPanel`, `GearPanel`, `InspectPanel`, `LogPanel`, `ScrollbackPanel`, `TargetPanel` and `AbilityPanel`, each a plugin holding its rectangle and its headings.
 - The scrollback: the whole log on a modal screen, wrapped rather than clipped, ruled off per turn, scrolled by line and by page with both ends clamped, and filtered by cycling only the tones the log actually holds. A second presenter over the same `MessageLog` the strip draws, with its cursor and filter in a `Scrollback` resource of its own.
+- `cursor`: the arithmetic the two cursors share, ordering candidates nearest first with a positional tie-break, cycling with a wrap, and stepping without leaving the loaded window.
 - The look cursor: opens on the nearest actor, steps with the direction keys, cycles what is in sight, stays inside the loaded window, and owns input as a modal.
+- The targeting cursor: a game writes `AimAt` and the engine does the rest.
+  It opens on the nearest thing the ability's `Aim` wants, which is the choice a mind's tactic would make, previews the footprint with the same call the resolver will make, and writes the `Use` intent on confirm.
+  An ability that wants no cursor is used at once, so a game binds every ability the same way.
+  The overlay repaints the backgrounds the map already drew, keeping every glyph: the cells hit, the flight to them, and the whole footprint in the bad tone with the reason in the banner when the resolver would refuse.
 - `Modals`: a stack of interned modal ids with `modal_is`, `modal_open` and `no_modal` run conditions, so one gate covers every screen a game adds.
 - `DirectionKeys`: arrows, vi keys and the numpad to the eight directions, in one resource a game may replace.
 - A message log carrying a tone per line, folding a repeat into a count, filterable by tone.
@@ -149,6 +156,13 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 `docs/guide` is an mdBook that builds a small roguelike, Warren, in nine steps: a map on screen, walking, sight and memory, monsters, blows, items, floors, content in RON, and an action of the game's own, ending with the headless tests.
 Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter's code is compiled by CI and can be played on its own; the chapters quote the sources through mdBook anchors rather than restating them, and `scripts/check-guide.sh` fails the build if an anchor, an image or a table-of-contents entry stops resolving.
 
+## The fourth example: Knacks
+
+One arena and five sets of abilities, a fantasy caster, a pirate, a marine, a man-at-arms and a thief, all eighteen of them loaded into one registry from five RON files that differ in nothing but their words.
+`Tab` changes which set the player knows and nothing else about the run changes, because nothing else can.
+`src/effects.rs` holds the five effects the engine does not ship, one per genre, and is the honest half of the claim: the boundary between what is data and what is code is those two files side by side.
+An ability key writes `AimAt` and nothing more; the cursor, the preview and the list of what can be called on are the engine's.
+
 ## The third example: Lamplight
 
 One dark cave: a lantern that burns oil and is lit or doused with a use action, a brazier, wisps that glow and drift, fungus that glows, pools that shimmer, a torch on the floor, and lurkers with dark sight and no glow.
@@ -169,11 +183,10 @@ It is built only on the public API, so it is the test that the seams are right.
 - Cursed items: nothing resists removal or carries a deliberate penalty.
 - Throwing.
 - A character sheet.
-- Abilities as data over the targeting shapes.
 - Tile fields for fire and gas, and the glow they would shed.
 - Nights on Corsair's open water, and a lantern the player can douse or run out of.
 - Lit detection ranges, a light-averse tactic, and a ranged penalty in the dark once accuracy exists.
-- Scripted encounters.
+- Scripted encounters, which want an ability's effect list without the turn, the cost and the cursor.
 - The wasm unload bridge.
 - Seed replay.
 - Bevy UI presenters over the panel views (phase H of `docs/design/ui.md`). The views and collectors already do not know which backend draws them; what a node tree would add is wrapping, proportional text, mouse hover and sub-cell bars. Deferred until a game asks for one of those, since it is a second set of presenters to keep and its tests are node trees rather than the exact-text ones that have caught the bugs so far.

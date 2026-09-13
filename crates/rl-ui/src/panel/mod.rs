@@ -17,18 +17,22 @@
 //! The drawing helpers below are public because a game taking the second
 //! way out should not have to rewrite a box-drawing routine to do it.
 
+pub mod ability;
 pub mod gear;
 pub mod inspect;
 pub mod log;
 pub mod nearby;
 pub mod scrollback;
+pub mod target;
 pub mod vitals;
 
+pub use ability::{AbilityLayout, AbilityMenu, AbilityPanel, ability_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
 pub use log::LogPanel;
 pub use nearby::NearbyPanel;
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
+pub use target::{TargetLayout, TargetPanel};
 pub use vitals::VitalsPanel;
 
 use rl_core::Rect;

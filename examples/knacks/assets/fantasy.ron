@@ -1,0 +1,54 @@
+// Fantasy: mana off a stat, fire off a damage kind, and a drain the
+// engine has no word for.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:      unique across every set, since all five load into one registry
+//   aim:       Foe (default) | Ally | SelfOnly | Ground | Anyone
+//   mode:      Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
+//              Beam(range:) | Cone(length:)
+//   sight:     optional; whether the aim must be a cell the user can see (default true)
+//   requires:  optional; Has(status) | Lacks(status) | Wielding(tag) |
+//              InSlot(slot, tag) | Above(stat, n)
+//   costs:     optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n)
+//   time:      optional; hundredths of a step the turn costs (default 100)
+//   cooldown:  optional; hundredths before it may be used again, from the
+//              moment of use (default 0)
+//   effects:   each (kind:, chance:, args:); kind is any effect registered by
+//              the engine (Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport)
+//              or by this game (Drain, Plunder, Hack, Banner, Smoke)
+#![enable(implicit_some)]
+[
+    (
+        name: "fireball",
+        mode: Ball(range: 8, radius: 2),
+        costs: [Pool("mana", 12)],
+        cooldown: 200,
+        effects: [
+            (kind: "Harm", args: (kind: "fire", roll: "3d6")),
+            (kind: "Inflict", chance: 50, args: (status: "scorched", turns: 4)),
+        ],
+    ),
+    (
+        name: "blink",
+        aim: Ground,
+        mode: Bolt(range: 7),
+        costs: [Pool("mana", 5)],
+        cooldown: 400,
+        effects: [(kind: "Teleport")],
+    ),
+    (
+        name: "mend",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Pool("mana", 6)],
+        effects: [(kind: "Mend", args: (kind: "care", roll: "2d6"))],
+    ),
+    (
+        name: "drain",
+        mode: Bolt(range: 6),
+        effects: [
+            (kind: "Harm", args: (kind: "fire", roll: "1d6")),
+            (kind: "Drain", args: (pool: "mana", amount: 4)),
+        ],
+    ),
+]

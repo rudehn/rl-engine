@@ -219,6 +219,10 @@ pub struct Sight<'w, 's> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MindWorld<'w> {
     fields: ResMut<'w, FlowFields>,
+    /// What the ability layer narrowed down for this mind, when the game
+    /// added it. Absent in a game with no abilities, and then no tactic
+    /// is ever offered one.
+    offered: Option<Res<'w, crate::ability::Offered>>,
     rng: ResMut<'w, CombatRng>,
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
@@ -252,6 +256,7 @@ impl Action for Attack {}
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MindIntents<'w> {
     moves: MessageWriter<'w, Intent<Step>>,
+    abilities: MessageWriter<'w, Intent<crate::ability::Use>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
     waits: MessageWriter<'w, Intent<Wait>>,
     chose: MessageWriter<'w, MindChose>,
@@ -267,7 +272,7 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
     let Ok((player_pos, player_sight)) = sight.player.single() else { return };
     let Ok((thinker, mind, profile)) = sight.minds.single() else { return };
     let Ok((_, my_pos, my_hp, my_faction, perception, _)) = sight.actors.get(thinker) else { return };
-    let MindWorld { fields, rng, map, occupancy, rules, turns } = &mut world;
+    let MindWorld { fields, offered, rng, map, occupancy, rules, turns } = &mut world;
     let (fields, rng, map, occupancy, rules, turns) = (&mut **fields, &mut **rng, &**map, &**occupancy, &**rules, &**turns);
     let actors = &sight.actors;
     let profile = profile.map(|p| p.0).unwrap_or_default();
@@ -300,6 +305,11 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
         }
     }
     snapshot.sort();
+    if let Some(offered) = offered.as_deref()
+        && offered.actor == Some(thinker)
+    {
+        snapshot.usable = offered.usable.clone();
+    }
 
     let wants_maps = !snapshot.enemies.is_empty();
     if wants_maps {
@@ -311,12 +321,23 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
     let approach = fields.approach.get(&profile);
     let escape = fields.escape.get(&profile);
     let can_step = |p: Point| map.is_walkable(p) && !occupancy.is_occupied(p);
+    // The predicate the ability resolver uses, so what a tactic thinks a
+    // shape will cover is what it does cover.
+    let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
     let mut turn_rng: StdRng =
         rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut rng.0), my_pos.0.x, my_pos.0.y));
     let shifted = |m: &DijkstraMap| shift_map(m, origin);
     let approach_world = approach.map(shifted);
     let escape_world = escape.map(shifted);
-    let mut ctx = TacticCtx { snapshot: &snapshot, approach: approach_world.as_ref(), escape: escape_world.as_ref(), can_step: &can_step, rng: &mut turn_rng };
+    let mut ctx = TacticCtx {
+        snapshot: &snapshot,
+        approach: approach_world.as_ref(),
+        escape: escape_world.as_ref(),
+        can_step: &can_step,
+        blocks_shot: &blocks_shot,
+        bounds: map.window_tiles(),
+        rng: &mut turn_rng,
+    };
     let (decision, _which) = mind.0.decide(&mut ctx);
     if !acting.claim_decision(thinker) {
         return;
@@ -332,6 +353,9 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
         },
         Decision::Attack(target) => {
             intents.attacks.write(Intent::new(thinker, Attack(target)));
+        }
+        Decision::Ability { ability, aim } => {
+            intents.abilities.write(Intent::new(thinker, crate::ability::Use { ability, aim }));
         }
         Decision::Wait => {
             intents.waits.write(Intent::new(thinker, Wait));
@@ -485,7 +509,11 @@ impl Plugin for CombatPlugin {
         use crate::plugin::{ResolveSet, Turn, TurnSet, needs};
         use crate::state::EngineState;
         use crate::turn::AddAction;
-        app.add_message::<DamageEvent>()
+        // The minds may choose an ability, so the message they would
+        // write it into exists whether or not the game added abilities.
+        // Registering it twice is what `add_message` is built for.
+        app.add_message::<Intent<crate::ability::Use>>()
+            .add_message::<DamageEvent>()
             .add_message::<DamageDealt>()
             .add_message::<DeathEvent>()
             .add_message::<MindChose>()
@@ -768,5 +796,77 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Attack(far)));
         app.update();
         assert_eq!(app.world().get::<Health>(far).unwrap().hp, 20);
+    }
+}
+
+/// Damage everyone the ability's aim wanted under its footprint.
+///
+/// Through [`DamageEvent`] rather than onto health directly, so a
+/// fireball is mitigated by the same armor, resistances and stages a
+/// sword is, and a game that inserts a stage gets it on both at once.
+#[derive(Debug, Clone, Copy)]
+pub struct Harm {
+    /// What kind of damage.
+    pub kind: DamageKindId,
+    /// How much, rolled per target.
+    pub roll: DiceRoll,
+}
+
+impl crate::ability::Effect for Harm {
+    fn apply(&self, landing: &crate::ability::Landing, world: &mut crate::ability::EffectWorld<'_, '_>) {
+        for target in &landing.targets {
+            let amount = self.roll.roll(&mut **world.rng);
+            world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, amount) });
+        }
+    }
+}
+
+impl crate::ability::FromArgs for Harm {
+    const KIND: &'static str = "Harm";
+
+    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        struct Args {
+            kind: String,
+            roll: String,
+        }
+        let a: Args = rl_rules::ability::read_args(args)?;
+        Ok(Self { kind: look.damage(&a.kind).ok_or_else(|| format!("unknown damage kind {:?}", a.kind))?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
+    }
+}
+
+/// Heal everyone under the footprint.
+///
+/// Negative damage of a named kind, so resistance to it is a game's to
+/// define: a construct that resists the kind a medkit deals cannot be
+/// patched up, and nothing in the engine had to learn the word undead.
+#[derive(Debug, Clone, Copy)]
+pub struct Mend {
+    /// The kind healing counts as.
+    pub kind: DamageKindId,
+    /// How much, rolled per target.
+    pub roll: DiceRoll,
+}
+
+impl crate::ability::Effect for Mend {
+    fn apply(&self, landing: &crate::ability::Landing, world: &mut crate::ability::EffectWorld<'_, '_>) {
+        for target in &landing.targets {
+            let amount = self.roll.roll(&mut **world.rng);
+            world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, -amount) });
+        }
+    }
+}
+
+impl crate::ability::FromArgs for Mend {
+    const KIND: &'static str = "Mend";
+
+    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        struct Args {
+            kind: String,
+            roll: String,
+        }
+        let a: Args = rl_rules::ability::read_args(args)?;
+        Ok(Self { kind: look.damage(&a.kind).ok_or_else(|| format!("unknown damage kind {:?}", a.kind))?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
     }
 }

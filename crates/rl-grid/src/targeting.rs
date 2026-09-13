@@ -7,9 +7,10 @@
 //! Nothing here knows what an ability does with the cells.
 
 use rl_core::{Point, Rect, geometry};
+use serde::{Deserialize, Serialize};
 
 /// The shape of a target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TargetMode {
     /// The user's own cell.
     Own,

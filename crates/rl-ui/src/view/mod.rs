@@ -14,14 +14,18 @@
 //! Each view has its own plugin, and adding one is the whole opt-in.
 //! Nothing here runs unless a game asks for it.
 
+pub mod ability;
 pub mod gear;
 pub mod inspect;
 pub mod nearby;
+pub mod target;
 pub mod vitals;
 
+pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
 pub use gear::{GearSlot, GearView, GearViewPlugin};
 pub use inspect::{InspectKeys, InspectView, InspectViewPlugin};
 pub use nearby::{NearbyView, NearbyViewPlugin};
+pub use target::{AimAt, TargetKeys, TargetView, TargetViewPlugin, target_modal};
 pub use vitals::{VitalsView, VitalsViewPlugin};
 
 use bevy::prelude::*;

@@ -1,6 +1,7 @@
 //! What an actor knows this turn.
 
 use crate::FactionId;
+use crate::ability::Usable;
 use rl_core::{Point, geometry};
 
 /// One actor as another sees it.
@@ -36,12 +37,15 @@ pub struct Snapshot<A: Copy> {
     pub allies: Vec<ActorView<A>>,
     /// The cell it came from last turn, if it moved.
     pub came_from: Option<Point>,
+    /// The abilities it could use this turn, already narrowed to what it
+    /// can afford. Empty for an actor with none, which is most of them.
+    pub usable: Vec<Usable>,
 }
 
 impl<A: Copy> Snapshot<A> {
     /// A snapshot with nothing in sight.
     pub fn alone(me: ActorView<A>) -> Self {
-        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None }
+        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None, usable: Vec::new() }
     }
 
     /// Sorts enemies and allies nearest first, ties by position, so two

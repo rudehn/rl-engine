@@ -64,6 +64,15 @@ pub struct Wearable(pub EquipShape);
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Enchant(pub rl_rules::Enchanted);
 
+/// What an item counts as.
+///
+/// The affix model already rolls against tags; abilities read the same
+/// ones to ask whether a shield is on the arm or a powder charge is in the
+/// bag, so they live on the item rather than in a table only the game can
+/// read.
+#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
+pub struct Tagged(pub Vec<rl_rules::TagId>);
+
 /// A countable item: picking one up merges it into a carried item with the
 /// same key instead of adding an entry. The key is the game's, usually
 /// the definition id.

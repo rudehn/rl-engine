@@ -87,6 +87,7 @@
 #[cfg(test)]
 pub(crate) mod harness;
 
+pub mod cursor;
 pub mod facet;
 pub mod keys;
 pub mod log;
@@ -101,10 +102,14 @@ pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{Modal, ModalId, Modals, modal_is, modal_open, no_modal};
-pub use panel::{GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, VitalsPanel};
+pub use panel::{
+    AbilityMenu, AbilityPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, TargetPanel, VitalsPanel,
+    ability_modal,
+};
 pub use tone::{Palette, Tone, ToneId, Tones};
 pub use view::{
-    Bar, GearSlot, GearView, GearViewPlugin, InspectKeys, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin, Row, VitalsView, VitalsViewPlugin,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, Bar, GearSlot, GearView, GearViewPlugin, InspectKeys, InspectView, InspectViewPlugin, NearbyView,
+    NearbyViewPlugin, Row, TargetKeys, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
 };
 
 use bevy::prelude::*;
@@ -159,8 +164,14 @@ pub mod prelude {
     // The module itself, for `panel::split_right` and the drawing
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
-    pub use crate::panel::{GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, VitalsPanel};
+    pub use crate::panel::{
+        AbilityMenu, AbilityPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, TargetPanel, VitalsPanel,
+        ability_modal,
+    };
     pub use crate::tone::{Palette, ToneId, Tones};
-    pub use crate::view::{Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin, Row, VitalsView, VitalsViewPlugin};
+    pub use crate::view::{
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin, Row,
+        TargetKeys, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+    };
     pub use crate::{UiPlugin, ViewSet};
 }
