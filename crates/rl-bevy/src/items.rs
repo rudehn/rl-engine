@@ -17,6 +17,16 @@ use crate::places::{MapId, OnMap};
 use crate::turn::{Acting, Action, ActionDone, ActionRefused, Intent};
 use crate::world::WorldMap;
 
+/// The equipment slots this game has, in the order a panel lists them.
+///
+/// [`Equipped`] stores what is worn by [`SlotId`](rl_rules::SlotId), which
+/// is an index and not a name, so anything that prints a slot needs the
+/// registry the ids came from. [`ItemsPlugin`] does not require it, because
+/// equipping does not: a game that never shows a gear panel never inserts
+/// one.
+#[derive(Resource, Debug, Clone, Deref, DerefMut)]
+pub struct Slots(pub rl_rules::Registry<rl_rules::SlotDef>);
+
 /// An item.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Item;

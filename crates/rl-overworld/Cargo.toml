@@ -21,3 +21,4 @@ rl-bevy.workspace = true
 bevy.workspace = true
 rl-grid.workspace = true
 rl-render.workspace = true
+rl-ui.workspace = true

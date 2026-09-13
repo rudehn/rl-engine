@@ -12,7 +12,7 @@ use rl_engine::rl_core::Point;
 use rl_engine::rl_rules::Tracker;
 use rl_engine::rl_rules::{Enchanted, Equipment};
 use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, decode, encode};
-use rl_engine::rl_ui::{LogCategory, MessageLog};
+use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::{Deserialize, Serialize};
 
 use crate::items::{Armory, ItemKind};
@@ -301,10 +301,10 @@ pub fn save_keys(world: &mut World) {
     if playing {
         let turn = world.resource::<Turns>().turn_number();
         match save_run(world) {
-            Ok(()) => world.resource_mut::<MessageLog>().push("The run is written in the log book.", LogCategory::Notice, turn),
+            Ok(()) => world.resource_mut::<MessageLog>().push("The run is written in the log book.", Tones::NOTICE, turn),
             Err(e) => {
                 error!("save failed: {e}");
-                world.resource_mut::<MessageLog>().push(format!("The save failed: {e}"), LogCategory::Bad, turn);
+                world.resource_mut::<MessageLog>().push(format!("The save failed: {e}"), Tones::BAD, turn);
             }
         }
     }

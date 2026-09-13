@@ -17,7 +17,7 @@ use crate::shade::{Memory, Shading, Vary};
 use crate::terminal::{Cell, Terminal};
 
 /// How an entity is drawn.
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct Glyph {
     /// The character.
     pub ch: char,

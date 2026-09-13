@@ -21,7 +21,7 @@ use rl_engine::rl_mapgen::passes::{CellularCave, KeepLargestRegion, StartPoint};
 use rl_engine::rl_mapgen::prefab::{Placement, Prefab, StampPrefab, Stamped};
 use rl_engine::rl_mapgen::{BaseContext, BuildContext, BuildError, Chain};
 use rl_engine::rl_render::Glyph;
-use rl_engine::rl_ui::{LogCategory, MessageLog};
+use rl_engine::rl_ui::{MessageLog, Tones};
 use rl_engine::rl_world::WorldGraph;
 
 use crate::content::{COVE, Content};
@@ -180,7 +180,7 @@ pub fn populate_places(mut commands: Commands, mut entered: MessageReader<PlaceE
         let turn = stock.turns.turn_number();
         stock.log.push(
             if ev.first { format!("You climb down into the {name}. It smells of tar and rum.") } else { format!("You return to the {name}.") },
-            LogCategory::Notice,
+            Tones::NOTICE,
             turn,
         );
         if !ev.first {

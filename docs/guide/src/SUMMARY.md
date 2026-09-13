@@ -12,6 +12,7 @@
 - [Down the stairs](07-down-the-stairs.md)
 - [Content in files](08-content-in-files.md)
 - [An action of your own](09-an-action-of-your-own.md)
-- [Testing without a window](10-testing.md)
+- [Panels](10-panels.md)
+- [Testing without a window](11-testing.md)
 
-[Where to go next](11-where-to-go-next.md)
+[Where to go next](12-where-to-go-next.md)

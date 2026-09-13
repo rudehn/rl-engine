@@ -14,13 +14,19 @@ use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, Rect};
 use rl_render::{Cell, Terminal};
+use rl_ui::{ModalId, Modals};
 use rl_world::BandId;
 
-/// Whether the overworld screen is open.
+/// The name the overworld's modal is declared under.
+pub const OVERWORLD_MODAL: &str = "overworld";
+
+/// Where the cursor is on the discovered-site list.
+///
+/// Whether the screen is open is not here: it is on the shared
+/// [`Modals`] stack, so this screen and a game's own cannot both think
+/// they own the arrow keys.
 #[derive(Resource, Debug, Default)]
 pub struct OverworldScreen {
-    /// Open or not.
-    pub open: bool,
     /// Index into the discovered-site list the cursor is on.
     pub selected: usize,
 }
@@ -126,6 +132,7 @@ pub struct OverworldPlugin;
 
 impl Plugin for OverworldPlugin {
     fn build(&self, app: &mut App) {
+        app.world_mut().resource_mut::<Modals>().declare(OVERWORLD_MODAL);
         app.add_systems(OnEnter(EngineState::Playing), rl_bevy::needs::<OverworldLayout>("OverworldPlugin"))
             .init_resource::<OverworldScreen>()
             .init_resource::<BandAppearance>()
@@ -138,12 +145,21 @@ impl Plugin for OverworldPlugin {
 
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<rl_bevy::CorePlugin>(app, "OverworldPlugin");
+        rl_bevy::depends_on::<rl_ui::UiPlugin>(app, "OverworldPlugin");
     }
 }
 
+/// The id of the overworld's modal, for a game gating its own systems.
+///
+/// # Panics
+/// Panics if [`OverworldPlugin`] was not added.
+pub fn overworld_modal(modals: &Modals) -> ModalId {
+    modals.get(OVERWORLD_MODAL).expect("OverworldPlugin declares the overworld modal")
+}
+
 /// Whether the overworld screen is open, for gating game input.
-pub fn overworld_open(screen: Res<OverworldScreen>) -> bool {
-    screen.open
+pub fn overworld_open(modals: Res<Modals>) -> bool {
+    modals.is_open(overworld_modal(&modals))
 }
 
 /// Opens and closes the screen, moves the cursor over discovered sites,
@@ -152,18 +168,20 @@ pub fn handle_keys(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<OverworldKeys>,
     mut screen: ResMut<OverworldScreen>,
+    mut modals: ResMut<Modals>,
     knowledge: Res<Knowledge>,
     mut portals: MessageWriter<PortalRequest>,
 ) {
-    if keys.just_pressed(binds.toggle) {
-        screen.open = !screen.open;
+    let modal = overworld_modal(&modals);
+    if keys.just_pressed(binds.toggle) && (modals.is_top(modal) || !modals.any_open()) {
+        modals.toggle(modal);
         return;
     }
-    if !screen.open {
+    if !modals.is_top(modal) {
         return;
     }
     if keys.just_pressed(binds.close) {
-        screen.open = false;
+        modals.close_one(modal);
         return;
     }
     let discovered: Vec<usize> = knowledge.discovered_sites().collect();
@@ -179,7 +197,7 @@ pub fn handle_keys(
     if keys.just_pressed(binds.go) {
         let site = discovered[screen.selected.min(discovered.len() - 1)];
         portals.write(PortalRequest { site });
-        screen.open = false;
+        modals.close_one(modal);
     }
 }
 
@@ -203,6 +221,7 @@ pub struct Whereabouts<'w, 's> {
 /// player's own region, over whatever the map view drew.
 pub fn draw_overworld(
     screen: Res<OverworldScreen>,
+    modals: Res<Modals>,
     layout: Option<Res<OverworldLayout>>,
     whereabouts: Whereabouts,
     look: Look,
@@ -210,7 +229,7 @@ pub fn draw_overworld(
 ) {
     let style = *look.style;
     let look = &look.bands;
-    if !screen.open {
+    if !modals.is_open(overworld_modal(&modals)) {
         return;
     }
     let Whereabouts { world, map, knowledge, player } = whereabouts;
@@ -260,7 +279,9 @@ pub fn draw_overworld(
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::{BandAppearance, OverworldKeys, OverworldLayout, OverworldPlugin, OverworldScreen, OverworldStyle, PortalRequest, overworld_open};
+    pub use crate::{
+        BandAppearance, OverworldKeys, OverworldLayout, OverworldPlugin, OverworldScreen, OverworldStyle, PortalRequest, overworld_modal, overworld_open,
+    };
 }
 
 #[cfg(test)]
@@ -288,7 +309,7 @@ mod tests {
     fn app() -> App {
         let mut app = headless_app();
         app.add_plugins(rl_bevy::FovPlugin);
-        app.add_plugins((bevy::input::InputPlugin, rl_render::MapViewPlugin, OverworldPlugin))
+        app.add_plugins((bevy::input::InputPlugin, rl_render::MapViewPlugin, rl_ui::UiPlugin, OverworldPlugin))
             .init_resource::<Script>()
             .add_systems(PreUpdate, play_script.after(bevy::input::InputSystems));
         let tiles = TileRegistry::standard();
@@ -338,10 +359,14 @@ mod tests {
     #[test]
     fn the_map_key_opens_the_screen_and_draws_the_world_over_the_map_view() {
         let mut app = app();
-        assert!(!app.world().resource::<OverworldScreen>().open);
+        let is_open = |app: &App| {
+            let modals = app.world().resource::<Modals>();
+            modals.is_open(overworld_modal(modals))
+        };
+        assert!(!is_open(&app));
 
         press(&mut app, OverworldKeys::default().toggle);
-        assert!(app.world().resource::<OverworldScreen>().open, "the map key opens the screen");
+        assert!(is_open(&app), "the map key opens the screen");
 
         let drawn: Vec<char> = {
             let t = app.world().resource::<Terminal>();
@@ -350,6 +375,6 @@ mod tests {
         assert!(drawn.iter().any(|c| *c == '.' || *c == '~'), "the world's bands are drawn: {drawn:?}");
 
         press(&mut app, OverworldKeys::default().close);
-        assert!(!app.world().resource::<OverworldScreen>().open, "escape closes it");
+        assert!(!is_open(&app), "escape closes it");
     }
 }

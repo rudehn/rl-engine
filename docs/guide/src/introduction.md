@@ -4,11 +4,11 @@ This guide builds a roguelike called Warren: a rat warren under a granary, four 
 
 ![Warren: a dug room lit by sight, remembered corridors in cold blue, two rats closing in, and the log counting their bites](images/warren.png)
 
-Nine steps, each a complete program you can run. CI compiles every one of them, so the code in these pages is code that builds.
+Ten steps, each a complete program you can run. CI compiles every one of them, so the code in these pages is code that builds.
 
 ```sh
 cargo run -p tutorial --bin step01_a_map
-cargo run -p tutorial --bin step09_shove
+cargo run -p tutorial --bin step10_panels
 ```
 
 ## Two rules the API follows
@@ -32,4 +32,4 @@ Warren draws with a glyph terminal the engine ships.
 Each chapter takes the previous step and adds one thing.
 Code in the text is pulled from the step's source, and the full file is linked at the top of every chapter.
 
-If you would rather read the finished game first, [step 9](09-an-action-of-your-own.md) is all of it in about four hundred lines.
+If you would rather read the finished game first, [step 10](10-panels.md) is all of it in one file.

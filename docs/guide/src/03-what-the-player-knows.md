@@ -41,20 +41,29 @@ The cold blue in the screenshot is not a colour anyone chose. It is the brown fl
 
 ```rust,no_run
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
+    // Two panels: the vitals strip on the top row, the log along the
+    // bottom. Each draws itself; neither needs a system of yours.
+    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[.] wait  [q]uit"))
+    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
 ```
 
-`ChromePlugin` draws a status line and a message log into rows you set aside, in the same terminal as the map.
+A panel is a plugin holding the rectangle it draws in.
+`VitalsPanel` reads health, armor, the turn and the position off the player and prints them; `LogPanel` prints the log.
+Neither needs a system of yours, and neither is added for you: [chapter 10](10-panels.md) is the rest of them and the reason they are split the way they are.
 
-Drawing is layered by `PresentSet`: `Narrate`, `Map`, `Chrome`, `Overlay`.
-You work out what to say in `Narrate`; the map is painted under it, chrome over it, modals over everything.
-No crate orders itself after another crate's draw function.
+The one thing the strip cannot know is how much of the map is yours, so Warren tells it:
 
 ```rust,no_run
 {{#include ../../../examples/tutorial/src/bin/step03_sight.rs:status}}
 ```
 
-The log takes a category rather than a colour, so the theme decides what bad news looks like.
+That is a facet: a note pushed onto the view in `ViewSet::Annotate`, in words the engine could not have written.
+
+Drawing is layered by `PresentSet`: `Narrate`, `Map`, `Chrome`, `Overlay`.
+You work out what to say in `Narrate`; the map is painted under it, chrome over it, modals over everything.
+No crate orders itself after another crate's draw function.
+
+The log takes a tone rather than a colour, so the palette decides what bad news looks like.
 
 ## Try it
 

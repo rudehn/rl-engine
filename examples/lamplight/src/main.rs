@@ -64,15 +64,20 @@ fn main() -> AppExit {
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
     .add_plugins((CorePlugin, FovPlugin, CombatPlugin, ItemsPlugin, LightingPlugin))
-    .add_plugins((MapViewPlugin, ChromePlugin, CapturePlugin))
+    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
     .insert_resource(Seed(seed))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
+    // No hints on the strip: the log's second line already lists the
+    // keys, and forty characters of them would squeeze the lantern
+    // readout off the row.
+    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)))
+    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
     .init_resource::<LightOverlay>()
+    .add_systems(Update, note_the_dark.in_set(ViewSet::Annotate))
     .add_systems(Startup, start)
     .add_systems(Update, player_input.in_set(EngineSet::Input))
     .add_systems(Turn, populate.in_set(TurnSet::React))
-    .add_systems(Update, (narrate, update_status).chain().in_set(PresentSet::Narrate));
+    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     app.run()
 }
 
@@ -235,8 +240,8 @@ fn start(
         ))
         .id();
     warps.write(WarpRequest::into_place(player, CAVE));
-    log.push(format!("Seed {}. The lantern is lit. Something moves in the dark.", seed.0.0), LogCategory::Notice, 0);
-    log.push("L lantern   g pick up   d drop torch   v show light   q quit", LogCategory::Info, 0);
+    log.push(format!("Seed {}. The lantern is lit. Something moves in the dark.", seed.0.0), Tones::NOTICE, 0);
+    log.push("L lantern   g pick up   d drop torch   v show light   q quit", Tones::TEXT, 0);
     next.set(EngineState::Playing);
 }
 
@@ -380,7 +385,6 @@ struct Voice<'w, 's> {
     commands: Commands<'w, 's>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
-    status: ResMut<'w, StatusLine>,
     next: ResMut<'w, NextState<EngineState>>,
     things: Query<'w, 's, &'static Thing>,
     lamps: Query<'w, 's, (&'static Lamp, Option<&'static LightSource>, Option<&'static Fuel>)>,
@@ -396,7 +400,7 @@ fn narrate(
     mut deaths: MessageReader<DeathEvent>,
     mut voice: Voice,
 ) {
-    let Voice { commands, turns, log, status, next, things, lamps, players } = &mut voice;
+    let Voice { commands, turns, log, next, things, lamps, players } = &mut voice;
     let turn = turns.turn_number();
     let name = |e: Entity| -> &'static str { if players.get(e).is_ok() { "you" } else { things.get(e).map(|t| t.name()).unwrap_or("something") } };
     for ev in items.read() {
@@ -405,36 +409,35 @@ fn narrate(
                 let Ok((lamp, lit, fuel)) = lamps.get(item) else { continue };
                 if lit.is_some() {
                     commands.entity(item).remove::<LightSource>();
-                    log.push("You douse the lantern. The dark comes in close.", LogCategory::Info, turn);
+                    log.push("You douse the lantern. The dark comes in close.", Tones::TEXT, turn);
                 } else if fuel.is_some_and(|f| f.0 == 0) {
-                    log.push("The lantern is dry.", LogCategory::Bad, turn);
+                    log.push("The lantern is dry.", Tones::BAD, turn);
                 } else {
                     commands.entity(item).insert(lamp.0);
-                    log.push("You light the lantern.", LogCategory::Info, turn);
+                    log.push("You light the lantern.", Tones::TEXT, turn);
                 }
             }
-            ItemEvent::PickedUp { item, .. } => log.push(format!("You pick up {}. It keeps burning in your hand.", name(item)), LogCategory::Info, turn),
-            ItemEvent::Dropped { item, .. } => log.push(format!("You set {} down. It lights the floor where it lies.", name(item)), LogCategory::Info, turn),
+            ItemEvent::PickedUp { item, .. } => log.push(format!("You pick up {}. It keeps burning in your hand.", name(item)), Tones::TEXT, turn),
+            ItemEvent::Dropped { item, .. } => log.push(format!("You set {} down. It lights the floor where it lies.", name(item)), Tones::TEXT, turn),
             _ => {}
         }
     }
     for ev in lights.read() {
         let LightEvent::BurntOut { entity } = *ev;
-        log.push(format!("{} gutters and goes out.", capital(name(entity))), LogCategory::Bad, turn);
+        log.push(format!("{} gutters and goes out.", capital(name(entity))), Tones::BAD, turn);
     }
     for d in dealt.read() {
         let attacker = d.hit.attacker.map(name).unwrap_or("something");
-        let (verb, cat) = if attacker == "you" { ("bite", LogCategory::Info) } else { ("bites", LogCategory::Bad) };
+        let (verb, cat) = if attacker == "you" { ("bite", Tones::TEXT) } else { ("bites", Tones::BAD) };
         let tail = if d.dealt <= 0 { " for nothing.".to_string() } else { format!(" for {}.", d.dealt) };
         log.push(format!("{} {verb} {}{tail}", capital(attacker), name(d.target)), cat, turn);
     }
     for d in deaths.read() {
         if d.was_player {
-            log.push("The dark has you. Press q to quit.", LogCategory::Bad, turn);
-            status.0 = format!("Lost in the dark on turn {turn}.   [q]uit");
+            log.push("The dark has you. Press q to quit.", Tones::BAD, turn);
             next.set(EngineState::Idle);
         } else {
-            log.push(format!("{} dies.", capital(name(d.entity))), LogCategory::Good, turn);
+            log.push(format!("{} dies.", capital(name(d.entity))), Tones::GOOD, turn);
         }
     }
 }
@@ -447,18 +450,15 @@ fn capital(s: &str) -> String {
     }
 }
 
-fn update_status(
-    mut status: ResMut<StatusLine>,
-    turns: Res<Turns>,
+/// What the engine cannot know: the lantern, and how bright it is here.
+fn note_the_dark(
+    mut vitals: ResMut<VitalsView>,
+    mut facets: ResMut<Facets>,
     lighting: Res<Lighting>,
-    state: Res<State<EngineState>>,
-    player: Query<(&Health, &Position, &Inventory), With<Player>>,
+    player: Query<(&Position, &Inventory), With<Player>>,
     lamps: Query<(Option<&LightSource>, Option<&Fuel>), With<Lamp>>,
 ) {
-    if *state.get() != EngineState::Playing {
-        return;
-    }
-    let Ok((hp, pos, bag)) = player.single() else { return };
+    let Ok((pos, bag)) = player.single() else { return };
     let lantern = bag
         .items
         .iter()
@@ -468,7 +468,8 @@ fn update_status(
             if lit.is_some() { format!("lit, {oil} oil") } else { format!("out, {oil} oil") }
         })
         .unwrap_or_else(|| "gone".into());
-    status.0 = format!("HP {}/{}   Turn {}   Lantern {lantern}   Light here {}", hp.hp, hp.max, turns.turn_number(), lighting.at(pos.0).intensity);
+    vitals.facets.push(facets.facet("lantern", format!("lantern {lantern}")));
+    vitals.facets.push(facets.facet("light", format!("light here {}", lighting.at(pos.0).intensity)));
 }
 
 #[cfg(test)]
@@ -480,7 +481,6 @@ mod tests {
         app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin, LightingPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
             .init_resource::<MessageLog>()
-            .init_resource::<StatusLine>()
             .add_systems(Startup, start)
             .add_systems(Turn, populate.in_set(TurnSet::React))
             .add_systems(Update, narrate.in_set(PresentSet::Narrate));

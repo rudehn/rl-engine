@@ -15,6 +15,8 @@
 //! - [`events`]: facts, counters and quests as data over what happened.
 //! - [`balance`]: threat scoring and the spawn-band report, so content is
 //!   checked from the command line.
+//! - [`forecast`]: what a fight is likely to cost, run through the same
+//!   mitigation a real blow goes through, for an inspect panel to print.
 //!
 //! One crate rather than five, because crate boundaries are drawn on
 //! dependency weight and these all weigh the same: core, grid, serde and
@@ -35,6 +37,7 @@ pub mod damage;
 pub mod equip;
 pub mod events;
 pub mod faction;
+pub mod forecast;
 pub mod stats;
 pub mod status;
 
@@ -46,6 +49,7 @@ pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
+pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
 pub use stats::{Modifier, Op, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 
@@ -62,6 +66,7 @@ pub mod prelude {
         Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker,
     };
     pub use crate::faction::{FactionId, Factions, Relation};
+    pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
     pub use crate::stats::{Modifier, Op, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 }

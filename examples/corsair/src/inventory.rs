@@ -8,15 +8,18 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::Terminal;
-use rl_engine::rl_ui::{ListMenu, LogCategory, MenuRow, Theme, draw_menu};
+use rl_engine::rl_ui::{ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu};
 
 use crate::items::{Armory, ItemKind};
 use crate::monsters::Bestiary;
 
-/// The screen's state.
+/// The name the sea chest's modal is declared under.
+pub const MODAL: &str = "chest";
+
+/// The screen's state. Whether it is open lives on the engine's
+/// [`Modals`] stack, so nothing else can take the keys while it is up.
 #[derive(Resource)]
 pub struct InventoryScreen {
-    pub open: bool,
     pub menu: ListMenu,
 }
 
@@ -25,8 +28,13 @@ impl Default for InventoryScreen {
         let mut menu = ListMenu::new("Sea chest");
         menu.hints = "[e]quip/remove  [d]rop  [u]se  [esc]".into();
         menu.empty = "Nothing but lint.".into();
-        Self { open: false, menu }
+        Self { menu }
     }
+}
+
+/// The id of the chest's modal.
+pub fn modal(modals: &Modals) -> ModalId {
+    modals.get(MODAL).expect("main declares the chest modal")
 }
 
 /// The player, while it holds the turn.
@@ -46,16 +54,24 @@ pub struct ChestIntents<'w> {
     uses: MessageWriter<'w, Intent<UseItem>>,
 }
 
-pub fn inventory_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<InventoryScreen>, player: PlayerTurn, bag: Bag, mut intents: ChestIntents) {
-    if keys.just_pressed(KeyCode::KeyI) {
-        screen.open = !screen.open;
+pub fn inventory_keys(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut screen: ResMut<InventoryScreen>,
+    mut modals: ResMut<Modals>,
+    player: PlayerTurn,
+    bag: Bag,
+    mut intents: ChestIntents,
+) {
+    let chest = modal(&modals);
+    if keys.just_pressed(KeyCode::KeyI) && (modals.is_top(chest) || !modals.any_open()) {
+        modals.toggle(chest);
         return;
     }
-    if !screen.open {
+    if !modals.is_top(chest) {
         return;
     }
     if keys.just_pressed(KeyCode::Escape) {
-        screen.open = false;
+        modals.close_one(chest);
         return;
     }
     if keys.any_just_pressed([KeyCode::ArrowDown, KeyCode::KeyJ]) {
@@ -84,23 +100,27 @@ pub fn inventory_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<Invent
         false
     };
     if asked {
-        screen.open = false;
+        // An action spends a turn, and the turn loop assumes no screen is
+        // up when it runs.
+        modals.close_all();
     }
 }
 
+/// The tables the chest reads an item's line from.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Ledger<'w, 's> {
+    armory: Res<'w, Armory>,
+    bestiary: Res<'w, Bestiary>,
+    bag: Bag<'w, 's>,
+    items: Query<'w, 's, (&'static ItemKind, Option<&'static Stack>, Option<&'static Enchant>)>,
+}
+
 /// Fills the rows from the bag and draws the screen over the map.
-pub fn draw_inventory(
-    mut screen: ResMut<InventoryScreen>,
-    armory: Res<Armory>,
-    bestiary: Res<Bestiary>,
-    theme: Res<Theme>,
-    mut terminal: ResMut<Terminal>,
-    bag: Bag,
-    items: Query<(&ItemKind, Option<&Stack>, Option<&Enchant>)>,
-) {
-    if !screen.open {
+pub fn draw_inventory(mut screen: ResMut<InventoryScreen>, modals: Res<Modals>, palette: Res<Palette>, mut terminal: ResMut<Terminal>, world: Ledger) {
+    if !modals.is_open(modal(&modals)) {
         return;
     }
+    let Ledger { armory, bestiary, bag, items } = &world;
     let Ok((inventory, worn)) = bag.single() else { return };
     let rows: Vec<MenuRow> = inventory
         .items
@@ -143,8 +163,8 @@ pub fn draw_inventory(
                 Some(slot) => format!("({})", armory.slots.name(slot)),
                 None => String::new(),
             };
-            let category = if worn.contains(item) { LogCategory::Notice } else { LogCategory::Info };
-            Some(MenuRow::new(label).tag(tag).detail(detail.join(", ")).category(category))
+            let category = if worn.contains(item) { Tones::NOTICE } else { Tones::TEXT };
+            Some(MenuRow::new(label).tag(tag).detail(detail.join(", ")).toned(category))
         })
         .collect();
     screen.menu.set_rows(rows);
@@ -153,5 +173,5 @@ pub fn draw_inventory(
     let wanted = screen.menu.rows.len().max(3) as i32 + 5;
     let (w, h) = (bounds.width.min(56), bounds.height.min(22).min(wanted));
     let rect = Rect::new((bounds.width - w) / 2, (bounds.height - h) / 2, w, h);
-    draw_menu(&mut terminal, rect, &screen.menu, &theme);
+    draw_menu(&mut terminal, rect, &screen.menu, &palette);
 }

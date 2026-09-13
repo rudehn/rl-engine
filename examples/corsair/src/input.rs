@@ -2,12 +2,7 @@
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::Direction;
-use rl_engine::rl_overworld::OverworldScreen;
-use rl_engine::rl_ui::{LogCategory, MessageLog};
-
-use crate::inventory::InventoryScreen;
-use crate::quests::LedgerScreen;
+use rl_engine::rl_ui::{DirectionKeys, MessageLog, Modals, Tones};
 
 /// How long a held key waits before repeating, and between repeats.
 const REPEAT_DELAY: f32 = 0.25;
@@ -19,17 +14,6 @@ pub struct Repeat {
     since_last: f32,
 }
 
-const MOVES: [(&[KeyCode], Direction); 8] = [
-    (&[KeyCode::ArrowUp, KeyCode::KeyK, KeyCode::Numpad8], Direction::North),
-    (&[KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::Numpad2], Direction::South),
-    (&[KeyCode::ArrowLeft, KeyCode::KeyH, KeyCode::Numpad4], Direction::West),
-    (&[KeyCode::ArrowRight, KeyCode::KeyL, KeyCode::Numpad6], Direction::East),
-    (&[KeyCode::KeyY, KeyCode::Numpad7], Direction::NorthWest),
-    (&[KeyCode::KeyU, KeyCode::Numpad9], Direction::NorthEast),
-    (&[KeyCode::KeyB, KeyCode::Numpad1], Direction::SouthWest),
-    (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
-];
-
 /// The player, while it holds the turn.
 type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Player>, With<MyTurn>)>;
 
@@ -38,9 +22,8 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Playe
 pub struct InputWorld<'w, 's> {
     keys: Res<'w, ButtonInput<KeyCode>>,
     time: Res<'w, Time>,
-    screen: Res<'w, OverworldScreen>,
-    chest: Res<'w, InventoryScreen>,
-    ledger: Res<'w, LedgerScreen>,
+    binds: Res<'w, DirectionKeys>,
+    modals: Res<'w, Modals>,
     occupancy: Res<'w, Occupancy>,
     player: PlayerTurn<'w, 's>,
 }
@@ -71,7 +54,7 @@ pub fn fire(mut aim: Aim, mut intents: MessageWriter<Intent<Attack>>) {
     let Ok((me, pos, sight, faction, gun)) = aim.player.single() else { return };
     let turn = aim.turns.turn_number();
     let Some(gun) = gun else {
-        aim.log.push("You have nothing to shoot with.", LogCategory::Muted, turn);
+        aim.log.push("You have nothing to shoot with.", Tones::MUTED, turn);
         return;
     };
     let here = aim.map.current();
@@ -90,7 +73,7 @@ pub fn fire(mut aim: Aim, mut intents: MessageWriter<Intent<Attack>>) {
         Some(target) => {
             intents.write(Intent::new(me, Attack(target)));
         }
-        None => aim.log.push("Nothing in range to shoot.", LogCategory::Muted, turn),
+        None => aim.log.push("Nothing in range to shoot.", Tones::MUTED, turn),
     }
 }
 
@@ -106,24 +89,26 @@ pub struct PlayerIntents<'w> {
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
 pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: PlayerIntents) {
-    let InputWorld { keys, time, screen, chest, ledger, occupancy, player } = world;
-    if screen.open || chest.open || ledger.open {
+    let InputWorld { keys, time, binds, modals, occupancy, player } = world;
+    // One gate for every screen there is, and every screen a game adds
+    // later: the stack is empty or the world does not have the keys.
+    if modals.any_open() {
         return;
     }
     let Ok((entity, pos)) = player.single() else { return };
 
-    let held = MOVES.iter().find(|(codes, _)| keys.any_pressed(codes.iter().copied()));
-    let fresh = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied()));
-    let walk = if let Some((_, dir)) = fresh {
+    let held = binds.pressed(&keys);
+    let fresh = binds.just_pressed(&keys);
+    let walk = if let Some(dir) = fresh {
         repeat.held_for = 0.0;
         repeat.since_last = 0.0;
-        Some(*dir)
-    } else if let Some((_, dir)) = held {
+        Some(dir)
+    } else if let Some(dir) = held {
         repeat.held_for += time.delta_secs();
         repeat.since_last += time.delta_secs();
         if repeat.held_for >= REPEAT_DELAY && repeat.since_last >= REPEAT_EVERY {
             repeat.since_last = 0.0;
-            Some(*dir)
+            Some(dir)
         } else {
             None
         }
@@ -132,7 +117,7 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: P
         None
     };
     if let Some(dir) = walk {
-        debug!("player walks {dir:?} (fresh {:?}, held {:?})", fresh.map(|m| m.1), held.map(|m| m.1));
+        debug!("player walks {dir:?} (fresh {fresh:?}, held {held:?})");
         // Bump to attack: walking into someone is a strike.
         match occupancy.first_at(pos.0 + dir.offset()) {
             Some(other) => {

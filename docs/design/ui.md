@@ -1,7 +1,7 @@
 # UI
 
-Status: proposed 2026-09-11.
-Written against `main` at `1264a69`, with `rl-ui` holding a message log, a status line and a list menu drawn on the glyph terminal.
+Status: phases A to F built 2026-09-12; G and H proposed.
+Written 2026-09-11 against `main` at `1264a69`, when `rl-ui` held a message log, a status line and a list menu.
 It reads the 17.6k lines across 31 modules of `fantasy-rogue/src/ui/` as the evidence of what a roguelike UI is made of, and decides which third of that belongs to an engine.
 
 ## 0. Summary
@@ -252,6 +252,18 @@ The look cursor is the same shape: moving the cursor, cycling to the next visibl
 A collector allocating a `Vec<Row>` of forty rows every frame at the window's refresh rate is waste, and the rows change only when the turn does.
 Collectors run on a turn-advanced run condition with a `dirty` flag for the cases that change without a turn, and reuse their `Vec` rather than rebuilding it.
 Terminal presenters stay immediate mode and redraw every frame, which costs a memory write per cell and is not worth guarding.
+
+## 11b. What the build changed
+
+Five decisions came out differently, and the reasons are worth keeping.
+
+- **`Name`, not `Label`.** Section 3 argued for an engine component and got the argument right and the name wrong: `Label` collides with `bevy_ui`'s, which every game globbing both preludes would have hit. Bevy's own `Name` is exactly "what to call this entity", so the engine defines nothing and a game that already names entities gets panels for free. The reasoning in section 3 against a `Describe` trait stands unchanged.
+- **Views are tier 2, not tier 1.** A row carries an `Entity` for hover and selection, and `Entity` is Bevy. Only the derivations are Bevy-free, and those went to `rl-rules::forecast` where they are tested without an `App`. Section 2 said as much; section 0 overstated it.
+- **Every frame, not on a turn boundary.** Section 11 planned a turn-advanced run condition. A frame already rewrites every cell of the map, so a few dozen rows beside it is not the cost worth being wrong about, and a panel that is a turn stale is the kind of bug that survives to a release. The collectors clear and refill their `Vec`s instead.
+- **An unset tone is reported at startup, not on use.** Section 4's "warns once" needed interior mutability to mean anything; a check at `OnEnter(Playing)` names every uncoloured tone at once and cannot spam a frame.
+- **`ChromeLayout` went and nothing replaced it.** Section 6 said a panel takes its own rectangle, and that was enough: `panel::split_*` hand back both halves of a cut, and a game keeps the pieces in a struct of its own. No layout resource exists.
+
+Found on the way, both fixed: `VitalsViewPlugin` asserted on `StatusRules`, which made a game with no statuses insert an empty registry to have a health bar; and the look cursor would settle on the player when nothing else was in sight, so the inspect panel forecast a duel with yourself.
 
 ## 12. Risks
 

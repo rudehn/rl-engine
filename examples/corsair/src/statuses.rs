@@ -6,7 +6,7 @@ use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_rules::{Named, Registry};
 use rl_engine::rl_rules::{Op, Stacking, StatusDef};
-use rl_engine::rl_ui::{LogCategory, MessageLog};
+use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
 
 use crate::items::Armory;
@@ -107,9 +107,9 @@ pub fn narrate_statuses(
     let turn = turns.turn_number();
     for ev in events.read() {
         let (target, text, cat) = match *ev {
-            StatusEvent::Applied { target, status } => (target, format!("You are {}.", describe(rules.defs.name(status))), LogCategory::Bad),
-            StatusEvent::Expired { target, status } => (target, format!("You are no longer {}.", describe(rules.defs.name(status))), LogCategory::Muted),
-            StatusEvent::Cured { target, status } => (target, format!("The {} passes.", rules.defs.name(status)), LogCategory::Good),
+            StatusEvent::Applied { target, status } => (target, format!("You are {}.", describe(rules.defs.name(status))), Tones::BAD),
+            StatusEvent::Expired { target, status } => (target, format!("You are no longer {}.", describe(rules.defs.name(status))), Tones::MUTED),
+            StatusEvent::Cured { target, status } => (target, format!("The {} passes.", rules.defs.name(status)), Tones::GOOD),
         };
         if players.get(target).is_ok() {
             log.push(text, cat, turn);
@@ -122,9 +122,4 @@ fn describe(name: &str) -> &str {
         "venom" => "poisoned",
         _ => name,
     }
-}
-
-/// The badges of the player's statuses, for the status line.
-pub fn badges(statuses: &Afflicted, rules: &StatusRules) -> String {
-    statuses.iter().filter_map(|s| rules.defs.get(s.id).badge.map(|b| format!("{b}{}", s.turns))).collect::<Vec<_>>().join(" ")
 }

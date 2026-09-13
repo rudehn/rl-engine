@@ -17,7 +17,7 @@ use rl_engine::rl_rules::{
     AffixDef, AffixKind, Enchanted, EnhanceRule, EquipShape, Modifier, Op, Scaled, ScaledStrike, SlotDef, StatDef, StatId, TagDef, TagId, roll_affixes,
 };
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
-use rl_engine::rl_ui::{LogCategory, MessageLog};
+use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
 
 use crate::content::PORT;
@@ -314,7 +314,10 @@ impl Armory {
     /// Spawns one `id` with a rolled enchantment.
     pub fn spawn_with(&self, commands: &mut Commands, id: Id<ItemDef>, count: u32, at: Option<Point>, enchant: Enchanted) -> Entity {
         let d = self.defs.get(id);
-        let mut e = commands.spawn((Item, ItemKind(id), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
+        // The label carries the rolled name, so a panel shows "fine
+        // cutlass" without ever seeing the armory.
+        let name = self.display_name(id, Some(&Enchant(enchant.clone())));
+        let mut e = commands.spawn((Item, ItemKind(id), Name::new(name), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
         if let Some(shape) = self.shape(id) {
             e.insert((Wearable(shape.clone()), Enchant(enchant)));
         }
@@ -406,13 +409,13 @@ pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, m
         let Ok((kind, stack)) = items.get_mut(item) else { continue };
         let d = armory.defs.get(kind.0);
         if !d.usable() {
-            log.push(format!("You cannot think what to do with the {}.", d.name), LogCategory::Muted, turns.turn_number());
+            log.push(format!("You cannot think what to do with the {}.", d.name), Tones::MUTED, turns.turn_number());
             continue;
         }
         if let Ok(mut hp) = users.get_mut(actor) {
             let before = hp.hp;
             hp.hp = (hp.hp + d.heal).min(hp.max);
-            log.push(format!("You drink the {}. It restores {} health.", d.name, hp.hp - before), LogCategory::Good, turns.turn_number());
+            log.push(format!("You drink the {}. It restores {} health.", d.name, hp.hp - before), Tones::GOOD, turns.turn_number());
             for name in ["venom", "bleeding"] {
                 cure.write(Cure { target: actor, status: statuses.defs.expect(name) });
             }
@@ -511,17 +514,17 @@ pub fn narrate_items(
     };
     for ev in events.read() {
         let (actor, text, cat) = match *ev {
-            ItemEvent::PickedUp { actor, item, merged_into } => (actor, format!("You pick up {}.", describe(merged_into.unwrap_or(item))), LogCategory::Info),
-            ItemEvent::Dropped { actor, item, .. } => (actor, format!("You drop {}.", describe(item)), LogCategory::Info),
+            ItemEvent::PickedUp { actor, item, merged_into } => (actor, format!("You pick up {}.", describe(merged_into.unwrap_or(item))), Tones::TEXT),
+            ItemEvent::Dropped { actor, item, .. } => (actor, format!("You drop {}.", describe(item)), Tones::TEXT),
             ItemEvent::Equipped { actor, item } => {
                 let verb = if items.get(item).is_ok_and(|(k, _, _)| armory.defs.get(k.0).attack.is_some() || armory.defs.get(k.0).ranged.is_some()) {
                     "wield"
                 } else {
                     "put on"
                 };
-                (actor, format!("You {verb} {}.", describe(item)), LogCategory::Info)
+                (actor, format!("You {verb} {}.", describe(item)), Tones::TEXT)
             }
-            ItemEvent::Unequipped { actor, item } => (actor, format!("You take off {}.", describe(item)), LogCategory::Muted),
+            ItemEvent::Unequipped { actor, item } => (actor, format!("You take off {}.", describe(item)), Tones::MUTED),
             ItemEvent::Used { .. } => continue,
         };
         if players.get(actor).is_ok() {

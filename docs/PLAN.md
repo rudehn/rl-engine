@@ -87,6 +87,15 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   A monster can now shove, and a game's tactic sits anywhere in the priority list beside the engine's.
   `OverworldPlugin` and `ChromePlugin` drew nothing at all when their layout resource was missing; they say so on entering play now, through the same `needs` helper the engine's own plugins use, which is public for that reason.
   Nate, 2026-09-11: the last two findings from the architecture review.
+- 2026-09-12: the panels, phases A to F of `docs/design/ui.md`.
+  `rl-ui` is rebuilt around the three-way split: `tone` (an interned `ToneId` over a `Palette` a game extends, with every uncoloured tone named at startup), `facet` (a note a game pushes onto a row in `ViewSet::Annotate`), `modal` (a stack of interned ids with `modal_is`, `modal_open` and `no_modal`), `keys` (the eight directions off arrows, vi keys and the numpad), `view/` (`NearbyView`, `VitalsView`, `GearView`, `InspectView` and a collector plugin each) and `panel/` (a terminal presenter each, plus the frame, heading, bar, clip and rectangle-split helpers a game writing its own reaches for).
+  `rl-rules` gains `forecast`: expected damage with the average roll put through the game's own mitigation, blows and turns to fell either side, and an `Outlook` read off the two counts, so an inspect panel's numbers cannot drift from the fight.
+  `rl-bevy` gains `Slots`; `Theme`, `LogCategory`, `ChromePlugin`, `ChromeLayout` and `StatusLine` are gone, and `rl-overworld` moved its open flag onto the shared stack so it and a game's screens cannot both own the arrow keys.
+  Corsair takes the full set with a rail down the right and a facet for what an enemy wields; the delve and Lamplight take vitals and a log and nothing else, which is the point.
+  The guide gains `10-panels.md` and `examples/tutorial/src/bin/step10_panels.rs`; testing and where-to-go-next renumber to 11 and 12.
+  Found on the way: `VitalsViewPlugin` asserted on `StatusRules`, so a game with no statuses had to insert an empty registry to get a health bar; and the look cursor settled on the player when nothing else was in sight, so the panel forecast a duel with yourself. Both fixed, both tested.
+  Deferred: the log's turn separators and a scrollback screen (phase G), and Bevy UI presenters over the same views (phase H), which waits for a game that asks.
+  Nate, 2026-09-11: the nearby list, equipment and stats, inspect and the log should be common features, without the theming being common too.
 - Next: the rest of the deferred pieces (throwing, a character sheet, abilities as data over targeting, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 
@@ -536,6 +545,7 @@ Both games spawn one text entity per cell; that backing store is rewritten, the 
 The `ActiveModal` closed enum becomes a registry of modal ids the game populates.
 The widget must not import its consumer; today `list_detail` re-exports helpers from `inventory_preview`.
 
+Revised 2026-09-12: built, as phases A to F of `docs/design/ui.md`; that document is the reference and section 11b of it records where the build differs from the plan.
 Revised 2026-09-11: this section said Bevy UI, and what was built draws on the glyph terminal.
 `docs/design/ui.md` settles it, and the answer is that the backend was the wrong thing to decide first.
 Every panel splits into a view (the data), a collector (the system that keeps it fresh) and a presenter (one way of drawing it); the views and collectors are the reusable half and do not know which backend draws them.

@@ -81,11 +81,15 @@ fn main() -> AppExit {
     .add_plugins((CorePlugin, FovPlugin, CombatPlugin, ItemsPlugin))
     // The drawing. `CapturePlugin` is only how this guide's screenshots
     // are taken; delete it and nothing changes.
-    .add_plugins((MapViewPlugin, ChromePlugin, CapturePlugin))
+    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
     .insert_resource(Seed(RunSeed(7)))
     // The map gets everything but the status row and the log.
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
+    // Two panels: the vitals strip on the top row, the log along the
+    // bottom. Each draws itself; neither needs a system of yours.
+    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[g]et [e]at [>]down [q]uit"))
+    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+    .add_systems(Update, note_bag_and_floor.in_set(ViewSet::Annotate))
     .add_systems(Startup, start)
     // Once a frame, before the turns: whatever the player pressed becomes
     // at most one intent, however many passes the turn loop then runs.
@@ -98,7 +102,7 @@ fn main() -> AppExit {
     // Both inside the turn: a floor fills the first time it is entered,
     // and a crust eaten heals before the next rat gets its bite in.
     .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
-    .add_systems(Update, (narrate, update_status).chain().in_set(PresentSet::Narrate));
+    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     app.run()
 }
 // ANCHOR_END: main
@@ -286,8 +290,8 @@ fn start(
         ))
         .id();
     warps.write(WarpRequest::into_place(player, map_of(1)));
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), LogCategory::Notice, 0);
-    log.push("g picks up, e eats, > goes down, shift and a direction shoves.", LogCategory::Muted, 0);
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
+    log.push("g picks up, e eats, > goes down, shift and a direction shoves.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
@@ -366,21 +370,12 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, play
 // ANCHOR_END: input
 
 // ANCHOR: status
-/// One line at the top of the screen, rewritten every frame.
-fn update_status(
-    mut status: ResMut<StatusLine>,
-    turns: Res<Turns>,
-    map: Res<WorldMap>,
-    state: Res<State<EngineState>>,
-    player: Query<(&Health, &Inventory), With<Player>>,
-) {
-    if *state.get() != EngineState::Playing {
-        return;
-    }
-    let Ok((hp, bag)) = player.single() else { return };
+/// What the engine cannot know: the bag, and which floor this is.
+fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>, player: Query<&Inventory, With<Player>>) {
+    let Ok(bag) = player.single() else { return };
     let depth = floor_of(map.current());
-    status.0 =
-        format!("HP {}/{}   Crusts {}   Turn {}   Floor {depth}/{FLOORS}: {}   [q]uit", hp.hp, hp.max, bag.items.len(), turns.turn_number(), name_of(depth));
+    vitals.facets.push(facets.facet("crusts", format!("crusts {}", bag.items.len())));
+    vitals.facets.push(facets.facet("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
 }
 // ANCHOR_END: status
 
@@ -398,7 +393,7 @@ fn populate(
 ) {
     for ev in entered.read() {
         let depth = floor_of(ev.map);
-        log.push(format!("Floor {depth}: {}.", name_of(depth)), LogCategory::Notice, turns.turn_number());
+        log.push(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE, turns.turn_number());
         if !ev.first {
             continue;
         }
@@ -476,7 +471,6 @@ fn populate(
 struct Voice<'w, 's> {
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
-    status: ResMut<'w, StatusLine>,
     next: ResMut<'w, NextState<EngineState>>,
     bestiary: Res<'w, Bestiary>,
     players: Query<'w, 's, (), With<Player>>,
@@ -491,7 +485,7 @@ fn narrate(
     mut deaths: MessageReader<DeathEvent>,
     mut voice: Voice,
 ) {
-    let Voice { turns, log, status, next, bestiary, players, kinds } = &mut voice;
+    let Voice { turns, log, next, bestiary, players, kinds } = &mut voice;
     let turn = turns.turn_number();
     let name = |e: Entity| -> String {
         if players.contains(e) {
@@ -502,34 +496,32 @@ fn narrate(
     };
     for ev in items.read() {
         match *ev {
-            ItemEvent::PickedUp { .. } => log.push("You pocket a crust of bread.", LogCategory::Info, turn),
-            ItemEvent::Used { .. } => log.push("You eat the crust. It helps.", LogCategory::Good, turn),
+            ItemEvent::PickedUp { .. } => log.push("You pocket a crust of bread.", Tones::TEXT, turn),
+            ItemEvent::Used { .. } => log.push("You eat the crust. It helps.", Tones::GOOD, turn),
             _ => {}
         }
     }
     for ev in shoved.read() {
-        log.push(format!("You shove {} back.", name(ev.target)), LogCategory::Info, turn);
+        log.push(format!("You shove {} back.", name(ev.target)), Tones::TEXT, turn);
     }
     for d in dealt.read() {
         let attacker = d.hit.attacker.map(&name).unwrap_or_else(|| "something".into());
         let mine = attacker == "you";
-        let (verb, category) = if mine { ("hit", LogCategory::Info) } else { ("bites", LogCategory::Bad) };
+        let (verb, category) = if mine { ("hit", Tones::TEXT) } else { ("bites", Tones::BAD) };
         let tail = if d.dealt <= 0 { " and does nothing.".to_string() } else { format!(" for {}.", d.dealt) };
         log.push(format!("{} {verb} {}{tail}", capital(&attacker), name(d.target)), category, turn);
     }
     for d in deaths.read() {
         if d.was_player {
-            log.push("The warren keeps you. Press q to quit.", LogCategory::Bad, turn);
-            status.0 = format!("Eaten on turn {turn}.   [q]uit");
+            log.push("The warren keeps you. Press q to quit.", Tones::BAD, turn);
             // Leaving `Playing` stops the loop: no turns, no input, but
             // the last frame stays on the screen.
             next.set(EngineState::Idle);
         } else if kinds.get(d.entity).is_ok_and(|k| bestiary.defs.get(k.0).name == "rat king") {
-            log.push("The rat king falls. The scratching stops. Press q to quit.", LogCategory::Notice, turn);
-            status.0 = format!("Won on turn {turn}.   [q]uit");
+            log.push("The rat king falls. The scratching stops. Press q to quit.", Tones::NOTICE, turn);
             next.set(EngineState::Idle);
         } else {
-            log.push(format!("{} dies.", capital(&name(d.entity))), LogCategory::Good, turn);
+            log.push(format!("{} dies.", capital(&name(d.entity))), Tones::GOOD, turn);
         }
     }
 }
@@ -650,7 +642,6 @@ mod tests {
         app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
             .init_resource::<MessageLog>()
-            .init_resource::<StatusLine>()
             .add_action::<Shove>()
             .add_message::<Shoved>()
             .add_systems(Startup, start)

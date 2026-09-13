@@ -45,16 +45,19 @@ fn main() -> AppExit {
     .add_plugins((CorePlugin, FovPlugin))
     // The drawing. `CapturePlugin` is only how this guide's screenshots
     // are taken; delete it and nothing changes.
-    .add_plugins((MapViewPlugin, ChromePlugin, CapturePlugin))
+    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
     .insert_resource(Seed(RunSeed(7)))
     // The map gets everything but the status row and the log.
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
+    // Two panels: the vitals strip on the top row, the log along the
+    // bottom. Each draws itself; neither needs a system of yours.
+    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[.] wait  [q]uit"))
+    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
     .add_systems(Startup, start)
     // Once a frame, before the turns: whatever the player pressed becomes
     // at most one intent, however many passes the turn loop then runs.
     .add_systems(Update, player_input.in_set(EngineSet::Input))
-    .add_systems(Update, update_status.in_set(PresentSet::Narrate));
+    .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
     app.run()
 }
 // ANCHOR_END: main
@@ -129,8 +132,8 @@ fn start(
         .spawn(((Actor, Player, Blocks, Position(Point::ZERO), Speed(100)), (Viewshed::new(9), RevealsMap, Glyph::new('@', Color::WHITE).on_layer(10))))
         .id();
     warps.write(WarpRequest::into_place(player, WARREN));
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), LogCategory::Notice, 0);
-    log.push("Walk with the arrows, hjklyubn or the numpad. . waits, q quits.", LogCategory::Muted, 0);
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
+    log.push("Walk with the arrows, hjklyubn or the numpad. . waits, q quits.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
@@ -177,9 +180,9 @@ fn player_input(
 // ANCHOR_END: input
 
 // ANCHOR: status
-/// One line at the top of the screen, rewritten every frame.
-fn update_status(mut status: ResMut<StatusLine>, turns: Res<Turns>, knowledge: Res<Knowledge>, player: Query<&Position, With<Player>>) {
-    let Ok(pos) = player.single() else { return };
-    status.0 = format!("Turn {}   At {},{}   {} tiles explored   [.] wait  [q]uit", turns.turn_number(), pos.0.x, pos.0.y, knowledge.explored_count());
+/// The one thing the vitals panel cannot know: how much of the map is
+/// ours. A note on the view, in the game's own words.
+fn note_explored(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, knowledge: Res<Knowledge>) {
+    vitals.facets.push(facets.facet("explored", format!("{} tiles explored", knowledge.explored_count())));
 }
 // ANCHOR_END: status

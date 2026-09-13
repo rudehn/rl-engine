@@ -4735,6 +4735,7 @@ dependencies = [
  "rl-core",
  "rl-grid",
  "rl-render",
+ "rl-ui",
  "rl-world",
 ]
 
@@ -4781,7 +4782,11 @@ dependencies = [
  "bevy",
  "rl-bevy",
  "rl-core",
+ "rl-grid",
+ "rl-mapgen",
  "rl-render",
+ "rl-rules",
+ "rl-world",
 ]
 
 [[package]]

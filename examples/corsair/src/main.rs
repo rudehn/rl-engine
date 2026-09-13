@@ -32,7 +32,7 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::{CapturePlugin, capture};
 use rl_engine::rl_render::{Glyph, MapView, MapViewPlugin, TerminalPlugin};
 use rl_engine::rl_rules::FactionId;
-use rl_engine::rl_ui::{ChromeLayout, ChromePlugin, LogCategory, MessageLog, StatusLine};
+use rl_engine::rl_ui::{Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, Tones, UiPlugin, ViewSet, VitalsPanel, panel};
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
@@ -45,8 +45,34 @@ const COLS: i32 = 100;
 const ROWS: i32 = 40;
 const CELL: Vec2 = Vec2::new(10.0, 16.0);
 const FONT: f32 = 14.0;
-/// Rows given to chrome: one status line at the top, four log lines at the bottom.
+/// Rows given to the log at the bottom of the screen.
 const LOG_ROWS: i32 = 4;
+/// Columns given to the rail down the right.
+const RAIL: i32 = 26;
+/// Rows the rail gives to vitals and to gear; the rest is what is nearby.
+const VITALS_ROWS: i32 = 9;
+const GEAR_ROWS: i32 = 7;
+
+/// The screen, cut up once so every panel and the map agree on it.
+struct Screen {
+    map: Rect,
+    log: Rect,
+    vitals: Rect,
+    gear: Rect,
+    nearby: Rect,
+    inspect: Rect,
+}
+
+impl Screen {
+    fn new() -> Self {
+        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        let (map, log) = panel::split_bottom(left, LOG_ROWS);
+        let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
+        let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
+        let inspect = Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10);
+        Self { map, log, vitals, gear, nearby, inspect }
+    }
+}
 
 fn main() -> AppExit {
     let mut seed = RunSeed::fresh();
@@ -81,6 +107,7 @@ fn main() -> AppExit {
         }
     }
 
+    let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -96,12 +123,20 @@ fn main() -> AppExit {
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: FONT })
     .add_plugins((CorePlugin, FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin))
-    .add_plugins((MapViewPlugin, ChromePlugin, OverworldPlugin, CapturePlugin))
+    .add_plugins((MapViewPlugin, UiPlugin, OverworldPlugin, CapturePlugin))
+    // The panels. Each one draws itself from a view the engine keeps
+    // current; none of them needs a system of Corsair's.
+    .add_plugins((
+        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals"),
+        GearPanel::new(screen.gear),
+        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the ground"),
+        LogPanel::new(screen.log),
+        InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close"),
+    ))
     .insert_resource(StartSeed { seed, regions, resume })
     .insert_resource(Saves::platform_default("corsair"))
-    .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
-    .insert_resource(OverworldLayout { viewport: Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS) })
+    .insert_resource(MapView::new(screen.map))
+    .insert_resource(OverworldLayout { viewport: screen.map })
     .init_resource::<inventory::InventoryScreen>()
     .init_resource::<places::Entrances>()
     .init_resource::<quests::LedgerScreen>()
@@ -131,12 +166,22 @@ fn main() -> AppExit {
             quests::report_facts,
             quests::narrate_quests,
             save::delete_on_death,
-            update_status,
         )
             .chain()
             .in_set(PresentSet::Narrate),
     )
+    // What the engine cannot know about a row: what an enemy is holding,
+    // and what is underfoot. Named by set, not by ordering after a
+    // collector.
+    .add_systems(Update, (note_what_they_wield, note_where_you_are).in_set(ViewSet::Annotate))
     .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
+    // Corsair's own screens, declared while building so the lookups in
+    // `inventory` and `quests` find them.
+    {
+        let mut modals = app.world_mut().resource_mut::<Modals>();
+        modals.declare(inventory::MODAL);
+        modals.declare(quests::MODAL);
+    }
     app.run()
 }
 
@@ -212,6 +257,7 @@ fn start_world(world: &mut World) {
     world.insert_resource(WorldRes(graph));
     world.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));
     world.insert_resource(ChunkRulesRes(Box::new(content)));
+    world.insert_resource(Slots(armory.slots.clone()));
     world.insert_resource(armory);
     world.insert_resource(bestiary);
 
@@ -219,15 +265,11 @@ fn start_world(world: &mut World) {
         Some(saved) => {
             save::restore_run(world, &saved);
             let text = save::describe(&saved);
-            world.resource_mut::<MessageLog>().push(text, LogCategory::Notice, saved.turn);
+            world.resource_mut::<MessageLog>().push(text, Tones::NOTICE, saved.turn);
         }
         None => {
             spawn_fresh_player(world, spawn);
-            world.resource_mut::<MessageLog>().push(
-                format!("Seed {}. You step off the gangplank onto the docks of a small port.", seed.0),
-                LogCategory::Notice,
-                0,
-            );
+            world.resource_mut::<MessageLog>().push(format!("Seed {}. You step off the gangplank onto the docks of a small port.", seed.0), Tones::NOTICE, 0);
             if std::env::var("CORSAIR_START").is_ok_and(|v| v == "cave")
                 && let Some(cove) = cove
             {
@@ -240,10 +282,15 @@ fn start_world(world: &mut World) {
             }
         }
     }
-    match std::env::var("CORSAIR_OPEN").as_deref() {
-        Ok("inventory") => world.resource_mut::<inventory::InventoryScreen>().open = true,
-        Ok("ledger") => world.resource_mut::<quests::LedgerScreen>().open = true,
-        _ => {}
+    let open = match std::env::var("CORSAIR_OPEN").as_deref() {
+        Ok("inventory") => Some(inventory::MODAL),
+        Ok("ledger") => Some(quests::MODAL),
+        _ => None,
+    };
+    if let Some(name) = open {
+        let mut modals = world.resource_mut::<Modals>();
+        let id = modals.declare(name);
+        modals.open(id);
     }
     world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
 }
@@ -276,6 +323,7 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             unarmed,
             Inventory { items: vec![cutlass, rum] },
             worn,
+            Name::new("you"),
             StatBlock::default(),
             Afflicted::default(),
             Strikes::default(),
@@ -299,7 +347,7 @@ fn honour_portals(
         let Some(site) = world.sites().get(req.site) else { continue };
         let target = world.region_tiles(site.position).center();
         warps.write(WarpRequest { actor: entity, to: Destination::Surface(target) });
-        log.push("The portal takes you.", LogCategory::Notice, turns.turn_number());
+        log.push("The portal takes you.", Tones::NOTICE, turns.turn_number());
     }
 }
 
@@ -312,50 +360,42 @@ fn note_discoveries(knowledge: Res<Knowledge>, world: Res<WorldRes>, turns: Res<
     if count > seen.0 {
         for site in knowledge.discovered_sites().skip(seen.0) {
             let kind = if world.sites()[site].kind == PORT { "a port" } else { "a cove" };
-            log.push(format!("You discover {kind}."), LogCategory::Good, turns.turn_number());
+            log.push(format!("You discover {kind}."), Tones::GOOD, turns.turn_number());
         }
         seen.0 = count;
     }
 }
 
-/// What the status line reads.
-#[derive(bevy::ecs::system::SystemParam)]
-struct StatusWorld<'w, 's> {
-    turns: Res<'w, Turns>,
-    world: Res<'w, WorldRes>,
-    state: Res<'w, State<EngineState>>,
-    armory: Res<'w, Armory>,
-    map: Res<'w, WorldMap>,
-    statuses: Res<'w, StatusRules>,
-    player: Query<'w, 's, (&'static Position, &'static Health, &'static Armor, &'static Equipped, &'static Afflicted), With<Player>>,
-    ground: Query<'w, 's, items::GroundData, With<Item>>,
-    kinds: Query<'w, 's, &'static ItemKind>,
+/// What a foe is holding, which the engine has no way to know: it has no
+/// armory and no idea what a weapon is. One facet per row, pushed in
+/// [`ViewSet::Annotate`].
+fn note_what_they_wield(mut nearby: ResMut<NearbyView>, mut facets: ResMut<Facets>, armory: Res<Armory>, worn: Query<&Equipped>, kinds: Query<&ItemKind>) {
+    let main = armory.slots.expect("main hand");
+    for row in nearby.actors.iter_mut() {
+        let Some(held) = worn.get(row.entity).ok().and_then(|w| w.in_slot(main)) else { continue };
+        let Ok(kind) = kinds.get(held) else { continue };
+        row.facets.push(facets.facet("wielding", armory.defs.get(kind.0).name.clone()).toned(Tones::MUTED));
+    }
 }
 
-fn update_status(mut status: ResMut<StatusLine>, w: StatusWorld) {
-    if *w.state.get() != EngineState::Playing {
-        return;
+/// Where the player is and what is underfoot: a band of the world, a
+/// level of a cave, and whatever is lying on this tile. None of it is
+/// anything the engine could name.
+fn note_where_you_are(
+    mut vitals: ResMut<rl_engine::rl_ui::VitalsView>,
+    mut facets: ResMut<Facets>,
+    armory: Res<Armory>,
+    world: Res<WorldRes>,
+    map: Res<WorldMap>,
+    ground: Query<items::GroundData, With<Item>>,
+    player: Query<&Position, With<Player>>,
+) {
+    let Ok(pos) = player.single() else { return };
+    let region = world.region_of_tile(pos.0);
+    let below = places::place_name(map.current());
+    let band = below.as_deref().unwrap_or_else(|| world.layers().band(region).map(content::band_name).unwrap_or("nowhere"));
+    vitals.facets.push(facets.facet("whereabouts", band.to_string()));
+    if let Some(here) = items::whats_here(pos.0, &armory, &ground) {
+        vitals.facets.push(facets.facet("underfoot", format!("here: {here} [g]")).toned(Tones::NOTICE));
     }
-    let Ok((pos, hp, armor, worn, afflicted)) = w.player.single() else { return };
-    let badges = statuses::badges(afflicted, &w.statuses);
-    let badges = if badges.is_empty() { String::new() } else { format!("  [{badges}]") };
-    let region = w.world.region_of_tile(pos.0);
-    let below = places::place_name(w.map.current());
-    let band = below.as_deref().unwrap_or_else(|| w.world.layers().band(region).map(content::band_name).unwrap_or("nowhere"));
-    let weapon =
-        worn.in_slot(w.armory.slots.expect("main hand")).and_then(|e| w.kinds.get(e).ok()).map(|k| w.armory.defs.get(k.0).name.as_str()).unwrap_or("fists");
-    let here = items::whats_here(pos.0, &w.armory, &w.ground).map(|s| format!("   here: {s} [g]")).unwrap_or_default();
-    status.0 = format!(
-        "HP {}/{}  AC {}  {}{}   Turn {}   ({}, {}) {}{}   [i]nventory [t]asks [m]ap [q]uit",
-        hp.hp,
-        hp.max,
-        armor.0,
-        weapon,
-        badges,
-        w.turns.turn_number(),
-        pos.0.x,
-        pos.0.y,
-        band,
-        here
-    );
 }

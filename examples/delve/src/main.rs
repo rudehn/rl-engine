@@ -57,17 +57,19 @@ fn main() -> AppExit {
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
     .add_plugins((CorePlugin, FovPlugin, CombatPlugin, LightingPlugin))
-    .add_plugins((MapViewPlugin, ChromePlugin, CapturePlugin))
+    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
     .insert_resource(Seed(seed))
     .insert_resource(FirstFloor(first))
     .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .insert_resource(ChromeLayout { log_rows: Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS), status_row: 0 })
+    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[>] down [<] up [.] wait [q]uit"))
+    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+    .add_systems(Update, note_floor.in_set(ViewSet::Annotate))
     .add_systems(Startup, start)
     .add_systems(Update, player_input.in_set(EngineSet::Input))
     .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
     // A floor fills the moment it is entered, inside the turn.
     .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-    .add_systems(Update, (narrate, update_status).chain().in_set(PresentSet::Narrate));
+    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     app.run()
 }
 
@@ -197,7 +199,7 @@ fn start(
         .id();
     // No surface: the first floor is the first place, and the run starts in it.
     warps.write(WarpRequest::into_place(player, map_of(first.map(|f| f.0).unwrap_or(1))));
-    log.push(format!("Seed {}. The whale's jaw is propped open with a mast. You light a brand and climb in.", seed.0.0), LogCategory::Notice, 0);
+    log.push(format!("Seed {}. The whale's jaw is propped open with a mast. You light a brand and climb in.", seed.0.0), Tones::NOTICE, 0);
     next.set(EngineState::Playing);
 }
 
@@ -228,7 +230,7 @@ fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntere
     let Stock { beasts, map, bile, seed } = &stock;
     for ev in entered.read() {
         let floor = floor_of(ev.map);
-        log.push(format!("Floor {floor}: {}.", name_of(floor)), LogCategory::Notice, turns.turn_number());
+        log.push(format!("Floor {floor}: {}.", name_of(floor)), Tones::NOTICE, turns.turn_number());
         if !ev.first {
             continue;
         }
@@ -338,14 +340,13 @@ struct Voice<'w, 's> {
     beasts: Res<'w, Beasts>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
-    status: ResMut<'w, StatusLine>,
     next: ResMut<'w, NextState<EngineState>>,
     kinds: Query<'w, 's, &'static Kind>,
     players: Query<'w, 's, (), With<Player>>,
 }
 
 fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<DeathEvent>, mut voice: Voice) {
-    let Voice { beasts, turns, log, status, next, kinds, players } = &mut voice;
+    let Voice { beasts, turns, log, next, kinds, players } = &mut voice;
     let turn = turns.turn_number();
     let name = |e: Entity| -> String {
         if players.get(e).is_ok() {
@@ -357,20 +358,18 @@ fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<Deat
     for d in dealt.read() {
         let attacker = d.hit.attacker.map(name).unwrap_or_else(|| "something".into());
         let target = name(d.target);
-        let (verb, cat) = if attacker == "you" { ("hit", LogCategory::Info) } else { ("hits", LogCategory::Bad) };
+        let (verb, cat) = if attacker == "you" { ("hit", Tones::TEXT) } else { ("hits", Tones::BAD) };
         let mut line = format!("{}{} {verb} {target}", attacker[..1].to_uppercase(), &attacker[1..]);
         line.push_str(&if d.dealt <= 0 { " but does nothing.".to_string() } else { format!(" for {}.", d.dealt) });
         log.push(line, cat, turn);
     }
     for d in deaths.read() {
         if d.was_player {
-            log.push("The whale keeps you. Press q to quit.", LogCategory::Bad, turn);
-            status.0 = format!("Digested on turn {turn}.   [q]uit");
+            log.push("The whale keeps you. Press q to quit.", Tones::BAD, turn);
             next.set(EngineState::Idle);
         } else if kinds.get(d.entity).is_ok_and(|k| beasts.defs.get(k.0).name == "heart warden") {
-            log.push("The heart stops. The whale shudders, and daylight opens above you.", LogCategory::Notice, turn);
-            log.push("You have won. Press q to quit.", LogCategory::Notice, turn);
-            status.0 = format!("Out through the blowhole on turn {turn}.   [q]uit");
+            log.push("The heart stops. The whale shudders, and daylight opens above you.", Tones::NOTICE, turn);
+            log.push("You have won. Press q to quit.", Tones::NOTICE, turn);
             next.set(EngineState::Idle);
         } else {
             log.push(
@@ -378,21 +377,16 @@ fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<Deat
                     let n = name(d.entity);
                     format!("{}{}", n[..1].to_uppercase(), &n[1..])
                 }),
-                LogCategory::Good,
+                Tones::GOOD,
                 turn,
             );
         }
     }
 }
 
-fn update_status(mut status: ResMut<StatusLine>, turns: Res<Turns>, map: Res<WorldMap>, state: Res<State<EngineState>>, player: Query<&Health, With<Player>>) {
-    if *state.get() != EngineState::Playing {
-        return;
-    }
-    let Ok(hp) = player.single() else { return };
+fn note_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>) {
     let floor = floor_of(map.current());
-    status.0 =
-        format!("HP {}/{}   Turn {}   Floor {floor} of {FLOORS}: {}   [>] down [<] up [.] wait [q]uit", hp.hp, hp.max, turns.turn_number(), name_of(floor));
+    vitals.facets.push(facets.facet("floor", format!("floor {floor} of {FLOORS}: {}", name_of(floor))));
 }
 
 #[cfg(test)]
@@ -405,7 +399,6 @@ mod tests {
         app.add_plugins((FovPlugin, CombatPlugin, LightingPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
             .init_resource::<MessageLog>()
-            .init_resource::<StatusLine>()
             .add_systems(Startup, start)
             .add_systems(Turn, populate_floor.in_set(TurnSet::React))
             .add_systems(Update, narrate.in_set(PresentSet::Narrate));

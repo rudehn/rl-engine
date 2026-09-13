@@ -15,7 +15,7 @@ use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_rules::{Factions, Relation};
-use rl_engine::rl_ui::{LogCategory, MessageLog, StatusLine};
+use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
 
 use crate::content::PORT;
@@ -181,6 +181,8 @@ impl Bestiary {
                 Speed(m.speed),
                 Mind(self.brains[id.index()].clone()),
                 MonsterKind(id),
+                // What the panels call it. The engine has no bestiary.
+                Name::new(m.name.clone()),
                 StatBlock::default(),
                 Afflicted::default(),
                 Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
@@ -234,7 +236,6 @@ pub fn spawn_on_load(
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Voice<'w> {
     log: ResMut<'w, MessageLog>,
-    status: ResMut<'w, StatusLine>,
     next: ResMut<'w, NextState<EngineState>>,
 }
 
@@ -248,7 +249,7 @@ pub fn narrate(
     names: Query<&MonsterKind>,
     players: Query<(), With<Player>>,
 ) {
-    let Voice { log, status, next } = &mut voice;
+    let Voice { log, next } = &mut voice;
     let name = |e: Entity| -> String {
         if players.get(e).is_ok() {
             "you".to_string()
@@ -263,19 +264,18 @@ pub fn narrate(
         let you_hit = attacker == "you";
         let verb = if you_hit { "hit" } else { "hits" };
         let (text, cat) = if d.dealt <= 0 {
-            (format!("{} {} {} but {} nothing.", cap(&attacker), verb, target, if you_hit { "do" } else { "does" }), LogCategory::Muted)
+            (format!("{} {} {} but {} nothing.", cap(&attacker), verb, target, if you_hit { "do" } else { "does" }), Tones::MUTED)
         } else {
-            (format!("{} {} {} for {}.", cap(&attacker), verb, target, d.dealt), if target == "you" { LogCategory::Bad } else { LogCategory::Info })
+            (format!("{} {} {} for {}.", cap(&attacker), verb, target, d.dealt), if target == "you" { Tones::BAD } else { Tones::TEXT })
         };
         log.push(text, cat, turn);
     }
     for d in deaths.read() {
         if d.was_player {
-            log.push("You die. Press q to quit.", LogCategory::Bad, turn);
-            status.0 = format!("Dead on turn {turn}.   [q]uit");
+            log.push("You die. Press q to quit.", Tones::BAD, turn);
             next.set(EngineState::Idle);
         } else {
-            log.push(format!("{} dies.", cap(&name(d.entity))), LogCategory::Good, turn);
+            log.push(format!("{} dies.", cap(&name(d.entity))), Tones::GOOD, turn);
         }
     }
 }

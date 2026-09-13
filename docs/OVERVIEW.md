@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-11, after the guide.
+Last updated: 2026-09-12, after the panels.
 
 ## The shape
 
@@ -74,6 +74,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt and wander tactics.
 - `events`: facts with kind, subject, object and amount, matchers, a ledger of named counters, and quests as objectives over facts with prerequisite chains and a victory flag.
 - `balance`: threat scoring and the spawn-band report.
+- `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, and an `Outlook` read off the two counts. Pure, so an inspect panel's numbers cannot drift from the fight.
 
 ## Tier 2: the Bevy layer
 
@@ -108,14 +109,25 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 
 ### rl-ui
 
-- Theme tokens.
-- A categorised message log.
-- The chrome plugin: status line and log.
+Every panel splits three ways: a view (a resource of plain data), a collector (the system that rebuilds it each frame, in `ViewSet::Collect`), and a presenter (one way of drawing it, in a `PresentSet` layer).
+The query is the half a game reuses; the drawing is the half it may replace or drop.
+Opt-in is per panel, and a presenter pulls its view plugin in behind it.
+
+- Tones: a semantic role interned as a `ToneId` over a `Palette` a game extends with roles the engine never heard of, warned about by name at startup if one has no colour. No widget takes a `Color`.
+- Facets: `Facet { key, text, tone }` pushed onto a row in `ViewSet::Annotate`, so a game's vocabulary reaches a panel without an engine type learning a word.
+- Views and their collectors: `NearbyView` (actors and things in the viewshed, nearest first, with health and a relation), `VitalsView` (bars, armor, status badges, turn, position), `GearView` (every registered slot, filled or not), `InspectView` (the look cursor's subject and a duel forecast).
+- Panels: `NearbyPanel`, `VitalsPanel`, `GearPanel`, `InspectPanel`, `LogPanel`, each a plugin holding its rectangle and its headings.
+- The look cursor: opens on the nearest actor, steps with the direction keys, cycles what is in sight, stays inside the loaded window, and owns input as a modal.
+- `Modals`: a stack of interned modal ids with `modal_is`, `modal_open` and `no_modal` run conditions, so one gate covers every screen a game adds.
+- `DirectionKeys`: arrows, vi keys and the numpad to the eight directions, in one resource a game may replace.
+- A message log carrying a tone per line, folding a repeat into a count, filterable by tone.
 - A framed scrolling list menu.
+- Drawing helpers a game writing its own presenter reuses: frames, section headings, bars, clipping, and rectangle splits.
 
 ### rl-overworld
 
 - Says what it needs: no layout, no screen, and it says so when play begins rather than drawing nothing.
+- Open or closed on the shared `Modals` stack, so it and a game's own screens cannot both think they own the arrow keys.
 - The world drawn from its bands with rivers, roads, discovered sites and the player.
 - A portal picker.
 

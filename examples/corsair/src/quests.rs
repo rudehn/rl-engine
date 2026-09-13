@@ -14,7 +14,7 @@ use rl_engine::rl_core::{Point, Rect};
 use rl_engine::rl_render::Terminal;
 use rl_engine::rl_rules::{Fact, FactDef, FactKind, Matcher, Need, Objective, QuestDef, QuestState};
 use rl_engine::rl_rules::{Named, Registry};
-use rl_engine::rl_ui::{ListMenu, LogCategory, MenuRow, MessageLog, StatusLine, Theme, draw_menu};
+use rl_engine::rl_ui::{ListMenu, MenuRow, MessageLog, Modals, Palette, Tones, draw_menu};
 
 use crate::content::{COVE, PORT};
 use crate::items::{Armory, ItemKind};
@@ -231,7 +231,6 @@ pub fn narrate_quests(
     quests: Res<Quests>,
     turns: Res<Turns>,
     mut log: ResMut<MessageLog>,
-    mut status: ResMut<StatusLine>,
     mut next: ResMut<NextState<EngineState>>,
 ) {
     let turn = turns.turn_number();
@@ -239,19 +238,18 @@ pub fn narrate_quests(
         match c.0 {
             rl_engine::rl_rules::Change::Progress { .. } => {}
             rl_engine::rl_rules::Change::ObjectiveDone { quest, objective } => {
-                log.push(format!("{}: done.", quests.defs.get(quest).objectives[objective].text), LogCategory::Good, turn);
+                log.push(format!("{}: done.", quests.defs.get(quest).objectives[objective].text), Tones::GOOD, turn);
             }
             rl_engine::rl_rules::Change::QuestDone { quest, victory } => {
                 let q = quests.defs.get(quest);
-                log.push(format!("Task complete: {}.", q.title), LogCategory::Notice, turn);
+                log.push(format!("Task complete: {}.", q.title), Tones::NOTICE, turn);
                 if victory {
-                    log.push("You have won. The sea is yours. Press q to quit.", LogCategory::Notice, turn);
-                    status.0 = format!("Retired rich on turn {turn}.   [q]uit");
+                    log.push("You have won. The sea is yours. Press q to quit.", Tones::NOTICE, turn);
                     next.set(EngineState::Idle);
                 }
             }
             rl_engine::rl_rules::Change::QuestOpened { quest } => {
-                log.push(format!("New task: {}. [t]", quests.defs.get(quest).title), LogCategory::Notice, turn);
+                log.push(format!("New task: {}. [t]", quests.defs.get(quest).title), Tones::NOTICE, turn);
             }
         }
     }
@@ -260,7 +258,6 @@ pub fn narrate_quests(
 /// The ledger screen.
 #[derive(Resource)]
 pub struct LedgerScreen {
-    pub open: bool,
     pub menu: ListMenu,
 }
 
@@ -269,21 +266,30 @@ impl Default for LedgerScreen {
         let mut menu = ListMenu::new("Ledger");
         menu.hints = "[esc]".into();
         menu.empty = "No tasks yet.".into();
-        Self { open: false, menu }
+        Self { menu }
     }
 }
 
 /// Opens, closes and scrolls the ledger.
-pub fn ledger_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<LedgerScreen>) {
-    if keys.just_pressed(KeyCode::KeyT) {
-        screen.open = !screen.open;
+/// The name the ledger's modal is declared under.
+pub const MODAL: &str = "ledger";
+
+/// The id of the ledger's modal.
+pub fn modal(modals: &Modals) -> rl_engine::rl_ui::ModalId {
+    modals.get(MODAL).expect("main declares the ledger modal")
+}
+
+pub fn ledger_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<LedgerScreen>, mut modals: ResMut<Modals>) {
+    let ledger = modal(&modals);
+    if keys.just_pressed(KeyCode::KeyT) && (modals.is_top(ledger) || !modals.any_open()) {
+        modals.toggle(ledger);
         return;
     }
-    if !screen.open {
+    if !modals.is_top(ledger) {
         return;
     }
     if keys.just_pressed(KeyCode::Escape) {
-        screen.open = false;
+        modals.close_one(ledger);
     }
     if keys.any_just_pressed([KeyCode::ArrowDown, KeyCode::KeyJ]) {
         screen.menu.move_by(1);
@@ -294,8 +300,8 @@ pub fn ledger_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<LedgerScr
 }
 
 /// Fills the ledger from the tracker and draws it.
-pub fn draw_ledger(mut screen: ResMut<LedgerScreen>, quests: Res<Quests>, theme: Res<Theme>, mut terminal: ResMut<Terminal>) {
-    if !screen.open {
+pub fn draw_ledger(mut screen: ResMut<LedgerScreen>, modals: Res<Modals>, quests: Res<Quests>, palette: Res<Palette>, mut terminal: ResMut<Terminal>) {
+    if !modals.is_open(modal(&modals)) {
         return;
     }
     let mut rows = Vec::new();
@@ -312,10 +318,10 @@ pub fn draw_ledger(mut screen: ResMut<LedgerScreen>, quests: Res<Quests>, theme:
                 })
                 .collect();
             let done = state == QuestState::Done;
-            rows.push(MenuRow::new(q.title.clone()).tag(if done { "done" } else { "" }).detail(format!("{} {}", q.text, steps.join("; "))).category(if done {
-                LogCategory::Muted
+            rows.push(MenuRow::new(q.title.clone()).tag(if done { "done" } else { "" }).detail(format!("{} {}", q.text, steps.join("; "))).toned(if done {
+                Tones::MUTED
             } else {
-                LogCategory::Info
+                Tones::TEXT
             }));
         }
     }
@@ -324,7 +330,7 @@ pub fn draw_ledger(mut screen: ResMut<LedgerScreen>, quests: Res<Quests>, theme:
     let wanted = screen.menu.rows.len().max(3) as i32 + 5;
     let (w, h) = (bounds.width.min(70), bounds.height.min(22).min(wanted));
     let rect = Rect::new((bounds.width - w) / 2, (bounds.height - h) / 2, w, h);
-    draw_menu(&mut terminal, rect, &screen.menu, &theme);
+    draw_menu(&mut terminal, rect, &screen.menu, &palette);
 }
 
 #[cfg(test)]

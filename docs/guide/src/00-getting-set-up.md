@@ -50,7 +50,7 @@ use rl_engine::rl_core::Rect;
 | 3 | `rl-engine` | facade |
 
 Map generation, field of view, pathfinding, the damage pipeline and the AI brains are tier 1.
-They run headless, test in milliseconds and build for WebAssembly, which is what makes [chapter 10](10-testing.md) possible.
+They run headless, test in milliseconds and build for WebAssembly, which is what makes [chapter 11](11-testing.md) possible.
 CI enforces the boundary.
 
 A tool that only needs one of them can depend on that crate alone and never compile Bevy:

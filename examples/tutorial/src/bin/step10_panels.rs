@@ -1,13 +1,15 @@
-//! Warren, step 8: the bestiary moves out of Rust and into a file.
+//! Warren, step 10: the panels, and a rail down the side.
 //!
-//! The guide chapter is `docs/guide/src/08-content-in-files.md`. A
-//! [`Registry`] validates the file at load and hands out a dense
-//! [`Id`] per entry; a [`BandedTable`] says which of them belong at which
-//! depth, and in what numbers.
+//! The guide chapter is `docs/guide/src/10-panels.md`. Everything in the
+//! rail comes from a view the engine keeps current: what is in sight with
+//! its health, what is worn, and the look cursor's reading of a rat. What
+//! the engine cannot know reaches a panel two ways, and both are here: a
+//! `Name` on an entity, and a `Facet` pushed onto a row.
 //!
-//! `cargo run -p tutorial --bin step08_content`
+//! `cargo run -p tutorial --bin step10_panels`, and `WARREN_SEED=19` picks
+//! another warren, which is how this chapter's screenshot was taken.
 //!
-//! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
+//! Keys: as step 9, plus `x` for the look cursor.
 
 use std::sync::Arc;
 
@@ -28,6 +30,8 @@ const ROWS: i32 = 40;
 const CELL: Vec2 = Vec2::new(10.0, 16.0);
 /// Rows at the bottom of the terminal given over to the message log.
 const LOG_ROWS: i32 = 5;
+/// Columns down the right given over to the rail.
+const RAIL: i32 = 24;
 /// The bestiary, compiled in so the binary runs from anywhere.
 const RATS_RON: &str = include_str!("../../assets/rats.ron");
 
@@ -57,8 +61,34 @@ fn name_of(floor: u32) -> &'static str {
 }
 // ANCHOR_END: floors
 
+// ANCHOR: layout
+/// The screen, cut up once, so the map and every panel agree on it.
+///
+/// `panel::split_*` take a rectangle and a size and hand back both
+/// halves, which is the whole of the engine's opinion about layout.
+struct Screen {
+    map: Rect,
+    log: Rect,
+    vitals: Rect,
+    nearby: Rect,
+    inspect: Rect,
+}
+
+impl Screen {
+    fn new() -> Self {
+        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        let (map, log) = panel::split_bottom(left, LOG_ROWS);
+        let (vitals, nearby) = panel::split_top(rail, 9);
+        // Over the map, because a modal covers what it is about.
+        let inspect = Rect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
+        Self { map, log, vitals, nearby, inspect }
+    }
+}
+// ANCHOR_END: layout
+
 // ANCHOR: main
 fn main() -> AppExit {
+    let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -80,22 +110,46 @@ fn main() -> AppExit {
     // The drawing. `CapturePlugin` is only how this guide's screenshots
     // are taken; delete it and nothing changes.
     .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
-    .insert_resource(Seed(RunSeed(7)))
-    // The map gets everything but the status row and the log.
-    .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    // Two panels: the vitals strip on the top row, the log along the
-    // bottom. Each draws itself; neither needs a system of yours.
-    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[g]et [e]at [>]down [q]uit"))
-    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-    .add_systems(Update, note_bag_and_floor.in_set(ViewSet::Annotate))
+    .insert_resource(Seed(RunSeed(std::env::var("WARREN_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(7))))
+    .insert_resource(MapView::new(screen.map))
+    // ANCHOR: panels
+    // Five panels. Each holds its own rectangle, reads a view the engine
+    // keeps current, and draws itself: none of them needs a system here.
+    // Warren has no equipment slots, so it takes no `GearPanel`. Opt-in
+    // is per panel: you add the ones you have a game for.
+    .add_plugins((
+        VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
+        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
+        LogPanel::new(screen.log),
+        InspectPanel::new(screen.inspect),
+    ))
+    // What the engine cannot know about a row. Named by set, never by
+    // ordering after a collector function.
+    .add_systems(Update, (note_bag_and_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate))
+    // ANCHOR_END: panels
     .add_systems(Startup, start)
     // Once a frame, before the turns: whatever the player pressed becomes
     // at most one intent, however many passes the turn loop then runs.
-    .add_systems(Update, player_input.in_set(EngineSet::Input))
+    // The game's own action: registered, then resolved alongside the
+    // engine's. Without the resolver the sweep would refuse every shove.
+    .add_action::<Shove>()
+    .add_message::<Shoved>()
+    .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
+    // ANCHOR: gate
+    // One gate for every screen there is and every screen added later:
+    // the stack is empty, or the world does not have the keys.
+    .add_systems(Update, player_input.in_set(EngineSet::Input).run_if(no_modal))
+    // ANCHOR_END: gate
     // Both inside the turn: a floor fills the first time it is entered,
     // and a crust eaten heals before the next rat gets its bite in.
     .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
     .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    // ANCHOR: tone
+    // A role the engine never heard of, and the colour for it. Every
+    // widget that takes a tone honours it from here on.
+    let fleeing = app.world_mut().resource_mut::<Tones>().declare("fleeing");
+    app.world_mut().resource_mut::<Palette>().set(fleeing, Color::srgb(0.6, 0.8, 1.0));
+    // ANCHOR_END: tone
     app.run()
 }
 // ANCHOR_END: main
@@ -239,6 +293,7 @@ impl Bestiary {
                 (Actor, Blocks, Kind(id), Position(at), Speed(def.speed), Faction(self.faction)),
                 (Health::full(def.hp), Armor(def.armor), Perception(def.perception), Mind(self.minds[id.index()].clone())),
                 (MeleeAttack { kind: self.bite, dice: def.attack }, Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
+                (Name::new(def.name.clone()),),
             ))
             .id()
     }
@@ -278,13 +333,15 @@ fn start(
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO), Speed(100)),
             (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
+            // What the panels call you. The engine has no names of its own.
+            (Name::new("you"),),
             (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
             (Inventory::default(),),
         ))
         .id();
     warps.write(WarpRequest::into_place(player, map_of(1)));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("Something is scratching in the dark. g picks up, e eats, > goes down.", Tones::MUTED, 0);
+    log.push("g gets, e eats, > descends, x looks, shift+dir shoves.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
@@ -315,6 +372,7 @@ struct PlayerIntents<'w> {
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
     stairs: MessageWriter<'w, Intent<GoThrough>>,
+    shoves: MessageWriter<'w, Intent<Shove>>,
 }
 // ANCHOR_END: intents
 
@@ -334,7 +392,10 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, play
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, pos, bag)) = player.single() else { return };
-    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
+    let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| shifted && keys.any_just_pressed(codes.iter().copied())) {
+        intents.shoves.write(Intent::new(entity, Shove(*dir)));
+    } else if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| !shifted && keys.any_just_pressed(codes.iter().copied())) {
         match occupancy.first_at(pos.0 + dir.offset()) {
             Some(other) => {
                 intents.attacks.write(Intent::new(entity, Attack(other)));
@@ -343,9 +404,7 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, play
                 intents.steps.write(Intent::new(entity, Step(*dir)));
             }
         }
-    } else if keys.just_pressed(KeyCode::Enter)
-        || (keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma]))
-    {
+    } else if keys.just_pressed(KeyCode::Enter) || (shifted && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma])) {
         intents.stairs.write(Intent::new(entity, GoThrough));
     } else if keys.just_pressed(KeyCode::KeyG) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
@@ -362,6 +421,9 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, play
 
 // ANCHOR: status
 /// What the engine cannot know: the bag, and which floor this is.
+///
+/// A facet is a note on a view: a key, some words, and a tone. The engine
+/// has no idea what a crust is, and this is how it never needs one.
 fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>, player: Query<&Inventory, With<Player>>) {
     let Ok(bag) = player.single() else { return };
     let depth = floor_of(map.current());
@@ -369,6 +431,29 @@ fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>
     vitals.facets.push(facets.facet("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
 }
 // ANCHOR_END: status
+
+// ANCHOR: annotate
+/// What a rat is up to, on the row the engine built for it.
+///
+/// `MonsterAIMode` is not a thing the engine has; `flee_at` is this
+/// game's rule. So the row gets a facet, in a tone this game declared,
+/// and the rail prints it without knowing what fleeing is.
+fn note_what_a_rat_is_doing(
+    mut nearby: ResMut<NearbyView>,
+    mut facets: ResMut<Facets>,
+    tones: Res<Tones>,
+    bestiary: Res<Bestiary>,
+    rats: Query<(&Kind, &Health)>,
+) {
+    let fleeing = tones.get("fleeing").expect("declared while building");
+    for row in nearby.actors.iter_mut() {
+        let Ok((kind, health)) = rats.get(row.entity) else { continue };
+        if health.hp <= bestiary.defs.get(kind.0).flee_at {
+            row.facets.push(facets.facet("mood", "fleeing").toned(fleeing));
+        }
+    }
+}
+// ANCHOR_END: annotate
 
 // ANCHOR: populate
 /// Fills the floor the one time it is built. `PlaceEntered::first` is
@@ -425,7 +510,10 @@ fn populate(
             if !map.is_walkable(p) {
                 continue;
             }
-            commands.spawn((Item, Crust(8), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+            // The `Name` is what puts it on the rail. Without one the
+            // collector skips it: a nameless row is a spawn that forgot,
+            // and a blank line is the hardest kind of that to notice.
+            commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
             crusts += 1;
         }
         // Groups, not individuals: the table says what may appear at this
@@ -469,7 +557,13 @@ struct Voice<'w, 's> {
 }
 
 /// Turns what the pipeline reported into English.
-fn narrate(mut items: MessageReader<ItemEvent>, mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<DeathEvent>, mut voice: Voice) {
+fn narrate(
+    mut items: MessageReader<ItemEvent>,
+    mut shoved: MessageReader<Shoved>,
+    mut dealt: MessageReader<DamageDealt>,
+    mut deaths: MessageReader<DeathEvent>,
+    mut voice: Voice,
+) {
     let Voice { turns, log, next, bestiary, players, kinds } = &mut voice;
     let turn = turns.turn_number();
     let name = |e: Entity| -> String {
@@ -485,6 +579,9 @@ fn narrate(mut items: MessageReader<ItemEvent>, mut dealt: MessageReader<DamageD
             ItemEvent::Used { .. } => log.push("You eat the crust. It helps.", Tones::GOOD, turn),
             _ => {}
         }
+    }
+    for ev in shoved.read() {
+        log.push(format!("You shove {} back.", name(ev.target)), Tones::TEXT, turn);
     }
     for d in dealt.read() {
         let attacker = d.hit.attacker.map(&name).unwrap_or_else(|| "something".into());
@@ -534,3 +631,221 @@ fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query
     }
 }
 // ANCHOR_END: eat
+
+// ANCHOR: action
+/// Shove whoever stands one cell away in this direction back another cell.
+///
+/// An action is a type. There is no list in the engine for it to be added
+/// to; registering it makes `Intent<Shove>` a message, and the sweep
+/// refuses any that no resolver claims.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Shove(Direction);
+impl Action for Shove {}
+
+/// A shove that landed, for the log to read.
+#[derive(Message, Debug, Clone, Copy)]
+struct Shoved {
+    target: Entity,
+}
+// ANCHOR_END: action
+
+// ANCHOR: resolver
+/// What the shove costs. A shove is quicker than a swing.
+const SHOVE_COST: u32 = BASE_ACTION_COST / 2;
+
+/// Everything the resolver moves.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Shoving<'w, 's> {
+    acting: ResMut<'w, Acting>,
+    occupancy: ResMut<'w, Occupancy>,
+    map: Res<'w, WorldMap>,
+    holders: Query<'w, 's, &'static Position, With<MyTurn>>,
+    targets: Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>), Without<MyTurn>>,
+}
+
+/// Resolves a shove.
+///
+/// The shape every resolver has: claim the actor so nothing else spends
+/// the same turn, do the thing, and report either an [`ActionDone`] with
+/// what it cost or an [`ActionRefused`], which costs nothing and leaves
+/// the player holding the turn.
+fn resolve_shoves(
+    mut intents: MessageReader<Intent<Shove>>,
+    mut done: MessageWriter<ActionDone>,
+    mut refused: MessageWriter<ActionRefused>,
+    mut shoved: MessageWriter<Shoved>,
+    mut world: Shoving,
+) {
+    for intent in intents.read() {
+        let Ok(from) = world.holders.get(intent.actor) else { continue };
+        if !world.acting.claim_action(intent.actor) {
+            continue;
+        }
+        let offset = intent.action.0.offset();
+        let cell = from.0 + offset;
+        let behind = cell + offset;
+        let target = world.occupancy.first_at(cell);
+        // Nobody there, or nowhere for them to go: nothing happens, and
+        // the turn is still the player's to spend on something else.
+        let landed = match target {
+            Some(target) if world.map.is_walkable(behind) && !world.occupancy.is_occupied(behind) => {
+                let Ok((mut pos, viewshed)) = world.targets.get_mut(target) else { continue };
+                world.occupancy.relocate(target, pos.0, behind);
+                pos.0 = behind;
+                if let Some(mut v) = viewshed {
+                    v.dirty = true;
+                }
+                shoved.write(Shoved { target });
+                true
+            }
+            _ => false,
+        };
+        if landed {
+            done.write(ActionDone { actor: intent.actor, cost: SHOVE_COST });
+        } else {
+            refused.write(ActionRefused { actor: intent.actor });
+        }
+    }
+}
+// ANCHOR_END: resolver
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ANCHOR: headless
+    /// The warren with no window: the engine plugins the game uses, the
+    /// game's own systems, and nothing that needs a screen.
+    fn headless(seed: u64) -> App {
+        let mut app = rl_engine::rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin));
+        app.insert_resource(Seed(RunSeed(seed)))
+            .init_resource::<MessageLog>()
+            .add_action::<Shove>()
+            .add_message::<Shoved>()
+            .add_systems(Startup, start)
+            .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
+            .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
+            .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        app
+    }
+
+    /// A started run: two frames is enough for the warp to build floor one
+    /// and the scheduler to deal the player its first turn.
+    fn started(seed: u64) -> (App, Entity) {
+        let mut app = headless(seed);
+        app.update();
+        app.update();
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        (app, player)
+    }
+
+    fn act<A: Action>(app: &mut App, actor: Entity, action: A) {
+        app.world_mut().write_message(Intent::new(actor, action));
+        app.update();
+    }
+    // ANCHOR_END: headless
+
+    // ANCHOR: property
+    /// The property that has to hold for every floor of every run: you can
+    /// stand where you arrive, and there is somewhere to go from there.
+    #[test]
+    fn every_floor_of_every_seed_has_a_walkable_way_in_and_a_way_on() {
+        for seed in 1u64..=12 {
+            let warren = Warren::new(RunSeed(seed));
+            let tables = warren.tiles.tables();
+            for depth in 1..=FLOORS {
+                let built = warren.build(map_of(depth), None).unwrap_or_else(|e| panic!("seed {seed} floor {depth}: {e}"));
+                let walkable = |p| built.terrain.get(p).is_some_and(|t: TileId| tables.walkable[t.index()]);
+                assert!(walkable(built.entry), "seed {seed} floor {depth}: arrived inside a wall");
+                assert!(built.exit.is_some_and(walkable), "seed {seed} floor {depth}: nowhere to go on to");
+            }
+        }
+    }
+    // ANCHOR_END: property
+
+    #[test]
+    fn the_stairs_lead_all_the_way_down_and_the_king_waits_on_the_last_floor() {
+        let (mut app, player) = started(7);
+        assert_eq!(app.world().resource::<WorldMap>().current(), map_of(1), "the run starts on floor one");
+        for depth in 1..FLOORS {
+            let down = app.world().resource::<WorldMap>().place(map_of(depth)).unwrap().exit.expect("a way down");
+            app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(depth), arrive: Arrive::At(down) } });
+            app.update();
+            act(&mut app, player, GoThrough);
+            assert_eq!(app.world().resource::<WorldMap>().current(), map_of(depth + 1), "took the stairs from floor {depth}");
+        }
+        // One more frame: what the last floor spawned gets its map tag.
+        app.update();
+        let bottom = map_of(FLOORS);
+        let king = app.world().resource::<Bestiary>().defs.expect("rat king");
+        let mut on_map = app.world_mut().query::<(&Kind, &OnMap)>();
+        let kings = on_map.iter(app.world()).filter(|(k, on)| k.0 == king && on.0 == bottom).count();
+        assert_eq!(kings, 1, "exactly one king, and it is on the bottom floor");
+    }
+
+    // ANCHOR: shove_tests
+    /// A walkable cell next to the player with another walkable cell
+    /// behind it, which is what a shove needs to land.
+    fn room_to_shove(app: &App, from: Point) -> Direction {
+        let map = app.world().resource::<WorldMap>();
+        Direction::ALL
+            .into_iter()
+            .find(|d| map.is_walkable(from + d.offset()) && map.is_walkable(from + d.offset() + d.offset()))
+            .expect("the entry of a built floor has room around it")
+    }
+
+    #[test]
+    fn a_shove_moves_the_rat_one_cell_further_off_and_spends_half_a_turn() {
+        let (mut app, player) = started(7);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let dir = room_to_shove(&app, at);
+        let rat = app.world_mut().spawn((Actor, Blocks, Position(at + dir.offset()), Speed(100))).id();
+        app.update();
+
+        let before = app.world().resource::<Turns>().now();
+        act(&mut app, player, Shove(dir));
+        assert_eq!(app.world().get::<Position>(rat).unwrap().0, at + dir.offset() + dir.offset(), "the rat went back a cell");
+        assert_eq!(app.world().resource::<Turns>().now(), before + SHOVE_COST, "and it cost half a turn");
+    }
+
+    #[test]
+    fn a_shove_at_nobody_is_refused_costs_nothing_and_leaves_the_turn_in_hand() {
+        let (mut app, player) = started(7);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let dir = room_to_shove(&app, at);
+
+        let before = app.world().resource::<Turns>().now();
+        act(&mut app, player, Shove(dir));
+        assert_eq!(app.world().resource::<Turns>().now(), before, "no time passed");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "the player still holds the turn");
+    }
+    // ANCHOR_END: shove_tests
+
+    #[test]
+    fn eating_a_crust_heals_inside_the_turn_and_leaves_nothing_in_the_bag() {
+        let (mut app, player) = started(7);
+        let crust = app.world_mut().spawn((Item, Crust(8))).id();
+        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(crust);
+        app.world_mut().get_mut::<Health>(player).unwrap().hp = 10;
+
+        act(&mut app, player, UseItem(crust));
+        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 18, "healed by the crust");
+        // A despawned item is dropped from every bag by the engine.
+        app.update();
+        assert!(app.world().get_entity(crust).is_err(), "the crust is eaten");
+        assert!(app.world().get::<Inventory>(player).unwrap().items.is_empty(), "and gone from the bag");
+    }
+
+    #[test]
+    fn a_crust_never_heals_past_the_maximum() {
+        let (mut app, player) = started(3);
+        let crust = app.world_mut().spawn((Item, Crust(8))).id();
+        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(crust);
+        let max = app.world().get::<Health>(player).unwrap().max;
+        app.world_mut().get_mut::<Health>(player).unwrap().hp = max - 2;
+
+        act(&mut app, player, UseItem(crust));
+        assert_eq!(app.world().get::<Health>(player).unwrap().hp, max);
+    }
+}

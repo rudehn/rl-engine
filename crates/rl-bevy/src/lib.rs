@@ -34,7 +34,7 @@ pub use combat::{
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fov::FovPlugin;
-pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Unequip, UseItem, Wearable};
+pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Unequip, UseItem, Wearable};
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
 pub use places::{
@@ -55,7 +55,7 @@ pub mod prelude {
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fov::FovPlugin;
-    pub use crate::items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Unequip, UseItem, Wearable};
+    pub use crate::items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Unequip, UseItem, Wearable};
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
     pub use crate::places::{

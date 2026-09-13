@@ -5,12 +5,17 @@
 //! the rows from whatever it is listing, moves the cursor from its own
 //! key bindings, and draws it into any rectangle of the terminal. Nothing
 //! here reads input or knows what a row means.
+//!
+//! A menu is not a view: what is in a list is the game's question, not the
+//! engine's. It is here because scrolling a cursor so the selected row
+//! stays visible is the same arithmetic every time, and getting it wrong
+//! is how a list ends up jumping a page when the cursor reaches the edge.
 
 use rl_core::Rect;
 use rl_render::{Cell, Terminal};
 
-use crate::log::LogCategory;
-use crate::theme::Theme;
+use crate::panel::{clip, frame};
+use crate::tone::{Palette, ToneId, Tones};
 
 /// One line of a menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,14 +26,14 @@ pub struct MenuRow {
     pub tag: String,
     /// A longer line shown under the list while this row is selected.
     pub detail: String,
-    /// Colours the label like a log line of this category.
-    pub category: LogCategory,
+    /// How the label reads.
+    pub tone: ToneId,
 }
 
 impl MenuRow {
     /// A plain row.
     pub fn new(label: impl Into<String>) -> Self {
-        Self { label: label.into(), tag: String::new(), detail: String::new(), category: LogCategory::Info }
+        Self { label: label.into(), tag: String::new(), detail: String::new(), tone: Tones::TEXT }
     }
 
     /// Sets the note on the right.
@@ -43,9 +48,9 @@ impl MenuRow {
         self
     }
 
-    /// Sets the colour category.
-    pub fn category(mut self, category: LogCategory) -> Self {
-        self.category = category;
+    /// Sets the tone the label reads in.
+    pub fn toned(mut self, tone: ToneId) -> Self {
+        self.tone = tone;
         self
     }
 }
@@ -102,66 +107,39 @@ impl ListMenu {
 /// Draws `menu` framed inside `rect`: title in the top border, rows
 /// scrolled to keep the cursor visible, the selected row's detail under
 /// them, and the hints in the bottom border.
-pub fn draw_menu(terminal: &mut Terminal, rect: Rect, menu: &ListMenu, theme: &Theme) {
+pub fn draw_menu(terminal: &mut Terminal, rect: Rect, menu: &ListMenu, palette: &Palette) {
     if rect.width < 4 || rect.height < 4 {
         return;
     }
-    terminal.fill(rect, Cell::new(' ', theme.text).on(theme.panel_bg));
-    draw_frame(terminal, rect, theme);
-    let title = format!(" {} ", menu.title);
-    terminal.print_on(rect.x + 2, rect.y, &title, theme.title, theme.panel_bg);
-    if !menu.hints.is_empty() {
-        let hints = format!(" {} ", menu.hints);
-        let x = rect.right() - 2 - hints.chars().count() as i32;
-        terminal.print_on(x.max(rect.x + 1), rect.bottom() - 1, &hints, theme.muted, theme.panel_bg);
-    }
+    let surface = palette.get(Tones::SURFACE);
+    terminal.fill(rect, Cell::new(' ', palette.get(Tones::TEXT)).on(surface));
+    frame(terminal, rect, &menu.title, &menu.hints, palette);
 
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     // The last inner row is the detail line, with a blank row above it.
     let list_rows = (inner.height - 2).max(1) as usize;
     if menu.rows.is_empty() {
-        terminal.print_on(inner.x, inner.y, &menu.empty, theme.muted, theme.panel_bg);
+        terminal.print_on(inner.x, inner.y, &menu.empty, palette.get(Tones::MUTED), surface);
         return;
     }
     let first = menu.selected.saturating_sub(list_rows - 1).min(menu.rows.len().saturating_sub(list_rows));
     for (i, row) in menu.rows.iter().enumerate().skip(first).take(list_rows) {
         let y = inner.y + (i - first) as i32;
         let selected = i == menu.selected;
-        let bg = if selected { theme.highlight_bg } else { theme.panel_bg };
-        let fg = if selected { theme.text } else { theme.log_color(row.category) };
+        let bg = if selected { palette.get(Tones::SELECT) } else { surface };
+        let fg = if selected { palette.get(Tones::TEXT) } else { palette.get(row.tone) };
         terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
-        let label = clip(&row.label, inner.width as usize - row.tag.chars().count() - 1);
+        let label = clip(&row.label, (inner.width as usize).saturating_sub(row.tag.chars().count() + 1));
         terminal.print_on(inner.x, y, &label, fg, bg);
         if !row.tag.is_empty() {
             let x = inner.right() - row.tag.chars().count() as i32;
-            terminal.print_on(x, y, &row.tag, theme.muted, bg);
+            terminal.print_on(x, y, &row.tag, palette.get(Tones::MUTED), bg);
         }
     }
     if let Some(row) = menu.selected_row() {
         let detail = clip(&row.detail, inner.width as usize);
-        terminal.print_on(inner.x, inner.bottom() - 1, &detail, theme.muted, theme.panel_bg);
+        terminal.print_on(inner.x, inner.bottom() - 1, &detail, palette.get(Tones::MUTED), surface);
     }
-}
-
-/// Draws a single-line box around the edge of `rect`.
-pub fn draw_frame(terminal: &mut Terminal, rect: Rect, theme: &Theme) {
-    let (x0, y0, x1, y1) = (rect.x, rect.y, rect.right() - 1, rect.bottom() - 1);
-    for x in x0 + 1..x1 {
-        terminal.put(x, y0, '\u{2500}', theme.frame);
-        terminal.put(x, y1, '\u{2500}', theme.frame);
-    }
-    for y in y0 + 1..y1 {
-        terminal.put(x0, y, '\u{2502}', theme.frame);
-        terminal.put(x1, y, '\u{2502}', theme.frame);
-    }
-    terminal.put(x0, y0, '\u{250c}', theme.frame);
-    terminal.put(x1, y0, '\u{2510}', theme.frame);
-    terminal.put(x0, y1, '\u{2514}', theme.frame);
-    terminal.put(x1, y1, '\u{2518}', theme.frame);
-}
-
-fn clip(s: &str, width: usize) -> String {
-    s.chars().take(width).collect()
 }
 
 #[cfg(test)]
@@ -193,7 +171,7 @@ mod tests {
         m.set_rows((0..20).map(|i| MenuRow::new(format!("row {i}")).tag("t").detail(format!("detail {i}"))).collect());
         m.selected = 15;
         let rect = Rect::new(0, 0, 40, 10);
-        draw_menu(&mut t, rect, &m, &Theme::default());
+        draw_menu(&mut t, rect, &m, &Palette::default());
         let line = |y: i32| -> String { (0..40).map(|x| t.get(x, y).unwrap().glyph).collect() };
         assert!(line(0).contains(" bag "), "title in the top border: {:?}", line(0));
         assert!(line(9).contains(" q "), "hints in the bottom border: {:?}", line(9));

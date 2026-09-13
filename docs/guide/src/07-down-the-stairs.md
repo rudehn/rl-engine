@@ -35,7 +35,7 @@ Every positioned entity is on exactly one map, tagged `OnMap`, which the engine 
 
 `KeepLargestRegion` after a cellular cave is not optional.
 Cave generators produce islands, and an unreachable half is a floor where the stairs are sometimes unreachable.
-[Chapter 10](10-testing.md) asserts it.
+[Chapter 11](11-testing.md) asserts it.
 
 ```rust
         let seed = RunSeed(self.seed.0 ^ (depth as u64) << 32);
@@ -73,7 +73,7 @@ Down arrives at the entry, up arrives at the exit, which is what lines the stair
 ```
 
 A victory condition is a component and an `if`.
-[Chapter 11](11-where-to-go-next.md) points at the quest system, which is this with the objectives in a file.
+[Chapter 12](12-where-to-go-next.md) points at the quest system, which is this with the objectives in a file.
 
 ## Try it
 
