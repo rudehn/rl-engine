@@ -42,7 +42,7 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 crates/<name>/src/lib.rs   module-level //! docs name every public item
 crates/<name>/benches/     criterion, on realistic maps, only for hot paths
 docs/PLAN.md               the design and milestones
-docs/design/               how one subsystem works, and why: lighting, ui
+docs/design/               how one subsystem works, and why: lighting, ui, abilities, stealth
 docs/guide/                the mdBook; every chapter quotes examples/tutorial
 docs/reviews/              the evidence
 scripts/check-tiers.sh     the tier boundary check
