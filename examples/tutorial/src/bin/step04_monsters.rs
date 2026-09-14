@@ -36,7 +36,7 @@ fn main() -> AppExit {
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Minds live in the combat plugin: deciding where to move and
         // deciding whom to hit are the same decision.
-        .add_plugins(CombatPlugin)
+        .add_plugins((CombatPlugin, MindsPlugin))
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.

@@ -47,7 +47,7 @@ fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("The Hollow Whale", COLS, ROWS).map(screen.map))
-        .add_plugins((CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, StealthPlugin))
+        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, StealthPlugin))
         // The engine's seven effects, and the one the delve adds.
         .add_engine_effects()
         .add_effect::<effects::Drain>()
@@ -722,7 +722,7 @@ mod tests {
     /// A headless whale: the engine plugins and the delve's own systems.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin));
         app.add_engine_effects().add_effect::<effects::Drain>();
         app.insert_resource(Seed(RunSeed(seed)))
             .init_resource::<MessageLog>()

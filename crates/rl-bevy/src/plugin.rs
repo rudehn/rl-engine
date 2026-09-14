@@ -8,7 +8,7 @@ use crate::knowledge::Knowledge;
 use crate::state::EngineState;
 use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
-use crate::{combat, places, turn};
+use crate::{places, turn};
 
 /// The stages of a frame while playing, in order. All in `Update`.
 ///
@@ -141,7 +141,7 @@ impl Plugin for CorePlugin {
             .init_resource::<Acting>()
             .init_resource::<WorldSettings>()
             .init_resource::<Knowledge>()
-            .init_resource::<combat::FlowFields>()
+            .init_resource::<crate::minds::FlowFields>()
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
             .add_message::<TurnEnd>()

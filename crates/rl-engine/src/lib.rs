@@ -59,7 +59,7 @@ pub use rl_world;
 ///
 /// App::new()
 ///     .add_plugins(RoguelikePlugins::new("Warren", 80, 40).map(Rect::new(0, 1, 80, 34)).build().disable::<CapturePlugin>())
-///     .add_plugins(CombatPlugin)
+///     .add_plugins((CombatPlugin, MindsPlugin))
 ///     .run();
 /// ```
 #[derive(Debug, Clone)]

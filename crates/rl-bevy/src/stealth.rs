@@ -1,7 +1,7 @@
 //! Stealth: who has noticed whom, kept on the observers.
 //!
 //! Opt-in. Without [`StealthPlugin`] no actor carries an [`Aware`], and
-//! [`decide_minds`](crate::combat::decide_minds) sees everything it has a
+//! [`decide_minds`](crate::minds::decide_minds) sees everything it has a
 //! line to exactly as it always has. With it, a subject carrying
 //! [`Stealth`] enters an observer's list of enemies only once that observer
 //! has noticed it, and an observer that loses the trail searches where it
@@ -24,9 +24,10 @@ use rand::Rng;
 use rl_core::Point;
 use rl_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
 
-use crate::combat::{CombatRng, CombatRules, DamageDealt, Dead, Faction, Mind, Perception, perceivable};
+use crate::combat::{CombatRng, CombatRules, DamageDealt, Dead, Faction};
 use crate::components::{MyTurn, Player, Position, Viewshed};
 use crate::lighting::{DarkSight, Lighting};
+use crate::minds::{Mind, Perception, perceivable};
 use crate::places::{MapId, OnMap};
 use crate::world::WorldMap;
 
@@ -195,7 +196,7 @@ impl Plugin for StealthPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "StealthPlugin");
+        crate::plugin::depends_on::<crate::minds::MindsPlugin>(app, "StealthPlugin");
     }
 }
 
@@ -306,9 +307,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::combat::{Armor, CombatPlugin, CombatRules, Health, MeleeAttack, Mind};
+    use crate::combat::{Armor, CombatPlugin, CombatRules, Health, MeleeAttack};
     use crate::components::{Actor, Blocks, RevealsMap};
     use crate::fov::FovPlugin;
+    use crate::minds::MindsPlugin;
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::{Intent, Wait};
@@ -328,7 +330,7 @@ mod tests {
     impl Field {
         fn new(notice: NoticeStats, gap: i32, reach: i32, plugin: bool) -> Field {
             let mut app = headless_app();
-            app.add_plugins((FovPlugin, CombatPlugin, StreamingPlugin));
+            app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StreamingPlugin));
             if plugin {
                 app.add_plugins(StealthPlugin);
             }

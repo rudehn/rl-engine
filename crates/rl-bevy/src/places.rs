@@ -19,9 +19,9 @@ use rl_grid::Terrain;
 use rl_mapgen::BuildError;
 use rl_world::WorldGraph;
 
-use crate::combat::FlowFields;
 use crate::components::{Blocks, Player, Position, Viewshed};
 use crate::knowledge::Knowledge;
+use crate::minds::FlowFields;
 use crate::turn::{Action, Intent, Occupancy, Resolution};
 use crate::world::{WorldMap, WorldRes};
 

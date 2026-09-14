@@ -33,7 +33,7 @@ Three decisions shape everything else.
 
 1. **Effects are types, not a list.**
    The same answer actions got in `10e3d82`, one level down.
-   The engine ships an effect per subsystem it owns, each living in the module that owns the mechanic, and a game registers its own with `add_effect`.
+   The engine ships an effect per subsystem it owns, all in `effects`, and a game registers its own with `add_effect`.
    There is no `Custom { id }` variant and no enum of effect kinds anywhere.
 2. **Fuel is a stat, not a resource type.**
    The engine never learns the word mana.
@@ -207,23 +207,26 @@ It comes from `Bystanders::land`, which the targeting preview calls too.
 Registration mirrors actions exactly:
 
 ```rust
-app.add_effect::<Harm>()      // the engine's, in combat.rs
+app.add_effect::<Harm>()      // the engine's, in effects.rs
    .add_effect::<Bribe>();    // the game's, in its own module
 ```
 
 `add_effect::<E>` records a constructor `fn(&ron::Value) -> Result<E, String>` under `E`'s name in the `EffectKinds` resource.
 Loading an ability file turns every `EffectSpec` into a `Box<dyn Effect>` once, at load, so nothing re-parses RON during play and an unknown effect name is a startup failure that names the ability.
 
-The engine ships one effect per subsystem, each in the module that owns it:
+The engine ships one effect per subsystem, all in `effects.rs`, and each asks the subsystem that owns the mechanic:
 
-| Effect | Module | What it asks for |
+| Effect | Asks | What it asks for |
 | --- | --- | --- |
-| `Harm { kind, roll }` | `combat` | a `DamageEvent` per actor in the footprint |
-| `Mend { kind, roll }` | `combat` | negative damage, through the same pipeline, past armor and scaled by resistance |
-| `Inflict { status, turns }` | `status` | an `Afflict` per actor |
-| `Cleanse { status }` | `status` | a `Cure` per actor |
-| `Shove { cells }` / `Pull { cells }` | `ability` | a move along the line, stopping at a blocker |
-| `Teleport` | `ability` | the user to the landing cell, if it is free |
+| `Harm { kind, roll }` | combat | a `DamageEvent` per actor in the footprint |
+| `Mend { kind, roll }` | combat | negative damage, through the same pipeline, past armor and scaled by resistance |
+| `Inflict { status, turns }` | statuses | an `Afflict` per actor |
+| `Cleanse { status }` | statuses | a `Cure` per actor |
+| `Shove { cells }` / `Pull { cells }` | `EffectWorld` | a move along the line, stopping at a blocker |
+| `Teleport` | `EffectWorld` | the user to the landing cell, if it is free |
+
+They began in the modules they ask, `Harm` in combat and `Inflict` in statuses, which made combat and statuses depend on abilities to implement `Effect`.
+In one module the dependency runs the way the design does: abilities are built on combat and statuses, and combat reads, and is tested, without a word about them.
 
 Seven, not the nine first sketched: `Kindle` and `Summon` land with the slices that need them, since neither Knacks nor Corsair asks for one yet, and `Grant` turned out to be a `Known` rebuilt from a status rather than an effect of its own. The three movement effects sit beside the resolver rather than in the turn loop, because the move goes through `EffectWorld::slide`, which is what keeps a shove out of a wall.
 

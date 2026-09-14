@@ -16,11 +16,13 @@
 pub mod ability;
 pub mod combat;
 pub mod components;
+pub mod effects;
 pub mod events;
 pub mod fov;
 pub mod items;
 pub mod knowledge;
 pub mod lighting;
+pub mod minds;
 pub mod places;
 pub mod plugin;
 pub mod state;
@@ -31,19 +33,21 @@ pub mod turn;
 pub mod world;
 
 pub use ability::{
-    Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld,
-    FromArgs, Grants, Known, Landed, Landing, Offered, Pools, Pull, Shove, Teleport, Use,
+    Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants,
+    Known, Landed, Landing, Offered, Pools, Use,
 };
 pub use combat::{
-    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health, MeleeAttack,
-    Mind, MindChose, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
+    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, MeleeAttack, RangedAttack,
+    Resists, Strikes, line_of_fire,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+pub use effects::{AddEngineEffects, Cleanse, Harm, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fov::FovPlugin;
 pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Tagged, Unequip, UseItem, Wearable};
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+pub use minds::{FlowFields, Mind, MindChose, MindsPlugin, Perception, Profile};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
@@ -57,14 +61,15 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::ability::{
-        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds,
-        EffectWorld, FromArgs, Grants, Known, Landed, Landing, Offered, Pools, Pull, Shove, Teleport, Use,
+        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs,
+        Grants, Known, Landed, Landing, Offered, Pools, Use,
     };
     pub use crate::combat::{
-        Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health,
-        MeleeAttack, Mind, MindChose, Perception, Profile, RangedAttack, Resists, Strikes, line_of_fire,
+        Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, MeleeAttack,
+        RangedAttack, Resists, Strikes, line_of_fire,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+    pub use crate::effects::{AddEngineEffects, Pull, Shove, Teleport};
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fov::FovPlugin;
     pub use crate::items::{
@@ -72,6 +77,7 @@ pub mod prelude {
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+    pub use crate::minds::{FlowFields, Mind, MindChose, MindsPlugin, Perception, Profile};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };

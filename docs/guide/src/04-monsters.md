@@ -5,9 +5,12 @@
 
 Rats that hunt you. They cannot bite yet.
 
-## Minds live in the combat plugin
+## Combat, and the minds that choose it
 
 Deciding where to move and deciding whom to hit are the same decision, asked of the same priority list.
+That decision is `MindsPlugin`'s, and what a blow does once it is struck is `CombatPlugin`'s, so a monster that thinks needs both.
+They are two plugins because a mind is where every choice a monster has meets: the abilities it may fire later in this guide arrive there too, and combat never has to hear of them.
+Forget `MindsPlugin` and the first monster spawned says so in the log, rather than standing still all run.
 
 `CombatPlugin` needs two resources before play begins, and panics naming them if they are missing:
 

@@ -255,7 +255,7 @@ Nothing here runs per frame, and nothing here allocates per turn beyond the map'
   `Notice` brings an `Aware` with it, so a game that authors observers and never adds `StealthPlugin` would have got monsters that notice nothing, forever, rather than the old behaviour.
   `StealthRunning` is true only when the plugin was added, and the delve's own test harness, which does not add it, is what caught this.
 - **The line-of-sight oracle is one function.**
-  `perceivable` in `combat.rs` is shared by `decide_minds` and by noticing, so the two can never disagree about who could be seen.
+  `perceivable` in `minds.rs` (it began in `combat.rs`, before the minds had a module of their own) is shared by `decide_minds` and by noticing, so the two can never disagree about who could be seen.
 
 Found on the way, both fixed: a mind that had not noticed the player could still descend the shared flow fields, which are built toward the player, and so walk straight to someone it never saw; and the delve had no way to put the brand out, so a quiet player carrying a lit brand was never quiet at all. Shift and `L` now smothers it and spends the turn.
 

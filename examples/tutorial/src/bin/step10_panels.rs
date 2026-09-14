@@ -94,7 +94,7 @@ fn main() -> AppExit {
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(screen.map))
         // Minds live in the combat plugin: deciding where to move and
         // deciding whom to hit are the same decision.
-        .add_plugins((CombatPlugin, ItemsPlugin))
+        .add_plugins((CombatPlugin, MindsPlugin, ItemsPlugin))
         .insert_resource(Seed(RunSeed(std::env::var("WARREN_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(7))))
         // ANCHOR: panels
         // Five panels. Each holds its own rectangle, reads a view the engine
@@ -694,7 +694,7 @@ mod tests {
     /// game's own systems, and nothing that needs a screen.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
             .init_resource::<MessageLog>()
             .add_action::<Shove>()

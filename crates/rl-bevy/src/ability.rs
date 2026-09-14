@@ -7,8 +7,8 @@
 //! its effects, and the state a use spends and sets.
 //!
 //! Effects are types, not a list, for the reason actions are: the engine
-//! ships one per subsystem it owns, each living in the module that owns
-//! the mechanic, and a game registers its own with
+//! ships one per subsystem it owns, in [`effects`](crate::effects), and a
+//! game registers its own with
 //! [`AddEffect::add_effect`]. There is no enum of effect kinds, no
 //! `Custom { id }`, and no list anywhere for a new one to be added to. An
 //! effect a game writes reaches the world through [`EffectWorld`], which
@@ -893,9 +893,10 @@ pub fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>, Option<&Equ
 /// with [`AddEffect::add_effect`] while the app is built, then build
 /// [`Abilities`] from the loaded definitions.
 ///
-/// The engine's own effects are not registered here: each belongs to the
-/// module that owns its mechanic, and a game adds the ones its content
-/// names with [`AddEngineEffects`] or one at a time.
+/// The engine's own effects are not registered here: they live in
+/// [`effects`](crate::effects), and a game adds the ones its content names
+/// with [`AddEngineEffects`](crate::effects::AddEngineEffects) or one at a
+/// time.
 ///
 /// Every [`Actor`](crate::components::Actor) is given an empty [`Known`],
 /// [`Pools`] and [`Cooldowns`] the moment it is spawned, so an actor given
@@ -930,121 +931,12 @@ impl Plugin for AbilitiesPlugin {
     }
 }
 
-/// Push everyone under the footprint away from the user.
-///
-/// Here rather than in the turn loop because the move goes through
-/// [`EffectWorld::slide`], which is what keeps a shove out of a wall and
-/// the occupancy index straight.
-#[derive(Debug, Clone, Copy)]
-pub struct Shove {
-    /// How many cells.
-    pub cells: i32,
-}
-
-impl Effect for Shove {
-    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        for target in landing.targets.clone() {
-            let Some(at) = world.position(target) else { continue };
-            let away = Point::new(at.x + (at.x - landing.origin.x).signum(), at.y + (at.y - landing.origin.y).signum());
-            world.slide(target, at, away, self.cells);
-        }
-    }
-}
-
-impl FromArgs for Shove {
-    const KIND: &'static str = "Shove";
-
-    fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
-        #[derive(serde::Deserialize)]
-        struct Args {
-            cells: i32,
-        }
-        let a: Args = rl_rules::ability::read_args(args)?;
-        Ok(Self { cells: a.cells })
-    }
-}
-
-/// Drag everyone under the footprint towards the user.
-#[derive(Debug, Clone, Copy)]
-pub struct Pull {
-    /// How many cells.
-    pub cells: i32,
-}
-
-impl Effect for Pull {
-    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        for target in landing.targets.clone() {
-            let Some(at) = world.position(target) else { continue };
-            world.slide(target, at, landing.origin, self.cells);
-        }
-    }
-}
-
-impl FromArgs for Pull {
-    const KIND: &'static str = "Pull";
-
-    fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
-        #[derive(serde::Deserialize)]
-        struct Args {
-            cells: i32,
-        }
-        let a: Args = rl_rules::ability::read_args(args)?;
-        Ok(Self { cells: a.cells })
-    }
-}
-
-/// Move the user to where the ability landed.
-///
-/// Refused rather than approximated when the cell will not take it: a
-/// blink that lands you inside a wall is worse than a blink that fizzles,
-/// and the turn is spent either way.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Teleport;
-
-impl Effect for Teleport {
-    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let Some(to) = landing.landed_at.or(Some(landing.aim)) else { return };
-        world.place(landing.user, to);
-    }
-}
-
-impl FromArgs for Teleport {
-    const KIND: &'static str = "Teleport";
-
-    fn from_args(_args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
-        Ok(Self)
-    }
-}
-
-/// The effects the engine ships, registered together.
-///
-/// A convenience, not a requirement: a game that wants three of them
-/// registers three, and one that wants none registers none. Nothing is
-/// registered by default, because an ability file naming an effect the
-/// game did not ask for should fail at load rather than work by accident.
-pub trait AddEngineEffects {
-    /// Registers `Harm`, `Mend`, `Inflict`, `Cleanse`, `Shove`, `Pull` and
-    /// `Teleport`.
-    fn add_engine_effects(&mut self) -> &mut Self;
-}
-
-impl AddEngineEffects for App {
-    fn add_engine_effects(&mut self) -> &mut Self {
-        self.add_effect::<crate::combat::Harm>()
-            .add_effect::<crate::combat::Mend>()
-            .add_effect::<crate::status::Inflict>()
-            .add_effect::<crate::status::Cleanse>()
-            .add_effect::<Shove>()
-            .add_effect::<Pull>()
-            .add_effect::<Teleport>()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::combat::{CombatRng, CombatRules, DamageDealt, Faction};
     use crate::components::{Actor, Player, RevealsMap};
+    use crate::effects::AddEngineEffects;
     use crate::status::StatusRules;
     use rl_core::{Direction, RunSeed};
     use rl_grid::TileId;
@@ -1161,6 +1053,7 @@ mod tests {
             crate::fov::FovPlugin,
             crate::world::StreamingPlugin,
             crate::combat::CombatPlugin,
+            crate::minds::MindsPlugin,
             crate::status::StatusPlugin,
             crate::items::ItemsPlugin,
             AbilitiesPlugin,
@@ -1367,7 +1260,7 @@ mod tests {
         let content = Content::new();
         let defs = rl_rules::ability::load(r#"[(name: "hex", mode: Own, effects: [(kind: "Curse", args: ())])]"#, &content.names()).unwrap();
         let mut kinds = EffectKinds::default();
-        kinds.declare::<crate::combat::Harm>();
+        kinds.declare::<crate::effects::Harm>();
         let Err(err) = Abilities::build(defs, &kinds, &content.names()) else { panic!("it should not build") };
         let rl_rules::ContentError::Invalid(errs) = err else { panic!("expected a validation failure") };
         assert_eq!(errs.len(), 1);
@@ -1452,9 +1345,9 @@ mod tests {
         let mut pools = Pools::new();
         pools.set(StatId::from_raw(0), 20);
         app.world_mut().entity_mut(them).insert((
-            crate::combat::Mind(Arc::new(brain)),
-            crate::combat::Perception(10),
-            crate::combat::Profile(MovementProfile::default()),
+            crate::minds::Mind(Arc::new(brain)),
+            crate::minds::Perception(10),
+            crate::minds::Profile(MovementProfile::default()),
             Grants(vec![bolt]),
             pools,
             Inventory::default(),
@@ -1494,9 +1387,9 @@ mod tests {
         let me = caster(&mut app, start, 20, &[]);
         let them = foe(&mut app, start.offset(3, 0));
         app.world_mut().entity_mut(them).insert((
-            crate::combat::Mind(Arc::new(Brain::new().then(UseAbility::default()))),
-            crate::combat::Perception(10),
-            crate::combat::Profile(MovementProfile::default()),
+            crate::minds::Mind(Arc::new(Brain::new().then(UseAbility::default()))),
+            crate::minds::Perception(10),
+            crate::minds::Profile(MovementProfile::default()),
             // Granted alone: the plugin gives every actor empty pools, and
             // an empty pool is what this test is about.
             Grants(vec![bolt]),

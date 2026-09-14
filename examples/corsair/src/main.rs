@@ -119,7 +119,7 @@ fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("Corsair", COLS, ROWS).font(FONT).map(screen.map))
-        .add_plugins((CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin))
+        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin))
         // The engine's seven effects, and the one Corsair adds.
         .add_engine_effects()
         .add_effect::<abilities::Plunder>()

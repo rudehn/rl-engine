@@ -61,7 +61,7 @@ use rl_engine::prelude::*;
 
 App::new()
     .add_plugins(RoguelikePlugins::new("My roguelike", 80, 40))
-    .add_plugins(CombatPlugin)
+    .add_plugins((CombatPlugin, MindsPlugin))
     .run();
 ```
 
