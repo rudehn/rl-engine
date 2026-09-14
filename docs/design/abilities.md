@@ -375,6 +375,7 @@ A wand the player can fire and a monster cannot is the half-shipped shape `PLAN.
 ## 7. Save, determinism and facts
 
 - Cooldowns and pools go in the save beside the scheduler's clock, in the same units.
+  Built 2026-09-13, after the review found this promised and not done: `EngineSave` holds them, with the charges on whatever lends an ability, for every entity the game saved.
   A cooldown is an absolute time on the turn queue's clock, not a countdown, so restoring the clock restores every cooldown for free.
 - `AbilityRng` is derived from `RunSeed` on its own domain, so adding an ability does not shift the combat stream and change every monster's rolls.
 - Chances are rolled once per effect per use, in order, from that stream.

@@ -17,6 +17,8 @@ tier = 2
 [dependencies]
 rl-core.workspace = true
 rl-grid.workspace = true
+# The ids an ability's pools and cooldowns are keyed by, in the save.
+rl-rules.workspace = true
 rl-bevy.workspace = true
 bevy.workspace = true
 serde.workspace = true

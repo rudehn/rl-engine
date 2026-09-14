@@ -60,6 +60,14 @@ impl EntityRemap {
         self.to_entity.get(id.0 as usize).copied().flatten()
     }
 
+    /// Every entity the map holds, with its save id, in id order.
+    ///
+    /// In id order rather than the order of the hash map beside it, so a
+    /// save written from this is the same bytes for the same run.
+    pub fn bound(&self) -> impl Iterator<Item = (SaveId, Entity)> + '_ {
+        self.to_entity.iter().enumerate().filter_map(|(i, e)| e.map(|e| (SaveId(i as u32), e)))
+    }
+
     /// How many ids have been handed out or bound.
     pub fn len(&self) -> usize {
         self.to_entity.len()

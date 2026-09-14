@@ -4779,6 +4779,7 @@ dependencies = [
  "rl-core",
  "rl-grid",
  "rl-mapgen",
+ "rl-rules",
  "rl-world",
  "ron 0.10.1",
  "serde",

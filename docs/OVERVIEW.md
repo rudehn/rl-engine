@@ -150,7 +150,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 - Backends for files, memory and browser storage behind one resource.
 - An exact-match versioned envelope.
 - Entity remapping.
-- The engine's own state captured and restored.
+- The engine's own state captured and restored, including the pools, cooldowns and charges of every entity the game saved, so a continued run keeps what its abilities had spent and a cooldown is still live at the clock it was saved on.
 
 ## Tier 3: rl-engine
 
