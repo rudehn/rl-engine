@@ -2,17 +2,15 @@
 //!
 //! The abilities are data in `assets/abilities.ron` and the engine resolves
 //! them: the aim, the footprint, the cost, the cooldown and the turn. What is
-//! here is Corsair's side of that boundary, and it is small on purpose. A
-//! [`Lookup`] over the registries Corsair already has, so an ability names a
-//! tag or a status the way the rest of the content does. `Plunder`, the one
-//! effect Corsair adds to the engine's seven. And the keys, which write
-//! [`AimAt`] and stop there.
+//! here is Corsair's side of that boundary, and it is small on purpose. The
+//! registries an ability file names, handed to the engine's loader, so an
+//! ability names a tag or a status the way the rest of the content does.
+//! `Plunder`, the one effect Corsair adds to the engine's seven. And the
+//! keys, which write [`AimAt`] and stop there.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_rules::ability::{Lookup, RawValue};
-use rl_engine::rl_rules::damage::DamageKindId;
-use rl_engine::rl_rules::{SlotId, StatId, StatusId, TagId};
+use rl_engine::rl_rules::ability::RawValue;
 
 use crate::items::Armory;
 use crate::monsters::Bestiary;
@@ -30,43 +28,14 @@ type PlayerHolding = (With<Player>, With<MyTurn>);
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Purse(pub u32);
 
-/// Every Corsair registry an ability file names, borrowed for a load.
-///
-/// No new tables: the tags are the armory's, the damage kinds the
-/// bestiary's, the statuses the ones `statuses.ron` defines. That is the
-/// whole cost of authoring abilities by name.
-pub struct Names<'a> {
-    /// Stats, tags and slots.
-    pub armory: &'a Armory,
-    /// Damage kinds.
-    pub bestiary: &'a Bestiary,
-    /// Statuses.
-    pub statuses: &'a StatusRules,
-}
-
-impl Lookup for Names<'_> {
-    fn stat(&self, n: &str) -> Option<StatId> {
-        self.armory.stats.id(n)
-    }
-    fn status(&self, n: &str) -> Option<StatusId> {
-        self.statuses.defs.id(n)
-    }
-    fn tag(&self, n: &str) -> Option<TagId> {
-        self.armory.tags.id(n)
-    }
-    fn slot(&self, n: &str) -> Option<SlotId> {
-        self.armory.slots.id(n)
-    }
-    fn damage(&self, n: &str) -> Option<DamageKindId> {
-        self.bestiary.kinds.id(n)
-    }
-}
-
 /// Loads and builds the abilities; panics naming every problem, at startup
 /// rather than the first time a key is pressed.
-pub fn load(names: &Names, kinds: &EffectKinds) -> Abilities {
-    let defs = rl_engine::rl_rules::ability::load(ABILITIES_RON, names).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
-    Abilities::build(defs, kinds, names).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"))
+///
+/// No new tables: the stats, tags and slots are the armory's, the damage
+/// kinds the bestiary's, the statuses the ones `statuses.ron` defines.
+pub fn load(armory: &Armory, bestiary: &Bestiary, statuses: &StatusRules, kinds: &EffectKinds) -> Abilities {
+    let names = Names::new().stats(&armory.stats).tags(&armory.tags).slots(&armory.slots).damage_kinds(&bestiary.kinds).statuses(&statuses.defs);
+    Abilities::load(ABILITIES_RON, kinds, &names).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"))
 }
 
 /// The player's grants.
@@ -106,7 +75,7 @@ impl Effect for Plunder {
 impl FromArgs for Plunder {
     const KIND: &'static str = "Plunder";
 
-    fn from_args(_: &RawValue, _: &dyn Lookup) -> Result<Self, String> {
+    fn from_args(_: &RawValue, _: &Names<'_>) -> Result<Self, String> {
         Ok(Plunder)
     }
 }

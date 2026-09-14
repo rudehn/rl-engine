@@ -13,9 +13,7 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::damage::DamageKind;
-use rl_engine::rl_rules::{
-    AffixDef, AffixKind, Enchanted, EnhanceRule, EquipShape, Modifier, Op, Scaled, ScaledStrike, SlotDef, StatDef, StatId, TagDef, TagId, roll_affixes,
-};
+use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, Modifier, Names, Op, SlotDef, StatDef, StatId, TagDef, TagId, affix, roll_affixes};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
@@ -63,31 +61,6 @@ impl ItemDef {
     /// Whether using it does anything.
     pub fn usable(&self) -> bool {
         self.heal > 0
-    }
-}
-
-/// An affix as authored.
-#[derive(Debug, Clone, Deserialize)]
-struct AffixRon {
-    name: String,
-    #[serde(default)]
-    kind: AffixKind,
-    applies_to: Vec<String>,
-    #[serde(default)]
-    grants: Vec<(String, i32, u32)>,
-    #[serde(default)]
-    strikes: Vec<(String, u32, u32, u32)>,
-    #[serde(default = "one")]
-    weight: u32,
-}
-
-fn one() -> u32 {
-    1
-}
-
-impl Named for AffixRon {
-    fn name(&self) -> &str {
-        &self.name
     }
 }
 
@@ -173,53 +146,8 @@ impl Armory {
         })
         .unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
 
-        let authored: Registry<AffixRon> = Registry::from_ron_str(AFFIXES_RON).unwrap_or_else(|e| panic!("assets/affixes.ron: {e}"));
-        authored
-            .validate(|a, _| {
-                for t in &a.applies_to {
-                    if tags.id(t).is_none() {
-                        return Err(format!("{}: unknown tag {t:?}", a.name));
-                    }
-                }
-                for (stat, _, _) in &a.grants {
-                    if stats.id(stat).is_none() {
-                        return Err(format!("{}: unknown stat {stat:?}", a.name));
-                    }
-                }
-                for (kind, _, _, sides) in &a.strikes {
-                    if kinds.id(kind).is_none() {
-                        return Err(format!("{}: unknown damage kind {kind:?}", a.name));
-                    }
-                    if *sides == 0 {
-                        return Err(format!("{}: a die needs sides", a.name));
-                    }
-                }
-                Ok(())
-            })
-            .unwrap_or_else(|e| panic!("assets/affixes.ron: {e}"));
-        let affixes = Registry::from_defs(
-            authored
-                .iter()
-                .map(|(_, a)| AffixDef {
-                    name: a.name.clone(),
-                    kind: a.kind,
-                    applies_to: a.applies_to.iter().map(|t| tags.expect(t)).collect(),
-                    grants: a.grants.iter().map(|(stat, base, per)| Scaled { stat: stats.expect(stat), base: *base, levels_per_point: *per }).collect(),
-                    strikes: a
-                        .strikes
-                        .iter()
-                        .map(|(kind, base_dice, per, sides)| ScaledStrike {
-                            kind: kinds.expect(kind),
-                            base_dice: *base_dice,
-                            levels_per_die: *per,
-                            sides: *sides,
-                        })
-                        .collect(),
-                    weight: a.weight,
-                })
-                .collect(),
-        )
-        .unwrap();
+        let names = Names::new().tags(&tags).stats(&stats).damage_kinds(kinds);
+        let affixes = affix::load(AFFIXES_RON, &names).unwrap_or_else(|e| panic!("assets/affixes.ron: {e}"));
         let mut shapes = Vec::new();
         let mut item_tags = Vec::new();
         let mut table = BandedTable::default();

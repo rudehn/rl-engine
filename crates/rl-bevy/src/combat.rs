@@ -813,14 +813,14 @@ impl crate::ability::Effect for Harm {
 impl crate::ability::FromArgs for Harm {
     const KIND: &'static str = "Harm";
 
-    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+    fn from_args(args: &rl_rules::ability::RawValue, names: &rl_rules::Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         struct Args {
             kind: String,
             roll: String,
         }
         let a: Args = rl_rules::ability::read_args(args)?;
-        Ok(Self { kind: look.damage(&a.kind).ok_or_else(|| format!("unknown damage kind {:?}", a.kind))?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
+        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
     }
 }
 
@@ -849,13 +849,13 @@ impl crate::ability::Effect for Mend {
 impl crate::ability::FromArgs for Mend {
     const KIND: &'static str = "Mend";
 
-    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+    fn from_args(args: &rl_rules::ability::RawValue, names: &rl_rules::Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         struct Args {
             kind: String,
             roll: String,
         }
         let a: Args = rl_rules::ability::read_args(args)?;
-        Ok(Self { kind: look.damage(&a.kind).ok_or_else(|| format!("unknown damage kind {:?}", a.kind))?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
+        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
     }
 }

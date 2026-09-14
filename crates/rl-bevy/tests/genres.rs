@@ -12,9 +12,9 @@
 
 use bevy::prelude::*;
 use rl_bevy::ability::{Abilities, AddEffect, AddEngineEffects, Effect, EffectKinds, EffectWorld, FromArgs, Landing};
-use rl_rules::ability::{Lookup, RawValue, load};
-use rl_rules::damage::{DamageKind, DamageKindId};
-use rl_rules::{AbilityDef, Registry, SlotDef, SlotId, StatDef, StatId, StatusDef, StatusId, TagDef, TagId};
+use rl_rules::ability::{RawValue, load};
+use rl_rules::damage::DamageKind;
+use rl_rules::{AbilityDef, Names, Registry, SlotDef, StatDef, StatusDef, TagDef};
 
 const SETS: [(&str, &str); 5] = [
     ("fantasy", include_str!("genres/fantasy.ron")),
@@ -33,25 +33,12 @@ struct Content {
     kinds: Registry<DamageKind>,
 }
 
-impl Lookup for Content {
-    fn stat(&self, n: &str) -> Option<StatId> {
-        self.stats.id(n)
-    }
-    fn status(&self, n: &str) -> Option<StatusId> {
-        self.statuses.id(n)
-    }
-    fn tag(&self, n: &str) -> Option<TagId> {
-        self.tags.id(n)
-    }
-    fn slot(&self, n: &str) -> Option<SlotId> {
-        self.slots.id(n)
-    }
-    fn damage(&self, n: &str) -> Option<DamageKindId> {
-        self.kinds.id(n)
-    }
-}
-
 impl Content {
+    /// The five registries, for a load.
+    fn names(&self) -> Names<'_> {
+        Names::new().stats(&self.stats).statuses(&self.statuses).tags(&self.tags).slots(&self.slots).damage_kinds(&self.kinds)
+    }
+
     fn new() -> Self {
         Self {
             // One pool per genre, and the engine cannot tell them apart.
@@ -79,7 +66,7 @@ impl Content {
     fn every_set(&self) -> Registry<AbilityDef> {
         let mut all = Vec::new();
         for (name, text) in SETS {
-            let loaded = load(text, self).unwrap_or_else(|e| panic!("genres/{name}.ron: {e}"));
+            let loaded = load(text, &self.names()).unwrap_or_else(|e| panic!("genres/{name}.ron: {e}"));
             all.extend(loaded.iter().map(|(_, d)| d.clone()));
         }
         Registry::from_defs(all).expect("no two sets name the same ability")
@@ -95,7 +82,7 @@ macro_rules! named_effect {
         }
         impl FromArgs for $name {
             const KIND: &'static str = stringify!($name);
-            fn from_args(_: &RawValue, _: &dyn Lookup) -> Result<Self, String> {
+            fn from_args(_: &RawValue, _: &Names<'_>) -> Result<Self, String> {
                 Ok($name)
             }
         }
@@ -129,7 +116,7 @@ fn five_genres_of_ability_load_into_one_table_and_build_against_one_set_of_effec
     }
 
     let app = effect_kinds(true);
-    let built = Abilities::build(all, app.world().resource::<EffectKinds>(), &content).unwrap_or_else(|e| panic!("{e}"));
+    let built = Abilities::build(all, app.world().resource::<EffectKinds>(), &content.names()).unwrap_or_else(|e| panic!("{e}"));
     // One table means one namespace: a fireball and a broadside are rows of
     // the same thing, addressed the same way.
     assert_ne!(built.expect("fireball"), built.expect("broadside"));
@@ -139,7 +126,7 @@ fn five_genres_of_ability_load_into_one_table_and_build_against_one_set_of_effec
 fn an_effect_no_game_registered_is_refused_at_build_by_name() {
     let content = Content::new();
     let app = effect_kinds(false);
-    let Err(e) = Abilities::build(content.every_set(), app.world().resource::<EffectKinds>(), &content) else {
+    let Err(e) = Abilities::build(content.every_set(), app.world().resource::<EffectKinds>(), &content.names()) else {
         panic!("built with none of the genres' own effects registered");
     };
     let why = e.to_string();

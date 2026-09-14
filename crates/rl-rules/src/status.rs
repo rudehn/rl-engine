@@ -4,12 +4,19 @@
 //! What a status *does* is expressed as stat modifiers the engine can
 //! apply and remove, plus an optional damage-over-time the game's damage
 //! pipeline resolves. Anything richer is the game's, keyed by the id.
+//!
+//! [`load`] reads definitions from RON by name, resolving every stat and
+//! damage kind through [`Names`], so a game authors statuses in the words
+//! its other content uses and never mirrors this schema in a type of its
+//! own.
 
-use crate::content::{Named, Registry};
+use crate::content::{ContentError, Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 
-use crate::stats::{Op, Stats};
+use crate::damage::DamageKindId;
+use crate::names::Names;
+use crate::stats::{Op, StatId, Stats};
 
 /// What happens when a status is applied to an actor that has it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,30 +32,31 @@ pub enum Stacking {
 }
 
 /// A stat change a status applies while it lasts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatusModifier {
-    /// The stat, by name in RON and resolved to an id at load.
-    pub stat: u32,
+    /// The stat.
+    pub stat: StatId,
     /// The change.
     pub op: Op,
 }
 
 /// A registered status.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// Built by [`load`] from names, or by hand with the methods below, and
+/// never deserialized as it stands: its ids index registries a content file
+/// cannot see, and a number written in one is a modifier that lands on
+/// another stat the day the stat list is reordered.
+#[derive(Debug, Clone, PartialEq)]
 pub struct StatusDef {
     /// The name content refers to it by.
     pub name: String,
     /// How a repeat application behaves.
-    #[serde(default = "refresh")]
     pub stacking: Stacking,
-    /// Stat changes while active, as raw stat ids.
-    #[serde(default)]
+    /// Stat changes while active.
     pub modifiers: Vec<StatusModifier>,
-    /// Damage per turn as `(damage kind id, amount)`, if any.
-    #[serde(default)]
-    pub tick_damage: Option<(u32, i32)>,
+    /// Damage per turn as `(kind, amount)`, if any.
+    pub tick_damage: Option<(DamageKindId, i32)>,
     /// Glyph for a badge, if the game wants one.
-    #[serde(default)]
     pub badge: Option<char>,
 }
 
@@ -69,14 +77,14 @@ impl StatusDef {
     }
 
     /// Adds a stat modifier.
-    pub fn modifies(mut self, stat: u32, op: Op) -> Self {
+    pub fn modifies(mut self, stat: StatId, op: Op) -> Self {
         self.modifiers.push(StatusModifier { stat, op });
         self
     }
 
     /// Sets damage per turn. A negative amount mends each turn instead,
     /// through the same pipeline, so regeneration is a status like poison.
-    pub fn ticks(mut self, kind: u32, amount: i32) -> Self {
+    pub fn ticks(mut self, kind: DamageKindId, amount: i32) -> Self {
         self.tick_damage = Some((kind, amount));
         self
     }
@@ -90,6 +98,69 @@ impl Named for StatusDef {
 
 /// A registered status id.
 pub type StatusId = Id<StatusDef>;
+
+/// A status as authored, before its names are resolved.
+#[derive(Debug, Deserialize)]
+struct Authored {
+    name: String,
+    #[serde(default = "refresh")]
+    stacking: Stacking,
+    #[serde(default)]
+    modifies: Vec<(String, Op)>,
+    #[serde(default)]
+    ticks: Option<(String, i32)>,
+    #[serde(default)]
+    badge: Option<char>,
+}
+
+impl Named for Authored {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// Loads statuses from RON, resolving every stat and damage kind through
+/// `names`.
+///
+/// One entry per status, and every field but `name` may be left out:
+///
+/// - `name`: unique; what a requirement, an effect or the game's code calls it.
+/// - `stacking`: what a second application does. `Refresh`, the default,
+///   keeps the longer duration; `Extend` adds them; `Stack` puts a second
+///   instance beside the first; `Ignore` does nothing.
+/// - `modifies`: stat changes while it lasts, each `(stat, op)` with `op`
+///   one of `Add(n)`, `MulPct(n)`, `AtLeast(n)` or `AtMost(n)`.
+/// - `ticks`: `(damage kind, amount)` dealt every whole turn. A negative
+///   amount mends.
+/// - `badge`: one character a panel may draw beside a health bar.
+///
+/// Reports every unknown name in the file at once.
+pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, ContentError> {
+    let authored: Registry<Authored> = Registry::from_ron_str(text)?;
+    let mut errors = Vec::new();
+    let mut defs = Vec::new();
+    for (_, a) in authored.iter() {
+        let mut modifiers = Vec::new();
+        for (stat, op) in &a.modifies {
+            match names.stat(stat) {
+                Ok(stat) => modifiers.push(StatusModifier { stat, op: *op }),
+                Err(e) => errors.push(format!("{}: {e}", a.name)),
+            }
+        }
+        let tick_damage = a.ticks.as_ref().and_then(|(kind, amount)| match names.damage_kind(kind) {
+            Ok(kind) => Some((kind, *amount)),
+            Err(e) => {
+                errors.push(format!("{}: {e}", a.name));
+                None
+            }
+        });
+        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge });
+    }
+    if !errors.is_empty() {
+        return Err(ContentError::Invalid(errors));
+    }
+    Registry::from_defs(defs)
+}
 
 /// One status on one actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,8 +178,8 @@ pub struct ActiveStatus {
 pub struct Tick {
     /// Which status.
     pub status: StatusId,
-    /// The damage kind, as a raw id for the game's damage registry.
-    pub kind: u32,
+    /// The damage kind.
+    pub kind: DamageKindId,
     /// How much, before mitigation.
     pub amount: i32,
     /// Who applied the status, for credit.
@@ -172,7 +243,7 @@ impl Statuses {
                 let instance = self.active.iter().filter(|s| s.id == id).count();
                 let tag = source_tag(id, instance);
                 for m in &def.modifiers {
-                    stats.add(crate::stats::Modifier::new(Id::from_raw(m.stat), m.op, tag));
+                    stats.add(crate::stats::Modifier::new(m.stat, m.op, tag));
                 }
                 self.active.push(ActiveStatus { id, turns, source });
                 true
@@ -244,11 +315,11 @@ mod tests {
 
     fn world() -> (Registry<StatDef>, Registry<StatusDef>) {
         let stats = Registry::from_defs(vec![StatDef::new("speed", 100)]).unwrap();
-        let speed = stats.expect("speed").raw();
+        let speed = stats.expect("speed");
         let statuses = Registry::from_defs(vec![
             StatusDef::new("slowed").modifies(speed, Op::MulPct(50)),
-            StatusDef::new("burning").ticks(0, 2).stacking(Stacking::Extend),
-            StatusDef::new("poisoned").ticks(1, 1).stacking(Stacking::Stack),
+            StatusDef::new("burning").ticks(DamageKindId::from_raw(0), 2).stacking(Stacking::Extend),
+            StatusDef::new("poisoned").ticks(DamageKindId::from_raw(1), 1).stacking(Stacking::Stack),
         ])
         .unwrap();
         (stats, statuses)
@@ -288,18 +359,55 @@ mod tests {
         assert_eq!(st.iter().filter(|s| s.id == poisoned).count(), 2, "stack sits beside");
         let report = st.tick(&defs, &mut stats);
         assert_eq!(report.ticks.len(), 3);
-        assert_eq!(report.ticks[0], Tick { status: burning, kind: 0, amount: 2, source: Some(9) });
+        assert_eq!(report.ticks[0], Tick { status: burning, kind: DamageKindId::from_raw(0), amount: 2, source: Some(9) });
         assert!(st.cure(poisoned, &mut stats));
         assert!(!st.has(poisoned));
         assert!(!st.cure(poisoned, &mut stats));
     }
 
+    fn vocabulary() -> (Registry<StatDef>, Registry<crate::damage::DamageKind>) {
+        let stats = Registry::from_defs(vec![StatDef::new("speed", 100), StatDef::new("armor", 0)]).unwrap();
+        let kinds = Registry::from_defs(vec![crate::damage::DamageKind::new("bite"), crate::damage::DamageKind::new("care")]).unwrap();
+        (stats, kinds)
+    }
+
     #[test]
-    fn statuses_load_from_ron() {
-        let r: Registry<StatusDef> =
-            Registry::from_ron_str(r#"[(name: "hasted", modifiers: [(stat: 2, op: MulPct(200))], badge: Some('H')), (name: "stunned", stacking: Ignore)]"#)
-                .unwrap();
-        assert_eq!(r.get(r.expect("hasted")).badge, Some('H'));
+    fn a_status_file_is_written_in_names_and_loaded_as_ids() {
+        let (stats, kinds) = vocabulary();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds);
+        let r = load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "hasted", modifies: [("speed", MulPct(200))], badge: 'H'),
+                (name: "venom", stacking: Extend, ticks: ("bite", 1)),
+                (name: "mending", ticks: ("care", -2)),
+                (name: "stunned", stacking: Ignore),
+            ]"#,
+            &names,
+        )
+        .expect("the file loads");
+        let hasted = r.get(r.expect("hasted"));
+        assert_eq!(hasted.modifiers, vec![StatusModifier { stat: stats.expect("speed"), op: Op::MulPct(200) }]);
+        assert_eq!(hasted.badge, Some('H'));
+        assert_eq!(hasted.stacking, Stacking::Refresh, "the default");
+        assert_eq!(r.get(r.expect("venom")).tick_damage, Some((kinds.expect("bite"), 1)));
+        assert_eq!(r.get(r.expect("mending")).tick_damage, Some((kinds.expect("care"), -2)), "a negative tick mends");
         assert_eq!(r.get(r.expect("stunned")).stacking, Stacking::Ignore);
+    }
+
+    #[test]
+    fn every_unknown_name_in_a_status_file_is_reported_at_once() {
+        let (stats, kinds) = vocabulary();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds);
+        let bad = r#"#![enable(implicit_some)]
+        [
+            (name: "cursed", modifies: [("luck", Add(-1)), ("wisdom", Add(-1))]),
+            (name: "burning", ticks: ("fire", 2)),
+            (name: "fine"),
+        ]"#;
+        let Err(ContentError::Invalid(errs)) = load(bad, &names) else { panic!("a file of unknown names loaded") };
+        assert_eq!(errs.len(), 3, "{errs:#?}");
+        assert!(errs.contains(&"cursed: unknown stat \"luck\"".to_string()), "{errs:#?}");
+        assert!(errs.contains(&"burning: unknown damage kind \"fire\"".to_string()), "{errs:#?}");
     }
 }

@@ -305,9 +305,8 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
 #[cfg(test)]
 pub(crate) mod harness {
     use super::*;
-    use rl_rules::ability::Lookup;
     use rl_rules::content::Registry;
-    use rl_rules::{DamageKind, StatDef};
+    use rl_rules::{DamageKind, Names, StatDef};
 
     /// The registries an ability file names, over the one damage kind the
     /// stage has.
@@ -320,23 +319,9 @@ pub(crate) mod harness {
         pub fn new() -> Self {
             Self { stats: Registry::from_defs(vec![StatDef::new("focus", 20)]).unwrap(), kinds: Registry::from_defs(vec![DamageKind::new("kinetic")]).unwrap() }
         }
-    }
 
-    impl Lookup for Content {
-        fn stat(&self, n: &str) -> Option<rl_rules::StatId> {
-            self.stats.id(n)
-        }
-        fn status(&self, _: &str) -> Option<rl_rules::StatusId> {
-            None
-        }
-        fn tag(&self, _: &str) -> Option<rl_rules::TagId> {
-            None
-        }
-        fn slot(&self, _: &str) -> Option<rl_rules::SlotId> {
-            None
-        }
-        fn damage(&self, n: &str) -> Option<rl_rules::damage::DamageKindId> {
-            self.kinds.id(n)
+        fn names(&self) -> Names<'_> {
+            Names::new().stats(&self.stats).damage_kinds(&self.kinds)
         }
     }
 
@@ -352,9 +337,7 @@ pub(crate) mod harness {
     /// Inserts everything an ability needs into `app`, before play begins.
     pub fn abilities(app: &mut App) {
         let content = Content::new();
-        let defs = rl_rules::ability::load(ABILITIES, &content).expect("the abilities load");
-        let kinds = app.world().resource::<EffectKinds>();
-        let built = Abilities::build(defs, kinds, &content).expect("the effects build");
+        let built = Abilities::load(ABILITIES, app.world().resource::<EffectKinds>(), &content.names()).expect("the abilities load and build");
         app.insert_resource(built);
         app.insert_resource(AbilityRng::for_run(rl_core::RunSeed(3)));
         app.insert_resource(StatRules(content.stats));

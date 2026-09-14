@@ -42,10 +42,11 @@ pub mod equip;
 pub mod events;
 pub mod faction;
 pub mod forecast;
+pub mod names;
 pub mod stats;
 pub mod status;
 
-pub use ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Lookup, Purse, Requirement, blocked, read_args};
+pub use ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, blocked, read_args};
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
 pub use ai::{ActorView, Awareness, Brain, Decision, MovementProfile, NoticeStats, Snapshot, StealthStats, Tactic, TacticCtx, notices};
 pub use balance::{BandRow, Report, ThreatSubject, threat};
@@ -55,12 +56,13 @@ pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
+pub use names::Names;
 pub use stats::{Modifier, Op, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Lookup, Purse, Requirement, blocked, read_args};
+    pub use crate::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, blocked, read_args};
     pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
     pub use crate::ai::tactics;
     pub use crate::ai::{ActorView, Awareness, Brain, Decision, MovementProfile, NoticeStats, Snapshot, StealthStats, Tactic, TacticCtx, notices};
@@ -73,6 +75,7 @@ pub mod prelude {
     };
     pub use crate::faction::{FactionId, Factions, Relation};
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
+    pub use crate::names::Names;
     pub use crate::stats::{Modifier, Op, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 }

@@ -10,7 +10,6 @@
 //! Opt-in: a game that inserts no [`StatusRules`] pays nothing.
 
 use bevy::prelude::*;
-use rl_core::Id;
 use rl_rules::Registry;
 use rl_rules::{Hit, Stats, StatusDef, StatusId, Statuses};
 
@@ -139,7 +138,7 @@ pub fn tick_statuses(
             let report = statuses.0.tick(&rules.defs, &mut stats.0);
             for t in report.ticks {
                 let credit = t.source.and_then(Entity::try_from_bits);
-                damage.write(DamageEvent { target: entity, hit: Hit::from_source(credit, Id::from_raw(t.kind), t.amount) });
+                damage.write(DamageEvent { target: entity, hit: Hit::from_source(credit, t.kind, t.amount) });
             }
             for status in report.expired {
                 events.write(StatusEvent::Expired { target: entity, status });
@@ -215,8 +214,8 @@ mod tests {
         let stats = Registry::from_defs(vec![StatDef::new("armor", 0)]).unwrap();
         let armor_stat = stats.expect("armor");
         let defs = Registry::from_defs(vec![
-            StatusDef::new("venom").ticks(venom_kind.raw(), 2).stacking(Stacking::Refresh),
-            StatusDef::new("hearty").modifies(armor_stat.raw(), Op::Add(3)),
+            StatusDef::new("venom").ticks(venom_kind, 2).stacking(Stacking::Refresh),
+            StatusDef::new("hearty").modifies(armor_stat, Op::Add(3)),
         ])
         .unwrap();
         let (venom, hearty) = (defs.expect("venom"), defs.expect("hearty"));
@@ -296,14 +295,14 @@ impl crate::ability::Effect for Inflict {
 impl crate::ability::FromArgs for Inflict {
     const KIND: &'static str = "Inflict";
 
-    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+    fn from_args(args: &rl_rules::ability::RawValue, names: &rl_rules::Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         struct Args {
             status: String,
             turns: u32,
         }
         let a: Args = rl_rules::ability::read_args(args)?;
-        Ok(Self { status: look.status(&a.status).ok_or_else(|| format!("unknown status {:?}", a.status))?, turns: a.turns })
+        Ok(Self { status: names.status(&a.status)?, turns: a.turns })
     }
 }
 
@@ -325,12 +324,12 @@ impl crate::ability::Effect for Cleanse {
 impl crate::ability::FromArgs for Cleanse {
     const KIND: &'static str = "Cleanse";
 
-    fn from_args(args: &rl_rules::ability::RawValue, look: &dyn rl_rules::ability::Lookup) -> Result<Self, String> {
+    fn from_args(args: &rl_rules::ability::RawValue, names: &rl_rules::Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         struct Args {
             status: String,
         }
         let a: Args = rl_rules::ability::read_args(args)?;
-        Ok(Self { status: look.status(&a.status).ok_or_else(|| format!("unknown status {:?}", a.status))? })
+        Ok(Self { status: names.status(&a.status)? })
     }
 }

@@ -4,7 +4,7 @@ Status: phases A to F built 2026-09-12.
 Written against `main` at `8662f1c`, with the UI slice (modals, views, panels, the look cursor) in flight.
 It closes the "abilities and targeting" item deferred from M5.
 
-Four things changed on the way from this document to the code, each noted where it happens below: the effect that puts a status on is `Inflict`, not `Afflict`, because `Afflict` is already the request and an effect is not a request; names in an ability file are resolved through a [`Lookup`] the game implements, which was not in the plan and removes the per-game mirror type the rest of the content layer needs; a cooldown counts from the moment of use rather than the end of it; and the sight requirement is not applied to an actor with no viewshed, since most non-players carry none and the question cannot be asked of them.
+Four things changed on the way from this document to the code, each noted where it happens below: the effect that puts a status on is `Inflict`, not `Afflict`, because `Afflict` is already the request and an effect is not a request; names in an ability file are resolved through [`Names`], the engine's one lookup over whichever registries a game has, which was not in the plan and removed the per-game mirror types the content layer used to need; a cooldown counts from the moment of use rather than the end of it; and the sight requirement is not applied to an actor with no viewshed, since most non-players carry none and the question cannot be asked of them.
 
 Phase D changed four more.
 A key needs no aiming code at all: a game writes `AimAt` and the engine opens the cursor, or uses a self ability at once, so every ability is bound the same way.
@@ -307,7 +307,10 @@ Once a game has written its five, its designers are back in RON.
 
 ### rl-rules: `ability.rs` (tier 1, no Bevy)
 
-Names in an ability file are resolved through a [`Lookup`]: five methods a game implements over the registries it already has. This was not in the plan, and it is the difference between abilities being data and being nearly data. The rest of the content layer makes a game mirror the engine's schema in a RON-facing type of its own and convert (see Corsair's `StatusRon`), which for a definition naming five other registries would have been a hundred lines per game. One trait implementation, five one-line methods, and a game authors abilities by name.
+Names in an ability file are resolved through [`Names`], a value borrowing whichever of the stat, status, tag, slot and damage kind registries a game has.
+This was not in the plan, and it is the difference between abilities being data and being nearly data.
+It began as a trait each game implemented, and every implementation turned out to be the same five one-line methods over the same five registries, so the engine owns the one copy.
+Statuses and affixes load through it too: they used to make a game mirror the engine's schema in a RON-facing type of its own and convert, which Corsair did in a hundred lines, and now a game hands `Names` to `status::load` and `affix::load` and authors both by name.
 
 
 `AbilityDef`, `Aim`, `Cost`, `Requirement`, `EffectSpec`, and the pure decisions over them:

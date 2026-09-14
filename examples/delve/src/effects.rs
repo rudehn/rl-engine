@@ -11,7 +11,7 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::StatId;
-use rl_engine::rl_rules::ability::{Lookup, RawValue, read_args};
+use rl_engine::rl_rules::ability::{RawValue, read_args};
 
 /// Pour into the user's pool, up to what its stats allow, whenever the
 /// ability lands on something.
@@ -44,13 +44,13 @@ impl Effect for Drain {
 impl FromArgs for Drain {
     const KIND: &'static str = "Drain";
 
-    fn from_args(args: &RawValue, look: &dyn Lookup) -> Result<Self, String> {
+    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         struct Args {
             pool: String,
             amount: i32,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { pool: look.stat(&a.pool).ok_or_else(|| format!("unknown stat {:?}", a.pool))?, amount: a.amount })
+        Ok(Self { pool: names.stat(&a.pool)?, amount: a.amount })
     }
 }

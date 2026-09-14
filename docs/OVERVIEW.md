@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-13, after one answer to where an ability lands.
+Last updated: 2026-09-13, after one lookup for every content file.
 
 ## The shape
 
@@ -67,11 +67,12 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - `content`: `Registry<T>` loaded from RON with validate-on-load, and `BandedTable` with weights, groups and gap detection.
 - Stats with a modifier accumulator.
 - The damage pipeline: kinds, resistances, hits with the attacker and credit split, composable stages. A negative hit mends down the same stages, past armor and a block and scaled by resistance to its kind; whoever rolls a blow floors it at zero.
-- Statuses with stacking rules, per-turn ticks and cures.
+- `names`: `Names`, the registries a content file's names resolve against, borrowed for a load and filled with whichever a game has. Every loader below reads through it and reports every unknown name in a file at once, saying which registry was missing when one was never given, so no game writes a lookup or mirrors an engine schema in a type of its own.
+- Statuses with stacking rules, per-turn ticks and cures, loaded by name with `status::load`: a stat to modify and a damage kind to tick, each resolved to a typed id.
 - A faction relation matrix.
 - The equipment slot graph with displacement.
-- The affix and enchant model: item tags, prefix and suffix affixes with level-scaled stat grants and extra strikes, an enhance rule for what a level buys, per-instance state, weighted rolling.
-- `ability`: what an actor can spend a turn on besides a step and a swing, as data. A shape from the targeting module, an [`Aim`] saying what it wants under it, costs against a pool, an item charge, health or a tagged item, requirements over statuses, slots and stats, an integer time and cooldown, and a list of named effects with their arguments left unparsed for whoever registered them. `load` resolves every name in a file through a `Lookup` the game implements over its own registries, and reports every unknown one at once; `blocked` answers whether a use is permitted and lists every reason it is not. `Aim::hits` says who a footprint catches, the user counting as its own ally, and `Aim::worth_aiming_at` what is worth pointing it at; `aim_blocked` refuses an aim with nowhere to go or out of the user's sight.
+- The affix and enchant model: item tags, prefix and suffix affixes with level-scaled stat grants and extra strikes, an enhance rule for what a level buys, per-instance state, weighted rolling. `affix::load` reads affixes by tag, stat and damage kind name.
+- `ability`: what an actor can spend a turn on besides a step and a swing, as data. A shape from the targeting module, an [`Aim`] saying what it wants under it, costs against a pool, an item charge, health or a tagged item, requirements over statuses, slots and stats, an integer time and cooldown, and a list of named effects with their arguments left unparsed for whoever registered them. `load` resolves every name in a file through `Names`; `blocked` answers whether a use is permitted and lists every reason it is not. `Aim::hits` says who a footprint catches, the user counting as its own ally, and `Aim::worth_aiming_at` what is worth pointing it at; `aim_blocked` refuses an aim with nowhere to go or out of the user's sight.
 - `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt, wander and use-ability tactics. The ability tactic aims by `Aim::worth_aiming_at` and scores a footprint by `Aim::hits`, the rules the resolver lands it with, so a mind fires something it cannot understand, never learns the theme, and never counts a hit the resolver would not land.
 - `events`: facts with kind, subject, object and amount, matchers, a ledger of named counters, and quests as objectives over facts with prerequisite chains and a victory flag.
 - `balance`: threat scoring and the spawn-band report.

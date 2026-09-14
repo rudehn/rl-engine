@@ -21,15 +21,13 @@ use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ability::Lookup;
+use rl_engine::rl_rules::AbilityId;
 use rl_engine::rl_rules::ai::awareness::{NoticeStats, StealthStats};
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
 use rl_engine::rl_rules::ai::tactics::UseAbility;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
-use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::{AbilityId, SlotId, StatId, StatusId, TagId};
 use serde::Deserialize;
 
 use crate::floors::{FLOORS, Whale, ambient_of, floor_of, map_of, name_of};
@@ -112,11 +110,8 @@ impl Screen {
     }
 }
 
-/// Every registry the delve's content names, and the lookup its abilities
-/// are authored against.
-///
-/// One struct for every table rather than a lookup per file, so an ability
-/// naming a status and a damage kind resolves both the same way.
+/// Every registry the delve's content names, kept together so one [`Names`]
+/// borrows them all when the knacks load.
 #[derive(Resource, Clone)]
 struct Rules {
     kinds: Registry<DamageKind>,
@@ -137,7 +132,7 @@ impl Rules {
             DamageKind::new("care").unarmored(),
         ])
         .unwrap();
-        let fire = kinds.expect("fire").raw();
+        let fire = kinds.expect("fire");
         Self {
             stats: Registry::from_defs(vec![StatDef::new("mana", 30)]).unwrap(),
             statuses: Registry::from_defs(vec![
@@ -150,23 +145,10 @@ impl Rules {
             kinds,
         }
     }
-}
 
-impl Lookup for Rules {
-    fn stat(&self, n: &str) -> Option<StatId> {
-        self.stats.id(n)
-    }
-    fn status(&self, n: &str) -> Option<StatusId> {
-        self.statuses.id(n)
-    }
-    fn tag(&self, n: &str) -> Option<TagId> {
-        self.tags.id(n)
-    }
-    fn slot(&self, n: &str) -> Option<SlotId> {
-        self.slots.id(n)
-    }
-    fn damage(&self, n: &str) -> Option<DamageKindId> {
-        self.kinds.id(n)
+    /// Every table, for a load.
+    fn names(&self) -> Names<'_> {
+        Names::new().stats(&self.stats).statuses(&self.statuses).tags(&self.tags).slots(&self.slots).damage_kinds(&self.kinds)
     }
 }
 
@@ -283,8 +265,7 @@ fn start(
     let kinds = rules.kinds.clone();
     // The knacks, built against the rules and the effects registered while
     // the app was built, so a file naming one nobody added fails here.
-    let authored = rl_engine::rl_rules::ability::load(ABILITIES_RON, &rules).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
-    let abilities = Abilities::build(authored, &effect_kinds, &rules).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
+    let abilities = Abilities::load(ABILITIES_RON, &effect_kinds, &rules.names()).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
     let facs = Registry::from_defs(vec![FactionDef { name: "you".into() }, FactionDef { name: "whale".into() }]).unwrap();
     let (you, whale_side) = (facs.expect("you"), facs.expect("whale"));
     let mut factions = Factions::new(&facs);

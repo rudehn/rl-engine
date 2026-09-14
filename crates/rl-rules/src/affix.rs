@@ -10,12 +10,13 @@
 //! registered stats and dice of a registered damage kind. The names, the
 //! tags, the stats and the kinds are the game's; the shape is here.
 
-use crate::content::{Named, Registry};
+use crate::content::{ContentError, Named, Registry};
 use rand::Rng;
 use rl_core::{DiceRoll, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::damage::DamageKindId;
+use crate::names::Names;
 use crate::stats::{Modifier, Op, StatId};
 
 /// A registered item tag: "weapon", "blade", "armor", "hat". An affix's
@@ -55,14 +56,13 @@ pub enum AffixKind {
 /// A stat bonus that grows with the enchant level: `base + level /
 /// levels_per_point`. The base term matters because `+0` is a reachable
 /// state, and an affix that does nothing at `+0` reads as a bug.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scaled {
     /// Which stat.
     pub stat: StatId,
     /// At level zero.
     pub base: i32,
     /// Levels per extra point; zero means the base only.
-    #[serde(default)]
     pub levels_per_point: u32,
 }
 
@@ -76,14 +76,13 @@ impl Scaled {
 
 /// Extra dice on a strike that grow with the enchant level: `base_dice +
 /// level / levels_per_die` dice of `sides`, never fewer than one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScaledStrike {
     /// What kind of damage.
     pub kind: DamageKindId,
     /// Dice at level zero.
     pub base_dice: u32,
     /// Levels per extra die; zero means the base only.
-    #[serde(default)]
     pub levels_per_die: u32,
     /// Faces per die.
     pub sides: u32,
@@ -98,23 +97,23 @@ impl ScaledStrike {
 }
 
 /// A registered affix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Built by [`load`] from names, or by hand. Not deserialized as it stands,
+/// for the reason a status definition is not: its ids index registries a
+/// content file cannot see.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AffixDef {
     /// The fragment: "Sharp", or "the deep" for "of the deep".
     pub name: String,
     /// Before or after.
-    #[serde(default)]
     pub kind: AffixKind,
     /// Tags it may roll onto; any one match is enough.
     pub applies_to: Vec<TagId>,
     /// Stat bonuses while worn.
-    #[serde(default)]
     pub grants: Vec<Scaled>,
     /// Extra dice on a strike while wielded.
-    #[serde(default)]
     pub strikes: Vec<ScaledStrike>,
     /// Relative chance among eligible affixes.
-    #[serde(default = "one")]
     pub weight: u32,
 }
 
@@ -136,6 +135,73 @@ impl AffixDef {
     pub fn applies(&self, tags: &[TagId]) -> bool {
         self.applies_to.iter().any(|t| tags.contains(t))
     }
+}
+
+/// An affix as authored, before its names are resolved.
+#[derive(Debug, Deserialize)]
+struct Authored {
+    name: String,
+    #[serde(default)]
+    kind: AffixKind,
+    applies_to: Vec<String>,
+    #[serde(default)]
+    grants: Vec<(String, i32, u32)>,
+    #[serde(default)]
+    strikes: Vec<(String, u32, u32, u32)>,
+    #[serde(default = "one")]
+    weight: u32,
+}
+
+impl Named for Authored {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// Loads affixes from RON, resolving every tag, stat and damage kind
+/// through `names`.
+///
+/// One entry per affix:
+///
+/// - `name`: unique; the fragment, so a prefix reads "Sharp cutlass" and a
+///   suffix "cutlass of flame".
+/// - `kind`: optional, `Prefix` or `Suffix`, the default.
+/// - `applies_to`: the item tags it may roll onto; any one match is enough.
+/// - `grants`: optional; stat bonuses while worn, each
+///   `(stat, base, levels_per_point)`: the bonus at `+0`, and the levels per
+///   extra point, zero for none.
+/// - `strikes`: optional; extra dice on every hit while wielded, each
+///   `(damage kind, base_dice, levels_per_die, sides)`.
+/// - `weight`: optional; relative chance among what applies, one by default.
+///
+/// Reports every unknown name, and every die with no sides, at once.
+pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<AffixDef>, ContentError> {
+    let authored: Registry<Authored> = Registry::from_ron_str(text)?;
+    let mut errors = Vec::new();
+    let mut defs = Vec::new();
+    for (_, a) in authored.iter() {
+        let mut failed = |e: String| errors.push(format!("{}: {e}", a.name));
+        let applies_to = a.applies_to.iter().filter_map(|t| names.tag(t).map_err(&mut failed).ok()).collect();
+        let grants = a
+            .grants
+            .iter()
+            .filter_map(|(stat, base, per)| names.stat(stat).map_err(&mut failed).ok().map(|stat| Scaled { stat, base: *base, levels_per_point: *per }))
+            .collect();
+        let mut strikes = Vec::new();
+        for (kind, base_dice, per, sides) in &a.strikes {
+            if *sides == 0 {
+                failed(format!("a strike of {kind:?} rolls dice with no sides"));
+            }
+            if let Ok(kind) = names.damage_kind(kind).map_err(&mut failed) {
+                strikes.push(ScaledStrike { kind, base_dice: *base_dice, levels_per_die: *per, sides: *sides });
+            }
+        }
+        defs.push(AffixDef { name: a.name.clone(), kind: a.kind, applies_to, grants, strikes, weight: a.weight });
+    }
+    if !errors.is_empty() {
+        return Err(ContentError::Invalid(errors));
+    }
+    Registry::from_defs(defs)
 }
 
 /// What one enchant level buys on the item itself.
@@ -373,5 +439,30 @@ mod tests {
         }
         assert!((120..=180).contains(&one), "weight 3 of 4: {one}");
         assert!(roll_affixes(&mut rng, &affixes, &[], 2).is_empty());
+    }
+
+    #[test]
+    fn an_affix_file_names_tags_stats_and_kinds_the_way_the_rest_of_the_content_does() {
+        let (tags, stats, kinds, by_hand) = setup();
+        let names = Names::new().tags(&tags).stats(&stats).damage_kinds(&kinds);
+        let loaded = load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "Sharp", kind: Prefix, applies_to: ["weapon"], grants: [("attack", 1, 2)], weight: 3),
+                (name: "flame", applies_to: ["weapon"], strikes: [("fire", 1, 3, 4)]),
+                (name: "Stout", kind: Prefix, applies_to: ["armor"], grants: [("armor", 1, 0)]),
+            ]"#,
+            &names,
+        )
+        .expect("the file loads");
+        let all = |r: &Registry<AffixDef>| r.iter().map(|(_, d)| d.clone()).collect::<Vec<_>>();
+        assert_eq!(all(&loaded), all(&by_hand), "the same three affixes the test builds by hand, suffix and weight one by default");
+
+        let Err(ContentError::Invalid(errs)) = load(r#"[(name: "odd", applies_to: ["hat"], grants: [("luck", 1, 0)], strikes: [("frost", 1, 0, 0)])]"#, &names)
+        else {
+            panic!("a file of unknown names loaded");
+        };
+        assert_eq!(errs.len(), 4, "the tag, the stat, the kind and the die with no sides: {errs:#?}");
+        assert!(errs.iter().all(|e| e.starts_with("odd: ")), "each names the affix: {errs:#?}");
     }
 }

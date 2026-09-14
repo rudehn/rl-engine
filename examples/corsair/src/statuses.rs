@@ -4,74 +4,19 @@
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_rules::{Named, Registry};
-use rl_engine::rl_rules::{Op, Stacking, StatusDef};
+use rl_engine::rl_rules::{Names, status};
 use rl_engine::rl_ui::{MessageLog, Tones};
-use serde::Deserialize;
 
 use crate::items::Armory;
 use crate::monsters::{Bestiary, MonsterKind};
 
 const STATUSES_RON: &str = include_str!("../assets/statuses.ron");
 
-/// A status as authored.
-#[derive(Debug, Clone, Deserialize)]
-struct StatusRon {
-    name: String,
-    #[serde(default = "refresh")]
-    stacking: Stacking,
-    #[serde(default)]
-    modifies: Vec<(String, Op)>,
-    #[serde(default)]
-    ticks: Option<(String, i32)>,
-    #[serde(default)]
-    badge: Option<char>,
-}
-
-fn refresh() -> Stacking {
-    Stacking::Refresh
-}
-
-impl Named for StatusRon {
-    fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-/// Loads the statuses with stat and damage kind names resolved; panics
-/// listing every problem.
+/// Loads the statuses, their stats and damage kinds named the way the rest
+/// of Corsair's content names them; panics listing every problem.
 pub fn load(armory: &Armory, bestiary: &Bestiary) -> StatusRules {
-    let authored: Registry<StatusRon> = Registry::from_ron_str(STATUSES_RON).unwrap_or_else(|e| panic!("assets/statuses.ron: {e}"));
-    authored
-        .validate(|s, _| {
-            for (stat, _) in &s.modifies {
-                if armory.stats.id(stat).is_none() {
-                    return Err(format!("{}: unknown stat {stat:?}", s.name));
-                }
-            }
-            if let Some((kind, _)) = &s.ticks
-                && bestiary.kinds.id(kind).is_none()
-            {
-                return Err(format!("{}: unknown damage kind {kind:?}", s.name));
-            }
-            Ok(())
-        })
-        .unwrap_or_else(|e| panic!("assets/statuses.ron: {e}"));
-    let defs = authored
-        .iter()
-        .map(|(_, s)| StatusDef {
-            name: s.name.clone(),
-            stacking: s.stacking,
-            modifiers: s
-                .modifies
-                .iter()
-                .map(|(stat, op)| rl_engine::rl_rules::status::StatusModifier { stat: armory.stats.expect(stat).raw(), op: *op })
-                .collect(),
-            tick_damage: s.ticks.as_ref().map(|(kind, n)| (bestiary.kinds.expect(kind).raw(), *n)),
-            badge: s.badge,
-        })
-        .collect();
-    StatusRules { defs: Registry::from_defs(defs).unwrap() }
+    let names = Names::new().stats(&armory.stats).damage_kinds(&bestiary.kinds);
+    StatusRules { defs: status::load(STATUSES_RON, &names).unwrap_or_else(|e| panic!("assets/statuses.ron: {e}")) }
 }
 
 /// A monster's hit that landed may leave its status behind.

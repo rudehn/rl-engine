@@ -29,9 +29,9 @@ use rl_grid::TargetMode;
 
 use crate::affix::TagId;
 use crate::content::{ContentError, Named, Registry};
-use crate::damage::DamageKindId;
 use crate::equip::SlotId;
 use crate::faction::Relation;
+use crate::names::Names;
 use crate::stats::StatId;
 use crate::status::{StatusId, Statuses};
 
@@ -347,27 +347,6 @@ pub struct Usable {
     pub mode: TargetMode,
 }
 
-/// Where an ability's names are looked up.
-///
-/// An ability refers to five other registries, and the engine does not
-/// hold any of them. A game implements this over the registries it already
-/// has, and gets to author abilities by name instead of mirroring the
-/// whole schema in a type of its own. Every method may answer `None`; the
-/// loader collects every unknown name and reports them together.
-pub trait Lookup {
-    /// A registered stat.
-    fn stat(&self, name: &str) -> Option<StatId>;
-    /// A registered status.
-    fn status(&self, name: &str) -> Option<StatusId>;
-    /// A registered item tag.
-    fn tag(&self, name: &str) -> Option<TagId>;
-    /// A registered equipment slot.
-    fn slot(&self, name: &str) -> Option<SlotId>;
-    /// A registered damage kind. Unused by the definition itself, and here
-    /// because the effects it names need the same seam.
-    fn damage(&self, name: &str) -> Option<DamageKindId>;
-}
-
 /// Parses one effect's arguments, with the same RON extensions the rest of
 /// a content file is written with.
 ///
@@ -456,25 +435,25 @@ impl Named for Authored {
     }
 }
 
-/// Loads abilities from RON, resolving every name through `look`.
+/// Loads abilities from RON, resolving every name through `names`.
 ///
 /// Reports every problem in the file at once rather than the first, so a
 /// content file with three typos names three.
-pub fn load(text: &str, look: &dyn Lookup) -> Result<Registry<AbilityDef>, ContentError> {
+pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<AbilityDef>, ContentError> {
     let authored: Registry<Authored> = Registry::from_ron_str(text)?;
     let mut errors = Vec::new();
     let mut defs = Vec::new();
     for (_, a) in authored.iter() {
         let mut costs = Vec::new();
         for c in &a.costs {
-            match resolve_cost(c, look) {
+            match resolve_cost(c, names) {
                 Ok(c) => costs.push(c),
                 Err(e) => errors.push(format!("{}: {e}", a.name)),
             }
         }
         let mut requires = Vec::new();
         for r in &a.requires {
-            match resolve_requirement(r, look) {
+            match resolve_requirement(r, names) {
                 Ok(r) => requires.push(r),
                 Err(e) => errors.push(format!("{}: {e}", a.name)),
             }
@@ -500,29 +479,23 @@ pub fn load(text: &str, look: &dyn Lookup) -> Result<Registry<AbilityDef>, Conte
     Registry::from_defs(defs)
 }
 
-fn resolve_cost(c: &CostRon, look: &dyn Lookup) -> Result<Cost, String> {
+fn resolve_cost(c: &CostRon, names: &Names<'_>) -> Result<Cost, String> {
     Ok(match c {
-        CostRon::Pool(name, amount) => Cost::Pool { stat: look.stat(name).ok_or_else(|| unknown("stat", name))?, amount: *amount },
+        CostRon::Pool(name, amount) => Cost::Pool { stat: names.stat(name)?, amount: *amount },
         CostRon::Charge(amount) => Cost::Charge { amount: *amount },
         CostRon::Health(amount) => Cost::Health { amount: *amount },
-        CostRon::Item(name, count) => Cost::Item { tag: look.tag(name).ok_or_else(|| unknown("tag", name))?, count: *count },
+        CostRon::Item(name, count) => Cost::Item { tag: names.tag(name)?, count: *count },
     })
 }
 
-fn resolve_requirement(r: &RequirementRon, look: &dyn Lookup) -> Result<Requirement, String> {
+fn resolve_requirement(r: &RequirementRon, names: &Names<'_>) -> Result<Requirement, String> {
     Ok(match r {
-        RequirementRon::Has(name) => Requirement::Has(look.status(name).ok_or_else(|| unknown("status", name))?),
-        RequirementRon::Lacks(name) => Requirement::Lacks(look.status(name).ok_or_else(|| unknown("status", name))?),
-        RequirementRon::Wielding(name) => Requirement::Wielding(look.tag(name).ok_or_else(|| unknown("tag", name))?),
-        RequirementRon::InSlot(slot, tag) => {
-            Requirement::InSlot(look.slot(slot).ok_or_else(|| unknown("slot", slot))?, look.tag(tag).ok_or_else(|| unknown("tag", tag))?)
-        }
-        RequirementRon::Above(name, n) => Requirement::Above(look.stat(name).ok_or_else(|| unknown("stat", name))?, *n),
+        RequirementRon::Has(name) => Requirement::Has(names.status(name)?),
+        RequirementRon::Lacks(name) => Requirement::Lacks(names.status(name)?),
+        RequirementRon::Wielding(name) => Requirement::Wielding(names.tag(name)?),
+        RequirementRon::InSlot(slot, tag) => Requirement::InSlot(names.slot(slot)?, names.tag(tag)?),
+        RequirementRon::Above(name, n) => Requirement::Above(names.stat(name)?, *n),
     })
-}
-
-fn unknown(what: &str, name: &str) -> String {
-    format!("unknown {what} {name:?}")
 }
 
 #[cfg(test)]
@@ -555,21 +528,9 @@ mod tests {
         }
     }
 
-    impl Lookup for World {
-        fn stat(&self, n: &str) -> Option<StatId> {
-            self.stats.id(n)
-        }
-        fn status(&self, n: &str) -> Option<StatusId> {
-            self.statuses.id(n)
-        }
-        fn tag(&self, n: &str) -> Option<TagId> {
-            self.tags.id(n)
-        }
-        fn slot(&self, n: &str) -> Option<SlotId> {
-            self.slots.id(n)
-        }
-        fn damage(&self, n: &str) -> Option<DamageKindId> {
-            self.kinds.id(n)
+    impl World {
+        fn names(&self) -> Names<'_> {
+            Names::new().stats(&self.stats).statuses(&self.statuses).tags(&self.tags).slots(&self.slots).damage_kinds(&self.kinds)
         }
     }
 
@@ -599,7 +560,7 @@ mod tests {
 
     fn defs() -> (World, Registry<AbilityDef>) {
         let w = World::new();
-        let r = load(RON, &w).expect("the file loads");
+        let r = load(RON, &w.names()).expect("the file loads");
         (w, r)
     }
 
@@ -651,7 +612,7 @@ mod tests {
             (name: "c", mode: Own, time: 0),
             (name: "d", mode: Own, effects: [(kind: "Harm", chance: 140, args: ())]),
         ]"#;
-        let err = load(bad, &w).expect_err("it does not load");
+        let err = load(bad, &w.names()).expect_err("it does not load");
         let ContentError::Invalid(errs) = err else { panic!("expected a validation failure, got {err:?}") };
         assert_eq!(errs.len(), 5, "{errs:#?}");
         assert!(errs.iter().any(|e| e.contains("unknown stat \"wisdom\"")), "{errs:#?}");
@@ -698,7 +659,7 @@ mod tests {
     #[test]
     fn a_cost_in_health_may_never_be_the_last_of_it() {
         let w = World::new();
-        let r = load(r#"[(name: "blood pact", mode: Own, costs: [Health(10)])]"#, &w).unwrap();
+        let r = load(r#"[(name: "blood pact", mode: Own, costs: [Health(10)])]"#, &w.names()).unwrap();
         let def = r.get(r.expect("blood pact"));
         let empty = Statuses::default();
         let gates = Gates { statuses: &empty, worn: &[], stat: &|_| 0 };
@@ -715,7 +676,7 @@ mod tests {
     #[test]
     fn a_charge_cost_needs_something_that_counts_charges() {
         let w = World::new();
-        let r = load(r#"[(name: "flare", mode: Bolt(range: 5), costs: [Charge(1)])]"#, &w).unwrap();
+        let r = load(r#"[(name: "flare", mode: Bolt(range: 5), costs: [Charge(1)])]"#, &w.names()).unwrap();
         let def = r.get(r.expect("flare"));
         let empty = Statuses::default();
         let gates = Gates { statuses: &empty, worn: &[], stat: &|_| 0 };
@@ -779,7 +740,7 @@ mod tests {
                 (name: "lob", mode: Bolt(range: 6), sight: false, effects: []),
                 (name: "steel", aim: SelfOnly, mode: Bolt(range: 6), effects: []),
             ]"#,
-            &world,
+            &world.names(),
         )
         .unwrap();
         let (bolt, lob, steel) = (defs.get(defs.expect("bolt")), defs.get(defs.expect("lob")), defs.get(defs.expect("steel")));

@@ -26,8 +26,8 @@ use rand::Rng;
 use rand::rngs::StdRng;
 use rl_core::{Point, RunSeed, SeedDomain};
 use rl_grid::{Footprint, footprint};
-use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Lookup, Purse, RawValue, Usable, aim_blocked, blocked};
-use rl_rules::{Registry, Relation, StatId, Statuses, TagId};
+use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, RawValue, Usable, aim_blocked, blocked};
+use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position, Viewshed};
@@ -377,12 +377,12 @@ pub trait FromArgs: Effect + Sized {
     /// The name abilities call this effect by in RON.
     const KIND: &'static str;
 
-    /// Builds one from the arguments, resolving any names through `look`.
-    fn from_args(args: &RawValue, look: &dyn Lookup) -> Result<Self, String>;
+    /// Builds one from the arguments, resolving any names through `names`.
+    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String>;
 }
 
 /// How an effect is built, once its name has been matched.
-type Builder = fn(&RawValue, &dyn Lookup) -> Result<Box<dyn Effect>, String>;
+type Builder = fn(&RawValue, &Names<'_>) -> Result<Box<dyn Effect>, String>;
 
 /// Every effect kind a game has registered.
 ///
@@ -395,7 +395,7 @@ pub struct EffectKinds(BTreeMap<String, Builder>);
 impl EffectKinds {
     /// Registers `E` under its own name.
     pub fn declare<E: FromArgs>(&mut self) {
-        self.0.insert(E::KIND.to_string(), |args, look| E::from_args(args, look).map(|e| Box::new(e) as Box<dyn Effect>));
+        self.0.insert(E::KIND.to_string(), |args, names| E::from_args(args, names).map(|e| Box::new(e) as Box<dyn Effect>));
     }
 
     /// Whether `kind` is registered.
@@ -438,11 +438,21 @@ pub struct Abilities {
 }
 
 impl Abilities {
+    /// Loads abilities from RON and builds their effects, every name resolved
+    /// through `names`: [`rl_rules::ability::load`] then [`build`](Self::build),
+    /// for a game whose abilities are one file.
+    ///
+    /// Fails at whichever step finds something wrong, listing everything it
+    /// found: every unknown name, or every effect that would not build.
+    pub fn load(text: &str, kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, rl_rules::ContentError> {
+        Self::build(rl_rules::ability::load(text, names)?, kinds, names)
+    }
+
     /// Builds the effects of every ability in `defs` through `kinds`.
     ///
     /// Fails naming the ability, the effect and what was wrong with it,
     /// and lists every failure rather than the first.
-    pub fn build(defs: Registry<AbilityDef>, kinds: &EffectKinds, look: &dyn Lookup) -> Result<Self, rl_rules::ContentError> {
+    pub fn build(defs: Registry<AbilityDef>, kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, rl_rules::ContentError> {
         let mut errors = Vec::new();
         let mut built = Vec::new();
         for (_, def) in defs.iter() {
@@ -453,7 +463,7 @@ impl Abilities {
                         let known: Vec<&str> = kinds.names().collect();
                         errors.push(format!("{}: no effect is registered as {:?}; registered: {}", def.name, spec.kind, known.join(", ")));
                     }
-                    Some(build) => match build(&spec.args, look) {
+                    Some(build) => match build(&spec.args, names) {
                         Ok(effect) => mine.push(Built { chance: spec.chance, effect }),
                         Err(e) => errors.push(format!("{}: effect {:?}: {e}", def.name, spec.kind)),
                     },
@@ -905,7 +915,7 @@ impl Plugin for AbilitiesPlugin {
             .init_resource::<Offered>()
             .add_message::<AbilityEvent>()
             .add_action::<Use>()
-            .needs::<Abilities>("AbilitiesPlugin", "`Abilities::build(defs, &EffectKinds, &lookup)` over the defs `rl_rules::ability::load` returns")
+            .needs::<Abilities>("AbilitiesPlugin", "`Abilities::load(ron, &EffectKinds, &names)`, the game's abilities with their effects built")
             .needs::<AbilityRng>("AbilitiesPlugin", "`AbilityRng::for_run(seed)`, the stream abilities roll from")
             .needs::<StatRules>("AbilitiesPlugin", "`StatRules(registry)`, the stats ability costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
@@ -944,7 +954,7 @@ impl Effect for Shove {
 impl FromArgs for Shove {
     const KIND: &'static str = "Shove";
 
-    fn from_args(args: &RawValue, _look: &dyn Lookup) -> Result<Self, String> {
+    fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         struct Args {
             cells: i32,
@@ -973,7 +983,7 @@ impl Effect for Pull {
 impl FromArgs for Pull {
     const KIND: &'static str = "Pull";
 
-    fn from_args(args: &RawValue, _look: &dyn Lookup) -> Result<Self, String> {
+    fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         struct Args {
             cells: i32,
@@ -1001,7 +1011,7 @@ impl Effect for Teleport {
 impl FromArgs for Teleport {
     const KIND: &'static str = "Teleport";
 
-    fn from_args(_args: &RawValue, _look: &dyn Lookup) -> Result<Self, String> {
+    fn from_args(_args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         Ok(Self)
     }
 }
@@ -1063,23 +1073,9 @@ mod tests {
                 factions: Registry::from_defs(vec![FactionDef { name: "us".into() }, FactionDef { name: "them".into() }]).unwrap(),
             }
         }
-    }
 
-    impl rl_rules::ability::Lookup for Content {
-        fn stat(&self, n: &str) -> Option<StatId> {
-            self.stats.id(n)
-        }
-        fn status(&self, n: &str) -> Option<rl_rules::StatusId> {
-            self.statuses.id(n)
-        }
-        fn tag(&self, n: &str) -> Option<TagId> {
-            self.tags.id(n)
-        }
-        fn slot(&self, n: &str) -> Option<rl_rules::SlotId> {
-            self.slots.id(n)
-        }
-        fn damage(&self, n: &str) -> Option<rl_rules::damage::DamageKindId> {
-            self.kinds.id(n)
+        fn names(&self) -> Names<'_> {
+            Names::new().stats(&self.stats).statuses(&self.statuses).tags(&self.tags).slots(&self.slots).damage_kinds(&self.kinds)
         }
     }
 
@@ -1149,7 +1145,7 @@ mod tests {
     impl FromArgs for Mark {
         const KIND: &'static str = "Mark";
 
-        fn from_args(args: &RawValue, _look: &dyn Lookup) -> Result<Self, String> {
+        fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
             #[derive(serde::Deserialize)]
             struct Args {
                 note: u32,
@@ -1172,9 +1168,7 @@ mod tests {
         app.add_engine_effects().add_effect::<Mark>();
 
         let content = Content::new();
-        let defs = rl_rules::ability::load(ABILITIES, &content).expect("the abilities load");
-        let kinds = app.world().resource::<EffectKinds>();
-        let abilities = Abilities::build(defs, kinds, &content).expect("the effects build");
+        let abilities = Abilities::load(ABILITIES, app.world().resource::<EffectKinds>(), &content.names()).expect("the abilities load and build");
 
         let mut factions = Factions::new(&content.factions);
         factions.set_mutual(content.factions.expect("us"), content.factions.expect("them"), Relation::Hostile);
@@ -1371,10 +1365,10 @@ mod tests {
     #[test]
     fn an_unregistered_effect_is_a_load_failure_that_names_the_ability() {
         let content = Content::new();
-        let defs = rl_rules::ability::load(r#"[(name: "hex", mode: Own, effects: [(kind: "Curse", args: ())])]"#, &content).unwrap();
+        let defs = rl_rules::ability::load(r#"[(name: "hex", mode: Own, effects: [(kind: "Curse", args: ())])]"#, &content.names()).unwrap();
         let mut kinds = EffectKinds::default();
         kinds.declare::<crate::combat::Harm>();
-        let Err(err) = Abilities::build(defs, &kinds, &content) else { panic!("it should not build") };
+        let Err(err) = Abilities::build(defs, &kinds, &content.names()) else { panic!("it should not build") };
         let rl_rules::ContentError::Invalid(errs) = err else { panic!("expected a validation failure") };
         assert_eq!(errs.len(), 1);
         assert!(errs[0].contains("hex") && errs[0].contains("Curse") && errs[0].contains("Harm"), "{errs:?}");

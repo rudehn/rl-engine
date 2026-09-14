@@ -257,7 +257,7 @@ fn start_world(world: &mut World) {
     // The abilities, built against the registries above and the effects
     // registered while the app was built, so a file naming one nobody added
     // fails here rather than the first time its key is pressed.
-    let built = abilities::load(&abilities::Names { armory: &armory, bestiary: &bestiary, statuses: &status_rules }, world.resource::<EffectKinds>());
+    let built = abilities::load(&armory, &bestiary, &status_rules, world.resource::<EffectKinds>());
     bestiary.resolve_abilities(&built);
     world.insert_resource(StatRules(armory.stats.clone()));
     world.insert_resource(AbilityRng::for_run(seed));
