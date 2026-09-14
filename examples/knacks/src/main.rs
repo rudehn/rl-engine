@@ -593,19 +593,18 @@ mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
     use rl_engine::rl_bevy::plugin::headless_app;
+    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
 
     /// A run with no window: the same plugins, the same effects, the same
     /// startup, so a test exercises the real wiring.
     fn headless(set: usize) -> App {
         let mut app = headless_app();
-        app.add_plugins((bevy::input::InputPlugin, FovPlugin, CombatPlugin, ItemsPlugin, StatusPlugin, AbilitiesPlugin))
+        app.add_plugins((KeyScriptPlugin, FovPlugin, CombatPlugin, ItemsPlugin, StatusPlugin, AbilitiesPlugin))
             // The same panels the game adds, so a key handler that asks for
             // the ability menu's modal finds it. They draw into a terminal,
             // so there is one, and nothing looks at it.
             .add_plugins((UiPlugin, TargetViewPlugin, AbilityPanel::new(Rect::new(0, 0, 36, 14))))
             .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, Vec2::ONE))
-            .init_resource::<Script>()
-            .add_systems(PreUpdate, play.after(bevy::input::InputSystems))
             .add_engine_effects()
             .add_effect::<Drain>()
             .add_effect::<Plunder>()
@@ -641,33 +640,6 @@ mod tests {
             .find(|p| app.world().resource::<WorldMap>().is_walkable(*p) && !app.world().resource::<Occupancy>().is_occupied(*p))
             .expect("room beside the player");
         app.world_mut().spawn((Actor, Blocks, Position(free), Health::full(20), Faction(FactionId::from_raw(1)), what)).id()
-    }
-
-    /// A key to deliver on the next frame, and the one to lift after it.
-    #[derive(Resource, Default)]
-    struct Script {
-        next: Option<KeyCode>,
-        held: Option<KeyCode>,
-    }
-
-    /// Plays [`Script`] after the input plugin has cleared the frame, the
-    /// way a keyboard delivers a key. A press staged from outside the
-    /// schedule is wiped in `PreUpdate` before any system can see it.
-    fn play(mut script: ResMut<Script>, mut keys: ResMut<ButtonInput<KeyCode>>) {
-        if let Some(k) = script.held.take() {
-            keys.release(k);
-        }
-        if let Some(k) = script.next.take() {
-            keys.press(k);
-            script.held = Some(k);
-        }
-    }
-
-    /// Presses `key` for one frame and releases it on the next.
-    fn press(app: &mut App, key: KeyCode) {
-        app.world_mut().resource_mut::<Script>().next = Some(key);
-        app.update();
-        app.update();
     }
 
     fn use_it(app: &mut App, name: &str, aim: Point) {

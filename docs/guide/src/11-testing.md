@@ -18,8 +18,17 @@ Two `update` calls start a run: the first runs `Startup` and the warp that build
 After that, one per action.
 
 Writing an intent is how the game plays itself.
-The tests press no keys, because keys are the part that needs a window.
 The suite runs in about forty milliseconds.
+
+## What goes into one
+
+`rl_engine::rl_bevy::testing` is the engine's own test kit, and a game's tests use the same copy:
+
+- `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test can drive the real input system rather than writing intents by hand. Bevy clears `just_pressed` at the top of every frame, so a key pressed on `ButtonInput` from inside a test is gone before any system sees it; `press` lands it after the clearing.
+- `surface(&mut app)` stands an open test world up and hands back ground to start on, for a test that needs a map and not the game's own.
+- `two_sides(&mut app)` inserts combat rules for two sides at war, for a test that fights.
+
+Knacks' tests press `4` and Enter to aim its drain through the targeting cursor and fire it, which is the whole flow a player uses, with no window.
 
 ## Test a property
 

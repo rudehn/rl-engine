@@ -220,47 +220,16 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::combat::{Armor, CombatPlugin, CombatRng, CombatRules, DamageStages, Health, MeleeAttack, Mind};
+    use crate::combat::{Armor, CombatPlugin, CombatRules, Health, MeleeAttack, Mind};
     use crate::components::{Actor, Blocks, RevealsMap};
     use crate::fov::FovPlugin;
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::{Intent, Wait};
-    use crate::world::{ChunkRulesRes, StreamingPlugin, WorldRes};
-    use rl_core::{DiceRoll, RunSeed};
-    use rl_grid::{TileId, TileRegistry};
-    use rl_mapgen::Chain;
+    use crate::world::StreamingPlugin;
+    use rl_core::DiceRoll;
     use rl_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
-    use rl_rules::damage::{DamageKind, SubtractArmor};
-    use rl_rules::faction::FactionDef;
-    use rl_rules::{Brain, Factions, Hit, Registry, Relation};
-    use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, Surroundings, WorldConfig, WorldGraph, WorldRules};
-
-    struct Flat;
-    impl WorldRules for Flat {
-        fn classify(&self, f: &CellFacts) -> BandId {
-            BandId(if f.is_sea { 0 } else { 1 })
-        }
-        fn road_friction(&self, _: BandId, _: &CellFacts) -> Option<f32> {
-            None
-        }
-        fn settlements(&self, _: &Layers, _: u64) -> Vec<Site> {
-            Vec::new()
-        }
-    }
-
-    struct Open(TileRegistry);
-    impl ChunkRules for Open {
-        fn tiles(&self) -> &TileRegistry {
-            &self.0
-        }
-        fn fill(&self, _: &Surroundings) -> TileId {
-            self.0.expect("floor")
-        }
-        fn chain(&self, _: &WorldGraph, _: &Surroundings) -> Chain<ChunkContext> {
-            Chain::new().then(rl_mapgen::passes::Fill { tile: self.0.expect("floor") })
-        }
-    }
+    use rl_rules::{Brain, Hit};
 
     /// An open field, a quiet player, and a watcher `gap` tiles east of it
     /// that hunts what it notices and waits otherwise.
@@ -277,22 +246,8 @@ mod tests {
             if plugin {
                 app.add_plugins(StealthPlugin);
             }
-            let tiles = TileRegistry::standard();
-            let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
-            let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
-            let start = world.tile_origin(region).offset(8, 8);
-            let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).unwrap();
-            let kind = kinds.expect("kinetic");
-            let sides = Registry::from_defs(vec![FactionDef { name: "you".into() }, FactionDef { name: "them".into() }]).unwrap();
-            let (you, them) = (sides.expect("you"), sides.expect("them"));
-            let mut factions = Factions::new(&sides);
-            factions.set_mutual(you, them, Relation::Hostile);
-            app.insert_resource(WorldMap::new(tiles.tables()))
-                .insert_resource(WorldRes(world))
-                .insert_resource(ChunkRulesRes(Box::new(Open(tiles))))
-                .insert_resource(CombatRules { kinds, factions })
-                .insert_resource(DamageStages(vec![Box::new(SubtractArmor)]))
-                .insert_resource(CombatRng::for_run(RunSeed(5)));
+            let start = crate::testing::surface(&mut app);
+            let crate::testing::Sides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
             let player = app
                 .world_mut()
                 .spawn((

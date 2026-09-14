@@ -323,62 +323,16 @@ mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     use crate::turn::{Action, Intent, Step, Wait};
-    use crate::world::{ChunkRulesRes, WorldRes};
-    use rl_core::{Direction, Point, RunSeed};
+    use rl_core::{Direction, Point};
     use rl_grid::{TileId, TileProps, TileRegistry};
-    use rl_mapgen::Chain;
-    use rl_mapgen::passes::Fill;
-    use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, Surroundings, WorldConfig, WorldGraph, WorldRules};
 
-    struct Flat;
-
-    impl WorldRules for Flat {
-        fn classify(&self, f: &CellFacts) -> BandId {
-            BandId(if f.is_sea { 0 } else { 1 })
-        }
-        fn road_friction(&self, band: BandId, _: &CellFacts) -> Option<f32> {
-            (band.0 == 1).then_some(0.0)
-        }
-        fn settlements(&self, layers: &Layers, _: u64) -> Vec<Site> {
-            // One town on the first land region found, so discovery can be tested.
-            layers.bands.iter().find(|(_, b)| b.0 == 1).map(|(p, _)| vec![Site { kind: rl_world::SiteKindId(1), position: p }]).unwrap_or_default()
-        }
-    }
-
-    struct Open {
-        tiles: TileRegistry,
-    }
-
-    impl ChunkRules for Open {
-        fn tiles(&self) -> &TileRegistry {
-            &self.tiles
-        }
-        fn fill(&self, _: &Surroundings) -> TileId {
-            self.tiles.expect("floor")
-        }
-        fn chain(&self, _: &WorldGraph, around: &Surroundings) -> Chain<ChunkContext> {
-            // Sea regions are solid so there is something unwalkable to bump.
-            let tile = if around.here.band.0 == 0 { self.tiles.expect("wall") } else { self.tiles.expect("floor") };
-            Chain::new().then(Fill { tile })
-        }
-    }
-
-    fn app_with_world() -> (App, WorldGraph) {
+    fn app_with_world() -> (App, Point) {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
         let mut tiles = TileRegistry::standard();
         tiles.register(TileProps::floor("mud").move_cost(200)).unwrap();
-        let config = WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) };
-        let world = WorldGraph::generate(RunSeed(5), config, &Flat);
-        app.insert_resource(WorldMap::new(tiles.tables()));
-        app.insert_resource(WorldRes(world.clone()));
-        app.insert_resource(ChunkRulesRes(Box::new(Open { tiles })));
-        (app, world)
-    }
-
-    fn land_tile(world: &WorldGraph) -> Point {
-        let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
-        world.tile_origin(region).offset(8, 8)
+        let start = crate::testing::surface_with(&mut app, tiles);
+        (app, start)
     }
 
     fn spawn_player(app: &mut App, at: Point) -> Entity {
@@ -393,8 +347,7 @@ mod tests {
 
     #[test]
     fn the_player_is_dealt_a_turn_and_walks() {
-        let (mut app, world) = app_with_world();
-        let start = land_tile(&world);
+        let (mut app, start) = app_with_world();
         let player = spawn_player(&mut app, start);
         app.update();
         app.update();
@@ -410,8 +363,7 @@ mod tests {
 
     #[test]
     fn a_refused_move_costs_no_time_and_keeps_the_turn() {
-        let (mut app, world) = app_with_world();
-        let start = land_tile(&world);
+        let (mut app, start) = app_with_world();
         let player = spawn_player(&mut app, start);
         app.update();
         app.update();
@@ -425,8 +377,7 @@ mod tests {
 
     #[test]
     fn everyone_due_before_the_player_acts_in_the_frame_the_player_did() {
-        let (mut app, world) = app_with_world();
-        let start = land_tile(&world);
+        let (mut app, start) = app_with_world();
         let player = spawn_player(&mut app, start);
         // No mind, so nobody decides for it: the recovery net charges it a
         // wait each time it is dealt a turn. At speed 200 a wait costs 50.
@@ -450,8 +401,7 @@ mod tests {
 
     #[test]
     fn an_idle_frame_runs_one_pass_and_a_key_moves_the_player_once() {
-        let (mut app, world) = app_with_world();
-        let start = land_tile(&world);
+        let (mut app, start) = app_with_world();
         let player = spawn_player(&mut app, start);
         app.update();
         app.update();
@@ -547,9 +497,8 @@ mod tests {
     /// charged instead of refused, so it cannot ask again forever.
     #[test]
     fn a_failed_action_keeps_the_players_turn_and_charges_a_monster() {
-        let (mut app, world) = app_with_world();
+        let (mut app, start) = app_with_world();
         app.add_action::<Leap>().add_systems(Turn, (leap_every_turn.in_set(DecideSet::Game), resolve_leaps.in_set(ResolveSet::Act)));
-        let start = land_tile(&world);
         let player = spawn_player(&mut app, start);
         let monster = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)))).id();
         app.update();
@@ -572,9 +521,8 @@ mod tests {
 
     #[test]
     fn a_game_action_the_engine_never_heard_of_spends_the_turn() {
-        let (mut app, world) = app_with_world();
+        let (mut app, start) = app_with_world();
         app.init_resource::<Heard>().add_action::<Shout>().add_systems(Turn, resolve_shouts.in_set(TurnSet::Resolve));
-        let start = land_tile(&world);
         let player = spawn_player(&mut app, start);
         app.update();
         app.update();
@@ -587,10 +535,9 @@ mod tests {
 
     #[test]
     fn an_action_nobody_resolves_is_refused_rather_than_left_to_hang() {
-        let (mut app, world) = app_with_world();
+        let (mut app, start) = app_with_world();
         // Registered, and no resolver: the mistake a game makes.
         app.add_action::<Shout>();
-        let start = land_tile(&world);
         let player = spawn_player(&mut app, start);
         app.update();
         app.update();
@@ -606,8 +553,7 @@ mod tests {
 
     #[test]
     fn walking_across_a_region_boundary_streams_the_window_and_keeps_edits() {
-        let (mut app, world) = app_with_world();
-        let start = land_tile(&world);
+        let (mut app, start) = app_with_world();
         let player = spawn_player(&mut app, start);
         app.update();
         app.update();
@@ -643,8 +589,7 @@ mod tests {
 
     #[test]
     fn sight_is_computed_and_reveals_the_map() {
-        let (mut app, world) = app_with_world();
-        let start = land_tile(&world);
+        let (mut app, start) = app_with_world();
         let player = spawn_player(&mut app, start);
         app.update();
         app.update();

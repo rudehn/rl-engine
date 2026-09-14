@@ -192,48 +192,16 @@ mod tests {
     use crate::state::EngineState;
     use crate::turn::Wait;
     use crate::turn::{Intent, Turns};
-    use crate::world::{ChunkRulesRes, WorldRes};
     use rl_core::RunSeed;
-    use rl_grid::{TileId, TileRegistry};
-    use rl_mapgen::Chain;
     use rl_rules::damage::{DamageKind, SubtractArmor};
     use rl_rules::faction::FactionDef;
     use rl_rules::{Factions, Op, Stacking, StatDef};
-    use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, Surroundings, WorldConfig, WorldGraph, WorldRules};
-
-    struct Flat;
-    impl WorldRules for Flat {
-        fn classify(&self, f: &CellFacts) -> BandId {
-            BandId(if f.is_sea { 0 } else { 1 })
-        }
-        fn road_friction(&self, _: BandId, _: &CellFacts) -> Option<f32> {
-            None
-        }
-        fn settlements(&self, _: &Layers, _: u64) -> Vec<Site> {
-            Vec::new()
-        }
-    }
-    struct Open(TileRegistry);
-    impl ChunkRules for Open {
-        fn tiles(&self) -> &TileRegistry {
-            &self.0
-        }
-        fn fill(&self, _: &Surroundings) -> TileId {
-            self.0.expect("floor")
-        }
-        fn chain(&self, _: &WorldGraph, _: &Surroundings) -> Chain<ChunkContext> {
-            Chain::new().then(rl_mapgen::passes::Fill { tile: self.0.expect("floor") })
-        }
-    }
 
     #[test]
     fn a_status_ticks_damage_each_turn_modifies_stats_and_expires() {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, StatusPlugin, crate::world::StreamingPlugin));
-        let tiles = TileRegistry::standard();
-        let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &Flat);
-        let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
-        let start = world.tile_origin(region).offset(8, 8);
+        let start = crate::testing::surface(&mut app);
         let kinds = Registry::from_defs(vec![DamageKind::new("venom")]).unwrap();
         let venom_kind = kinds.expect("venom");
         let facs = Registry::from_defs(vec![FactionDef { name: "us".into() }]).unwrap();
@@ -245,9 +213,6 @@ mod tests {
         ])
         .unwrap();
         let (venom, hearty) = (defs.expect("venom"), defs.expect("hearty"));
-        app.insert_resource(WorldMap::new(tiles.tables()));
-        app.insert_resource(WorldRes(world));
-        app.insert_resource(ChunkRulesRes(Box::new(Open(tiles))));
         app.insert_resource(CombatRules { kinds, factions: Factions::new(&facs) });
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
         app.insert_resource(CombatRng::for_run(RunSeed(5)));

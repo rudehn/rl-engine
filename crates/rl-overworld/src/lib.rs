@@ -288,32 +288,17 @@ pub mod prelude {
 mod tests {
     use super::*;
     use rl_bevy::plugin::headless_app;
+    use rl_bevy::testing::press;
     use rl_core::RunSeed;
     use rl_grid::TileRegistry;
-    use rl_world::{BandId, CellFacts, Layers, Site, SiteKindId, WorldConfig, WorldGraph, WorldRules};
-
-    /// Land everywhere but the sea, with one town to discover.
-    struct Flat;
-    impl WorldRules for Flat {
-        fn classify(&self, f: &CellFacts) -> BandId {
-            BandId(if f.is_sea { 0 } else { 1 })
-        }
-        fn road_friction(&self, _: BandId, _: &CellFacts) -> Option<f32> {
-            None
-        }
-        fn settlements(&self, layers: &Layers, _: u64) -> Vec<Site> {
-            layers.bands.iter().find(|(_, b)| b.0 == 1).map(|(p, _)| vec![Site { kind: SiteKindId(1), position: p }]).unwrap_or_default()
-        }
-    }
+    use rl_world::{BandId, WorldConfig, WorldGraph};
 
     fn app() -> App {
         let mut app = headless_app();
         app.add_plugins(rl_bevy::FovPlugin);
-        app.add_plugins((bevy::input::InputPlugin, rl_render::MapViewPlugin::new(Rect::new(0, 1, 100, 35)), rl_ui::UiPlugin, OverworldPlugin))
-            .init_resource::<Script>()
-            .add_systems(PreUpdate, play_script.after(bevy::input::InputSystems));
+        app.add_plugins((rl_bevy::testing::KeyScriptPlugin, rl_render::MapViewPlugin::new(Rect::new(0, 1, 100, 35)), rl_ui::UiPlugin, OverworldPlugin));
         let tiles = TileRegistry::standard();
-        let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 64, ..WorldConfig::regions(64, 64) }, &Flat);
+        let world = WorldGraph::generate(RunSeed(5), WorldConfig { region_size: 64, ..WorldConfig::regions(64, 64) }, &rl_bevy::testing::TestWorld::new());
         let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("land");
         let start = world.tile_origin(region).offset(8, 8);
         let mut bands = BandAppearance::new();
@@ -328,31 +313,6 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app
-    }
-
-    /// Keys to play, the way a real keyboard delivers them: pressed in
-    /// `PreUpdate` after the input systems, which clear `just_pressed`
-    /// every frame, and released on the frame after.
-    #[derive(Resource, Default)]
-    struct Script {
-        next: Vec<KeyCode>,
-        held: Vec<KeyCode>,
-    }
-
-    fn play_script(mut script: ResMut<Script>, mut keys: ResMut<ButtonInput<KeyCode>>) {
-        for k in std::mem::take(&mut script.held) {
-            keys.release(k);
-        }
-        let next = std::mem::take(&mut script.next);
-        for k in &next {
-            keys.press(*k);
-        }
-        script.held = next;
-    }
-
-    fn press(app: &mut App, key: KeyCode) {
-        app.world_mut().resource_mut::<Script>().next.push(key);
-        app.update();
     }
 
     #[test]

@@ -26,6 +26,7 @@ pub mod plugin;
 pub mod state;
 pub mod status;
 pub mod stealth;
+pub mod testing;
 pub mod turn;
 pub mod world;
 

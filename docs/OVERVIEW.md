@@ -102,7 +102,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - Lighting, opt-in by inserting `Lighting`: `LightSource` on a prop, an actor or an item, shed from the carrier once carried; static and dynamic layers recast only when their sources change; the map's `opacity_epoch` so an edit that changes what blocks sight refreshes light and every viewshed without anyone moving; `DarkSight`; `Fuel` ticked by the turn with `LightEvent::BurntOut`; the viewshed keeps its geometric `line` and its seen `visible`, and minds perceive along a line only what is lit, within their dark sight or adjacent.
 - Facts fed to quests and counters after the frame.
 - Save exports for the scheduler, the world's edits and places, and knowledge.
-- A headless app for tests.
+- A headless app for tests, and `testing`, what goes into one: `surface` stands a `TestWorld` up and hands back open ground to start on, `two_sides` inserts combat rules for two sides at war, and `KeyScriptPlugin` with `press` plays keys the way a keyboard does. One copy for the engine's crates and a game's tests alike, where there had been nine copies of the world and three of the key player.
 
 ### rl-render
 
