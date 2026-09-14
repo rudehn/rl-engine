@@ -337,7 +337,9 @@ Effects run inside `Resolve`, not `React`, so the damage they cause goes through
 ### rl-ui: the target cursor
 
 The look cursor already opened onto the nearest thing worth looking at, stepped with `DirectionKeys`, cycled with Tab, and held a modal.
-What the two cursors share turned out to be arithmetic rather than state, so `cursor.rs` holds three functions and each cursor keeps its own resource: ordering candidates nearest first with a positional tie-break, cycling with a wrap, and stepping without leaving the loaded window.
+What the two cursors share is their keys and how a key moves them, so `cursor.rs` holds `CursorKeys`, the one set of bindings, and `steer`, the one reading of a frame's keys: close, confirm, cycle to the next candidate nearest first, or step without leaving the loaded window.
+Each cursor keeps only where it is and what it is for.
+It began as three shared functions with a key resource per cursor, and the two systems had grown the same close, next and step handling twice.
 `TargetView` carries the ability, the cursor, the footprint and targets from `Bystanders::land`, the call the resolver lands the use with, whether the aim is legal, every reason it is not, and a row per target.
 The cursor opens on what `Aim::worth_aiming_at` picks, the rule the tactic aims by.
 `TargetPanel` repaints the backgrounds the map already drew rather than drawing a box: the cells hit, the flight to them, and, when the resolver would refuse, the whole footprint in the bad tone with the reason in its banner.

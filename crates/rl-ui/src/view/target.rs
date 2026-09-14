@@ -24,8 +24,7 @@ use rl_core::Point;
 use rl_render::Glyph;
 use rl_rules::ability::{AbilityId, Aim, Blocked};
 
-use crate::cursor;
-use crate::keys::DirectionKeys;
+use crate::cursor::{self, CursorInput, CursorKeys, Steer};
 use crate::modal::{ModalId, Modals};
 use crate::view::Row;
 
@@ -77,36 +76,17 @@ impl TargetView {
     }
 }
 
-/// Keys the targeting cursor answers to.
-#[derive(Resource, Debug, Clone)]
-pub struct TargetKeys {
-    /// Spends the turn on the aim.
-    pub confirm: KeyCode,
-    /// And so does this, because a player reaching for one reaches for
-    /// the other.
-    pub also_confirm: KeyCode,
-    /// Puts the cursor away, spending nothing.
-    pub cancel: KeyCode,
-    /// Jumps to the next thing the ability wants.
-    pub next: KeyCode,
-}
-
-impl Default for TargetKeys {
-    fn default() -> Self {
-        Self { confirm: KeyCode::Enter, also_confirm: KeyCode::Space, cancel: KeyCode::Escape, next: KeyCode::Tab }
-    }
-}
-
 /// Adds the targeting cursor and keeps [`TargetView`] current.
 ///
 /// Needs [`WorldMap`] and the abilities the game loaded. Nothing here runs
 /// in a game that never added [`AbilitiesPlugin`], since without
-/// [`Abilities`] there is nothing to aim.
+/// [`Abilities`] there is nothing to aim. Its keys are [`CursorKeys`], the
+/// ones the look cursor answers to.
 pub struct TargetViewPlugin;
 
 impl Plugin for TargetViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TargetView>().init_resource::<TargetKeys>().add_message::<AimAt>();
+        app.init_resource::<TargetView>().init_resource::<CursorKeys>().add_message::<AimAt>();
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
         app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(TARGET_MODAL);
@@ -129,9 +109,7 @@ pub fn target_modal(modals: &Modals) -> ModalId {
 /// Everything the cursor steers by.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Aiming<'w, 's> {
-    keys: Res<'w, ButtonInput<KeyCode>>,
-    binds: Res<'w, TargetKeys>,
-    steps: Res<'w, DirectionKeys>,
+    input: CursorInput<'w>,
     map: Res<'w, WorldMap>,
     abilities: Option<Res<'w, Abilities>>,
     occupancy: Res<'w, Occupancy>,
@@ -197,31 +175,22 @@ pub fn aim_cursor(
         modals.close_one(modal);
         return;
     };
-    if aiming.keys.just_pressed(aiming.binds.cancel) {
-        close(&mut view, &mut modals, modal);
-        return;
-    }
-    if aiming.keys.just_pressed(aiming.binds.confirm) || aiming.keys.just_pressed(aiming.binds.also_confirm) {
-        // Refused aims are the resolver's to report, not the cursor's: a
-        // player who insists gets the refusal in the log with its reason,
-        // which is better than a key that does nothing.
-        uses.write(Intent::new(user, Use { ability, aim: view.cursor }));
-        close(&mut view, &mut modals, modal);
-        return;
-    }
     let Ok((from, sight)) = aiming.users.get(user) else {
+        // The aimer left the world: there is nothing to aim from.
         close(&mut view, &mut modals, modal);
         return;
     };
-    if aiming.keys.just_pressed(aiming.binds.next) {
-        let candidates = aiming.candidates(user, from.0, abilities.get(ability).aim, sight);
-        if let Some(next) = cursor::next_of(&candidates, view.cursor) {
-            view.cursor = next;
+    let aim = abilities.get(ability).aim;
+    match aiming.input.steer(&mut view.cursor, aiming.map.window_tiles(), || aiming.candidates(user, from.0, aim, sight)) {
+        Steer::Close => close(&mut view, &mut modals, modal),
+        Steer::Confirm => {
+            // Refused aims are the resolver's to report, not the cursor's: a
+            // player who insists gets the refusal in the log with its reason,
+            // which is better than a key that does nothing.
+            uses.write(Intent::new(user, Use { ability, aim: view.cursor }));
+            close(&mut view, &mut modals, modal);
         }
-        return;
-    }
-    if let Some(step) = aiming.steps.just_pressed(&aiming.keys) {
-        view.cursor = cursor::stepped(view.cursor, step, aiming.map.window_tiles());
+        Steer::Moved | Steer::Stay => {}
     }
 }
 

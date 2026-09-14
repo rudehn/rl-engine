@@ -20,9 +20,8 @@ use rl_rules::Relation;
 use rl_rules::damage::DamageKindId;
 use rl_rules::forecast::{Combatant, Duel, duel};
 
-use crate::cursor;
+use crate::cursor::{self, CursorInput, CursorKeys, Steer};
 use crate::facet::Facet;
-use crate::keys::DirectionKeys;
 use crate::modal::{ModalId, Modals};
 use crate::view::Row;
 
@@ -50,32 +49,16 @@ impl InspectView {
     }
 }
 
-/// Keys the cursor answers to.
-#[derive(Resource, Debug, Clone)]
-pub struct InspectKeys {
-    /// Opens and closes the cursor.
-    pub toggle: KeyCode,
-    /// Closes it.
-    pub close: KeyCode,
-    /// Jumps to the next actor in sight.
-    pub next: KeyCode,
-}
-
-impl Default for InspectKeys {
-    fn default() -> Self {
-        Self { toggle: KeyCode::KeyX, close: KeyCode::Escape, next: KeyCode::Tab }
-    }
-}
-
 /// Adds the look cursor and keeps [`InspectView`] current.
 ///
 /// Needs [`WorldMap`] for the window the cursor moves in, and
-/// [`CombatRules`] for the damage kinds the forecast resolves through.
+/// [`CombatRules`] for the damage kinds the forecast resolves through. Its
+/// keys are [`CursorKeys`], the ones the targeting cursor answers to.
 pub struct InspectViewPlugin;
 
 impl Plugin for InspectViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<InspectView>().init_resource::<InspectKeys>();
+        app.init_resource::<InspectView>().init_resource::<CursorKeys>();
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
         app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(INSPECT_MODAL);
@@ -111,9 +94,7 @@ type NotYou = (Without<Dead>, Without<Player>);
 /// Everything the cursor steers by.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Look<'w, 's> {
-    keys: Res<'w, ButtonInput<KeyCode>>,
-    binds: Res<'w, InspectKeys>,
-    steps: Res<'w, DirectionKeys>,
+    input: CursorInput<'w>,
     map: Res<'w, WorldMap>,
     player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
     actors: Query<'w, 's, Standing, OtherActors>,
@@ -127,31 +108,30 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, lo
     let modal = inspect_modal(&modals);
     let Ok((origin, viewshed)) = look.player.single() else { return };
     let here = look.map.current();
-    let in_sight = cursor::ordered(
-        origin.0,
-        look.actors.iter().filter(|(pos, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && viewshed.can_see(pos.0)).map(|(pos, _)| pos.0),
-    );
+    let in_sight = || {
+        cursor::ordered(
+            origin.0,
+            look.actors.iter().filter(|(pos, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && viewshed.can_see(pos.0)).map(|(pos, _)| pos.0),
+        )
+    };
 
-    if look.keys.just_pressed(look.binds.toggle) && !modals.any_open() {
+    let toggled = look.input.just_pressed(look.input.keys().look);
+    if toggled && !modals.any_open() {
         modals.open(modal);
-        view.cursor = in_sight.first().copied().unwrap_or(origin.0);
+        view.cursor = in_sight().first().copied().unwrap_or(origin.0);
         return;
     }
     if !modals.is_top(modal) {
         return;
     }
-    if look.keys.just_pressed(look.binds.toggle) || look.keys.just_pressed(look.binds.close) {
+    if toggled {
         modals.close_one(modal);
         return;
     }
-    if look.keys.just_pressed(look.binds.next)
-        && let Some(next) = cursor::next_of(&in_sight, view.cursor)
-    {
-        view.cursor = next;
-        return;
-    }
-    if let Some(step) = look.steps.just_pressed(&look.keys) {
-        view.cursor = cursor::stepped(view.cursor, step, look.map.window_tiles());
+    match look.input.steer(&mut view.cursor, look.map.window_tiles(), in_sight) {
+        Steer::Close => modals.close_one(modal),
+        // Looking spends nothing, so there is nothing to confirm.
+        Steer::Confirm | Steer::Moved | Steer::Stay => {}
     }
 }
 
@@ -257,13 +237,13 @@ mod tests {
         stage.tick();
         assert!(!stage.app.world().resource::<Modals>().any_open(), "nothing is open until the key");
 
-        stage.press(InspectKeys::default().toggle);
+        stage.press(CursorKeys::default().look);
         let view = stage.app.world().resource::<InspectView>();
         assert_eq!(view.cursor, stage.at.offset(2, 0), "it opens on the nearest thing worth looking at");
         assert_eq!(view.subject.as_ref().map(|s| s.label.as_str()), Some("near one"));
         assert!(stage.app.world().resource::<Modals>().any_open(), "and the world does not have the keys");
 
-        stage.press(InspectKeys::default().close);
+        stage.press(CursorKeys::default().close);
         assert!(!stage.app.world().resource::<Modals>().any_open());
         assert!(stage.app.world().resource::<InspectView>().subject.is_none(), "a closed cursor describes nothing");
     }
@@ -274,12 +254,12 @@ mod tests {
         stage.actor("far one", 'f', 6, 0);
         stage.actor("near one", 'n', 2, 0);
         stage.tick();
-        stage.press(InspectKeys::default().toggle);
+        stage.press(CursorKeys::default().look);
         let seen = |stage: &Stage| stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone());
         assert_eq!(seen(&stage).as_deref(), Some("near one"));
-        stage.press(InspectKeys::default().next);
+        stage.press(CursorKeys::default().next);
         assert_eq!(seen(&stage).as_deref(), Some("far one"));
-        stage.press(InspectKeys::default().next);
+        stage.press(CursorKeys::default().next);
         assert_eq!(seen(&stage).as_deref(), Some("near one"), "and round again");
     }
 
@@ -288,7 +268,7 @@ mod tests {
         let mut stage = stage();
         stage.actor("east of you", 'e', 1, 0);
         stage.tick();
-        stage.press(InspectKeys::default().toggle);
+        stage.press(CursorKeys::default().look);
         assert_eq!(stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone()).as_deref(), Some("east of you"));
         stage.press(KeyCode::ArrowRight);
         let view = stage.app.world().resource::<InspectView>();
@@ -299,7 +279,7 @@ mod tests {
     #[test]
     fn the_cursor_over_nothing_describes_nothing_and_never_yourself() {
         let mut stage = stage();
-        stage.press(InspectKeys::default().toggle);
+        stage.press(CursorKeys::default().look);
         // Nothing in sight, so the cursor opens on the player's own tile.
         let view = stage.app.world().resource::<InspectView>();
         assert_eq!(view.cursor, stage.at);
@@ -312,7 +292,7 @@ mod tests {
         let mut stage = stage();
         stage.actor("a weakling", 'w', 1, 0);
         stage.tick();
-        stage.press(InspectKeys::default().toggle);
+        stage.press(CursorKeys::default().look);
         let view = stage.app.world().resource::<InspectView>();
         let duel = view.duel.expect("two combatants make a duel");
         // The player rolls 1d6 into no armor and has 30 health; the

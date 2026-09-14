@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-13, after one lookup for every content file.
+Last updated: 2026-09-13, after one cursor behaviour.
 
 ## The shape
 
@@ -125,7 +125,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 - Views and their collectors: `NearbyView` (actors and things in the viewshed, nearest first, with health and a relation), `VitalsView` (bars, armor, status badges, turn, position), `GearView` (every registered slot, filled or not), `InspectView` (the look cursor's subject and a duel forecast), `TargetView` (the ability being aimed, the footprint it would cover, whether the resolver would accept it and why not, and what is under it), `AbilityView` (every ability the turn-holder knows, in registration order, with the gate's reasons for the ones it cannot use).
 - Panels: `NearbyPanel`, `VitalsPanel`, `GearPanel`, `InspectPanel`, `LogPanel`, `ScrollbackPanel`, `TargetPanel` and `AbilityPanel`, each a plugin holding its rectangle and its headings.
 - The scrollback: the whole log on a modal screen, wrapped rather than clipped, ruled off per turn, scrolled by line and by page with both ends clamped, and filtered by cycling only the tones the log actually holds. A second presenter over the same `MessageLog` the strip draws, with its cursor and filter in a `Scrollback` resource of its own.
-- `cursor`: the arithmetic the two cursors share, ordering candidates nearest first with a positional tie-break, cycling with a wrap, and stepping without leaving the loaded window.
+- `cursor`: what the two cursors share. `CursorKeys` is the one set of bindings both answer to, and `steer` the one reading of a frame's keys: close over confirm over moving, the next candidate asked for only when it is wanted, ordered nearest first with a positional tie-break and cycled with a wrap, and a step that never leaves the loaded window.
 - The look cursor: opens on the nearest actor, steps with the direction keys, cycles what is in sight, stays inside the loaded window, and owns input as a modal.
 - The targeting cursor: a game writes `AimAt` and the engine does the rest.
   It opens on the nearest thing worth aiming at by `Aim::worth_aiming_at`, the rule a mind's tactic aims by, previews through `Bystanders::land`, the call the resolver lands the use with, and writes the `Use` intent on confirm.

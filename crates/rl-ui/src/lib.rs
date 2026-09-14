@@ -98,6 +98,7 @@ pub mod panel;
 pub mod tone;
 pub mod view;
 
+pub use cursor::{CursorKeys, Steer};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog};
@@ -109,8 +110,8 @@ pub use panel::{
 };
 pub use tone::{Palette, Tone, ToneId, Tones};
 pub use view::{
-    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, Bar, GearSlot, GearView, GearViewPlugin, InspectKeys, InspectView, InspectViewPlugin, NearbyView,
-    NearbyViewPlugin, Row, TargetKeys, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin,
+    Row, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
 };
 
 use bevy::prelude::*;
@@ -131,7 +132,8 @@ pub enum ViewSet {
 }
 
 /// The base every other plugin in this crate needs: tones, the palette,
-/// facet keys, the modal stack and the direction bindings.
+/// facet keys, the modal stack, the direction bindings and the keys the
+/// cursors answer to.
 ///
 /// Adds no systems that draw and no views. A game adds this once and then
 /// the panels it wants.
@@ -144,6 +146,7 @@ impl Plugin for UiPlugin {
             .init_resource::<Facets>()
             .init_resource::<Modals>()
             .init_resource::<DirectionKeys>()
+            .init_resource::<CursorKeys>()
             .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate).chain().in_set(rl_bevy::PresentSet::Narrate))
             .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones);
         // The one facet key the engine itself pushes: a status badge.
@@ -157,6 +160,7 @@ impl Plugin for UiPlugin {
 
 /// The names most callers want in scope.
 pub mod prelude {
+    pub use crate::cursor::CursorKeys;
     pub use crate::facet::{Facet, FacetId, Facets};
     pub use crate::keys::DirectionKeys;
     pub use crate::log::{LogEntry, MessageLog};
@@ -172,7 +176,7 @@ pub mod prelude {
     pub use crate::tone::{Palette, ToneId, Tones};
     pub use crate::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin, Row,
-        TargetKeys, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+        TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};
 }

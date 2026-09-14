@@ -23,9 +23,9 @@ pub mod vitals;
 
 pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
 pub use gear::{GearSlot, GearView, GearViewPlugin};
-pub use inspect::{InspectKeys, InspectView, InspectViewPlugin};
+pub use inspect::{InspectView, InspectViewPlugin};
 pub use nearby::{NearbyView, NearbyViewPlugin};
-pub use target::{AimAt, TargetKeys, TargetView, TargetViewPlugin, target_modal};
+pub use target::{AimAt, TargetView, TargetViewPlugin, target_modal};
 pub use vitals::{VitalsView, VitalsViewPlugin};
 
 use bevy::prelude::*;
