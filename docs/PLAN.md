@@ -122,6 +122,17 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Found on the way: `Notice` brings an `Aware` with it, so a game that authored observers without the plugin got monsters that never noticed anything, which the delve's own test harness caught; a mind that had not seen the player could descend the flow fields toward it anyway; and nothing in the delve could put the brand out.
   Deferred: sneak attack damage (phase E), two-way stealth, squad alerting, noise.
   Nate, 2026-09-12: "Let's add the stealth awareness."
+- 2026-09-13: "seen" asks everything that is watching, not only what keeps track.
+  Corsair's strip read hidden while a surface cutthroat, which carries no `Notice` and so sees on sight, was cutting the player down: "seen" had asked only the observers that keep an `Aware`.
+  `rl_bevy::Watchers` answers who is watching whom by the rule the minds act on, and `VitalsView::seen` and `Row::aware` both read it, so the rail marks the monster that has seen you whether or not it was ever authored to notice.
+  Reproduced first as a Corsair test through the real wiring.
+  Nate, 2026-09-13: "corsair shows hidden while the player is being attacked."
+- 2026-09-13: two example games, and every mechanic in one of them.
+  Corsair is the open world and the delve the dungeon; Lamplight and Knacks are gone, their mechanics moved into the games they fit.
+  The delve gains Lamplight's: a brand that burns `Fuel` and will not relight when spent, a torch to carry and set down, a whaler's lamp on every floor, `v` for light as digits; and five knacks from Knacks' fantasy and medieval sets with `Drain` as its own effect, a mana pool drawn as a bar, a whalebone shield the bash asks the slot graph for, gut eels that spit, and a rail showing who has noticed you.
+  Corsair gains the pirates set: a broadside on powder, a grapnel cutthroats throw back, a swig of rum, and `Plunder`, which spills a foe's purse at its feet; restored runs keep what the player knows, and now its name and stealth too, which the stealth slice had put only on a fresh player.
+  The claim that abilities serve any genre became `crates/rl-bevy/tests/genres.rs`: the five sets load into one registry and build against one set of effects, and a missing effect is refused by name.
+  Nate, 2026-09-13: "consolidate the example games. 1 open world and 1 dungeon delving. Add game mechanic examples into those."
 - 2026-09-13: one answer to where an ability lands, and one way a turn ends, from the architecture review of the same day.
   `rl-rules` gains `Aim::hits`, `Aim::worth_aiming_at` and `aim_blocked`, the rules for who a footprint catches, what is worth pointing it at and why an aim is refused; `rl-bevy`'s `Bystanders::land` is the one call the resolver lands a use with and the targeting preview previews one with, and the ability tactic scores by the same rules. A property test over seeded layouts holds the preview to the resolver.
   `rl-bevy` gains `Resolution`, every resolver's side of the loop: `claim`, then `done` or `failed`, the one place that knows the player keeps a failed turn and anyone else is charged. The engine's step, wait, warp, item, attack and ability resolvers, the sweep, and the tutorial's shove all use it, and chapter 09 teaches two duties where it taught three.

@@ -14,8 +14,7 @@
 //! [`rl_overworld`], [`rl_save`]) are the Bevy plugins that run the loops.
 //!
 //! The repository README walks through a headless example, and the
-//! `corsair`, `delve`, `lamplight` and `knacks` example games show the Bevy
-//! side end to end.
+//! `corsair` and `delve` example games show the Bevy side end to end.
 //!
 //! A game starts from [`RoguelikePlugins`], the window, the terminal and
 //! the plugins every game adds, and then names the subsystems it wants.

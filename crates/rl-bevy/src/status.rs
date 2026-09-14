@@ -197,6 +197,13 @@ mod tests {
     use rl_rules::faction::FactionDef;
     use rl_rules::{Factions, Op, Stacking, StatDef};
 
+    #[derive(Resource, Default)]
+    struct Heard(Vec<StatusEvent>);
+
+    fn hear(mut events: MessageReader<StatusEvent>, mut heard: ResMut<Heard>) {
+        heard.0.extend(events.read().copied());
+    }
+
     #[test]
     fn a_status_ticks_damage_each_turn_modifies_stats_and_expires() {
         let mut app = headless_app();
@@ -232,6 +239,10 @@ mod tests {
                 // actor both, and the statuses below must still land.
             ))
             .id();
+        // Every status event, recorded by a reader: when a headless app
+        // swaps its message buffers depends on wall time, so peeking at the
+        // buffer after an update can miss a message that was written.
+        app.init_resource::<Heard>().add_systems(PostUpdate, hear);
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
@@ -257,7 +268,7 @@ mod tests {
         assert!(!w.get::<Afflicted>(player).unwrap().has(venom), "venom ran out");
         assert!(!w.get::<Afflicted>(player).unwrap().has(hearty));
         assert_eq!(w.get::<StatBlock>(player).unwrap().value(armor_stat, &stats), 0, "hearty's modifier left with it");
-        let expired: Vec<StatusEvent> = w.resource::<Messages<StatusEvent>>().iter_current_update_messages().copied().collect();
+        let expired = &w.resource::<Heard>().0;
         assert!(expired.contains(&StatusEvent::Expired { target: player, status: venom }), "{expired:?}");
     }
 }

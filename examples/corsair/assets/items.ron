@@ -6,7 +6,9 @@
 //   color:  (r, g, b) in 0..=1
 //   slot:   optional; where it is worn: "main hand" | "off hand" | "body" | "head"
 //   also:   optional; slots it also claims when worn, for two-handers
-//   tags:   optional; what affixes see: "weapon" | "blade" | "gun" | "armor" | "shield" | "hat"
+//   tags:   optional; what affixes and abilities see: "weapon" | "blade" | "gun" | "armor" |
+//           "shield" | "hat" | "powder" | "rum"; an ability that costs Item("powder", 1) spends
+//           one from a stack tagged "powder"
 //           a "weapon" gains +1 damage per enchant level, "armor" +1 armor per level
 //   armor:  optional; flat armor while worn
 //   attack: optional; the damage roll while wielded, "NdS+B" or a flat number
@@ -24,6 +26,7 @@
     (name: "buckler", glyph: '[', color: (0.6, 0.6, 0.5), slot: "off hand", tags: ["armor", "shield"], armor: 1, spawn: (2, 40, 2)),
     (name: "leather jerkin", glyph: '[', color: (0.6, 0.4, 0.2), slot: "body", tags: ["armor"], armor: 1, spawn: (0, 40, 2)),
     (name: "tricorne", glyph: '[', color: (0.3, 0.3, 0.35), slot: "head", tags: ["armor", "hat"], armor: 1, spawn: (6, 40, 1)),
-    (name: "rum", glyph: '!', color: (0.9, 0.6, 0.2), heal: 8, stack: true, spawn: (0, 40, 4)),
+    (name: "rum", glyph: '!', color: (0.9, 0.6, 0.2), tags: ["rum"], heal: 8, stack: true, spawn: (0, 40, 4)),
     (name: "doubloons", glyph: '$', color: (1.0, 0.85, 0.2), stack: true, spawn: (0, 40, 4)),
+    (name: "powder", glyph: ',', color: (0.4, 0.4, 0.42), tags: ["powder"], stack: true, spawn: (0, 40, 3)),
 ]

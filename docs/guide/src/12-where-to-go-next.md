@@ -17,7 +17,23 @@ Opt in by inserting one resource:
 
 This is where the `Viewshed` split from [chapter 3](03-what-the-player-knows.md) starts to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only when a light reaches it.
 
-`lamplight` is one dark cave and everything that glows in it, in a single file.
+`delve` turns it on below the Maw: a brand that burns down and can be smothered, a torch to carry and set down, lamps that never move, and `v` to see the light as digits.
+
+## Stealth
+
+`StealthPlugin` puts a roll between being seen and being noticed.
+`Notice` on an observer is a certain radius, a chance beyond it, a bonus while the subject stands in light, and a memory; `Stealth` on a subject narrows both.
+A monster that has not noticed you does not act on you, one that loses you searches where it last saw you, and `Watchers` answers who is watching whom for the panels.
+
+`delve` is built around it, and Corsair's caves use it.
+
+## Abilities
+
+`AbilitiesPlugin` resolves abilities written as data: an aim, a shape from the targeting footprints, costs, requirements, a cooldown and a list of named effects.
+The engine ships seven effects and a game registers its own with `add_effect`.
+A key writes `AimAt`; the engine opens the cursor, previews what it would cover, and spends the turn.
+
+`delve` has five, `corsair` four, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
 
 ## Statuses, stats and gear
 
@@ -55,9 +71,8 @@ cargo run -p corsair -- --balance
 
 | Example | What it shows |
 |---|---|
-| `lamplight` | Lighting, in one file |
-| `delve` | Five floors of a beached whale, no surface at all; `floors.rs` is the whole map builder |
-| `corsair` | An open-world pirate roguelike, built only on the public API |
+| `delve` | Five floors of a beached whale, no surface at all; lighting, stealth and five knacks; `floors.rs` is the whole map builder |
+| `corsair` | An open-world pirate roguelike with a pirate's abilities, built only on the public API |
 
 ## Reading further
 

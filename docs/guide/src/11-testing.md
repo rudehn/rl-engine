@@ -28,7 +28,7 @@ The suite runs in about forty milliseconds.
 - `surface(&mut app)` stands an open test world up and hands back ground to start on, for a test that needs a map and not the game's own.
 - `two_sides(&mut app)` inserts combat rules for two sides at war, for a test that fights.
 
-Knacks' tests press `4` and Enter to aim its drain through the targeting cursor and fire it, which is the whole flow a player uses, with no window.
+The targeting cursor's own tests open it on an ability, step it with the arrow keys and press Enter to fire, which is the whole flow a player uses, with no window.
 
 ## Test a property
 

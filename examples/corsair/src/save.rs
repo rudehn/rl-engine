@@ -254,6 +254,7 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
     }
     let bag: Vec<Entity> = p.bag.iter().filter_map(|id| remap.entity(*id)).collect();
     let (faction, unarmed, max_hp) = (bestiary.factions.expect("player"), crate::items::unarmed(&bestiary), 30);
+    let grants = crate::abilities::player_grants(world.resource::<rl_engine::rl_bevy::Abilities>());
     let player = world
         .spawn((
             (Actor, Player, Blocks, Position(p.at), OnMap(p.map), Viewshed::new(12), RevealsMap),
@@ -267,6 +268,9 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
                 Strikes::default(),
                 rl_engine::rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
             ),
+            // What a fresh player has and a save does not record: what it
+            // knows, its name on the panels, and that it can hide.
+            (grants, Name::new("you"), rl_engine::rl_bevy::Stealth(rl_engine::rl_rules::ai::awareness::StealthStats { quiet: 1, subtlety: 10 })),
         ))
         .id();
     remap.bind(p.id, player);

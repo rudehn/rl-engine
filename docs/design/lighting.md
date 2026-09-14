@@ -151,6 +151,9 @@ A heat-map toggle draws the intensity as digits, which is how phase A is inspect
 
 ## 4. The example: lamplight
 
+Folded into the delve on 2026-09-13, when the examples became one open world and one dungeon: the brand burns `Fuel` and can be smothered, a torch lies on the first floor, whalers' lamps stand in for the brazier, and `v` shows the light as digits.
+What follows is the plan as written.
+
 A third example, `examples/lamplight`, small enough to read in one sitting, is the first thing lighting is built against.
 The delve and Corsair adopt lighting only after it works there.
 

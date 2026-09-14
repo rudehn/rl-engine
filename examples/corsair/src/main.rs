@@ -12,6 +12,7 @@
 //! `CORSAIR_START=cave` starts at the bottom of the nearest smugglers'
 //! cave, both for screenshots.
 
+mod abilities;
 mod content;
 mod input;
 mod inventory;
@@ -32,7 +33,8 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
-    Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, Tones, ViewSet, VitalsPanel, panel,
+    AbilityPanel, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, TargetPanel, Tones, ViewSet,
+    VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -62,6 +64,8 @@ struct Screen {
     nearby: Rect,
     inspect: Rect,
     scrollback: Rect,
+    target: Rect,
+    abilities: Rect,
 }
 
 impl Screen {
@@ -73,7 +77,9 @@ impl Screen {
         let inspect = Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10);
         // The whole map area, since reading back is all you are doing.
         let scrollback = map.inflate(-2);
-        Self { map, log, vitals, gear, nearby, inspect, scrollback }
+        let target = Rect::new(map.x, map.bottom() - 1, map.width, 1);
+        let abilities = Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14);
+        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities }
     }
 }
 
@@ -113,7 +119,10 @@ fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("Corsair", COLS, ROWS).font(FONT).map(screen.map))
-        .add_plugins((CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin))
+        .add_plugins((CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin))
+        // The engine's seven effects, and the one Corsair adds.
+        .add_engine_effects()
+        .add_effect::<abilities::Plunder>()
         .add_plugins(OverworldPlugin)
         // The panels. Each one draws itself from a view the engine keeps
         // current; none of them needs a system of Corsair's.
@@ -126,6 +135,10 @@ fn main() -> AppExit {
             // A second presenter over the same log the strip draws: `p` opens
             // all of it, scrollable and filterable by tone.
             ScrollbackPanel::new(screen.scrollback).titled("Ship's log"),
+            // The cursor's reading of what an ability would cover, and the list
+            // of what can be called on with the reasons any cannot.
+            TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
+            AbilityPanel::new(screen.abilities).title("What you can call on").hints("[a] close"),
         ))
         .insert_resource(StartSeed { seed, regions, resume })
         .insert_resource(Saves::platform_default("corsair"))
@@ -134,7 +147,10 @@ fn main() -> AppExit {
         .init_resource::<places::Entrances>()
         .init_resource::<quests::LedgerScreen>()
         .add_systems(Startup, start_world)
-        .add_systems(Update, (quests::ledger_keys, inventory::inventory_keys, input::player_input, input::fire).chain().in_set(EngineSet::Input))
+        .add_systems(
+            Update,
+            (quests::ledger_keys, inventory::inventory_keys, abilities::ability_keys, input::player_input, input::fire).chain().in_set(EngineSet::Input),
+        )
         // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
         .add_systems(Update, save::save_keys.after(EngineSet::Present))
         .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
@@ -158,6 +174,7 @@ fn main() -> AppExit {
                 statuses::narrate_statuses,
                 quests::report_facts,
                 quests::narrate_quests,
+                abilities::narrate_abilities,
                 save::delete_on_death,
             )
                 .chain()
@@ -229,14 +246,23 @@ fn start_world(world: &mut World) {
     let town = graph.sites().iter().find(|s| s.kind == PORT).expect("a world with a town");
     let spawn = graph.region_tiles(town.position).center();
 
-    let (bestiary, rules) = monsters::Bestiary::load(seed, town.position);
+    let (mut bestiary, rules) = monsters::Bestiary::load(seed, town.position);
     let armory = Armory::load(seed, town.position, &bestiary.kinds);
     bestiary
         .defs
         .validate(|m, _| m.drops.iter().find(|(name, _)| armory.defs.id(name).is_none()).map_or(Ok(()), |(name, _)| Err(format!("unknown drop {name:?}"))))
         .unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
     let (quest_log, facts) = quests::load(&bestiary, &armory);
-    world.insert_resource(statuses::load(&armory, &bestiary));
+    let status_rules = statuses::load(&armory, &bestiary);
+    // The abilities, built against the registries above and the effects
+    // registered while the app was built, so a file naming one nobody added
+    // fails here rather than the first time its key is pressed.
+    let built = abilities::load(&abilities::Names { armory: &armory, bestiary: &bestiary, statuses: &status_rules }, world.resource::<EffectKinds>());
+    bestiary.resolve_abilities(&built);
+    world.insert_resource(StatRules(armory.stats.clone()));
+    world.insert_resource(AbilityRng::for_run(seed));
+    world.insert_resource(status_rules);
+    world.insert_resource(built);
     let cove = graph.sites().iter().position(|s| s.kind == content::COVE);
 
     world.insert_resource(quest_log);
@@ -293,13 +319,15 @@ fn start_world(world: &mut World) {
 fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
     // The armory comes out while its spawner borrows commands.
     let armory = world.remove_resource::<Armory>().expect("the armory is inserted first");
-    let (cutlass, rum, worn) = {
+    let (cutlass, rum, powder, worn) = {
         let mut commands = world.commands();
         let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
         let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
+        // Enough for a few broadsides before the first port.
+        let powder = armory.spawn(&mut commands, armory.defs.expect("powder"), 6, None);
         let mut worn = Equipped(rl_engine::rl_rules::Equipment::for_slots(&armory.slots));
         worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
-        (cutlass, rum, worn)
+        (cutlass, rum, powder, worn)
     };
     world.flush();
     world.insert_resource(armory);
@@ -308,6 +336,7 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
         let faction: FactionId = bestiary.factions.expect("player");
         (faction, items::unarmed(bestiary))
     };
+    let grants = abilities::player_grants(world.resource::<Abilities>());
     world.spawn((
         (Actor, Player, Blocks, Position(spawn), Viewshed::new(12), RevealsMap),
         (
@@ -315,7 +344,7 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             Armor(0),
             Faction(faction),
             unarmed,
-            Inventory { items: vec![cutlass, rum] },
+            Inventory { items: vec![cutlass, rum, powder] },
             worn,
             Name::new("you"),
             // Quiet enough that a smuggler in the dark has to be close,
@@ -324,6 +353,7 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             Strikes::default(),
             Glyph::new('@', Color::WHITE).on_layer(10),
         ),
+        grants,
     ));
 }
 

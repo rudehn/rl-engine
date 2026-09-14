@@ -1,0 +1,75 @@
+// The delver's knacks, and the one a beast has.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:      unique; the player knows the first five in the order `1` to `5` aim them,
+//              and a beast names the ones it knows in `beasts.ron`
+//   aim:       Foe (default) | Ally | SelfOnly | Ground | Anyone
+//   mode:      Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
+//              Beam(range:) | Cone(length:)
+//   sight:     optional; whether the aim must be a cell the user can see (default true)
+//   requires:  optional; Has(status) | Lacks(status) | Wielding(tag) |
+//              InSlot(slot, tag) | Above(stat, n); the slots are "main hand" and
+//              "off hand", the one tag is "shield"
+//   costs:     optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n);
+//              the one pool is "mana"
+//   time:      optional; hundredths of a step the turn costs (default 100)
+//   cooldown:  optional; hundredths before it may be used again, from the
+//              moment of use (default 0)
+//   effects:   each (kind:, chance:, args:); kind is one the engine ships
+//              (Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport) or the
+//              delve's own, Drain, which pours into a pool what it takes; the
+//              damage kinds are "bite" | "blade" | "blunt" | "bile" | "fire" | "care",
+//              the statuses "scorched" | "dazed"
+#![enable(implicit_some)]
+[
+    (
+        name: "fireball",
+        mode: Ball(range: 8, radius: 2),
+        costs: [Pool("mana", 12)],
+        cooldown: 200,
+        effects: [
+            (kind: "Harm", args: (kind: "fire", roll: "3d6")),
+            (kind: "Inflict", chance: 50, args: (status: "scorched", turns: 4)),
+        ],
+    ),
+    (
+        name: "blink",
+        aim: Ground,
+        mode: Bolt(range: 7),
+        costs: [Pool("mana", 5)],
+        cooldown: 400,
+        effects: [(kind: "Teleport")],
+    ),
+    (
+        name: "mend",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Pool("mana", 6)],
+        effects: [(kind: "Mend", args: (kind: "care", roll: "2d6"))],
+    ),
+    (
+        name: "drain",
+        mode: Bolt(range: 6),
+        effects: [
+            (kind: "Harm", args: (kind: "fire", roll: "1d6")),
+            (kind: "Drain", args: (pool: "mana", amount: 4)),
+        ],
+    ),
+    (
+        name: "shield bash",
+        mode: Adjacent,
+        requires: [InSlot("off hand", "shield")],
+        cooldown: 300,
+        effects: [
+            (kind: "Harm", args: (kind: "blunt", roll: "1d6")),
+            (kind: "Shove", args: (cells: 1)),
+            (kind: "Inflict", chance: 70, args: (status: "dazed", turns: 2)),
+        ],
+    ),
+    (
+        name: "spit",
+        mode: Bolt(range: 5),
+        cooldown: 300,
+        effects: [(kind: "Harm", args: (kind: "bile", roll: "1d4"))],
+    ),
+]

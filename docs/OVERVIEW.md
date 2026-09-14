@@ -163,27 +163,18 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 `docs/guide` is an mdBook that builds a small roguelike, Warren, in nine steps: a map on screen, walking, sight and memory, monsters, blows, items, floors, content in RON, and an action of the game's own, ending with the headless tests.
 Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter's code is compiled by CI and can be played on its own; the chapters quote the sources through mdBook anchors rather than restating them, and `scripts/check-guide.sh` fails the build if an anchor, an image or a table-of-contents entry stops resolving.
 
-## The fourth example: Knacks
-
-One arena and five sets of abilities, a fantasy caster, a pirate, a marine, a man-at-arms and a thief, all eighteen of them loaded into one registry from five RON files that differ in nothing but their words.
-`Tab` changes which set the player knows and nothing else about the run changes, because nothing else can.
-`src/effects.rs` holds the five effects the engine does not ship, one per genre, and is the honest half of the claim: the boundary between what is data and what is code is those two files side by side.
-An ability key writes `AimAt` and nothing more; the cursor, the preview and the list of what can be called on are the engine's.
-
-## The third example: Lamplight
-
-One dark cave: a lantern that burns oil and is lit or doused with a use action, a brazier, wisps that glow and drift, fungus that glows, pools that shimmer, a torch on the floor, and lurkers with dark sight and no glow.
-`main.rs` is the whole game; it is the test that lighting is one resource and one component away.
-
-## The second example: the Hollow Whale
+## The dungeon: the Hollow Whale
 
 Five floors of a beached leviathan, mouth to heart, with no surface and, below the Maw's grey daylight, no light but a brand, the bile and whatever a beast sheds: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
 `floors.rs` is the whole map builder; it is the test that a dungeon delve is first-class.
-Its beasts notice from RON and the player is quiet, so smothering the brand with shift and `L` is a way past a salt ghost rather than only a way to see less.
+It is where lighting, stealth and abilities meet. The brand burns `Fuel` and shift and `L` smothers it, which is a way past a beast that has not noticed you rather than only a way to see less; a torch lies on the first floor to carry and set down, whalers' lamps are the fixtures, and `v` shows light as digits. The delver's five knacks are data in `assets/abilities.ron`, with `Drain` the delve's own effect in `effects.rs`, and gut eels spit back.
+The rail shows vitals with the mana bar and which beasts in sight have noticed you.
 
-## The worked example: Corsair
+## The open world: Corsair
 
 Islands in daylight from the world graph, dark caves lit by the player's lantern and the smugglers' own, ports with huts, a bestiary, armory, affixes, statuses and quests from RON, caves with a treasure vault, a pistol, a ledger, saving and continuing, and a balance report.
+Its abilities are a pirate's: a broadside on powder, a grapnel, a swig of rum and a shakedown, `Plunder`, which is Corsair's own effect; cutthroats throw the grapnel back, and its cave dwellers notice rather than see on sight.
+That all five genres of ability share one registry is `crates/rl-bevy/tests/genres.rs`, not a game.
 It is built only on the public API, so it is the test that the seams are right.
 
 ## Not built yet

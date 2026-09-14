@@ -9,9 +9,11 @@ use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
+use rl_engine::rl_rules::AbilityId;
 use rl_engine::rl_rules::Brain;
 use rl_engine::rl_rules::ai::awareness::NoticeStats;
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
+use rl_engine::rl_rules::ai::tactics::UseAbility;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
@@ -48,6 +50,10 @@ pub struct MonsterDef {
     pub lantern: Option<LightSource>,
     #[serde(default)]
     pub notice: Option<NoticeStats>,
+    #[serde(default)]
+    pub abilities: Vec<String>,
+    #[serde(default)]
+    pub purse: Option<(u32, u32)>,
 }
 
 impl Named for MonsterDef {
@@ -86,6 +92,9 @@ pub struct Bestiary {
     seed: RunSeed,
     home: Point,
     spawned: BTreeSet<Point>,
+    /// What each kind knows, resolved against the built abilities once they
+    /// exist. Empty until then, and for a kind that knows nothing.
+    grants: Vec<Vec<AbilityId>>,
 }
 
 impl Bestiary {
@@ -98,6 +107,8 @@ impl Bestiary {
             DamageKind::new("claw"),
             DamageKind::new("fist"),
             DamageKind::new("fire"),
+            // What a swig mends with: nothing in the way of it.
+            DamageKind::new("care").unarmored(),
         ])
         .unwrap();
         let factions = Registry::from_defs(vec![
@@ -137,14 +148,16 @@ impl Bestiary {
         for (id, m) in defs.iter() {
             let (lo, hi, w, gmin, gmax) = m.spawn;
             table.push(BandedEntry::new(id).bands(lo, hi).weight(w).group(gmin, gmax));
-            let mut brain = Brain::new().then(MeleeAdjacent);
+            // A kind that knows an ability leads with it when one is worth
+            // firing, and fights as it would without otherwise.
+            let mut brain = if m.abilities.is_empty() { Brain::new() } else { Brain::new().then(UseAbility { chance_pct: 35 }) }.then(MeleeAdjacent);
             if m.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: m.flee_at });
             }
             brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: m.wander })));
         }
         let rules = CombatRules { kinds: kinds.clone(), factions: relations };
-        (Self { defs, kinds, factions, table, brains, seed, home, spawned: BTreeSet::new() }, rules)
+        (Self { defs, kinds, factions, table, brains, seed, home, spawned: BTreeSet::new(), grants: Vec::new() }, rules)
     }
 }
 
@@ -174,10 +187,19 @@ impl Bestiary {
         e
     }
 
+    /// Resolves each kind's ability names against the built registry.
+    ///
+    /// # Panics
+    /// Panics naming the ability, when `monsters.ron` names one
+    /// `abilities.ron` does not have.
+    pub fn resolve_abilities(&mut self, abilities: &Abilities) {
+        self.grants = self.defs.iter().map(|(_, m)| m.abilities.iter().map(|n| abilities.expect(n)).collect()).collect();
+    }
+
     /// Spawns one `id` standing at `p` on the current map.
     pub fn spawn(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
         let m = self.defs.get(id);
-        commands
+        let e = commands
             .spawn((
                 Actor,
                 Blocks,
@@ -194,7 +216,18 @@ impl Bestiary {
                 Name::new(m.name.clone()),
                 Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
             ))
-            .id()
+            .id();
+        if let Some(grants) = self.grants.get(id.index()).filter(|g| !g.is_empty()) {
+            commands.entity(e).insert(Grants(grants.clone()));
+        }
+        if let Some((min, max)) = m.purse {
+            // From the position rather than a stream, so a monster restored
+            // from a save carries what it spawned with.
+            let span = (max.max(min) - min + 1) as u64;
+            let coin = min + (rl_engine::rl_core::seed::position_hash(self.seed.0, p.x, p.y) % span) as u32;
+            commands.entity(e).insert(crate::abilities::Purse(coin));
+        }
+        e
     }
 }
 
@@ -298,4 +331,54 @@ fn cap(s: &str) -> String {
 /// Damage stages: Corsair uses armor only, for now.
 pub fn stages() -> DamageStages {
     DamageStages(vec![Box::new(SubtractArmor)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rl_engine::rl_core::RunSeed;
+    use rl_engine::rl_ui::{UiPlugin, VitalsView, VitalsViewPlugin};
+
+    /// Reported from play: on the surface, a cutthroat was cutting the
+    /// player down while the vitals strip still read "hidden". Surface
+    /// monsters carry no `Notice`, so they see on sight and never keep an
+    /// `Aware`, and "seen" asked only the observers that did.
+    #[test]
+    fn a_player_under_attack_on_the_surface_is_never_reported_hidden() {
+        let dir = std::env::temp_dir().join(format!("corsair-seen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        // The real game's panels and stealth, which the shared harness
+        // leaves out.
+        app.add_plugins((StealthPlugin, UiPlugin, VitalsViewPlugin));
+        app.update();
+        app.update();
+
+        let me = {
+            let w = app.world_mut();
+            let mut q = w.query_filtered::<Entity, With<Player>>();
+            q.single(w).unwrap()
+        };
+        assert!(app.world().get::<Stealth>(me).is_some(), "Corsair's player can hide");
+        let at = app.world().get::<Position>(me).expect("a position").0.offset(1, 0);
+        let kind = app.world().resource::<Bestiary>().defs.expect("cutthroat");
+        app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            // `spawn`, not `spawn_underground`: a surface cutthroat, no Notice.
+            bestiary.spawn(&mut commands, kind, at);
+            queue.apply(world);
+        });
+        app.update();
+
+        let full = app.world().get::<Health>(me).expect("health").hp;
+        for _ in 0..6 {
+            app.world_mut().write_message(Intent::new(me, Wait));
+            app.update();
+        }
+        let hp = app.world().get::<Health>(me).map(|h| h.hp).unwrap_or(0);
+        assert!(hp < full, "the cutthroat at the player's elbow attacked: {hp} of {full}");
+        assert_eq!(app.world().resource::<VitalsView>().seen, Some(true), "a player being cut down has been seen");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
