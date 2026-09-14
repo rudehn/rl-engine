@@ -410,9 +410,19 @@ mod tests {
         rig.app.update();
     }
 
+    /// Every place entered, recorded by a reader rather than peeked at in
+    /// the buffer, whose swap depends on wall time in a headless app.
+    #[derive(Resource, Default)]
+    struct Entered(Vec<PlaceEntered>);
+
+    fn record_entered(mut events: MessageReader<PlaceEntered>, mut entered: ResMut<Entered>) {
+        entered.0.extend(events.read().copied());
+    }
+
     #[test]
     fn a_transition_takes_the_player_down_and_a_warp_brings_it_back_to_the_same_place() {
         let mut r = rig();
+        r.app.init_resource::<Entered>().add_systems(PostUpdate, record_entered);
         let cave = MapId(3);
         r.app.world_mut().spawn((Position(r.start), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
         let watcher = r.app.world_mut().spawn((Actor, Blocks, Position(r.start.offset(2, 0)), Speed(100))).id();
@@ -431,8 +441,7 @@ mod tests {
             assert_eq!(map.window_tiles(), Rect::new(0, 0, 40, 30), "the place is the whole window");
             assert!(w.resource::<Occupancy>().is_occupied(place.entry));
             assert!(!w.resource::<Occupancy>().is_occupied(r.start.offset(2, 0)), "the surface watcher is not on this map's index");
-            let entered: Vec<PlaceEntered> = w.resource::<Messages<PlaceEntered>>().iter_current_update_messages().copied().collect();
-            assert_eq!(entered, vec![PlaceEntered { map: cave, first: true, entry: place.entry, exit: place.exit }]);
+            assert_eq!(w.resource::<Entered>().0, vec![PlaceEntered { map: cave, first: true, entry: place.entry, exit: place.exit }]);
             assert_eq!(place.spots, vec![Spot { tag: 7, at: place.entry }]);
             let v = w.get::<Viewshed>(r.player).unwrap();
             assert!(!v.dirty && v.can_see(place.entry), "sight was recomputed in the place");
@@ -463,9 +472,9 @@ mod tests {
         {
             let w = r.app.world();
             assert_eq!(w.resource::<WorldMap>().current(), cave);
-            let entered: Vec<PlaceEntered> = w.resource::<Messages<PlaceEntered>>().iter_current_update_messages().copied().collect();
-            // Messages linger until a fixed update, so look at the latest.
-            assert!(!entered.last().unwrap().first, "built once: {entered:?}");
+            let entered = &w.resource::<Entered>().0;
+            assert_eq!(entered.len(), 2, "entered twice: {entered:?}");
+            assert!(!entered[1].first, "built once: {entered:?}");
             assert!(w.resource::<Knowledge>().is_explored(entry), "place knowledge survived too");
             assert_eq!(w.get::<Position>(coin).unwrap().0, entry);
         }

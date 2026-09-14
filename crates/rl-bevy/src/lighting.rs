@@ -481,9 +481,23 @@ mod tests {
         assert_eq!(light.at(Point::new(1, 4)).intensity, 0, "four tiles off, the rim");
     }
 
+    /// How many `LightEvent`s have been read, by a reader that sees each
+    /// exactly once.
+    #[derive(Resource, Default)]
+    struct BurntOut(usize);
+
+    fn count_burnt(mut events: MessageReader<LightEvent>, mut burnt: ResMut<BurntOut>) {
+        burnt.0 += events.read().count();
+    }
+
     #[test]
     fn fuel_burns_down_and_the_light_goes_out_once() {
         let mut rig = Rig::new(Some(Lighting::dark()), None);
+        // Counted through a reader rather than by peeking at the buffer:
+        // when a headless app swaps its message buffers depends on wall
+        // time, so a peek sees a message on one frame, two, or none, and
+        // this test failed on the frames it saw none.
+        rig.app.init_resource::<BurntOut>().add_systems(PostUpdate, count_burnt);
         let lamp = rig.app.world_mut().spawn((Item, LightSource::new(150, 4, amber()), Fuel(2))).id();
         rig.app.world_mut().get_mut::<Inventory>(rig.player).unwrap().items.push(lamp);
         rig.act(Wait);
@@ -493,13 +507,10 @@ mod tests {
         assert!(rig.app.world().get::<LightSource>(lamp).is_none(), "out");
         assert_eq!(rig.app.world().get::<Fuel>(lamp), Some(&Fuel(0)));
         assert_eq!(rig.seen_count(), 9);
-        // Headless message buffers linger for a frame or two, so count
-        // what is there: one report now, and never a second one.
-        let burnt = |app: &App| app.world().resource::<Messages<LightEvent>>().iter_current_update_messages().count();
-        assert_eq!(burnt(&rig.app), 1);
+        assert_eq!(rig.app.world().resource::<BurntOut>().0, 1, "reported when it went out");
         rig.act(Wait);
         rig.act(Wait);
-        assert!(burnt(&rig.app) <= 1, "reported once, not every turn");
+        assert_eq!(rig.app.world().resource::<BurntOut>().0, 1, "and never again");
     }
 
     #[test]

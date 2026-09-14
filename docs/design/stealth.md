@@ -259,6 +259,11 @@ Nothing here runs per frame, and nothing here allocates per turn beyond the map'
 
 Found on the way, both fixed: a mind that had not noticed the player could still descend the shared flow fields, which are built toward the player, and so walk straight to someone it never saw; and the delve had no way to put the brand out, so a quiet player carrying a lit brand was never quiet at all. Shift and `L` now smothers it and spends the turn.
 
+Found in play afterwards: Corsair's vitals strip read hidden while a surface cutthroat cut the player down.
+"Seen" asked only the observers that keep an `Aware`, and a monster with no `Notice` sees on sight without ever keeping one, so the observers that were actually attacking were the ones never asked.
+`Watchers` in `rl-bevy` now answers "who is watching whom" by the rule the minds act on - an observer that keeps track watches what it knows about, one that sees on sight watches what it can perceive - and both the vitals strip and the nearby rail read it.
+Reproduced first as a Corsair test through the real wiring, with a surface cutthroat at the player's elbow.
+
 ## 13. Risks
 
 - **A monster that oscillates at the edge of `certain`.**

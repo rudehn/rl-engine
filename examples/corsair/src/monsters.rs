@@ -301,3 +301,53 @@ fn cap(s: &str) -> String {
 pub fn stages() -> DamageStages {
     DamageStages(vec![Box::new(SubtractArmor)])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rl_engine::rl_core::RunSeed;
+    use rl_engine::rl_ui::{UiPlugin, VitalsView, VitalsViewPlugin};
+
+    /// Reported from play: on the surface, a cutthroat was cutting the
+    /// player down while the vitals strip still read "hidden". Surface
+    /// monsters carry no `Notice`, so they see on sight and never keep an
+    /// `Aware`, and "seen" asked only the observers that did.
+    #[test]
+    fn a_player_under_attack_on_the_surface_is_never_reported_hidden() {
+        let dir = std::env::temp_dir().join(format!("corsair-seen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        // The real game's panels and stealth, which the shared harness
+        // leaves out.
+        app.add_plugins((StealthPlugin, UiPlugin, VitalsViewPlugin));
+        app.update();
+        app.update();
+
+        let me = {
+            let w = app.world_mut();
+            let mut q = w.query_filtered::<Entity, With<Player>>();
+            q.single(w).unwrap()
+        };
+        assert!(app.world().get::<Stealth>(me).is_some(), "Corsair's player can hide");
+        let at = app.world().get::<Position>(me).expect("a position").0.offset(1, 0);
+        let kind = app.world().resource::<Bestiary>().defs.expect("cutthroat");
+        app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            // `spawn`, not `spawn_underground`: a surface cutthroat, no Notice.
+            bestiary.spawn(&mut commands, kind, at);
+            queue.apply(world);
+        });
+        app.update();
+
+        let full = app.world().get::<Health>(me).expect("health").hp;
+        for _ in 0..6 {
+            app.world_mut().write_message(Intent::new(me, Wait));
+            app.update();
+        }
+        let hp = app.world().get::<Health>(me).map(|h| h.hp).unwrap_or(0);
+        assert!(hp < full, "the cutthroat at the player's elbow attacked: {hp} of {full}");
+        assert_eq!(app.world().resource::<VitalsView>().seen, Some(true), "a player being cut down has been seen");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

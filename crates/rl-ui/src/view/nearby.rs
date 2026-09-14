@@ -85,8 +85,7 @@ pub struct Around<'w, 's> {
     rules: Res<'w, CombatRules>,
     player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed, Option<&'static Faction>), With<Player>>,
     seen: Query<'w, 's, Seen, Without<Dead>>,
-    aware: Query<'w, 's, &'static Aware>,
-    stealth: StealthRunning<'w>,
+    watchers: Watchers<'w, 's>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed.
@@ -105,8 +104,8 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
             (Some(mine), Some(theirs)) => Some(around.rules.factions.relation(mine.0, theirs.0)),
             _ => None,
         };
-        if is_actor && around.stealth.get() {
-            row.aware = around.aware.get(entity).ok().map(|a| a.knows(me));
+        if is_actor && around.watchers.running() && around.watchers.is_watcher(entity) {
+            row.aware = Some(around.watchers.sees(entity, me));
         }
         if is_actor { view.actors.push(row) } else { view.things.push(row) }
     }

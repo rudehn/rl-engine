@@ -122,6 +122,11 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Found on the way: `Notice` brings an `Aware` with it, so a game that authored observers without the plugin got monsters that never noticed anything, which the delve's own test harness caught; a mind that had not seen the player could descend the flow fields toward it anyway; and nothing in the delve could put the brand out.
   Deferred: sneak attack damage (phase E), two-way stealth, squad alerting, noise.
   Nate, 2026-09-12: "Let's add the stealth awareness."
+- 2026-09-13: "seen" asks everything that is watching, not only what keeps track.
+  Corsair's strip read hidden while a surface cutthroat, which carries no `Notice` and so sees on sight, was cutting the player down: "seen" had asked only the observers that keep an `Aware`.
+  `rl_bevy::Watchers` answers who is watching whom by the rule the minds act on, and `VitalsView::seen` and `Row::aware` both read it, so the rail marks the monster that has seen you whether or not it was ever authored to notice.
+  Reproduced first as a Corsair test through the real wiring.
+  Nate, 2026-09-13: "corsair shows hidden while the player is being attacked."
 - Next: the rest of the deferred pieces (throwing, a character sheet, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

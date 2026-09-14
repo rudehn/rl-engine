@@ -34,8 +34,10 @@ pub struct VitalsView {
     pub turn: u32,
     /// Where the player is standing.
     pub position: Point,
-    /// Whether anything at odds with the player has noticed it: `None` for a
-    /// player that cannot hide, or in a game without stealth.
+    /// Whether anything at odds with the player is watching it, by the rule
+    /// the minds act on: an observer that keeps track knows about it, and one
+    /// that sees on sight can see it. `None` for a player that cannot hide,
+    /// or in a game without stealth.
     pub seen: Option<bool>,
 }
 
@@ -73,8 +75,7 @@ pub struct Me<'w, 's> {
     turns: Res<'w, Turns>,
     statuses: Option<Res<'w, StatusRules>>,
     facets: ResMut<'w, crate::facet::Facets>,
-    aware: Query<'w, 's, &'static Aware>,
-    stealth: StealthRunning<'w>,
+    watchers: Watchers<'w, 's>,
     player: Query<'w, 's, Vitals, With<Player>>,
 }
 
@@ -92,7 +93,7 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.position = pos.0;
     view.turn = me.turns.turn_number();
     view.armor = armor.map(|a| a.0);
-    view.seen = (hides && me.stealth.get()).then(|| me.aware.iter().any(|a| a.knows(entity)));
+    view.seen = (hides && me.watchers.running()).then(|| me.watchers.watched(entity));
     if let Some(health) = health {
         // Tone by how close to death, so a panel needs no thresholds of
         // its own and every panel agrees on when it is bad.

@@ -24,7 +24,7 @@ use rand::Rng;
 use rl_core::Point;
 use rl_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
 
-use crate::combat::{CombatRng, CombatRules, DamageDealt, Faction, Perception, perceivable};
+use crate::combat::{CombatRng, CombatRules, DamageDealt, Dead, Faction, Mind, Perception, perceivable};
 use crate::components::{MyTurn, Player, Position, Viewshed};
 use crate::lighting::{DarkSight, Lighting};
 use crate::places::{MapId, OnMap};
@@ -96,6 +96,92 @@ impl StealthRunning<'_> {
     /// Whether stealth is running.
     pub fn get(&self) -> bool {
         self.noticed.is_some()
+    }
+}
+
+/// Anything that can notice a subject: a mind, or an authored observer.
+type WatcherData = (
+    Entity,
+    &'static Position,
+    Option<&'static Faction>,
+    Option<&'static Perception>,
+    Option<&'static DarkSight>,
+    Option<&'static Aware>,
+    Option<&'static OnMap>,
+);
+
+/// What counts as a watcher: something that decides, or something authored
+/// to notice, that is neither the player nor dead.
+type CanWatch = (Or<(With<Mind>, With<Notice>)>, Without<Player>, Without<Dead>);
+/// One watcher, as the query hands it back.
+type Watcher<'a> = (Entity, &'a Position, Option<&'a Faction>, Option<&'a Perception>, Option<&'a DarkSight>, Option<&'a Aware>, Option<&'a OnMap>);
+
+/// Who is watching whom right now, by the rule the minds act on.
+///
+/// Stealth only hides a subject from observers that keep an [`Aware`]. One
+/// that does not - a monster with no [`Notice`] - sees on sight, exactly as
+/// it did before stealth existed, and it will attack a hider it can see.
+/// Asking only the `Aware` keepers whether a player has been seen therefore
+/// answers "hidden" while such a monster cuts the player down, which is how
+/// this came to exist. The rule here is the one `decide_minds` applies: an
+/// observer that keeps an `Aware` watches what it knows about, alert or
+/// searching; one that does not watches whatever it can perceive.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Watchers<'w, 's> {
+    running: StealthRunning<'w>,
+    player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
+    watchers: Query<'w, 's, WatcherData, CanWatch>,
+    subjects: Query<'w, 's, (&'static Position, Option<&'static Faction>, Option<&'static OnMap>)>,
+    lighting: Option<Res<'w, Lighting>>,
+    map: Option<Res<'w, WorldMap>>,
+    rules: Option<Res<'w, CombatRules>>,
+}
+
+impl Watchers<'_, '_> {
+    /// Whether stealth is running at all. Without it nothing is hidden and
+    /// "seen" is not a question worth asking.
+    pub fn running(&self) -> bool {
+        self.running.get()
+    }
+
+    /// Whether `entity` is something that notices.
+    pub fn is_watcher(&self, entity: Entity) -> bool {
+        self.watchers.contains(entity)
+    }
+
+    /// Whether `watcher` is watching `subject` right now.
+    pub fn sees(&self, watcher: Entity, subject: Entity) -> bool {
+        self.watchers.get(watcher).is_ok_and(|w| self.judge(w, subject))
+    }
+
+    /// Whether anything at odds with `subject` is watching it.
+    pub fn watched(&self, subject: Entity) -> bool {
+        self.watchers.iter().any(|w| self.judge(w, subject))
+    }
+
+    fn judge(&self, (watcher, pos, faction, perception, dark, aware, on): Watcher<'_>, subject: Entity) -> bool {
+        if watcher == subject {
+            return false;
+        }
+        let (Some(map), Some(rules), Ok((at, theirs, subject_on))) = (self.map.as_deref(), self.rules.as_deref(), self.subjects.get(subject)) else {
+            return false;
+        };
+        // Only what is at odds with the subject: an ally looking on is not
+        // being seen by an enemy.
+        match (faction, theirs) {
+            (Some(mine), Some(theirs)) if rules.factions.is_hostile(mine.0, theirs.0) => {}
+            _ => return false,
+        }
+        if let Some(aware) = aware {
+            return aware.knows(subject);
+        }
+        let here = map.current();
+        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || subject_on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here {
+            return false;
+        }
+        let Ok((player_pos, sight)) = self.player.single() else { return false };
+        awareness::within_reach(pos.0, at.0, perception.map(|p| p.0).unwrap_or(8))
+            && perceivable(player_pos.0, sight, self.lighting.as_deref(), pos.0, dark.map(|d| d.0).unwrap_or(0), at.0)
     }
 }
 
@@ -394,6 +480,29 @@ mod tests {
         field.wait();
         field.wait();
         assert_eq!(field.at(watcher), resting, "then waits, having nothing left to look for");
+    }
+
+    /// Whether the player was watched, as the vitals strip would ask.
+    #[derive(Resource, Default)]
+    struct Watched(Option<bool>);
+
+    fn read_watched(watchers: Watchers, player: Query<Entity, With<Player>>, mut out: ResMut<Watched>) {
+        out.0 = player.single().ok().map(|p| watchers.watched(p));
+    }
+
+    #[test]
+    fn a_watcher_that_sees_on_sight_counts_and_an_observer_that_has_not_noticed_does_not() {
+        let mut field = Field::new(blind(), 2, 10, true);
+        field.app.init_resource::<Watched>().add_systems(PostUpdate, read_watched);
+        field.wait();
+        assert_eq!(field.app.world().resource::<Watched>().0, Some(false), "two tiles off and never noticed: not watching");
+
+        // The same monster with no Notice sees on sight, the way every
+        // surface monster in Corsair does, and it is watching.
+        let watcher = field.watcher;
+        field.app.world_mut().entity_mut(watcher).remove::<(Notice, Aware)>();
+        field.wait();
+        assert_eq!(field.app.world().resource::<Watched>().0, Some(true));
     }
 
     /// How many `Noticed` messages have been read, by a reader that sees
