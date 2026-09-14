@@ -134,7 +134,7 @@ impl Armory {
     pub fn load(seed: RunSeed, home: Point, kinds: &Registry<DamageKind>) -> Self {
         let slots = Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand"), SlotDef::new("body"), SlotDef::new("head")]).unwrap();
         let stats = Registry::from_defs(vec![StatDef::new("armor", 0).clamp(0, 20), StatDef::new("attack", 0)]).unwrap();
-        let tags = Registry::from_defs(["weapon", "blade", "gun", "armor", "shield", "hat"].map(TagDef::new).to_vec()).unwrap();
+        let tags = Registry::from_defs(["weapon", "blade", "gun", "armor", "shield", "hat", "powder", "rum"].map(TagDef::new).to_vec()).unwrap();
         let defs: Registry<ItemDef> = Registry::from_ron_str(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(|d, _| {
             for t in &d.tags {
@@ -318,6 +318,11 @@ impl Armory {
         // cutlass" without ever seeing the armory.
         let name = self.display_name(id, Some(&Enchant(enchant.clone())));
         let mut e = commands.spawn((Item, ItemKind(id), Name::new(name), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
+        // Tagged, so an ability that spends powder or rum can find it in a bag.
+        let tags = self.tags_of(id);
+        if !tags.is_empty() {
+            e.insert(Tagged(tags.to_vec()));
+        }
         if let Some(shape) = self.shape(id) {
             e.insert((Wearable(shape.clone()), Enchant(enchant)));
         }

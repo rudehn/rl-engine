@@ -30,14 +30,13 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 
 ## Quick start
 
-Clone the repository and run one of the three example games.
+Clone the repository and run one of the two example games.
 
 ```sh
 git clone https://github.com/rudehn/rl-engine
 cd rl-engine
 cargo run --release -p corsair -- --seed 7
 cargo run --release -p delve -- --seed 7
-cargo run --release -p lamplight -- --seed 7
 ```
 
 The first build compiles Bevy and takes a few minutes.
@@ -93,8 +92,8 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The three example games are the best guide to the Bevy side.
-`examples/delve/src/floors.rs` is a complete multi-floor map builder in one file, and `examples/lamplight/src/main.rs` is lighting turned on in one file.
+The two example games are the best guide to the Bevy side, and every mechanic the engine has is in one of them.
+`examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
 
 ## Crates
 
@@ -126,6 +125,8 @@ It has islands from the world graph, ports with huts, a bestiary and an armory i
 Loot lies on the sand and in the pockets of the dead, with affixes and enchant levels from RON.
 A pistol shoots along a clear line of fire, venom and bleeding tick by the turn, and rum cures them.
 Smugglers' caves under the coves lead down to a treasure vault, and a ledger of tasks from RON ends in a victory.
+A broadside that spends powder, a grapnel that hauls a foe in, a swig of rum, and a shakedown that spills a purse at a foe's feet are abilities in `assets/abilities.ron`; the last is the one effect Corsair adds to the engine's seven, in `src/abilities.rs`, and cutthroats throw the grapnel back.
+In the caves the smugglers notice a quiet player rather than seeing it at once, and the rail down the right marks which of them has.
 A message log, a sea chest to equip from, and a world map with a portal picker round it out.
 It is what a game on this engine looks like.
 
@@ -135,7 +136,7 @@ cargo run -p corsair -- --continue   # resume the saved run
 cargo run -p corsair -- --balance    # the spawn table's threat by band
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `f` to fire a pistol at the nearest foe, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `f` to fire a pistol at the nearest foe, `1` to `4` to aim a broadside, a grapnel, a swig or a shakedown, `a` to list them, `x` to look, `p` for the ship's log, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
 
 ### The Hollow Whale, a dungeon delve
 
@@ -144,46 +145,30 @@ Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>`
 `examples/delve` is the Hollow Whale: five floors down a beached leviathan, mouth to heart, with no surface at all.
 No world graph, no streaming, no overworld: each floor is a place built by a chain of engine passes the first time its stairs are taken, and the run is won when the heart warden dies.
 Below the Maw the lights are off: the only light is the brand the player carries, the bile pooled on the floor, and what the bestiary says a beast sheds.
-Two files; `floors.rs` is the whole map builder.
+`floors.rs` is the whole map builder.
+
+It is also where lighting, stealth and abilities meet.
+The brand burns down, and smothering it slips you past a beast that has not yet noticed you; a whaler's torch lies on the first floor to pick up and set down, lit wherever it lies; whalers' lamps burn on every floor; and `v` shows the light on each tile as a digit.
+The delver has five knacks in `assets/abilities.ron`: a fireball, a blink, a mend, a shield bash that asks the slot graph for the shield on its arm, and a drain that refills mana, the one effect the delve adds, in `src/effects.rs`.
+Gut eels spit back.
 
 ```sh
 cargo run -p delve -- --seed 7
 cargo run -p delve -- --seed 7 --floor 3    # start deeper
 ```
 
-### Knacks, five genres of ability
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for stairs, `1` to `5` to aim a knack, `a` to list them, `L` to smother or light the brand, `g` to pick up, `d` to set the torch down, `v` to show light, `x` to look, `p` for the log, `q` to quit.
 
-`examples/knacks` is one arena and five sets of abilities: a fantasy caster, a pirate, a marine, a man-at-arms and a thief.
-All eighteen load into one registry from five RON files that differ in nothing but their words, and `Tab` changes which set the player knows.
-Nothing else about the run changes, because nothing else can: a fireball, a broadside and a smoke bomb are rows of the same table, fired by the same resolver, and mana, powder, power cells, stamina and nerve are one mechanism the engine cannot tell apart.
-`src/effects.rs` holds the five effects the engine does not ship, one per genre, and is the honest half of the claim: everything else is data.
+### Abilities in any genre
 
-```sh
-cargo run -p knacks -- --seed 7 --set pirates
-```
-
-Keys: walk as in the delve, `1` to `4` to aim an ability, `a` to list them with the reasons any cannot be used, `Tab` to change set, `.` to wait, `q` to quit.
-While aiming, the direction keys step the cursor, `Tab` cycles what the ability wants, `Enter` or space fires, and `Esc` puts it away; an ability aimed at yourself fires at once.
-
-### Lamplight, the lighting example
-
-![Lamplight: a dark cave lit by a lantern, a brazier, glowing fungus and a wisp, with remembered passages in cold blue](docs/images/lamplight.png)
-
-`examples/lamplight` is one dark cave and everything that glows in it: a lantern the player lights and douses that burns oil, a brazier that never moves, wisps that drift about with a glow of their own, a torch on the floor to pick up and drop, fungus and still water, and lurkers that see in the dark and are found only when a light reaches them.
-One file, and the whole of turning lighting on is inserting the `Lighting` resource; one `LightSource` component serves the prop, the actors and the items.
-
-```sh
-cargo run -p lamplight -- --seed 7
-```
-
-Keys: walk as in the delve, `L` to light or douse the lantern, `g` to pick up, `d` to drop the torch, `v` to show light as digits, `.` to wait, `q` to quit.
+That abilities are data and serve any genre is a test rather than a game: `crates/rl-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.
 
 ### Pictures of your own
 
-Any of the four photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
+Either game photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
 
 ```sh
-RL_CAPTURE=shot.png RL_CAPTURE_KEYS="j*4 l*6 ." cargo run -p lamplight -- --seed 7
+RL_CAPTURE=shot.png RL_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p delve -- --seed 7
 ```
 
 The window opens above the others without taking focus, and the screen must be unlocked; a frame that comes back black is refused rather than saved.
@@ -198,7 +183,7 @@ The window opens above the others without taking focus, and the screen must be u
 
 ## Documentation
 
-- **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable steps, from a map on screen to an action of your own. Start here. Every step is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
+- **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in ten runnable steps, from a map on screen to an action of your own. Start here. Every step is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
 - `docs/OVERVIEW.md` is the inventory of what exists and what is not built yet, kept current.
 - `docs/PLAN.md` is the design: what was decided, why, and which milestone each piece lands in.
 - `docs/reviews/` holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.

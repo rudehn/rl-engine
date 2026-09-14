@@ -12,6 +12,7 @@
 //!
 //! `cargo run -p delve -- --seed 7`, or `--floor 3` to start deeper.
 
+mod effects;
 mod floors;
 
 use std::sync::Arc;
@@ -22,11 +23,15 @@ use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::capture;
+use rl_engine::rl_rules::ability::Lookup;
 use rl_engine::rl_rules::ai::awareness::{NoticeStats, StealthStats};
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
+use rl_engine::rl_rules::ai::tactics::UseAbility;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
+use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::{AbilityId, SlotId, StatId, StatusId, TagId};
 use serde::Deserialize;
 
 use crate::floors::{FLOORS, Whale, ambient_of, floor_of, map_of, name_of};
@@ -44,6 +49,7 @@ fn main() -> AppExit {
         seed = RunSeed(args[i + 1].parse().expect("seed"));
     }
     let first = args.iter().position(|a| a == "--floor").map(|i| args[i + 1].parse::<u32>().expect("floor").clamp(1, FLOORS)).unwrap_or(1);
+    let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -58,26 +64,135 @@ fn main() -> AppExit {
             .set(ImagePlugin::default_nearest()),
     )
     .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, LightingPlugin))
+    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, StealthPlugin))
+    // The engine's seven effects, and the one the delve adds.
+    .add_engine_effects()
+    .add_effect::<effects::Drain>()
+    .init_resource::<LightOverlay>()
     .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
     .insert_resource(Seed(seed))
     .insert_resource(FirstFloor(first))
-    .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[>] down [<] up [.] wait [q]uit"))
-    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-    .add_systems(Update, note_floor.in_set(ViewSet::Annotate))
+    .insert_resource(MapView::new(screen.map))
+    .add_plugins((
+        VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
+        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
+        LogPanel::new(screen.log),
+        InspectPanel::new(screen.inspect),
+        ScrollbackPanel::new(screen.scrollback),
+        TargetPanel::new(screen.target).hints("[enter] use  [tab] next  [esc] back"),
+        AbilityPanel::new(screen.knacks).title("Knacks").hints("[a] close"),
+    ))
+    .add_systems(Update, (note_floor, show_pools).in_set(ViewSet::Annotate))
     .add_systems(Startup, start)
-    .add_systems(Update, (tend_brand, player_input).chain().in_set(EngineSet::Input))
+    // A screen that is up owns the keys: the knack keys decide that for
+    // themselves, and everything else waits for the stack to be empty.
+    .add_systems(Update, (call_on, (tend_brand, pick_and_drop, toggle_overlay, player_input).chain().run_if(no_modal)).chain().in_set(EngineSet::Input))
     .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
     // A floor fills the moment it is entered, inside the turn.
     .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
-    app.add_plugins(StealthPlugin);
+    .add_systems(Update, (narrate, narrate_knacks).in_set(PresentSet::Narrate));
     app.run()
 }
 
 #[derive(Resource, Clone, Copy)]
 struct Seed(RunSeed);
+
+/// The screen, cut once so the map and every panel agree on it: a rail down
+/// the right for vitals and what is in sight, the log under the map, and the
+/// screens that cover the map while they are up.
+struct Screen {
+    map: Rect,
+    log: Rect,
+    vitals: Rect,
+    nearby: Rect,
+    inspect: Rect,
+    scrollback: Rect,
+    target: Rect,
+    knacks: Rect,
+}
+
+impl Screen {
+    fn new() -> Self {
+        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        let (map, log) = panel::split_bottom(left, LOG_ROWS);
+        let (vitals, nearby) = panel::split_top(rail, 11);
+        Self {
+            map,
+            log,
+            vitals,
+            nearby,
+            inspect: Rect::new(map.x + 2, map.bottom() - 11, map.width.min(50), 10),
+            scrollback: map.inflate(-2),
+            target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
+            knacks: Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14),
+        }
+    }
+}
+
+/// Every registry the delve's content names, and the lookup its abilities
+/// are authored against.
+///
+/// One struct for every table rather than a lookup per file, so an ability
+/// naming a status and a damage kind resolves both the same way.
+#[derive(Resource, Clone)]
+struct Rules {
+    kinds: Registry<DamageKind>,
+    stats: Registry<StatDef>,
+    statuses: Registry<StatusDef>,
+    tags: Registry<TagDef>,
+    slots: Registry<SlotDef>,
+}
+
+impl Rules {
+    fn new() -> Self {
+        let kinds = Registry::from_defs(vec![
+            DamageKind::new("bite"),
+            DamageKind::new("blade"),
+            DamageKind::new("blunt"),
+            DamageKind::new("bile"),
+            DamageKind::new("fire").unarmored(),
+            DamageKind::new("care").unarmored(),
+        ])
+        .unwrap();
+        let fire = kinds.expect("fire").raw();
+        Self {
+            stats: Registry::from_defs(vec![StatDef::new("mana", 30)]).unwrap(),
+            statuses: Registry::from_defs(vec![
+                StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
+                StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
+            ])
+            .unwrap(),
+            tags: Registry::from_defs(vec![TagDef::new("shield")]).unwrap(),
+            slots: Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap(),
+            kinds,
+        }
+    }
+}
+
+impl Lookup for Rules {
+    fn stat(&self, n: &str) -> Option<StatId> {
+        self.stats.id(n)
+    }
+    fn status(&self, n: &str) -> Option<StatusId> {
+        self.statuses.id(n)
+    }
+    fn tag(&self, n: &str) -> Option<TagId> {
+        self.tags.id(n)
+    }
+    fn slot(&self, n: &str) -> Option<SlotId> {
+        self.slots.id(n)
+    }
+    fn damage(&self, n: &str) -> Option<DamageKindId> {
+        self.kinds.id(n)
+    }
+}
+
+/// The player, and only while it holds the turn.
+type PlayerHolding = (With<Player>, With<MyTurn>);
+
+/// Marks the torch, so `d` knows which carried thing to set down.
+#[derive(Component, Clone, Copy)]
+struct Torch;
 
 /// The floor the run starts on.
 #[derive(Resource, Clone, Copy)]
@@ -85,6 +200,14 @@ struct FirstFloor(u32);
 
 /// What the player's brand sheds: a whale-oil flame.
 const BRAND: LightSource = LightSource::new(200, 8, Rgb::new(255, 190, 120)).flickering(60);
+/// The light a torch or a whaler's lamp sheds.
+const FLAME: Rgb = Rgb::new(255, 170, 90);
+/// Columns given to the rail down the right.
+const RAIL: i32 = 26;
+/// The delver's knacks and the one a beast has, compiled in.
+const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
+/// What the player knows, in the order `1` to `5` aim them.
+const KNACKS: [&str; 5] = ["fireball", "blink", "mend", "drain", "shield bash"];
 
 /// One kind of beast, as authored.
 #[derive(Debug, Clone, Deserialize)]
@@ -105,6 +228,8 @@ struct BeastDef {
     dark_sight: Option<i32>,
     #[serde(default)]
     notice: Option<NoticeStats>,
+    #[serde(default)]
+    abilities: Vec<String>,
 }
 
 impl Named for BeastDef {
@@ -125,6 +250,8 @@ struct Beasts {
     brains: Vec<Arc<Brain<Entity>>>,
     bite: rl_engine::rl_rules::damage::DamageKindId,
     whale: rl_engine::rl_rules::FactionId,
+    /// What each kind knows, resolved against the built abilities.
+    grants: Vec<Vec<AbilityId>>,
 }
 
 impl Beasts {
@@ -138,9 +265,13 @@ impl Beasts {
                 Speed(d.speed),
                 Mind(self.brains[id.index()].clone()),
                 Kind(id),
+                Name::new(d.name.clone()),
                 Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5),
             ),
         ));
+        if let Some(grants) = self.grants.get(id.index()).filter(|g| !g.is_empty()) {
+            beast.insert((Known::new(), Grants(grants.clone()), Cooldowns::new()));
+        }
         if let Some(glow) = d.glow {
             beast.insert(glow);
         }
@@ -162,9 +293,15 @@ fn start(
     mut warps: MessageWriter<WarpRequest>,
     mut log: ResMut<MessageLog>,
     mut next: ResMut<NextState<EngineState>>,
+    effect_kinds: Res<EffectKinds>,
 ) {
     let whale = Whale::new(seed.0);
-    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("blade")]).unwrap();
+    let rules = Rules::new();
+    let kinds = rules.kinds.clone();
+    // The knacks, built against the rules and the effects registered while
+    // the app was built, so a file naming one nobody added fails here.
+    let authored = rl_engine::rl_rules::ability::load(ABILITIES_RON, &rules).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
+    let abilities = Abilities::build(authored, &effect_kinds, &rules).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
     let facs = Registry::from_defs(vec![FactionDef { name: "you".into() }, FactionDef { name: "whale".into() }]).unwrap();
     let (you, whale_side) = (facs.expect("you"), facs.expect("whale"));
     let mut factions = Factions::new(&facs);
@@ -175,15 +312,21 @@ fn start(
     for (id, b) in defs.iter() {
         let (lo, hi, w, gmin, gmax) = b.spawn;
         table.push(BandedEntry::new(id).bands(lo, hi).weight(w).group(gmin, gmax));
-        let mut brain = Brain::new().then(MeleeAdjacent);
+        // A beast that knows an ability leads with it when one is worth firing.
+        let mut brain = if b.abilities.is_empty() { Brain::new() } else { Brain::new().then(UseAbility { chance_pct: 40 }) }.then(MeleeAdjacent);
         if b.flee_at > 0 {
             brain = brain.then(FleeWhenHurt { at_pct: b.flee_at });
         }
         // Hunt what it sees, search where it last saw you, then drift.
         brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 30 })));
     }
-    commands.insert_resource(Beasts { defs, table, brains, bite: kinds.expect("bite"), whale: whale_side });
+    let grants = defs.iter().map(|(_, b)| b.abilities.iter().map(|n| abilities.expect(n)).collect()).collect();
+    commands.insert_resource(Beasts { defs, table, brains, bite: kinds.expect("bite"), whale: whale_side, grants });
     commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
+    commands.insert_resource(StatRules(rules.stats.clone()));
+    commands.insert_resource(StatusRules { defs: rules.statuses.clone() });
+    commands.insert_resource(Slots(rules.slots.clone()));
+    commands.insert_resource(AbilityRng::for_run(seed.0));
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(CombatRng::for_run(seed.0));
     commands.insert_resource(whale.appearance());
@@ -193,6 +336,23 @@ fn start(
     // The lights go off; each floor sets its own ambient as it is entered.
     commands.insert_resource(Lighting::dark());
 
+    // A shield on the arm, which is what shield bash asks the slot graph for.
+    let off_hand = rules.slots.expect("off hand");
+    let shield = commands
+        .spawn((
+            Item,
+            Name::new("a whalebone shield"),
+            Tagged(vec![rules.tags.expect("shield")]),
+            Wearable(EquipShape::in_slot(off_hand)),
+            Glyph::new(']', Color::srgb(0.9, 0.88, 0.8)),
+        ))
+        .id();
+    let mut worn = Equipment::with_slot_count(rules.slots.len());
+    worn.equip(shield, &EquipShape::in_slot(off_hand)).expect("one shield, one arm");
+    let mana = rules.stats.expect("mana");
+    let mut pools = Pools::new();
+    pools.set(mana, rules.stats.get(mana).base);
+    let knacks: Vec<AbilityId> = KNACKS.iter().map(|n| abilities.expect(n)).collect();
     let player = commands
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(30), RevealsMap, Speed(100)),
@@ -202,17 +362,28 @@ fn start(
                 Faction(you),
                 MeleeAttack { kind: kinds.expect("blade"), dice: DiceRoll::new(1, 6) },
                 BRAND,
+                // A brand burns down while it is lit, and keeps what is left
+                // while it is smothered.
+                Fuel(900),
                 // Quiet, and a little subtle: enough that a beast has to be
                 // close, or the brand has to be lit, before it is sure.
                 Stealth(StealthStats { quiet: 1, subtlety: 10 }),
+                Name::new("you"),
                 Glyph::new('@', Color::WHITE).on_layer(10),
             ),
+            (StatBlock::default(), Afflicted::default(), pools, Cooldowns::new(), Known::new(), Grants(knacks)),
+            (Inventory { items: vec![shield] }, Equipped(worn)),
         ))
         .id();
+    commands.insert_resource(abilities);
+    commands.insert_resource(rules);
     // No surface: the first floor is the first place, and the run starts in it.
     warps.write(WarpRequest::into_place(player, map_of(first.map(|f| f.0).unwrap_or(1))));
     log.push(format!("Seed {}. The whale's jaw is propped open with a mast.", seed.0.0), Tones::NOTICE, 0);
     log.push("You light a brand and climb in.", Tones::NOTICE, 0);
+    // Two lines, because one ran past the edge of the log.
+    log.push("1-5 knacks  a list  x look  p log", Tones::MUTED, 0);
+    log.push("g get  d drop torch  L brand  v light", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 
@@ -266,6 +437,32 @@ fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntere
         // Bile glows: a faint steady source on every pooled tile.
         for (p, _) in place.terrain.iter().filter(|(_, t)| *t == bile.0) {
             commands.spawn((Position(p), LightSource::new(70, 2, Rgb::new(160, 255, 70))));
+        }
+        // A whaler's lamp, left burning by whoever came before: a fixture, so
+        // it lives in the static layer and never moves.
+        let mut kit = seed.0.rng(SeedDomain::new(b"whale.lamps"), floor as u64);
+        if let Some(at) = spot_between(place.terrain.bounds(), map, ev.entry, 6, 14, &mut kit) {
+            commands.spawn((
+                Position(at),
+                Name::new("a whaler's lamp"),
+                LightSource::new(235, 9, FLAME).flickering(150),
+                Glyph::new('*', Color::srgb(1.0, 0.75, 0.3)).on_layer(1),
+            ));
+        }
+        // On the first floor, a torch to carry: lit where it lies, shed from
+        // whoever picks it up, and lit on the floor again when set down.
+        if floor == 1
+            && let Some(at) = spot_between(place.terrain.bounds(), map, ev.entry, 2, 5, &mut kit)
+        {
+            commands.spawn((
+                Position(at),
+                Item,
+                Torch,
+                Name::new("a whaler's torch"),
+                LightSource::new(190, 6, FLAME).flickering(120),
+                Fuel(600),
+                Glyph::new('!', Color::srgb(1.0, 0.7, 0.3)).on_layer(2),
+            ));
         }
         // The warden stands where the heart's prefab marked it.
         for spot in place.spots.iter().filter(|s| s.tag == 'W' as u32) {
@@ -351,7 +548,7 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, play
 }
 
 /// The player holding the turn, and whether its brand is lit.
-type BrandBearer = (Entity, Has<LightSource>);
+type BrandBearer = (Entity, Has<LightSource>, Option<&'static Fuel>);
 
 /// `L` smothers the brand or lights it again, and spends the turn.
 ///
@@ -370,7 +567,11 @@ fn tend_brand(
     if !(shifted && keys.just_pressed(KeyCode::KeyL)) {
         return;
     }
-    let Ok((entity, lit)) = player.single() else { return };
+    let Ok((entity, lit, fuel)) = player.single() else { return };
+    if !lit && fuel.is_some_and(|f| f.0 == 0) {
+        log.bad("The brand is spent. There is nothing left in it to light.", turns.turn_number());
+        return;
+    }
     if lit {
         commands.entity(entity).remove::<LightSource>();
         log.muted("You smother the brand. The dark closes in, and hides you.", turns.turn_number());
@@ -379,6 +580,116 @@ fn tend_brand(
         log.notice("The brand catches again.", turns.turn_number());
     }
     waits.write(Intent::new(entity, Wait));
+}
+
+/// A walkable tile between `min` and `max` steps from `entry`, or `None` when
+/// a floor has no such tile after a fair number of tries.
+fn spot_between(bounds: Rect, map: &WorldMap, entry: Point, min: i32, max: i32, rng: &mut impl Rng) -> Option<Point> {
+    (0..400)
+        .map(|_| Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom())))
+        .find(|p| map.is_walkable(*p) && (min..=max).contains(&geometry::chebyshev(*p, entry)))
+}
+
+/// `g` picks up whatever lies here; `d` sets the torch down, where it goes on
+/// lighting the floor.
+fn pick_and_drop(
+    keys: Res<ButtonInput<KeyCode>>,
+    player: Query<(Entity, &Inventory), PlayerHolding>,
+    torches: Query<(), With<Torch>>,
+    mut picks: MessageWriter<Intent<PickUp>>,
+    mut drops: MessageWriter<Intent<DropItem>>,
+) {
+    let Ok((me, bag)) = player.single() else { return };
+    if keys.just_pressed(KeyCode::KeyG) {
+        picks.write(Intent::new(me, PickUp));
+    } else if keys.just_pressed(KeyCode::KeyD)
+        && let Some(torch) = bag.items.iter().copied().find(|i| torches.contains(*i))
+    {
+        drops.write(Intent::new(me, DropItem(torch)));
+    }
+}
+
+/// `v` draws the light on each tile as a digit, which is how a dark floor is
+/// read when the shading alone is too subtle to judge.
+fn toggle_overlay(keys: Res<ButtonInput<KeyCode>>, mut overlay: ResMut<LightOverlay>) {
+    if keys.just_pressed(KeyCode::KeyV) {
+        overlay.0 = !overlay.0;
+    }
+}
+
+/// `1` to `5` aim the knacks in order; `a` lists them with the reasons any is
+/// out of reach. A key writes `AimAt` and stops: the cursor, the preview and
+/// the use are the engine's.
+fn call_on(keys: Res<ButtonInput<KeyCode>>, mut modals: ResMut<Modals>, player: Query<(Entity, &Known), PlayerHolding>, mut aims: MessageWriter<AimAt>) {
+    const SLOTS: [KeyCode; 5] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5];
+    let list = ability_modal(&modals);
+    if keys.just_pressed(KeyCode::KeyA) && (modals.is_top(list) || !modals.any_open()) {
+        modals.toggle(list);
+        return;
+    }
+    if modals.any_open() {
+        return;
+    }
+    let Ok((user, known)) = player.single() else { return };
+    if let Some(slot) = SLOTS.iter().position(|k| keys.just_pressed(*k))
+        && let Some((ability, _)) = known.iter().nth(slot)
+    {
+        aims.write(AimAt { user, ability });
+    }
+}
+
+/// Knacks used and refused, and a brand or a torch going out.
+fn narrate_knacks(
+    mut used: MessageReader<AbilityEvent>,
+    mut lights: MessageReader<LightEvent>,
+    abilities: Res<Abilities>,
+    turns: Res<Turns>,
+    mut log: ResMut<MessageLog>,
+    names: Query<(&Name, Has<Player>)>,
+) {
+    let turn = turns.turn_number();
+    let named = |e: Entity| names.get(e).map(|(n, _)| n.as_str().to_string()).unwrap_or_else(|_| "something".into());
+    let is_you = |e: Entity| names.get(e).is_ok_and(|(_, you)| you);
+    for ev in used.read() {
+        match ev {
+            AbilityEvent::Used { user, ability, targets, .. } => {
+                let what = &abilities.get(*ability).name;
+                let (who, verb) = if is_you(*user) { ("You".to_string(), "use") } else { (upper_first(&named(*user)), "uses") };
+                let line = match targets.as_slice() {
+                    [] => format!("{who} {verb} {what}."),
+                    [one] => format!("{who} {verb} {what} on {}.", named(*one)),
+                    many => format!("{who} {verb} {what}, catching {}.", many.len()),
+                };
+                log.push(line, if is_you(*user) { Tones::TEXT } else { Tones::BAD }, turn);
+            }
+            AbilityEvent::Refused { user, ability, .. } if is_you(*user) => {
+                log.bad(format!("You cannot use {} right now; `a` says why.", abilities.get(*ability).name), turn);
+            }
+            AbilityEvent::Refused { .. } => {}
+        }
+    }
+    for ev in lights.read() {
+        let LightEvent::BurntOut { entity } = *ev;
+        let what = if is_you(entity) { "Your brand".to_string() } else { upper_first(&named(entity)) };
+        log.bad(format!("{what} gutters and goes out."), turn);
+    }
+}
+
+fn upper_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
+/// The player's pools as bars beside health: a pool is a quantity with a
+/// maximum, so the panel draws it without learning what mana is.
+fn show_pools(mut vitals: ResMut<VitalsView>, rules: Res<StatRules>, player: Query<(&Pools, &StatBlock), With<Player>>) {
+    let Ok((pools, stats)) = player.single() else { return };
+    for (id, def) in rules.0.iter() {
+        vitals.bars.push(Bar::new(def.name.clone(), pools.get(id), stats.0.value(id, &rules.0), Tones::NOTICE));
+    }
 }
 
 /// Hits, deaths, and the end of the run either way.
@@ -432,9 +743,12 @@ fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<Deat
     }
 }
 
-fn note_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>) {
+fn note_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>, lighting: Res<Lighting>, player: Query<&Position, With<Player>>) {
     let floor = floor_of(map.current());
     vitals.facets.push(facets.facet("floor", format!("floor {floor} of {FLOORS}: {}", name_of(floor))));
+    if let Ok(pos) = player.single() {
+        vitals.facets.push(facets.facet("light", format!("light here {}", lighting.at(pos.0).intensity)));
+    }
 }
 
 #[cfg(test)]
@@ -444,7 +758,8 @@ mod tests {
     /// A headless whale: the engine plugins and the delve's own systems.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, LightingPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin));
+        app.add_engine_effects().add_effect::<effects::Drain>();
         app.insert_resource(Seed(RunSeed(seed)))
             .init_resource::<MessageLog>()
             .add_systems(Startup, start)
@@ -479,5 +794,131 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, GoThrough));
         app.update();
         assert_eq!(app.world().resource::<WorldMap>().current(), map_of(FLOORS - 1));
+    }
+
+    /// A run settled into the Maw with the player holding its turn.
+    fn settled(seed: u64) -> (App, Entity) {
+        let mut app = headless(seed);
+        for _ in 0..3 {
+            app.update();
+        }
+        let player = {
+            let w = app.world_mut();
+            let mut q = w.query_filtered::<Entity, With<Player>>();
+            q.single(w).unwrap()
+        };
+        (app, player)
+    }
+
+    /// A beast of `kind` on a free tile beside the player.
+    fn beside(app: &mut App, player: Entity, kind: &str) -> Entity {
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let free = Direction::ALL
+            .into_iter()
+            .map(|d| at + d.offset())
+            .find(|p| app.world().resource::<WorldMap>().is_walkable(*p) && !app.world().resource::<Occupancy>().is_occupied(*p))
+            .expect("room beside the player");
+        let beast = app.world_mut().resource_scope(|world: &mut World, beasts: Mut<Beasts>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            let e = beasts.spawn(&mut commands, beasts.defs.expect(kind), free);
+            queue.apply(world);
+            e
+        });
+        app.update();
+        beast
+    }
+
+    fn use_knack(app: &mut App, player: Entity, name: &str, aim: Point) {
+        let ability = app.world().resource::<Abilities>().expect(name);
+        app.world_mut().write_message(Intent::new(player, Use { ability, aim }));
+        app.update();
+    }
+
+    #[test]
+    fn drain_hurts_what_it_hits_and_pours_mana_back_into_the_pool() {
+        let (mut app, player) = settled(7);
+        let mana = app.world().resource::<Rules>().stats.expect("mana");
+        app.world_mut().get_mut::<Pools>(player).unwrap().set(mana, 10);
+        let crab = beside(&mut app, player, "stomach crab");
+        let at = app.world().get::<Position>(crab).unwrap().0;
+
+        use_knack(&mut app, player, "drain", at);
+        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < 9), "fire past a crab's armor always lands");
+        assert!(app.world().get::<Pools>(player).unwrap().get(mana) > 10, "and the mana came back");
+    }
+
+    /// A requirement that reads the slot graph: with the shield on the arm
+    /// the bash spends the turn; without it the gate refuses, for free.
+    #[test]
+    fn shield_bash_needs_the_shield_the_slot_graph_says_is_on_the_arm() {
+        let (mut armed, player) = settled(7);
+        let crab = beside(&mut armed, player, "stomach crab");
+        let at = armed.world().get::<Position>(crab).unwrap().0;
+        let clock = armed.world().resource::<Turns>().now();
+        use_knack(&mut armed, player, "shield bash", at);
+        assert!(armed.world().resource::<Turns>().now() > clock, "with the shield, the bash spent the turn");
+
+        let (mut bare, player) = settled(7);
+        let crab = beside(&mut bare, player, "stomach crab");
+        let at = bare.world().get::<Position>(crab).unwrap().0;
+        let worn: Vec<Entity> = bare.world().get::<Equipped>(player).unwrap().0.worn().map(|(_, i)| i).collect();
+        for item in worn {
+            bare.world_mut().get_mut::<Equipped>(player).unwrap().0.unequip(item);
+        }
+        let clock = bare.world().resource::<Turns>().now();
+        use_knack(&mut bare, player, "shield bash", at);
+        assert_eq!(bare.world().resource::<Turns>().now(), clock, "without it, refused and no time passed");
+    }
+
+    #[test]
+    fn a_carried_torch_lights_its_bearer_and_a_dropped_one_lights_the_floor() {
+        let (mut app, player) = settled(7);
+        let torch = {
+            let w = app.world_mut();
+            let mut q = w.query_filtered::<Entity, With<Torch>>();
+            q.single(w).expect("a torch on the first floor")
+        };
+        let at = app.world().get::<Position>(torch).unwrap().0;
+        // Smother the brand, so the only flame near the player is the torch.
+        app.world_mut().entity_mut(player).remove::<LightSource>();
+        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(1), arrive: Arrive::At(at) } });
+        app.update();
+        let ambient = ambient_of(1).intensity;
+
+        app.world_mut().write_message(Intent::new(player, PickUp));
+        app.update();
+        app.update();
+        assert!(app.world().get::<Inventory>(player).unwrap().contains(torch), "picked up");
+        assert!(app.world().get::<Position>(torch).is_none(), "and off the floor");
+        let here = app.world().get::<Position>(player).unwrap().0;
+        assert!(app.world().resource::<Lighting>().at(here).intensity > ambient, "the bearer is lit by what it carries");
+
+        app.world_mut().write_message(Intent::new(player, DropItem(torch)));
+        app.update();
+        app.update();
+        assert_eq!(app.world().get::<Position>(torch).map(|p| p.0), Some(here), "set down where the player stands");
+        assert!(app.world().get::<LightSource>(torch).is_some(), "and still burning on the floor");
+    }
+
+    #[test]
+    fn a_brand_that_runs_dry_goes_out_and_will_not_light_again() {
+        use bevy::ecs::system::RunSystemOnce;
+        let (mut app, player) = settled(7);
+        app.world_mut().entity_mut(player).insert(Fuel(2));
+        for _ in 0..3 {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+        assert!(app.world().get::<LightSource>(player).is_none(), "burnt out");
+        assert_eq!(app.world().get::<Fuel>(player), Some(&Fuel(0)));
+
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::ShiftLeft);
+        keys.press(KeyCode::KeyL);
+        app.insert_resource(keys);
+        app.world_mut().run_system_once(tend_brand).expect("the brand key ran");
+        app.update();
+        assert!(app.world().get::<LightSource>(player).is_none(), "a spent brand does not catch again");
     }
 }

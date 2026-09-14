@@ -1,0 +1,53 @@
+// Corsair's abilities: what a pirate calls on besides a cutlass.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:      unique; the player knows the first four in the order `1` to `4` aim them,
+//              and a monster names the ones it knows in `monsters.ron`
+//   aim:       Foe (default) | Ally | SelfOnly | Ground | Anyone
+//   mode:      Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
+//              Beam(range:) | Cone(length:)
+//   sight:     optional; whether the aim must be a cell the user can see (default true)
+//   requires:  optional; Has(status) | Lacks(status) | Wielding(tag) |
+//              InSlot(slot, tag) | Above(stat, n)
+//   costs:     optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n),
+//              where a tag is one from `items.ron`, "powder" or "rum"
+//   time:      optional; hundredths of a step the turn costs (default 100)
+//   cooldown:  optional; hundredths before it may be used again, from the
+//              moment of use (default 0)
+//   effects:   each (kind:, chance:, args:); kind is one the engine ships
+//              (Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport) or
+//              Corsair's own, Plunder, which spills a foe's purse at its feet
+#![enable(implicit_some)]
+[
+    (
+        name: "broadside",
+        mode: Cone(length: 5),
+        costs: [Item("powder", 1)],
+        cooldown: 400,
+        effects: [
+            (kind: "Harm", args: (kind: "pistol", roll: "2d6")),
+            (kind: "Inflict", chance: 40, args: (status: "deafened", turns: 3)),
+        ],
+    ),
+    (
+        name: "grapnel",
+        mode: Bolt(range: 7),
+        cooldown: 300,
+        effects: [(kind: "Pull", args: (cells: 3))],
+    ),
+    (
+        name: "swig",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Item("rum", 1)],
+        effects: [
+            (kind: "Mend", args: (kind: "care", roll: "2d4")),
+            (kind: "Cleanse", args: (status: "bleeding")),
+        ],
+    ),
+    (
+        name: "plunder",
+        mode: Adjacent,
+        effects: [(kind: "Plunder")],
+    ),
+]

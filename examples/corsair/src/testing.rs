@@ -13,7 +13,8 @@ use rl_engine::rl_ui::MessageLog;
 /// A run with no window, seeded and pointed at `dir` for its saves.
 pub fn headless(seed: RunSeed, resume: bool, dir: &std::path::Path) -> App {
     let mut app = rl_engine::rl_bevy::plugin::headless_app();
-    app.add_plugins((FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin));
+    app.add_plugins((FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin));
+    app.add_engine_effects().add_effect::<crate::abilities::Plunder>();
     app.insert_resource(crate::StartSeed { seed, regions: (24, 24), resume })
         .insert_resource(Saves(Box::new(FileBackend::new(dir))))
         .init_resource::<MessageLog>()

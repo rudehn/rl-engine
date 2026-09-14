@@ -11,4 +11,5 @@
     (name: "venom", ticks: ("bite", 1), badge: 'v'),
     (name: "bleeding", stacking: Extend, ticks: ("claw", 1), badge: 'b'),
     (name: "hearty", modifies: [("armor", Add(1))], badge: 'h'),
+    (name: "deafened", badge: 'd'),
 ]

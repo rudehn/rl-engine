@@ -15,7 +15,8 @@
 //              moment of use (default 0)
 //   effects:   each (kind:, chance:, args:); kind is any effect registered by
 //              the engine (Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport)
-//              or by this game (Drain, Plunder, Hack, Banner, Smoke)
+//              or by the game loading it (here the stubs in `genres.rs`: Drain,
+//              Plunder, Hack, Banner, Smoke)
 #![enable(implicit_some)]
 [
     (

@@ -9,9 +9,11 @@ use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
+use rl_engine::rl_rules::AbilityId;
 use rl_engine::rl_rules::Brain;
 use rl_engine::rl_rules::ai::awareness::NoticeStats;
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
+use rl_engine::rl_rules::ai::tactics::UseAbility;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
@@ -48,6 +50,10 @@ pub struct MonsterDef {
     pub lantern: Option<LightSource>,
     #[serde(default)]
     pub notice: Option<NoticeStats>,
+    #[serde(default)]
+    pub abilities: Vec<String>,
+    #[serde(default)]
+    pub purse: Option<(u32, u32)>,
 }
 
 impl Named for MonsterDef {
@@ -86,6 +92,9 @@ pub struct Bestiary {
     seed: RunSeed,
     home: Point,
     spawned: BTreeSet<Point>,
+    /// What each kind knows, resolved against the built abilities once they
+    /// exist. Empty until then, and for a kind that knows nothing.
+    grants: Vec<Vec<AbilityId>>,
 }
 
 impl Bestiary {
@@ -98,6 +107,8 @@ impl Bestiary {
             DamageKind::new("claw"),
             DamageKind::new("fist"),
             DamageKind::new("fire"),
+            // What a swig mends with: nothing in the way of it.
+            DamageKind::new("care").unarmored(),
         ])
         .unwrap();
         let factions = Registry::from_defs(vec![
@@ -137,14 +148,16 @@ impl Bestiary {
         for (id, m) in defs.iter() {
             let (lo, hi, w, gmin, gmax) = m.spawn;
             table.push(BandedEntry::new(id).bands(lo, hi).weight(w).group(gmin, gmax));
-            let mut brain = Brain::new().then(MeleeAdjacent);
+            // A kind that knows an ability leads with it when one is worth
+            // firing, and fights as it would without otherwise.
+            let mut brain = if m.abilities.is_empty() { Brain::new() } else { Brain::new().then(UseAbility { chance_pct: 35 }) }.then(MeleeAdjacent);
             if m.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: m.flee_at });
             }
             brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: m.wander })));
         }
         let rules = CombatRules { kinds: kinds.clone(), factions: relations };
-        (Self { defs, kinds, factions, table, brains, seed, home, spawned: BTreeSet::new() }, rules)
+        (Self { defs, kinds, factions, table, brains, seed, home, spawned: BTreeSet::new(), grants: Vec::new() }, rules)
     }
 }
 
@@ -174,10 +187,19 @@ impl Bestiary {
         e
     }
 
+    /// Resolves each kind's ability names against the built registry.
+    ///
+    /// # Panics
+    /// Panics naming the ability, when `monsters.ron` names one
+    /// `abilities.ron` does not have.
+    pub fn resolve_abilities(&mut self, abilities: &Abilities) {
+        self.grants = self.defs.iter().map(|(_, m)| m.abilities.iter().map(|n| abilities.expect(n)).collect()).collect();
+    }
+
     /// Spawns one `id` standing at `p` on the current map.
     pub fn spawn(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
         let m = self.defs.get(id);
-        commands
+        let e = commands
             .spawn((
                 Actor,
                 Blocks,
@@ -196,7 +218,18 @@ impl Bestiary {
                 Afflicted::default(),
                 Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
             ))
-            .id()
+            .id();
+        if let Some(grants) = self.grants.get(id.index()).filter(|g| !g.is_empty()) {
+            commands.entity(e).insert((Known::new(), Grants(grants.clone()), Cooldowns::new()));
+        }
+        if let Some((min, max)) = m.purse {
+            // From the position rather than a stream, so a monster restored
+            // from a save carries what it spawned with.
+            let span = (max.max(min) - min + 1) as u64;
+            let coin = min + (rl_engine::rl_core::seed::position_hash(self.seed.0, p.x, p.y) % span) as u32;
+            commands.entity(e).insert(crate::abilities::Purse(coin));
+        }
+        e
     }
 }
 

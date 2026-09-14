@@ -127,6 +127,12 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `rl_bevy::Watchers` answers who is watching whom by the rule the minds act on, and `VitalsView::seen` and `Row::aware` both read it, so the rail marks the monster that has seen you whether or not it was ever authored to notice.
   Reproduced first as a Corsair test through the real wiring.
   Nate, 2026-09-13: "corsair shows hidden while the player is being attacked."
+- 2026-09-13: two example games, and every mechanic in one of them.
+  Corsair is the open world and the delve the dungeon; Lamplight and Knacks are gone, their mechanics moved into the games they fit.
+  The delve gains Lamplight's: a brand that burns `Fuel` and will not relight when spent, a torch to carry and set down, a whaler's lamp on every floor, `v` for light as digits; and five knacks from Knacks' fantasy and medieval sets with `Drain` as its own effect, a mana pool drawn as a bar, a whalebone shield the bash asks the slot graph for, gut eels that spit, and a rail showing who has noticed you.
+  Corsair gains the pirates set: a broadside on powder, a grapnel cutthroats throw back, a swig of rum, and `Plunder`, which spills a foe's purse at its feet; restored runs keep what the player knows, and now its name and stealth too, which the stealth slice had put only on a fresh player.
+  The claim that abilities serve any genre became `crates/rl-bevy/tests/genres.rs`: the five sets load into one registry and build against one set of effects, and a missing effect is refused by name.
+  Nate, 2026-09-13: "consolidate the example games. 1 open world and 1 dungeon delving. Add game mechanic examples into those."
 - Next: the rest of the deferred pieces (throwing, a character sheet, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

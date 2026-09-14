@@ -402,6 +402,7 @@ The delve's warden gets a breath weapon and stops being a sack of health.
 A fourth example, `examples/knacks`: one small map, five ability sets in five RON files, a key to switch between them, and one game effect per genre that the engine does not ship.
 All five load into one registry, which is sharper than the plan: a fireball and a smoke bomb are two rows of one table, and switching sets is a change of grants and nothing else.
 It is the test that the seams are right, in the same way Corsair is, and it is what makes the answer to "will this work for my game" a command rather than an argument.
+Folded on 2026-09-13: the pirates set went to Corsair with `Plunder` spilling a purse rather than moving a coin, the fantasy and medieval sets to the delve with `Drain`, and the claim that five genres share one registry became `crates/rl-bevy/tests/genres.rs`.
 
 The remaining engine effects - `Shove`, `Pull`, `Kindle`, `Summon`, `Grant` - land wherever the phase that needs them does.
 
