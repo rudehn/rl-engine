@@ -599,7 +599,7 @@ fn reasons(why: &[Blocked]) -> String {
             Blocked::Cooling { .. } => "not ready yet",
             Blocked::Cannot(_) => "nothing left to spend",
             Blocked::Needs(_) => "something is missing",
-            Blocked::NoTarget => "nothing in sight",
+            Blocked::NoTarget => "nothing to aim at",
         })
         .collect();
     words.join(", ")
@@ -881,5 +881,64 @@ mod tests {
         press(&mut app, KeyCode::Escape);
         press(&mut app, KeyCode::ArrowUp);
         assert_eq!(app.world().get::<Position>(you).expect("a position").0, stood.offset(0, -1), "and the keys came back");
+    }
+
+    /// An ability aimed at allies counts its user as one, which is what
+    /// `Aim::Ally` promises: a hurt marine alone in the arena sprays
+    /// themself, the banner says so before the turn is spent, and the
+    /// spray mends.
+    #[test]
+    fn a_spray_aimed_at_allies_mends_the_hurt_user() {
+        let mut app = headless(2);
+        let you = player(&mut app);
+        app.world_mut().get_mut::<Health>(you).expect("health").hp = 20;
+        app.update();
+        let at = app.world().get::<Position>(you).expect("a position").0;
+
+        // `3` is medspray, the third of the sci-fi set.
+        press(&mut app, KeyCode::Digit3);
+        let view = app.world().resource::<TargetView>();
+        assert!(view.aiming(), "the cursor opened");
+        assert_eq!(view.cursor, at, "on the only hurt ally in sight, which is you");
+        let named: Vec<&str> = view.targets.iter().map(|r| r.label.as_str()).collect();
+        assert_eq!(named, vec!["you"], "and the banner names you");
+
+        press(&mut app, KeyCode::Enter);
+        assert!(app.world().get::<Health>(you).expect("health").hp > 20, "and the spray mended you");
+    }
+
+    /// What the banner refuses, the resolver refuses: a fireball pointed
+    /// at the caster's own feet has nowhere to fly, reads as refused, and
+    /// costs nothing when fired anyway.
+    #[test]
+    fn an_aim_the_banner_refuses_costs_nothing_when_fired() {
+        let mut app = headless(0);
+        let you = player(&mut app);
+        let mana = app.world().resource::<Content>().stats.expect("mana");
+        let at = app.world().get::<Position>(you).expect("a position").0;
+
+        // `1` is the fireball; put the cursor back on the caster.
+        press(&mut app, KeyCode::Digit1);
+        app.world_mut().resource_mut::<TargetView>().cursor = at;
+        app.update();
+        let view = app.world().resource::<TargetView>();
+        assert!(view.aiming());
+        assert!(!view.legal, "nowhere to fly, and it says so: {:?}", view.why);
+
+        let before = app.world().get::<Pools>(you).expect("pools").get(mana);
+        let clock = app.world().resource::<Turns>().now();
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.world().get::<Pools>(you).expect("pools").get(mana), before, "refused, as the banner said, so nothing was spent");
+        assert_eq!(app.world().resource::<Turns>().now(), clock, "and no time passed");
+    }
+
+    /// The plainest key there is: a wait spends a turn and opens no screen.
+    #[test]
+    fn the_wait_key_spends_a_turn_and_opens_no_screen() {
+        let mut app = headless(0);
+        let clock = app.world().resource::<Turns>().now();
+        press(&mut app, KeyCode::Period);
+        assert!(!app.world().resource::<Modals>().any_open(), "no screen opened");
+        assert!(app.world().resource::<Turns>().now() > clock, "and the turn was spent");
     }
 }

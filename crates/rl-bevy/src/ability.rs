@@ -26,16 +26,15 @@ use rand::Rng;
 use rand::rngs::StdRng;
 use rl_core::{Point, RunSeed, SeedDomain};
 use rl_grid::{Footprint, footprint};
-use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Lookup, Purse, RawValue, Usable, blocked};
-use rl_rules::{Registry, StatId, Statuses, TagId};
+use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Lookup, Purse, RawValue, Usable, aim_blocked, blocked};
+use rl_rules::{Registry, Relation, StatId, Statuses, TagId};
 
-use crate::combat::{CombatRules, Faction, Health};
-use crate::components::{Blocks, MyTurn, Player, Position, Viewshed};
+use crate::combat::{CombatRules, Dead, Faction, Health};
+use crate::components::{Blocks, MyTurn, Position, Viewshed};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
-use crate::state::EngineState;
 use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules};
-use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Turns};
+use crate::turn::{Action, AddAction, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
 
 /// Spend a turn on an ability, pointed at a cell.
@@ -502,38 +501,104 @@ pub struct UserState<'w, 's> {
     gear: Query<'w, 's, Bearing>,
     charges: Query<'w, 's, &'static mut Charges>,
     tagged: Query<'w, 's, (Option<&'static Tagged>, Option<&'static mut Stack>)>,
-    players: Query<'w, 's, (), With<Player>>,
     stats: Res<'w, StatRules>,
     commands: Commands<'w, 's>,
 }
 
-/// Who is standing in a footprint and how they feel about the user.
+/// A use being worked out: who, which, from where, and at what.
+#[derive(Debug, Clone, Copy)]
+pub struct Aimed<'a> {
+    /// Who is using it.
+    pub user: Entity,
+    /// Which ability.
+    pub ability: AbilityId,
+    /// Its definition.
+    pub def: &'a AbilityDef,
+    /// Where the user stands.
+    pub origin: Point,
+    /// Where it is pointed: the user's own cell for an ability that needs
+    /// no cursor.
+    pub aim: Point,
+    /// Whether the user can see `aim`, `None` when it carries no sight to
+    /// ask. Most minds carry none and are trusted with their tactic's pick.
+    pub sees_aim: Option<bool>,
+}
+
+/// Where a use lands, and whether the aim holds.
+#[derive(Debug, Clone)]
+pub struct Landed {
+    /// The footprint and who is under it.
+    pub landing: Landing,
+    /// Every reason this aim would be refused, from
+    /// [`aim_blocked`]; empty when it holds.
+    pub refused: Vec<Blocked>,
+}
+
+/// Who is standing in a footprint and how they stand to the user.
+///
+/// Public because the resolver is not the only one asking. The targeting
+/// cursor previews a use through the same [`Bystanders::land`], so the
+/// cells it paints and the names in its banner are the ones that will be
+/// hit: a preview that works that out some other way is a preview that
+/// drifts from the rules.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Bystanders<'w, 's> {
     factions: Query<'w, 's, &'static Faction>,
-    alive: Query<'w, 's, (), With<Health>>,
+    alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     rules: Option<Res<'w, CombatRules>>,
 }
 
 impl Bystanders<'_, '_> {
-    /// How `other` stands towards `user`, when both have a faction and the
-    /// game registered a matrix. `None` where the question cannot be
-    /// asked, which is why an ability in a game with no factions should
-    /// aim at [`Aim::Ground`] rather than at a foe.
-    fn relation(&self, user: Entity, other: Entity) -> Option<rl_rules::Relation> {
+    /// How `other` stands towards `user`.
+    ///
+    /// The user is its own ally whatever the matrix says. Otherwise `None`
+    /// where the question cannot be asked, because either side has no
+    /// faction or the game registered no matrix, which is why an ability
+    /// in a game with no factions should aim at [`Aim::Ground`].
+    pub fn relation(&self, user: Entity, other: Entity) -> Option<Relation> {
+        if user == other {
+            return Some(Relation::Allied);
+        }
         let rules = self.rules.as_ref()?;
         let a = self.factions.get(user).ok()?;
         let b = self.factions.get(other).ok()?;
         Some(rules.factions.relation(a.0, b.0))
     }
+
+    /// Where `aimed` lands, who it hits, and why the aim would be refused.
+    ///
+    /// The one answer to the question. The resolver lands a use with it
+    /// and the targeting cursor previews one with it, so the two cannot
+    /// disagree. Who counts as hit is [`Aim::hits`] over every living
+    /// actor under the footprint, the user included; what refuses an aim
+    /// is [`aim_blocked`].
+    pub fn land(&self, aimed: Aimed<'_>, map: &WorldMap, occupancy: &Occupancy) -> Landed {
+        let Aimed { user, ability, def, origin, aim, sees_aim } = aimed;
+        let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
+        let Footprint { cells, path, landing } = footprint(def.mode, origin, aim, map.window_tiles(), stops);
+        let refused = aim_blocked(def, &cells, sees_aim);
+        let mut targets = Vec::new();
+        if def.aim == Aim::SelfOnly {
+            // Whatever the shape, the only one it wants is the one using it.
+            targets.push(user);
+        } else {
+            for cell in &cells {
+                for who in occupancy.at(*cell) {
+                    if !targets.contains(who) && self.alive.contains(*who) && def.aim.hits(self.relation(user, *who), *who == user) {
+                        targets.push(*who);
+                    }
+                }
+            }
+        }
+        Landed { landing: Landing { user, ability, origin, aim, cells, path, landed_at: landing, targets }, refused }
+    }
 }
 
-/// One pass of the turn loop, as a resolver needs it: the clock it runs
-/// on and the claim that keeps one turn to one action.
+/// The abilities a game registered, and the clock their cooldowns run on.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Pass<'w> {
+pub struct Catalog<'w> {
+    abilities: Res<'w, Abilities>,
     turns: Res<'w, Turns>,
-    acting: ResMut<'w, Acting>,
 }
 
 /// Resolves a use: gate, pay, aim, land.
@@ -544,14 +609,15 @@ pub struct Pass<'w> {
 /// costs the turn, the way a shot at nothing does.
 pub fn resolve_abilities(
     mut intents: MessageReader<Intent<Use>>,
-    mut report: Report,
-    mut pass: Pass,
-    abilities: Res<Abilities>,
+    mut events: MessageWriter<AbilityEvent>,
+    mut resolution: Resolution,
+    catalog: Catalog,
     mut state: UserState,
     bystanders: Bystanders,
     mut world: EffectWorld,
 ) {
-    let now = pass.turns.now();
+    let Catalog { abilities, turns } = catalog;
+    let now = turns.now();
     for intent in intents.read() {
         let user = intent.actor;
         let id = intent.action.ability;
@@ -560,28 +626,23 @@ pub fn resolve_abilities(
             continue;
         }
         let source = known.source_of(id);
-        if !pass.acting.claim_action(user) {
+        if !resolution.claim(user) {
             continue;
         }
         let def = abilities.get(id);
         let Some(origin) = world.position(user) else {
-            report.done.write(ActionDone { actor: user, cost: def.time });
+            resolution.failed(user, def.time);
             continue;
         };
         let aim = if def.aim.needs_cursor() { intent.action.aim } else { origin };
+        let aimed = Aimed { user, ability: id, def, origin, aim, sees_aim: world.sight_of(user, aim) };
+        let Landed { landing, refused } = bystanders.land(aimed, &world.map, &world.occupancy);
 
         let mut why = gate(user, id, def, source, &state, now);
-        if def.sight && def.aim.needs_cursor() && world.sight_of(user, aim) == Some(false) {
-            why.push(Blocked::NoTarget);
-        }
+        why.extend(refused);
         if !why.is_empty() {
-            report.events.write(AbilityEvent::Refused { user, ability: id, why });
-            // Only the player may retry for free; anyone else would loop.
-            if state.players.contains(user) {
-                report.refused.write(ActionRefused { actor: user });
-            } else {
-                report.done.write(ActionDone { actor: user, cost: def.time });
-            }
+            events.write(AbilityEvent::Refused { user, ability: id, why });
+            resolution.failed(user, def.time);
             continue;
         }
 
@@ -592,7 +653,6 @@ pub fn resolve_abilities(
             cooldowns.set(id, now + def.cooldown);
         }
 
-        let landing = land(user, id, def, origin, aim, &world, &bystanders);
         let targets = landing.targets.clone();
         for built in &abilities.built[id.index()] {
             if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
@@ -600,17 +660,9 @@ pub fn resolve_abilities(
             }
             built.effect.apply(&landing, &mut world);
         }
-        report.events.write(AbilityEvent::Used { user, ability: id, aim, targets });
-        report.done.write(ActionDone { actor: user, cost: def.time });
+        events.write(AbilityEvent::Used { user, ability: id, aim, targets });
+        resolution.done(user, def.time);
     }
-}
-
-/// What the resolver says happened.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Report<'w> {
-    done: MessageWriter<'w, ActionDone>,
-    refused: MessageWriter<'w, ActionRefused>,
-    events: MessageWriter<'w, AbilityEvent>,
 }
 
 /// Every reason `def` may not be used by `user` right now.
@@ -729,37 +781,6 @@ fn spend_tagged(carried: &[Entity], tag: TagId, count: u16, state: &mut UserStat
     }
 }
 
-/// Resolves the footprint and who is standing in it.
-fn land(
-    user: Entity,
-    ability: AbilityId,
-    def: &AbilityDef,
-    origin: Point,
-    aim: Point,
-    world: &EffectWorld<'_, '_>,
-    bystanders: &Bystanders<'_, '_>,
-) -> Landing {
-    let bounds = world.map.window_tiles();
-    let stops = |p: Point| p != origin && (world.map.blocks_projectiles(p) || world.occupancy.is_occupied(p));
-    let Footprint { cells, path, landing } = footprint(def.mode, origin, aim, bounds, stops);
-    let mut targets = Vec::new();
-    if def.aim == Aim::SelfOnly {
-        targets.push(user);
-    } else {
-        for cell in &cells {
-            for who in world.occupancy.at(*cell) {
-                if *who == user || targets.contains(who) || !bystanders.alive.contains(*who) {
-                    continue;
-                }
-                if def.aim.wants(bystanders.relation(user, *who)) {
-                    targets.push(*who);
-                }
-            }
-        }
-    }
-    Landing { user, ability, origin, aim, cells, path, landed_at: landing, targets }
-}
-
 /// What the actor holding the turn knows, and which of it can be used.
 ///
 /// A resource rather than a component so the gate runs once, for the one
@@ -767,20 +788,40 @@ fn land(
 /// the minds in [`combat`](crate::combat), which take `usable` and never
 /// learn how an ability is paid for, and a menu, which wants `refused` as
 /// well so it can grey a row and say why.
+///
+/// Read through [`usable_by`](Self::usable_by) and [`why_for`](Self::why_for),
+/// which answer only for the actor it was worked out for: it is rebuilt
+/// every pass, so a reader holding last pass's actor would otherwise act
+/// on someone else's abilities.
 #[derive(Resource, Debug, Default)]
 pub struct Offered {
     /// Who it was worked out for. The player as readily as a monster:
     /// what may be used is the same question for both.
-    pub actor: Option<Entity>,
+    actor: Option<Entity>,
     /// What can be used now.
-    pub usable: Vec<Usable>,
+    usable: Vec<Usable>,
     /// What is known and cannot be used, with every reason.
-    pub refused: Vec<(AbilityId, Vec<Blocked>)>,
+    refused: Vec<(AbilityId, Vec<Blocked>)>,
 }
 
 impl Offered {
-    /// Why `ability` cannot be used, empty when it can or is unknown.
-    pub fn why(&self, ability: AbilityId) -> &[Blocked] {
+    /// Who holds the turn it was worked out for, if anyone does.
+    pub fn actor(&self) -> Option<Entity> {
+        self.actor
+    }
+
+    /// What `actor` can use now, empty when it was worked out for someone
+    /// else.
+    pub fn usable_by(&self, actor: Entity) -> &[Usable] {
+        if self.actor == Some(actor) { &self.usable } else { &[] }
+    }
+
+    /// Why `actor` cannot use `ability`, empty when it can, when it does
+    /// not know it, or when this was worked out for someone else.
+    pub fn why_for(&self, actor: Entity, ability: AbilityId) -> &[Blocked] {
+        if self.actor != Some(actor) {
+            return &[];
+        }
         self.refused.iter().find(|(id, _)| *id == ability).map(|(_, why)| why.as_slice()).unwrap_or(&[])
     }
 }
@@ -849,22 +890,23 @@ pub struct AbilitiesPlugin;
 
 impl Plugin for AbilitiesPlugin {
     fn build(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "AbilitiesPlugin");
+        use crate::plugin::Needs;
         app.init_resource::<EffectKinds>()
             .init_resource::<Offered>()
             .add_message::<AbilityEvent>()
             .add_action::<Use>()
-            .add_systems(
-                OnEnter(EngineState::Playing),
-                (
-                    crate::plugin::needs::<Abilities>("AbilitiesPlugin"),
-                    crate::plugin::needs::<AbilityRng>("AbilitiesPlugin"),
-                    crate::plugin::needs::<StatRules>("AbilitiesPlugin"),
-                ),
-            )
-            .add_systems(Turn, offer_abilities.before(crate::combat::decide_minds).in_set(crate::plugin::DecideSet::Minds))
+            .needs::<Abilities>("AbilitiesPlugin", "`Abilities::build(defs, &EffectKinds, &lookup)` over the defs `rl_rules::ability::load` returns")
+            .needs::<AbilityRng>("AbilitiesPlugin", "`AbilityRng::for_run(seed)`, the stream abilities roll from")
+            .needs::<StatRules>("AbilitiesPlugin", "`StatRules(registry)`, the stats ability costs and requirements name")
+            .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
             .add_systems(Turn, resolve_abilities.in_set(ResolveSet::Act))
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
+    }
+
+    // In `finish` like every other plugin's, so the order a game lists its
+    // plugins in never matters.
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "AbilitiesPlugin");
     }
 }
 
@@ -982,7 +1024,7 @@ impl AddEngineEffects for App {
 mod tests {
     use super::*;
     use crate::combat::{CombatRng, CombatRules, DamageDealt, Faction};
-    use crate::components::{Actor, RevealsMap, Speed};
+    use crate::components::{Actor, Player, RevealsMap, Speed};
     use crate::status::StatusRules;
     use crate::world::{ChunkRulesRes, WorldRes};
     use rl_core::{Direction, RunSeed};
@@ -1103,6 +1145,12 @@ mod tests {
         aim: Ground,
         mode: Own,
         effects: [(kind: "Mark", args: (note: 7))],
+    ),
+    (
+        name: "mend",
+        aim: Ally,
+        mode: Own,
+        effects: [(kind: "Mend", args: (kind: "fire", roll: "5"))],
     ),
 ]"#;
 
@@ -1394,6 +1442,48 @@ mod tests {
         assert_eq!(dealt[0].target, them);
         assert_eq!(dealt[0].dealt, 4);
         assert_eq!(dealt[0].hit.attacker, Some(me), "credited to the caster");
+    }
+
+    /// The resolver lands a use by the rule the preview and the minds read:
+    /// a burst on the ground catches the thrower standing in it, and a bolt
+    /// pointed at the caster's own feet has nowhere to fly, so it is refused
+    /// and costs the player nothing.
+    #[test]
+    fn a_burst_catches_its_thrower_and_a_bolt_with_nowhere_to_fly_is_refused() {
+        let (mut app, start) = app();
+        let (bolt, burst) = (ability(&app, "bolt"), ability(&app, "burst"));
+        let me = caster(&mut app, start, 20, &[bolt, burst]);
+        let them = foe(&mut app, start.offset(1, 0));
+        settle(&mut app);
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: burst, aim: start.offset(1, 0) }));
+        app.update();
+        assert_eq!(hp(&app, them), 17, "the foe it was thrown at");
+        assert_eq!(hp(&app, me), 27, "and the thrower, one cell off the middle of it");
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start }));
+        app.update();
+        assert_eq!(app.world().get::<Pools>(me).unwrap().get(StatId::from_raw(0)), 20, "nothing spent");
+        assert_eq!(app.world().resource::<Turns>().now(), 100, "and no time passed for the bolt");
+    }
+
+    /// A mend is a negative hit down the same pipeline a blow takes, so it
+    /// heals the user it was aimed at and stops at full health.
+    #[test]
+    fn a_mend_heals_the_user_and_stops_at_full() {
+        let (mut app, start) = app();
+        let mend = ability(&app, "mend");
+        let me = caster(&mut app, start, 20, &[mend]);
+        settle(&mut app);
+        app.world_mut().get_mut::<Health>(me).expect("health").hp = 22;
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: mend, aim: start }));
+        app.update();
+        assert_eq!(hp(&app, me), 27, "five mended");
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: mend, aim: start }));
+        app.update();
+        assert_eq!(hp(&app, me), 30, "and no further than full");
     }
 
     /// The other half of owning the loop: a monster fires an ability the

@@ -115,6 +115,9 @@ mod tests {
         let kills = counters.expect("kills");
         app.insert_resource(Quests::new(defs));
         app.insert_resource(Counters(Ledger::new(&counters).tally(Matcher::any(killed), kills)));
+        // Play needs a map, and says so if there is none; facts need nothing
+        // on it.
+        app.insert_resource(crate::world::WorldMap::new(rl_grid::TileRegistry::standard().tables()));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.world_mut().write_message(Happened(Fact::new(killed).about(1)));

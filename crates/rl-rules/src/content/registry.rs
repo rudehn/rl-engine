@@ -117,7 +117,7 @@ impl<T> Registry<T> {
     /// # Panics
     /// Panics if there is none. For names the game knows it shipped.
     pub fn expect(&self, name: &str) -> Id<T> {
-        self.id(name).unwrap_or_else(|| panic!("no definition named {name:?}"))
+        self.id(name).unwrap_or_else(|| panic!("no {} named {name:?}", std::any::type_name::<T>()))
     }
 
     /// The name behind `id`.

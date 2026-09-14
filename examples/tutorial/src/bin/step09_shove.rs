@@ -577,7 +577,6 @@ const SHOVE_COST: u32 = BASE_ACTION_COST / 2;
 /// Everything the resolver moves.
 #[derive(bevy::ecs::system::SystemParam)]
 struct Shoving<'w, 's> {
-    acting: ResMut<'w, Acting>,
     occupancy: ResMut<'w, Occupancy>,
     map: Res<'w, WorldMap>,
     holders: Query<'w, 's, &'static Position, With<MyTurn>>,
@@ -586,46 +585,36 @@ struct Shoving<'w, 's> {
 
 /// Resolves a shove.
 ///
-/// The shape every resolver has: claim the actor so nothing else spends
-/// the same turn, do the thing, and report either an [`ActionDone`] with
-/// what it cost or an [`ActionRefused`], which costs nothing and leaves
-/// the player holding the turn.
-fn resolve_shoves(
-    mut intents: MessageReader<Intent<Shove>>,
-    mut done: MessageWriter<ActionDone>,
-    mut refused: MessageWriter<ActionRefused>,
-    mut shoved: MessageWriter<Shoved>,
-    mut world: Shoving,
-) {
+/// The shape every resolver has: claim the turn so nothing else spends it,
+/// do the thing, and say how it went. `done` charges what it cost; `failed`
+/// leaves the player holding the turn and charges anyone else, so a
+/// monster cannot try the same impossible shove forever.
+fn resolve_shoves(mut intents: MessageReader<Intent<Shove>>, mut resolution: Resolution, mut shoved: MessageWriter<Shoved>, mut world: Shoving) {
     for intent in intents.read() {
-        let Ok(from) = world.holders.get(intent.actor) else { continue };
-        if !world.acting.claim_action(intent.actor) {
+        if !resolution.claim(intent.actor) {
             continue;
         }
-        let offset = intent.action.0.offset();
-        let cell = from.0 + offset;
-        let behind = cell + offset;
-        let target = world.occupancy.first_at(cell);
-        // Nobody there, or nowhere for them to go: nothing happens, and
-        // the turn is still the player's to spend on something else.
-        let landed = match target {
-            Some(target) if world.map.is_walkable(behind) && !world.occupancy.is_occupied(behind) => {
-                let Ok((mut pos, viewshed)) = world.targets.get_mut(target) else { continue };
-                world.occupancy.relocate(target, pos.0, behind);
-                pos.0 = behind;
-                if let Some(mut v) = viewshed {
-                    v.dirty = true;
-                }
-                shoved.write(Shoved { target });
-                true
-            }
-            _ => false,
+        let Ok(from) = world.holders.get(intent.actor) else {
+            resolution.failed(intent.actor, SHOVE_COST);
+            continue;
         };
-        if landed {
-            done.write(ActionDone { actor: intent.actor, cost: SHOVE_COST });
-        } else {
-            refused.write(ActionRefused { actor: intent.actor });
+        let offset = intent.action.0.offset();
+        let behind = from.0 + offset + offset;
+        let room = world.map.is_walkable(behind) && !world.occupancy.is_occupied(behind);
+        let pushed = world.occupancy.first_at(from.0 + offset).filter(|_| room).and_then(|t| world.targets.get_mut(t).ok().map(|found| (t, found)));
+        let Some((target, (mut pos, viewshed))) = pushed else {
+            // Nobody there, or nowhere for them to go: nothing happens, and
+            // the turn is still the player's to spend on something else.
+            resolution.failed(intent.actor, SHOVE_COST);
+            continue;
+        };
+        world.occupancy.relocate(target, pos.0, behind);
+        pos.0 = behind;
+        if let Some(mut v) = viewshed {
+            v.dirty = true;
         }
+        shoved.write(Shoved { target });
+        resolution.done(intent.actor, SHOVE_COST);
     }
 }
 // ANCHOR_END: resolver

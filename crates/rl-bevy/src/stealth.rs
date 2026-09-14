@@ -199,6 +199,12 @@ pub fn wake_on_damage(
     mut noticed: MessageWriter<Noticed>,
 ) {
     for ev in dealt.read() {
+        // A mend is a negative hit down the same pipeline, and a hider who
+        // patches a sleeper up has not struck it. A blow that armor stopped
+        // at zero still woke it.
+        if ev.dealt < 0 {
+            continue;
+        }
         let Some(attacker) = ev.hit.attacker else { continue };
         let (Ok(mut aware), Ok(at)) = (observers.get_mut(ev.target), attackers.get(attacker)) else { continue };
         let mut state = aware.of(attacker);

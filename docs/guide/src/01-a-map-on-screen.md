@@ -22,7 +22,8 @@ Everything else is a plugin you name.
 Nothing turns itself on because a resource happens to exist.
 
 `FovPlugin` computes what each actor can see.
-It is not optional in practice: the map view draws a tile only if the player's `Viewshed` says it is visible or the explored map says it was, so a program without it draws black.
+It is not optional here: the map view draws a tile only if the player's `Viewshed` says it is visible or the explored map says it was, so `MapViewPlugin` refuses to start without it and says which plugin to add.
+Leave out the `MapView` or the `WorldMap` and play refuses to begin the same way, listing everything missing at once with how to make each.
 
 `CapturePlugin` is only how this guide's screenshots are taken.
 

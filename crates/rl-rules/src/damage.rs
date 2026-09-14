@@ -92,7 +92,11 @@ pub struct Hit<A: Copy> {
     pub credit: Option<A>,
     /// The kind.
     pub kind: DamageKindId,
-    /// Damage before mitigation. Never negative.
+    /// Damage before mitigation. Negative mends, and goes down the same
+    /// stages, so a resistance to the kind a heal is dealt as scales the
+    /// heal and immunity to it means nothing can patch the defender up.
+    /// Whoever rolls a blow floors it at zero first: a weapon with a
+    /// negative bonus that rolls low has missed, not healed.
     pub amount: i32,
     /// Whether the hit was a critical, for stages that care.
     pub critical: bool,
@@ -161,8 +165,12 @@ impl<A: Copy> DamageStage<A> for HalveIfBlocked {
 
 /// Runs `stages` in order over `hit.amount`. The result is what to take
 /// from health: positive hurts, negative heals, zero was stopped.
+///
+/// The amount goes in with its sign. Clamping it here once made every
+/// heal a no-op, because a mend is a negative hit; the stages that must
+/// not touch a heal, armor and a block, already leave one alone.
 pub fn resolve<A: Copy>(hit: &Hit<A>, defender: &Defender, resistances: &Resistances, kinds: &Registry<DamageKind>, stages: &[&dyn DamageStage<A>]) -> i32 {
-    let mut amount = hit.amount.max(0);
+    let mut amount = hit.amount;
     for stage in stages {
         amount = stage.apply(hit, defender, resistances, kinds, amount);
     }
@@ -220,6 +228,21 @@ mod tests {
         r.add(burn, -200);
         assert_eq!(r.get(burn), -50);
         assert_eq!(resolve(&hit, &defender, &r, &k, &[&ApplyResistance]), 13, "vulnerable takes more");
+    }
+
+    #[test]
+    fn a_negative_hit_heals_past_armor_and_a_block_and_resistance_scales_it() {
+        let k = kinds();
+        let kinetic = k.expect("kinetic");
+        let mut r = Resistances::new();
+        let stages: [&dyn DamageStage<u32>; 3] = [&ApplyResistance, &SubtractArmor, &HalveIfBlocked];
+        let heal = Hit::by(1u32, kinetic, -6);
+        let braced = Defender { armor: 4, blocked: true };
+        assert_eq!(resolve(&heal, &braced, &r, &k, &stages), -6, "armor and a block stop blows, not mending");
+        r.set(kinetic, 50);
+        assert_eq!(resolve(&heal, &braced, &r, &k, &stages), -3, "half resistant to the kind is half mended");
+        r.set(kinetic, 100);
+        assert_eq!(resolve(&heal, &braced, &r, &k, &stages), 0, "and immune to it cannot be patched up");
     }
 
     #[test]

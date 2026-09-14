@@ -120,11 +120,6 @@ pub fn run_turns(world: &mut World) {
     }
 }
 
-/// The engine's plugins, gated on [`EngineState::Playing`].
-///
-/// Insert [`WorldRes`](crate::world::WorldRes), [`ChunkRulesRes`](crate::world::ChunkRulesRes)
-/// and a [`WorldMap`] before entering `Playing`; the streaming system does
-/// the rest.
 /// The engine's core, and the only plugin every game needs.
 ///
 /// The state, the system sets, the turn schedule and the loop that runs
@@ -133,6 +128,9 @@ pub fn run_turns(world: &mut World) {
 /// stands here. Everything else is a plugin of its own, and a game adds
 /// the ones it wants: nothing turns itself on because a resource happens
 /// to exist.
+///
+/// Needs a [`WorldMap`] before play begins, and checks what every other
+/// plugin said it needs at the same moment, through [`Requirements`].
 pub struct CorePlugin;
 
 impl Plugin for CorePlugin {
@@ -155,20 +153,23 @@ impl Plugin for CorePlugin {
                 Update,
                 (EngineSet::Stream, EngineSet::Input, EngineSet::Turns, EngineSet::Light, EngineSet::Fov, EngineSet::Present)
                     .chain()
-                    .run_if(in_state(EngineState::Playing))
-                    .run_if(resource_exists::<WorldMap>),
+                    .run_if(in_state(EngineState::Playing)),
             )
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
-            .configure_sets(Turn, (DecideSet::Notice, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
-            .configure_sets(Turn, (ResolveSet::Act, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve))
+            .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
+            .configure_sets(Turn, (ResolveSet::Travel, ResolveSet::Act, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve))
+            .configure_sets(Turn, (CleanupSet::Remove, CleanupSet::Requeue).chain().in_set(TurnSet::Cleanup))
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
             .add_action::<places::GoThrough>()
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
             .add_systems(Turn, (turn::start_pass, places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
-            .add_systems(Turn, (turn::resolve_moves, turn::resolve_waits, places::resolve_warps).chain().in_set(ResolveSet::Act))
-            .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(TurnSet::Cleanup));
+            .add_systems(Turn, (turn::resolve_moves, turn::resolve_waits, places::resolve_warps).chain().in_set(ResolveSet::Travel))
+            .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(CleanupSet::Requeue))
+            .needs::<WorldMap>("CorePlugin", "`WorldMap::new(tiles.tables())`, the map every engine system reads")
+            .add_systems(OnEnter(EngineState::Playing), check_requirements)
+            .add_systems(Update, warn_if_play_never_began);
     }
 }
 
@@ -183,6 +184,10 @@ pub enum DecideSet {
     /// Who has noticed whom, for the actor about to decide. Empty unless
     /// the game added [`StealthPlugin`](crate::stealth::StealthPlugin).
     Notice,
+    /// What the actor about to decide may choose from, worked out before
+    /// anything chooses: the abilities it can use, when the game added
+    /// [`AbilitiesPlugin`](crate::ability::AbilitiesPlugin).
+    Offer,
     /// The engine's minds, deciding for everyone but the player.
     Minds,
     /// The game's answer to whatever its own tactics chose.
@@ -191,12 +196,19 @@ pub enum DecideSet {
 
 /// The stages of [`TurnSet::Resolve`], in order.
 ///
-/// Actions first, then what ticks because a turn passed, then the damage
-/// both of them produced. Named because the systems that fill them come
-/// from different plugins, which cannot chain themselves together.
+/// Moving first, then every other action, then what ticks because a turn
+/// passed, then the damage all of it produced. Named because the systems
+/// that fill them come from different plugins, which cannot chain
+/// themselves together, and no plugin orders itself after another's
+/// function. One turn is one action whichever set resolves it: the first
+/// resolver to [`claim`](crate::turn::Resolution::claim) an actor spends
+/// its turn.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResolveSet {
-    /// Actions: a step, a strike, a drink, a door.
+    /// Going somewhere: a step, a wait, a door, and any warp a reaction
+    /// asked for, so a place a warp builds exists before anything acts in it.
+    Travel,
+    /// Every other action: a strike, a drink, an ability, a game's own.
     Act,
     /// What a turn costs whoever is standing in it: statuses, fuel.
     Effects,
@@ -204,12 +216,92 @@ pub enum ResolveSet {
     Damage,
 }
 
-/// Asserts, when play begins, that a plugin has what it cannot work
-/// without. A missing rule table is a mistake in the game's setup, and it
-/// says so rather than quietly doing nothing all run.
-pub fn needs<R: Resource>(plugin: &'static str) -> impl Fn(Option<Res<R>>) {
-    move |res: Option<Res<R>>| {
-        assert!(res.is_some(), "{plugin} needs {} inserted before EngineState::Playing", std::any::type_name::<R>());
+/// The stages of [`TurnSet::Cleanup`], in order.
+///
+/// The dead leave the queue and the index before the turns are requeued,
+/// so an actor killed this pass is never dealt another.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CleanupSet {
+    /// Take out whatever this pass killed.
+    Remove,
+    /// Requeue what acted, keep the turn of what was refused, recover what
+    /// nobody moved, and forget what was despawned.
+    Requeue,
+}
+
+/// Everything the added plugins cannot work without, checked together when
+/// play begins.
+///
+/// A plugin records what it needs while the app is built, with a hint at
+/// how a game makes it. On entering [`EngineState::Playing`] one check reads
+/// them all, and if anything is missing it panics once, listing every piece
+/// with its hint, so a game's setup is fixed in one run rather than one
+/// crash at a time. A missing rule table is a mistake in the setup, and
+/// saying so beats a subsystem quietly doing nothing all run.
+#[derive(Resource, Default)]
+pub struct Requirements(Vec<Requirement>);
+
+/// One thing one plugin needs.
+struct Requirement {
+    plugin: &'static str,
+    resource: &'static str,
+    hint: &'static str,
+    present: fn(&World) -> bool,
+}
+
+impl Requirements {
+    /// Every requirement `world` does not meet, one line each: who needs
+    /// what, and how to make it.
+    pub fn missing(&self, world: &World) -> Vec<String> {
+        self.0.iter().filter(|r| !(r.present)(world)).map(|r| format!("{} needs {}: {}", r.plugin, r.resource, r.hint)).collect()
+    }
+}
+
+/// Declares what a plugin cannot work without.
+pub trait Needs {
+    /// Records that `plugin` needs `R` inserted before play begins, with
+    /// `hint` saying how a game makes one.
+    fn needs<R: Resource>(&mut self, plugin: &'static str, hint: &'static str) -> &mut Self;
+}
+
+impl Needs for App {
+    fn needs<R: Resource>(&mut self, plugin: &'static str, hint: &'static str) -> &mut Self {
+        fn present<R: Resource>(world: &World) -> bool {
+            world.contains_resource::<R>()
+        }
+        let resource = std::any::type_name::<R>();
+        self.init_resource::<Requirements>();
+        let mut list = self.world_mut().resource_mut::<Requirements>();
+        if !list.0.iter().any(|r| r.plugin == plugin && r.resource == resource) {
+            list.0.push(Requirement { plugin, resource, hint, present: present::<R> });
+        }
+        self
+    }
+}
+
+/// Panics once, listing every requirement the game's setup left unmet.
+pub fn check_requirements(world: &World) {
+    let Some(requirements) = world.get_resource::<Requirements>() else { return };
+    let missing = requirements.missing(world);
+    if !missing.is_empty() {
+        let pieces = if missing.len() == 1 { "one piece is" } else { "some pieces are" };
+        panic!("play cannot begin: {pieces} missing.\n  {}\nInsert each before setting EngineState::Playing.", missing.join("\n  "));
+    }
+}
+
+/// Warns once when a world has been built and play never began.
+///
+/// Every engine system waits on [`EngineState::Playing`], so a game that
+/// built its map and forgot to set the state gets a still window and no
+/// other sign of what is wrong.
+fn warn_if_play_never_began(mut frames: Local<u32>, state: Res<State<EngineState>>, map: Option<Res<WorldMap>>) {
+    if *state.get() != EngineState::Idle || map.is_none() {
+        *frames = 0;
+        return;
+    }
+    *frames += 1;
+    if *frames == 120 {
+        warn!("a WorldMap was inserted but EngineState is still Idle after 120 frames; nothing runs until the game sets EngineState::Playing");
     }
 }
 
@@ -376,6 +468,24 @@ mod tests {
         assert!(app.world().get::<MyTurn>(player).is_some());
     }
 
+    /// Every missing piece is reported together, each with how to make it,
+    /// so a game's setup is fixed in one run rather than one crash at a time.
+    #[test]
+    fn every_missing_requirement_is_listed_at_once_with_how_to_make_it() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let missing = app.world().resource::<Requirements>().missing(app.world());
+        assert_eq!(missing.len(), 3, "the map, the rule table and the stream: {missing:#?}");
+        assert!(missing.iter().any(|m| m.starts_with("CorePlugin needs") && m.contains("WorldMap::new")), "{missing:#?}");
+        assert!(missing.iter().any(|m| m.starts_with("CombatPlugin needs") && m.contains("CombatRules { kinds, factions }")), "{missing:#?}");
+        assert!(missing.iter().any(|m| m.contains("CombatRng::for_run")), "{missing:#?}");
+
+        // A plugin added twice, or two asking for the same thing, is one line
+        // per plugin rather than a list that repeats itself.
+        app.needs::<WorldMap>("CorePlugin", "again");
+        assert_eq!(app.world().resource::<Requirements>().missing(app.world()).len(), 3);
+    }
+
     #[test]
     #[should_panic(expected = "CombatPlugin needs")]
     fn combat_without_its_rules_says_so_when_play_begins() {
@@ -402,19 +512,62 @@ mod tests {
     #[derive(Resource, Default)]
     struct Heard(u32);
 
-    fn resolve_shouts(
-        mut intents: MessageReader<Intent<Shout>>,
-        mut done: MessageWriter<ActionDone>,
-        mut acting: ResMut<crate::turn::Acting>,
-        mut heard: ResMut<Heard>,
-    ) {
+    fn resolve_shouts(mut intents: MessageReader<Intent<Shout>>, mut resolution: crate::turn::Resolution, mut heard: ResMut<Heard>) {
         for intent in intents.read() {
-            if !acting.claim_action(intent.actor) {
+            if !resolution.claim(intent.actor) {
                 continue;
             }
             heard.0 += 1;
-            done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
+            resolution.done(intent.actor, rl_core::turn::BASE_ACTION_COST);
         }
+    }
+
+    /// A game's action that can never be done.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct Leap;
+    impl Action for Leap {}
+
+    fn resolve_leaps(mut intents: MessageReader<Intent<Leap>>, mut resolution: crate::turn::Resolution) {
+        for intent in intents.read() {
+            if resolution.claim(intent.actor) {
+                resolution.failed(intent.actor, rl_core::turn::BASE_ACTION_COST);
+            }
+        }
+    }
+
+    /// A game's decider that tries a leap for every monster dealt a turn.
+    fn leap_every_turn(mut leaps: MessageWriter<Intent<Leap>>, holding: Query<Entity, (With<MyTurn>, Without<Player>)>) {
+        for monster in &holding {
+            leaps.write(Intent::new(monster, Leap));
+        }
+    }
+
+    /// The rule for a failure lives in `Resolution`, so a game's resolver
+    /// inherits it: the player keeps its turn at no cost, and a monster is
+    /// charged instead of refused, so it cannot ask again forever.
+    #[test]
+    fn a_failed_action_keeps_the_players_turn_and_charges_a_monster() {
+        let (mut app, world) = app_with_world();
+        app.add_action::<Leap>().add_systems(Turn, (leap_every_turn.in_set(DecideSet::Game), resolve_leaps.in_set(ResolveSet::Act)));
+        let start = land_tile(&world);
+        let player = spawn_player(&mut app, start);
+        let monster = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Speed(100))).id();
+        app.update();
+        app.update();
+        let mut refused: Vec<Entity> = Vec::new();
+
+        intend(&mut app, player, Leap);
+        app.update();
+        refused.extend(app.world_mut().resource_mut::<Messages<ActionRefused>>().drain().map(|r| r.actor));
+        assert_eq!(app.world().resource::<Turns>().now(), 0, "the player's failed leap cost nothing");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "and the turn is still the player's");
+
+        intend(&mut app, player, Wait);
+        app.update();
+        refused.extend(app.world_mut().resource_mut::<Messages<ActionRefused>>().drain().map(|r| r.actor));
+        assert_eq!(app.world().resource::<Turns>().now(), 100, "the monster's failed leap was charged, so the clock reached the player again");
+        assert!(app.world().get::<MyTurn>(player).is_some());
+        assert_eq!(refused, vec![player], "only the player was ever refused, never {monster:?}");
     }
 
     #[test]

@@ -132,8 +132,8 @@ pub struct OverworldPlugin;
 
 impl Plugin for OverworldPlugin {
     fn build(&self, app: &mut App) {
-        app.world_mut().resource_mut::<Modals>().declare(OVERWORLD_MODAL);
-        app.add_systems(OnEnter(EngineState::Playing), rl_bevy::needs::<OverworldLayout>("OverworldPlugin"))
+        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(OVERWORLD_MODAL);
+        app.needs::<OverworldLayout>("OverworldPlugin", "`OverworldLayout { viewport }`, the terminal cells the overworld is drawn in")
             .init_resource::<OverworldScreen>()
             .init_resource::<BandAppearance>()
             .init_resource::<OverworldStyle>()

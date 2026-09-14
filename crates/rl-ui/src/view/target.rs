@@ -5,8 +5,8 @@
 //! the ability's [`Aim`] wants, steps with the direction keys, cycles
 //! through the rest, refuses to leave the loaded window, and on confirm
 //! writes the [`Use`] intent itself. The picture is a view: the footprint
-//! the ability would cover from here, resolved by the same
-//! [`footprint`](rl_grid::footprint) the resolver will use, so what is
+//! the ability would cover from here and who it would hit, resolved by
+//! [`Bystanders::land`], the call the resolver lands it with, so what is
 //! shown is what will happen.
 //!
 //! The cursor is a modal, declared under the name `target`, so a game
@@ -21,7 +21,6 @@
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::Point;
-use rl_grid::{Footprint, footprint};
 use rl_render::Glyph;
 use rl_rules::ability::{AbilityId, Aim, Blocked};
 
@@ -108,10 +107,10 @@ pub struct TargetViewPlugin;
 impl Plugin for TargetViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TargetView>().init_resource::<TargetKeys>().add_message::<AimAt>();
-        app.world_mut().resource_mut::<Modals>().declare(TARGET_MODAL);
-        app.add_systems(OnEnter(EngineState::Playing), rl_bevy::needs::<WorldMap>("TargetViewPlugin"))
-            .add_systems(Update, aim_cursor.in_set(EngineSet::Input))
-            .add_systems(Update, collect_target.in_set(crate::ViewSet::Collect));
+        // `Modals` is plain data, so this plugin makes sure it exists rather
+        // than panicking when added before `UiPlugin`.
+        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(TARGET_MODAL);
+        app.add_systems(Update, aim_cursor.in_set(EngineSet::Input)).add_systems(Update, collect_target.in_set(crate::ViewSet::Collect));
     }
 
     fn finish(&self, app: &mut App) {
@@ -136,31 +135,27 @@ pub struct Aiming<'w, 's> {
     map: Res<'w, WorldMap>,
     abilities: Option<Res<'w, Abilities>>,
     occupancy: Res<'w, Occupancy>,
-    rules: Option<Res<'w, CombatRules>>,
-    users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>, Option<&'static Faction>)>,
-    others: Query<'w, 's, &'static Faction, Without<Dead>>,
+    bystanders: Bystanders<'w, 's>,
+    users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>)>,
+    living: Query<'w, 's, &'static Health, Without<Dead>>,
 }
 
 impl Aiming<'_, '_> {
-    /// The cells this ability's aim wants, nearest to the user first.
+    /// The cells this ability is worth pointing at, nearest to the user
+    /// first.
     ///
-    /// The same question the mind's tactic asks, so the cursor opens on
-    /// what a monster would have picked and a player who just presses
-    /// confirm gets the sensible shot.
+    /// [`Aim::worth_aiming_at`] is the rule the mind's tactic aims by, so
+    /// the cursor opens on what a monster would have picked, the user's own
+    /// cell included when there is a hurt user to mend, and a player who
+    /// just presses confirm gets the sensible shot.
     fn candidates(&self, user: Entity, from: Point, aim: Aim, sight: Option<&Viewshed>) -> Vec<Point> {
         if !aim.needs_cursor() {
             return vec![from];
         }
-        let mine = self.users.get(user).ok().and_then(|(_, _, f)| f).map(|f| f.0);
         let wanted = self.occupancy.iter().filter(|(p, who)| {
-            if *who == user || !sight.is_none_or(|s| s.can_see(*p)) {
-                return false;
-            }
-            let relation = match (&self.rules, mine, self.others.get(*who).ok()) {
-                (Some(rules), Some(mine), Some(theirs)) => Some(rules.factions.relation(mine, theirs.0)),
-                _ => None,
-            };
-            aim.wants(relation)
+            let Ok(health) = self.living.get(*who) else { return false };
+            let seen = *who == user || sight.is_none_or(|s| s.can_see(*p));
+            seen && aim.worth_aiming_at(self.bystanders.relation(user, *who), *who == user, health.hp < health.max)
         });
         cursor::ordered(from, wanted.map(|(p, _)| p))
     }
@@ -178,7 +173,7 @@ pub fn aim_cursor(
     let Some(abilities) = aiming.abilities.as_deref() else { return };
 
     for request in requests.read() {
-        let Ok((from, sight, _)) = aiming.users.get(request.user) else { continue };
+        let Ok((from, sight)) = aiming.users.get(request.user) else { continue };
         let def = abilities.get(request.ability);
         // An ability that wants no cursor is used where it stands. A game
         // binds every ability the same way and never asks which kind it is.
@@ -214,7 +209,7 @@ pub fn aim_cursor(
         close(&mut view, &mut modals, modal);
         return;
     }
-    let Ok((from, sight, _)) = aiming.users.get(user) else {
+    let Ok((from, sight)) = aiming.users.get(user) else {
         close(&mut view, &mut modals, modal);
         return;
     };
@@ -249,7 +244,7 @@ fn close(view: &mut TargetView, modals: &mut Modals, modal: ModalId) {
 /// anyway. Dropping it would make the banner say "nothing" over a monster
 /// about to be burned, so `targets` counts what the footprint catches and
 /// the cosmetics are filled in where they exist.
-type Standing = (Entity, Option<&'static Name>, Option<&'static Glyph>, Option<&'static Health>, Option<&'static Faction>);
+type Standing = (Entity, &'static Position, Option<&'static Name>, Option<&'static Glyph>, Option<&'static Health>);
 
 /// What the footprint is resolved against.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -258,16 +253,17 @@ pub struct Reach<'w, 's> {
     occupancy: Res<'w, Occupancy>,
     abilities: Option<Res<'w, Abilities>>,
     offered: Option<Res<'w, Offered>>,
-    rules: Option<Res<'w, CombatRules>>,
-    users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>, Option<&'static Faction>)>,
-    subjects: Query<'w, 's, Standing, Without<Dead>>,
+    bystanders: Bystanders<'w, 's>,
+    users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>)>,
+    subjects: Query<'w, 's, Standing>,
 }
 
 /// Fills [`TargetView`] from wherever the cursor is.
 ///
-/// The footprint comes from the same call the resolver will make, with the
-/// same blocker, so the cells lit on the map are the cells that will be
-/// hit. A preview computed any other way is a preview that drifts.
+/// Through [`Bystanders::land`], the call the resolver lands the use with,
+/// so the cells lit on the map, the names in the banner and whether it
+/// reads as refused are what will happen when the player confirms. A
+/// preview computed any other way is a preview that drifts.
 pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
     view.cells.clear();
     view.path.clear();
@@ -276,55 +272,34 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
     view.landing = None;
     view.legal = false;
     let (Some(ability), Some(user), Some(abilities)) = (view.ability, view.user, reach.abilities.as_deref()) else { return };
-    let Ok((from, sight, mine)) = reach.users.get(user) else { return };
+    let Ok((from, sight)) = reach.users.get(user) else { return };
     let def = abilities.get(ability);
+    let aimed = Aimed { user, ability, def, origin: from.0, aim: view.cursor, sees_aim: sight.map(|s| s.can_see(view.cursor)) };
+    let Landed { landing, refused } = reach.bystanders.land(aimed, &reach.map, &reach.occupancy);
 
-    let stops = |p: Point| p != from.0 && (reach.map.blocks_projectiles(p) || reach.occupancy.is_occupied(p));
-    let Footprint { cells, path, landing } = footprint(def.mode, from.0, view.cursor, reach.map.window_tiles(), stops);
-
-    // Every reason the resolver would refuse, worked out before the turn
-    // is spent rather than after: what the gate said about the ability,
-    // then what this particular aim adds.
-    if let Some(offered) = reach.offered.as_deref()
-        && offered.actor == Some(user)
-        && let Some((_, why)) = offered.refused.iter().find(|(id, _)| *id == ability)
-    {
-        view.why.extend(why.iter().copied());
+    // Every reason the resolver would refuse, before the turn is spent
+    // rather than after: what the gate said about the ability, then what
+    // this particular aim adds.
+    if let Some(offered) = reach.offered.as_deref() {
+        view.why.extend(offered.why_for(user, ability).iter().copied());
     }
-    if def.sight && sight.is_some_and(|s| !s.can_see(view.cursor)) {
-        view.why.push(Blocked::NoTarget);
-    }
-    if cells.is_empty() {
-        view.why.push(Blocked::NoTarget);
-    }
+    view.why.extend(refused);
     view.legal = view.why.is_empty();
 
-    for cell in &cells {
-        for who in reach.occupancy.at(*cell) {
-            let Ok((entity, name, glyph, health, theirs)) = reach.subjects.get(*who) else { continue };
-            if entity == user && def.aim != Aim::SelfOnly {
-                continue;
-            }
-            let relation = match (&reach.rules, mine, theirs) {
-                (Some(rules), Some(mine), Some(theirs)) => Some(rules.factions.relation(mine.0, theirs.0)),
-                _ => None,
-            };
-            if def.aim != Aim::SelfOnly && !def.aim.wants(relation) {
-                continue;
-            }
-            let label = name.map(|n| n.as_str().to_string()).unwrap_or_default();
-            // A blank glyph draws nothing and invents no colour, the same
-            // choice as the empty label above.
-            let glyph = glyph.copied().unwrap_or_else(|| Glyph::new(' ', Color::WHITE));
-            let mut row = Row::new(entity, label, glyph).at(rl_core::geometry::chebyshev(from.0, *cell));
-            row.health = health.map(|h| (h.hp, h.max));
-            row.relation = relation;
-            view.targets.push(row);
-        }
+    for who in &landing.targets {
+        let Ok((entity, at, name, glyph, health)) = reach.subjects.get(*who) else { continue };
+        let label = name.map(|n| n.as_str().to_string()).unwrap_or_default();
+        // A blank glyph draws nothing and invents no colour, the same
+        // choice as the empty label above.
+        let glyph = glyph.copied().unwrap_or_else(|| Glyph::new(' ', Color::WHITE));
+        let mut row = Row::new(entity, label, glyph).at(rl_core::geometry::chebyshev(from.0, at.0));
+        row.health = health.map(|h| (h.hp, h.max));
+        row.relation = reach.bystanders.relation(user, entity);
+        view.targets.push(row);
     }
-    view.cells = cells;
-    view.path = path;
-    view.landing = landing;
+    view.cells = landing.cells;
+    view.path = landing.path;
+    view.landing = landing.landed_at;
 }
 
 #[cfg(test)]
@@ -371,6 +346,7 @@ pub(crate) mod harness {
         (name: "burst", aim: Ground, mode: Ball(range: 6, radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "2"))]),
         (name: "steel", aim: SelfOnly, mode: Own, effects: []),
         (name: "dear", mode: Bolt(range: 6), costs: [Pool("focus", 99)], effects: []),
+        (name: "salve", aim: Ally, mode: Ball(range: 6, radius: 1), effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))]),
     ]"#;
 
     /// Inserts everything an ability needs into `app`, before play begins.
@@ -519,6 +495,78 @@ mod tests {
         let view = stage.app.world().resource::<TargetView>();
         assert!(!view.legal, "it cannot be paid for");
         assert!(view.why.iter().any(|w| matches!(w, Blocked::Cannot(_))), "{:?}", view.why);
+    }
+
+    /// The property the preview exists for, over many layouts: who the
+    /// banner lists and whether it reads as refused are exactly what the
+    /// resolver does once the player confirms.
+    #[test]
+    fn the_preview_names_exactly_who_the_resolver_hits() {
+        use rl_core::seed::position_hash;
+        for seed in 0..12u64 {
+            // A small deterministic stream: one hash per draw.
+            let mut draw = 0;
+            let mut roll = |n: i32| {
+                draw += 1;
+                (position_hash(seed, draw, n) % n as u64) as i32
+            };
+            let mut stage = staged();
+            let (bolt, burst, _) = arm(&mut stage);
+            let salve = stage.app.world().resource::<Abilities>().expect("salve");
+            let player = stage.player;
+            stage.app.world_mut().get_mut::<Grants>(player).expect("grants").0.push(salve);
+            if roll(2) == 0 {
+                stage.app.world_mut().get_mut::<Health>(player).expect("health").hp = 12;
+            }
+            let mut taken = vec![(0, 0)];
+            for i in 0..6 {
+                let (dx, dy) = loop {
+                    let at = (roll(9) - 4, roll(9) - 4);
+                    if !taken.contains(&at) {
+                        break at;
+                    }
+                };
+                taken.push((dx, dy));
+                let who = stage.actor(&format!("them {i}"), 't', dx, dy);
+                if roll(2) == 0 {
+                    stage.app.world_mut().entity_mut(who).insert(Faction(rl_rules::FactionId::from_raw(0)));
+                }
+                if roll(2) == 0 {
+                    stage.app.world_mut().get_mut::<Health>(who).expect("health").hp = 4;
+                }
+            }
+            stage.tick();
+            stage.tick();
+
+            for _ in 0..6 {
+                let ability = [bolt, burst, salve][roll(3) as usize];
+                let aim = stage.at.offset(roll(13) - 6, roll(13) - 6);
+                let user = stage.player;
+                stage.app.world_mut().write_message(AimAt { user, ability });
+                stage.tick();
+                stage.app.world_mut().resource_mut::<TargetView>().cursor = aim;
+                stage.tick();
+                let view = stage.app.world().resource::<TargetView>();
+                assert!(view.aiming(), "seed {seed}: the cursor is up");
+                let legal = view.legal;
+                let mut shown: Vec<Entity> = view.targets.iter().map(|r| r.entity).collect();
+                shown.sort();
+
+                let _ = stage.app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().count();
+                stage.press(KeyCode::Enter);
+                let outcomes: Vec<AbilityEvent> = stage.app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().collect();
+                match outcomes.as_slice() {
+                    [AbilityEvent::Used { targets, .. }] => {
+                        let mut hit = targets.clone();
+                        hit.sort();
+                        assert!(legal, "seed {seed}: the preview refused an aim the resolver took");
+                        assert_eq!(hit, shown, "seed {seed}: the banner listed other than who was hit");
+                    }
+                    [AbilityEvent::Refused { why, .. }] => assert!(!legal, "seed {seed}: the resolver refused ({why:?}) an aim the preview called legal"),
+                    other => panic!("seed {seed}: expected one outcome, got {other:?}"),
+                }
+            }
+        }
     }
 
     /// Confirming spends the turn on the aim; cancelling spends nothing.

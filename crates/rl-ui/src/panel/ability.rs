@@ -63,7 +63,7 @@ impl Plugin for AbilityPanel {
         if !app.is_plugin_added::<AbilityViewPlugin>() {
             app.add_plugins(AbilityViewPlugin);
         }
-        app.world_mut().resource_mut::<Modals>().declare(ABILITY_MODAL);
+        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(ABILITY_MODAL);
         app.insert_resource(self.0.clone()).init_resource::<AbilityMenu>().add_systems(Update, draw_abilities.in_set(PresentSet::Overlay));
     }
 }

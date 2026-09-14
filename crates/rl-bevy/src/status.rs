@@ -161,12 +161,11 @@ pub struct StatusPlugin;
 
 impl Plugin for StatusPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{ResolveSet, Turn, needs};
-        use crate::state::EngineState;
+        use crate::plugin::{Needs, ResolveSet, Turn};
         app.add_message::<Afflict>()
             .add_message::<Cure>()
             .add_message::<StatusEvent>()
-            .add_systems(OnEnter(EngineState::Playing), needs::<StatusRules>("StatusPlugin"))
+            .needs::<StatusRules>("StatusPlugin", "`StatusRules { defs }`, a registry of `StatusDef`s, which may be empty")
             .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects));
     }
 

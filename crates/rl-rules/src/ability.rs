@@ -24,7 +24,7 @@ use serde::Deserialize;
 
 pub use ron::value::RawValue;
 
-use rl_core::Id;
+use rl_core::{Id, Point};
 use rl_grid::TargetMode;
 
 use crate::affix::TagId;
@@ -79,6 +79,36 @@ impl Aim {
     /// cloak or a battle cry should not open a cursor.
     pub fn needs_cursor(self) -> bool {
         self != Aim::SelfOnly
+    }
+
+    /// Whether an actor standing under the footprint is hit.
+    ///
+    /// `relation` is how the actor stands to the user, `None` when either
+    /// takes no side. The user is its own ally whatever the matrix says, so
+    /// a spray aimed at allies mends whoever sprays it and a burst on the
+    /// ground burns whoever stands in it, the thrower included, while an
+    /// ability aimed at a foe never catches its user. One rule for the
+    /// resolver, the preview and the mind that scores a footprint.
+    pub fn hits(self, relation: Option<Relation>, is_user: bool) -> bool {
+        match self {
+            Aim::SelfOnly => is_user,
+            _ => self.wants(if is_user { Some(Relation::Allied) } else { relation }),
+        }
+    }
+
+    /// Whether an actor is worth pointing this at: what a mind aims for and
+    /// what the player's cursor opens on, so the two make the same choice.
+    ///
+    /// Narrower than [`hits`](Self::hits). An ability aimed at allies is
+    /// worth pointing only at the hurt, and one aimed at the ground or at
+    /// anyone only at a foe, because nothing else would want either pointed
+    /// at it. Anything a footprint hits that is not worth hitting is harm.
+    pub fn worth_aiming_at(self, relation: Option<Relation>, is_user: bool, hurt: bool) -> bool {
+        match self {
+            Aim::SelfOnly => is_user,
+            Aim::Ally => hurt && self.hits(relation, is_user),
+            Aim::Foe | Aim::Ground | Aim::Anyone => !is_user && relation == Some(Relation::Hostile),
+        }
     }
 }
 
@@ -281,6 +311,24 @@ pub fn blocked(def: &AbilityDef, gates: &Gates<'_>, purse: &Purse<'_>, now: u32,
         }
     }
     out
+}
+
+/// Every reason this particular aim would be refused, as opposed to the
+/// ability: [`blocked`] answers whether it may be used at all, this whether
+/// it may be used *here*.
+///
+/// `cells` is the footprint the aim resolved to and `sees_aim` whether the
+/// user can see the cell it is pointed at, `None` for a user with no sight
+/// to ask, which is a mind trusted with its tactic's choice. A shape with
+/// nowhere to go, such as a bolt pointed at the caster's own feet, is
+/// refused rather than paid for, so the player keeps the turn and a
+/// preview can say so before it is spent. An ability aimed at its user
+/// needs no footprint and no sight.
+pub fn aim_blocked(def: &AbilityDef, cells: &[Point], sees_aim: Option<bool>) -> Vec<Blocked> {
+    let pointed = def.aim.needs_cursor();
+    let nowhere = pointed && cells.is_empty();
+    let unseen = pointed && def.sight && sees_aim == Some(false);
+    if nowhere || unseen { vec![Blocked::NoTarget] } else { Vec::new() }
 }
 
 /// An ability an actor could use this turn, as a mind reads it.
@@ -691,5 +739,56 @@ mod tests {
         assert!(!Aim::SelfOnly.wants(Some(Relation::Hostile)));
         assert!(!Aim::SelfOnly.needs_cursor());
         assert!(Aim::Ground.needs_cursor());
+    }
+
+    #[test]
+    fn the_user_stands_in_its_own_footprint_as_its_own_ally() {
+        assert!(Aim::Ally.hits(Some(Relation::Hostile), true), "an ally to itself whatever the matrix says");
+        assert!(Aim::Ground.hits(None, true), "the ground does not step aside for the thrower");
+        assert!(Aim::Anyone.hits(None, true));
+        assert!(!Aim::Foe.hits(None, true), "a foe-aimed shape never catches its user");
+        assert!(!Aim::Foe.hits(Some(Relation::Allied), false), "nor an ally");
+        assert!(Aim::SelfOnly.hits(None, true));
+        assert!(!Aim::SelfOnly.hits(Some(Relation::Allied), false), "and a self ability nobody else");
+    }
+
+    #[test]
+    fn what_is_worth_aiming_at_is_always_something_the_footprint_hits() {
+        assert!(Aim::Ally.worth_aiming_at(None, true, true), "a hurt user mends itself");
+        assert!(!Aim::Ally.worth_aiming_at(Some(Relation::Allied), false, false), "a whole ally is not worth a heal");
+        assert!(Aim::Ground.worth_aiming_at(Some(Relation::Hostile), false, false));
+        assert!(!Aim::Ground.worth_aiming_at(Some(Relation::Allied), false, true), "an ally is hit only by mistake");
+        assert!(!Aim::Anyone.worth_aiming_at(None, true, true), "and so is the thrower");
+        for aim in [Aim::SelfOnly, Aim::Foe, Aim::Ally, Aim::Ground, Aim::Anyone] {
+            for relation in [None, Some(Relation::Hostile), Some(Relation::Neutral), Some(Relation::Allied)] {
+                for (is_user, hurt) in [(false, false), (false, true), (true, false), (true, true)] {
+                    if aim.worth_aiming_at(relation, is_user, hurt) {
+                        assert!(aim.hits(relation, is_user), "{aim:?} aims at {relation:?} (user: {is_user}) and would pass it by");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_aim_with_nowhere_to_go_or_out_of_sight_is_refused_once() {
+        let world = World::new();
+        let defs = load(
+            r#"[
+                (name: "bolt", mode: Bolt(range: 6), effects: []),
+                (name: "lob", mode: Bolt(range: 6), sight: false, effects: []),
+                (name: "steel", aim: SelfOnly, mode: Bolt(range: 6), effects: []),
+            ]"#,
+            &world,
+        )
+        .unwrap();
+        let (bolt, lob, steel) = (defs.get(defs.expect("bolt")), defs.get(defs.expect("lob")), defs.get(defs.expect("steel")));
+        let some = [Point::new(3, 0)];
+        assert_eq!(aim_blocked(bolt, &[], Some(true)), vec![Blocked::NoTarget], "nowhere to fly");
+        assert_eq!(aim_blocked(bolt, &some, Some(false)), vec![Blocked::NoTarget], "out of sight");
+        assert_eq!(aim_blocked(bolt, &[], Some(false)), vec![Blocked::NoTarget], "both, and still said once");
+        assert!(aim_blocked(bolt, &some, None).is_empty(), "a user with no sight to ask is trusted");
+        assert!(aim_blocked(lob, &some, Some(false)).is_empty(), "an ability that needs no sight");
+        assert!(aim_blocked(steel, &[], Some(false)).is_empty(), "and one aimed at its user needs neither");
     }
 }

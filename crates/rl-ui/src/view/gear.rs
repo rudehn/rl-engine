@@ -60,7 +60,7 @@ pub struct GearViewPlugin;
 impl Plugin for GearViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GearView>()
-            .add_systems(OnEnter(EngineState::Playing), rl_bevy::needs::<Slots>("GearViewPlugin"))
+            .needs::<Slots>("GearViewPlugin", "`Slots(registry)`, the equipment slots the worn ids index into")
             .add_systems(Update, collect_gear.in_set(crate::ViewSet::Collect));
     }
 

@@ -4,7 +4,7 @@
 //! somewhere, and the somewhere is arithmetic over the same mitigation
 //! pipeline a real blow goes through. Putting it here rather than in the UI
 //! means the forecast cannot drift from the fight: [`expected_damage`]
-//! calls [`resolve`](crate::damage::resolve) with the average roll in place
+//! calls [`resolve`] with the average roll in place
 //! of a real one, through the game's own damage stages.
 //!
 //! Nothing here rolls dice, so the same inputs always give the same

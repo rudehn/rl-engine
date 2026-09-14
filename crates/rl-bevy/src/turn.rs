@@ -178,6 +178,56 @@ impl Acting {
     }
 }
 
+/// How a resolver spends a turn: the claim that keeps one turn to one
+/// action, and the outcome that puts the actor back in the queue.
+///
+/// Every resolver has one shape, the engine's and a game's alike: claim
+/// the actor holding the turn, attempt the action, say how it went. The
+/// rule for a failure lives here and nowhere else. The player keeps its
+/// turn and may try something else, and anyone else is charged and moves
+/// on, because a monster handed a free retry asks again forever. A
+/// resolver that wrote [`ActionRefused`] itself had to remember that; one
+/// that calls [`failed`](Self::failed) cannot get it wrong.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Resolution<'w, 's> {
+    acting: ResMut<'w, Acting>,
+    finished: MessageWriter<'w, ActionDone>,
+    refusals: MessageWriter<'w, ActionRefused>,
+    holding: Query<'w, 's, (), With<MyTurn>>,
+    players: Query<'w, 's, (), With<Player>>,
+}
+
+impl Resolution<'_, '_> {
+    /// Claims `actor`'s turn for this resolver. False when it holds no turn
+    /// or something already spent this one, and the intent is then stale
+    /// or a second choice: skip it.
+    pub fn claim(&mut self, actor: Entity) -> bool {
+        self.holding.contains(actor) && self.acting.claim_action(actor)
+    }
+
+    /// Whether something already spent `actor`'s turn this pass.
+    pub fn spent(&self, actor: Entity) -> bool {
+        self.acting.has_acted(actor)
+    }
+
+    /// The action happened and owes `cost` hundredths of a step, before
+    /// speed.
+    pub fn done(&mut self, actor: Entity, cost: u32) {
+        self.finished.write(ActionDone { actor, cost });
+    }
+
+    /// The action could not be done. The player keeps its turn at no
+    /// cost; anyone else is charged `cost`, what the attempt would have
+    /// taken, and moves on.
+    pub fn failed(&mut self, actor: Entity, cost: u32) {
+        if self.players.contains(actor) {
+            self.refusals.write(ActionRefused { actor });
+        } else {
+            self.finished.write(ActionDone { actor, cost });
+        }
+    }
+}
+
 /// Forgets the pass that just ended. First thing in every pass.
 pub fn start_pass(mut acting: ResMut<Acting>) {
     acting.decided.clear();
@@ -197,7 +247,7 @@ pub struct ActionDone {
 /// the actor keeps its turn.
 ///
 /// Only ever written for the player: a non-player handed a free retry loops
-/// forever. The engine's own emit site checks that; a game's must too.
+/// forever. Write it through [`Resolution::failed`], which checks that.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct ActionRefused {
     /// Who.
@@ -281,7 +331,7 @@ pub fn admit_new_actors(
 }
 
 /// The actor holding the turn, as the resolver sees it.
-type TurnHolder<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>, Has<Player>), With<MyTurn>>;
+type TurnHolder<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>), With<MyTurn>>;
 
 /// The actor holding the turn, as the cleanup sees it.
 type Holding<'w, 's> = Query<'w, 's, (Entity, Option<&'static Speed>, Has<Player>), With<MyTurn>>;
@@ -293,28 +343,25 @@ type Holding<'w, 's> = Query<'w, 's, (Entity, Option<&'static Speed>, Has<Player
 /// monster from retrying forever.
 pub fn resolve_moves(
     mut intents: MessageReader<Intent<Step>>,
-    mut done: MessageWriter<ActionDone>,
-    mut refused: MessageWriter<ActionRefused>,
-    mut acting: ResMut<Acting>,
+    mut resolution: Resolution,
     map: Res<WorldMap>,
     mut occupancy: ResMut<Occupancy>,
     mut actors: TurnHolder,
 ) {
     for intent in intents.read() {
-        let Ok((mut pos, viewshed, blocks, is_player)) = actors.get_mut(intent.actor) else { continue };
-        if !acting.claim_action(intent.actor) {
-            debug!("actor {:?} already acted this pass; dropped {:?}", intent.actor, intent.action);
+        if !resolution.claim(intent.actor) {
+            debug!("actor {:?} holds no turn or already acted this pass; dropped {:?}", intent.actor, intent.action);
             continue;
         }
+        let Ok((mut pos, viewshed, blocks)) = actors.get_mut(intent.actor) else {
+            resolution.failed(intent.actor, BASE_ACTION_COST);
+            continue;
+        };
         let dir = intent.action.0;
         let target = pos.0 + dir.offset();
         let open = map.is_walkable(target) && !occupancy.is_occupied(target) && corner_ok(&map, pos.0, dir);
         if !open {
-            if is_player {
-                refused.write(ActionRefused { actor: intent.actor });
-            } else {
-                done.write(ActionDone { actor: intent.actor, cost: BASE_ACTION_COST });
-            }
+            resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         }
         let cost = map.cost(target).unwrap_or(BASE_ACTION_COST);
@@ -326,7 +373,7 @@ pub fn resolve_moves(
         if let Some(mut v) = viewshed {
             v.dirty = true;
         }
-        done.write(ActionDone { actor: intent.actor, cost });
+        resolution.done(intent.actor, cost);
     }
 }
 
@@ -340,17 +387,11 @@ fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
 }
 
 /// Resolves a wait: the turn passes and nothing else happens.
-pub fn resolve_waits(
-    mut intents: MessageReader<Intent<Wait>>,
-    mut done: MessageWriter<ActionDone>,
-    mut acting: ResMut<Acting>,
-    holding: Query<(), With<MyTurn>>,
-) {
+pub fn resolve_waits(mut intents: MessageReader<Intent<Wait>>, mut resolution: Resolution) {
     for intent in intents.read() {
-        if holding.get(intent.actor).is_err() || !acting.claim_action(intent.actor) {
-            continue;
+        if resolution.claim(intent.actor) {
+            resolution.done(intent.actor, BASE_ACTION_COST);
         }
-        done.write(ActionDone { actor: intent.actor, cost: BASE_ACTION_COST });
     }
 }
 
@@ -360,22 +401,13 @@ pub fn resolve_waits(
 /// it a game that registers an action and forgets its resolver leaves the
 /// player holding a turn nothing will ever spend, which reads as a frozen
 /// game rather than a mistake.
-pub fn sweep_unclaimed<A: Action>(
-    mut intents: MessageReader<Intent<A>>,
-    acting: Res<Acting>,
-    mut refused: MessageWriter<ActionRefused>,
-    players: Query<(), With<Player>>,
-) {
+pub fn sweep_unclaimed<A: Action>(mut intents: MessageReader<Intent<A>>, mut resolution: Resolution) {
     for intent in intents.read() {
-        if acting.has_acted(intent.actor) {
+        if resolution.spent(intent.actor) {
             continue;
         }
         warn!("nothing resolved {} for actor {:?}", std::any::type_name::<A>(), intent.actor);
-        // Only the player may keep its turn; the recovery net in
-        // `cleanup_turns` charges anyone else a wait.
-        if players.contains(intent.actor) {
-            refused.write(ActionRefused { actor: intent.actor });
-        }
+        resolution.failed(intent.actor, BASE_ACTION_COST);
     }
 }
 

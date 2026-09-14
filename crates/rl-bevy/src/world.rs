@@ -530,10 +530,10 @@ pub struct StreamingPlugin;
 
 impl Plugin for StreamingPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{EngineSet, needs};
-        use crate::state::EngineState;
+        use crate::plugin::{EngineSet, Needs};
         app.add_message::<ChunkLoaded>()
-            .add_systems(OnEnter(EngineState::Playing), (needs::<WorldRes>("StreamingPlugin"), needs::<ChunkRulesRes>("StreamingPlugin")))
+            .needs::<WorldRes>("StreamingPlugin", "`WorldRes(WorldGraph::generate(seed, config, &rules))`, the surface to stream")
+            .needs::<ChunkRulesRes>("StreamingPlugin", "`ChunkRulesRes(Box::new(rules))`, how a chunk of the surface is built")
             .add_systems(Update, stream_chunks.in_set(EngineSet::Stream));
     }
 

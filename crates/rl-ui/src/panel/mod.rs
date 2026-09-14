@@ -2,14 +2,14 @@
 //!
 //! Every panel here is a plugin holding the rectangle it draws in and the
 //! title over it, and nothing else. It reads a view, reads the
-//! [`Palette`](crate::Palette), and writes cells. It owns no state, makes
+//! [`Palette`], and writes cells. It owns no state, makes
 //! no decisions a game might want to make differently, and can be left out
 //! entirely: a game that adds [`NearbyViewPlugin`](crate::NearbyViewPlugin)
 //! and not [`NearbyPanel`] gets the data and draws its own.
 //!
 //! That is the whole theming story. Three ways out, cheapest first:
 //!
-//! 1. Change the [`Palette`](crate::Palette), including tones the engine
+//! 1. Change the [`Palette`], including tones the engine
 //!    never heard of. Every panel restyles at once.
 //! 2. Keep the view, drop the panel, draw it yourself.
 //! 3. Add neither plugin.

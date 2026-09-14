@@ -20,9 +20,9 @@ use rl_mapgen::BuildError;
 use rl_world::WorldGraph;
 
 use crate::combat::FlowFields;
-use crate::components::{Blocks, MyTurn, Player, Position, Viewshed};
+use crate::components::{Blocks, Player, Position, Viewshed};
 use crate::knowledge::Knowledge;
-use crate::turn::{Acting, Action, ActionDone, ActionRefused, Intent, Occupancy};
+use crate::turn::{Action, Intent, Occupancy, Resolution};
 use crate::world::{WorldMap, WorldRes};
 
 /// Which map an entity is on. Zero is the surface; a game numbers its
@@ -188,8 +188,6 @@ pub struct Maps<'w> {
 /// What a warp reports.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct WarpReport<'w> {
-    done: MessageWriter<'w, ActionDone>,
-    refused: MessageWriter<'w, ActionRefused>,
     changed: MessageWriter<'w, MapChanged>,
     entered: MessageWriter<'w, PlaceEntered>,
 }
@@ -206,7 +204,6 @@ type Transitions<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static OnM
 pub struct Travel<'w, 's> {
     travellers: Traveller<'w, 's>,
     transitions: Transitions<'w, 's>,
-    holding: Query<'w, 's, (), (With<Player>, With<MyTurn>)>,
 }
 
 /// Takes the player through the transition it stands on for an
@@ -215,25 +212,28 @@ pub fn resolve_warps(
     mut commands: Commands,
     mut intents: MessageReader<Intent<GoThrough>>,
     mut requests: MessageReader<WarpRequest>,
-    mut acting: ResMut<Acting>,
+    mut resolution: Resolution,
     mut maps: Maps,
     mut report: WarpReport,
     travel: Travel,
 ) {
-    let Travel { mut travellers, transitions, holding } = travel;
+    let Travel { mut travellers, transitions } = travel;
     let mut trips: Vec<(Entity, Destination, bool)> = Vec::new();
     for intent in intents.read() {
-        if holding.get(intent.actor).is_err() || !acting.claim_action(intent.actor) {
+        if !resolution.claim(intent.actor) {
             continue;
         }
-        let Ok((pos, _, on, _)) = travellers.get(intent.actor) else { continue };
+        // Only the player travels between places; anyone else going
+        // through fails like any other impossible action.
+        let Ok((pos, _, on, _)) = travellers.get(intent.actor) else {
+            resolution.failed(intent.actor, BASE_ACTION_COST);
+            continue;
+        };
         let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
         let found = transitions.iter().find(|(p, m, _)| p.0 == pos.0 && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| t.to);
         match found {
             Some(to) => trips.push((intent.actor, to, true)),
-            None => {
-                report.refused.write(ActionRefused { actor: intent.actor });
-            }
+            None => resolution.failed(intent.actor, BASE_ACTION_COST),
         }
     }
     for req in requests.read() {
@@ -246,13 +246,13 @@ pub fn resolve_warps(
         match warp(&mut commands, &mut maps, &mut report, &mut travellers, actor, to) {
             Ok(()) => {
                 if is_action {
-                    report.done.write(ActionDone { actor, cost: BASE_ACTION_COST });
+                    resolution.done(actor, BASE_ACTION_COST);
                 }
             }
             Err(e) => {
                 error!("warp failed: {e}");
                 if is_action {
-                    report.refused.write(ActionRefused { actor });
+                    resolution.failed(actor, BASE_ACTION_COST);
                 }
             }
         }
@@ -325,7 +325,7 @@ pub fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fresh: Quer
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Actor, RevealsMap, Speed};
+    use crate::components::{Actor, MyTurn, RevealsMap, Speed};
     use crate::items::{Inventory, Item, ItemEvent, PickUp};
     use crate::plugin::headless_app;
     use crate::state::EngineState;

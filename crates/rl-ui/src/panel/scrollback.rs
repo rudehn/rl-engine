@@ -138,7 +138,7 @@ impl ScrollbackPanel {
 impl Plugin for ScrollbackPanel {
     fn build(&self, app: &mut App) {
         app.init_resource::<MessageLog>().init_resource::<Scrollback>().init_resource::<ScrollbackKeys>().insert_resource(self.0.clone());
-        app.world_mut().resource_mut::<Modals>().declare(SCROLLBACK_MODAL);
+        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(SCROLLBACK_MODAL);
         app.add_systems(Update, scrollback_keys.in_set(EngineSet::Input)).add_systems(Update, draw_scrollback.in_set(PresentSet::Overlay));
     }
 }

@@ -17,15 +17,15 @@ tier = 2
 [dependencies]
 rl-core.workspace = true
 rl-bevy.workspace = true
-# The targeting cursor resolves a footprint with the same call the
-# resolver will make, so what it draws is what will happen.
-rl-grid.workspace = true
 bevy.workspace = true
 rl-rules.workspace = true
 rl-render.workspace = true
 
 [dev-dependencies]
 # A view test needs a real map to see across, and a real map needs the
-# generation crates. Dev-only, so nothing downstream pays for them.
+# generation crates and the tiles. Dev-only, so nothing downstream pays for
+# them. The targeting cursor itself resolves nothing: it asks the resolver's
+# own `Bystanders::land`.
+rl-grid.workspace = true
 rl-mapgen.workspace = true
 rl-world.workspace = true

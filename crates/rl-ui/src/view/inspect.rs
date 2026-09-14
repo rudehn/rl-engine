@@ -76,8 +76,10 @@ pub struct InspectViewPlugin;
 impl Plugin for InspectViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InspectView>().init_resource::<InspectKeys>();
-        app.world_mut().resource_mut::<Modals>().declare(INSPECT_MODAL);
-        app.add_systems(OnEnter(EngineState::Playing), (rl_bevy::needs::<WorldMap>("InspectViewPlugin"), rl_bevy::needs::<CombatRules>("InspectViewPlugin")))
+        // `Modals` is plain data, so this plugin makes sure it exists rather
+        // than panicking when added before `UiPlugin`.
+        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(INSPECT_MODAL);
+        app.needs::<CombatRules>("InspectViewPlugin", "`CombatRules { kinds, factions }`, the damage kinds the forecast resolves through")
             .add_systems(Update, move_cursor.in_set(EngineSet::Input))
             .add_systems(Update, collect_inspect.in_set(crate::ViewSet::Collect));
     }

@@ -30,8 +30,8 @@ pub mod turn;
 pub mod world;
 
 pub use ability::{
-    Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants,
-    Known, Landing, Pools, Pull, Shove, Teleport, Use,
+    Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld,
+    FromArgs, Grants, Known, Landed, Landing, Offered, Pools, Pull, Shove, Teleport, Use,
 };
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health, MeleeAttack,
@@ -46,18 +46,18 @@ pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingP
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
-pub use plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
+pub use plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, Requirements, ResolveSet, Turn, TurnSet, depends_on};
 pub use state::EngineState;
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning};
-pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
+pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, TurnEnd, Turns, Wait};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::ability::{
-        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs,
-        Grants, Known, Landing, Offered, Pools, Pull, Shove, Teleport, Use,
+        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, AddEngineEffects, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds,
+        EffectWorld, FromArgs, Grants, Known, Landed, Landing, Offered, Pools, Pull, Shove, Teleport, Use,
     };
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, FlowFields, Health,
@@ -74,10 +74,10 @@ pub mod prelude {
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
-    pub use crate::plugin::{CorePlugin, DecideSet, EngineSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on, needs};
+    pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
     pub use crate::state::EngineState;
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning};
-    pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Step, TurnEnd, Turns, Wait};
+    pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, TurnEnd, Turns, Wait};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, PlaceMap, StreamingPlugin, WindowView, WorldMap, WorldRes, WorldSettings};
 }

@@ -66,7 +66,7 @@ impl AbilityView {
 /// Keeps [`AbilityView`] current.
 ///
 /// Nothing here runs in a game that never added
-/// [`AbilitiesPlugin`](rl_bevy::AbilitiesPlugin): without [`Abilities`]
+/// [`AbilitiesPlugin`]: without [`Abilities`]
 /// there is nothing to list, and the view stays empty rather than the
 /// plugin insisting on a registry the game has no use for.
 pub struct AbilityViewPlugin;
@@ -105,10 +105,7 @@ pub fn collect_abilities(
             // The gate's answer when it has one for this actor. A frame
             // in which nobody holds a turn leaves the reasons empty
             // rather than guessing at them.
-            blocked: match offered.as_deref() {
-                Some(offered) if offered.actor == Some(actor) => offered.why(id).to_vec(),
-                _ => Vec::new(),
-            },
+            blocked: offered.as_deref().map(|o| o.why_for(actor, id).to_vec()).unwrap_or_default(),
             cooling: ready_at.saturating_sub(now),
             facets: Vec::new(),
         });

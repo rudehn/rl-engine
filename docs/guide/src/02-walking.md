@@ -53,8 +53,8 @@ Neither is something you write.
 ## Refusals
 
 Walk into a wall and nothing happens: no time passes, you keep the turn.
-That is an `ActionRefused`, and the engine only writes one for the player.
-A monster handed a free retry would spin forever, so a blocked monster is charged for a wait instead.
+The step resolver reports it with `Resolution::failed`, which writes an `ActionRefused` for the player and nobody else.
+A monster handed a free retry would spin forever, so a blocked monster is charged for a wait instead, and a resolver you write gets the same rule by calling the same method.
 
 ## Try it
 

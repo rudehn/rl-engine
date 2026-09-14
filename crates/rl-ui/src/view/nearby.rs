@@ -66,7 +66,7 @@ pub struct NearbyViewPlugin;
 impl Plugin for NearbyViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NearbyView>()
-            .add_systems(OnEnter(EngineState::Playing), (rl_bevy::needs::<WorldMap>("NearbyViewPlugin"), rl_bevy::needs::<CombatRules>("NearbyViewPlugin")))
+            .needs::<CombatRules>("NearbyViewPlugin", "`CombatRules { kinds, factions }`, for the relation each row carries")
             .add_systems(Update, collect_nearby.in_set(crate::ViewSet::Collect));
     }
 

@@ -30,11 +30,11 @@ Forget the resolver and you get a warning naming the type, not a frozen game wit
 {{#include ../../../examples/tutorial/src/bin/step09_shove.rs:resolver}}
 ```
 
-**Check the actor holds the turn.** `With<MyTurn>` on the query. An intent for somebody not acting is stale.
+`Resolution` is the engine's side of every resolver, its own and yours.
 
-**Claim the actor.** `acting.claim_action` returns false if something already spent this turn. One turn is one action, across resolvers that have never heard of each other.
+**Claim the turn.** `resolution.claim` returns false if the actor holds no turn, so the intent is stale, or if something already spent this one. One turn is one action, across resolvers that have never heard of each other.
 
-**Report a cost or a refusal.** `ActionDone` charges and requeues. `ActionRefused` costs nothing and leaves the turn in hand. Only ever refuse the player; a monster with a free retry loops forever, which is why the engine charges a stranded one for a wait in `Cleanup`.
+**Say how it went.** `resolution.done` charges what the action cost and requeues the actor. `resolution.failed` is for one that could not be done: the player keeps the turn at no cost, and anyone else is charged, because a monster handed a free retry asks again forever. That rule lives in `Resolution`, so no resolver has to remember it.
 
 **Keep the indexes straight.** Moving something means `occupancy.relocate` as well as writing `Position`, and marking a moved viewshed dirty.
 
@@ -46,11 +46,11 @@ Reporting through a `Shoved` message rather than logging from inside the resolve
 
 Warren's shove is player-only, so it is written in `EngineSet::Input`.
 
-For monsters, decide in `TurnSet::Decide`, which has two stages: `DecideSet::Minds` is where the engine's brains run, `DecideSet::Game` is after them.
+For monsters, decide in `TurnSet::Decide`: `DecideSet::Minds` is where the engine's brains run, and `DecideSet::Game` is after them.
 Claim with `acting.claim_decision` before writing the intent, so nothing chooses twice.
 
 ## Try it
 
-- Make a shove fail against a heavier monster and refuse it.
+- Make a shove fail against a heavier monster with `resolution.failed`.
 - Charge a full turn instead of half. The clock is the balance knob.
 - Delete `resolve_shoves` and press the key. Read the warning.

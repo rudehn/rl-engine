@@ -74,7 +74,8 @@ impl StatusDef {
         self
     }
 
-    /// Sets damage per turn.
+    /// Sets damage per turn. A negative amount mends each turn instead,
+    /// through the same pipeline, so regeneration is a status like poison.
     pub fn ticks(mut self, kind: u32, amount: i32) -> Self {
         self.tick_damage = Some((kind, amount));
         self

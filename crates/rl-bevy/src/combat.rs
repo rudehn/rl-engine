@@ -21,7 +21,7 @@ use rl_rules::{DamageStage, Factions, Hit, Resistances};
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
 use crate::lighting::{DarkSight, Lighting, perceives};
 use crate::places::{MapId, OnMap};
-use crate::turn::{Acting, Action, ActionDone, Intent, Occupancy, Step, Turns, Wait};
+use crate::turn::{Acting, Action, Intent, Occupancy, Resolution, Step, Turns, Wait};
 use crate::world::WorldMap;
 
 /// Hit points.
@@ -336,10 +336,8 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
             .min_by_key(|(stale, at)| (*stale, *at))
             .map(|(_, at)| at);
     }
-    if let Some(offered) = offered.as_deref()
-        && offered.actor == Some(thinker)
-    {
-        snapshot.usable = offered.usable.clone();
+    if let Some(offered) = offered.as_deref() {
+        snapshot.usable = offered.usable_by(thinker).to_vec();
     }
 
     // The shared flow fields are built toward the player. Where stealth is
@@ -433,20 +431,19 @@ type AttackerData = (&'static Position, Option<&'static MeleeAttack>, Option<&'s
 pub fn resolve_attacks(
     mut intents: MessageReader<Intent<Attack>>,
     mut damage: MessageWriter<DamageEvent>,
-    mut done: MessageWriter<ActionDone>,
+    mut resolution: Resolution,
     mut rng: ResMut<CombatRng>,
-    mut acting: ResMut<Acting>,
     arena: Arena,
 ) {
     let Arena { map, occupancy, attackers, targets } = arena;
     for intent in intents.read() {
         let target = intent.action.0;
         let Ok((pos, melee, ranged, strikes)) = attackers.get(intent.actor) else { continue };
-        if !acting.claim_action(intent.actor) {
+        if !resolution.claim(intent.actor) {
             continue;
         }
         let Ok(target_pos) = targets.get(target) else {
-            done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
+            resolution.done(intent.actor, rl_core::turn::BASE_ACTION_COST);
             continue;
         };
         let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
@@ -455,14 +452,16 @@ pub fn resolve_attacks(
             ranged.filter(|r| line_of_fire(&map, &occupancy, pos.0, target_pos.0, r.range)).map(|r| (r.kind, r.dice))
         };
         if let Some((kind, dice)) = weapon {
-            let amount = dice.roll(&mut **rng);
+            // Floored where it is rolled: a blow that rolls below zero has
+            // missed, and the pipeline would read a negative one as a heal.
+            let amount = dice.roll_at_least(&mut **rng, 0);
             damage.write(DamageEvent { target, hit: Hit::by(intent.actor, kind, amount) });
             for (kind, dice) in strikes.map(|s| s.0.as_slice()).unwrap_or(&[]) {
-                let amount = dice.roll(&mut **rng);
+                let amount = dice.roll_at_least(&mut **rng, 0);
                 damage.write(DamageEvent { target, hit: Hit::by(intent.actor, *kind, amount) });
             }
         }
-        done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
+        resolution.done(intent.actor, rl_core::turn::BASE_ACTION_COST);
     }
 }
 
@@ -542,8 +541,7 @@ pub struct CombatPlugin;
 
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{ResolveSet, Turn, TurnSet, needs};
-        use crate::state::EngineState;
+        use crate::plugin::{CleanupSet, Needs, ResolveSet, Turn};
         use crate::turn::AddAction;
         // The minds may choose an ability, so the message they would
         // write it into exists whether or not the game added abilities.
@@ -555,12 +553,16 @@ impl Plugin for CombatPlugin {
             .add_message::<MindChose>()
             .init_resource::<DamageStages>()
             .add_action::<Attack>()
-            .add_systems(OnEnter(EngineState::Playing), (needs::<CombatRules>("CombatPlugin"), needs::<CombatRng>("CombatPlugin")))
+            .needs::<CombatRules>("CombatPlugin", "`CombatRules { kinds, factions }`, a registry of damage kinds and a faction matrix")
+            .needs::<CombatRng>("CombatPlugin", "`CombatRng::for_run(seed)`, the stream combat rolls from")
             .add_systems(Turn, decide_minds.in_set(crate::plugin::DecideSet::Minds))
-            .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act).after(crate::items::resolve_items).after(crate::places::resolve_warps))
+            .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
-            .add_systems(Turn, process_deaths.in_set(TurnSet::Cleanup).before(crate::turn::cleanup_turns))
-            .add_systems(PostUpdate, bury_the_dead.after(crate::events::track_facts));
+            .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))
+            // In `Last`, after everything that reads the frame's deaths has
+            // run, which is the promise that the dead linger until the frame
+            // ends, kept without naming any of those systems.
+            .add_systems(Last, bury_the_dead);
     }
 
     fn finish(&self, app: &mut App) {
@@ -662,18 +664,13 @@ mod tests {
         }
     }
 
-    fn resolve_shoves(
-        mut intents: MessageReader<Intent<Shoved>>,
-        mut done: MessageWriter<ActionDone>,
-        mut acting: ResMut<crate::turn::Acting>,
-        mut count: ResMut<Shoves>,
-    ) {
+    fn resolve_shoves(mut intents: MessageReader<Intent<Shoved>>, mut resolution: Resolution, mut count: ResMut<Shoves>) {
         for intent in intents.read() {
-            if !acting.claim_action(intent.actor) {
+            if !resolution.claim(intent.actor) {
                 continue;
             }
             count.0 += 1;
-            done.write(ActionDone { actor: intent.actor, cost: rl_core::turn::BASE_ACTION_COST });
+            resolution.done(intent.actor, rl_core::turn::BASE_ACTION_COST);
         }
     }
 
@@ -851,7 +848,7 @@ pub struct Harm {
 impl crate::ability::Effect for Harm {
     fn apply(&self, landing: &crate::ability::Landing, world: &mut crate::ability::EffectWorld<'_, '_>) {
         for target in &landing.targets {
-            let amount = self.roll.roll(&mut **world.rng);
+            let amount = self.roll.roll_at_least(&mut **world.rng, 0);
             world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, amount) });
         }
     }
@@ -887,7 +884,7 @@ pub struct Mend {
 impl crate::ability::Effect for Mend {
     fn apply(&self, landing: &crate::ability::Landing, world: &mut crate::ability::EffectWorld<'_, '_>) {
         for target in &landing.targets {
-            let amount = self.roll.roll(&mut **world.rng);
+            let amount = self.roll.roll_at_least(&mut **world.rng, 0);
             world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, -amount) });
         }
     }

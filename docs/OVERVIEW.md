@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-12, after the targeting cursor.
+Last updated: 2026-09-13, after one answer to where an ability lands.
 
 ## The shape
 
@@ -66,13 +66,13 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 
 - `content`: `Registry<T>` loaded from RON with validate-on-load, and `BandedTable` with weights, groups and gap detection.
 - Stats with a modifier accumulator.
-- The damage pipeline: kinds, resistances, hits with the attacker and credit split, composable stages.
+- The damage pipeline: kinds, resistances, hits with the attacker and credit split, composable stages. A negative hit mends down the same stages, past armor and a block and scaled by resistance to its kind; whoever rolls a blow floors it at zero.
 - Statuses with stacking rules, per-turn ticks and cures.
 - A faction relation matrix.
 - The equipment slot graph with displacement.
 - The affix and enchant model: item tags, prefix and suffix affixes with level-scaled stat grants and extra strikes, an enhance rule for what a level buys, per-instance state, weighted rolling.
-- `ability`: what an actor can spend a turn on besides a step and a swing, as data. A shape from the targeting module, an [`Aim`] saying what it wants under it, costs against a pool, an item charge, health or a tagged item, requirements over statuses, slots and stats, an integer time and cooldown, and a list of named effects with their arguments left unparsed for whoever registered them. `load` resolves every name in a file through a `Lookup` the game implements over its own registries, and reports every unknown one at once; `blocked` answers whether a use is permitted and lists every reason it is not.
-- `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt, wander and use-ability tactics. The ability tactic scores a footprint by what the ability's `Aim` wants under it, so a mind fires something it cannot understand and never learns the theme.
+- `ability`: what an actor can spend a turn on besides a step and a swing, as data. A shape from the targeting module, an [`Aim`] saying what it wants under it, costs against a pool, an item charge, health or a tagged item, requirements over statuses, slots and stats, an integer time and cooldown, and a list of named effects with their arguments left unparsed for whoever registered them. `load` resolves every name in a file through a `Lookup` the game implements over its own registries, and reports every unknown one at once; `blocked` answers whether a use is permitted and lists every reason it is not. `Aim::hits` says who a footprint catches, the user counting as its own ally, and `Aim::worth_aiming_at` what is worth pointing it at; `aim_blocked` refuses an aim with nowhere to go or out of the user's sight.
+- `ai`: movement profiles, snapshots of what an actor sees, and a tactic-priority brain with melee, flee-when-hurt, hunt, wander and use-ability tactics. The ability tactic aims by `Aim::worth_aiming_at` and scores a footprint by `Aim::hits`, the rules the resolver lands it with, so a mind fires something it cannot understand, never learns the theme, and never counts a hit the resolver would not land.
 - `events`: facts with kind, subject, object and amount, matchers, a ledger of named counters, and quests as objectives over facts with prerequisite chains and a victory flag.
 - `balance`: threat scoring and the spawn-band report.
 - `ai::awareness`: `NoticeStats` (a certain radius, a chance beyond it, a light bonus and a memory) and `StealthStats`, the pure `notices` roll, and `Awareness`, which goes `Unaware` to `Alert` on a sighting and back once its memory runs out; plus the `SearchLastKnown` tactic, which walks to where an enemy was last seen.
@@ -82,16 +82,17 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 
 ### rl-bevy
 
-- One plugin per subsystem, each opt-in: `CorePlugin` holds the loop, the map and its places; field of view, combat, statuses, items, lighting, streaming and facts are added by name. A plugin says what it needs, so a missing rule table or a missing plugin it depends on panics naming both, rather than a subsystem quietly doing nothing all run.
+- One plugin per subsystem, each opt-in: `CorePlugin` holds the loop, the map and its places; field of view, combat, statuses, items, lighting, streaming and facts are added by name. A plugin says what it needs with `app.needs::<R>(plugin, hint)`, and on entering play one check lists every missing piece at once with how to make it, `CorePlugin`'s own `WorldMap` included, rather than a subsystem, or the whole frame, quietly doing nothing all run. A plugin that depends on another checks in `finish`, so the order a game lists its plugins in never matters, and a world built while play never began is warned about.
 - The engine-owned loop: a `Turn` schedule run as many passes per frame as it takes, input once per frame, refusals that cost nothing, stall recovery.
 - A mind may choose an action the engine has never heard of: a tactic returns a number of the game's own, the engine reports it as `MindChose`, and the game answers it in `DecideSet::Game`. A game's tactic can sit anywhere in the priority list beside the engine's.
 - A reaction phase inside the turn: `TurnSet::React` runs after the actions of a pass resolve and before the turn is requeued, which is where a game answers what just happened. A drink heals before the next blow lands, a bite poisons on the bite, gear counts from the moment it is worn.
 - Drawing is layered by `PresentSet`: narration, then the map, then the chrome, then whatever covers them. No crate orders itself after another crate's draw function.
-- Actions are types, not a list: `Step`, `Attack`, `Wait`, `PickUp`, `DropItem`, `Equip`, `Unequip`, `UseItem` and `GoThrough` ship with the engine, each resolved by the module that owns the mechanic. A game registers its own with `add_action`, resolves it in `TurnSet::Resolve` by claiming the actor and reporting a cost, and the sweep refuses whatever no resolver claimed.
+- Actions are types, not a list: `Step`, `Attack`, `Wait`, `PickUp`, `DropItem`, `Equip`, `Unequip`, `UseItem` and `GoThrough` ship with the engine, each resolved by the module that owns the mechanic. A game registers its own with `add_action`, resolves it in `ResolveSet::Act` through `Resolution`, and the sweep refuses whatever no resolver claimed. `Resolution` is every resolver's side of the loop, the engine's and a game's: `claim` the actor holding the turn, then `done` with a cost or `failed`, which keeps the player's turn and charges anyone else, so no resolver has to remember that a monster handed a free retry loops forever.
+- Every stage a plugin fills is a named set, and no system orders itself after another's function: `DecideSet::{Notice, Offer, Minds, Game}`, `ResolveSet::{Travel, Act, Effects, Damage}` with steps, waits and warps travelling before anything else acts, and `CleanupSet::{Remove, Requeue}` taking the dead out before a turn is requeued. The dead are buried in `Last`.
 - Chunk streaming with edit deltas, per-map occupancy and knowledge, field of view.
 - Combat: health, armor, resists, factions, melee and ranged attacks down a line of fire, extra strikes, the damage event pipeline, deaths that linger until the frame ends, flow fields per movement profile feeding the minds.
 - Items on the ground, in bags and in slots, with stacks, tags and enchantments.
-- Abilities, opt-in: the `Use` action, `Known` rebuilt every turn from what an actor is and wears, `Pools` for whatever a game calls its fuel, `Cooldowns` as absolute times on the turn clock so a save restores them for nothing, `Grants` and `Charges` on the things that lend an ability, `Offered`, the gate's answer for whoever holds the turn, which the minds and a menu both read, and a resolver that gates, pays, resolves the footprint and lands the effects inside the pass. Effects are types, not a list: one per subsystem the engine owns, each in the module that owns the mechanic, and a game registers its own with `add_effect`. An effect asks for damage, a status or a move through `EffectWorld`, and reaches anything else through `Commands`.
+- Abilities, opt-in: the `Use` action, `Known` rebuilt every turn from what an actor is and wears, `Pools` for whatever a game calls its fuel, `Cooldowns` as absolute times on the turn clock so a save restores them for nothing, `Grants` and `Charges` on the things that lend an ability, `Offered`, the gate's answer for whoever holds the turn, which the minds and a menu both read through accessors that answer only for that actor, and a resolver that gates, pays, resolves the footprint and lands the effects inside the pass. `Bystanders::land` is the one answer to where a use lands, who it hits and why the aim would be refused; the resolver and the targeting preview both call it. Effects are types, not a list: one per subsystem the engine owns, each in the module that owns the mechanic, and a game registers its own with `add_effect`. An effect asks for damage, a status or a move through `EffectWorld`, and reaches anything else through `Commands`.
 - Places: bounded maps entered by transitions or warps, built on first arrival, kept whole, off-map actors frozen; `PlaceBuild::from_context` reads a finished chain; `WarpRequest::into_place` starts a run in one.
 - The surface is optional, and everything regional belongs to it: `WorldMap::new` takes the tile tables alone, the region size is read from the world graph when the first window loads, and `Knowledge` is initialised by the engine. A delve names neither.
 - Knowledge: explored tiles per map in buckets of its own, and the surface's seen regions and discovered sites kept apart from them, so going underground never hides the overworld's fog.
@@ -105,7 +106,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 ### rl-render
 
 - A diffed terminal back buffer.
-- The map view with lit, remembered and unknown tiles.
+- The map view with lit, remembered and unknown tiles. `MapViewPlugin` needs a `MapView` and field of view, and says so, since without either it draws nothing.
 - Shading, in the manner of Brogue: each tile authored with both colours and a `Vary` that jitters every cell by a hash of its position and can shimmer over time; light multiplies glyph and background channel by channel, down to a dark floor and up to a gain cap; the wavering part of a light dips on a smooth noise so flames ripple; `Memory` fades what was seen to a darker, greyer, cooler colour.
 - `LightOverlay`: intensity drawn as digits.
 - `CapturePlugin`: `RL_CAPTURE` plays `RL_CAPTURE_KEYS` through the real keyboard input, photographs the window without taking focus, refuses a black frame, and exits.
@@ -125,7 +126,8 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 - `cursor`: the arithmetic the two cursors share, ordering candidates nearest first with a positional tie-break, cycling with a wrap, and stepping without leaving the loaded window.
 - The look cursor: opens on the nearest actor, steps with the direction keys, cycles what is in sight, stays inside the loaded window, and owns input as a modal.
 - The targeting cursor: a game writes `AimAt` and the engine does the rest.
-  It opens on the nearest thing the ability's `Aim` wants, which is the choice a mind's tactic would make, previews the footprint with the same call the resolver will make, and writes the `Use` intent on confirm.
+  It opens on the nearest thing worth aiming at by `Aim::worth_aiming_at`, the rule a mind's tactic aims by, previews through `Bystanders::land`, the call the resolver lands the use with, and writes the `Use` intent on confirm.
+  A property test over seeded layouts holds the preview to it: who the banner lists and whether it reads as refused are what the resolver does.
   An ability that wants no cursor is used at once, so a game binds every ability the same way.
   The overlay repaints the backgrounds the map already drew, keeping every glyph: the cells hit, the flight to them, and the whole footprint in the bad tone with the reason in the banner when the resolver would refuse.
 - Awareness on the panels: `Row::aware` says whether each actor in sight has noticed the player, the rail mutes the ones that have not and marks the ones that have, and `VitalsView::seen` reads hidden or seen.

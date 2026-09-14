@@ -49,7 +49,7 @@ impl VitalsView {
 /// Keeps [`VitalsView`] current.
 ///
 /// Needs nothing. Badges come from [`StatusRules`], which is an opt-in
-/// subsystem the way [`Lighting`](rl_bevy::Lighting) is: a game with no
+/// subsystem the way [`Lighting`] is: a game with no
 /// statuses gets no badges and pays nothing for the idea, rather than
 /// being made to insert an empty registry to have a health bar.
 pub struct VitalsViewPlugin;

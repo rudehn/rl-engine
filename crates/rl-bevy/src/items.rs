@@ -14,7 +14,7 @@ use rl_rules::{EquipShape, Equipment};
 
 use crate::components::{MyTurn, Position};
 use crate::places::{MapId, OnMap};
-use crate::turn::{Acting, Action, ActionDone, ActionRefused, Intent};
+use crate::turn::{Action, Intent, Resolution};
 use crate::world::WorldMap;
 
 /// The equipment slots this game has, in the order a panel lists them.
@@ -144,16 +144,7 @@ pub struct ItemWorld<'w, 's> {
     ground: Ground<'w, 's>,
     stacks: Query<'w, 's, &'static Stack>,
     wearables: Query<'w, 's, &'static Wearable>,
-    players: Query<'w, 's, (), With<crate::components::Player>>,
     map: Res<'w, WorldMap>,
-}
-
-/// What the item resolver reports.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct ItemReport<'w> {
-    done: MessageWriter<'w, ActionDone>,
-    refused: MessageWriter<'w, ActionRefused>,
-    events: MessageWriter<'w, ItemEvent>,
 }
 
 /// Take everything lying on the actor's cell.
@@ -217,91 +208,93 @@ impl ItemIntents<'_, '_> {
 /// holding the turn. Each costs one action. An impossible one, such as
 /// picking up from bare ground, is refused for the player and treated as
 /// a wait for anyone else, like an impossible move.
-pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut acting: ResMut<Acting>, world: ItemWorld, report: ItemReport) {
-    let ItemWorld { mut carriers, ground, stacks, wearables, players, map } = world;
+pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resolution: Resolution, world: ItemWorld, mut events: MessageWriter<ItemEvent>) {
+    let ItemWorld { mut carriers, ground, stacks, wearables, map } = world;
     let this_map = map.current();
-    let ItemReport { mut done, mut refused, mut events } = report;
     for (actor, which) in intents.drain() {
-        if acting.has_acted(actor) {
+        if !resolution.claim(actor) {
             continue;
         }
-        let ok = match which {
-            Which::PickUp => {
-                let Ok((pos, mut bag, _)) = carriers.get_mut(actor) else { continue };
-                let here: Vec<Entity> =
-                    ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map).map(|(e, _, _)| e).collect();
-                for item in &here {
-                    commands.entity(*item).remove::<Position>();
-                    let merged_into = stacks.get(*item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));
-                    match merged_into {
-                        Some(into) => {
-                            let add = stacks.get(*item).map(|s| s.count).unwrap_or(1);
-                            commands.entity(into).entry::<Stack>().and_modify(move |mut s| s.count += add);
-                            commands.entity(*item).despawn();
+        // An actor with no bag to act on has failed like any other
+        // impossible item action, rather than holding a claimed turn.
+        let ok = 'attempt: {
+            match which {
+                Which::PickUp => {
+                    let Ok((pos, mut bag, _)) = carriers.get_mut(actor) else { break 'attempt false };
+                    let here: Vec<Entity> =
+                        ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map).map(|(e, _, _)| e).collect();
+                    for item in &here {
+                        commands.entity(*item).remove::<Position>();
+                        let merged_into = stacks.get(*item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));
+                        match merged_into {
+                            Some(into) => {
+                                let add = stacks.get(*item).map(|s| s.count).unwrap_or(1);
+                                commands.entity(into).entry::<Stack>().and_modify(move |mut s| s.count += add);
+                                commands.entity(*item).despawn();
+                            }
+                            None => bag.items.push(*item),
                         }
-                        None => bag.items.push(*item),
+                        events.write(ItemEvent::PickedUp { actor, item: *item, merged_into });
                     }
-                    events.write(ItemEvent::PickedUp { actor, item: *item, merged_into });
+                    !here.is_empty()
                 }
-                !here.is_empty()
-            }
-            Which::Drop(item) => {
-                let Ok((pos, mut bag, worn)) = carriers.get_mut(actor) else { continue };
-                if !bag.remove(item) {
-                    false
-                } else {
-                    if let Some(mut worn) = worn
-                        && worn.unequip(item)
-                    {
+                Which::Drop(item) => {
+                    let Ok((pos, mut bag, worn)) = carriers.get_mut(actor) else { break 'attempt false };
+                    if !bag.remove(item) {
+                        false
+                    } else {
+                        if let Some(mut worn) = worn
+                            && worn.unequip(item)
+                        {
+                            events.write(ItemEvent::Unequipped { actor, item });
+                        }
+                        commands.entity(item).insert(*pos);
+                        events.write(ItemEvent::Dropped { actor, item, at: *pos });
+                        true
+                    }
+                }
+                Which::Equip(item) => {
+                    let Ok((_, bag, worn)) = carriers.get_mut(actor) else { break 'attempt false };
+                    match (worn, wearables.get(item)) {
+                        (Some(mut worn), Ok(shape)) if bag.contains(item) => match worn.equip(item, &shape.0) {
+                            Ok(displaced) => {
+                                for other in displaced {
+                                    events.write(ItemEvent::Unequipped { actor, item: other });
+                                }
+                                events.write(ItemEvent::Equipped { actor, item });
+                                true
+                            }
+                            Err(e) => {
+                                warn!("{actor:?} could not equip {item:?}: {e}");
+                                false
+                            }
+                        },
+                        _ => false,
+                    }
+                }
+                Which::Unequip(item) => {
+                    let Ok((_, _, worn)) = carriers.get_mut(actor) else { break 'attempt false };
+                    let taken_off = worn.is_some_and(|mut worn| worn.unequip(item));
+                    if taken_off {
                         events.write(ItemEvent::Unequipped { actor, item });
                     }
-                    commands.entity(item).insert(*pos);
-                    events.write(ItemEvent::Dropped { actor, item, at: *pos });
-                    true
+                    taken_off
                 }
-            }
-            Which::Equip(item) => {
-                let Ok((_, bag, worn)) = carriers.get_mut(actor) else { continue };
-                match (worn, wearables.get(item)) {
-                    (Some(mut worn), Ok(shape)) if bag.contains(item) => match worn.equip(item, &shape.0) {
-                        Ok(displaced) => {
-                            for other in displaced {
-                                events.write(ItemEvent::Unequipped { actor, item: other });
-                            }
-                            events.write(ItemEvent::Equipped { actor, item });
-                            true
-                        }
-                        Err(e) => {
-                            warn!("{actor:?} could not equip {item:?}: {e}");
-                            false
-                        }
-                    },
-                    _ => false,
-                }
-            }
-            Which::Unequip(item) => {
-                let Ok((_, _, worn)) = carriers.get_mut(actor) else { continue };
-                let taken_off = worn.is_some_and(|mut worn| worn.unequip(item));
-                if taken_off {
-                    events.write(ItemEvent::Unequipped { actor, item });
-                }
-                taken_off
-            }
-            Which::Use(item) => {
-                let Ok((_, bag, _)) = carriers.get_mut(actor) else { continue };
-                if bag.contains(item) {
-                    events.write(ItemEvent::Used { actor, item });
-                    true
-                } else {
-                    false
+                Which::Use(item) => {
+                    let Ok((_, bag, _)) = carriers.get_mut(actor) else { break 'attempt false };
+                    if bag.contains(item) {
+                        events.write(ItemEvent::Used { actor, item });
+                        true
+                    } else {
+                        false
+                    }
                 }
             }
         };
-        acting.claim_action(actor);
-        if ok || players.get(actor).is_err() {
-            done.write(ActionDone { actor, cost: BASE_ACTION_COST });
+        if ok {
+            resolution.done(actor, BASE_ACTION_COST);
         } else {
-            refused.write(ActionRefused { actor });
+            resolution.failed(actor, BASE_ACTION_COST);
         }
     }
 }
@@ -328,7 +321,7 @@ pub struct ItemsPlugin;
 
 impl Plugin for ItemsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{ResolveSet, Turn, TurnSet};
+        use crate::plugin::{CleanupSet, ResolveSet, Turn};
         use crate::turn::AddAction;
         app.add_message::<ItemEvent>()
             .add_action::<PickUp>()
@@ -336,8 +329,8 @@ impl Plugin for ItemsPlugin {
             .add_action::<Equip>()
             .add_action::<Unequip>()
             .add_action::<UseItem>()
-            .add_systems(Turn, resolve_items.in_set(ResolveSet::Act).after(crate::places::resolve_warps))
-            .add_systems(Turn, forget_removed_items.in_set(TurnSet::Cleanup).after(crate::turn::cleanup_turns));
+            .add_systems(Turn, resolve_items.in_set(ResolveSet::Act))
+            .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
     }
 
     fn finish(&self, app: &mut App) {

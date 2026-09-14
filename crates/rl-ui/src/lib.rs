@@ -57,7 +57,8 @@
 //!    No `Color`, no [`Rect`](rl_core::Rect), no string the game did not
 //!    supply. Anything a game might phrase differently is a [`Facet`].
 //! 2. A collector system in [`ViewSet::Collect`], and a plugin that adds
-//!    it and declares what it needs with [`rl_bevy::needs`].
+//!    it and declares what it needs with [`Needs::needs`](rl_bevy::Needs::needs),
+//!    saying how a game makes each piece.
 //! 3. Arithmetic that is really about the rules, in `rl-rules` where it can
 //!    be tested without an `App`. [`rl_rules::forecast`] is the example: the
 //!    inspect panel's numbers come from the same mitigation pipeline a real
@@ -79,7 +80,7 @@
 //! - **A panel owns no state.** If it needs to remember something, that is
 //!   a view or a [`ListMenu`] the game holds.
 //!
-//! [`Name`]: rl_bevy::Label
+//! [`Name`]: bevy::prelude::Name
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]

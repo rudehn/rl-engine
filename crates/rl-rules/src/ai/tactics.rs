@@ -6,7 +6,8 @@ use rl_grid::footprint;
 
 use crate::ability::{Aim, Usable};
 use crate::ai::brain::{Decision, Tactic, TacticCtx};
-use crate::ai::snapshot::Snapshot;
+use crate::ai::snapshot::{ActorView, Snapshot};
+use crate::faction::Relation;
 
 /// Attack an adjacent enemy, the nearest by position on a tie.
 #[derive(Debug, Clone, Copy, Default)]
@@ -150,7 +151,7 @@ impl<A: Copy> Tactic<A> for Wander {
 /// covering.
 ///
 /// The engine cannot know what an ability does, so this scores what its
-/// footprint would land on: the things its [`Aim`](crate::ability::Aim)
+/// footprint would land on: the things its [`Aim`]
 /// wants, less the things it does not. A monster will not drop a burst on
 /// its own allies to catch one enemy, and never learns what the burst is.
 ///
@@ -175,35 +176,48 @@ impl UseAbility {
     /// What `usable` aimed at `at` would be worth, or `None` when it is
     /// not worth using.
     ///
-    /// Two points for something wanted, three off for something not, so
-    /// one ally caught outweighs one enemy hit. A shape that covers the
-    /// user is only wanted when the ability was aimed at the user.
+    /// Two points for something worth hitting, three off for something hit
+    /// by mistake, so one ally caught in a ground burst outweighs one enemy
+    /// in it. Who is hit is [`Aim::hits`], the rule the resolver lands the
+    /// use with, and what is worth it is [`Aim::worth_aiming_at`].
     fn score<A: Copy>(usable: &Usable, cells: &[Point], snapshot: &Snapshot<A>) -> i32 {
         if usable.aim == Aim::SelfOnly {
             // Nothing to weigh: a self ability is worth using when there
             // is anything to use it against at all.
             return if snapshot.enemies.is_empty() { 0 } else { 1 };
         }
-        let inside = |p: Point| cells.contains(&p);
-        let enemies = snapshot.enemies.iter().filter(|e| inside(e.pos)).count() as i32;
-        let allies = snapshot.allies.iter().filter(|a| inside(a.pos)).count() as i32;
-        let (wanted, unwanted) = match usable.aim {
-            Aim::Ally => (snapshot.allies.iter().filter(|a| inside(a.pos) && a.hp_pct() < 100).count() as i32, enemies),
-            // Ground and Anyone are pointed at foes by a mind, because a
-            // mind has nothing else it would want to point them at.
-            _ => (enemies, allies),
-        };
-        let self_hit = i32::from(inside(snapshot.me.pos));
-        wanted * 2 - unwanted * 3 - self_hit * 3
+        // Who the footprint hits and whether each was worth hitting, by the
+        // rule the resolver lands it with: the user stands in its own blast,
+        // and a foe-aimed shape passes an ally by rather than harming it.
+        // Healing an ally that was not hurt wastes nothing, so only the
+        // other aims count what they catch by mistake.
+        let (mut worth, mut harm) = (0, 0);
+        for (actor, relation, is_user) in Self::everyone(snapshot) {
+            if !cells.contains(&actor.pos) || !usable.aim.hits(Some(relation), is_user) {
+                continue;
+            }
+            if usable.aim.worth_aiming_at(Some(relation), is_user, actor.hp_pct() < 100) {
+                worth += 1;
+            } else if usable.aim != Aim::Ally {
+                harm += 1;
+            }
+        }
+        worth * 2 - harm * 3
     }
 
-    /// The cells worth pointing an ability at.
+    /// The cells worth pointing an ability at, the user's own first.
     fn aims<A: Copy>(usable: &Usable, snapshot: &Snapshot<A>) -> Vec<Point> {
-        match usable.aim {
-            Aim::SelfOnly => vec![snapshot.me.pos],
-            Aim::Ally => snapshot.allies.iter().filter(|a| a.hp_pct() < 100).map(|a| a.pos).collect(),
-            _ => snapshot.enemies.iter().map(|e| e.pos).collect(),
-        }
+        Self::everyone(snapshot)
+            .filter(|(actor, relation, is_user)| usable.aim.worth_aiming_at(Some(*relation), *is_user, actor.hp_pct() < 100))
+            .map(|(actor, _, _)| actor.pos)
+            .collect()
+    }
+
+    /// The user, then what it sees, each with how it stands to the user.
+    fn everyone<A: Copy>(snapshot: &Snapshot<A>) -> impl Iterator<Item = (&ActorView<A>, Relation, bool)> {
+        std::iter::once((&snapshot.me, Relation::Allied, true))
+            .chain(snapshot.enemies.iter().map(|e| (e, Relation::Hostile, false)))
+            .chain(snapshot.allies.iter().map(|a| (a, Relation::Allied, false)))
     }
 }
 
@@ -444,14 +458,62 @@ mod tests {
         assert_eq!(ability, Id::from_raw(0));
         assert!(aim == Point::new(6, 5) || aim == Point::new(6, 6), "it aimed at the huddle: {aim:?}");
 
-        // Put an ally in the huddle and the loner becomes the better shot.
+        // A burst on the ground takes no sides: put an ally in the huddle
+        // and the loner becomes the better shot. A foe-aimed burst passes
+        // the ally by, which the next test pins.
         let mut mixed = many.clone();
+        mixed.usable = vec![usable(0, Aim::Ground, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
         mixed.allies = vec![view(9, 6, 6, 10)];
         mixed.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10)];
         let mut ctx =
             TacticCtx { snapshot: &mixed, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
         assert_eq!(aim, Point::new(3, 8), "one ally caught outweighs one enemy hit");
+    }
+
+    /// A mind weighs a footprint by who the resolver would hit: a foe-aimed
+    /// burst passes an ally by and costs nothing for it, and a spray aimed
+    /// at allies is pointed at the hurt user itself.
+    #[test]
+    fn a_mind_scores_a_footprint_by_who_the_resolver_would_hit() {
+        let mut rng = StdRng::seed_from_u64(4);
+        let can_step = |_: Point| true;
+
+        // Two enemies side by side with an ally tucked under each, and a
+        // loner. A foe-aimed burst on the pair hits both and passes the
+        // allies by, so the pair is worth twice the loner.
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10), view(4, 7, 5, 10)];
+        s.allies = vec![view(8, 6, 6, 10), view(9, 7, 6, 10)];
+        s.usable = vec![usable(0, Aim::Foe, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
+        s.sort();
+        let mut ctx =
+            TacticCtx { snapshot: &s, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
+        assert_ne!(aim, Point::new(3, 8), "the ally under the pair costs a foe-aimed burst nothing");
+
+        // The same room with the burst on the ground: now the ally burns,
+        // and the loner is the better shot.
+        s.usable = vec![usable(0, Aim::Ground, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
+        let mut ctx =
+            TacticCtx { snapshot: &s, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
+        assert_eq!(aim, Point::new(3, 8));
+
+        // Hurt and alone, with a spray aimed at allies: the one ally in
+        // reach is itself.
+        let mut hurt = Snapshot::alone(view(1, 0, 5, 4));
+        hurt.usable = vec![usable(0, Aim::Ally, rl_grid::TargetMode::Adjacent)];
+        let mut ctx =
+            TacticCtx { snapshot: &hurt, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        assert_eq!(UseAbility::default().evaluate(&mut ctx), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(0, 5) }));
+
+        // Whole again, there is nothing to mend.
+        let mut whole = hurt.clone();
+        whole.me = view(1, 0, 5, 10);
+        let mut ctx =
+            TacticCtx { snapshot: &whole, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
     }
 
     /// Nothing worth hitting, nothing to use: the next tactic gets its
