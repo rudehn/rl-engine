@@ -309,7 +309,7 @@ mod tests {
     fn app() -> App {
         let mut app = headless_app();
         app.add_plugins(rl_bevy::FovPlugin);
-        app.add_plugins((bevy::input::InputPlugin, rl_render::MapViewPlugin, rl_ui::UiPlugin, OverworldPlugin))
+        app.add_plugins((bevy::input::InputPlugin, rl_render::MapViewPlugin::new(Rect::new(0, 1, 100, 35)), rl_ui::UiPlugin, OverworldPlugin))
             .init_resource::<Script>()
             .add_systems(PreUpdate, play_script.after(bevy::input::InputSystems));
         let tiles = TileRegistry::standard();
@@ -323,7 +323,6 @@ mod tests {
             .insert_resource(WorldRes(world))
             .insert_resource(Terminal::new(100, 40, Vec2::ONE))
             .insert_resource(OverworldLayout { viewport: Rect::new(0, 1, 100, 35) })
-            .insert_resource(rl_render::MapView::new(Rect::new(0, 1, 100, 35)))
             .insert_resource(bands);
         app.world_mut().spawn((Player, Position(start)));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

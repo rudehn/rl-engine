@@ -14,20 +14,17 @@
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy::window::WindowResolution;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_render::capture;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
-/// The terminal, in cells and in pixels per cell.
+/// The terminal, in cells.
 const COLS: i32 = 80;
 const ROWS: i32 = 40;
-const CELL: Vec2 = Vec2::new(10.0, 16.0);
 /// Rows at the bottom of the terminal given over to the message log.
 const LOG_ROWS: i32 = 5;
 /// Columns down the right given over to the rail.
@@ -91,63 +88,49 @@ impl Screen {
 fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(capture::prepare(Window {
-                    title: "Warren".into(),
-                    resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
-                    ..default()
-                })),
-                ..default()
-            })
-            .set(ImagePlugin::default_nearest()),
-    )
-    .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    // The engine: the turn loop and the map, then sight.
-    // Minds live in the combat plugin: deciding where to move and
-    // deciding whom to hit are the same decision.
-    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, ItemsPlugin))
-    // The drawing. `CapturePlugin` is only how this guide's screenshots
-    // are taken; delete it and nothing changes.
-    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
-    .insert_resource(Seed(RunSeed(std::env::var("WARREN_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(7))))
-    .insert_resource(MapView::new(screen.map))
-    // ANCHOR: panels
-    // Five panels. Each holds its own rectangle, reads a view the engine
-    // keeps current, and draws itself: none of them needs a system here.
-    // Warren has no equipment slots, so it takes no `GearPanel`. Opt-in
-    // is per panel: you add the ones you have a game for.
-    .add_plugins((
-        VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
-        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
-        LogPanel::new(screen.log),
-        InspectPanel::new(screen.inspect),
-        // A second presenter over the log the strip already draws: `p`
-        // opens all of it, scrollable and filterable by tone.
-        ScrollbackPanel::new(screen.scrollback),
-    ))
-    // What the engine cannot know about a row. Named by set, never by
-    // ordering after a collector function.
-    .add_systems(Update, (note_bag_and_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate))
-    // ANCHOR_END: panels
-    .add_systems(Startup, start)
-    // Once a frame, before the turns: whatever the player pressed becomes
-    // at most one intent, however many passes the turn loop then runs.
-    // The game's own action: registered, then resolved alongside the
-    // engine's. Without the resolver the sweep would refuse every shove.
-    .add_action::<Shove>()
-    .add_message::<Shoved>()
-    .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
-    // ANCHOR: gate
-    // One gate for every screen there is and every screen added later:
-    // the stack is empty, or the world does not have the keys.
-    .add_systems(Update, player_input.in_set(EngineSet::Input).run_if(no_modal))
-    // ANCHOR_END: gate
-    // Both inside the turn: a floor fills the first time it is entered,
-    // and a crust eaten heals before the next rat gets its bite in.
-    .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
-    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    // What every game adds: the window and the glyph terminal, the turn
+    // loop, sight, the map in its share of the screen, and the UI base.
+    // `CapturePlugin` inside it only takes this guide's screenshots.
+    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(screen.map))
+        // Minds live in the combat plugin: deciding where to move and
+        // deciding whom to hit are the same decision.
+        .add_plugins((CombatPlugin, ItemsPlugin))
+        .insert_resource(Seed(RunSeed(std::env::var("WARREN_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(7))))
+        // ANCHOR: panels
+        // Five panels. Each holds its own rectangle, reads a view the engine
+        // keeps current, and draws itself: none of them needs a system here.
+        // Warren has no equipment slots, so it takes no `GearPanel`. Opt-in
+        // is per panel: you add the ones you have a game for.
+        .add_plugins((
+            VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
+            NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
+            LogPanel::new(screen.log),
+            InspectPanel::new(screen.inspect),
+            // A second presenter over the log the strip already draws: `p`
+            // opens all of it, scrollable and filterable by tone.
+            ScrollbackPanel::new(screen.scrollback),
+        ))
+        // What the engine cannot know about a row. Named by set, never by
+        // ordering after a collector function.
+        .add_systems(Update, (note_bag_and_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate))
+        // ANCHOR_END: panels
+        .add_systems(Startup, start)
+        // Once a frame, before the turns: whatever the player pressed becomes
+        // at most one intent, however many passes the turn loop then runs.
+        // The game's own action: registered, then resolved alongside the
+        // engine's. Without the resolver the sweep would refuse every shove.
+        .add_action::<Shove>()
+        .add_message::<Shoved>()
+        .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
+        // ANCHOR: gate
+        // One gate for every screen there is and every screen added later:
+        // the stack is empty, or the world does not have the keys.
+        .add_systems(Update, player_input.in_set(EngineSet::Input).run_if(no_modal))
+        // ANCHOR_END: gate
+        // Both inside the turn: a floor fills the first time it is entered,
+        // and a crust eaten heals before the next rat gets its bite in.
+        .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
+        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     // ANCHOR: tone
     // A role the engine never heard of, and the colour for it. Every
     // widget that takes a tone honours it from here on.

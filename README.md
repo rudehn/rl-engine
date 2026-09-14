@@ -53,6 +53,19 @@ rl-engine = { git = "https://github.com/rudehn/rl-engine" }
 bevy = "0.19"
 ```
 
+A game starts from `RoguelikePlugins`: a window sized to the glyph terminal, the engine's loop, sight, the map and the UI base.
+Everything else is a plugin you name, so this is a game with combat and nothing it did not ask for.
+
+```rust,no_run
+use bevy::prelude::*;
+use rl_engine::prelude::*;
+
+App::new()
+    .add_plugins(RoguelikePlugins::new("My roguelike", 80, 40))
+    .add_plugins(CombatPlugin)
+    .run();
+```
+
 A tool or a server that needs no window can depend on a single tier-1 crate, such as `rl-grid` for field of view and pathfinding, and never compile Bevy.
 
 ```toml
@@ -93,7 +106,7 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The three example games are the best guide to the Bevy side.
+The four example games are the best guide to the Bevy side.
 `examples/delve/src/floors.rs` is a complete multi-floor map builder in one file, and `examples/lamplight/src/main.rs` is lighting turned on in one file.
 
 ## Crates

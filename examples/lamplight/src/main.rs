@@ -22,19 +22,16 @@
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy::window::WindowResolution;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_mapgen::passes::{CellularCave, CentralStart, KeepLargestRegion};
-use rl_engine::rl_render::capture;
 use rl_engine::rl_rules::ai::tactics::{Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
 
 const COLS: i32 = 80;
 const ROWS: i32 = 40;
-const CELL: Vec2 = Vec2::new(10.0, 16.0);
 const LOG_ROWS: i32 = 4;
 const CAVE: MapId = MapId(1);
 
@@ -50,34 +47,20 @@ fn main() -> AppExit {
         seed = RunSeed(args[i + 1].parse().expect("seed"));
     }
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(capture::prepare(Window {
-                    title: "Lamplight".into(),
-                    resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
-                    ..default()
-                })),
-                ..default()
-            })
-            .set(ImagePlugin::default_nearest()),
-    )
-    .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, ItemsPlugin, LightingPlugin))
-    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
-    .insert_resource(Seed(seed))
-    .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    // No hints on the strip: the log's second line already lists the
-    // keys, and forty characters of them would squeeze the lantern
-    // readout off the row.
-    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)))
-    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-    .init_resource::<LightOverlay>()
-    .add_systems(Update, note_the_dark.in_set(ViewSet::Annotate))
-    .add_systems(Startup, start)
-    .add_systems(Update, player_input.in_set(EngineSet::Input))
-    .add_systems(Turn, populate.in_set(TurnSet::React))
-    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    app.add_plugins(RoguelikePlugins::new("Lamplight", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+        .add_plugins((CombatPlugin, ItemsPlugin, LightingPlugin))
+        .insert_resource(Seed(seed))
+        // No hints on the strip: the log's second line already lists the
+        // keys, and forty characters of them would squeeze the lantern
+        // readout off the row.
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)))
+        .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+        .init_resource::<LightOverlay>()
+        .add_systems(Update, note_the_dark.in_set(ViewSet::Annotate))
+        .add_systems(Startup, start)
+        .add_systems(Update, player_input.in_set(EngineSet::Input))
+        .add_systems(Turn, populate.in_set(TurnSet::React))
+        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     app.run()
 }
 

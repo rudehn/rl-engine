@@ -106,7 +106,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 ### rl-render
 
 - A diffed terminal back buffer.
-- The map view with lit, remembered and unknown tiles. `MapViewPlugin` needs a `MapView` and field of view, and says so, since without either it draws nothing.
+- The map view with lit, remembered and unknown tiles. `MapViewPlugin::new(rect)` takes the rectangle it draws in, the way every panel does, and needs field of view, since without it nothing is ever seen.
 - Shading, in the manner of Brogue: each tile authored with both colours and a `Vary` that jitters every cell by a hash of its position and can shimmer over time; light multiplies glyph and background channel by channel, down to a dark floor and up to a gain cap; the wavering part of a light dips on a smooth noise so flames ripple; `Memory` fades what was seen to a darker, greyer, cooler colour.
 - `LightOverlay`: intensity drawn as digits.
 - `CapturePlugin`: `RL_CAPTURE` plays `RL_CAPTURE_KEYS` through the real keyboard input, photographs the window without taking focus, refuses a black frame, and exits.
@@ -154,6 +154,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 ## Tier 3: rl-engine
 
 - The facade re-exporting every crate.
+- `RoguelikePlugins`, the front door: `RoguelikePlugins::new(title, cols, rows)` opens a window sized to the glyph terminal and adds what every game adds, `TerminalPlugin`, `CorePlugin`, `FovPlugin`, `MapViewPlugin`, `UiPlugin` and `CapturePlugin`, with `.cell`, `.font` and `.map` for the rest. No subsystem is in it, and anything in it can be replaced or switched off as in any Bevy plugin group. Every example game and tutorial step starts from it.
 - A prelude worth globbing: core, grid, mapgen, world, rules, the Bevy layer, render, UI, overworld and save, in one `use`. It leaves out `Rect`, because Bevy's prelude has one of its own and a game that globs both would have to disambiguate every use; a doc test globs both preludes and names a type from each crate, so the next collision fails there rather than in someone's game.
 
 ## The guide

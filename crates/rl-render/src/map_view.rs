@@ -136,14 +136,23 @@ impl MapView {
 
 /// Draws the map and the entities on it into the terminal every frame.
 ///
-/// Needs a [`MapView`] before play begins, and field of view: without it
-/// no tile is ever seen or remembered, so the map draws as nothing at all.
-pub struct MapViewPlugin;
+/// Takes the rectangle it draws in, the way every panel does, so a game
+/// has no [`MapView`] of its own to insert and cannot forget one. Needs
+/// field of view: without it no tile is ever seen or remembered, so the
+/// map would draw as nothing at all.
+pub struct MapViewPlugin(Rect);
+
+impl MapViewPlugin {
+    /// The map, drawn in the terminal cells of `viewport`.
+    pub fn new(viewport: Rect) -> Self {
+        Self(viewport)
+    }
+}
 
 impl Plugin for MapViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TileAppearance>()
-            .needs::<MapView>("MapViewPlugin", "`MapView::new(rect)`, the terminal cells the map is drawn in")
+            .insert_resource(MapView::new(self.0))
             .add_systems(Update, (follow_player, draw_map).chain().in_set(PresentSet::Map));
     }
 

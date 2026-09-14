@@ -7,15 +7,11 @@
 //! `cargo run -p tutorial --bin step01_a_map`
 
 use bevy::prelude::*;
-use bevy::window::WindowResolution;
 use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_render::capture;
 
-/// The terminal, in cells and in pixels per cell.
+/// The terminal, in cells.
 const COLS: i32 = 80;
 const ROWS: i32 = 40;
-const CELL: Vec2 = Vec2::new(10.0, 16.0);
 
 /// Map zero is the streamed surface. The warren has no surface, so its
 /// one floor is map one.
@@ -24,27 +20,10 @@ const WARREN: MapId = MapId(1);
 // ANCHOR: main
 fn main() -> AppExit {
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(capture::prepare(Window {
-                    title: "Warren".into(),
-                    resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
-                    ..default()
-                })),
-                ..default()
-            })
-            .set(ImagePlugin::default_nearest()),
-    )
-    .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    // The engine: the turn loop and the map, then sight.
-    .add_plugins((CorePlugin, FovPlugin))
-    // The drawing. `CapturePlugin` is only how this guide's screenshots
-    // are taken; delete it and nothing changes.
-    .add_plugins((MapViewPlugin, CapturePlugin))
-    .insert_resource(Seed(RunSeed(7)))
-    .insert_resource(MapView::new(Rect::new(0, 0, COLS, ROWS)))
-    .add_systems(Startup, start);
+    // What every game adds: the window and the glyph terminal, the turn
+    // loop, sight, the map across the whole terminal, and the UI base.
+    // `CapturePlugin` inside it only takes this guide's screenshots.
+    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS)).insert_resource(Seed(RunSeed(7))).add_systems(Startup, start);
     app.run()
 }
 // ANCHOR_END: main

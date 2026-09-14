@@ -143,7 +143,7 @@ mod tests {
         let mut stage = Stage::new_with((AbilitiesPlugin, TargetPanel::new(Rect::new(0, 0, 40, 1)).hints("[enter]")), |app| {
             app.add_engine_effects();
             abilities(app);
-            app.add_plugins(rl_render::MapViewPlugin).insert_resource(MapView::new(Rect::new(0, 1, 40, 20)));
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 1, 40, 20)));
         });
         stage.tick();
         stage

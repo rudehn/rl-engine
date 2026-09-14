@@ -17,11 +17,9 @@ mod floors;
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy::window::WindowResolution;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_render::capture;
 use rl_engine::rl_rules::ai::awareness::{NoticeStats, StealthStats};
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
@@ -33,7 +31,6 @@ use crate::floors::{FLOORS, Whale, ambient_of, floor_of, map_of, name_of};
 
 const COLS: i32 = 90;
 const ROWS: i32 = 46;
-const CELL: Vec2 = Vec2::new(10.0, 16.0);
 const LOG_ROWS: i32 = 4;
 const BEASTS_RON: &str = include_str!("../assets/beasts.ron");
 
@@ -45,33 +42,19 @@ fn main() -> AppExit {
     }
     let first = args.iter().position(|a| a == "--floor").map(|i| args[i + 1].parse::<u32>().expect("floor").clamp(1, FLOORS)).unwrap_or(1);
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(capture::prepare(Window {
-                    title: "The Hollow Whale".into(),
-                    resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
-                    ..default()
-                })),
-                ..default()
-            })
-            .set(ImagePlugin::default_nearest()),
-    )
-    .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, LightingPlugin))
-    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
-    .insert_resource(Seed(seed))
-    .insert_resource(FirstFloor(first))
-    .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[>] down [<] up [.] wait [q]uit"))
-    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-    .add_systems(Update, note_floor.in_set(ViewSet::Annotate))
-    .add_systems(Startup, start)
-    .add_systems(Update, (tend_brand, player_input).chain().in_set(EngineSet::Input))
-    .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
-    // A floor fills the moment it is entered, inside the turn.
-    .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    app.add_plugins(RoguelikePlugins::new("The Hollow Whale", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+        .add_plugins((CombatPlugin, LightingPlugin))
+        .insert_resource(Seed(seed))
+        .insert_resource(FirstFloor(first))
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[>] down [<] up [.] wait [q]uit"))
+        .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+        .add_systems(Update, note_floor.in_set(ViewSet::Annotate))
+        .add_systems(Startup, start)
+        .add_systems(Update, (tend_brand, player_input).chain().in_set(EngineSet::Input))
+        .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
+        // A floor fills the moment it is entered, inside the turn.
+        .add_systems(Turn, populate_floor.in_set(TurnSet::React))
+        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     app.add_plugins(StealthPlugin);
     app.run()
 }

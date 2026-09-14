@@ -14,18 +14,19 @@ Nothing moves yet.
 {{#include ../../../examples/tutorial/src/bin/step01_a_map.rs:main}}
 ```
 
-`TerminalPlugin` is the glyph grid: 80 by 40 cells, one Bevy sprite each.
-Nothing about it is roguelike; every other drawing plugin writes into it.
+`RoguelikePlugins` is what every game adds, in one line.
+It opens a window sized to an 80 by 40 cell glyph terminal and adds the plugins no game goes without:
 
-`CorePlugin` is the engine: the turn loop, the clock, the occupancy index, the map and its places, the `EngineState` machine, and three actions that need nothing else (step, wait, go through).
-Everything else is a plugin you name.
-Nothing turns itself on because a resource happens to exist.
+- `TerminalPlugin`, the glyph grid, one Bevy sprite per cell. Nothing about it is roguelike; every other drawing plugin writes into it.
+- `CorePlugin`, the engine: the turn loop, the clock, the occupancy index, the map and its places, the `EngineState` machine, and three actions that need nothing else (step, wait, go through).
+- `FovPlugin`, which computes what each actor can see. The map view draws a tile only if the player's `Viewshed` says it is visible or the explored map says it was.
+- `MapViewPlugin`, the map, drawn across the whole terminal unless `.map(rect)` gives it less.
+- `UiPlugin`, the base every panel in chapter 3 onward needs.
+- `CapturePlugin`, which is only how this guide's screenshots are taken, and does nothing unless asked.
 
-`FovPlugin` computes what each actor can see.
-It is not optional here: the map view draws a tile only if the player's `Viewshed` says it is visible or the explored map says it was, so `MapViewPlugin` refuses to start without it and says which plugin to add.
-Leave out the `MapView` or the `WorldMap` and play refuses to begin the same way, listing everything missing at once with how to make each.
-
-`CapturePlugin` is only how this guide's screenshots are taken.
+Everything else is a plugin you name, starting in chapter 4, and nothing turns itself on because a resource happens to exist.
+The group is Bevy's own kind, so any of it can be swapped or switched off: `RoguelikePlugins::new("Warren", 80, 40).build().disable::<CapturePlugin>()`.
+Leave out the `WorldMap` and play refuses to begin, listing everything missing at once with how to make each.
 
 ## Tiles are ids
 

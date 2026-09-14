@@ -25,15 +25,14 @@ mod statuses;
 mod testing;
 
 use bevy::prelude::*;
-use bevy::window::WindowResolution;
+use rl_engine::RoguelikePlugins;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
 use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
-use rl_engine::rl_render::{CapturePlugin, capture};
-use rl_engine::rl_render::{Glyph, MapView, MapViewPlugin, TerminalPlugin};
+use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
-    Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, Tones, UiPlugin, ViewSet, VitalsPanel, panel,
+    Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, Tones, ViewSet, VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -45,7 +44,6 @@ use rl_engine::rl_save::Saves;
 /// Terminal size in cells.
 const COLS: i32 = 100;
 const ROWS: i32 = 40;
-const CELL: Vec2 = Vec2::new(10.0, 16.0);
 const FONT: f32 = 14.0;
 /// Rows given to the log at the bottom of the screen.
 const LOG_ROWS: i32 = 4;
@@ -114,75 +112,62 @@ fn main() -> AppExit {
 
     let screen = Screen::new();
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(capture::prepare(Window {
-                    title: "Corsair".to_string(),
-                    resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
-                    ..default()
-                })),
-                ..default()
-            })
-            .set(ImagePlugin::default_nearest()),
-    )
-    .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: FONT })
-    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin))
-    .add_plugins((MapViewPlugin, UiPlugin, OverworldPlugin, CapturePlugin))
-    // The panels. Each one draws itself from a view the engine keeps
-    // current; none of them needs a system of Corsair's.
-    .add_plugins((
-        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals"),
-        GearPanel::new(screen.gear),
-        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the ground"),
-        LogPanel::new(screen.log),
-        InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close"),
-        // A second presenter over the same log the strip draws: `p` opens
-        // all of it, scrollable and filterable by tone.
-        ScrollbackPanel::new(screen.scrollback).titled("Ship's log"),
-    ))
-    .insert_resource(StartSeed { seed, regions, resume })
-    .insert_resource(Saves::platform_default("corsair"))
-    .insert_resource(MapView::new(screen.map))
-    .insert_resource(OverworldLayout { viewport: screen.map })
-    .init_resource::<inventory::InventoryScreen>()
-    .init_resource::<places::Entrances>()
-    .init_resource::<quests::LedgerScreen>()
-    .add_systems(Startup, start_world)
-    .add_systems(Update, (quests::ledger_keys, inventory::inventory_keys, input::player_input, input::fire).chain().in_set(EngineSet::Input))
-    // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
-    .add_systems(Update, save::save_keys.after(EngineSet::Present))
-    .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
-    .add_systems(Update, places::light_the_way.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
-    .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
-    // What this turn caused, answered inside the turn: the floor that
-    // fills on first arrival, what the dead leave, what a drink does,
-    // what gear is worth, what a bite leaves behind. Inside the pass, so
-    // a drink heals before the next blow lands.
-    .add_systems(
-        Turn,
-        (places::populate_places, items::drop_loot, items::use_items, items::refresh_gear, statuses::inflict_on_hit).chain().in_set(TurnSet::React),
-    )
-    // Once a frame, in words: everything the chrome is about to draw.
-    .add_systems(
-        Update,
-        (
-            note_discoveries,
-            monsters::narrate,
-            items::narrate_items,
-            statuses::narrate_statuses,
-            quests::report_facts,
-            quests::narrate_quests,
-            save::delete_on_death,
+    app.add_plugins(RoguelikePlugins::new("Corsair", COLS, ROWS).font(FONT).map(screen.map))
+        .add_plugins((CombatPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin))
+        .add_plugins(OverworldPlugin)
+        // The panels. Each one draws itself from a view the engine keeps
+        // current; none of them needs a system of Corsair's.
+        .add_plugins((
+            VitalsPanel::new(screen.vitals).bars(12).heading("Vitals"),
+            GearPanel::new(screen.gear),
+            NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the ground"),
+            LogPanel::new(screen.log),
+            InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close"),
+            // A second presenter over the same log the strip draws: `p` opens
+            // all of it, scrollable and filterable by tone.
+            ScrollbackPanel::new(screen.scrollback).titled("Ship's log"),
+        ))
+        .insert_resource(StartSeed { seed, regions, resume })
+        .insert_resource(Saves::platform_default("corsair"))
+        .insert_resource(OverworldLayout { viewport: screen.map })
+        .init_resource::<inventory::InventoryScreen>()
+        .init_resource::<places::Entrances>()
+        .init_resource::<quests::LedgerScreen>()
+        .add_systems(Startup, start_world)
+        .add_systems(Update, (quests::ledger_keys, inventory::inventory_keys, input::player_input, input::fire).chain().in_set(EngineSet::Input))
+        // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
+        .add_systems(Update, save::save_keys.after(EngineSet::Present))
+        .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
+        .add_systems(Update, places::light_the_way.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
+        .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
+        // What this turn caused, answered inside the turn: the floor that
+        // fills on first arrival, what the dead leave, what a drink does,
+        // what gear is worth, what a bite leaves behind. Inside the pass, so
+        // a drink heals before the next blow lands.
+        .add_systems(
+            Turn,
+            (places::populate_places, items::drop_loot, items::use_items, items::refresh_gear, statuses::inflict_on_hit).chain().in_set(TurnSet::React),
         )
-            .chain()
-            .in_set(PresentSet::Narrate),
-    )
-    // What the engine cannot know about a row: what an enemy is holding,
-    // and what is underfoot. Named by set, not by ordering after a
-    // collector.
-    .add_systems(Update, (note_what_they_wield, note_where_you_are).in_set(ViewSet::Annotate))
-    .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
+        // Once a frame, in words: everything the chrome is about to draw.
+        .add_systems(
+            Update,
+            (
+                note_discoveries,
+                monsters::narrate,
+                items::narrate_items,
+                statuses::narrate_statuses,
+                quests::report_facts,
+                quests::narrate_quests,
+                save::delete_on_death,
+            )
+                .chain()
+                .in_set(PresentSet::Narrate),
+        )
+        // What the engine cannot know about a row: what an enemy is holding,
+        // and what is underfoot. Named by set, not by ordering after a
+        // collector.
+        .add_systems(Update, (note_what_they_wield, note_where_you_are).in_set(ViewSet::Annotate))
+        .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
     app.add_plugins(StealthPlugin);
     // Corsair's own screens, declared while building so the lookups in
     // `inventory` and `quests` find them.

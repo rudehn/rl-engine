@@ -40,14 +40,15 @@ The cold blue in the screenshot is not a colour anyone chose. It is the brown fl
 ## The status line and the log
 
 ```rust,no_run
-    .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
     // Two panels: the vitals strip on the top row, the log along the
     // bottom. Each draws itself; neither needs a system of yours.
     .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[.] wait  [q]uit"))
     .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
 ```
 
-A panel is a plugin holding the rectangle it draws in.
+`.map` gives the map everything but the top row and the log, which leaves room for two panels.
+A panel is a plugin holding the rectangle it draws in, the way the map view does.
 `VitalsPanel` reads health, armor, the turn and the position off the player and prints them; `LogPanel` prints the log.
 Neither needs a system of yours, and neither is added for you: [chapter 10](10-panels.md) is the rest of them and the reason they are split the way they are.
 

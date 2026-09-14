@@ -14,10 +14,17 @@
 //! [`rl_overworld`], [`rl_save`]) are the Bevy plugins that run the loops.
 //!
 //! The repository README walks through a headless example, and the
-//! `corsair`, `delve` and `lamplight` example games show the Bevy side end
-//! to end.
+//! `corsair`, `delve`, `lamplight` and `knacks` example games show the Bevy
+//! side end to end.
+//!
+//! A game starts from [`RoguelikePlugins`], the window, the terminal and
+//! the plugins every game adds, and then names the subsystems it wants.
 
 #![deny(missing_docs)]
+
+use bevy::app::PluginGroupBuilder;
+use bevy::prelude::*;
+use bevy::window::WindowResolution;
 
 pub use rl_bevy;
 pub use rl_core;
@@ -29,6 +36,86 @@ pub use rl_rules;
 pub use rl_save;
 pub use rl_ui;
 pub use rl_world;
+
+/// What every game on the glyph terminal adds before its own plugins, in
+/// one group.
+///
+/// Bevy's defaults, with a window sized to the terminal and nearest-pixel
+/// sampling so glyphs stay sharp; the [`TerminalPlugin`](rl_render::TerminalPlugin)
+/// grid; the engine's [`CorePlugin`](rl_bevy::CorePlugin) and
+/// [`FovPlugin`](rl_bevy::FovPlugin); the map, drawn in [`map`](Self::map)'s
+/// rectangle; [`UiPlugin`](rl_ui::UiPlugin), the base every panel needs; and
+/// [`CapturePlugin`](rl_render::CapturePlugin), which does nothing unless
+/// `RL_CAPTURE` is set.
+///
+/// Only what every game adds, and nothing that is a subsystem: combat,
+/// items, statuses, lighting, streaming and the rest stay plugins a game
+/// names, because a subsystem is opt-in. Anything here can still be
+/// switched off or replaced the way Bevy's own groups allow.
+///
+/// ```no_run
+/// use bevy::prelude::*;
+/// use rl_engine::prelude::*;
+/// use rl_engine::rl_core::Rect;
+///
+/// App::new()
+///     .add_plugins(RoguelikePlugins::new("Warren", 80, 40).map(Rect::new(0, 1, 80, 34)).build().disable::<CapturePlugin>())
+///     .add_plugins(CombatPlugin)
+///     .run();
+/// ```
+#[derive(Debug, Clone)]
+pub struct RoguelikePlugins {
+    title: String,
+    cols: i32,
+    rows: i32,
+    cell: Vec2,
+    font: f32,
+    map: Option<rl_core::Rect>,
+}
+
+impl RoguelikePlugins {
+    /// A window titled `title`, `cols` by `rows` cells of ten by sixteen
+    /// pixels, with the map filling it.
+    pub fn new(title: impl Into<String>, cols: i32, rows: i32) -> Self {
+        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None }
+    }
+
+    /// Each cell's size in pixels.
+    pub fn cell(mut self, size: Vec2) -> Self {
+        self.cell = size;
+        self
+    }
+
+    /// The glyph height in pixels, a little under the cell's.
+    pub fn font(mut self, size: f32) -> Self {
+        self.font = size;
+        self
+    }
+
+    /// The terminal cells the map is drawn in; the rest is left to panels.
+    pub fn map(mut self, viewport: rl_core::Rect) -> Self {
+        self.map = Some(viewport);
+        self
+    }
+}
+
+impl PluginGroup for RoguelikePlugins {
+    fn build(self) -> PluginGroupBuilder {
+        let (width, height) = ((self.cols as f32 * self.cell.x) as u32, (self.rows as f32 * self.cell.y) as u32);
+        let window = Window { title: self.title, resolution: WindowResolution::new(width, height), ..default() };
+        let map = self.map.unwrap_or(rl_core::Rect::new(0, 0, self.cols, self.rows));
+        PluginGroupBuilder::start::<Self>()
+            .add_group(
+                DefaultPlugins.set(WindowPlugin { primary_window: Some(rl_render::capture::prepare(window)), ..default() }).set(ImagePlugin::default_nearest()),
+            )
+            .add(rl_render::TerminalPlugin { width: self.cols, height: self.rows, cell_size: self.cell, font_size: self.font })
+            .add(rl_bevy::CorePlugin)
+            .add(rl_bevy::FovPlugin)
+            .add(rl_render::MapViewPlugin::new(map))
+            .add(rl_ui::UiPlugin)
+            .add(rl_render::CapturePlugin)
+    }
+}
 
 /// The curated set of names a game needs most of the time.
 /// Everything a game reaches for, in one glob.
@@ -57,6 +144,7 @@ pub use rl_world;
 /// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
 /// ```
 pub mod prelude {
+    pub use crate::RoguelikePlugins;
     // Core, minus `Rect`: see the note above.
     pub use rl_bevy::prelude::*;
     pub use rl_core::prelude::{

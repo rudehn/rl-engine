@@ -32,12 +32,10 @@
 mod effects;
 
 use bevy::prelude::*;
-use bevy::window::WindowResolution;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_mapgen::passes::{Border, CentralStart, Fill, Scatter};
-use rl_engine::rl_render::capture;
 use rl_engine::rl_rules::ability::{AbilityDef, Cost, Lookup};
 use rl_engine::rl_rules::ai::tactics::{Hunt, MeleeAdjacent, UseAbility, Wander};
 use rl_engine::rl_rules::damage::DamageKindId;
@@ -50,7 +48,6 @@ use effects::{Banner, Drain, Hack, Plunder, Smoke, SmokeTile};
 
 const COLS: i32 = 80;
 const ROWS: i32 = 36;
-const CELL: Vec2 = Vec2::new(10.0, 16.0);
 const LOG_ROWS: i32 = 5;
 const ARENA: MapId = MapId(1);
 
@@ -75,43 +72,29 @@ fn main() -> AppExit {
     }
 
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(capture::prepare(Window {
-                    title: "Knacks".into(),
-                    resolution: WindowResolution::new((COLS as f32 * CELL.x) as u32, (ROWS as f32 * CELL.y) as u32),
-                    ..default()
-                })),
-                ..default()
-            })
-            .set(ImagePlugin::default_nearest()),
-    )
-    .add_plugins(TerminalPlugin { width: COLS, height: ROWS, cell_size: CELL, font_size: 14.0 })
-    .add_plugins((CorePlugin, FovPlugin, CombatPlugin, ItemsPlugin, StatusPlugin, AbilitiesPlugin))
-    .add_plugins((MapViewPlugin, UiPlugin, CapturePlugin))
-    // The engine's effects, then this game's. Nothing is registered by
-    // default, so an ability naming an effect nobody added fails at load.
-    .add_engine_effects()
-    .add_effect::<Drain>()
-    .add_effect::<Plunder>()
-    .add_effect::<Hack>()
-    .add_effect::<Banner>()
-    .add_effect::<Smoke>()
-    .insert_resource(Seed(seed))
-    .insert_resource(Chosen(set))
-    .insert_resource(MapView::new(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-    .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)))
-    .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-    // The cursor and the list: the whole of what this game writes for
-    // aiming is the key that opens one and the key that opens the other.
-    .add_plugins(TargetPanel::new(Rect::new(0, ROWS - LOG_ROWS - 1, COLS, 1)).hints("[enter] fire  [tab] next  [esc] back"))
-    .add_plugins(AbilityPanel::new(Rect::new(COLS / 2 - 18, 6, 36, 14)).title("What you can call on").hints("[a] close"))
-    .add_systems(Startup, start)
-    .add_systems(Update, (player_input, switch_set).in_set(EngineSet::Input))
-    .add_systems(Turn, populate.in_set(TurnSet::React))
-    .add_systems(Update, show_pools.in_set(ViewSet::Annotate))
-    .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    app.add_plugins(RoguelikePlugins::new("Knacks", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
+        .add_plugins((CombatPlugin, ItemsPlugin, StatusPlugin, AbilitiesPlugin))
+        // The engine's effects, then this game's. Nothing is registered by
+        // default, so an ability naming an effect nobody added fails at load.
+        .add_engine_effects()
+        .add_effect::<Drain>()
+        .add_effect::<Plunder>()
+        .add_effect::<Hack>()
+        .add_effect::<Banner>()
+        .add_effect::<Smoke>()
+        .insert_resource(Seed(seed))
+        .insert_resource(Chosen(set))
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)))
+        .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
+        // The cursor and the list: the whole of what this game writes for
+        // aiming is the key that opens one and the key that opens the other.
+        .add_plugins(TargetPanel::new(Rect::new(0, ROWS - LOG_ROWS - 1, COLS, 1)).hints("[enter] fire  [tab] next  [esc] back"))
+        .add_plugins(AbilityPanel::new(Rect::new(COLS / 2 - 18, 6, 36, 14)).title("What you can call on").hints("[a] close"))
+        .add_systems(Startup, start)
+        .add_systems(Update, (player_input, switch_set).in_set(EngineSet::Input))
+        .add_systems(Turn, populate.in_set(TurnSet::React))
+        .add_systems(Update, show_pools.in_set(ViewSet::Annotate))
+        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     app.run()
 }
 
@@ -620,7 +603,7 @@ mod tests {
             // the ability menu's modal finds it. They draw into a terminal,
             // so there is one, and nothing looks at it.
             .add_plugins((UiPlugin, TargetViewPlugin, AbilityPanel::new(Rect::new(0, 0, 36, 14))))
-            .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, CELL))
+            .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, Vec2::ONE))
             .init_resource::<Script>()
             .add_systems(PreUpdate, play.after(bevy::input::InputSystems))
             .add_engine_effects()
