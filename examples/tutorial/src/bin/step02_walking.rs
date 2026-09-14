@@ -90,9 +90,8 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpR
     commands.insert_resource(WorldMap::new(warren.tiles.tables()));
     commands.insert_resource(PlaceRulesRes(Box::new(warren)));
 
-    let player = commands
-        .spawn(((Actor, Player, Blocks, Position(Point::ZERO), Speed(100)), (Viewshed::new(9), RevealsMap, Glyph::new('@', Color::WHITE).on_layer(10))))
-        .id();
+    let player =
+        commands.spawn(((Actor, Player, Blocks, Position(Point::ZERO)), (Viewshed::new(9), RevealsMap, Glyph::new('@', Color::WHITE).on_layer(10)))).id();
     warps.write(WarpRequest::into_place(player, WARREN));
     next.set(EngineState::Playing);
 }

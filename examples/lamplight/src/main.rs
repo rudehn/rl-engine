@@ -217,7 +217,7 @@ fn start(
     let lamp = commands.spawn((Item, Thing::Lantern, Lamp(lantern), lantern, Fuel(400))).id();
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(30), RevealsMap, Speed(100)),
+            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(30), RevealsMap),
             (Health::full(40), Armor(0), Faction(you), MeleeAttack { kind: kinds.expect("bite"), dice: DiceRoll::new(1, 4) }),
             (Inventory { items: vec![lamp] }, Glyph::new('@', Color::WHITE).on_layer(10)),
         ))

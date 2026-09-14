@@ -101,15 +101,13 @@ impl Stage {
         let player = app
             .world_mut()
             .spawn((
-                (Actor, Player, Blocks, Position(at), Viewshed::new(10), RevealsMap, Speed(100)),
+                (Actor, Player, Blocks, Position(at), Viewshed::new(10), RevealsMap),
                 (
                     Health::full(30),
                     Armor(0),
                     Faction(ours),
                     MeleeAttack { kind, dice: rl_core::DiceRoll::new(1, 6) },
                     Name::new("you"),
-                    StatBlock::default(),
-                    Afflicted::default(),
                     Inventory::default(),
                     rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
                 ),
@@ -135,7 +133,6 @@ impl Stage {
                 Health::full(10),
                 Armor(0),
                 Faction(theirs),
-                Speed(100),
                 MeleeAttack { kind, dice: rl_core::DiceRoll::new(1, 4) },
                 Name::new(name.to_string()),
                 rl_render::Glyph::new(glyph, Color::WHITE).on_layer(5),

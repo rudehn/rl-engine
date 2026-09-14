@@ -221,7 +221,7 @@ mod tests {
 
     use super::*;
     use crate::combat::{Armor, CombatPlugin, CombatRng, CombatRules, DamageStages, Health, MeleeAttack, Mind};
-    use crate::components::{Actor, Blocks, RevealsMap, Speed};
+    use crate::components::{Actor, Blocks, RevealsMap};
     use crate::fov::FovPlugin;
     use crate::plugin::headless_app;
     use crate::state::EngineState;
@@ -296,7 +296,7 @@ mod tests {
             let player = app
                 .world_mut()
                 .spawn((
-                    (Actor, Player, Blocks, Position(start), Viewshed::new(16), RevealsMap, Speed(100)),
+                    (Actor, Player, Blocks, Position(start), Viewshed::new(16), RevealsMap),
                     (Health::full(100), Armor(0), Faction(you), Stealth(StealthStats::default())),
                 ))
                 .id();
@@ -304,7 +304,7 @@ mod tests {
             let watcher = app
                 .world_mut()
                 .spawn((
-                    (Actor, Blocks, Position(start.offset(gap, 0)), Speed(100), Health::full(100), Armor(0), Faction(them)),
+                    (Actor, Blocks, Position(start.offset(gap, 0)), Health::full(100), Armor(0), Faction(them)),
                     (MeleeAttack { kind, dice: DiceRoll::flat(0) }, Perception(reach), Mind(Arc::new(brain)), Notice(notice)),
                 ))
                 .id();

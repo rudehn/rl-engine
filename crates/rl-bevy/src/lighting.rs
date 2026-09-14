@@ -308,7 +308,7 @@ impl Plugin for LightingPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Blocks, MyTurn, Player, RevealsMap, Speed};
+    use crate::components::{Blocks, MyTurn, Player, RevealsMap};
     use crate::items::{DropItem, PickUp};
     use crate::knowledge::Knowledge;
     use crate::places::{PlaceBuild, PlaceRules, PlaceRulesRes, WarpRequest};
@@ -363,8 +363,7 @@ mod tests {
                 app.add_plugins(LightingPlugin);
                 app.insert_resource(l);
             }
-            let mut player =
-                app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(12), RevealsMap, Speed(100), Inventory::default()));
+            let mut player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(12), RevealsMap, Inventory::default()));
             if let Some(d) = dark_sight {
                 player.insert(DarkSight(d));
             }

@@ -341,7 +341,7 @@ impl Plugin for ItemsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Actor, Blocks, Player, RevealsMap, Speed, Viewshed};
+    use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::Turns;
@@ -401,17 +401,7 @@ mod tests {
         let (main, off) = (slots.expect("main"), slots.expect("off"));
         let player = app
             .world_mut()
-            .spawn((
-                Actor,
-                Player,
-                Blocks,
-                Position(start),
-                Viewshed::new(6),
-                RevealsMap,
-                Speed(100),
-                Inventory::default(),
-                Equipped(Equipment::for_slots(&slots)),
-            ))
+            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Inventory::default(), Equipped(Equipment::for_slots(&slots))))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();

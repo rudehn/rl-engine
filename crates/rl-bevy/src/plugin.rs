@@ -382,7 +382,7 @@ mod tests {
     }
 
     fn spawn_player(app: &mut App, at: Point) -> Entity {
-        let e = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(6), RevealsMap, Speed(100))).id();
+        let e = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(6), RevealsMap)).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         e
     }
@@ -551,7 +551,7 @@ mod tests {
         app.add_action::<Leap>().add_systems(Turn, (leap_every_turn.in_set(DecideSet::Game), resolve_leaps.in_set(ResolveSet::Act)));
         let start = land_tile(&world);
         let player = spawn_player(&mut app, start);
-        let monster = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Speed(100))).id();
+        let monster = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)))).id();
         app.update();
         app.update();
         let mut refused: Vec<Entity> = Vec::new();

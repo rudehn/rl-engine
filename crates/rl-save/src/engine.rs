@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn the_engine_state_survives_a_round_trip_into_a_fresh_world() {
         let (mut app, start) = fresh();
-        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Speed(100))).id();
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
         let other = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Speed(200))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -133,7 +133,7 @@ mod tests {
 
         // Restore into a fresh app with fresh entities.
         let (mut app2, _) = fresh();
-        let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(1, 0)), Viewshed::new(6), RevealsMap, Speed(100))).id();
+        let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(1, 0)), Viewshed::new(6), RevealsMap)).id();
         let other2 = app2.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Speed(200))).id();
         let mut remap2 = EntityRemap::new();
         remap2.bind(p_id, player2);

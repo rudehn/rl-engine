@@ -309,7 +309,7 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
         (faction, items::unarmed(bestiary))
     };
     world.spawn((
-        (Actor, Player, Blocks, Position(spawn), Viewshed::new(12), RevealsMap, Speed(100)),
+        (Actor, Player, Blocks, Position(spawn), Viewshed::new(12), RevealsMap),
         (
             Health::full(30),
             Armor(0),
@@ -321,8 +321,6 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             // Quiet enough that a smuggler in the dark has to be close,
             // or catch you in your own lantern light, to be sure of you.
             Stealth(rl_engine::rl_rules::ai::awareness::StealthStats { quiet: 1, subtlety: 10 }),
-            StatBlock::default(),
-            Afflicted::default(),
             Strikes::default(),
             Glyph::new('@', Color::WHITE).on_layer(10),
         ),

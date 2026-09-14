@@ -109,9 +109,8 @@ fn start(
     commands.insert_resource(WorldMap::new(warren.tiles.tables()));
     commands.insert_resource(PlaceRulesRes(Box::new(warren)));
 
-    let player = commands
-        .spawn(((Actor, Player, Blocks, Position(Point::ZERO), Speed(100)), (Viewshed::new(9), RevealsMap, Glyph::new('@', Color::WHITE).on_layer(10))))
-        .id();
+    let player =
+        commands.spawn(((Actor, Player, Blocks, Position(Point::ZERO)), (Viewshed::new(9), RevealsMap, Glyph::new('@', Color::WHITE).on_layer(10)))).id();
     warps.write(WarpRequest::into_place(player, WARREN));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
     log.push("Walk with the arrows, hjklyubn or the numpad. . waits, q quits.", Tones::MUTED, 0);

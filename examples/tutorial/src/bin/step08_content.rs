@@ -258,7 +258,7 @@ fn start(
 
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Speed(100)),
+            (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
             (Inventory::default(),),

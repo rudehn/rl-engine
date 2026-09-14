@@ -134,6 +134,10 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `MapViewPlugin::new(rect)` takes its rectangle the way every panel does, so a game no longer inserts a `MapView` of its own; the requirement for one is gone with it.
   Every example and tutorial step starts from the group, which took thirteen lines of window setup and two plugin lines out of each; chapter 1 explains what is inside it and chapter 3 gives the map its rectangle through `.map`.
   Nate, 2026-09-13: "commit then continue".
+- 2026-09-13: actors that complete themselves, the third of the review's on-ramp items.
+  An actor spawned without `Afflicted` and `StatBlock` silently took no status, and one spawned with `Grants` but no `Known` silently knew nothing; the examples spawned `StatBlock::default()` eighteen times, `Afflicted::default()` twelve and `Speed(100)` thirty-eight to stay clear of it.
+  `Actor` now requires `Speed`, which defaults to normal. `StatusPlugin` registers `Afflicted` and `StatBlock` as required by every actor, and `AbilitiesPlugin` registers `Known`, `Pools` and `Cooldowns`, so the components arrive with the subsystem and a game without it carries none, which keeps opt-in. The ability state is required by the actor rather than by `Grants`, because an item that lends an ability is no actor and must not come to know it.
+  Every hand-spawned default is gone from the examples and the engine's tests; the status test's player now spawns with neither component and must still take its statuses, and a monster given `Grants` alone must still reach for its ability.
 - Next: the rest of the deferred pieces (throwing, a character sheet, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

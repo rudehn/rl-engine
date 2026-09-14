@@ -192,8 +192,6 @@ impl Bestiary {
                 MonsterKind(id),
                 // What the panels call it. The engine has no bestiary.
                 Name::new(m.name.clone()),
-                StatBlock::default(),
-                Afflicted::default(),
                 Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
             ))
             .id()

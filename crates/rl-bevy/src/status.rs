@@ -157,11 +157,20 @@ pub fn statuses_ready(rules: Option<Res<StatusRules>>) -> bool {
 ///
 /// Ticks go through the damage pipeline, so combat comes with it, and
 /// [`StatusRules`] must be in place before play begins.
+///
+/// Every [`Actor`] is given an empty [`Afflicted`] and [`StatBlock`] the
+/// moment it is spawned, so a monster spawned without them still takes a
+/// status rather than silently shrugging it off. Registered here and not
+/// on `Actor` itself, so a game without statuses carries neither.
 pub struct StatusPlugin;
 
 impl Plugin for StatusPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{Needs, ResolveSet, Turn};
+        // Before anything spawns, which is when Bevy allows it; an actor
+        // spawned before this plugin was added is a setup Bevy refuses.
+        app.register_required_components::<Actor, Afflicted>();
+        app.register_required_components::<Actor, StatBlock>();
         app.add_message::<Afflict>()
             .add_message::<Cure>()
             .add_message::<StatusEvent>()
@@ -178,7 +187,7 @@ impl Plugin for StatusPlugin {
 mod tests {
     use super::*;
     use crate::combat::{Armor, CombatRng, CombatRules, DamageStages, Health};
-    use crate::components::{Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+    use crate::components::{Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::Wait;
@@ -252,11 +261,10 @@ mod tests {
                 Position(start),
                 Viewshed::new(6),
                 RevealsMap,
-                Speed(100),
                 Health::full(30),
                 Armor(0),
-                StatBlock::default(),
-                Afflicted::default(),
+                // No `Afflicted` and no `StatBlock`: the plugin gives every
+                // actor both, and the statuses below must still land.
             ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

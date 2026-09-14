@@ -886,11 +886,21 @@ pub fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>, Option<&Equ
 /// The engine's own effects are not registered here: each belongs to the
 /// module that owns its mechanic, and a game adds the ones its content
 /// names with [`AddEngineEffects`] or one at a time.
+///
+/// Every [`Actor`](crate::components::Actor) is given an empty [`Known`],
+/// [`Pools`] and [`Cooldowns`] the moment it is spawned, so an actor given
+/// [`Grants`] alone can use what it was granted. On the actor rather than
+/// on `Grants`, because an item that lends an ability is no actor and must
+/// not come to know it.
 pub struct AbilitiesPlugin;
 
 impl Plugin for AbilitiesPlugin {
     fn build(&self, app: &mut App) {
+        use crate::components::Actor;
         use crate::plugin::Needs;
+        app.register_required_components::<Actor, Known>();
+        app.register_required_components::<Actor, Pools>();
+        app.register_required_components::<Actor, Cooldowns>();
         app.init_resource::<EffectKinds>()
             .init_resource::<Offered>()
             .add_message::<AbilityEvent>()
@@ -1024,7 +1034,7 @@ impl AddEngineEffects for App {
 mod tests {
     use super::*;
     use crate::combat::{CombatRng, CombatRules, DamageDealt, Faction};
-    use crate::components::{Actor, Player, RevealsMap, Speed};
+    use crate::components::{Actor, Player, RevealsMap};
     use crate::status::StatusRules;
     use crate::world::{ChunkRulesRes, WorldRes};
     use rl_core::{Direction, RunSeed};
@@ -1238,19 +1248,7 @@ mod tests {
         let grants = Grants(abilities.to_vec());
         let e = app
             .world_mut()
-            .spawn((
-                Actor,
-                Player,
-                Blocks,
-                Position(at),
-                Viewshed::new(8),
-                RevealsMap,
-                Speed(100),
-                Health::full(30),
-                us,
-                (grants, Known::new(), pools, Cooldowns::new()),
-                (StatBlock::default(), Afflicted::default(), Inventory::default()),
-            ))
+            .spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), RevealsMap, Health::full(30), us, (grants, pools), Inventory::default()))
             .id();
         app.world_mut().resource_mut::<NextState<crate::state::EngineState>>().set(crate::state::EngineState::Playing);
         e
@@ -1258,12 +1256,12 @@ mod tests {
 
     fn foe(app: &mut App, at: Point) -> Entity {
         let them = Faction(rl_rules::FactionId::from_raw(1));
-        app.world_mut().spawn((Actor, Blocks, Position(at), Speed(100), Health::full(20), them, StatBlock::default(), Afflicted::default())).id()
+        app.world_mut().spawn((Actor, Blocks, Position(at), Health::full(20), them)).id()
     }
 
     fn friend(app: &mut App, at: Point) -> Entity {
         let us = Faction(rl_rules::FactionId::from_raw(0));
-        app.world_mut().spawn((Actor, Blocks, Position(at), Speed(100), Health::full(20), us, StatBlock::default(), Afflicted::default())).id()
+        app.world_mut().spawn((Actor, Blocks, Position(at), Health::full(20), us)).id()
     }
 
     fn settle(app: &mut App) {
@@ -1507,9 +1505,7 @@ mod tests {
             crate::combat::Perception(10),
             crate::combat::Profile(MovementProfile::default()),
             Grants(vec![bolt]),
-            Known::new(),
             pools,
-            Cooldowns::new(),
             Inventory::default(),
         ));
         settle(&mut app);
@@ -1550,10 +1546,9 @@ mod tests {
             crate::combat::Mind(Arc::new(Brain::new().then(UseAbility::default()))),
             crate::combat::Perception(10),
             crate::combat::Profile(MovementProfile::default()),
+            // Granted alone: the plugin gives every actor empty pools, and
+            // an empty pool is what this test is about.
             Grants(vec![bolt]),
-            Known::new(),
-            Pools::new(),
-            Cooldowns::new(),
             Inventory::default(),
         ));
         settle(&mut app);

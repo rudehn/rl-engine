@@ -200,7 +200,7 @@ fn start(
 
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Speed(100)),
+            (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
             (Inventory::default(),),
@@ -338,7 +338,7 @@ fn populate(
             // The bottom floor: the king stands where the stairs would be.
             (false, Some(throne)) => {
                 commands.spawn((
-                    (Actor, Blocks, King, Position(throne), Speed(100), Faction(rats.faction)),
+                    (Actor, Blocks, King, Position(throne), Faction(rats.faction)),
                     (Health::full(40), Armor(2), Perception(12), Mind(rats.mind.clone())),
                     (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(2, 4) }, Glyph::new('R', Color::srgb(0.95, 0.78, 0.35)).on_layer(6)),
                 ));

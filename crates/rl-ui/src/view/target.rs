@@ -370,7 +370,7 @@ pub(crate) mod harness {
         let mut pools = Pools::new();
         pools.set(rl_rules::StatId::from_raw(0), 20);
         let player = stage.player;
-        stage.app.world_mut().entity_mut(player).insert((Grants(vec![bolt, burst, steel, dear]), Known::new(), pools, Cooldowns::new()));
+        stage.app.world_mut().entity_mut(player).insert((Grants(vec![bolt, burst, steel, dear]), pools));
         stage.tick();
         stage.tick();
         (bolt, burst, steel)

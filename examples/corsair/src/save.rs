@@ -256,7 +256,7 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
     let (faction, unarmed, max_hp) = (bestiary.factions.expect("player"), crate::items::unarmed(&bestiary), 30);
     let player = world
         .spawn((
-            (Actor, Player, Blocks, Position(p.at), OnMap(p.map), Viewshed::new(12), RevealsMap, Speed(100)),
+            (Actor, Player, Blocks, Position(p.at), OnMap(p.map), Viewshed::new(12), RevealsMap),
             (
                 Health { hp: p.hp, max: max_hp },
                 Armor(0),
@@ -264,8 +264,6 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
                 unarmed,
                 Inventory { items: bag },
                 Equipped(worn),
-                StatBlock::default(),
-                Afflicted::default(),
                 Strikes::default(),
                 rl_engine::rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
             ),

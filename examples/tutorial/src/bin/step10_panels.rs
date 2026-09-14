@@ -318,7 +318,7 @@ fn start(
 
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Speed(100)),
+            (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             // What the panels call you. The engine has no names of its own.
             (Name::new("you"),),
@@ -776,7 +776,7 @@ mod tests {
         let (mut app, player) = started(7);
         let at = app.world().get::<Position>(player).unwrap().0;
         let dir = room_to_shove(&app, at);
-        let rat = app.world_mut().spawn((Actor, Blocks, Position(at + dir.offset()), Speed(100))).id();
+        let rat = app.world_mut().spawn((Actor, Blocks, Position(at + dir.offset()))).id();
         app.update();
 
         let before = app.world().resource::<Turns>().now();

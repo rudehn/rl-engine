@@ -19,7 +19,12 @@ impl Position {
 }
 
 /// Takes turns.
+///
+/// Requires [`Speed`], at its normal hundred, so an actor spawned without
+/// one moves at normal speed rather than leaving every reader to decide
+/// what a missing speed means.
 #[derive(Component, Debug, Clone, Copy, Default)]
+#[require(Speed)]
 pub struct Actor;
 
 /// The one actor the game waits on for input.

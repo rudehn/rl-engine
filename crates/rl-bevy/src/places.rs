@@ -325,7 +325,7 @@ pub fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fresh: Quer
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Actor, MyTurn, RevealsMap, Speed};
+    use crate::components::{Actor, MyTurn, RevealsMap};
     use crate::items::{Inventory, Item, ItemEvent, PickUp};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
@@ -398,7 +398,7 @@ mod tests {
         app.insert_resource(WorldRes(world));
         app.insert_resource(ChunkRulesRes(Box::new(Open(tiles.clone()))));
         app.insert_resource(PlaceRulesRes(Box::new(Caves(tiles))));
-        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Speed(100), Inventory::default())).id();
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Inventory::default())).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
@@ -415,7 +415,7 @@ mod tests {
         let mut r = rig();
         let cave = MapId(3);
         r.app.world_mut().spawn((Position(r.start), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
-        let watcher = r.app.world_mut().spawn((Actor, Blocks, Position(r.start.offset(2, 0)), Speed(100))).id();
+        let watcher = r.app.world_mut().spawn((Actor, Blocks, Position(r.start.offset(2, 0)))).id();
         r.app.update();
         assert_eq!(r.app.world().get::<OnMap>(watcher).map(|m| m.0), Some(MapId::SURFACE), "tagged on arrival");
 

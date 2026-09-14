@@ -178,7 +178,7 @@ fn start(
 
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(30), RevealsMap, Speed(100)),
+            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(30), RevealsMap),
             (
                 Health::full(30),
                 Armor(1),

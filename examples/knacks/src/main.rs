@@ -288,9 +288,9 @@ fn start(
 
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(14), RevealsMap, Speed(100)),
+            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(14), RevealsMap),
             (Health::full(60), Armor(1), Faction(you), MeleeAttack { kind: DamageKindId::from_raw(3), dice: DiceRoll::new(1, 4) }),
-            (StatBlock::default(), Afflicted::default(), Pools::new(), Cooldowns::new(), Known::new(), Grants(Vec::new())),
+            Grants(Vec::new()),
             (Inventory::default(), Equipped(Equipment::with_slot_count(2)), Coin(0), Name::new("you")),
             Glyph::new('@', Color::WHITE).on_layer(10),
         ))
@@ -333,17 +333,17 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ta
         }
         for _ in 0..4 {
             commands.spawn((
-                (Actor, Blocks, Position(spot(5)), Name::new("a brute"), Health::full(24), Faction(creatures.them), Speed(100)),
+                (Actor, Blocks, Position(spot(5)), Name::new("a brute"), Health::full(24), Faction(creatures.them)),
                 (Perception(9), Mind(creatures.brute.clone()), MeleeAttack { kind: creatures.fist, dice: DiceRoll::new(1, 5) }),
-                (StatBlock::default(), Afflicted::default(), Coin(0)),
+                Coin(0),
                 Glyph::new('b', Color::srgb(0.85, 0.45, 0.35)).on_layer(5),
             ));
         }
         for _ in 0..2 {
             commands.spawn((
-                (Actor, Blocks, Position(spot(7)), Name::new("a sentry"), Health::full(18), Faction(creatures.them), Speed(100)),
+                (Actor, Blocks, Position(spot(7)), Name::new("a sentry"), Health::full(18), Faction(creatures.them)),
                 (Perception(9), Mind(creatures.brute.clone()), MeleeAttack { kind: creatures.fist, dice: DiceRoll::new(1, 3) }),
-                (StatBlock::default(), Afflicted::default(), Coin(40)),
+                Coin(40),
                 Glyph::new('s', Color::srgb(0.8, 0.75, 0.4)).on_layer(5),
             ));
         }
@@ -352,9 +352,9 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ta
         let mut pools = Pools::new();
         pools.set(content.stats.expect("power"), 40);
         commands.spawn((
-            (Actor, Blocks, Position(spot(9)), Name::new("an adept"), Health::full(20), Faction(creatures.them), Speed(100)),
+            (Actor, Blocks, Position(spot(9)), Name::new("an adept"), Health::full(20), Faction(creatures.them)),
             (Perception(12), Mind(creatures.adept.clone()), MeleeAttack { kind: creatures.fist, dice: DiceRoll::new(1, 3) }),
-            (StatBlock::default(), Afflicted::default(), pools, Cooldowns::new(), Known::new(), Grants(vec![creatures.overload])),
+            (pools, Grants(vec![creatures.overload])),
             (Inventory::default(), Coin(10)),
             Glyph::new('a', Color::srgb(0.5, 0.75, 0.95)).on_layer(5),
         ));
@@ -640,7 +640,7 @@ mod tests {
             .map(|d| at + d.offset())
             .find(|p| app.world().resource::<WorldMap>().is_walkable(*p) && !app.world().resource::<Occupancy>().is_occupied(*p))
             .expect("room beside the player");
-        app.world_mut().spawn((Actor, Blocks, Position(free), Health::full(20), Faction(FactionId::from_raw(1)), Speed(100), what)).id()
+        app.world_mut().spawn((Actor, Blocks, Position(free), Health::full(20), Faction(FactionId::from_raw(1)), what)).id()
     }
 
     /// A key to deliver on the next frame, and the one to lift after it.
@@ -700,7 +700,7 @@ mod tests {
         let you = player(&mut app);
         let mana = app.world().resource::<Content>().stats.expect("mana");
         app.world_mut().get_mut::<Pools>(you).expect("pools").set(mana, 10);
-        let them = beside(&mut app, StatBlock::default());
+        let them = beside(&mut app, ());
         let at = app.world().get::<Position>(them).expect("a position").0;
 
         use_it(&mut app, "drain", at);
@@ -714,7 +714,7 @@ mod tests {
     fn plunder_moves_the_coin_across() {
         let mut app = headless(1);
         let you = player(&mut app);
-        let them = beside(&mut app, (StatBlock::default(), Coin(40)));
+        let them = beside(&mut app, Coin(40));
         let at = app.world().get::<Position>(them).expect("a position").0;
 
         use_it(&mut app, "plunder", at);
@@ -728,7 +728,7 @@ mod tests {
         let mut app = headless(2);
         let you = player(&mut app);
         let mine = app.world().get::<Faction>(you).copied().expect("a side");
-        let them = beside(&mut app, StatBlock::default());
+        let them = beside(&mut app, ());
         let at = app.world().get::<Position>(them).expect("a position").0;
         assert_ne!(app.world().get::<Faction>(them).unwrap().0, mine.0);
 
@@ -778,7 +778,7 @@ mod tests {
     fn shield_bash_needs_the_shield_the_slot_graph_says_it_needs() {
         let mut app = headless(3);
         let you = player(&mut app);
-        let them = beside(&mut app, StatBlock::default());
+        let them = beside(&mut app, ());
         let at = app.world().get::<Position>(them).expect("a position").0;
 
         use_it(&mut app, "shield bash", at);
@@ -826,7 +826,7 @@ mod tests {
     fn an_ability_key_opens_the_cursor_and_enter_fires_it() {
         let mut app = headless(0);
         let you = player(&mut app);
-        let them = beside(&mut app, (StatBlock::default(), Name::new("a dummy")));
+        let them = beside(&mut app, Name::new("a dummy"));
         app.update();
 
         // `4` is drain, the fourth of the fantasy set, and adjacent is
@@ -851,7 +851,7 @@ mod tests {
     fn the_cursor_takes_the_keys_while_it_is_up() {
         let mut app = headless(0);
         let you = player(&mut app);
-        beside(&mut app, (StatBlock::default(), Name::new("a dummy")));
+        beside(&mut app, Name::new("a dummy"));
         app.update();
         let stood = app.world().get::<Position>(you).expect("a position").0;
 
