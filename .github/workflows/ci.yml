@@ -28,6 +28,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: tests
         run: cargo test --workspace
+      - name: the starter template generates and builds
+        run: scripts/check-template.sh
       - name: doc tests and missing docs
         run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
       - name: tiers 0 and 1 build on wasm

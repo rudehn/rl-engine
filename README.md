@@ -43,7 +43,14 @@ The first build compiles Bevy and takes a few minutes.
 
 ## Use it in your game
 
-rl-engine is not on crates.io yet, so depend on it from git.
+The quickest start is the template: one file that runs on the first build, with a generated floor, a player and goblins, combat, sight, light and stealth, and tests.
+
+```sh
+cargo install cargo-generate
+cargo generate --git https://github.com/rudehn/rl-engine templates/starter --name my-game
+```
+
+To add the engine to a project of your own instead: rl-engine is not on crates.io yet, so depend on it from git.
 The `rl-engine` crate is the facade that re-exports every other crate, and `rl_engine::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.
 
 ```toml

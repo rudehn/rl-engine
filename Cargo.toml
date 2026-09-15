@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "examples/corsair", "examples/delve", "examples/tutorial"]
+# A template renders into a game of its own; scripts/check-template.sh builds it.
+exclude = ["templates"]
 
 [workspace.package]
 version = "0.1.0"

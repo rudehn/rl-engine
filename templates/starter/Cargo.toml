@@ -1,0 +1,21 @@
+[package]
+name = "{{project-name}}"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rl-engine = { git = "https://github.com/rudehn/rl-engine" }
+# `system_font_discovery` lets the terminal ask the system for a monospace
+# font; Bevy's built-in one has no box-drawing glyphs.
+bevy = { version = "0.19", features = ["system_font_discovery"] }
+rand = { version = "0.9", features = ["std", "std_rng"] }
+
+# Map generation and pathfinding are arithmetic-heavy, and an unoptimised
+# debug build takes seconds per floor. Dependencies get full optimisation,
+# your own code a light pass, so builds stay quick and play stays smooth.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1

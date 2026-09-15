@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-14, after the prelude kept to what a game writes.
+Last updated: 2026-09-14, after a template to start a game from.
 
 ## The shape
 
@@ -159,6 +159,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 - The facade re-exporting every crate.
 - `RoguelikePlugins`, the front door: `RoguelikePlugins::new(title, cols, rows)` opens a window sized to the glyph terminal and adds what every game adds, `TerminalPlugin`, `CorePlugin`, `FovPlugin`, `MapViewPlugin`, `UiPlugin` and `CapturePlugin`, with `.cell`, `.font` and `.map` for the rest. No subsystem is in it, and anything in it can be replaced or switched off as in any Bevy plugin group. Every example game and tutorial step starts from it.
 - A prelude worth globbing: core, grid, mapgen, world, rules, the Bevy layer, render, UI, overworld and save, in one `use`. It leaves out `Rect`, because Bevy's prelude has one of its own and a game that globs both would have to disambiguate every use; a doc test globs both preludes and names a type from each crate, so the next collision fails there rather than in someone's game. The Bevy layer's part holds what a game writes: the effects a game names only in RON, and the pieces other engine crates build on such as `Bystanders`, `Offered` and `FlowFields`, stay at the crate root.
+- `templates/starter`, a `cargo generate` template for a new game: one file with a generated floor of rooms, a carried torch and braziers in the dark, goblins that notice by sight and light and search where they last saw the player, bump-to-attack combat, a status row, a log and a look cursor, and three headless tests. `scripts/check-template.sh` renders it with the engine taken from the checkout and runs its formatting, clippy and tests, and CI runs the script, so the template cannot fall behind the API.
 
 ## The guide
 

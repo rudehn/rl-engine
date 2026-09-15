@@ -13,6 +13,21 @@ cargo run -p tutorial --bin step01_a_map
 
 The first build compiles Bevy and takes a few minutes.
 
+## From the template
+
+To start a game of your own rather than follow along, generate one:
+
+```sh
+cargo install cargo-generate
+cargo generate --git https://github.com/rudehn/rl-engine templates/starter --name my-game
+cd my-game
+cargo run
+```
+
+It is one file that runs from the first build: a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and three tests that play it without a window.
+Every chapter after this one is something to add to it.
+CI generates and builds the template on every change to the engine, so it does not rot.
+
 ## In your own project
 
 rl-engine is not on crates.io yet, so depend on it from git.
