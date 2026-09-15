@@ -17,5 +17,6 @@ tier = 2
 [dependencies]
 rl-core.workspace = true
 rl-grid.workspace = true
+rl-rules.workspace = true
 rl-bevy.workspace = true
 bevy.workspace = true

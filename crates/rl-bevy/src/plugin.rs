@@ -160,7 +160,11 @@ impl Plugin for CorePlugin {
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
             .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
-            .configure_sets(Turn, (ResolveSet::Travel, ResolveSet::Act, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve))
+            .configure_sets(
+                Turn,
+                (ResolveSet::Travel, ResolveSet::Act, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve),
+            )
+            .configure_sets(Turn, (FieldSet::Fire, FieldSet::Gas).chain().in_set(ResolveSet::Fields))
             .configure_sets(Turn, (CleanupSet::Remove, CleanupSet::Requeue).chain().in_set(TurnSet::Cleanup))
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
@@ -202,8 +206,10 @@ pub enum DecideSet {
 
 /// The stages of [`TurnSet::Resolve`], in order.
 ///
-/// Moving first, then every other action, then what ticks because a turn
-/// passed, then the damage all of it produced. Named because the systems
+/// Moving first, then every other action, then fire and gas over the map,
+/// then what ticks because a turn passed, then the damage all of it
+/// produced. Fields before the ticks, so a status that fire or gas puts on
+/// whoever stands in it lands and bites on the turn they stood there. Named because the systems
 /// that fill them come from different plugins, which cannot chain
 /// themselves together, and no plugin orders itself after another's
 /// function. One turn is one action whichever set resolves it: the first
@@ -216,10 +222,25 @@ pub enum ResolveSet {
     Travel,
     /// Every other action: a strike, a drink, an ability, a game's own.
     Act,
+    /// What spreads over the map because a turn passed: fire, then gas, in
+    /// [`FieldSet`] order.
+    Fields,
     /// What a turn costs whoever is standing in it: statuses, fuel.
     Effects,
     /// The damage the pass produced, applied once.
     Damage,
+}
+
+/// The stages of [`ResolveSet::Fields`], in order.
+///
+/// Fire before gas, so a fire that burns a vapour away and gives off smoke
+/// has that smoke spread on the same turn.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FieldSet {
+    /// Fire catches, spreads and burns out.
+    Fire,
+    /// Gas spreads, fades and is breathed.
+    Gas,
 }
 
 /// The stages of [`TurnSet::Cleanup`], in order.

@@ -19,7 +19,10 @@ pub mod components;
 pub mod doors;
 pub mod effects;
 pub mod events;
+pub mod fields;
+pub mod fire;
 pub mod fov;
+pub mod gas;
 pub mod items;
 pub mod knowledge;
 pub mod lighting;
@@ -46,9 +49,12 @@ pub use combat::{
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use doors::{Close, DoorEvent};
-pub use effects::{AddEngineEffects, Cleanse, Harm, Inflict, Mend, Pull, Shove, Teleport};
+pub use effects::{AddEngineEffects, Cleanse, Emit, Harm, Ignite, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
+pub use fields::{MapFields, SavedField};
+pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
 pub use fov::FovPlugin;
+pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
     DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged,
     Unequip, UseItem, Wearable,
@@ -59,7 +65,7 @@ pub use minds::{FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Percepti
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
-pub use plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, Requirements, ResolveSet, Turn, TurnSet, depends_on};
+pub use plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, FieldSet, Needs, PresentSet, Requirements, ResolveSet, Turn, TurnSet, depends_on};
 pub use registries::Registries;
 pub use seed::{AddStream, Seed, Stream};
 pub use state::EngineState;
@@ -89,7 +95,9 @@ pub mod prelude {
     pub use crate::doors::{Close, DoorEvent};
     pub use crate::effects::AddEngineEffects;
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
+    pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
     pub use crate::fov::FovPlugin;
+    pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
     pub use crate::items::{
         DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged, Unequip, UseItem,
         Wearable,
@@ -100,7 +108,7 @@ pub mod prelude {
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
-    pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
+    pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, FieldSet, Needs, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
     pub use crate::registries::Registries;
     pub use crate::seed::{AddStream, Seed};
     pub use crate::state::EngineState;

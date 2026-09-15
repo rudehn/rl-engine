@@ -28,6 +28,7 @@ use crate::affix::{TagDef, TagId};
 use crate::content::{ContentError, Named, Registry};
 use crate::damage::{DamageKind, DamageKindId};
 use crate::equip::{SlotDef, SlotId};
+use crate::gas::{GasDef, GasId};
 use crate::stats::{StatDef, StatId};
 use crate::status::{StatusDef, StatusId};
 
@@ -128,6 +129,16 @@ impl<'a> Names<'a> {
     /// Damage kinds, for a tick, a strike or an effect that deals one.
     pub fn damage_kinds(self, damage_kinds: &'a Registry<DamageKind>) -> Self {
         self.with("damage kind", damage_kinds)
+    }
+
+    /// Gases, for an effect that gives one off.
+    pub fn gases(self, gases: &'a Registry<GasDef>) -> Self {
+        self.with("gas", gases)
+    }
+
+    /// The gas named `name`, or why there is none.
+    pub fn gas(&self, name: &str) -> Result<GasId, String> {
+        self.id(name)
     }
 
     /// The `T` named `name`, or why there is none.

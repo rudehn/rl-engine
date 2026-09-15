@@ -15,6 +15,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - What a dead actor carried falls where it died.
 - Fixed: an item carried to another map and put down there stayed on the map it was picked up from, where nobody could see it or take it back. A carried item is on no map now.
 - Fixed: `TargetViewPlugin` in a game without abilities failed on its first frame, for a message only `AbilitiesPlugin` registered.
+- `TileField<T>`, a value per tile stepped a turn at a time by a rule that reads the field as it stood.
+- Gas: `GasDef` and `gas::load` in `rl-rules`, and `Registries::gases`; `GasPlugin`, `Gases`, `Release`, `Vents` and `Breathed` in `rl-bevy`. Gas thick enough hides what is behind it through `WorldMap::set_veil`.
+- Fire: `TileProps::burn`, which must name the tile a burnt tile leaves; `fire::spread` and `Tinder` in `rl-rules`; `FirePlugin`, `Fire`, `Kindle`, `Flammable`, `Burning`, `FireRules` and `FireEvent` in `rl-bevy`. Burning cells glow through `Lighting::set_glow`, and a mind will not step into fire.
+- `Ignite` and `Emit` ability effects, registered by the fire and gas plugins.
+- `ResolveSet::Fields`, between `Act` and `Effects`, with `FieldSet::Fire` before `FieldSet::Gas`.
+- `FieldAppearance`: how the map view draws flames and gas. `EngineSave::fields` keeps both.
 
 ## 0.1.0
 

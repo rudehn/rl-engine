@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use rl_core::{Grid2D, Point, Rect};
-use rl_grid::{CostSource, OpacitySource, TileId, TileTables};
+use rl_grid::{BitGrid, CostSource, OpacitySource, TileId, TileTables};
 use rl_mapgen::Outputs;
 use rl_world::{ChunkRules, WorldGraph};
 
@@ -215,6 +215,10 @@ pub struct WorldMap {
     current: MapId,
     surface: Surface,
     places: BTreeMap<MapId, PlaceMap>,
+    /// Cells of the current window that hide what is behind them for a
+    /// reason other than their tile, such as thick smoke, and the world cell
+    /// at its top-left.
+    veil: (Point, BitGrid),
 }
 
 impl WorldMap {
@@ -222,7 +226,47 @@ impl WorldMap {
     /// world graph gets its surface on the first stream, region size and
     /// all; a delve never gets one and never asks for one.
     pub fn new(tables: TileTables) -> Self {
-        Self { tables, generation: 0, opacity_epoch: 0, cost_epoch: 0, current: MapId::SURFACE, surface: Surface::default(), places: BTreeMap::new() }
+        Self {
+            tables,
+            generation: 0,
+            opacity_epoch: 0,
+            cost_epoch: 0,
+            current: MapId::SURFACE,
+            surface: Surface::default(),
+            places: BTreeMap::new(),
+            veil: (Point::ZERO, BitGrid::new(0, 0)),
+        }
+    }
+
+    /// Hides what is behind every cell in `cells` on the current map, on top
+    /// of what its tile hides, replacing the veil set before: thick smoke,
+    /// rewritten every turn by what makes it.
+    ///
+    /// Field of view and light both read opacity through the map, so a veil
+    /// stops sight and light alike, and changing it moves the opacity epoch
+    /// so every viewshed and the light are recast without anyone moving. The
+    /// veil is lifted whenever the current map or the window changes, until
+    /// whatever set it sets it again.
+    pub fn set_veil(&mut self, cells: impl IntoIterator<Item = Point>) {
+        let window = self.window_tiles();
+        let mut veil = BitGrid::new(window.width, window.height);
+        for p in cells {
+            veil.insert(p - window.origin());
+        }
+        let (was_origin, was) = &self.veil;
+        let moved = *was_origin != window.origin() && !(was.is_clear() && veil.is_clear());
+        if moved || was.count() != veil.count() || was.iter().ne(veil.iter()) {
+            self.opacity_epoch += 1;
+        }
+        self.veil = (window.origin(), veil);
+    }
+
+    /// Lifts the veil, when the map or window under it changes.
+    fn lift_veil(&mut self) {
+        if !self.veil.1.is_clear() {
+            self.opacity_epoch += 1;
+        }
+        self.veil = (Point::ZERO, BitGrid::new(0, 0));
     }
 
     /// The map every reader reads right now.
@@ -260,6 +304,7 @@ impl WorldMap {
         if self.current != map {
             self.current = map;
             self.generation += 1;
+            self.lift_veil();
         }
         true
     }
@@ -347,9 +392,10 @@ impl WorldMap {
         self.tile(p).and_then(|t| self.tables.closes[t.index()])
     }
 
-    /// Whether `p` blocks sight. Unloaded tiles do.
+    /// Whether `p` blocks sight: its tile does, or the veil over it. Unloaded
+    /// tiles do.
     pub fn is_opaque(&self, p: Point) -> bool {
-        self.tile(p).is_none_or(|t| self.tables.opaque[t.index()])
+        self.tile(p).is_none_or(|t| self.tables.opaque[t.index()]) || self.veil.1.contains(p - self.veil.0)
     }
 
     /// Whether `p` stops a projectile. Unloaded tiles do.
@@ -400,6 +446,7 @@ impl WorldMap {
     pub fn load_window(&mut self, regions: Rect, world: &WorldGraph, rules: &dyn ChunkRules) -> Result<Vec<Point>, rl_mapgen::BuildError> {
         let loaded = self.surface.load(regions, world, rules)?;
         self.generation += 1;
+        self.lift_veil();
         Ok(loaded)
     }
 

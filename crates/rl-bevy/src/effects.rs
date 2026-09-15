@@ -1,12 +1,15 @@
 //! The effects the engine ships: what an ability can do with the subsystems
 //! the engine owns.
 //!
-//! Seven, one per mechanic. [`Harm`] and [`Mend`] ask combat's damage
-//! pipeline, [`Inflict`] and [`Cleanse`] ask statuses, and [`Shove`],
-//! [`Pull`] and [`Teleport`] move an actor through [`EffectWorld`]. Here,
-//! rather than each in the module that owns its mechanic, so the dependency
-//! runs one way: abilities are built on combat and statuses, and neither of
-//! those has to know an ability exists.
+//! [`Harm`] and [`Mend`] ask combat's damage pipeline, [`Inflict`] and
+//! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move
+//! an actor through [`EffectWorld`]; [`AddEngineEffects`] registers those
+//! seven. [`Ignite`] asks fire and [`Emit`] asks gas, and each is registered
+//! by the plugin that answers it, so an ability file naming one works exactly
+//! when the game has that subsystem. Here, rather than each in the module
+//! that owns its mechanic, so the dependency runs one way: abilities are
+//! built on combat, statuses, fire and gas, and none of those has to know an
+//! ability exists.
 //!
 //! A game's own effects sit beside these through
 //! [`AddEffect::add_effect`], and the resolver cannot tell them apart.
@@ -15,6 +18,7 @@ use bevy::prelude::*;
 use rl_core::{DiceRoll, Point};
 use rl_rules::ability::{RawValue, read_args};
 use rl_rules::damage::DamageKindId;
+use rl_rules::gas::GasId;
 use rl_rules::{Hit, Names, StatusId};
 
 use crate::ability::{AddEffect, Effect, EffectWorld, FromArgs, Landing};
@@ -238,6 +242,73 @@ impl FromArgs for Teleport {
 
     fn from_args(_args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         Ok(Self)
+    }
+}
+
+/// Set fire to every cell under the footprint, for at least `turns`.
+///
+/// A cell with nothing to burn burns that long and goes out, which is a
+/// fireball scorching bare stone; one with something to burn catches and
+/// burns as that does. Registered by [`FirePlugin`](crate::fire::FirePlugin),
+/// which is what answers it.
+#[derive(Debug, Clone, Copy)]
+pub struct Ignite {
+    /// For at least how many turns.
+    pub turns: u8,
+}
+
+impl Effect for Ignite {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        for cell in &landing.cells {
+            world.commands.write_message(crate::fire::Kindle { at: *cell, turns: self.turns });
+        }
+    }
+}
+
+impl FromArgs for Ignite {
+    const KIND: &'static str = "Ignite";
+
+    fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        struct Args {
+            turns: u8,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { turns: a.turns })
+    }
+}
+
+/// Give off `amount` of a gas on every cell under the footprint.
+///
+/// Registered by [`GasPlugin`](crate::gas::GasPlugin), which is what answers
+/// it.
+#[derive(Debug, Clone, Copy)]
+pub struct Emit {
+    /// Which gas.
+    pub gas: GasId,
+    /// How much on each cell.
+    pub amount: u8,
+}
+
+impl Effect for Emit {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        for cell in &landing.cells {
+            world.commands.write_message(crate::gas::Release { gas: self.gas, at: *cell, amount: self.amount });
+        }
+    }
+}
+
+impl FromArgs for Emit {
+    const KIND: &'static str = "Emit";
+
+    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        struct Args {
+            gas: String,
+            amount: u8,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { gas: names.gas(&a.gas)?, amount: a.amount })
     }
 }
 

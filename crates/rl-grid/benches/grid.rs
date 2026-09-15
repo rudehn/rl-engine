@@ -5,7 +5,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use rl_core::{Grid2D, Point, Rect, Steps};
-use rl_grid::{AStar, BitGrid, DijkstraMap, Emitter, LightField, PathRules, Rgb, Terrain, TileRegistry, fov, region};
+use rl_grid::{AStar, BitGrid, DijkstraMap, Emitter, LightField, PathRules, Rgb, Terrain, TileField, TileRegistry, fov, region};
 
 /// A cave-like map: 35% walls, then two smoothing passes so it has rooms
 /// and corridors rather than static.
@@ -145,5 +145,39 @@ fn bench_light(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_fov, bench_astar, bench_dijkstra, bench_regions, bench_light);
+/// One step of a field over a map with a cloud in it, the cost fire and gas
+/// pay every turn. The rule is gas's exchange with each neighbour, written out
+/// here because the rule itself lives in `rl-rules`, which this crate is below.
+fn bench_field(c: &mut Criterion) {
+    let mut group = c.benchmark_group("tile_field");
+    for size in [96, 192] {
+        let (t, r) = cave(size, size, 11);
+        let view = t.view(&r);
+        let mut cloud: TileField<u8> = TileField::new(size, size);
+        let mut rng = StdRng::seed_from_u64(5);
+        for _ in 0..40 {
+            cloud.set(open_cell(&t, &r, &mut rng), 255);
+        }
+        group.bench_with_input(BenchmarkId::new("exchange_step", format!("{size}x{size}")), &size, |b, _| {
+            b.iter_batched(
+                || cloud.clone(),
+                |mut field| {
+                    field.step(|p, around| {
+                        if !view.is_walkable(p) {
+                            return 0;
+                        }
+                        let here = i32::from(around.here());
+                        let flow: i32 = around.neighbours().filter(|(n, _)| view.is_walkable(*n)).map(|(_, v)| i32::from(v) - here).sum();
+                        (here + flow * 50 / 800).clamp(0, 255) as u8
+                    });
+                    black_box(field.get(Point::new(1, 1)))
+                },
+                criterion::BatchSize::SmallInput,
+            )
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_fov, bench_astar, bench_dijkstra, bench_regions, bench_light, bench_field);
 criterion_main!(benches);

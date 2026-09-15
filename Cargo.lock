@@ -4738,6 +4738,7 @@ dependencies = [
  "rl-bevy",
  "rl-core",
  "rl-grid",
+ "rl-rules",
 ]
 
 [[package]]

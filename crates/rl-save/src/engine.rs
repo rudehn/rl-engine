@@ -7,10 +7,10 @@
 //! only keep entries whose ids were bound.
 
 use bevy::prelude::*;
-use rl_bevy::{Charges, Cooldowns, Knowledge, KnowledgeSave, Occupancy, Pools, Seed, Turns, WorldMap, WorldMapSave};
+use rl_bevy::{Charges, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, SavedField, Seed, Turns, WorldMap, WorldMapSave};
 use rl_core::RunSeed;
-use rl_rules::StatId;
 use rl_rules::ability::AbilityId;
+use rl_rules::{GasId, StatId};
 use serde::{Deserialize, Serialize};
 
 use crate::remap::{EntityRemap, SaveId};
@@ -34,6 +34,19 @@ pub struct EngineSave {
     /// Empty in a save written before abilities were saved.
     #[serde(default)]
     pub abilities: Vec<(SaveId, AbilityState)>,
+    /// Every burning cell and every cell with gas in it, on every map.
+    /// Empty in a game with neither, and in a save written before either.
+    #[serde(default)]
+    pub fields: FieldsSave,
+}
+
+/// Fire and gas, as a save holds them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct FieldsSave {
+    /// Turns of burning left, per map.
+    pub fire: Vec<SavedField<u8>>,
+    /// Concentration, per gas, per map.
+    pub gases: Vec<(GasId, Vec<SavedField<u8>>)>,
 }
 
 /// The ability state of one entity, as a save holds it.
@@ -100,7 +113,11 @@ impl EngineSave {
         // front of the present so the restored run deals it first.
         let holders: Vec<Entity> = world.query_filtered::<Entity, With<rl_bevy::MyTurn>>().iter(world).collect();
         let queue = holders.into_iter().map(|e| (e, now)).chain(entries).map(|(e, t)| (remap.save_id(e), t)).collect();
-        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities }
+        let fields = FieldsSave {
+            fire: world.get_resource::<Fire>().map(Fire::export).unwrap_or_default(),
+            gases: world.get_resource::<Gases>().map(Gases::export).unwrap_or_default(),
+        };
+        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities, fields }
     }
 
     /// Restores the engine's state into `world`. The game's entities must
@@ -110,6 +127,12 @@ impl EngineSave {
     pub fn restore(&self, world: &mut World, remap: &EntityRemap) {
         world.resource_mut::<WorldMap>().import(self.map.clone());
         world.resource_mut::<Knowledge>().import(self.knowledge.clone());
+        if let Some(mut fire) = world.get_resource_mut::<Fire>() {
+            fire.import(self.fields.fire.clone());
+        }
+        if let Some(mut gases) = world.get_resource_mut::<Gases>() {
+            gases.import(self.fields.gases.clone());
+        }
         let entries = self.queue.iter().filter_map(|(id, t)| remap.entity(*id).map(|e| (e, *t)));
         world.resource_mut::<Turns>().import(self.now, entries);
         for (id, state) in &self.abilities {
@@ -187,6 +210,49 @@ mod tests {
         assert!(w.resource::<Occupancy>().is_occupied(start.offset(3, 0)), "the index was rebuilt");
         assert!(w.resource::<Turns>().contains(other2) || w.get::<MyTurn>(other2).is_some(), "the other actor is scheduled");
         assert!(w.get::<MyTurn>(player2).is_some(), "the player, who held the turn when saved, holds it again");
+    }
+
+    /// A fire and a cloud of gas are the engine's, so a run saved while
+    /// something burns is continued with it still burning, on the map it
+    /// was burning on.
+    #[test]
+    fn fire_and_gas_survive_a_round_trip() {
+        let burning = |app: &mut App| {
+            app.add_plugins((rl_bevy::FirePlugin, rl_bevy::GasPlugin));
+            let gases = rl_rules::Registry::from_defs(vec![rl_rules::GasDef::new("smoke")]).unwrap();
+            app.insert_resource(rl_bevy::Registries { gases, ..Default::default() });
+            app.insert_resource(rl_bevy::FireRules::new().glow(None));
+            app.insert_resource(Seed(RunSeed(5)));
+        };
+        let (mut app, start) = fresh();
+        burning(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let smoke = rl_core::Id::from_raw(0);
+        app.world_mut().write_message(rl_bevy::Kindle { at: start.offset(2, 0), turns: 9 });
+        app.world_mut().write_message(rl_bevy::Release { gas: smoke, at: start.offset(0, 2), amount: 200 });
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+        let mut remap = EntityRemap::new();
+        let player_id = remap.save_id(player);
+        let save = EngineSave::capture(app.world_mut(), &mut remap);
+        assert!(!save.fields.fire.is_empty() && !save.fields.gases.is_empty(), "captured: {:?}", save.fields);
+        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        burning(&mut app2);
+        let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(player_id, player2);
+        back.restore(app2.world_mut(), &remap2);
+        app2.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app2.update();
+        app2.update();
+        let w = app2.world();
+        assert!(w.resource::<rl_bevy::Fire>().is_burning(start.offset(2, 0)), "still burning where it burned");
+        assert!(w.resource::<rl_bevy::Gases>().at(smoke, start.offset(0, 2)) > 0, "and the smoke still hangs");
     }
 
     /// What abilities spend is engine state, and the design promised it a

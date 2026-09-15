@@ -103,6 +103,8 @@ pub struct Lighting {
     generation: Option<u64>,
     epoch: u64,
     static_dirty: bool,
+    /// Light shed by cells rather than entities, and the map it is on.
+    glow: (MapId, Vec<(Point, LightSource)>),
 }
 
 impl Lighting {
@@ -122,6 +124,7 @@ impl Lighting {
             generation: None,
             epoch: 0,
             static_dirty: true,
+            glow: (MapId::SURFACE, Vec::new()),
         }
     }
 
@@ -148,6 +151,14 @@ impl Lighting {
     /// Forces the fixtures to be recast on the next update.
     pub fn mark_static_dirty(&mut self) {
         self.static_dirty = true;
+    }
+
+    /// Light shed by cells of `map` rather than by entities, replacing what
+    /// was set before: a fire's burning cells, which come and go every turn
+    /// and so are cast with the sources that move. Nothing is shed while
+    /// another map is current.
+    pub fn set_glow(&mut self, map: MapId, glow: Vec<(Point, LightSource)>) {
+        self.glow = (map, glow);
     }
 
     /// Matches the fields to the window. Returns whether they were remade.
@@ -217,6 +228,9 @@ pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, s
                 dynamics.push(source.at(local(pos.0)));
             }
         }
+    }
+    if lighting.glow.0 == here {
+        dynamics.extend(lighting.glow.1.iter().map(|(p, source)| source.at(local(*p))));
     }
     statics.sort_unstable();
     dynamics.sort_unstable();

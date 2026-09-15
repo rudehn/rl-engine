@@ -1076,6 +1076,7 @@ mod tests {
             statuses: content.statuses,
             tags: content.tags,
             slots: content.slots,
+            gases: Default::default(),
         });
         app.insert_resource(abilities);
         (app, start)

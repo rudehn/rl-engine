@@ -58,6 +58,8 @@ pub struct Whale {
     bile: TileId,
     bone: TileId,
     sinew: TileId,
+    tallow: TileId,
+    cinder: TileId,
     seed: RunSeed,
 }
 
@@ -69,8 +71,12 @@ impl Whale {
         let tooth = tiles.register(TileProps::wall("tooth")).unwrap();
         let bile = tiles.register(TileProps::floor("bile").move_cost(200)).unwrap();
         let bone = tiles.register(TileProps::wall("bone")).unwrap();
-        let sinew = tiles.register(TileProps::floor("sinew").opaque(true)).unwrap();
-        Self { tiles, flesh, blubber, tooth, bile, bone, sinew, seed }
+        // Curtains of sinew burn away and leave the doorway open.
+        let sinew = tiles.register(TileProps::floor("sinew").opaque(true).burns(45, 4, "flesh")).unwrap();
+        // Slicks of fat: quick to catch, and what is left is cinder.
+        let tallow = tiles.register(TileProps::floor("tallow").burns(75, 3, "cinder")).unwrap();
+        let cinder = tiles.register(TileProps::floor("cinder")).unwrap();
+        Self { tiles, flesh, blubber, tooth, bile, bone, sinew, tallow, cinder, seed }
     }
 
     pub fn tiles(&self) -> &TileRegistry {
@@ -89,6 +95,8 @@ impl Whale {
         look.set_varied(self.bile, Cell::new('~', Color::srgb(0.78, 0.98, 0.32)).on(Color::srgb(0.2, 0.3, 0.05)), Vary::new(0.2, 0.05).shimmering(0.25));
         look.set_varied(self.bone, Cell::new('#', Color::srgb(0.96, 0.94, 0.86)).on(Color::srgb(0.62, 0.6, 0.52)), bone);
         look.set_varied(self.sinew, Cell::new('+', Color::srgb(1.0, 0.66, 0.62)).on(Color::srgb(0.46, 0.15, 0.18)), flesh);
+        look.set_varied(self.tallow, Cell::new('"', Color::srgb(1.0, 0.94, 0.7)).on(Color::srgb(0.46, 0.38, 0.22)), Vary::new(0.18, 0.05));
+        look.set_varied(self.cinder, Cell::new(',', Color::srgb(0.52, 0.46, 0.44)).on(Color::srgb(0.13, 0.1, 0.1)), Vary::new(0.25, 0.04));
         look
     }
 
@@ -126,17 +134,18 @@ impl Whale {
 
 use bevy::prelude::Color;
 
-/// Bile pooled on the floor after the rooms are carved: a scatter that
-/// runs in the finish phase, since growth may not follow structures.
-struct Pools {
-    bile: TileId,
+/// Bile or fat spilled on the floor after the rooms are carved: a scatter
+/// that runs in the finish phase, since growth may not follow structures.
+struct Spill {
+    name: &'static str,
+    tile: TileId,
     on: TileId,
     chance_pct: u32,
 }
 
-impl rl_engine::rl_mapgen::Pass<BaseContext> for Pools {
+impl rl_engine::rl_mapgen::Pass<BaseContext> for Spill {
     fn name(&self) -> &'static str {
-        "pools"
+        self.name
     }
     fn phase(&self) -> rl_engine::rl_mapgen::Phase {
         rl_engine::rl_mapgen::Phase::Finish
@@ -146,7 +155,7 @@ impl rl_engine::rl_mapgen::Pass<BaseContext> for Pools {
         use rl_engine::rl_mapgen::BuildContext;
         for idx in 0..ctx.terrain().len() {
             if ctx.terrain().get_idx(idx) == self.on && ctx.rng().random_range(0..100) < self.chance_pct {
-                ctx.terrain_mut().set_idx(idx, self.bile);
+                ctx.terrain_mut().set_idx(idx, self.tile);
             }
         }
         Ok(())
@@ -168,22 +177,29 @@ impl PlaceRules for Whale {
                 .then(Scatter { name: "teeth", tile: self.tooth, on: open, chance_pct: 3 })
                 .then(KeepLargestRegion { wall })
                 .then(RandomStart)
-                .then(FarthestExit),
-            // The Gullet: a long throat of passages.
-            2 => Chain::new().then(Bsp { floor: open, min_leaf: 9, padding: 1 }).then(RandomStart).then(FarthestExit),
+                .then(FarthestExit)
+                .then(Spill { name: "tallow", tile: self.tallow, on: open, chance_pct: 8 }),
+            // The Gullet: a long throat of passages, slick with fat.
+            2 => Chain::new().then(Bsp { floor: open, min_leaf: 9, padding: 1 }).then(RandomStart).then(FarthestExit).then(Spill {
+                name: "tallow",
+                tile: self.tallow,
+                on: open,
+                chance_pct: 14,
+            }),
             // The Stomach: chambers pooled with bile.
             3 => Chain::new()
                 .then(Rooms { floor: open, attempts: 40, min_size: 5, max_size: 11, min_rooms: 5 })
                 .then(Doors { door: self.sinew })
                 .then(RandomStart)
                 .then(FarthestExit)
-                .then(Pools { bile: self.bile, on: open, chance_pct: 12 }),
+                .then(Spill { name: "pools", tile: self.bile, on: open, chance_pct: 12 }),
             // The Ribcage: tight bone-walled rooms.
             4 => Chain::new()
                 .then(Rooms { floor: open, attempts: 60, min_size: 4, max_size: 8, min_rooms: 6 })
                 .then(Doors { door: self.sinew })
                 .then(RandomStart)
-                .then(FarthestExit),
+                .then(FarthestExit)
+                .then(Spill { name: "tallow", tile: self.tallow, on: open, chance_pct: 6 }),
             // The Heart: one chamber, and what beats in it.
             _ => Chain::new()
                 .then(Rooms { floor: open, attempts: 60, min_size: 15, max_size: 18, min_rooms: 2 })

@@ -7,11 +7,18 @@
 //! lighting turned on, a visible tile's glyph and background and whatever
 //! stands on it are coloured by the light that lands there; see
 //! [`shade`](crate::shade) for how.
+//!
+//! Fire and gas are drawn over the tiles they are on, from
+//! [`FieldAppearance`]: a flame over every burning cell, and the ground
+//! tinted by the densest gas on it, thick enough to hide behind drawn as a
+//! haze. Only on tiles in sight; memory holds no smoke.
 
+use bevy::color::Mix;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, Rect};
 use rl_grid::{Light, TileId};
+use rl_rules::GasId;
 
 use crate::shade::{Memory, Shading, Vary};
 use crate::terminal::{Cell, Terminal};
@@ -101,6 +108,66 @@ impl TileAppearance {
     }
 }
 
+/// How fire and gas look over the tiles they are on.
+///
+/// Fire is the engine's, so it has a look of its own a game only recolours;
+/// gases are the game's, and each is a tint the game names, grey until it
+/// does.
+#[derive(Resource, Debug, Clone)]
+pub struct FieldAppearance {
+    /// A burning cell: the flame's glyph and colour over the embers.
+    pub flame: Cell,
+    /// The colour a flame flickers toward.
+    pub flare: Color,
+    /// The glyph gas thick enough to hide behind is drawn with.
+    pub haze: char,
+    gases: Vec<Option<Color>>,
+}
+
+impl Default for FieldAppearance {
+    fn default() -> Self {
+        Self {
+            flame: Cell::new('^', Color::srgb(1.0, 0.55, 0.15)).on(Color::srgb(0.4, 0.09, 0.02)),
+            flare: Color::srgb(1.0, 0.9, 0.4),
+            haze: '░',
+            gases: Vec::new(),
+        }
+    }
+}
+
+impl FieldAppearance {
+    /// Tints the ground under `gas` toward `tint`.
+    pub fn set_gas(&mut self, gas: GasId, tint: Color) {
+        if self.gases.len() <= gas.index() {
+            self.gases.resize(gas.index() + 1, None);
+        }
+        self.gases[gas.index()] = Some(tint);
+    }
+
+    /// The tint of `gas`, grey for a gas nobody coloured.
+    pub fn gas(&self, gas: GasId) -> Color {
+        self.gases.get(gas.index()).copied().flatten().unwrap_or(Color::srgb(0.62, 0.62, 0.6))
+    }
+
+    /// `cell` as `amount` of a gas tinted `tint` over it; `hides` when it is
+    /// thick enough to hide what is behind it.
+    pub fn under_gas(&self, mut cell: Cell, tint: Color, amount: u8, hides: bool) -> Cell {
+        let share = f32::from(amount) / 255.0;
+        cell.bg = cell.bg.mix(&tint, (0.25 + share * 0.6).min(0.85));
+        if hides {
+            cell.glyph = self.haze;
+            cell.fg = tint.mix(&Color::WHITE, 0.2);
+        }
+        cell
+    }
+
+    /// A burning cell at `p` at time `t`, flickering cell by cell.
+    pub fn burning(&self, p: Point, t: f32) -> Cell {
+        let beat = rl_core::seed::position_hash((t * 12.0) as u64, p.x, p.y) % 100;
+        Cell { glyph: self.flame.glyph, fg: self.flame.fg.mix(&self.flare, beat as f32 / 160.0), bg: self.flame.bg }
+    }
+}
+
 /// Where on the terminal the map is drawn, and which world tile sits at
 /// its top-left.
 #[derive(Resource, Debug, Clone, Copy)]
@@ -152,6 +219,7 @@ impl MapViewPlugin {
 impl Plugin for MapViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TileAppearance>()
+            .init_resource::<FieldAppearance>()
             .insert_resource(MapView::new(self.0))
             .add_systems(Update, (follow_player, draw_map).chain().in_set(PresentSet::Map));
     }
@@ -189,11 +257,14 @@ pub struct Scene<'w, 's> {
     overlay: Option<Res<'w, LightOverlay>>,
     player: Query<'w, 's, &'static Viewshed, With<Player>>,
     glyphs: Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>)>,
+    fields: Res<'w, FieldAppearance>,
+    fire: Option<Res<'w, Fire>>,
+    gases: Option<Res<'w, Gases>>,
 }
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
 pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
-    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs } = &scene;
+    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, fields, fire, gases } = &scene;
     let t = (time.elapsed_secs() * ANIMATION_RATE).floor() / ANIMATION_RATE;
     let viewshed = player.single().ok();
     let here = map.current();
@@ -209,6 +280,17 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             (Some(id), false) if knowledge.is_explored(p) => look.remembered(id, p),
             _ => Cell::default(),
         };
+        if viewshed.is_some_and(|v| v.can_see(p)) {
+            if let Some((gas, amount)) = gases.as_deref().and_then(|g| g.densest(p)) {
+                // Thick enough to hide behind is what the map's opacity says,
+                // over a tile that does not hide anything itself.
+                let hides = map.is_opaque(p) && map.tile(p).is_some_and(|t| !map.tables().opaque[t.index()]);
+                cell = fields.under_gas(cell, fields.gas(gas), amount, hides);
+            }
+            if fire.as_deref().is_some_and(|f| f.is_burning(p)) {
+                cell = fields.burning(p, t);
+            }
+        }
         if overlay && viewshed.is_some_and(|v| v.can_see(p)) {
             let level = (lighting.map(|l| l.at(p).intensity).unwrap_or(0) as u32 * 10 / 256) as u8;
             cell.glyph = (b'0' + level) as char;
@@ -251,6 +333,23 @@ mod tests {
         assert_eq!(v.to_world(Point::new(10, 2)), Some(Point::new(80, 90)));
         assert_eq!(v.to_screen(Point::new(0, 0)), None);
         assert_eq!(v.to_world(Point::new(0, 0)), None);
+    }
+
+    #[test]
+    fn gas_tints_the_ground_thicker_for_more_and_a_haze_hides_the_glyph() {
+        let fields = FieldAppearance::default();
+        let ground = Cell::new('.', Color::WHITE).on(Color::BLACK);
+        let tint = Color::srgb(0.2, 0.9, 0.2);
+        let thin = fields.under_gas(ground, tint, 40, false);
+        let thick = fields.under_gas(ground, tint, 220, false);
+        assert_eq!(thin.glyph, '.', "thin gas leaves the ground showing");
+        assert!(thick.bg.to_linear().green > thin.bg.to_linear().green, "more gas, more tint");
+        assert_eq!(fields.under_gas(ground, tint, 220, true).glyph, fields.haze, "and what hides is drawn as haze");
+        let mut coloured = FieldAppearance::default();
+        coloured.set_gas(GasId::from_raw(2), tint);
+        assert_eq!(coloured.gas(GasId::from_raw(2)), tint);
+        assert_ne!(coloured.gas(GasId::from_raw(0)), tint, "a gas nobody coloured is grey");
+        assert_eq!(fields.burning(Point::new(3, 4), 0.5).glyph, fields.flame.glyph);
     }
 
     #[test]

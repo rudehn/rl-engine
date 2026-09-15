@@ -43,7 +43,7 @@ fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("The Hollow Whale", COLS, ROWS).map(screen.map))
-        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, StealthPlugin))
+        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, StealthPlugin, FirePlugin, GasPlugin))
         // The engine's seven effects, and the one the delve adds.
         .add_engine_effects()
         .add_effect::<effects::Drain>()
@@ -116,16 +116,25 @@ fn registries() -> Registries {
     ])
     .unwrap();
     let fire = damage_kinds.expect("fire");
+    let statuses = Registry::from_defs(vec![
+        StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
+        StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
+    ])
+    .unwrap();
+    let gases = Registry::from_defs(vec![
+        // What burning flesh gives off: thick enough to hide in while it hangs.
+        GasDef::new("smoke").spread(55).fade(9).veils_at(70),
+        // The reek off a pool of bile. It burns, and a lungful makes the head swim.
+        GasDef::new("reek").spread(35).fade(12).burns().inflicts(60, statuses.expect("dazed"), 1),
+    ])
+    .unwrap();
     Registries {
         factions: Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("whale")]).unwrap(),
         stats: Registry::from_defs(vec![StatDef::new("mana", 30)]).unwrap(),
-        statuses: Registry::from_defs(vec![
-            StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
-            StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
-        ])
-        .unwrap(),
+        statuses,
         tags: Registry::from_defs(vec![TagDef::new("shield")]).unwrap(),
         slots: Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap(),
+        gases,
         damage_kinds,
     }
 }
@@ -265,6 +274,8 @@ fn start(
     commands.insert_resource(Beasts { defs, table, brains, bite: registries.damage_kinds.expect("bite"), whale: whale_side });
     commands.insert_resource(combat);
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
+    // Standing in fire scorches, and burning flesh smokes.
+    commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
     commands.insert_resource(whale.appearance());
     commands.insert_resource(WorldMap::new(whale.tiles().tables()));
     commands.insert_resource(Bile(whale.bile()));
@@ -341,11 +352,13 @@ struct Stock<'w> {
     bile: Res<'w, Bile>,
     seed: Res<'w, Seed>,
     first: Option<Res<'w, FirstFloor>>,
+    registries: Res<'w, Registries>,
 }
 
 /// Stairs, glowing bile and beasts, the first time a floor is entered.
 fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
-    let Stock { beasts, map, bile, seed, first } = &stock;
+    let Stock { beasts, map, bile, seed, first, registries } = &stock;
+    let reek = registries.gases.expect("reek");
     for ev in entered.read() {
         let floor = floor_of(ev.map);
         log.push(format!("Floor {floor}: {}.", name_of(floor)), Tones::NOTICE, turns.turn_number());
@@ -376,9 +389,14 @@ fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntere
             ));
         }
         let Some(place) = map.place(ev.map) else { continue };
-        // Bile glows: a faint steady source on every pooled tile.
+        // Bile glows: a faint steady source on every pooled tile. One pool in
+        // four reeks as well, which is enough to fill a chamber without
+        // drowning a floor.
         for (p, _) in place.terrain.iter().filter(|(_, t)| *t == bile.0) {
-            commands.spawn((Position(p), LightSource::new(70, 2, Rgb::new(160, 255, 70))));
+            let mut pool = commands.spawn((Position(p), LightSource::new(70, 2, Rgb::new(160, 255, 70))));
+            if rl_engine::rl_core::seed::position_hash(seed.0.0, p.x, p.y).is_multiple_of(4) {
+                pool.insert(Vents { gas: reek, amount: 16 });
+            }
         }
         // A whaler's lamp, left burning by whoever came before: a fixture, so
         // it lives in the static layer and never moves.
@@ -580,10 +598,12 @@ fn call_on(keys: Res<ButtonInput<KeyCode>>, mut modals: ResMut<Modals>, player: 
     }
 }
 
-/// Knacks used and refused, and a brand or a torch going out.
+/// Knacks used and refused, a brand or a torch going out, and standing in
+/// fire.
 fn narrate_knacks(
     mut used: MessageReader<AbilityEvent>,
     mut lights: MessageReader<LightEvent>,
+    mut fires: MessageReader<FireEvent>,
     abilities: Res<Abilities>,
     turns: Res<Turns>,
     mut log: ResMut<MessageLog>,
@@ -614,6 +634,13 @@ fn narrate_knacks(
         let LightEvent::BurntOut { entity } = *ev;
         let what = if is_you(entity) { "Your brand".to_string() } else { upper_first(&named(entity)) };
         log.bad(format!("{what} gutters and goes out."), turn);
+    }
+    for ev in fires.read() {
+        if let FireEvent::Scorched { entity, .. } = *ev
+            && is_you(entity)
+        {
+            log.bad("You are standing in fire.", turn);
+        }
     }
 }
 
@@ -700,7 +727,7 @@ mod tests {
     /// A headless whale: the engine plugins and the delve's own systems.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, FirePlugin, GasPlugin));
         app.add_engine_effects().add_effect::<effects::Drain>();
         app.insert_resource(Seed(RunSeed(seed)))
             .add_plugins(UiPlugin)
@@ -788,6 +815,61 @@ mod tests {
         assert!(at("Floor 1:") < at(KEY_HINTS[0]), "{lines:#?}");
         assert_eq!(lines[at(KEY_HINTS[0])..at(KEY_HINTS[0]) + 2], KEY_HINTS, "both key lines, together and once");
         assert_eq!(lines.iter().filter(|l| **l == KEY_HINTS[0]).count(), 1);
+    }
+
+    /// Waits `turns` whole turns, as the player.
+    fn wait(app: &mut App, player: Entity, turns: usize) {
+        for _ in 0..turns {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+    }
+
+    /// A fireball is fire: the fat it lands on catches and burns away to
+    /// cinder, and what it scorches goes on burning after the blast.
+    #[test]
+    fn a_fireball_sets_the_fat_it_lands_on_alight_and_it_burns_to_cinder() {
+        let (mut app, player) = settled(7);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let whale = Whale::new(RunSeed(7));
+        let (tallow, cinder) = (whale.tiles().expect("tallow"), whale.tiles().expect("cinder"));
+        let open = |app: &App, p: Point| app.world().resource::<WorldMap>().is_walkable(p) && !app.world().resource::<Occupancy>().is_occupied(p);
+        let along = |dir: Direction, n: i32| {
+            let (dx, dy) = dir.delta();
+            at.offset(dx * n, dy * n)
+        };
+        let side = Direction::ALL.into_iter().find(|d| !d.is_diagonal() && (1..=6).all(|n| open(&app, along(*d, n)))).expect("a clear run from the player");
+        let slick: Vec<Point> = (3..=5).map(|n| along(side, n)).collect();
+        for p in &slick {
+            app.world_mut().resource_mut::<WorldMap>().set_tile(*p, tallow);
+        }
+        app.update();
+
+        use_knack(&mut app, player, "fireball", slick[1]);
+        assert!(slick.iter().all(|p| app.world().resource::<Fire>().is_burning(*p)), "the fat caught");
+        wait(&mut app, player, 8);
+        let map = app.world().resource::<WorldMap>();
+        assert!(slick.iter().all(|p| map.tile(*p) == Some(cinder)), "and burnt to cinder");
+        assert_eq!(app.world().resource::<Fire>().burning().count(), 0, "and went out");
+    }
+
+    /// A reeking pool of bile fills the air over it with a gas that burns.
+    #[test]
+    fn a_reeking_pool_fills_the_air_over_it() {
+        let (mut app, player) = settled(7);
+        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(3), arrive: Arrive::Entry } });
+        app.update();
+        app.update();
+        let vent = {
+            let w = app.world_mut();
+            let mut q = w.query::<(&Position, &Vents, &OnMap)>();
+            q.iter(w).find(|(_, _, on)| on.0 == map_of(3)).map(|(p, v, _)| (p.0, v.gas)).expect("the Stomach has a reeking pool")
+        };
+        wait(&mut app, player, 4);
+        let (at, reek) = vent;
+        let gases = app.world().resource::<Gases>();
+        assert!(gases.at(reek, at) > 0, "the air over the pool reeks");
+        assert!(app.world().resource::<Registries>().gases.get(reek).burns, "and what it reeks of burns");
     }
 
     #[test]

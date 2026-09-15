@@ -11,6 +11,9 @@
 //!   [`affix`]: the modifier accumulator, the mitigation pipeline, the tick
 //!   and expiry machinery, the relation matrix, the slot graph and the
 //!   affix and enchant model.
+//! - [`gas`] and [`fire`]: the rules a turn steps a gas and a fire by over a
+//!   tile field; which gases there are is content, and what burns is the
+//!   caller's to say.
 //! - [`ability`]: what an actor can spend a turn on besides a step and a
 //!   swing, as data: a shape, costs, requirements and a list of effects
 //!   the layer above resolves.
@@ -41,7 +44,9 @@ pub mod damage;
 pub mod equip;
 pub mod events;
 pub mod faction;
+pub mod fire;
 pub mod forecast;
+pub mod gas;
 pub mod names;
 pub mod stats;
 pub mod status;
@@ -57,7 +62,9 @@ pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
+pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
+pub use gas::{Breath, GasDef, GasId};
 pub use names::{NameRef, Names};
 pub use stats::{Modifier, Op, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
@@ -78,7 +85,9 @@ pub mod prelude {
         Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker,
     };
     pub use crate::faction::{FactionId, Factions, Relation};
+    pub use crate::fire::Tinder;
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
+    pub use crate::gas::{Breath, GasDef, GasId};
     pub use crate::names::{NameRef, Names};
     pub use crate::stats::{Modifier, Op, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};

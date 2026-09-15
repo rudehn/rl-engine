@@ -155,6 +155,8 @@ pub fn perceivable(player_pos: Point, player_sight: &Viewshed, lighting: Option<
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MindWorld<'w> {
     fields: ResMut<'w, FlowFields>,
+    /// Where fire burns, when the game added it; a mind will not step in.
+    fire: Option<Res<'w, crate::fire::Fire>>,
     /// What the ability layer narrowed down for this mind, when the game
     /// added it. Absent in a game with no abilities, and then no tactic
     /// is ever offered one.
@@ -235,7 +237,8 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
     let Ok((player_pos, player_sight)) = sight.player.single() else { return };
     let Ok((thinker, mind, profile, intelligence)) = sight.minds.single() else { return };
     let Ok((_, my_pos, my_hp, my_faction, perception, _)) = sight.actors.get(thinker) else { return };
-    let MindWorld { fields, offered, rng, map, occupancy, rules, turns } = &mut world;
+    let MindWorld { fields, fire, offered, rng, map, occupancy, rules, turns } = &mut world;
+    let fire = fire.as_deref();
     let (fields, rng, map, occupancy, rules, turns) = (&mut **fields, &mut **rng, &**map, &**occupancy, &**rules, &**turns);
     let actors = &sight.actors;
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
@@ -317,7 +320,8 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
     let escape = fields.escape.get(&key);
     // A closed door is a step for a mind that opens doors, since stepping
     // into one opens it, and a wall for one that does not.
-    let can_step = |p: Point| (map.is_walkable(p) || (key.1 && map.opens(p).is_some())) && !occupancy.is_occupied(p);
+    // Nor is a burning cell anywhere a mind will step.
+    let can_step = |p: Point| (map.is_walkable(p) || (key.1 && map.opens(p).is_some())) && !occupancy.is_occupied(p) && !fire.is_some_and(|f| f.is_burning(p));
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);

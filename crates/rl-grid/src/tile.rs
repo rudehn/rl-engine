@@ -65,6 +65,36 @@ pub struct TileProps {
     /// its closed self.
     #[serde(default)]
     pub closes_to: Option<String>,
+    /// How it burns, when it does. Nothing burns unless it says so.
+    #[serde(default)]
+    pub burn: Option<Burn>,
+}
+
+/// How a tile burns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Burn {
+    /// Percent chance each turn that it catches from each burning neighbour.
+    pub catch_pct: u8,
+    /// Turns it burns once alight.
+    pub turns: u8,
+    /// The tile it leaves once burnt out, by name.
+    ///
+    /// Required rather than defaulting to the tile itself: a tile that stayed
+    /// itself could catch again from the neighbour it had just lit, and two
+    /// such tiles would pass one fire between them forever. Burning uses the
+    /// fuel up, which is what makes every fire end.
+    pub leaves: String,
+}
+
+/// How a tile burns, with the tile it leaves resolved to an id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Kindling {
+    /// Percent chance each turn that it catches from each burning neighbour.
+    pub catch_pct: u8,
+    /// Turns it burns once alight, at least one.
+    pub turns: u8,
+    /// What it leaves.
+    pub leaves: TileId,
 }
 
 impl TileProps {
@@ -79,6 +109,7 @@ impl TileProps {
             move_cost: NORMAL_MOVE_COST,
             opens_to: None,
             closes_to: None,
+            burn: None,
         }
     }
 
@@ -131,6 +162,14 @@ impl TileProps {
     /// Builder: closing this makes it the tile called `name`.
     pub fn closes_to(mut self, name: impl Into<String>) -> Self {
         self.closes_to = Some(name.into());
+        self
+    }
+
+    /// Builder: it catches from each burning neighbour with `catch_pct`
+    /// percent a turn, burns `turns` turns, and leaves the tile called
+    /// `leaves`.
+    pub fn burns(mut self, catch_pct: u8, turns: u8, leaves: impl Into<String>) -> Self {
+        self.burn = Some(Burn { catch_pct, turns, leaves: leaves.into() });
         self
     }
 
@@ -264,12 +303,16 @@ impl TileRegistry {
     /// loops, so a FOV or a flood never chases a `Vec<TileProps>` pointer.
     ///
     /// # Panics
-    /// Panics naming the tile if one opens or closes into a name nobody
-    /// registered. Names are resolved here rather than at registration so a
-    /// door may be registered before the tile it opens into.
+    /// Panics naming the tile if one opens, closes or burns into a name
+    /// nobody registered. Names are resolved here rather than at registration
+    /// so a door may be registered before the tile it opens into.
     pub fn tables(&self) -> TileTables {
-        let resolve = |props: &TileProps, into: &Option<String>, verb: &str| {
-            into.as_ref().map(|name| self.id(name).unwrap_or_else(|| panic!("tile {:?} {verb} {name:?}, which is not registered", props.name)))
+        let named = |props: &TileProps, name: &str, verb: &str| {
+            self.id(name).unwrap_or_else(|| panic!("tile {:?} {verb} {name:?}, which is not registered", props.name))
+        };
+        let resolve = |props: &TileProps, into: &Option<String>, verb: &str| into.as_ref().map(|name| named(props, name, verb));
+        let kindling = |props: &TileProps| {
+            props.burn.as_ref().map(|b| Kindling { catch_pct: b.catch_pct.min(100), turns: b.turns.max(1), leaves: named(props, &b.leaves, "burns to") })
         };
         TileTables {
             walkable: self.props.iter().map(|p| p.walkable).collect(),
@@ -279,6 +322,7 @@ impl TileRegistry {
             move_cost: self.props.iter().map(|p| p.effective_move_cost()).collect(),
             opens: self.props.iter().map(|p| resolve(p, &p.opens_to, "opens to")).collect(),
             closes: self.props.iter().map(|p| resolve(p, &p.closes_to, "closes to")).collect(),
+            burns: self.props.iter().map(kindling).collect(),
         }
     }
 }
@@ -300,6 +344,8 @@ pub struct TileTables {
     pub opens: Vec<Option<TileId>>,
     /// What each tile becomes when closed, if it closes.
     pub closes: Vec<Option<TileId>>,
+    /// How each tile burns, if it does.
+    pub burns: Vec<Option<Kindling>>,
 }
 
 #[cfg(test)]
@@ -350,6 +396,26 @@ mod tests {
         assert_eq!(t.opens[r.expect("wall").index()], None, "a wall opens into nothing");
         let gate: TileProps = ron::from_str(r#"(name: "gate", passable: Some(true), opens_to: Some("gate_open"))"#).unwrap();
         assert_eq!(gate.opens_to.as_deref(), Some("gate_open"));
+    }
+
+    #[test]
+    fn a_tile_that_burns_leaves_the_tile_it_names() {
+        let mut r = TileRegistry::standard();
+        let ash = r.register(TileProps::floor("ash")).unwrap();
+        let grass = r.register(TileProps::floor("grass").burns(60, 3, "ash")).unwrap();
+        let t = r.tables();
+        assert_eq!(t.burns[grass.index()], Some(Kindling { catch_pct: 60, turns: 3, leaves: ash }));
+        assert_eq!(t.burns[ash.index()], None, "ash does not burn, so the fire ends");
+        let hay: TileProps = ron::from_str(r#"(name: "hay", walkable: true, burn: Some((catch_pct: 90, turns: 2, leaves: "ash")))"#).unwrap();
+        assert_eq!(hay.burn.map(|b| b.leaves), Some("ash".to_string()));
+    }
+
+    #[test]
+    #[should_panic(expected = "tile \"thatch\" burns to \"ahs\", which is not registered")]
+    fn a_tile_that_burns_into_a_tile_nobody_registered_is_refused_by_name() {
+        let mut r = TileRegistry::standard();
+        r.register(TileProps::floor("thatch").burns(50, 2, "ahs")).unwrap();
+        r.tables();
     }
 
     #[test]

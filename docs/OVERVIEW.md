@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-14, after throwing.
+Last updated: 2026-09-15, after fire and gas.
 
 ## The shape
 
@@ -28,7 +28,8 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 
 ### rl-grid
 
-- Tile registry with flag tables, `Terrain` and views, `OpacitySource` and `CostSource` traits. A tile names what it opens and closes into, resolved to ids in the tables, which refuse a name nobody registered.
+- Tile registry with flag tables, `Terrain` and views, `OpacitySource` and `CostSource` traits. A tile names what it opens and closes into, and how it burns and the tile it leaves, resolved to ids in the tables, which refuse a name nobody registered.
+- `TileField<T>`: a value per tile stepped a turn at a time by a rule that reads the field as it stood, allocating nothing in a step, and moved with a window by `reframe`.
 - `BitGrid`.
 - Symmetric shadowcasting field of view.
 - Region flood and labelling.
@@ -77,6 +78,8 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - `events`: facts with kind, subject, object and amount, matchers, a ledger of named counters, and quests as objectives over facts with prerequisite chains and a victory flag.
 - `balance`: threat scoring and the spawn-band report.
 - `ai::awareness`: `NoticeStats` (a certain radius, a chance beyond it, a light bonus and a memory) and `StealthStats`, the pure `notices` roll, and `Awareness`, which goes `Unaware` to `Alert` on a sighting and back once its memory runs out; plus the `SearchLastKnown` tactic, which walks to where an enemy was last seen.
+- `gas`: `GasDef` (spread, fade, the concentration that hides what is behind it, whether it burns, a status for breathing enough), loaded by status name, and `diffuse`, an exchange with each neighbour and a fade of at least one unit, so every cloud clears.
+- `fire`: `Tinder` and `spread`, one catch chance per burning neighbour from rolls the caller passes in, so the spread does not depend on visiting order.
 - `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, and an `Outlook` read off the two counts. Pure, so an inspect panel's numbers cannot drift from the fight.
 
 ## Tier 2: the Bevy layer
@@ -90,7 +93,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - A reaction phase inside the turn: `TurnSet::React` runs after the actions of a pass resolve and before the turn is requeued, which is where a game answers what just happened. A drink heals before the next blow lands, a bite poisons on the bite, gear counts from the moment it is worn.
 - Drawing is layered by `PresentSet`: narration, then the map, then the chrome, then whatever covers them. No crate orders itself after another crate's draw function.
 - Actions are types, not a list: `Step`, `Attack`, `Wait`, `Close`, `PickUp`, `DropItem`, `Equip`, `EquipFromGround`, `Unequip`, `UseItem`, `Throw` and `GoThrough` ship with the engine, each resolved by the module that owns the mechanic. A game registers its own with `add_action`, resolves it in `ResolveSet::Act` through `Resolution`, and the sweep refuses whatever no resolver claimed. `Resolution` is every resolver's side of the loop, the engine's and a game's: `claim` the actor holding the turn, then `done` with a cost or `failed`, which keeps the player's turn and charges anyone else, so no resolver has to remember that a monster handed a free retry loops forever.
-- Every stage a plugin fills is a named set, and no system orders itself after another's function: `DecideSet::{Notice, Offer, Minds, Game}`, `ResolveSet::{Travel, Act, Effects, Damage}` with steps, waits and warps travelling before anything else acts, and `CleanupSet::{Remove, Requeue}` taking the dead out before a turn is requeued. The dead are buried in `Last`.
+- Every stage a plugin fills is a named set, and no system orders itself after another's function: `DecideSet::{Notice, Offer, Minds, Game}`, `ResolveSet::{Travel, Act, Fields, Effects, Damage}` with `FieldSet::{Fire, Gas}` inside `Fields` with steps, waits and warps travelling before anything else acts, and `CleanupSet::{Remove, Requeue}` taking the dead out before a turn is requeued. The dead are buried in `Last`.
 - Chunk streaming with edit deltas, per-map occupancy and knowledge, field of view.
 - `Registries`, every registry the engine reads, in one resource the game fills once: damage kinds, factions, stats, statuses, tags and slots. An empty one means none, and `names()` hands the same tables to a load, so a game's content is resolved against exactly what the engine will read it with and no subsystem keeps a copy.
 - Combat: health, armor, resists, factions as `CombatRules`, the matrix over the registry's sides, built by naming pairs with `CombatRules::new(&sides).hostile(a, b)`, `hunts` for a grudge that is not returned and `allied`, melee and ranged attacks down a line of fire, extra strikes, the damage event pipeline, and deaths that linger until the frame ends. It knows nothing of minds or abilities: a blow is a blow whoever chose it.
@@ -98,7 +101,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - Minds, opt-in by adding `MindsPlugin` beside combat: `Mind`, `Perception` and `Profile` on a monster, and `Intelligence(Wits)`, which every mind carries and is sapient unless the spawn says otherwise; flow fields per movement profile and per whether the mover opens doors, which reads a closed door through `WorldMap::opening_view` as the turn to open it, the snapshot a brain reads, and the one system that turns a decision into a step, an attack, a wait, an ability, a pickup, an equip from the ground, a throw or a `MindChose`. The one place every action a monster can choose meets, so neither combat nor abilities has to know about the other; a `Mind` spawned without the plugin is reported once rather than left standing.
 - Items on the ground, in bags and in slots, with stacks, tags and enchantments. A carried item is on no map, and one put down lies on the map it is put down on. `EquipFromGround` takes up and puts on what lies underfoot for a turn and a half; `GearScore` is what wearing an item is worth, which a mind compares against what it would displace; what a dead actor carried falls where it died.
 - Throwing, opt-in by adding `ThrowingPlugin` beside items and combat: `Throwable` says how far an item goes and what it strikes for, `Throw` sends one from a stack or the item itself at a cell, and it strikes the first body in its way down combat's damage pipeline and comes to rest at its feet, short of a wall, or at the end of its reach, reported as `ItemEvent::Thrown`. `flight` is the one answer to where a throw goes, and the resolver and the targeting preview both call it.
-- Abilities, opt-in, with every actor given an empty `Known`, `Pools` and `Cooldowns` as it is spawned, so `Grants` alone is enough to use what was granted: the `Use` action, `Known` rebuilt every turn from what an actor is and wears, `Pools` for whatever a game calls its fuel, `Cooldowns` as absolute times on the turn clock so a save restores them for nothing, `Grants` and `Charges` on the things that lend an ability, `Offered`, the gate's answer for whoever holds the turn, which the minds and a menu both read through accessors that answer only for that actor, and a resolver that gates, pays, resolves the footprint and lands the effects inside the pass. `Bystanders::land` is the one answer to where a use lands, who it hits and why the aim would be refused; the resolver and the targeting preview both call it. Effects are types, not a list: one per subsystem the engine owns, all seven in `effects`, which depends on combat and statuses so neither depends on abilities, and a game registers its own with `add_effect`. An effect asks for damage, a status or a move through `EffectWorld`, and reaches anything else through `Commands`.
+- Abilities, opt-in, with every actor given an empty `Known`, `Pools` and `Cooldowns` as it is spawned, so `Grants` alone is enough to use what was granted: the `Use` action, `Known` rebuilt every turn from what an actor is and wears, `Pools` for whatever a game calls its fuel, `Cooldowns` as absolute times on the turn clock so a save restores them for nothing, `Grants` and `Charges` on the things that lend an ability, `Offered`, the gate's answer for whoever holds the turn, which the minds and a menu both read through accessors that answer only for that actor, and a resolver that gates, pays, resolves the footprint and lands the effects inside the pass. `Bystanders::land` is the one answer to where a use lands, who it hits and why the aim would be refused; the resolver and the targeting preview both call it. Effects are types, not a list: one per subsystem the engine owns, seven in `effects` registered together, and `Ignite` and `Emit` registered by the fire and gas plugins, which depends on combat and statuses so neither depends on abilities, and a game registers its own with `add_effect`. An effect asks for damage, a status or a move through `EffectWorld`, and reaches anything else through `Commands`.
 - Places: bounded maps entered by transitions or warps, built on first arrival, kept whole, off-map actors frozen; `PlaceBuild::from_context` reads a finished chain; `WarpRequest::into_place` starts a run in one.
 - The surface is optional, and everything regional belongs to it: `WorldMap::new` takes the tile tables alone, the region size is read from the world graph when the first window loads, and `Knowledge` is initialised by the engine. A delve names neither.
 - Knowledge: explored tiles per map in buckets of its own, and the surface's seen regions and discovered sites kept apart from them, so going underground never hides the overworld's fog.
@@ -106,6 +109,9 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - Every actor requires a `Speed`, normal unless the spawn says otherwise.
 - Stealth, opt-in by adding `StealthPlugin`: `Notice` on observers and `Stealth` on subjects, `Aware` remembering who has noticed whom, a roll to notice in `DecideSet::Notice` for the actor about to decide, waking on a blow in `TurnSet::React`, and a `Noticed` message on the flip; the minds act only on hiders they have noticed, search where they last saw them, and never descend a flow field toward a player they have not seen.
 - Lighting, opt-in by inserting `Lighting`: `LightSource` on a prop, an actor or an item, shed from the carrier once carried; static and dynamic layers recast only when their sources change; the map's `opacity_epoch` so an edit that changes what blocks sight refreshes light and every viewshed without anyone moving; `DarkSight`; `Fuel` ticked by the turn with `LightEvent::BurntOut`; the viewshed keeps its geometric `line` and its seen `visible`, and minds perceive along a line only what is lit, within their dark sight or adjacent.
+- Gas, opt-in by adding `GasPlugin`: a field per gas per map in `Gases`, given off by `Release` and `Vents`, stepped every whole turn over what does not stop a thrown thing, written into the map's veil where thick enough so sight and light stop there, and breathed, as `Breathed` and the gas's status.
+- Fire, opt-in by adding `FirePlugin`: `Fire` per map, set alight by `Kindle` and by what is `Burning`, fed by burning tiles, `Flammable` things and gas that burns, stepped every whole turn from hashed rolls; burnt ground becomes the tile it leaves, whoever stands in it is `Scorched` and given `FireRules::inflicts`, and burning cells smoke and glow through `Lighting::set_glow`. `FireEvent` reports what the game answers. Minds will not step into fire.
+- `MapFields`, what fire and gas keep per map: the current map's field fitted to the window, every other map's set aside, and every one saved.
 - Facts fed to quests and counters after the frame.
 - Save exports for the scheduler, the world's edits and places, and knowledge.
 - A headless app for tests, and `testing`, what goes into one: `surface` stands a `TestWorld` up and hands back open ground to start on, `two_sides` inserts combat rules for two sides at war, and `KeyScriptPlugin` with `press` plays keys the way a keyboard does. One copy for the engine's crates and a game's tests alike, where there had been nine copies of the world and three of the key player.
@@ -116,6 +122,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - The map view with lit, remembered and unknown tiles. `MapViewPlugin::new(rect)` takes the rectangle it draws in, the way every panel does, and needs field of view, since without it nothing is ever seen.
 - Shading, in the manner of Brogue: each tile authored with both colours and a `Vary` that jitters every cell by a hash of its position and can shimmer over time; light multiplies glyph and background channel by channel, down to a dark floor and up to a gain cap; the wavering part of a light dips on a smooth noise so flames ripple; `Memory` fades what was seen to a darker, greyer, cooler colour.
 - `LightOverlay`: intensity drawn as digits.
+- `FieldAppearance`: flames over every burning cell in sight, flickering cell by cell, and the ground tinted by the densest gas on it, drawn as haze where it hides what is behind it.
 - `CapturePlugin`: `RL_CAPTURE` plays `RL_CAPTURE_KEYS` through the real keyboard input, photographs the window without taking focus, refuses a black frame, and exits.
 - Glyph entities filtered to the current map.
 
@@ -157,7 +164,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 - Backends for files, memory and browser storage behind one resource.
 - An exact-match versioned envelope.
 - Entity remapping.
-- The engine's own state captured and restored, including the pools, cooldowns and charges of every entity the game saved, so a continued run keeps what its abilities had spent and a cooldown is still live at the clock it was saved on.
+- The engine's own state captured and restored, including every burning cell and every cell with gas on every map, and the pools, cooldowns and charges of every entity the game saved, so a continued run keeps what its abilities had spent and a cooldown is still live at the clock it was saved on.
 
 ## Tier 3: rl-engine
 
@@ -177,6 +184,7 @@ Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter'
 Five floors of a beached leviathan, mouth to heart, with no surface and, below the Maw's grey daylight, no light but a brand, the bile and whatever a beast sheds: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
 `floors.rs` is the whole map builder; it is the test that a dungeon delve is first-class.
 It is where lighting, stealth and abilities meet. The brand burns `Fuel` and shift and `L` smothers it, which is a way past a beast that has not noticed you rather than only a way to see less; a torch lies on the first floor to carry and set down, whalers' lamps are the fixtures, and `v` shows light as digits. The delver's five knacks are data in `assets/abilities.ron`, with `Drain` the delve's own effect in `effects.rs`, and gut eels spit back.
+Fire and gas meet here: slicks of fat catch and burn to cinder, sinew curtains burn away, one bile pool in four reeks of a gas that burns and dazes, burning flesh smokes enough to hide in, and the fireball sets what it lands on alight.
 The rail shows vitals with the mana bar and which beasts in sight have noticed you.
 
 ## The open world: Corsair
@@ -192,7 +200,7 @@ It is built only on the public API, so it is the test that the seams are right.
 
 - Cursed items: nothing resists removal or carries a deliberate penalty.
 - A character sheet.
-- Tile fields for fire and gas, and the glow they would shed.
+- Heat and cold that put fire out, liquids that flow, and wind.
 - Nights on Corsair's open water, and a lantern the player can douse or run out of.
 - Lit detection ranges, a light-averse tactic, and a ranged penalty in the dark once accuracy exists.
 - Scripted encounters, which want an ability's effect list without the turn, the cost and the cursor.
