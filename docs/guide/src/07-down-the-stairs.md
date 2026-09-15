@@ -22,9 +22,9 @@ Every positioned entity is on exactly one map, tagged `OnMap`, which the engine 
 
 ```rust
         let chain = match depth {
-            1 | 2 => Chain::new()
-                .then(dungeon::Rooms { floor: open, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 })
-                .then(dungeon::Doors { door: roots }),
+            1 | 2 => {
+                Chain::new().then(dungeon::Rooms { floor: open, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 }).then(dungeon::Doors { door: roots })
+            }
             3 => Chain::new().then(passes::CellularCave { wall, floor: open, fill_pct: 45, ..Default::default() }).then(passes::KeepLargestRegion { wall }),
             _ => Chain::new().then(dungeon::Rooms { floor: open, attempts: 60, min_size: 12, max_size: 18, min_rooms: 2 }),
         };
@@ -69,7 +69,7 @@ Down arrives at the entry, up arrives at the exit, which is what lines the stair
 
 ```rust
         } else if kings.contains(d.entity) {
-            log.push("The rat king falls. The scratching stops. Press q to quit.", LogCategory::Notice, turn);
+            log.push("The rat king falls. The scratching stops. Press q to quit.", Tones::NOTICE, turn);
 ```
 
 A victory condition is a component and an `if`.

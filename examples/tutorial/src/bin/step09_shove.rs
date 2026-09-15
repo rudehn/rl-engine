@@ -271,7 +271,6 @@ fn start(
         .id();
     warps.write(WarpRequest::into_place(player, map_of(1)));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("g picks up, e eats, > goes down, shift and a direction shoves.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
@@ -374,6 +373,12 @@ fn populate(
     for ev in entered.read() {
         let depth = floor_of(ev.map);
         log.push(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE, turns.turn_number());
+        // The keys, once, under the first floor's name. Not in `start`: the
+        // name is written when the warp lands, a frame later, and would read
+        // as though it came after them.
+        if ev.first && depth == 1 {
+            log.push("g picks up, e eats, > goes down, shift and a direction shoves.", Tones::MUTED, turns.turn_number());
+        }
         if !ev.first {
             continue;
         }
@@ -635,6 +640,17 @@ mod tests {
         app.update();
     }
     // ANCHOR_END: headless
+
+    /// The log reads in the order things happen: into the warren, onto the
+    /// first floor, and only then the keys.
+    #[test]
+    fn the_first_floor_is_named_before_the_keys_are_listed() {
+        let (app, _) = started(7);
+        let lines: Vec<&str> = app.world().resource::<MessageLog>().iter().map(|e| e.text.as_str()).collect();
+        let at = |needle: &str| lines.iter().position(|l| l.starts_with(needle)).unwrap_or_else(|| panic!("no {needle:?} in {lines:#?}"));
+        assert!(at("Seed 7.") < at("Floor 1:") && at("Floor 1:") < at("g picks up"), "{lines:#?}");
+        assert_eq!(lines.iter().filter(|l| l.starts_with("g picks up")).count(), 1, "and once: {lines:#?}");
+    }
 
     // ANCHOR: property
     /// The property that has to hold for every floor of every run: you can

@@ -199,6 +199,10 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
 - 2026-09-14: releases are tags, and the template names one.
   The template depended on the engine's `main`, so a breaking change there reached every game generated afterwards the moment it was pushed, and a game's lockfile pinned whatever commit that happened to be.
   A release is a tag, `v` and the workspace version: `v0.1.0` is the first. The template, the README and the guide pin it, `scripts/check-template.sh` refuses a template whose tag is not the workspace version, and a release is cut by bumping the version, which fails that check until the template names the new tag, then tagging the commit that does.
+- 2026-09-14: the tutorial names its floor before its keys, and the guide cannot quote code that is gone.
+  Steps 7 to 10 had the delve's bug: `start` pushed the key hints and the first floor's name came when the warp landed, so the log read the keys first. The hints follow the first floor's name, once, and step 9 holds the order in a test.
+  Chapter 7 still wrote `LogCategory::Notice` a week after the log had moved to tones, because a snippet written out by hand is the one reference `check-guide.sh` did not check. It now checks that every such line is a line of an example, a line with `...` excepted; two more had drifted into a different formatting of the same code.
+  `CHANGELOG.md` records what 0.1.0 is, which the template's comment now points at for what moves between releases.
 - Next: the rest of the deferred pieces (throwing, a character sheet, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

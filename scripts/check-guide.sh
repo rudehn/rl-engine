@@ -3,7 +3,8 @@
 #
 #   scripts/check-guide.sh   every {{#include}} names a file that exists and
 #                            an anchor that is in it, every image resolves,
-#                            and every chapter is in SUMMARY.md
+#                            every hand-written snippet line is in an
+#                            example, and every chapter is in SUMMARY.md
 #
 # The guide quotes the tutorial crate rather than restating it, so a renamed
 # anchor or a moved file would leave a chapter silently showing an error
@@ -56,8 +57,29 @@ for page in $listed; do
   [[ -f "$src/$page" ]] || note "SUMMARY.md lists a missing page: $page"
 done
 
+# Every line of a Rust snippet a chapter writes out by hand rather than
+# includes is a line of an example's source. A copied line is the one kind
+# of reference mdBook cannot check, so it is the kind that drifted: a chapter
+# kept an API for a week after the code had moved on. A line holding `...`
+# elides on purpose and is exempt.
+while IFS= read -r stale; do
+  note "$stale"
+done < <(python3 - "$src" <<'PY'
+import pathlib, re, sys
+lines = {l.strip() for f in pathlib.Path("examples").rglob("*.rs") for l in f.read_text().splitlines()}
+for page in sorted(pathlib.Path(sys.argv[1]).glob("*.md")):
+    for block in re.finditer(r"```rust[^\n]*\n(.*?)```", page.read_text(), re.S):
+        if "{{#include" in block.group(1):
+            continue
+        for line in block.group(1).splitlines():
+            t = line.strip()
+            if t and "..." not in t and t not in lines:
+                print(f"{page}: a snippet line no example has: {t}")
+PY
+)
+
 if ((fail)); then
   echo "guide: broken references above" >&2
   exit 1
 fi
-echo "ok: the guide's includes, images and table of contents all resolve"
+echo "ok: the guide's includes, images, snippets and table of contents all resolve"

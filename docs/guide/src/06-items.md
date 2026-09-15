@@ -42,7 +42,7 @@ The engine drops vanished items from every inventory and every slot.
 ## React, not Narrate
 
 ```rust,no_run
-    .add_systems(Turn, (populate, eat).in_set(TurnSet::React));
+        .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
 ```
 
 `TurnSet::React` runs inside a turn pass, after that pass's actions resolve and before the actor is requeued.

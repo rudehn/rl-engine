@@ -202,7 +202,6 @@ fn start(
         .id();
     warps.write(WarpRequest::into_place(player, map_of(1)));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("Something is scratching in the dark. g picks up, e eats, > goes down.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
@@ -303,6 +302,12 @@ fn populate(
     for ev in entered.read() {
         let depth = floor_of(ev.map);
         log.push(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE, turns.turn_number());
+        // The keys, once, under the first floor's name. Not in `start`: the
+        // name is written when the warp lands, a frame later, and would read
+        // as though it came after them.
+        if ev.first && depth == 1 {
+            log.push("Something is scratching in the dark. g picks up, e eats, > goes down.", Tones::MUTED, turns.turn_number());
+        }
         if !ev.first {
             continue;
         }
