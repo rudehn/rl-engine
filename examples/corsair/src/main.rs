@@ -93,10 +93,11 @@ impl Screen {
 }
 
 fn main() -> AppExit {
-    let mut seed = RunSeed::fresh();
+    // A replay is the run it was recorded from: its seed and its flags.
+    let mut seed = rl_engine::rl_bevy::replay::seed().unwrap_or_else(RunSeed::fresh);
     let mut regions = (64, 64);
     let mut resume = false;
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = rl_engine::rl_bevy::replay::args();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {

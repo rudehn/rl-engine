@@ -93,8 +93,8 @@ Ambient is data the game writes, not a rule the engine runs: a constant for a de
 - `Light`, `Rgb`, `Emitter`, `falloff`, `screen`.
 - `LightField`: a `Grid<Light>` over the window with `clear`, `at`, `cast(&impl OpacitySource, &Emitter, scratch: &mut BitGrid)`, `flood(rect, light)` for contiguous hazards that must not shadowcast one by one, and `compose(&statics, &dynamics, ambient) -> &mut self`.
 - Nothing allocates per cast: the scratch `BitGrid` and the field are owned by the caller and reused.
-- A criterion bench at 20 sources on the realistic maps, alongside the FOV benches.
-  The plan promised this bench from day one and it is still unmeasured.
+- A criterion bench at 20 sources on the realistic maps, alongside the FOV benches: `light/20_sources_radius_8` in `crates/rl-grid/benches/grid.rs`.
+  Measured 2026-09-15 on an M1: 70 µs to cast twenty sources of radius 8 over a 96x64 cave, and 52 µs to compose the statics, the dynamics and the ambient over the same field, so a frame that recasts everything spends an eighth of a millisecond on light.
 
 ### rl-bevy: `lighting.rs` (tier 2)
 

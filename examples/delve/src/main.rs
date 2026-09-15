@@ -38,7 +38,9 @@ const LOG_ROWS: i32 = 4;
 const BEASTS_RON: &str = include_str!("../assets/beasts.ron");
 
 fn main() -> AppExit {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Through the replay module, so a recorded run replays with the
+    // floor it was recorded on.
+    let args = rl_engine::rl_bevy::replay::args();
     let first = args.iter().position(|a| a == "--floor").map(|i| args[i + 1].parse::<u32>().expect("floor").clamp(1, FLOORS)).unwrap_or(1);
     let screen = Screen::new();
     let mut app = App::new();

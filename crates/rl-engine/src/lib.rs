@@ -118,6 +118,9 @@ impl PluginGroup for RoguelikePlugins {
             // with the map view.
             .add(rl_render::ParticlesPlugin)
             .add(rl_ui::UiPlugin)
+            // A run written down and played back, when the environment
+            // asks: `RL_RECORD=run.ron` and `RL_REPLAY=run.ron`.
+            .add(rl_ui::ReplayPlugin::from_env())
             .add(rl_render::CapturePlugin)
     }
 }

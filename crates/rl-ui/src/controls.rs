@@ -685,6 +685,12 @@ impl Repeats {
     pub fn firing(&self, shift: bool) -> Option<Direction> {
         self.firing.filter(|(_, with_shift)| *with_shift == shift).map(|(d, _)| d)
     }
+
+    /// The direction repeating this frame, and whether Shift is with it,
+    /// for whoever writes it down.
+    pub fn firing_any(&self) -> Option<(Direction, bool)> {
+        self.firing
+    }
 }
 
 /// Moves [`Repeats`] on by this frame. Runs before any input is read.

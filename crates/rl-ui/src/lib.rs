@@ -97,6 +97,7 @@ pub mod log;
 pub mod menu;
 pub mod modal;
 pub mod panel;
+pub mod replay;
 pub mod tone;
 pub mod view;
 
@@ -112,6 +113,7 @@ pub use panel::{
     AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel,
     SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, sheet_modal,
 };
+pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones};
 pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
@@ -195,6 +197,7 @@ pub mod prelude {
     pub use crate::log::{LogEntry, MessageLog};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
     pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};
+    pub use crate::replay::ReplayPlugin;
     // The module itself, for `panel::split_right` and the drawing
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;

@@ -31,6 +31,7 @@ pub mod minds;
 pub mod places;
 pub mod plugin;
 pub mod registries;
+pub mod replay;
 pub mod seed;
 pub mod state;
 pub mod status;
@@ -69,6 +70,7 @@ pub use places::{
 };
 pub use plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, FieldSet, Needs, PresentSet, Requirements, ResolveSet, Turn, TurnSet, depends_on};
 pub use registries::Registries;
+pub use replay::{Pressed, Recording};
 pub use seed::{AddStream, Seed, Stream};
 pub use state::EngineState;
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};

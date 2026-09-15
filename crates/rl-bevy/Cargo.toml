@@ -21,5 +21,6 @@ rl-mapgen.workspace = true
 rl-world.workspace = true
 rl-rules.workspace = true
 serde.workspace = true
+ron.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 bevy.workspace = true

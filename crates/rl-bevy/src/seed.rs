@@ -35,9 +35,16 @@ impl Seed {
     /// Panics naming the argument when `N` is not a whole number, because a
     /// typo that quietly started a random run is a replay that was never
     /// replayed.
+    ///
+    /// When [`REPLAY_VAR`](crate::replay::REPLAY_VAR) names a recording,
+    /// the recording's seed, whatever the command line says: a replay is
+    /// the run it was recorded from.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_args() -> Self {
-        match seed_argument(std::env::args().skip(1)) {
+        if let Some(seed) = crate::replay::seed() {
+            return Seed(seed);
+        }
+        match seed_argument(crate::replay::args().into_iter()) {
             Some(Ok(seed)) => Seed(seed),
             Some(Err(e)) => panic!("{e}"),
             None => Seed(RunSeed::fresh()),

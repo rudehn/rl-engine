@@ -5,10 +5,13 @@
 //! first play `RL_CAPTURE_KEYS` through the real keyboard input, one key
 //! every few frames, then waits for the turns to settle, saves the window
 //! to that path, and exits. `RL_CAPTURE_FRAMES` sets the earliest frame to
-//! shoot on, 60 by default. The shot also waits for a few seconds of wall
-//! time, because a hidden window has no vsync to pace it and would reach
-//! any frame count before the renderer has compiled its shaders. Without
-//! `RL_CAPTURE` the plugin does nothing.
+//! shoot on, 60 by default. `RL_CAPTURE_AT=hold` shoots instead a tenth of
+//! a second into the first hold on the turns after the keys, which is the
+//! flight or the burst the keys caused rather than what it left behind;
+//! `hold:0.3` picks the moment. Everything waits for a few seconds of wall
+//! time first, because a hidden window has no vsync to pace it and would
+//! reach any frame count before the renderer has compiled its shaders.
+//! Without `RL_CAPTURE` the plugin does nothing.
 //!
 //! Keys are separated by spaces. A letter is its key and a capital letter
 //! is that key with shift; `.` `,` `>` `<` `/` `?` and the symbols over the
@@ -39,15 +42,47 @@ pub const CAPTURE_VAR: &str = "RL_CAPTURE";
 pub const FRAMES_VAR: &str = "RL_CAPTURE_FRAMES";
 /// The environment variable naming keys to press first.
 pub const KEYS_VAR: &str = "RL_CAPTURE_KEYS";
+/// The environment variable naming when to shoot: unset for once the keys
+/// have settled, or `hold` for the first moment the turns are held for
+/// something to be seen, a tenth of a second in, so the shot catches the
+/// flight or the burst the keys caused rather than what it left behind.
+/// `hold:0.3` names its own moment, in seconds after the hold began.
+pub const AT_VAR: &str = "RL_CAPTURE_AT";
 
-/// The frame the first scripted key is pressed on: the world is built by then.
+/// The frame the first scripted key is pressed on, counted from the end of
+/// the warm-up, so what the keys cause is drawn by a renderer that is
+/// ready and a shot in the middle of it is a shot of it.
 const FIRST_KEY: u32 = 30;
 /// Frames between scripted keys.
 const KEY_GAP: u32 = 3;
 /// Frames to wait after the last key before shooting.
 const SETTLE: u32 = 20;
-/// Wall time before the shot, for the renderer to have everything compiled.
+/// Wall time before the keys and the shot, for the renderer to have
+/// everything compiled.
 const WARM_UP_SECS: f32 = 4.0;
+/// How far into a hold the shot is taken, unless `hold:` says.
+const INTO_HOLD_SECS: f32 = 0.1;
+
+/// When the shot is taken.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum At {
+    /// Once the keys have been pressed and the frames have settled.
+    Settled,
+    /// This many seconds into the first hold on the turns after the keys.
+    Hold(f32),
+}
+
+/// Reads [`AT_VAR`].
+fn at(value: Option<String>) -> Result<At, String> {
+    match value.as_deref() {
+        None | Some("") | Some("settled") => Ok(At::Settled),
+        Some("hold") => Ok(At::Hold(INTO_HOLD_SECS)),
+        Some(v) => match v.strip_prefix("hold:").and_then(|s| s.parse().ok()) {
+            Some(secs) => Ok(At::Hold(secs)),
+            None => Err(format!("{AT_VAR} is {v:?}; it takes `hold`, `hold:<seconds>` or nothing")),
+        },
+    }
+}
 
 /// Saves the window and exits, when [`CAPTURE_VAR`] asks.
 pub struct CapturePlugin;
@@ -72,8 +107,12 @@ struct Capture {
     path: PathBuf,
     keys: Vec<Vec<KeyCode>>,
     shoot_on: u32,
+    at: At,
+    /// Frames since the warm-up ended; the keys count from here.
     frame: u32,
     held: Vec<KeyCode>,
+    /// When the turns were first seen held after the last key.
+    held_since: Option<f32>,
     shot: bool,
 }
 
@@ -86,7 +125,8 @@ impl Plugin for CapturePlugin {
         };
         let earliest = std::env::var(FRAMES_VAR).ok().and_then(|v| v.parse().ok()).unwrap_or(60);
         let shoot_on = earliest.max(FIRST_KEY + KEY_GAP * keys.len() as u32 + SETTLE);
-        app.insert_resource(Capture { path: path.into(), keys, shoot_on, frame: 0, held: Vec::new(), shot: false })
+        let at = at(std::env::var(AT_VAR).ok()).unwrap_or_else(|e| panic!("{e}"));
+        app.insert_resource(Capture { path: path.into(), keys, shoot_on, at, frame: 0, held: Vec::new(), held_since: None, shot: false })
             .add_systems(PreUpdate, press_keys.after(InputSystems))
             .add_systems(Last, shoot);
     }
@@ -191,8 +231,12 @@ const DIGITS: [KeyCode; 10] = [
 ];
 
 /// Presses the next scripted key on its frame, through the same
-/// `ButtonInput` the game reads, and lets go of it the frame after.
-fn press_keys(mut state: ResMut<Capture>, mut keys: ResMut<ButtonInput<KeyCode>>) {
+/// `ButtonInput` the game reads, and lets go of it the frame after. The
+/// frames are counted from the end of the warm-up.
+fn press_keys(mut state: ResMut<Capture>, mut keys: ResMut<ButtonInput<KeyCode>>, time: Res<Time<Real>>) {
+    if time.elapsed_secs() < WARM_UP_SECS {
+        return;
+    }
     state.frame += 1;
     for k in std::mem::take(&mut state.held) {
         keys.release(k);
@@ -208,8 +252,23 @@ fn press_keys(mut state: ResMut<Capture>, mut keys: ResMut<ButtonInput<KeyCode>>
     state.held = chord;
 }
 
-fn shoot(mut commands: Commands, mut state: ResMut<Capture>, time: Res<Time<Real>>) {
-    if state.shot || state.frame < state.shoot_on || time.elapsed_secs() < WARM_UP_SECS {
+fn shoot(mut commands: Commands, mut state: ResMut<Capture>, time: Res<Time<Real>>, hold: Option<Res<rl_bevy::TurnHold>>) {
+    if state.shot || time.elapsed_secs() < WARM_UP_SECS {
+        return;
+    }
+    let now = time.elapsed_secs();
+    let ready = match state.at {
+        At::Settled => state.frame >= state.shoot_on,
+        At::Hold(into) => {
+            let all_pressed = state.frame >= FIRST_KEY + KEY_GAP * state.keys.len() as u32;
+            let held = all_pressed && hold.as_deref().is_some_and(rl_bevy::TurnHold::is_held);
+            if held && state.held_since.is_none() {
+                state.held_since = Some(now);
+            }
+            held && state.held_since.is_some_and(|since| now - since >= into)
+        }
+    };
+    if !ready {
         return;
     }
     state.shot = true;

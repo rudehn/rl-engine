@@ -191,6 +191,10 @@ Either game photographs its own window when asked, after playing a script of key
 
 ```sh
 RL_CAPTURE=shot.png RL_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p delve -- --seed 7
+
+# Write a run down as it is played, and play it back.
+RL_RECORD=run.ron cargo run -p delve -- --seed 7
+RL_REPLAY=run.ron cargo run -p delve
 ```
 
 The window opens above the others without taking focus, and the screen must be unlocked; a frame that comes back black is refused rather than saved.

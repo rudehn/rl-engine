@@ -34,7 +34,7 @@ ron = "0.10"
 noise = "0.9"
 # `system_font_discovery` lets the terminal ask for a generic monospace family
 # instead of shipping a font asset; Bevy's built-in font lacks box-drawing glyphs.
-bevy = { version = "0.19", features = ["system_font_discovery"] }
+bevy = { version = "0.19", features = ["system_font_discovery", "serialize"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # Worldgen and pathfinding are math-heavy; an unoptimised debug run takes

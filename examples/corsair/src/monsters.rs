@@ -378,6 +378,7 @@ pub fn stages() -> DamageStages {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use rl_engine::rl_core::{Direction, RunSeed};
     use rl_engine::rl_ui::{VitalsView, VitalsViewPlugin};
 
