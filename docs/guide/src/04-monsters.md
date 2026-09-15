@@ -16,17 +16,15 @@ Forget `MindsPlugin` and the first monster spawned says so in the log, rather th
 
 ```rust
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
-    let sides = Registry::from_defs(vec![FactionDef { name: "you".into() }, FactionDef { name: "vermin".into() }]).unwrap();
+    let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
-    let mut factions = Factions::new(&sides);
-    factions.set_mutual(you, vermin, Relation::Hostile);
-    commands.insert_resource(CombatRules { factions });
+    commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
     commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
 ```
 
 Damage kinds and factions are registries, like tiles.
 They go in `Registries`, the one resource every subsystem reads its registries from, and `CombatRules` is only the matrix of who is hostile to whom.
-`Factions` is a relation matrix, so hostility is a fact about a pair rather than a flag on a monster: three-way wars cost nothing extra.
+`CombatRules` is a relation matrix, so hostility is a fact about a pair rather than a flag on a monster: three-way wars cost nothing extra, `hunts(a, b)` makes a grudge that is not returned, and `allied(a, b)` sides that help each other.
 
 Combat rolls from a stream the engine derives from the run's `Seed`, which `main` inserted in chapter one; a game never inserts a stream of its own.
 Its own draws come from `seed.stream(name, index)`, below: randomness always comes from the seed, never from entropy and never from a constant.

@@ -14,7 +14,8 @@ use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_rules::damage::{DamageKindId, Defender};
-use rl_rules::{DamageStage, Factions, Hit, Resistances};
+use rl_rules::faction::FactionDef;
+use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
 use crate::turn::{Action, Intent, Occupancy, Resolution, Turns};
@@ -78,11 +79,51 @@ pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
 ///
 /// A rule rather than content: the sides themselves are a registry in
 /// [`Registries`](crate::registries::Registries), and this is the matrix
-/// over them.
+/// over them. Built by naming the pairs:
+///
+/// ```
+/// use rl_bevy::CombatRules;
+/// use rl_rules::{Registry, faction::FactionDef};
+///
+/// let sides = Registry::from_defs(["player", "beasts", "navy", "pirates"].map(FactionDef::new).to_vec()).unwrap();
+/// let side = |name| sides.expect(name);
+/// let rules = CombatRules::new(&sides)
+///     .hostile(side("player"), side("beasts"))
+///     .hunts(side("navy"), side("pirates"));
+/// assert!(rules.factions.is_hostile(side("beasts"), side("player")));
+/// assert!(!rules.factions.is_hostile(side("pirates"), side("navy")), "the pirates would only rather not meet them");
+/// ```
 #[derive(Resource)]
 pub struct CombatRules {
     /// Who hates whom.
     pub factions: Factions,
+}
+
+impl CombatRules {
+    /// Every side in `sides` allied with itself and neutral to every other,
+    /// until a pair is named.
+    pub fn new(sides: &Registry<FactionDef>) -> Self {
+        Self { factions: Factions::new(sides) }
+    }
+
+    /// `a` and `b` attack each other on sight.
+    pub fn hostile(mut self, a: FactionId, b: FactionId) -> Self {
+        self.factions.set_mutual(a, b, Relation::Hostile);
+        self
+    }
+
+    /// `hunter` attacks `prey` on sight, and `prey` does not return it: a
+    /// grudge need not be mutual.
+    pub fn hunts(mut self, hunter: FactionId, prey: FactionId) -> Self {
+        self.factions.set(hunter, prey, Relation::Hostile);
+        self
+    }
+
+    /// `a` and `b` help each other.
+    pub fn allied(mut self, a: FactionId, b: FactionId) -> Self {
+        self.factions.set_mutual(a, b, Relation::Allied);
+        self
+    }
 }
 
 /// The mitigation pipeline, in order. Empty means damage lands raw.

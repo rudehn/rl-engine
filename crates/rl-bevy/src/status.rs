@@ -175,7 +175,7 @@ mod tests {
     use rl_core::RunSeed;
     use rl_rules::damage::{DamageKind, SubtractArmor};
     use rl_rules::faction::FactionDef;
-    use rl_rules::{Factions, Op, Registry, Stacking, StatDef, StatusDef};
+    use rl_rules::{Op, Registry, Stacking, StatDef, StatusDef};
 
     #[derive(Resource, Default)]
     struct Heard(Vec<StatusEvent>);
@@ -191,7 +191,7 @@ mod tests {
         let start = crate::testing::surface(&mut app);
         let kinds = Registry::from_defs(vec![DamageKind::new("venom")]).unwrap();
         let venom_kind = kinds.expect("venom");
-        let facs = Registry::from_defs(vec![FactionDef { name: "us".into() }]).unwrap();
+        let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
         let stats = Registry::from_defs(vec![StatDef::new("armor", 0)]).unwrap();
         let armor_stat = stats.expect("armor");
         let defs = Registry::from_defs(vec![
@@ -200,7 +200,7 @@ mod tests {
         ])
         .unwrap();
         let (venom, hearty) = (defs.expect("venom"), defs.expect("hearty"));
-        app.insert_resource(CombatRules { factions: Factions::new(&facs) });
+        app.insert_resource(CombatRules::new(&facs));
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
         app.insert_resource(crate::seed::Seed(RunSeed(5)));
         app.insert_resource(Registries { damage_kinds: kinds, factions: facs, stats: stats.clone(), statuses: defs, ..Default::default() });

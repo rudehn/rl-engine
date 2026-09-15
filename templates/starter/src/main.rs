@@ -182,17 +182,10 @@ fn start(
     // the game fills, so the engine never names a goblin.
     let kinds =
         Registry::from_defs(vec![DamageKind::new("stab"), DamageKind::new("slash")]).unwrap();
-    let sides = Registry::from_defs(vec![
-        FactionDef { name: "you".into() },
-        FactionDef {
-            name: "goblins".into(),
-        },
-    ])
-    .unwrap();
+    let sides =
+        Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("goblins")]).unwrap();
     let (you, goblins) = (sides.expect("you"), sides.expect("goblins"));
-    let mut factions = Factions::new(&sides);
-    factions.set_mutual(you, goblins, Relation::Hostile);
-    commands.insert_resource(CombatRules { factions });
+    commands.insert_resource(CombatRules::new(&sides).hostile(you, goblins));
     commands.insert_resource(Registries {
         damage_kinds: kinds.clone(),
         factions: sides,

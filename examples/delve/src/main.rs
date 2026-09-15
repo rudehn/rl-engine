@@ -117,7 +117,7 @@ fn registries() -> Registries {
     .unwrap();
     let fire = damage_kinds.expect("fire");
     Registries {
-        factions: Registry::from_defs(vec![FactionDef { name: "you".into() }, FactionDef { name: "whale".into() }]).unwrap(),
+        factions: Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("whale")]).unwrap(),
         stats: Registry::from_defs(vec![StatDef::new("mana", 30)]).unwrap(),
         statuses: Registry::from_defs(vec![
             StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
@@ -244,8 +244,7 @@ fn start(
     // while the app was built, so a file naming one nobody added fails here.
     let abilities = Abilities::load(ABILITIES_RON, &effect_kinds, &registries.names()).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
     let (you, whale_side) = (registries.factions.expect("you"), registries.factions.expect("whale"));
-    let mut factions = Factions::new(&registries.factions);
-    factions.set_mutual(you, whale_side, Relation::Hostile);
+    let combat = CombatRules::new(&registries.factions).hostile(you, whale_side);
     // A beast names the knacks it knows, so the bestiary loads against them too.
     let defs: Registry<BeastDef> = registries.names().with("ability", abilities.defs()).load(BEASTS_RON).unwrap_or_else(|e| panic!("assets/beasts.ron: {e}"));
     let mut table = BandedTable::default();
@@ -262,7 +261,7 @@ fn start(
         brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 30 })));
     }
     commands.insert_resource(Beasts { defs, table, brains, bite: registries.damage_kinds.expect("bite"), whale: whale_side });
-    commands.insert_resource(CombatRules { factions });
+    commands.insert_resource(combat);
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(whale.appearance());
     commands.insert_resource(WorldMap::new(whale.tiles().tables()));

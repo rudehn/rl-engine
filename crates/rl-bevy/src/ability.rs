@@ -943,7 +943,7 @@ mod tests {
     use rl_grid::TileId;
     use rl_rules::content::Registry;
     use rl_rules::faction::FactionDef;
-    use rl_rules::{DamageKind, Factions, Relation, SlotDef, StatDef, StatusDef, TagDef};
+    use rl_rules::{DamageKind, SlotDef, StatDef, StatusDef, TagDef};
 
     /// Every registry an ability names, and the lookup over them.
     struct Content {
@@ -963,7 +963,7 @@ mod tests {
                 tags: Registry::from_defs(vec![TagDef::new("powder"), TagDef::new("wand")]).unwrap(),
                 slots: Registry::from_defs(vec![SlotDef::new("hand")]).unwrap(),
                 kinds: Registry::from_defs(vec![DamageKind::new("fire")]).unwrap(),
-                factions: Registry::from_defs(vec![FactionDef { name: "us".into() }, FactionDef { name: "them".into() }]).unwrap(),
+                factions: Registry::from_defs(vec![FactionDef::new("us"), FactionDef::new("them")]).unwrap(),
             }
         }
 
@@ -1064,11 +1064,10 @@ mod tests {
         let content = Content::new();
         let abilities = Abilities::load(ABILITIES, app.world().resource::<EffectKinds>(), &content.names()).expect("the abilities load and build");
 
-        let mut factions = Factions::new(&content.factions);
-        factions.set_mutual(content.factions.expect("us"), content.factions.expect("them"), Relation::Hostile);
+        let combat = CombatRules::new(&content.factions).hostile(content.factions.expect("us"), content.factions.expect("them"));
 
         let start = crate::testing::surface(&mut app);
-        app.insert_resource(CombatRules { factions });
+        app.insert_resource(combat);
         app.insert_resource(crate::seed::Seed(RunSeed(5)));
         app.insert_resource(Registries {
             damage_kinds: content.kinds,

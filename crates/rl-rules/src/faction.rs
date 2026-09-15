@@ -11,6 +11,13 @@ pub struct FactionDef {
     pub name: String,
 }
 
+impl FactionDef {
+    /// A faction called `name`.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+}
+
 impl Named for FactionDef {
     fn name(&self) -> &str {
         &self.name
@@ -84,8 +91,7 @@ mod tests {
 
     #[test]
     fn relations_default_and_can_be_asymmetric() {
-        let r = Registry::from_defs(vec![FactionDef { name: "navy".into() }, FactionDef { name: "pirates".into() }, FactionDef { name: "merchants".into() }])
-            .unwrap();
+        let r = Registry::from_defs(vec![FactionDef::new("navy"), FactionDef::new("pirates"), FactionDef::new("merchants")]).unwrap();
         let (navy, pirates, merchants) = (r.expect("navy"), r.expect("pirates"), r.expect("merchants"));
         let mut f = Factions::new(&r);
         assert!(f.is_allied(navy, navy));

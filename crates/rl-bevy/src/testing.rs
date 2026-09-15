@@ -19,7 +19,7 @@ use rl_mapgen::Chain;
 use rl_mapgen::passes::Fill;
 use rl_rules::damage::{DamageKind, DamageKindId, SubtractArmor};
 use rl_rules::faction::FactionDef;
-use rl_rules::{FactionId, Factions, Registry, Relation};
+use rl_rules::{FactionId, Registry};
 use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, SiteKindId, Surroundings, WorldConfig, WorldGraph, WorldRules};
 
 use crate::combat::{CombatRules, DamageStages};
@@ -128,11 +128,9 @@ pub struct Sides {
 pub fn two_sides(app: &mut App) -> Sides {
     let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
     let kind = kinds.expect("kinetic");
-    let names = Registry::from_defs(vec![FactionDef { name: "ours".into() }, FactionDef { name: "theirs".into() }]).expect("two sides");
+    let names = Registry::from_defs(vec![FactionDef::new("ours"), FactionDef::new("theirs")]).expect("two sides");
     let (ours, theirs) = (names.expect("ours"), names.expect("theirs"));
-    let mut factions = Factions::new(&names);
-    factions.set_mutual(ours, theirs, Relation::Hostile);
-    app.insert_resource(CombatRules { factions })
+    app.insert_resource(CombatRules::new(&names).hostile(ours, theirs))
         .insert_resource(Registries { damage_kinds: kinds, factions: names, ..Default::default() })
         .insert_resource(DamageStages(vec![Box::new(SubtractArmor)]))
         .insert_resource(crate::seed::Seed(TEST_SEED));
