@@ -124,7 +124,7 @@ pub fn tick_statuses(
             let report = statuses.0.tick(&registries.statuses, &mut stats.0);
             for t in report.ticks {
                 let credit = t.source.and_then(Entity::try_from_bits);
-                damage.write(DamageEvent { target: entity, hit: Hit::from_source(credit, t.kind, t.amount) });
+                damage.write(DamageEvent { target: entity, hit: Hit::from_status(credit, t.status, t.kind, t.amount) });
             }
             for status in report.expired {
                 events.write(StatusEvent::Expired { target: entity, status });

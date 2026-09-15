@@ -282,6 +282,7 @@ pub fn spawn_on_load(
 pub struct Voice<'w> {
     log: ResMut<'w, MessageLog>,
     next: ResMut<'w, NextState<EngineState>>,
+    registries: Res<'w, Registries>,
 }
 
 /// Turns hits and deaths into log lines.
@@ -294,7 +295,7 @@ pub fn narrate(
     names: Query<&MonsterKind>,
     players: Query<(), With<Player>>,
 ) {
-    let Voice { log, next } = &mut voice;
+    let Voice { log, next, registries } = &mut voice;
     let name = |e: Entity| -> String {
         if players.get(e).is_ok() {
             "you".to_string()
@@ -304,6 +305,16 @@ pub fn narrate(
     };
     let turn = turns.turn_number();
     for d in dealt.read() {
+        // A status ticking is the status, not "something", doing it.
+        if let Some(status) = d.hit.status
+            && d.dealt > 0
+        {
+            let target = name(d.target);
+            let verb = if target == "you" { "take" } else { "takes" };
+            let tone = if target == "you" { Tones::BAD } else { Tones::TEXT };
+            log.push(format!("{} {verb} {} from {}.", cap(&target), d.dealt, registries.statuses.name(status)), tone, turn);
+            continue;
+        }
         let attacker = d.hit.attacker.map(name).unwrap_or_else(|| "something".into());
         let target = name(d.target);
         let you_hit = attacker == "you";

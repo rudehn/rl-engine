@@ -745,6 +745,7 @@ fn show_pools(mut vitals: ResMut<VitalsView>, registries: Res<Registries>, playe
 #[derive(bevy::ecs::system::SystemParam)]
 struct Voice<'w, 's> {
     beasts: Res<'w, Beasts>,
+    registries: Res<'w, Registries>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
     next: ResMut<'w, NextState<EngineState>>,
@@ -753,7 +754,7 @@ struct Voice<'w, 's> {
 }
 
 fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<DeathEvent>, mut voice: Voice) {
-    let Voice { beasts, turns, log, next, kinds, players } = &mut voice;
+    let Voice { beasts, registries, turns, log, next, kinds, players } = &mut voice;
     let turn = turns.turn_number();
     let name = |e: Entity| -> String {
         if players.get(e).is_ok() {
@@ -763,6 +764,26 @@ fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<Deat
         }
     };
     for d in dealt.read() {
+        // A status ticking is the status, not "something", doing it.
+        if let Some(status) = d.hit.status
+            && d.dealt > 0
+        {
+            let who = name(d.target);
+            let tone = if who == "you" { Tones::BAD } else { Tones::TEXT };
+            log.push(
+                format!(
+                    "{}{} take{} {} from {}.",
+                    who[..1].to_uppercase(),
+                    &who[1..],
+                    if who == "you" { "" } else { "s" },
+                    d.dealt,
+                    registries.statuses.name(status)
+                ),
+                tone,
+                turn,
+            );
+            continue;
+        }
         // A knack a delver turns on itself, a mend most often, is narrated
         // as the knack; only one that hurt is worth a line of its own.
         if d.hit.attacker == Some(d.target) {
@@ -820,7 +841,18 @@ mod tests {
     /// with the keys wired as `main` wires them, so a test can play it.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, FirePlugin, GasPlugin));
+        app.add_plugins((
+            FovPlugin,
+            CombatPlugin,
+            MindsPlugin,
+            StatusPlugin,
+            ItemsPlugin,
+            LightingPlugin,
+            AbilitiesPlugin,
+            StealthPlugin,
+            FirePlugin,
+            GasPlugin,
+        ));
         app.add_engine_effects().add_effect::<effects::Drain>();
         let screen = Screen::new();
         app.insert_resource(Seed(RunSeed(seed)))
@@ -1090,6 +1122,88 @@ mod tests {
         assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < hp), "the drain landed");
         let turns = app.world().resource::<Turns>().now() - clock;
         assert_eq!(turns, 100, "one turn spent, by the knack alone: the Enter was not also the stairs");
+    }
+
+    /// Holds `key` down for `frames` frames, the way a keyboard does: down
+    /// on the first, held on the rest, and released after.
+    fn hold(app: &mut App, key: KeyCode, frames: usize) {
+        use rl_engine::rl_bevy::testing::KeyScript;
+        app.world_mut().resource_mut::<KeyScript>().hold(key);
+        for _ in 0..frames {
+            app.update();
+        }
+        app.world_mut().resource_mut::<KeyScript>().release(key);
+        app.update();
+    }
+
+    /// An orthogonal step the player can take from where it stands, and
+    /// the key for it. Orthogonal, since a diagonal past a wall's corner
+    /// is refused by the rules and would read here as the keys failing.
+    fn a_step(app: &App, player: Entity) -> (Direction, KeyCode) {
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let (map, occupancy) = (app.world().resource::<WorldMap>(), app.world().resource::<Occupancy>());
+        [
+            (Direction::North, KeyCode::ArrowUp),
+            (Direction::South, KeyCode::ArrowDown),
+            (Direction::East, KeyCode::ArrowRight),
+            (Direction::West, KeyCode::ArrowLeft),
+        ]
+        .into_iter()
+        .find(|(d, _)| map.is_walkable(at + d.offset()) && !occupancy.is_occupied(at + d.offset()))
+        .expect("room to step")
+    }
+
+    /// Leaving the cursor gives the keys back, however it was left: by
+    /// Escape, by a cast, or by a look at what the cast left behind.
+    #[test]
+    fn the_keys_come_back_after_the_cursor_closes() {
+        let (mut app, player) = settled(7);
+        beside(&mut app, player, "stomach crab");
+
+        hold(&mut app, KeyCode::Digit1, 4);
+        assert!(app.world().resource::<Modals>().any_open(), "the cursor opened");
+        hold(&mut app, KeyCode::Escape, 6);
+        assert!(!app.world().resource::<Modals>().any_open(), "the cursor went away");
+        let (dir, key) = a_step(&app, player);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        hold(&mut app, key, 3);
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, at + dir.offset(), "a step after Escape is a step");
+
+        hold(&mut app, KeyCode::Digit1, 4);
+        hold(&mut app, KeyCode::Enter, 6);
+        assert!(!app.world().resource::<Modals>().any_open(), "cast, and the cursor went away");
+        hold(&mut app, KeyCode::KeyX, 4);
+        hold(&mut app, KeyCode::ArrowLeft, 4);
+        hold(&mut app, KeyCode::Escape, 6);
+        assert!(!app.world().resource::<Modals>().any_open(), "looked, and the look went away");
+        for _ in 0..3 {
+            let (dir, key) = a_step(&app, player);
+            let at = app.world().get::<Position>(player).unwrap().0;
+            hold(&mut app, key, 3);
+            assert_eq!(app.world().get::<Position>(player).unwrap().0, at + dir.offset(), "a step after the cast and the look is a step");
+        }
+    }
+
+    /// A cast the rules refuse is a leaving too, and the keys come back
+    /// after it.
+    #[test]
+    fn the_keys_come_back_after_a_refused_cast() {
+        let (mut app, player) = settled(7);
+        beside(&mut app, player, "stomach crab");
+        hold(&mut app, KeyCode::Digit1, 4);
+        for _ in 0..9 {
+            hold(&mut app, KeyCode::ArrowLeft, 3);
+        }
+        let view = app.world().resource::<TargetView>();
+        assert!(!view.legal && !view.beyond.is_empty(), "aimed past the reach: {:?}", view.why);
+        hold(&mut app, KeyCode::Enter, 6);
+        assert!(!app.world().resource::<Modals>().any_open(), "refused, and the cursor went away with the refusal");
+        for _ in 0..3 {
+            let (dir, key) = a_step(&app, player);
+            let at = app.world().get::<Position>(player).unwrap().0;
+            hold(&mut app, key, 3);
+            assert_eq!(app.world().get::<Position>(player).unwrap().0, at + dir.offset(), "a step after the refusal is a step");
+        }
     }
 
     /// A hotkey works from inside the list too, and closes it.

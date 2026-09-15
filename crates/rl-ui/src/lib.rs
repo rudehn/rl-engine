@@ -100,7 +100,7 @@ pub mod panel;
 pub mod tone;
 pub mod view;
 
-pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, key_name};
+pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats, key_name};
 pub use cursor::{CursorKeys, Steer};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighting};
@@ -136,10 +136,10 @@ pub enum ViewSet {
 }
 
 /// The base every other plugin in this crate needs: tones, the palette,
-/// facet keys, the modal stack, the direction bindings, the keys the
-/// cursors answer to, the [`Focus`] the nearby list and both cursors
-/// share, the [`Controls`] registry every key is declared in, and the
-/// message log every game writes to.
+/// facet keys, the modal stack, the direction bindings and the pace a held
+/// one repeats at, the keys the cursors answer to, the [`Focus`] the
+/// nearby list and both cursors share, the [`Controls`] registry every key
+/// is declared in, and the message log every game writes to.
 ///
 /// The log is here rather than with the panels that draw it because a game
 /// writes to it from its own systems whether or not it draws it: a headless
@@ -151,7 +151,10 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Tones>()
+        // The keys, so a headless game with no input plugin still has the
+        // resource every reader here takes, and reads nothing pressed.
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<Tones>()
             .init_resource::<Palette>()
             .init_resource::<Facets>()
             .init_resource::<Modals>()
@@ -160,9 +163,12 @@ impl Plugin for UiPlugin {
             .init_resource::<Focus>()
             .init_resource::<Controls>()
             .init_resource::<ControlsKeys>()
+            .init_resource::<RepeatPace>()
+            .init_resource::<Repeats>()
             .init_resource::<MessageLog>()
             .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate).chain().in_set(rl_bevy::PresentSet::Narrate))
             .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
+            .add_systems(Update, (controls::advance_repeats.before(rl_bevy::EngineSet::Input), modal::close_on_escape.in_set(rl_bevy::EngineSet::Input)))
             .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones);
         // The one facet key the engine itself pushes: a status badge.
         app.world_mut().resource_mut::<Facets>().declare("badge");
@@ -175,7 +181,7 @@ impl Plugin for UiPlugin {
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys};
+    pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
     pub use crate::cursor::CursorKeys;
     pub use crate::facet::{Facet, FacetId, Facets};
     pub use crate::focus::{Focus, InSight, Sighting};

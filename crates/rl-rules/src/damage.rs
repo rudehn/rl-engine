@@ -8,6 +8,7 @@
 //! own anywhere in the list.
 
 use crate::content::{Named, Registry};
+use crate::status::StatusId;
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 
@@ -100,17 +101,25 @@ pub struct Hit<A: Copy> {
     pub amount: i32,
     /// Whether the hit was a critical, for stages that care.
     pub critical: bool,
+    /// The status whose tick this is, when it is one, so a narrator can
+    /// say what hurt rather than that something did.
+    pub status: Option<StatusId>,
 }
 
 impl<A: Copy> Hit<A> {
     /// A hit by `attacker` who also gets credit.
     pub fn by(attacker: A, kind: DamageKindId, amount: i32) -> Self {
-        Self { attacker: Some(attacker), credit: Some(attacker), kind, amount, critical: false }
+        Self { attacker: Some(attacker), credit: Some(attacker), kind, amount, critical: false, status: None }
     }
 
     /// Damage with no attacker to trigger riders, crediting `credit`.
     pub fn from_source(credit: Option<A>, kind: DamageKindId, amount: i32) -> Self {
-        Self { attacker: None, credit, kind, amount, critical: false }
+        Self { attacker: None, credit, kind, amount, critical: false, status: None }
+    }
+
+    /// One tick of `status`, crediting whoever applied it.
+    pub fn from_status(credit: Option<A>, status: StatusId, kind: DamageKindId, amount: i32) -> Self {
+        Self { status: Some(status), ..Self::from_source(credit, kind, amount) }
     }
 }
 

@@ -61,7 +61,7 @@ pub fn expected_damage<A: Copy>(attacker: &Combatant<'_>, defender: &Combatant<'
             let low = avg.floor() as i32;
             let share = avg - low as f32;
             let at = |amount: i32| {
-                let hit: Hit<A> = Hit { attacker: None, credit: None, kind: *kind, amount, critical: false };
+                let hit: Hit<A> = Hit { attacker: None, credit: None, kind: *kind, amount, critical: false, status: None };
                 resolve(&hit, &shield, defender.resists, kinds, stages).max(0) as f32
             };
             at(low) * (1.0 - share) + at(low + 1) * share

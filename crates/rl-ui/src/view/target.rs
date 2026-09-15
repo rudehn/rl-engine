@@ -35,6 +35,7 @@ use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_bevy::{Aimed, Bystanders, Landed, Offered, flight, shot};
 use rl_core::Point;
+use rl_grid::TargetMode;
 use rl_render::Glyph;
 use rl_rules::ability::{AbilityId, Aim, Blocked};
 
@@ -539,13 +540,30 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
     }
     // Where the aim stops short of the cursor, the rest of the way is
     // painted as out of reach: from where the projectile stopped, or from
-    // the user for a shape that has no flight and reached nothing.
-    if view.why.contains(&Blocked::OutOfReach) || (landing.cells.is_empty() && landing.path.is_empty() && def.aim.needs_cursor()) {
+    // the user for a shape that has no flight and reached nothing. The
+    // footprint is then drawn where it was pointed rather than where it
+    // stopped, since nothing lands at the stop: a refused aim shows the
+    // shape the player asked for, in the tone that says no.
+    let out_of_reach = view.why.contains(&Blocked::OutOfReach) || (landing.cells.is_empty() && landing.path.is_empty() && def.aim.needs_cursor());
+    if out_of_reach {
         view.beyond = beyond(landing.landed_at.unwrap_or(from), view.cursor);
+        view.cells = shape_at(def.mode, view.cursor);
+    } else {
+        view.cells = landing.cells;
     }
-    view.cells = landing.cells;
     view.path = landing.path;
     view.landing = landing.landed_at;
+}
+
+/// The cells `mode` would cover if it landed at `aim`: a disc for a ball,
+/// the cell for anything that lands on one, nothing for a shape that
+/// covers ground on the way rather than at the end.
+pub fn shape_at(mode: TargetMode, aim: Point) -> Vec<Point> {
+    match mode {
+        TargetMode::Ball { radius, .. } => rl_core::geometry::disc(aim, radius).collect(),
+        TargetMode::Bolt { .. } | TargetMode::Adjacent => vec![aim],
+        TargetMode::Own | TargetMode::Beam { .. } | TargetMode::Cone { .. } => Vec::new(),
+    }
 }
 
 /// The cells from `stop` to `aim`, `stop` excluded and `aim` included:

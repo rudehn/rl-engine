@@ -234,9 +234,11 @@ mod tests {
         assert_eq!(view.landing, Some(at.offset(-6, 0)));
         assert_eq!(view.beyond, (7..=9).map(|x| at.offset(-x, 0)).collect::<Vec<_>>(), "from past the stop to the cursor");
         assert_eq!(bg_at(&stage, at.offset(-3, 0)), Some(lined(&stage, Tones::NOTICE, 2)), "within reach is the flight");
-        // Five cells of flight before the landing, so the first cell past
-        // it is the sixth of the line.
-        assert_eq!(bg_at(&stage, at.offset(-7, 0)), Some(lined(&stage, Tones::BAD, 5)), "past it is red, the pulse counting on");
+        // Six cells of flight, the stop among them since nothing lands
+        // there, so the first cell past it is the seventh of the line.
+        assert_eq!(bg_at(&stage, at.offset(-6, 0)), Some(lined(&stage, Tones::NOTICE, 5)), "the stop is flight, not a hit");
+        assert_eq!(bg_at(&stage, at.offset(-7, 0)), Some(lined(&stage, Tones::BAD, 6)), "past it is red, the pulse counting on");
+        assert_eq!(bg_at(&stage, at.offset(-9, 0)), Some(stage.app.world().resource::<Palette>().get(Tones::TITLE)), "the cursor, over the refused shape");
         assert_eq!(stage.row(0), "bolt at nothing - out of reach  [enter]");
     }
 

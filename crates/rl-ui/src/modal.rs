@@ -104,6 +104,11 @@ impl Modals {
         self.closing = false;
     }
 
+    /// Whether a screen closed this frame.
+    pub fn closing(&self) -> bool {
+        self.closing
+    }
+
     /// Opens `modal` if it is closed, closes it if it is open. What a
     /// toggle key does.
     pub fn toggle(&mut self, modal: ModalId) {
@@ -180,6 +185,19 @@ pub fn modal_open(modal: ModalId) -> impl Fn(Res<Modals>) -> bool + Clone {
     move |modals: Res<Modals>| modals.is_open(modal)
 }
 
+/// Closes whatever screen is on top when the cursors' close key is
+/// pressed and no screen has answered it this frame.
+///
+/// Every screen the engine ships closes on that key itself; this is the
+/// promise for the ones a game writes and forgets to: the key always
+/// puts a screen away. A screen that closed this frame has answered, so
+/// the same press never closes the one under it as well.
+pub fn close_on_escape(input: Res<ButtonInput<KeyCode>>, keys: Res<crate::cursor::CursorKeys>, mut modals: ResMut<Modals>) {
+    if input.just_pressed(keys.close) && !modals.closing() && modals.top().is_some() {
+        modals.close();
+    }
+}
+
 /// A run condition: true while nothing is open. Gate the game's own
 /// movement keys on this and the player cannot walk with the bag up.
 pub fn no_modal(modals: Res<Modals>) -> bool {
@@ -254,6 +272,28 @@ mod tests {
         assert_eq!(modals.top(), None);
         modals.begin_frame();
         assert!(!modals.any_open());
+    }
+
+    /// A screen a game declared and never taught to close still closes on
+    /// the close key, and the press that closes it closes nothing else.
+    #[test]
+    fn the_close_key_puts_away_a_screen_that_never_learned_to_close() {
+        use crate::harness::Stage;
+        let mut stage = Stage::new(());
+        let (bag, detail) = {
+            let mut modals = stage.app.world_mut().resource_mut::<Modals>();
+            (modals.declare("bag"), modals.declare("detail"))
+        };
+        {
+            let mut modals = stage.app.world_mut().resource_mut::<Modals>();
+            modals.open(bag);
+            modals.open(detail);
+        }
+        stage.press(KeyCode::Escape);
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(!modals.is_open(detail) && modals.is_open(bag), "the top one, and only it");
+        stage.press(KeyCode::Escape);
+        assert!(!stage.app.world().resource::<Modals>().any_open());
     }
 
     /// The key that closes a screen is still down when the world's input

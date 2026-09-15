@@ -9,16 +9,6 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Direction;
 use rl_engine::rl_ui::{AddControls, AimFire, AimThrow, Chord, ControlId, ControlInput, Keys, MessageLog, Modals, Tones};
 
-/// How long a held key waits before repeating, and between repeats.
-const REPEAT_DELAY: f32 = 0.25;
-const REPEAT_EVERY: f32 = 0.08;
-
-#[derive(Default)]
-pub struct Repeat {
-    held_for: f32,
-    since_last: f32,
-}
-
 /// Every key Corsair answers to, by name.
 #[derive(Resource, Clone, Copy)]
 pub struct Binds {
@@ -83,7 +73,6 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Playe
 pub struct InputWorld<'w, 's> {
     keys: ControlInput<'w>,
     binds: Res<'w, Binds>,
-    time: Res<'w, Time>,
     modals: Res<'w, Modals>,
     occupancy: Res<'w, Occupancy>,
     map: Res<'w, WorldMap>,
@@ -181,8 +170,8 @@ pub struct PlayerIntents<'w> {
 }
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
-pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: PlayerIntents) {
-    let InputWorld { keys, binds, time, modals, occupancy, map, player } = world;
+pub fn player_input(world: InputWorld, mut intents: PlayerIntents) {
+    let InputWorld { keys, binds, modals, occupancy, map, player } = world;
     // One gate for every screen there is, and every screen a game adds
     // later: the stack is empty or the world does not have the keys.
     if modals.any_open() {
@@ -190,27 +179,7 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: P
     }
     let Ok((entity, pos)) = player.single() else { return };
 
-    let held = keys.direction_held(binds.walk);
-    let fresh = keys.direction(binds.walk);
-    let walk = if let Some(dir) = fresh {
-        repeat.held_for = 0.0;
-        repeat.since_last = 0.0;
-        Some(dir)
-    } else if let Some(dir) = held {
-        repeat.held_for += time.delta_secs();
-        repeat.since_last += time.delta_secs();
-        if repeat.held_for >= REPEAT_DELAY && repeat.since_last >= REPEAT_EVERY {
-            repeat.since_last = 0.0;
-            Some(dir)
-        } else {
-            None
-        }
-    } else {
-        *repeat = Repeat::default();
-        None
-    };
-    if let Some(dir) = walk {
-        debug!("player walks {dir:?} (fresh {fresh:?}, held {held:?})");
+    if let Some(dir) = keys.direction(binds.walk) {
         // Bump to attack: walking into someone is a strike.
         match occupancy.first_at(pos.0 + dir.offset()) {
             Some(other) => {

@@ -315,6 +315,7 @@ impl TileRegistry {
             props.burn.as_ref().map(|b| Kindling { catch_pct: b.catch_pct.min(100), turns: b.turns.max(1), leaves: named(props, &b.leaves, "burns to") })
         };
         TileTables {
+            names: self.props.iter().map(|p| p.name.clone()).collect(),
             walkable: self.props.iter().map(|p| p.walkable).collect(),
             passable: self.props.iter().map(|p| p.is_passable()).collect(),
             opaque: self.props.iter().map(|p| p.opaque).collect(),
@@ -330,6 +331,8 @@ impl TileRegistry {
 /// Dense per-id flag tables, see [`TileRegistry::tables`].
 #[derive(Debug, Clone, Default)]
 pub struct TileTables {
+    /// What each tile is called, for whatever describes one to a player.
+    pub names: Vec<String>,
     /// Walkable now.
     pub walkable: Vec<bool>,
     /// Passable eventually.

@@ -36,6 +36,13 @@ pub const INSPECT_MODAL: &str = "inspect";
 pub struct InspectView {
     /// The world tile the cursor is on.
     pub cursor: Point,
+    /// What the ground there is called, by the name the game registered
+    /// the tile under, or empty for a cell the map does not hold.
+    pub ground: String,
+    /// Whether the cell is on fire.
+    pub burning: bool,
+    /// The gas hanging there, by its registered name, when there is one.
+    pub gas: Option<String>,
     /// The topmost entity under the cursor, if any.
     pub subject: Option<Row>,
     /// How a fight with the subject is likely to go, when both sides can
@@ -154,6 +161,8 @@ pub struct Duelists<'w, 's> {
     modals: Res<'w, Modals>,
     map: Res<'w, WorldMap>,
     focus: Res<'w, Focus>,
+    fire: Option<Res<'w, Fire>>,
+    gases: Option<Res<'w, Gases>>,
     player: Query<'w, 's, (&'static Position, Fighter, Option<&'static Faction>), With<Player>>,
     subjects: Query<'w, 's, Subject, NotYou>,
     fighters: Query<'w, 's, (Fighter, Option<&'static Faction>)>,
@@ -175,11 +184,22 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
     view.facets.clear();
+    view.ground.clear();
+    view.burning = false;
+    view.gas = None;
     if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
         return;
     }
     let Ok((origin, mine, my_faction)) = duelists.player.single() else { return };
     let here = duelists.map.current();
+    // The ground first, since it is there whether or not anything stands
+    // on it: what a burnt cell is now, and what hangs in the air over it.
+    let cursor = view.cursor;
+    if let Some(tile) = duelists.map.tile(cursor) {
+        view.ground = duelists.map.tables().names.get(tile.index()).cloned().unwrap_or_default();
+    }
+    view.burning = duelists.fire.as_deref().is_some_and(|f| f.is_burning(cursor));
+    view.gas = duelists.gases.as_deref().and_then(|g| g.densest(cursor)).map(|(gas, _)| duelists.registries.gases.name(gas).to_string());
     // What the cursor picked out, when that is here, so Tab onto the second
     // of two things on one tile describes the second. Otherwise the topmost
     // glyph, the one the map drew, so the panel and the map never disagree
@@ -351,6 +371,25 @@ mod tests {
         assert_eq!(view.cursor, stage.at);
         assert!(view.subject.is_none(), "you are not something you look at");
         assert!(view.duel.is_none(), "and never a duel with yourself");
+    }
+
+    /// The ground is always something: the cursor names the tile it is
+    /// over, and says when it burns.
+    #[test]
+    fn the_cursor_names_the_ground_and_whether_it_burns() {
+        let mut stage = Stage::new_with((InspectViewPlugin, rl_bevy::FirePlugin), |app| {
+            app.insert_resource(rl_bevy::FireRules::new());
+        });
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.ground, "floor", "the floor, by the name it was registered under");
+        assert!(!view.burning);
+        let at = stage.at;
+        stage.app.world_mut().write_message(rl_bevy::Kindle { at, turns: 3 });
+        stage.app.world_mut().write_message(rl_bevy::Intent::new(stage.player, rl_bevy::Wait));
+        stage.tick();
+        stage.tick();
+        assert!(stage.app.world().resource::<InspectView>().burning, "and it burns now");
     }
 
     #[test]

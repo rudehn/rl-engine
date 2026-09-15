@@ -553,6 +553,7 @@ pub struct ControlInput<'w> {
     log: Option<Res<'w, ScrollbackKeys>>,
     sheet: Option<Res<'w, SheetKeys>>,
     abilities: Option<Res<'w, AbilityKeys>>,
+    repeats: Res<'w, Repeats>,
 }
 
 impl ControlInput<'_> {
@@ -588,10 +589,14 @@ impl ControlInput<'_> {
         self.controls.pressed(id, &self.input, &self.bindings())
     }
 
-    /// The direction `id` asked for this frame. See
-    /// [`Controls::direction`].
+    /// The direction `id` asked for this frame: a key just pressed, or a
+    /// key held long enough to repeat, at [`RepeatPace`]. See
+    /// [`Controls::direction`] and [`Repeats`].
     pub fn direction(&self, id: ControlId) -> Option<Direction> {
-        self.controls.direction(id, &self.input, &self.bindings())
+        self.controls.direction(id, &self.input, &self.bindings()).or_else(|| {
+            let Keys::Directions { shift } = self.controls.get(id).keys else { return None };
+            self.repeats.firing(shift)
+        })
     }
 
     /// The direction `id` is holding down. See
@@ -611,9 +616,113 @@ impl ControlInput<'_> {
     }
 }
 
+/// How a held direction key repeats: the wait before the first repeat,
+/// and the wait between repeats, in seconds.
+///
+/// One resource for every game, since a player who holds a key expects
+/// the same walk in each.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct RepeatPace {
+    /// Seconds a key is held before it repeats.
+    pub delay: f32,
+    /// Seconds between repeats after that.
+    pub every: f32,
+}
+
+impl Default for RepeatPace {
+    fn default() -> Self {
+        Self { delay: 0.25, every: 0.08 }
+    }
+}
+
+/// What the held direction key is doing this frame.
+///
+/// A held key repeats its direction at [`RepeatPace`], and every
+/// direction control reads the repeat through [`ControlInput::direction`]
+/// as if the key had been pressed again. That is what a player holding a
+/// key means in every roguelike, so it is the engine's to do and no
+/// game's to remember: a walk, a cursor and a shove all repeat, and each
+/// game's input system reads `direction` exactly as before.
+///
+/// One state, not one per control: the direction keys are one physical
+/// set, and a player holds one of them at a time.
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct Repeats {
+    /// Seconds the current key has been down.
+    held_for: f32,
+    /// Seconds since its last repeat.
+    since_last: f32,
+    /// The direction down this frame and whether Shift is with it, if the
+    /// hold is long enough to be repeating this frame.
+    firing: Option<(Direction, bool)>,
+}
+
+impl Repeats {
+    /// Moves the hold on by `delta` seconds, where `held` is the direction
+    /// key down this frame and whether Shift is with it, and `fresh`
+    /// whether that key went down this frame. A fresh press restarts the
+    /// hold and fires nothing, since the press itself is read as a press.
+    pub fn advance(&mut self, held: Option<(Direction, bool)>, fresh: bool, pace: &RepeatPace, delta: f32) {
+        self.firing = None;
+        let Some(held) = held else {
+            *self = Self::default();
+            return;
+        };
+        if fresh {
+            *self = Self::default();
+            return;
+        }
+        self.held_for += delta;
+        self.since_last += delta;
+        if self.held_for >= pace.delay && self.since_last >= pace.every {
+            self.since_last = 0.0;
+            self.firing = Some(held);
+        }
+    }
+
+    /// The direction repeating this frame for a control whose chords use
+    /// Shift as `shift` says.
+    pub fn firing(&self, shift: bool) -> Option<Direction> {
+        self.firing.filter(|(_, with_shift)| *with_shift == shift).map(|(d, _)| d)
+    }
+}
+
+/// Moves [`Repeats`] on by this frame. Runs before any input is read.
+pub fn advance_repeats(input: Res<ButtonInput<KeyCode>>, directions: Res<DirectionKeys>, pace: Res<RepeatPace>, time: Res<Time>, mut repeats: ResMut<Repeats>) {
+    let held = directions.0.iter().find(|(key, _)| input.pressed(*key));
+    let fresh = held.is_some_and(|(key, _)| input.just_pressed(*key));
+    let held = held.map(|(_, dir)| (*dir, shifted(&input)));
+    repeats.advance(held, fresh, &pace, time.delta_secs());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A held key says nothing until the delay is up, then repeats at the
+    /// pace, and a fresh press or a release starts over.
+    #[test]
+    fn a_held_direction_repeats_after_the_delay_and_a_release_starts_over() {
+        let pace = RepeatPace { delay: 0.25, every: 0.1 };
+        let mut repeats = Repeats::default();
+        let west = Some((Direction::West, false));
+        repeats.advance(west, true, &pace, 0.016);
+        assert_eq!(repeats.firing(false), None, "the press is read as a press");
+        let mut fired = vec![];
+        for frame in 1..=40 {
+            repeats.advance(west, false, &pace, 0.016);
+            if repeats.firing(false).is_some() {
+                fired.push(frame);
+            }
+        }
+        assert_eq!(fired, vec![16, 23, 30, 37], "once past the delay, then every tenth of a second");
+        assert_eq!(repeats.firing(true), None, "a shifted control does not read an unshifted hold");
+        repeats.advance(None, false, &pace, 0.016);
+        repeats.advance(west, false, &pace, 0.016);
+        assert_eq!(repeats.firing(false), None, "released and pressed again, the delay is owed again");
+        repeats.advance(Some((Direction::East, true)), false, &pace, 0.3);
+        assert_eq!(repeats.firing(true), Some(Direction::East), "and a shifted hold is read by a shifted control");
+    }
 
     fn input(keys: &[KeyCode]) -> ButtonInput<KeyCode> {
         let mut input = ButtonInput::default();

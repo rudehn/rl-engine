@@ -155,23 +155,42 @@ impl Plugin for KeyScriptPlugin {
     }
 }
 
-/// Keys to press on the next frame.
+/// Keys to press on the next frame, and keys to keep down.
 #[derive(Resource, Debug, Default)]
 pub struct KeyScript {
     next: Vec<KeyCode>,
     held: Vec<KeyCode>,
+    pinned: Vec<KeyCode>,
 }
 
 impl KeyScript {
-    /// Queues `key` to be pressed on the next frame.
+    /// Queues `key` to be pressed on the next frame and released on the
+    /// one after.
     pub fn press(&mut self, key: KeyCode) {
         self.next.push(key);
+    }
+
+    /// Queues `key` to be pressed on the next frame and kept down until
+    /// [`release`](Self::release): what a finger resting on a key does,
+    /// one `just_pressed` and then `pressed` for as long as it rests.
+    pub fn hold(&mut self, key: KeyCode) {
+        self.next.push(key);
+        self.pinned.push(key);
+    }
+
+    /// Lets go of a key held with [`hold`](Self::hold), on the next frame.
+    pub fn release(&mut self, key: KeyCode) {
+        self.pinned.retain(|k| *k != key);
+        self.held.push(key);
     }
 }
 
 fn play_keys(mut script: ResMut<KeyScript>, mut keys: ResMut<ButtonInput<KeyCode>>) {
+    let pinned = script.pinned.clone();
     for k in std::mem::take(&mut script.held) {
-        keys.release(k);
+        if !pinned.contains(&k) {
+            keys.release(k);
+        }
     }
     let next = std::mem::take(&mut script.next);
     for k in &next {

@@ -1,12 +1,14 @@
 //! What the look cursor is over, and how a fight with it would go.
 //!
 //! Drawn in [`PresentSet::Overlay`], over the map, because the cursor is a
-//! modal and a modal covers what it is about. The cursor itself is drawn
-//! on the map cell it sits on, so the panel and the cursor never disagree
-//! about what is being described.
+//! modal and a modal covers what it is about. The cursor is drawn as
+//! four pointers on the cells around the one it sits on, pulsing, so the
+//! cell itself shows what is there, and the panel and the cursor never
+//! disagree about what is being described.
 
+use bevy::color::Mix;
 use bevy::prelude::*;
-use rl_bevy::{PresentSet, WorldMap};
+use rl_bevy::PresentSet;
 use rl_core::Rect;
 use rl_render::{Cell, MapView, Terminal};
 use rl_rules::forecast::Outlook;
@@ -29,8 +31,9 @@ pub struct InspectLayout {
     pub hints: String,
     /// What is shown when the cursor is over nothing.
     pub empty: String,
-    /// The glyph the cursor is drawn as on the map.
-    pub cursor: char,
+    /// The pointers drawn on the cells left of, right of, above and below
+    /// the cursor, each pointing at it.
+    pub pointers: [char; 4],
 }
 
 /// Draws [`InspectView`] and the cursor on the map.
@@ -46,7 +49,7 @@ impl InspectPanel {
             title: "Looking at".into(),
             hints: "move \u{2022} tab next \u{2022} esc close".into(),
             empty: "Nothing here.".into(),
-            cursor: '\u{2588}',
+            pointers: ['>', '<', 'v', '^'],
         })
     }
 
@@ -93,6 +96,15 @@ pub fn outlook_tone(outlook: Outlook) -> ToneId {
     }
 }
 
+/// Seconds one pulse of the pointers takes.
+const POINTER_PULSE_SECS: f32 = 0.9;
+
+/// How bright the pointers are at time `t`, from 0 to 1 and back, so they
+/// breathe rather than blink.
+pub fn pointer_pulse(t: f32) -> f32 {
+    (t * std::f32::consts::TAU / POINTER_PULSE_SECS).sin() * 0.5 + 0.5
+}
+
 /// Paints the cursor and the panel, while the cursor is open.
 pub fn draw_inspect(
     mut terminal: ResMut<Terminal>,
@@ -101,17 +113,22 @@ pub fn draw_inspect(
     palette: Res<Palette>,
     modals: Res<Modals>,
     map_view: Option<Res<MapView>>,
-    map: Option<Res<WorldMap>>,
+    time: Res<Time>,
 ) {
     if !modals.is_open(inspect_modal(&modals)) {
         return;
     }
-    let _ = &map;
-    if let Some(map_view) = map_view
-        && let Some(screen) = map_view.to_screen(view.cursor)
-    {
-        let under = terminal.get(screen.x, screen.y).unwrap_or_default();
-        terminal.set(screen.x, screen.y, Cell::new(layout.cursor, palette.get(Tones::SELECT)).on(under.fg));
+    // Four pointers on the neighbours, pulsing between the select tone
+    // and the title tone, and the cell itself left as the map drew it:
+    // a cursor that covered the cell would hide what it points at.
+    if let Some(map_view) = map_view {
+        let color = palette.get(Tones::SELECT).mix(&palette.get(Tones::TITLE), pointer_pulse(time.elapsed_secs()));
+        let around = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        for ((dx, dy), glyph) in around.into_iter().zip(layout.pointers) {
+            let Some(screen) = map_view.to_screen(view.cursor.offset(dx, dy)) else { continue };
+            let under = terminal.get(screen.x, screen.y).unwrap_or_default();
+            terminal.set(screen.x, screen.y, Cell::new(glyph, color).on(under.bg));
+        }
     }
 
     let rect = layout.rect;
@@ -123,8 +140,20 @@ pub fn draw_inspect(
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let bg = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
+    // The ground, always, so a burnt cell says what it burnt to.
+    let mut ground = view.ground.clone();
+    if view.burning {
+        ground.push_str(", burning");
+    }
+    if let Some(gas) = &view.gas {
+        ground.push_str(&format!(", in {gas}"));
+    }
+    let bottom = inner.bottom();
     let Some(subject) = &view.subject else {
         terminal.print_on(inner.x, inner.y, &clip(&layout.empty, width), palette.get(Tones::MUTED), bg);
+        if !ground.is_empty() && inner.y + 1 < bottom {
+            terminal.print_on(inner.x, inner.y + 1, &clip(&ground, width), palette.get(Tones::TEXT), bg);
+        }
         return;
     };
     let mut y = inner.y;
@@ -143,7 +172,8 @@ pub fn draw_inspect(
         y += 1;
     }
     if y < inner.bottom() {
-        terminal.print_on(inner.x, y, &clip(&format!("{} tiles away", subject.distance), width), palette.get(Tones::MUTED), bg);
+        let whereabouts = if ground.is_empty() { format!("{} tiles away", subject.distance) } else { format!("{} tiles away, on {ground}", subject.distance) };
+        terminal.print_on(inner.x, y, &clip(&whereabouts, width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
     if let Some(duel) = view.duel
@@ -166,5 +196,65 @@ pub fn draw_inspect(
         }
         terminal.print_on(inner.x, y, &clip(&facet.text, width), palette.get(facet.tone), bg);
         y += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cursor::CursorKeys;
+    use crate::harness::Stage;
+    use rl_core::Point;
+
+    /// A stage with the map drawn under the panel, so the pointers land on
+    /// real cells.
+    fn staged() -> Stage {
+        Stage::new_with(InspectPanel::new(Rect::new(0, 21, 40, 8)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 30)
+    }
+
+    fn glyph_at(stage: &Stage, world: Point) -> Option<char> {
+        let map = stage.app.world().resource::<MapView>();
+        let screen = map.to_screen(world)?;
+        stage.app.world().resource::<Terminal>().get(screen.x, screen.y).map(|c| c.glyph)
+    }
+
+    /// The cell looked at keeps its own glyph; the four around it point
+    /// at it, on the pulse the clock says.
+    #[test]
+    fn the_cursor_is_four_pointers_around_the_cell_and_the_cell_keeps_its_glyph() {
+        let mut stage = staged();
+        stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let at = stage.at.offset(2, 0);
+        assert_eq!(glyph_at(&stage, at), Some('c'), "still the crab");
+        assert_eq!(glyph_at(&stage, at.offset(-1, 0)), Some('>'));
+        assert_eq!(glyph_at(&stage, at.offset(1, 0)), Some('<'));
+        assert_eq!(glyph_at(&stage, at.offset(0, -1)), Some('v'));
+        assert_eq!(glyph_at(&stage, at.offset(0, 1)), Some('^'));
+        let t = stage.app.world().resource::<Time>().elapsed_secs();
+        let palette = stage.app.world().resource::<Palette>();
+        let expected = palette.get(Tones::SELECT).mix(&palette.get(Tones::TITLE), pointer_pulse(t));
+        let map = stage.app.world().resource::<MapView>();
+        let screen = map.to_screen(at.offset(-1, 0)).unwrap();
+        assert_eq!(stage.app.world().resource::<Terminal>().get(screen.x, screen.y).map(|c| c.fg), Some(expected), "on the pulse");
+        assert!((0.0..=1.0).contains(&pointer_pulse(0.37)));
+    }
+
+    /// The ground is named whether or not something stands on it.
+    #[test]
+    fn the_panel_names_the_ground_under_the_cursor() {
+        let mut stage = staged();
+        stage.press(CursorKeys::default().look);
+        assert_eq!(stage.row(22).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end(), "Nothing here.");
+        assert_eq!(stage.row(23).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end(), "floor", "what the ground is called");
+        stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().next);
+        let rows = stage.rows();
+        assert!(rows.iter().any(|r| r.contains("2 tiles away, on floor")), "{rows:#?}");
     }
 }
