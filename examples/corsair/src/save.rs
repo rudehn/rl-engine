@@ -5,13 +5,16 @@
 //! itself is not saved; it regenerates from the seed, and the engine
 //! replays the edits on top. `S` saves, `q` saves and quits, `--continue`
 //! loads, and death deletes the save so a run cannot be resumed past it.
+//! A window or tab closed on the run saves it too: every turn the run is
+//! encoded into the engine's [`Stash`], which the unload bridge writes on
+//! the way out.
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Point;
 use rl_engine::rl_rules::Tracker;
 use rl_engine::rl_rules::{Enchanted, Equipment};
-use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, decode, encode};
+use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, Stash, decode, encode};
 use rl_engine::rl_ui::{Bindings, Controls, MessageLog, ScrollbackKeys, Tones};
 use serde::{Deserialize, Serialize};
 
@@ -166,8 +169,37 @@ fn capture_game(run: &Run, remap: &mut EntityRemap) -> Option<Captured> {
     Some(Captured { player, monsters, items, transitions })
 }
 
-/// Writes the run to the save slot.
+/// Writes the run to the save slot, and stashes it for the bridge that
+/// writes on the way out.
 pub fn save_run(world: &mut World) -> Result<(), SaveError> {
+    let text = encode_run(world)?;
+    world.resource::<Saves>().persist(SLOT, &text)?;
+    world.resource::<Stash>().stash(SLOT, &text);
+    Ok(())
+}
+
+/// Keeps the [`Stash`] one turn behind the run at most, so a tab or a
+/// window closed on the run loses no more than the turn in hand.
+///
+/// Once a turn rather than once a frame: the run is only different after
+/// a turn, and encoding it is the whole of the cost.
+pub fn refresh_stash(world: &mut World, mut last: Local<Option<u32>>) {
+    if *world.resource::<State<EngineState>>().get() != EngineState::Playing {
+        return;
+    }
+    let turn = world.resource::<Turns>().turn_number();
+    if *last == Some(turn) {
+        return;
+    }
+    *last = Some(turn);
+    match encode_run(world) {
+        Ok(text) => world.resource::<Stash>().stash(SLOT, &text),
+        Err(e) => warn!("the run could not be stashed: {e}"),
+    }
+}
+
+/// The run as one versioned blob.
+fn encode_run(world: &mut World) -> Result<String, SaveError> {
     let mut remap = EntityRemap::new();
     let mut state: bevy::ecs::system::SystemState<Run> = bevy::ecs::system::SystemState::new(world);
     let (player, monsters, items, transitions, rest) = {
@@ -199,8 +231,7 @@ pub fn save_run(world: &mut World) -> Result<(), SaveError> {
         quests: rest.3,
         turn: rest.4,
     };
-    let text = encode(VERSION, &save)?;
-    world.resource::<Saves>().persist(SLOT, &text)
+    encode(VERSION, &save)
 }
 
 /// Reads the save slot, if there is one this build can read.
@@ -345,12 +376,15 @@ pub fn save_keys(world: &mut World) {
     }
 }
 
-/// Death ends the run: the save goes with it.
-pub fn delete_on_death(mut deaths: MessageReader<DeathEvent>, saves: Res<Saves>) {
+/// Death ends the run: the save goes with it, and so does the stash, or
+/// closing the window afterwards would write the run back.
+pub fn delete_on_death(mut deaths: MessageReader<DeathEvent>, saves: Res<Saves>, stash: Res<Stash>) {
     for d in deaths.read() {
-        if d.was_player
-            && let Err(e) = saves.delete(SLOT)
-        {
+        if !d.was_player {
+            continue;
+        }
+        stash.clear();
+        if let Err(e) = saves.delete(SLOT) {
             error!("could not delete the save: {e}");
         }
     }
@@ -383,6 +417,30 @@ mod tests {
         let w = app.world_mut();
         let mut q = w.query_filtered::<&Position, With<Item>>();
         q.iter(w).count()
+    }
+
+    /// The stash follows the run a turn at a time, and death clears it, so
+    /// a window closed after dying writes nothing back.
+    #[test]
+    fn the_stash_follows_the_run_and_death_clears_it() {
+        let dir = std::env::temp_dir().join(format!("corsair-stash-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = headless(RunSeed(7), false, &dir);
+        app.add_systems(Update, delete_on_death.in_set(PresentSet::Narrate));
+        app.update();
+        app.update();
+        let stash = app.world().resource::<Stash>().clone();
+        assert_eq!(stash.pending().as_deref(), Some(SLOT), "stashed by the first turn");
+
+        let me = player(&mut app);
+        let at = app.world().get::<Position>(me).unwrap().0;
+        app.world_mut().write_message(DeathEvent { entity: me, at, credit: None, was_player: true });
+        app.update();
+        assert_eq!(stash.pending(), None, "cleared with the save");
+        app.world_mut().write_message(AppExit::Success);
+        app.update();
+        assert!(!app.world().resource::<Saves>().exists(SLOT), "closing the window after dying wrote nothing back");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

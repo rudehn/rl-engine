@@ -10,7 +10,8 @@
 //! [`EngineSave`], the scheduler, the world's edits and places, and what
 //! the player knows, captured from and restored into a Bevy world. A game
 //! captures its entities, asks for the engine's state, and writes one
-//! versioned blob.
+//! versioned blob. [`UnloadPlugin`] writes the last blob the game
+//! [`Stash`]ed when the page or the window is closed on it.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -18,11 +19,13 @@
 pub mod backend;
 pub mod engine;
 pub mod remap;
+pub mod unload;
 pub mod versioned;
 
 pub use backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
 pub use engine::EngineSave;
 pub use remap::{EntityRemap, SaveId};
+pub use unload::{Stash, UnloadPlugin};
 pub use versioned::{Versioned, decode, encode};
 
 /// The names most callers want in scope.
@@ -30,5 +33,6 @@ pub mod prelude {
     pub use crate::backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
     pub use crate::engine::EngineSave;
     pub use crate::remap::{EntityRemap, SaveId};
+    pub use crate::unload::{Stash, UnloadPlugin};
     pub use crate::versioned::{Versioned, decode, encode};
 }

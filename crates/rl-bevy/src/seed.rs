@@ -55,6 +55,7 @@ impl Seed {
 }
 
 /// The seed in `args`, if one was asked for.
+#[cfg(not(target_arch = "wasm32"))]
 fn seed_argument(mut args: impl Iterator<Item = String>) -> Option<Result<RunSeed, String>> {
     args.by_ref().find(|a| a == "--seed")?;
     Some(match args.next() {

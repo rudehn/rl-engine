@@ -217,7 +217,7 @@ The window opens above the others without taking focus, and the screen must be u
 cargo test -p rl-core -p rl-grid      # tier 0 and 1, seconds
 cargo bench -p rl-grid                # FOV, A*, Dijkstra, regions
 scripts/check-tiers.sh                # the tier boundaries
-scripts/check-tiers.sh --wasm         # tiers 0 and 1 build for WebAssembly
+scripts/check-tiers.sh --wasm         # tiers 0 and 1, and rl-save, build for WebAssembly
 scripts/check-guide.sh                # the guide's links into the code
 mdbook serve docs/guide               # read the guide at localhost:3000
 cargo test --workspace                # everything, builds Bevy

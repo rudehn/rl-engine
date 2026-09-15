@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::Terminal;
-use rl_engine::rl_ui::{AimThrow, ControlInput, ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu};
+use rl_engine::rl_ui::{AimThrow, ControlInput, ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu, key_name};
 
 use crate::input::Binds;
 use crate::items::{Armory, ItemKind};
@@ -26,10 +26,24 @@ pub struct InventoryScreen {
 impl Default for InventoryScreen {
     fn default() -> Self {
         let mut menu = ListMenu::new("Sea chest");
-        menu.hints = "[e]quip/remove  [d]rop  [u]se  [t]hrow  [esc]".into();
+        // The hints are written from the registry when the chest opens, so
+        // they name the keys the chest reads rather than the keys it read
+        // when this line was typed.
         menu.empty = "Nothing but lint.".into();
         Self { menu }
     }
+}
+
+/// The bottom-border hints, from the keys as they are bound.
+fn hints(keys: &ControlInput, binds: &Binds) -> String {
+    format!(
+        "[{}] wear/remove  [{}] drop  [{}] use  [{}] throw  [{}] close",
+        keys.label(binds.chest_equip),
+        keys.label(binds.chest_drop),
+        keys.label(binds.chest_use),
+        keys.label(binds.chest_throw),
+        key_name(keys.bindings().cursor.close)
+    )
 }
 
 /// The id of the chest's modal.
@@ -67,6 +81,7 @@ pub fn inventory_keys(
     let chest = modal(&modals);
     if keys.just_pressed(binds.chest) && (modals.is_top(chest) || !modals.any_open()) {
         modals.toggle(chest);
+        screen.menu.hints = hints(&keys, &binds);
         return;
     }
     if !modals.is_top(chest) {

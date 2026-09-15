@@ -41,7 +41,7 @@ use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
 use crate::items::{Armory, ItemKind};
-use rl_engine::rl_save::Saves;
+use rl_engine::rl_save::{Saves, UnloadPlugin};
 
 /// Terminal size in cells.
 const COLS: i32 = 100;
@@ -129,7 +129,9 @@ fn main() -> AppExit {
         // The engine's seven effects, and the one Corsair adds.
         .add_engine_effects()
         .add_effect::<abilities::Plunder>()
-        .add_plugins(OverworldPlugin)
+        // The map screen, and the bridge that writes the stashed run when
+        // the window or the tab is closed on it.
+        .add_plugins((OverworldPlugin, UnloadPlugin))
         // The panels. Each one draws itself from a view the engine keeps
         // current; none of them needs a system of Corsair's.
         .add_plugins((
@@ -164,8 +166,10 @@ fn main() -> AppExit {
                 .chain()
                 .in_set(EngineSet::Input),
         )
-        // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
+        // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns;
+        // the stash is refreshed once a turn at the end of the frame.
         .add_systems(Update, save::save_keys.after(EngineSet::Present))
+        .add_systems(Last, save::refresh_stash)
         .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
         .add_systems(Update, places::light_the_way.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
         .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))

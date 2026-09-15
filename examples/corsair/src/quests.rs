@@ -15,7 +15,7 @@ use rl_engine::rl_render::Terminal;
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{ContentError, Fact, FactDef, FactKind, Matcher, NameRef, Names, Need, Objective, QuestDef, QuestState};
 use rl_engine::rl_rules::{Named, Registry};
-use rl_engine::rl_ui::{ControlInput, ListMenu, MenuRow, MessageLog, Modals, Palette, Tones, draw_menu};
+use rl_engine::rl_ui::{ControlInput, ListMenu, MenuRow, MessageLog, Modals, Palette, Tones, draw_menu, key_name};
 
 use crate::content::{COVE, PORT};
 use crate::input::Binds;
@@ -285,7 +285,7 @@ pub struct LedgerScreen {
 impl Default for LedgerScreen {
     fn default() -> Self {
         let mut menu = ListMenu::new("Ledger");
-        menu.hints = "[esc]".into();
+        // The hint is written from the registry when the ledger opens.
         menu.empty = "No tasks yet.".into();
         Self { menu }
     }
@@ -304,6 +304,7 @@ pub fn ledger_keys(keys: ControlInput, binds: Res<Binds>, mut screen: ResMut<Led
     let ledger = modal(&modals);
     if keys.just_pressed(binds.ledger) && (modals.is_top(ledger) || !modals.any_open()) {
         modals.toggle(ledger);
+        screen.menu.hints = format!("[{}] close", key_name(keys.bindings().cursor.close));
         return;
     }
     if !modals.is_top(ledger) {

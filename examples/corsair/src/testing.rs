@@ -7,7 +7,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_save::{FileBackend, Saves};
+use rl_engine::rl_save::{FileBackend, Saves, UnloadPlugin};
 use rl_engine::rl_ui::UiPlugin;
 
 /// A run with no window, seeded and pointed at `dir` for its saves.
@@ -28,8 +28,9 @@ pub fn headless(seed: RunSeed, resume: bool, dir: &std::path::Path) -> App {
     app.add_engine_effects().add_effect::<crate::abilities::Plunder>();
     app.insert_resource(Seed(seed))
         .insert_resource(crate::StartOptions { regions: (24, 24), resume })
-        .insert_resource(Saves(Box::new(FileBackend::new(dir))))
-        .add_plugins(UiPlugin)
+        .insert_resource(Saves::new(FileBackend::new(dir)))
+        .add_plugins((UiPlugin, UnloadPlugin))
+        .add_systems(Last, crate::save::refresh_stash)
         .init_resource::<crate::inventory::InventoryScreen>()
         .init_resource::<crate::places::Entrances>()
         .init_resource::<crate::quests::LedgerScreen>()

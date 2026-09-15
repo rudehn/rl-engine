@@ -6,7 +6,9 @@
 #   scripts/check-tiers.sh          every member declares a tier, no crate
 #                                   depends on a higher tier, and tiers 0 and
 #                                   1 never reach Bevy
-#   scripts/check-tiers.sh --wasm   build tiers 0 and 1 for wasm32
+#   scripts/check-tiers.sh --wasm   build tiers 0 and 1 for wasm32, and
+#                                   rl-save, whose browser storage and
+#                                   unload bridge exist only there
 #
 # Tiers: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and the games.
 # The crate lists come from `cargo metadata`, never from this file, so a new
@@ -43,7 +45,9 @@ fi
 if [[ "${1:-}" == "--wasm" ]]; then
   packages=()
   for crate in "${bevy_free[@]}"; do packages+=(-p "$crate"); done
-  exec cargo check "${packages[@]}" --target wasm32-unknown-unknown
+  # rl-save is tier 2, but its web backend and unload bridge are compiled
+  # only for wasm32, so a native build never sees a mistake in them.
+  exec cargo check "${packages[@]}" -p rl-save --target wasm32-unknown-unknown
 elif [[ $# -gt 0 ]]; then
   echo "usage: scripts/check-tiers.sh [--wasm]" >&2
   exit 2

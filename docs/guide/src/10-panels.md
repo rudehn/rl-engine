@@ -132,6 +132,9 @@ That buys more than tidiness.
 The engine's own screens declare theirs the same way, the look cursor's, the log's and `?` itself, and list them from the resources that bind them, so a game that moves "look" off `x` sees the new key on the screen without telling anyone.
 A `Chord` is a key with Shift held or not, matched exactly: the shove is Shift with a direction, and `L` is never read as a step east.
 
+Steps 2 to 9 read `KeyCode`s straight off `ButtonInput` in `player_input`, and that is the right size for a game with four keys and no screen to list them on.
+The registry earns its keep here, where the `?` screen arrives, and everything Warren grows from now on is declared into it.
+
 ## Two presenters, one view
 
 Press `p` and the whole log opens, scrollable, ruled off by turn, and filterable by tone with `tab`.

@@ -8,7 +8,7 @@
 //! removed it.
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use bevy::prelude::Resource;
 
@@ -176,8 +176,11 @@ impl SaveBackend for WebBackend {
 
 /// The backend a game saves through, as a resource, so no system
 /// branches on the platform.
+///
+/// Shared rather than owned, so the unload bridge's handler, which runs
+/// outside the app, writes through the same backend the game does.
 #[derive(Resource)]
-pub struct Saves(pub Box<dyn SaveBackend + Send + Sync>);
+pub struct Saves(pub Arc<dyn SaveBackend + Send + Sync>);
 
 impl Saves {
     /// The platform's default: files beside the executable, or browser
@@ -185,13 +188,18 @@ impl Saves {
     pub fn platform_default(name: &str) -> Self {
         #[cfg(target_arch = "wasm32")]
         {
-            Self(Box::new(WebBackend::new(name)))
+            Self(Arc::new(WebBackend::new(name)))
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = name;
-            Self(Box::new(FileBackend::beside_executable()))
+            Self(Arc::new(FileBackend::beside_executable()))
         }
+    }
+
+    /// Saves through `backend`.
+    pub fn new(backend: impl SaveBackend + Send + Sync + 'static) -> Self {
+        Self(Arc::new(backend))
     }
 }
 

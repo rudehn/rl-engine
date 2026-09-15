@@ -29,4 +29,7 @@ rl-mapgen.workspace = true
 rl-world.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Storage"] }
+# `Storage` for the saves themselves; `Event` and `EventTarget` for the
+# unload bridge's listener, and `wasm-bindgen` for the closure it leaks.
+web-sys = { version = "0.3", features = ["Window", "Storage", "Event", "EventTarget"] }
+wasm-bindgen = "0.2"

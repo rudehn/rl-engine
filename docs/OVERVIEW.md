@@ -168,6 +168,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 - An exact-match versioned envelope.
 - Entity remapping.
 - The engine's own state captured and restored, including every burning cell and every cell with gas on every map, and the pools, cooldowns and charges of every entity the game saved, so a continued run keeps what its abilities had spent and a cooldown is still live at the clock it was saved on.
+- The unload bridge: `Stash`, the last save the game encoded, and `UnloadPlugin`, which writes it through `Saves` when a browser page is hidden or unloaded and, everywhere, on the frame the app exits. The handler runs outside the app and cannot borrow the world, so the game keeps the stash fresh and clears it when a save must not survive. `Saves` shares its backend by `Arc` so the handler writes through the same one.
 
 ## Tier 3: rl-engine
 
@@ -207,7 +208,6 @@ It is built only on the public API, so it is the test that the seams are right.
 - Nights on Corsair's open water, and a lantern the player can douse or run out of.
 - Lit detection ranges, a light-averse tactic, and a ranged penalty in the dark once accuracy exists.
 - Scripted encounters, which want an ability's effect list without the turn, the cost and the cursor.
-- The wasm unload bridge.
 - Seed replay.
 - Bevy UI presenters over the panel views (phase H of `docs/design/ui.md`). The views and collectors already do not know which backend draws them; what a node tree would add is wrapping, proportional text, mouse hover and sub-cell bars. Deferred until a game asks for one of those, since it is a second set of presenters to keep and its tests are node trees rather than the exact-text ones that have caught the bugs so far.
 - Mouse-to-tile in `rl-render`, which hover, tooltips and click-to-travel all wait on.
