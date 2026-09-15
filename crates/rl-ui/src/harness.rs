@@ -60,6 +60,12 @@ impl Stage {
             ))
             .id();
         setup(&mut app);
+        // What `App::run` would do before its first frame and `update` does
+        // not: run every plugin's `finish`, where a plugin declares what it
+        // could only declare once the game had built everything else, such
+        // as its controls.
+        app.finish();
+        app.cleanup();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
@@ -123,5 +129,15 @@ impl Stage {
     /// at the top of every frame.
     pub fn press(&mut self, key: KeyCode) {
         rl_bevy::testing::press(&mut self.app, key);
+    }
+
+    /// Presses every key in `keys` together for one frame, for a chord such
+    /// as Shift with a letter.
+    pub fn chord(&mut self, keys: &[KeyCode]) {
+        for key in keys {
+            self.app.world_mut().resource_mut::<rl_bevy::testing::KeyScript>().press(*key);
+        }
+        self.app.update();
+        self.app.update();
     }
 }

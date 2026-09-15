@@ -158,7 +158,7 @@ cargo run -p corsair -- --continue   # resume the saved run
 cargo run -p corsair -- --balance    # the spawn table's threat by band
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `>` `<` or Enter to use a cave mouth or stairs, `f` to fire a pistol at the nearest foe, `1` to `4` to aim a broadside, a grapnel, a swig or a shakedown, `a` to list them, `x` to look, `p` for the ship's log, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `e` to put on what is underfoot, `c` to shut a door, `>` `<` or Enter to use a cave mouth or stairs, `f` to aim the pistol, `r` to aim a throwing knife, `1` to `4` to aim a broadside, a grapnel, a swig or a shakedown, `a` to list them, `x` to look, `tab` to pick out what is in sight, `p` for the ship's log, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `S` to save, `q` to save and quit, and `?` for all of them on one screen.
 
 ### The Hollow Whale, a dungeon delve
 
@@ -179,7 +179,7 @@ cargo run -p delve -- --seed 7
 cargo run -p delve -- --seed 7 --floor 3    # start deeper
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for stairs, `1` to `5` to aim a knack, `a` to list them, `L` to smother or light the brand, `g` to pick up, `d` to set the torch down, `v` to show light, `x` to look, `p` for the log, `q` to quit.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for stairs, `1` to `5` to aim a knack, `a` to list them, `L` to smother or light the brand, `g` to pick up, `d` to set a torch or lamp down, `v` to show light, `x` to look, `tab` to pick out what is in sight, `p` for the log, `q` to quit, and `?` for all of them on one screen.
 
 ### Abilities in any genre
 

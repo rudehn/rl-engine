@@ -258,7 +258,8 @@ mod tests {
 
     #[test]
     fn a_player_that_can_hide_is_told_whether_it_has_been_seen() {
-        let mut stage = Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), rl_bevy::StealthPlugin)).screen(24, 8);
+        // Stealth is decided in the minds' pass, so it needs the minds.
+        let mut stage = Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), rl_bevy::MindsPlugin, rl_bevy::StealthPlugin)).screen(24, 8);
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(rl_bevy::Stealth::default());
         stage.tick();

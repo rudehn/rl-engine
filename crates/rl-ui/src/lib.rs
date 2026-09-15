@@ -88,6 +88,7 @@
 #[cfg(test)]
 pub(crate) mod harness;
 
+pub mod controls;
 pub mod cursor;
 pub mod facet;
 pub mod focus;
@@ -99,6 +100,7 @@ pub mod panel;
 pub mod tone;
 pub mod view;
 
+pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, key_name};
 pub use cursor::{CursorKeys, Steer};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighting};
@@ -107,8 +109,8 @@ pub use log::{LogEntry, MessageLog};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use panel::{
-    AbilityMenu, AbilityPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, TargetPanel, VitalsPanel,
-    ability_modal,
+    AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, TargetPanel,
+    VitalsPanel, ability_modal, controls_modal,
 };
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones};
 pub use view::{
@@ -136,7 +138,8 @@ pub enum ViewSet {
 /// The base every other plugin in this crate needs: tones, the palette,
 /// facet keys, the modal stack, the direction bindings, the keys the
 /// cursors answer to, the [`Focus`] the nearby list and both cursors
-/// share, and the message log every game writes to.
+/// share, the [`Controls`] registry every key is declared in, and the
+/// message log every game writes to.
 ///
 /// The log is here rather than with the panels that draw it because a game
 /// writes to it from its own systems whether or not it draws it: a headless
@@ -155,6 +158,8 @@ impl Plugin for UiPlugin {
             .init_resource::<DirectionKeys>()
             .init_resource::<CursorKeys>()
             .init_resource::<Focus>()
+            .init_resource::<Controls>()
+            .init_resource::<ControlsKeys>()
             .init_resource::<MessageLog>()
             .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate).chain().in_set(rl_bevy::PresentSet::Narrate))
             .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones);
@@ -169,6 +174,7 @@ impl Plugin for UiPlugin {
 
 /// The names most callers want in scope.
 pub mod prelude {
+    pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys};
     pub use crate::cursor::CursorKeys;
     pub use crate::facet::{Facet, FacetId, Facets};
     pub use crate::focus::{Focus, InSight, Sighting};
@@ -180,8 +186,8 @@ pub mod prelude {
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
     pub use crate::panel::{
-        AbilityMenu, AbilityPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, TargetPanel, VitalsPanel,
-        ability_modal,
+        AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, TargetPanel,
+        VitalsPanel, ability_modal, controls_modal,
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones};
     pub use crate::view::{

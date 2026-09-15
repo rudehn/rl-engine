@@ -118,6 +118,20 @@ With no screen up, `tab` steps down the rail and lights the row and its tile on 
 That is the engine's `Focus`, the one thing picked out of what is in sight, and the look cursor opens on it and moves it as it goes.
 Warren wrote none of it: `NearbyPanel` and `InspectPanel` share it through the same list.
 
+## Every key, once
+
+Warren declares its keys in one place and reads them by name.
+
+```rust,no_run
+{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:keys}}
+```
+
+`player_input` asks `keys.direction(binds.walk)` and `keys.just_pressed(binds.eat)`, never `KeyCode::KeyE`.
+That buys more than tidiness.
+`ControlsPanel` lists the same registry, so `?` shows exactly the keys Warren reads, and a key Warren stops reading leaves the screen with its declaration.
+The engine's own screens declare theirs the same way, the look cursor's, the log's and `?` itself, and list them from the resources that bind them, so a game that moves "look" off `x` sees the new key on the screen without telling anyone.
+A `Chord` is a key with Shift held or not, matched exactly: the shove is Shift with a direction, and `L` is never read as a step east.
+
 ## Two presenters, one view
 
 Press `p` and the whole log opens, scrollable, ruled off by turn, and filterable by tone with `tab`.
@@ -150,3 +164,4 @@ It is pure and lives in tier 1, which means it is tested without an `App` and a 
 - Push a facet keyed `mood` from two different systems and see both print, in order.
 - Log fifty lines, open `p`, and hold `tab`: the filter offers only the tones Warren actually logs in.
 - Press `tab` twice with nothing open, then `x`: the look cursor opens on the second row, not the nearest rat.
+- Press `?`. Then move `CursorKeys::look` to another key in `main` and press `?` again: the screen followed, and nothing in Warren mentioned it.

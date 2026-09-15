@@ -12,6 +12,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ability::RawValue;
 
+use crate::input::Binds;
 use crate::items::Armory;
 
 /// The abilities, compiled in so the binary runs from anywhere.
@@ -85,14 +86,14 @@ impl FromArgs for Plunder {
 /// is steered and what the use costs are the engine's, which is why nothing
 /// here knows what a broadside does.
 pub fn ability_keys(
-    keys: Res<ButtonInput<KeyCode>>,
+    keys: ControlInput,
+    binds: Res<Binds>,
     mut modals: ResMut<Modals>,
     player: Query<(Entity, &Known), PlayerHolding>,
     mut aims: MessageWriter<AimAt>,
 ) {
-    const SLOTS: [KeyCode; 4] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4];
     let list = ability_modal(&modals);
-    if keys.just_pressed(KeyCode::KeyA) && (modals.is_top(list) || !modals.any_open()) {
+    if keys.just_pressed(binds.abilities) && (modals.is_top(list) || !modals.any_open()) {
         modals.toggle(list);
         return;
     }
@@ -100,7 +101,7 @@ pub fn ability_keys(
         return;
     }
     let Ok((user, known)) = player.single() else { return };
-    if let Some(slot) = SLOTS.iter().position(|k| keys.just_pressed(*k))
+    if let Some(slot) = keys.which(binds.call_on)
         && let Some((ability, _)) = known.iter().nth(slot)
     {
         aims.write(AimAt { user, ability });

@@ -58,6 +58,10 @@ fn main() -> AppExit {
             ScrollbackPanel::new(screen.scrollback),
             TargetPanel::new(screen.target).hints("[enter] use  [tab] next  [esc] back"),
             AbilityPanel::new(screen.knacks).title("Knacks").hints("[a] close"),
+            // Every key declared in `declare_controls` and by the engine's
+            // own screens, on one screen, with the hint that opens it in
+            // the rail's last row.
+            ControlsPanel::new(screen.controls).hint(screen.hint),
         ))
         .add_systems(Update, (note_floor, show_pools).in_set(ViewSet::Annotate))
         .add_systems(Startup, start)
@@ -68,6 +72,7 @@ fn main() -> AppExit {
         // A floor fills the moment it is entered, inside the turn.
         .add_systems(Turn, populate_floor.in_set(TurnSet::React))
         .add_systems(Update, (narrate, narrate_knacks, narrate_items).in_set(PresentSet::Narrate));
+    declare_controls(&mut app);
     app.run()
 }
 
@@ -83,6 +88,8 @@ struct Screen {
     scrollback: Rect,
     target: Rect,
     knacks: Rect,
+    controls: Rect,
+    hint: Rect,
 }
 
 impl Screen {
@@ -90,6 +97,8 @@ impl Screen {
         let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
         let (map, log) = panel::split_bottom(left, LOG_ROWS);
         let (vitals, nearby) = panel::split_top(rail, 11);
+        // The last row of the rail says how to see the controls.
+        let (nearby, hint) = panel::split_bottom(nearby, 1);
         Self {
             map,
             log,
@@ -99,6 +108,8 @@ impl Screen {
             scrollback: map.inflate(-2),
             target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
             knacks: Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14),
+            controls: map.inflate(-2),
+            hint,
         }
     }
 }
@@ -157,8 +168,6 @@ const BRAND: LightSource = LightSource::new(200, 8, Rgb::new(255, 190, 120)).fli
 const FLAME: Rgb = Rgb::new(255, 170, 90);
 /// Columns given to the rail down the right.
 const RAIL: i32 = 26;
-/// The keys, in two lines because one ran past the edge of the log.
-const KEY_HINTS: [&str; 2] = ["1-5 knacks  a list  x look  tab pick  p log", "g get  d drop flame  L brand  v light"];
 /// The delver's knacks and the one a beast has, compiled in.
 const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
 /// What the player knows, in the order `1` to `5` aim them.
@@ -354,22 +363,21 @@ struct Stock<'w> {
     seed: Res<'w, Seed>,
     first: Option<Res<'w, FirstFloor>>,
     registries: Res<'w, Registries>,
+    help: Res<'w, ControlsKeys>,
 }
 
 /// Stairs, glowing bile and beasts, the first time a floor is entered.
 fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
-    let Stock { beasts, map, bile, seed, first, registries } = &stock;
+    let Stock { beasts, map, bile, seed, first, registries, help } = &stock;
     let reek = registries.gases.expect("reek");
     for ev in entered.read() {
         let floor = floor_of(ev.map);
         log.push(format!("Floor {floor}: {}.", name_of(floor)), Tones::NOTICE, turns.turn_number());
-        // The keys, once, under the name of the floor the run starts on. Not
-        // in `start`: the name is written when the warp lands, a frame later,
-        // and would read as if it came after them.
+        // How to see the keys, once, under the name of the floor the run
+        // starts on. Not in `start`: the name is written when the warp lands,
+        // a frame later, and would read as if it came after.
         if ev.first && floor == first.as_ref().map_or(1, |f| f.0) {
-            for line in KEY_HINTS {
-                log.push(line, Tones::MUTED, turns.turn_number());
-            }
+            log.push(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED, turns.turn_number());
         }
         if !ev.first {
             continue;
@@ -461,16 +469,42 @@ fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntere
 /// The player, while it holds the turn.
 type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Player>, With<MyTurn>)>;
 
-const MOVES: [(&[KeyCode], Direction); 8] = [
-    (&[KeyCode::ArrowUp, KeyCode::KeyK, KeyCode::Numpad8], Direction::North),
-    (&[KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::Numpad2], Direction::South),
-    (&[KeyCode::ArrowLeft, KeyCode::KeyH, KeyCode::Numpad4], Direction::West),
-    (&[KeyCode::ArrowRight, KeyCode::KeyL, KeyCode::Numpad6], Direction::East),
-    (&[KeyCode::KeyY, KeyCode::Numpad7], Direction::NorthWest),
-    (&[KeyCode::KeyU, KeyCode::Numpad9], Direction::NorthEast),
-    (&[KeyCode::KeyB, KeyCode::Numpad1], Direction::SouthWest),
-    (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
-];
+/// Every key the delve answers to, by name.
+///
+/// Declared once in [`declare_controls`], read by name in the input
+/// systems, and listed on `?` from that same declaration.
+#[derive(Resource, Clone, Copy)]
+struct Binds {
+    walk: ControlId,
+    stairs: ControlId,
+    wait: ControlId,
+    pick_up: ControlId,
+    drop: ControlId,
+    brand: ControlId,
+    knacks: ControlId,
+    list: ControlId,
+    overlay: ControlId,
+    quit: ControlId,
+}
+
+/// Declares the keys, under the headings the `?` screen groups them by.
+///
+/// A chord is matched exactly, so `L`, the brand, is never a step east.
+fn declare_controls(app: &mut App) {
+    let binds = Binds {
+        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
+        stairs: app.add_control("Move", "take the stairs", [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)]),
+        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
+        pick_up: app.add_control("Act", "pick up what is here", KeyCode::KeyG),
+        drop: app.add_control("Act", "set down the flame you carry", KeyCode::KeyD),
+        brand: app.add_control("Act", "smother the brand, or light it", Chord::shift(KeyCode::KeyL)),
+        knacks: app.add_control("Knacks", "use a knack", [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5]),
+        list: app.add_control("Knacks", "list them, and what blocks any", KeyCode::KeyA),
+        overlay: app.add_control("Game", "show the light on each tile", KeyCode::KeyV),
+        quit: app.add_control("Game", "quit", KeyCode::KeyQ),
+    };
+    app.insert_resource(binds);
+}
 
 /// What the player's keys can ask for.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -481,31 +515,33 @@ struct PlayerIntents<'w> {
     stairs: MessageWriter<'w, Intent<GoThrough>>,
 }
 
-/// Keys to intents: walk, bump to attack, `.` to wait, `>` `<` or Enter for stairs, `q` to quit.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
-    if keys.just_pressed(KeyCode::KeyQ) {
+/// Keys to intents: walk, bump to attack, wait, take the stairs, quit.
+fn player_input(
+    keys: ControlInput,
+    binds: Res<Binds>,
+    occupancy: Res<Occupancy>,
+    player: PlayerTurn,
+    mut intents: PlayerIntents,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if keys.just_pressed(binds.quit) {
         exit.write(AppExit::Success);
         return;
     }
     let Ok((entity, pos)) = player.single() else { return };
-    let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    // Shift and L is the brand, not a step east.
-    if shifted && keys.just_pressed(KeyCode::KeyL) {
-        return;
-    }
-    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
+    if let Some(dir) = keys.direction(binds.walk) {
         // Bump to attack: walking into someone is a strike.
         match occupancy.first_at(pos.0 + dir.offset()) {
             Some(other) => {
                 intents.attacks.write(Intent::new(entity, Attack(other)));
             }
             None => {
-                intents.steps.write(Intent::new(entity, Step(*dir)));
+                intents.steps.write(Intent::new(entity, Step(dir)));
             }
         }
-    } else if keys.just_pressed(KeyCode::Enter) || (shifted && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma])) {
+    } else if keys.just_pressed(binds.stairs) {
         intents.stairs.write(Intent::new(entity, GoThrough));
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
+    } else if keys.just_pressed(binds.wait) {
         intents.waits.write(Intent::new(entity, Wait));
     }
 }
@@ -519,15 +555,15 @@ type BrandBearer = (Entity, Has<LightSource>, Option<&'static Fuel>);
 /// argument limit, and because the brand is the one thing in the delve the
 /// player chooses to be seen by.
 fn tend_brand(
-    keys: Res<ButtonInput<KeyCode>>,
+    keys: ControlInput,
+    binds: Res<Binds>,
     mut commands: Commands,
     player: Query<BrandBearer, (With<Player>, With<MyTurn>)>,
     mut waits: MessageWriter<Intent<Wait>>,
     mut log: ResMut<MessageLog>,
     turns: Res<Turns>,
 ) {
-    let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    if !(shifted && keys.just_pressed(KeyCode::KeyL)) {
+    if !keys.just_pressed(binds.brand) {
         return;
     }
     let Ok((entity, lit, fuel)) = player.single() else { return };
@@ -556,7 +592,8 @@ fn spot_between(bounds: Rect, map: &WorldMap, entry: Point, min: i32, max: i32, 
 /// What picking up and setting down read and write.
 #[derive(bevy::ecs::system::SystemParam)]
 struct Hands<'w, 's> {
-    keys: Res<'w, ButtonInput<KeyCode>>,
+    keys: ControlInput<'w>,
+    binds: Res<'w, Binds>,
     map: Res<'w, WorldMap>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
@@ -573,14 +610,14 @@ struct Hands<'w, 's> {
 fn pick_and_drop(mut hands: Hands) {
     let Ok((me, pos, bag)) = hands.player.single() else { return };
     let turn = hands.turns.turn_number();
-    if hands.keys.just_pressed(KeyCode::KeyG) {
+    if hands.keys.just_pressed(hands.binds.pick_up) {
         let here = hands.map.current();
         if hands.ground.iter().any(|(p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here) {
             hands.picks.write(Intent::new(me, PickUp));
         } else {
             hands.log.muted("There is nothing here to pick up.", turn);
         }
-    } else if hands.keys.just_pressed(KeyCode::KeyD) {
+    } else if hands.keys.just_pressed(hands.binds.drop) {
         match bag.items.iter().copied().find(|i| hands.torches.contains(*i)) {
             Some(flame) => {
                 hands.drops.write(Intent::new(me, DropItem(flame)));
@@ -592,8 +629,8 @@ fn pick_and_drop(mut hands: Hands) {
 
 /// `v` draws the light on each tile as a digit, which is how a dark floor is
 /// read when the shading alone is too subtle to judge.
-fn toggle_overlay(keys: Res<ButtonInput<KeyCode>>, mut overlay: ResMut<LightOverlay>) {
-    if keys.just_pressed(KeyCode::KeyV) {
+fn toggle_overlay(keys: ControlInput, binds: Res<Binds>, mut overlay: ResMut<LightOverlay>) {
+    if keys.just_pressed(binds.overlay) {
         overlay.0 = !overlay.0;
     }
 }
@@ -601,10 +638,9 @@ fn toggle_overlay(keys: Res<ButtonInput<KeyCode>>, mut overlay: ResMut<LightOver
 /// `1` to `5` aim the knacks in order; `a` lists them with the reasons any is
 /// out of reach. A key writes `AimAt` and stops: the cursor, the preview and
 /// the use are the engine's.
-fn call_on(keys: Res<ButtonInput<KeyCode>>, mut modals: ResMut<Modals>, player: Query<(Entity, &Known), PlayerHolding>, mut aims: MessageWriter<AimAt>) {
-    const SLOTS: [KeyCode; 5] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5];
+fn call_on(keys: ControlInput, binds: Res<Binds>, mut modals: ResMut<Modals>, player: Query<(Entity, &Known), PlayerHolding>, mut aims: MessageWriter<AimAt>) {
     let list = ability_modal(&modals);
-    if keys.just_pressed(KeyCode::KeyA) && (modals.is_top(list) || !modals.any_open()) {
+    if keys.just_pressed(binds.list) && (modals.is_top(list) || !modals.any_open()) {
         modals.toggle(list);
         return;
     }
@@ -612,7 +648,7 @@ fn call_on(keys: Res<ButtonInput<KeyCode>>, mut modals: ResMut<Modals>, player: 
         return;
     }
     let Ok((user, known)) = player.single() else { return };
-    if let Some(slot) = SLOTS.iter().position(|k| keys.just_pressed(*k))
+    if let Some(slot) = keys.which(binds.knacks)
         && let Some((ability, _)) = known.iter().nth(slot)
     {
         aims.write(AimAt { user, ability });
@@ -785,6 +821,7 @@ mod tests {
             .add_systems(Startup, start)
             .add_systems(Turn, populate_floor.in_set(TurnSet::React))
             .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        declare_controls(&mut app);
         app
     }
 
@@ -856,16 +893,15 @@ mod tests {
     }
 
     /// The log reads in the order things happened: the climb, the floor it
-    /// lands on, and only then the keys.
+    /// lands on, and only then how to see the keys.
     #[test]
-    fn the_first_floor_is_named_before_the_keys_are_listed() {
+    fn the_first_floor_is_named_before_the_controls_are_offered() {
         let (app, _) = settled(7);
         let lines: Vec<&str> = app.world().resource::<MessageLog>().iter().map(|e| e.text.as_str()).collect();
         let at = |needle: &str| lines.iter().position(|l| l.starts_with(needle)).unwrap_or_else(|| panic!("no {needle:?} in {lines:#?}"));
         assert!(at("You light a brand") < at("Floor 1:"), "{lines:#?}");
-        assert!(at("Floor 1:") < at(KEY_HINTS[0]), "{lines:#?}");
-        assert_eq!(lines[at(KEY_HINTS[0])..at(KEY_HINTS[0]) + 2], KEY_HINTS, "both key lines, together and once");
-        assert_eq!(lines.iter().filter(|l| **l == KEY_HINTS[0]).count(), 1);
+        assert!(at("Floor 1:") < at("Press ? for the controls."), "{lines:#?}");
+        assert_eq!(lines.iter().filter(|l| **l == "Press ? for the controls.").count(), 1, "once");
     }
 
     /// Waits `turns` whole turns, as the player.

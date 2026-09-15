@@ -9,7 +9,9 @@
 //! `cargo run -p tutorial --bin step10_panels`, and `WARREN_SEED=19` picks
 //! another warren, which is how this chapter's screenshot was taken.
 //!
-//! Keys: as step 9, plus `x` for the look cursor and `p` for the log.
+//! Keys: as step 9, plus `x` for the look cursor, `p` for the log, and `?`
+//! for the list of them. The list is the same registry the input system
+//! reads, so it cannot go stale.
 
 use std::sync::Arc;
 
@@ -70,6 +72,8 @@ struct Screen {
     nearby: Rect,
     inspect: Rect,
     scrollback: Rect,
+    controls: Rect,
+    hint: Rect,
 }
 
 impl Screen {
@@ -77,9 +81,11 @@ impl Screen {
         let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
         let (map, log) = panel::split_bottom(left, LOG_ROWS);
         let (vitals, nearby) = panel::split_top(rail, 9);
+        // The last row of the rail says how to see the controls.
+        let (nearby, hint) = panel::split_bottom(nearby, 1);
         // Over the map, because a modal covers what it is about.
         let inspect = Rect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
-        Self { map, log, vitals, nearby, inspect, scrollback: map.inflate(-2) }
+        Self { map, log, vitals, nearby, inspect, scrollback: map.inflate(-2), controls: map.inflate(-2), hint }
     }
 }
 // ANCHOR_END: layout
@@ -109,6 +115,9 @@ fn main() -> AppExit {
             // A second presenter over the log the strip already draws: `p`
             // opens all of it, scrollable and filterable by tone.
             ScrollbackPanel::new(screen.scrollback),
+            // Every key declared below and by the engine, on one screen, and
+            // the one hint that opens it in the rail's last row.
+            ControlsPanel::new(screen.controls).hint(screen.hint),
         ))
         // What the engine cannot know about a row. Named by set, never by
         // ordering after a collector function.
@@ -136,6 +145,7 @@ fn main() -> AppExit {
     // widget that takes a tone honours it from here on.
     app.add_tone("fleeing", Color::srgb(0.6, 0.8, 1.0));
     // ANCHOR_END: tone
+    declare_controls(&mut app);
     app.run()
 }
 // ANCHOR_END: main
@@ -330,17 +340,40 @@ fn start(
 // ANCHOR_END: start
 
 // ANCHOR: keys
-/// The eight directions and every key that asks for each.
-const MOVES: [(&[KeyCode], Direction); 8] = [
-    (&[KeyCode::ArrowUp, KeyCode::KeyK, KeyCode::Numpad8], Direction::North),
-    (&[KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::Numpad2], Direction::South),
-    (&[KeyCode::ArrowLeft, KeyCode::KeyH, KeyCode::Numpad4], Direction::West),
-    (&[KeyCode::ArrowRight, KeyCode::KeyL, KeyCode::Numpad6], Direction::East),
-    (&[KeyCode::KeyY, KeyCode::Numpad7], Direction::NorthWest),
-    (&[KeyCode::KeyU, KeyCode::Numpad9], Direction::NorthEast),
-    (&[KeyCode::KeyB, KeyCode::Numpad1], Direction::SouthWest),
-    (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
-];
+/// Every key Warren answers to, by name.
+///
+/// The names are what `player_input` checks; the keys behind them are
+/// declared once in `declare_controls`, and the `?` screen lists that
+/// same declaration. A key the game stops reading leaves the screen with
+/// its declaration.
+#[derive(Resource, Clone, Copy)]
+struct Binds {
+    walk: ControlId,
+    shove: ControlId,
+    stairs: ControlId,
+    pick_up: ControlId,
+    eat: ControlId,
+    wait: ControlId,
+    quit: ControlId,
+}
+
+/// Declares the keys, under the headings the `?` screen groups them by.
+///
+/// The walk is every direction key the engine binds, arrows, `hjklyubn`
+/// and the numpad; the shove is the same keys with Shift held. A chord is
+/// matched exactly, so `L` never reads as a step east.
+fn declare_controls(app: &mut App) {
+    let binds = Binds {
+        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
+        shove: app.add_control("Move", "shove whoever is there", Keys::Directions { shift: true }),
+        stairs: app.add_control("Move", "take the stairs", [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)]),
+        pick_up: app.add_control("Act", "pick up what is here", KeyCode::KeyG),
+        eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
+        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
+        quit: app.add_control("Game", "quit", KeyCode::KeyQ),
+    };
+    app.insert_resource(binds);
+}
 // ANCHOR_END: keys
 
 // ANCHOR: intents
@@ -368,35 +401,41 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position, &'static Inv
 ///
 /// Bump to attack is a decision the game makes, not the engine: a step
 /// into an occupied cell is written as an [`Attack`] instead.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, occupancy: Res<Occupancy>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
-    if keys.just_pressed(KeyCode::KeyQ) {
+fn player_input(
+    keys: ControlInput,
+    binds: Res<Binds>,
+    occupancy: Res<Occupancy>,
+    player: PlayerTurn,
+    mut intents: PlayerIntents,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if keys.just_pressed(binds.quit) {
         exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, pos, bag)) = player.single() else { return };
-    let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| shifted && keys.any_just_pressed(codes.iter().copied())) {
-        intents.shoves.write(Intent::new(entity, Shove(*dir)));
-    } else if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| !shifted && keys.any_just_pressed(codes.iter().copied())) {
+    if let Some(dir) = keys.direction(binds.shove) {
+        intents.shoves.write(Intent::new(entity, Shove(dir)));
+    } else if let Some(dir) = keys.direction(binds.walk) {
         match occupancy.first_at(pos.0 + dir.offset()) {
             Some(other) => {
                 intents.attacks.write(Intent::new(entity, Attack(other)));
             }
             None => {
-                intents.steps.write(Intent::new(entity, Step(*dir)));
+                intents.steps.write(Intent::new(entity, Step(dir)));
             }
         }
-    } else if keys.just_pressed(KeyCode::Enter) || (shifted && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma])) {
+    } else if keys.just_pressed(binds.stairs) {
         intents.stairs.write(Intent::new(entity, GoThrough));
-    } else if keys.just_pressed(KeyCode::KeyG) {
+    } else if keys.just_pressed(binds.pick_up) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
-    } else if keys.just_pressed(KeyCode::KeyE) {
+    } else if keys.just_pressed(binds.eat) {
         // Eating is a use; the engine spends the turn and reports it back.
         if let Some(crust) = bag.items.first().copied() {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
+    } else if keys.just_pressed(binds.wait) {
         intents.waits.write(Intent::new(entity, Wait));
     }
 }

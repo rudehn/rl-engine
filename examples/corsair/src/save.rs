@@ -12,9 +12,10 @@ use rl_engine::rl_core::Point;
 use rl_engine::rl_rules::Tracker;
 use rl_engine::rl_rules::{Enchanted, Equipment};
 use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, decode, encode};
-use rl_engine::rl_ui::{MessageLog, Tones};
+use rl_engine::rl_ui::{Bindings, Controls, MessageLog, ScrollbackKeys, Tones};
 use serde::{Deserialize, Serialize};
 
+use crate::input::Binds;
 use crate::items::{Armory, ItemKind};
 use crate::monsters::{Bestiary, MonsterKind};
 use crate::places::Entrances;
@@ -314,10 +315,17 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
 }
 
 /// `S` saves; `q` saves then quits. Both only while playing.
+///
+/// An exclusive system, since saving reads the whole world, so the keys
+/// are read through the registry by hand rather than as a `ControlInput`.
 pub fn save_keys(world: &mut World) {
-    let keys = world.resource::<ButtonInput<KeyCode>>();
-    let wants_save = keys.just_pressed(KeyCode::KeyS) && keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let wants_quit = keys.just_pressed(KeyCode::KeyQ);
+    let (wants_save, wants_quit) = {
+        let keys = world.resource::<ButtonInput<KeyCode>>();
+        let controls = world.resource::<Controls>();
+        let binds = world.resource::<Binds>();
+        let bindings = Bindings { directions: world.resource(), cursor: world.resource(), help: world.resource(), log: world.get_resource::<ScrollbackKeys>() };
+        (controls.which(binds.save, keys, &bindings).is_some(), controls.which(binds.quit, keys, &bindings).is_some())
+    };
     if !wants_save && !wants_quit {
         return;
     }

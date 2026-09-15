@@ -26,6 +26,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - The look cursor stops on things as well as actors. The targeting cursor cycles by `Aim::cycles_to`: an aim at the ground stops on anything in sight rather than on cells.
 - `AimFire`, a shot through the targeting cursor with a `RangedAttack`; `TargetView` gains `firing`. `shot` is the line a shot flies, which `line_of_fire` now answers by.
 - `panel::tint`, and `panel::bar` draws on the background its cells already have.
+- `Controls`, the registry every key a game answers to is declared in, with `AddControls::add_control`, `ControlId`, `Chord` (a key with Shift or not, matched exactly), `Keys` (chords, the direction keys with or without Shift, or one of the engine's own bindings as an `EngineKey`, read from its resource when listed), and `ControlInput`, this frame's keys read through it. The engine's cursors, scrollback, overworld map and controls screen declare their own keys, in `finish`, so a game's groups are listed first.
+- `ControlsPanel`: every declared control on one screen, grouped, in columns and pages, opened with `?` from `ControlsKeys`, and a `hint` row naming that key. Corsair, the delve, the starter and the tutorial's step 10 declare their keys once and read them by name, and their hand-typed key lines are gone. `?` in `RL_CAPTURE_KEYS`.
 
 ## 0.1.0
 

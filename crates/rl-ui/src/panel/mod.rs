@@ -18,6 +18,7 @@
 //! way out should not have to rewrite a box-drawing routine to do it.
 
 pub mod ability;
+pub mod controls;
 pub mod gear;
 pub mod inspect;
 pub mod log;
@@ -27,6 +28,7 @@ pub mod target;
 pub mod vitals;
 
 pub use ability::{AbilityLayout, AbilityMenu, AbilityPanel, ability_modal};
+pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
 pub use log::LogPanel;

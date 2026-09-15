@@ -20,8 +20,29 @@ use rl_bevy::prelude::*;
 use rl_core::{Point, geometry};
 use rl_render::Glyph;
 
+use crate::controls::{AddControls, EngineKey, Keys};
 use crate::cursor::CursorInput;
 use crate::modal::Modals;
+
+/// The heading the cursors' keys are listed under on the controls screen.
+pub const CURSOR_GROUP: &str = "Look and aim";
+/// The heading the keys that open and close screens are listed under.
+pub const SCREENS_GROUP: &str = "Screens";
+
+/// Declares the keys that step the [`Focus`], in the words every plugin
+/// that reads them uses, so the controls screen lists them once however
+/// many plugins declare them.
+pub(crate) fn declare_focus_controls(app: &mut App) {
+    app.add_control(CURSOR_GROUP, "next thing in sight", EngineKey::Next);
+    app.add_control(CURSOR_GROUP, "previous thing in sight", EngineKey::Previous);
+    app.add_control(SCREENS_GROUP, "close a cursor or screen", EngineKey::Close);
+}
+
+/// [`declare_focus_controls`], and the keys that step a cursor.
+pub(crate) fn declare_cursor_controls(app: &mut App) {
+    declare_focus_controls(app);
+    app.add_control(CURSOR_GROUP, "move the cursor", Keys::Directions { shift: false });
+}
 
 /// One entity the player can see.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

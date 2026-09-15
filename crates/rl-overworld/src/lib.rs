@@ -14,8 +14,7 @@ use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, Rect};
 use rl_render::{Cell, Terminal};
-use rl_ui::AddModal;
-use rl_ui::{ModalId, Modals};
+use rl_ui::{AddControls, AddModal, ModalId, Modals};
 use rl_world::BandId;
 
 /// The name the overworld's modal is declared under.
@@ -147,6 +146,13 @@ impl Plugin for OverworldPlugin {
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<rl_bevy::CorePlugin>(app, "OverworldPlugin");
         rl_bevy::depends_on::<rl_ui::UiPlugin>(app, "OverworldPlugin");
+        // Listed on the controls screen from the keys as they stand once
+        // the game has finished building, so a game that inserts its own
+        // `OverworldKeys` lists those.
+        let keys = *app.world().resource::<OverworldKeys>();
+        app.add_control("Map", "open the map", keys.toggle);
+        app.add_control("Map", "pick a site", [keys.prev, keys.next]);
+        app.add_control("Map", "portal to it", keys.go);
     }
 }
 

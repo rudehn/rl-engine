@@ -210,6 +210,10 @@ With nothing open, Tab steps the focus down that list, and the nearby panel draw
 The look cursor and the targeting cursor cycle the same list, entity by entity, open on the focus when they can take it, and move it as they go, so the row highlighted, the thing looked at and the thing aimed at are one choice.
 An aim narrows the list by `Aim::cycles_to`, and an aim at the ground cycles what is in sight rather than cells, which the direction keys already reach.
 
+The keys themselves are one registry, `Controls`.
+A game declares each key it answers to once, as a group, an action and the keys, and reads a frame's keys through `ControlInput` by the id it got back; the engine's own screens declare theirs the same way, from the resources that bind them, in `finish` so the game's groups are listed first.
+`ControlsPanel` draws that registry, so what `?` shows is what the game reads, and a key the game stops reading leaves the screen with its declaration.
+
 ## 8. What the engine does not get
 
 - Main menu, settings, save slots, key rebinding screens.
@@ -218,8 +222,9 @@ An aim narrows the list by `Aim::cycles_to`, and an aim at the ground cycles wha
   The moment the engine owns a widget toolkit it owns a widget toolkit forever.
 - Hover and tooltips, until `rl-render` can map a cursor to a tile.
   That is a real gap and a small one, and it should land in `rl-render` as a mouse-to-tile query before any panel depends on it.
-- Key hints from hand-typed strings.
-  Hints are worth engine space only if they are generated from a keybind registry, which means the keybind registry comes first or the feature does not come at all.
+- Key hints from hand-typed strings in a panel's border.
+  A hint was worth engine space only once it could be generated from a keybind registry; `Controls` is that registry now, and the controls screen and its `? controls` hint are generated from it.
+  A border hint such as the scrollback's is still a phrase the game may replace, not a list.
 
 ## 9. Phases
 

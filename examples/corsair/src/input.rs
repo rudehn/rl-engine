@@ -1,9 +1,13 @@
 //! Keys to intents.
+//!
+//! Every key Corsair answers to is declared once, in [`declare_controls`],
+//! and read by name through [`Binds`]. The `?` screen lists that same
+//! declaration, so the keys it shows are the keys the systems here check.
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Direction;
-use rl_engine::rl_ui::{AimFire, AimThrow, DirectionKeys, MessageLog, Modals, Tones};
+use rl_engine::rl_ui::{AddControls, AimFire, AimThrow, Chord, ControlId, ControlInput, Keys, MessageLog, Modals, Tones};
 
 /// How long a held key waits before repeating, and between repeats.
 const REPEAT_DELAY: f32 = 0.25;
@@ -15,15 +19,73 @@ pub struct Repeat {
     since_last: f32,
 }
 
+/// Every key Corsair answers to, by name.
+#[derive(Resource, Clone, Copy)]
+pub struct Binds {
+    pub walk: ControlId,
+    pub go_through: ControlId,
+    pub wait: ControlId,
+    pub pick_up: ControlId,
+    pub close_door: ControlId,
+    pub fire: ControlId,
+    pub throw: ControlId,
+    pub put_on: ControlId,
+    pub chest: ControlId,
+    pub ledger: ControlId,
+    pub abilities: ControlId,
+    pub call_on: ControlId,
+    pub menu_up: ControlId,
+    pub menu_down: ControlId,
+    pub chest_equip: ControlId,
+    pub chest_drop: ControlId,
+    pub chest_use: ControlId,
+    pub chest_throw: ControlId,
+    pub save: ControlId,
+    pub quit: ControlId,
+}
+
+/// Declares the keys, under the headings the `?` screen groups them by.
+/// The engine's own screens declare theirs alongside: the cursors', the
+/// log's, the map's, and `?` itself.
+pub fn declare_controls(app: &mut App) {
+    let binds = Binds {
+        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
+        go_through: app.add_control(
+            "Move",
+            "go through stairs or a portal",
+            [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)],
+        ),
+        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
+        pick_up: app.add_control("Act", "pick up what is here", [KeyCode::KeyG, KeyCode::Comma]),
+        put_on: app.add_control("Act", "put on what is here", KeyCode::KeyE),
+        close_door: app.add_control("Act", "shut the door beside you", KeyCode::KeyC),
+        fire: app.add_control("Act", "fire the pistol", KeyCode::KeyF),
+        throw: app.add_control("Act", "throw a knife", KeyCode::KeyR),
+        call_on: app.add_control("Abilities", "call on one", [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4]),
+        abilities: app.add_control("Abilities", "list them, with why any is out of reach", KeyCode::KeyA),
+        chest: app.add_control("Screens", "open the sea chest", KeyCode::KeyI),
+        ledger: app.add_control("Screens", "open the ledger", KeyCode::KeyT),
+        menu_up: app.add_control("Screens", "up a row", [KeyCode::ArrowUp, KeyCode::KeyK]),
+        menu_down: app.add_control("Screens", "down a row", [KeyCode::ArrowDown, KeyCode::KeyJ]),
+        chest_equip: app.add_control("Sea chest", "wear it, or take it off", KeyCode::KeyE),
+        chest_drop: app.add_control("Sea chest", "drop it", KeyCode::KeyD),
+        chest_use: app.add_control("Sea chest", "use it", [KeyCode::KeyU, KeyCode::Enter]),
+        chest_throw: app.add_control("Sea chest", "throw it", KeyCode::KeyT),
+        save: app.add_control("Game", "write the run to the log book", Chord::shift(KeyCode::KeyS)),
+        quit: app.add_control("Game", "save and quit", KeyCode::KeyQ),
+    };
+    app.insert_resource(binds);
+}
+
 /// The player, while it holds the turn.
 type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Player>, With<MyTurn>)>;
 
 /// What input reads.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct InputWorld<'w, 's> {
-    keys: Res<'w, ButtonInput<KeyCode>>,
+    keys: ControlInput<'w>,
+    binds: Res<'w, Binds>,
     time: Res<'w, Time>,
-    binds: Res<'w, DirectionKeys>,
     modals: Res<'w, Modals>,
     occupancy: Res<'w, Occupancy>,
     map: Res<'w, WorldMap>,
@@ -33,7 +95,8 @@ pub struct InputWorld<'w, 's> {
 /// What aiming a shot reads.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Aim<'w, 's> {
-    keys: Res<'w, ButtonInput<KeyCode>>,
+    keys: ControlInput<'w>,
+    binds: Res<'w, Binds>,
     modals: Res<'w, Modals>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
@@ -47,7 +110,7 @@ type Gunner = (Entity, Has<RangedAttack>);
 /// cycles the rest with Tab, previews the line of fire, and shoots on
 /// confirm.
 pub fn fire(mut aim: Aim, mut aims: MessageWriter<AimFire>) {
-    if aim.modals.any_open() || !aim.keys.just_pressed(KeyCode::KeyF) {
+    if aim.modals.any_open() || !aim.keys.just_pressed(aim.binds.fire) {
         return;
     }
     let Ok((me, armed)) = aim.player.single() else { return };
@@ -66,7 +129,8 @@ type LyingWearable = (Entity, &'static Position, Option<&'static OnMap>);
 /// What throwing and putting on from the ground read.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Hands<'w, 's> {
-    keys: Res<'w, ButtonInput<KeyCode>>,
+    keys: ControlInput<'w>,
+    binds: Res<'w, Binds>,
     modals: Res<'w, Modals>,
     map: Res<'w, WorldMap>,
     turns: Res<'w, Turns>,
@@ -79,7 +143,7 @@ pub struct Hands<'w, 's> {
 /// `r`: throw the first thing carried that can be thrown, through the
 /// targeting cursor, which picks the nearest foe and throws on confirm.
 pub fn hurl(mut hands: Hands, mut aims: MessageWriter<AimThrow>) {
-    if hands.modals.any_open() || !hands.keys.just_pressed(KeyCode::KeyR) {
+    if hands.modals.any_open() || !hands.keys.just_pressed(hands.binds.throw) {
         return;
     }
     let Ok((me, _, bag)) = hands.player.single() else { return };
@@ -94,7 +158,7 @@ pub fn hurl(mut hands: Hands, mut aims: MessageWriter<AimThrow>) {
 /// `e`: put on what lies underfoot, in one action and half again, which is
 /// quicker than picking it up and putting it on.
 pub fn equip_underfoot(mut hands: Hands, mut intents: MessageWriter<Intent<EquipFromGround>>) {
-    if hands.modals.any_open() || !hands.keys.just_pressed(KeyCode::KeyE) {
+    if hands.modals.any_open() || !hands.keys.just_pressed(hands.binds.put_on) {
         return;
     }
     let Ok((me, at, _)) = hands.player.single() else { return };
@@ -120,7 +184,7 @@ pub struct PlayerIntents<'w> {
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
 pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: PlayerIntents) {
-    let InputWorld { keys, time, binds, modals, occupancy, map, player } = world;
+    let InputWorld { keys, binds, time, modals, occupancy, map, player } = world;
     // One gate for every screen there is, and every screen a game adds
     // later: the stack is empty or the world does not have the keys.
     if modals.any_open() {
@@ -128,8 +192,8 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: P
     }
     let Ok((entity, pos)) = player.single() else { return };
 
-    let held = binds.pressed(&keys);
-    let fresh = binds.just_pressed(&keys);
+    let held = keys.direction_held(binds.walk);
+    let fresh = keys.direction(binds.walk);
     let walk = if let Some(dir) = fresh {
         repeat.held_for = 0.0;
         repeat.since_last = 0.0;
@@ -160,20 +224,18 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: P
         }
         return;
     }
-    if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma]) {
-        // `>` and `<`: through whatever stands here.
+    if keys.just_pressed(binds.go_through) {
+        // Through whatever stands here: stairs, a cave mouth, a portal.
         intents.transits.write(Intent::new(entity, GoThrough));
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
+    } else if keys.just_pressed(binds.wait) {
         intents.waits.write(Intent::new(entity, Wait));
-    } else if keys.just_pressed(KeyCode::KeyG) || keys.just_pressed(KeyCode::Comma) {
+    } else if keys.just_pressed(binds.pick_up) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
-    } else if keys.just_pressed(KeyCode::KeyC) {
-        // `c`: shut the open door beside you. Walking into a shut one opens it.
+    } else if keys.just_pressed(binds.close_door) {
+        // Shut the open door beside you. Walking into a shut one opens it.
         if let Some(dir) = Direction::ALL.into_iter().find(|d| map.closes(pos.0 + d.offset()).is_some()) {
             intents.closes.write(Intent::new(entity, Close(dir)));
         }
-    } else if keys.just_pressed(KeyCode::Enter) {
-        intents.transits.write(Intent::new(entity, GoThrough));
     }
 }
 

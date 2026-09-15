@@ -15,9 +15,10 @@ use rl_engine::rl_render::Terminal;
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{ContentError, Fact, FactDef, FactKind, Matcher, NameRef, Names, Need, Objective, QuestDef, QuestState};
 use rl_engine::rl_rules::{Named, Registry};
-use rl_engine::rl_ui::{ListMenu, MenuRow, MessageLog, Modals, Palette, Tones, draw_menu};
+use rl_engine::rl_ui::{ControlInput, ListMenu, MenuRow, MessageLog, Modals, Palette, Tones, draw_menu};
 
 use crate::content::{COVE, PORT};
+use crate::input::Binds;
 use crate::items::{Armory, ItemDef, ItemKind};
 use crate::monsters::{Bestiary, MonsterDef, MonsterKind};
 use crate::places;
@@ -299,22 +300,22 @@ pub fn modal(modals: &Modals) -> rl_engine::rl_ui::ModalId {
     modals.get(MODAL).expect("main declares the ledger modal")
 }
 
-pub fn ledger_keys(keys: Res<ButtonInput<KeyCode>>, mut screen: ResMut<LedgerScreen>, mut modals: ResMut<Modals>) {
+pub fn ledger_keys(keys: ControlInput, binds: Res<Binds>, mut screen: ResMut<LedgerScreen>, mut modals: ResMut<Modals>) {
     let ledger = modal(&modals);
-    if keys.just_pressed(KeyCode::KeyT) && (modals.is_top(ledger) || !modals.any_open()) {
+    if keys.just_pressed(binds.ledger) && (modals.is_top(ledger) || !modals.any_open()) {
         modals.toggle(ledger);
         return;
     }
     if !modals.is_top(ledger) {
         return;
     }
-    if keys.just_pressed(KeyCode::Escape) {
+    if keys.input().just_pressed(keys.bindings().cursor.close) {
         modals.close_one(ledger);
     }
-    if keys.any_just_pressed([KeyCode::ArrowDown, KeyCode::KeyJ]) {
+    if keys.just_pressed(binds.menu_down) {
         screen.menu.move_by(1);
     }
-    if keys.any_just_pressed([KeyCode::ArrowUp, KeyCode::KeyK]) {
+    if keys.just_pressed(binds.menu_up) {
         screen.menu.move_by(-1);
     }
 }

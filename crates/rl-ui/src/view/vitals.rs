@@ -141,7 +141,8 @@ mod tests {
 
     #[test]
     fn seen_is_none_for_a_player_that_cannot_hide_and_tracks_every_watcher_otherwise() {
-        let mut stage = Stage::new((VitalsViewPlugin, rl_bevy::StealthPlugin));
+        // Stealth is decided in the minds' pass, so it needs the minds.
+        let mut stage = Stage::new((VitalsViewPlugin, rl_bevy::MindsPlugin, rl_bevy::StealthPlugin));
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().seen, None, "no Stealth on the player");
 

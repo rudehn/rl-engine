@@ -36,5 +36,6 @@ pub fn headless(seed: RunSeed, resume: bool, dir: &std::path::Path) -> App {
         .add_systems(Startup, crate::start_world)
         .add_systems(Update, (crate::monsters::spawn_on_load, crate::items::scatter_on_load, crate::places::mark_entrances).in_set(EngineSet::Stream))
         .add_systems(Turn, crate::items::refresh_gear.in_set(TurnSet::React));
+    crate::input::declare_controls(&mut app);
     app
 }

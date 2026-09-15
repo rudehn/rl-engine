@@ -12,6 +12,7 @@
 //! gates its own movement keys on [`no_modal`](crate::no_modal) and gets
 //! the exclusion for free.
 
+use crate::controls::AddControls;
 use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
@@ -72,6 +73,11 @@ impl Plugin for InspectViewPlugin {
 
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<crate::UiPlugin>(app, "InspectViewPlugin");
+        // Declared once the game has declared its own, so the controls
+        // screen lists the game's groups first whatever order the plugins
+        // were added in.
+        app.add_control(crate::focus::CURSOR_GROUP, "look around", crate::controls::EngineKey::Look);
+        crate::focus::declare_cursor_controls(app);
     }
 }
 

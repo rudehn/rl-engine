@@ -12,7 +12,10 @@
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, and walk into a goblin
 //! to attack it; `.` to wait; `t` to put your torch out or light it again;
-//! `x` to look around; `q` to quit.
+//! `x` to look around; `q` to quit; `?` lists them all. Each is declared
+//! once, in `declare_controls`, and read by name: that one list is what the
+//! `?` screen shows and what the input system checks, so the two cannot
+//! disagree.
 
 use std::sync::Arc;
 
@@ -49,10 +52,18 @@ fn main() -> AppExit {
         // stealth decides what has been noticed.
         .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, StealthPlugin))
         // The panels draw themselves from views the engine keeps current.
+        // The controls screen lists every key declared below, and prints the
+        // one hint that opens it at the right of the status row.
         .add_plugins((
-            VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[t]orch  [x] look  [q]uit"),
+            VitalsPanel::new(Rect::new(0, 0, COLS - 12, 1)),
             LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),
             InspectPanel::new(Rect::new(2, ROWS - LOG_ROWS - 11, 50, 10)),
+            ControlsPanel::new(Rect::new(4, 3, COLS - 8, ROWS - LOG_ROWS - 6)).hint(Rect::new(
+                COLS - 12,
+                0,
+                12,
+                1,
+            )),
         ))
         // `--seed 7` replays a run; without it every run is new.
         .insert_resource(Seed::from_args())
@@ -66,6 +77,8 @@ fn main() -> AppExit {
         // Inside the turn: the floor fills the moment it is first entered.
         .add_systems(Turn, populate.in_set(TurnSet::React))
         .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    // The keys, once, for the input system and the `?` screen alike.
+    declare_controls(&mut app);
     app.run()
 }
 
@@ -273,18 +286,47 @@ struct PlayerIntents<'w> {
 type PlayerTurn<'w, 's> =
     Query<'w, 's, (Entity, &'static Position, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
+/// Every key the game answers to, by name.
+///
+/// Declared once in [`declare_controls`], so the `?` screen and the input
+/// system read the same list. To add a key, add a field here, declare it
+/// there, and check it in [`player_input`].
+#[derive(Resource, Clone, Copy)]
+struct Binds {
+    walk: ControlId,
+    wait: ControlId,
+    torch: ControlId,
+    quit: ControlId,
+}
+
+/// Declares the keys, under the headings the `?` screen groups them by.
+/// The engine adds its own alongside: the look cursor's, and `?` itself.
+fn declare_controls(app: &mut App) {
+    let binds = Binds {
+        walk: app.add_control(
+            "Move",
+            "walk, or strike whoever is there",
+            Keys::Directions { shift: false },
+        ),
+        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
+        torch: app.add_control("Act", "put the torch out, or light it", KeyCode::KeyT),
+        quit: app.add_control("Game", "quit", KeyCode::KeyQ),
+    };
+    app.insert_resource(binds);
+}
+
 /// Keys to intents. Writing an intent is all it takes to act: the engine
 /// spends the turn, and refuses what cannot be done.
 fn player_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    directions: Res<DirectionKeys>,
+    keys: ControlInput,
+    binds: Res<Binds>,
     occupancy: Res<Occupancy>,
     player: PlayerTurn,
     mut intents: PlayerIntents,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
-    if keys.just_pressed(KeyCode::KeyQ) {
+    if keys.just_pressed(binds.quit) {
         exit.write(AppExit::Success);
         return;
     }
@@ -292,7 +334,7 @@ fn player_input(
     let Ok((me, at, lit)) = player.single() else {
         return;
     };
-    if let Some(dir) = directions.just_pressed(&keys) {
+    if let Some(dir) = keys.direction(binds.walk) {
         // Walking into someone is an attack; that is the game's rule, not
         // the engine's.
         match occupancy.first_at(at.0 + dir.offset()) {
@@ -303,7 +345,7 @@ fn player_input(
                 intents.steps.write(Intent::new(me, Step(dir)));
             }
         }
-    } else if keys.just_pressed(KeyCode::KeyT) {
+    } else if keys.just_pressed(binds.torch) {
         // Dark, you are hidden from anything that needs light to see you,
         // and as blind as it is. Either way it takes the turn.
         if lit {
@@ -312,7 +354,7 @@ fn player_input(
             commands.entity(me).insert(TORCH);
         }
         intents.waits.write(Intent::new(me, Wait));
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
+    } else if keys.just_pressed(binds.wait) {
         intents.waits.write(Intent::new(me, Wait));
     }
 }
@@ -493,6 +535,7 @@ mod tests {
         .add_systems(Update, player_input.in_set(EngineSet::Input))
         .add_systems(Turn, populate.in_set(TurnSet::React))
         .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        declare_controls(&mut app);
         app
     }
 

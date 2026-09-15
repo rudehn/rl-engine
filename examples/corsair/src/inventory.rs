@@ -8,8 +8,9 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::Terminal;
-use rl_engine::rl_ui::{AimThrow, ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu};
+use rl_engine::rl_ui::{AimThrow, ControlInput, ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu};
 
+use crate::input::Binds;
 use crate::items::{Armory, ItemKind};
 
 /// The name the sea chest's modal is declared under.
@@ -55,7 +56,8 @@ pub struct ChestIntents<'w> {
 }
 
 pub fn inventory_keys(
-    keys: Res<ButtonInput<KeyCode>>,
+    keys: ControlInput,
+    binds: Res<Binds>,
     mut screen: ResMut<InventoryScreen>,
     mut modals: ResMut<Modals>,
     player: PlayerTurn,
@@ -63,40 +65,40 @@ pub fn inventory_keys(
     mut intents: ChestIntents,
 ) {
     let chest = modal(&modals);
-    if keys.just_pressed(KeyCode::KeyI) && (modals.is_top(chest) || !modals.any_open()) {
+    if keys.just_pressed(binds.chest) && (modals.is_top(chest) || !modals.any_open()) {
         modals.toggle(chest);
         return;
     }
     if !modals.is_top(chest) {
         return;
     }
-    if keys.just_pressed(KeyCode::Escape) {
+    if keys.input().just_pressed(keys.bindings().cursor.close) {
         modals.close_one(chest);
         return;
     }
-    if keys.any_just_pressed([KeyCode::ArrowDown, KeyCode::KeyJ]) {
+    if keys.just_pressed(binds.menu_down) {
         screen.menu.move_by(1);
     }
-    if keys.any_just_pressed([KeyCode::ArrowUp, KeyCode::KeyK]) {
+    if keys.just_pressed(binds.menu_up) {
         screen.menu.move_by(-1);
     }
     let Ok(entity) = player.single() else { return };
     let Ok((inventory, worn)) = bag.single() else { return };
     let Some(item) = inventory.items.get(screen.menu.selected).copied() else { return };
-    let asked = if keys.just_pressed(KeyCode::KeyE) {
+    let asked = if keys.just_pressed(binds.chest_equip) {
         if worn.contains(item) {
             intents.unequips.write(Intent::new(entity, Unequip(item)));
         } else {
             intents.equips.write(Intent::new(entity, Equip(item)));
         }
         true
-    } else if keys.just_pressed(KeyCode::KeyD) {
+    } else if keys.just_pressed(binds.chest_drop) {
         intents.drops.write(Intent::new(entity, DropItem(item)));
         true
-    } else if keys.any_just_pressed([KeyCode::KeyU, KeyCode::Enter]) {
+    } else if keys.just_pressed(binds.chest_use) {
         intents.uses.write(Intent::new(entity, UseItem(item)));
         true
-    } else if keys.just_pressed(KeyCode::KeyT) && missiles.contains(item) {
+    } else if keys.just_pressed(binds.chest_throw) && missiles.contains(item) {
         // The chest closes and the targeting cursor opens in its place.
         intents.throws.write(AimThrow { user: entity, item });
         true

@@ -81,10 +81,8 @@ pub struct NearbyViewPlugin;
 
 impl Plugin for NearbyViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<NearbyView>()
-            .init_resource::<Focus>()
-            .init_resource::<crate::CursorKeys>()
-            .needs::<CombatRules>("NearbyViewPlugin", "`CombatRules { factions }`, for the relation each row carries")
+        app.init_resource::<NearbyView>().init_resource::<Focus>().init_resource::<crate::CursorKeys>();
+        app.needs::<CombatRules>("NearbyViewPlugin", "`CombatRules { factions }`, for the relation each row carries")
             // Before either cursor reads the same keys, so the key that puts
             // a cursor away is not read again as letting go of what it left
             // picked out.
@@ -94,6 +92,8 @@ impl Plugin for NearbyViewPlugin {
 
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<crate::UiPlugin>(app, "NearbyViewPlugin");
+        // After the game's own, so its groups are listed first.
+        crate::focus::declare_focus_controls(app);
     }
 }
 
@@ -175,7 +175,8 @@ mod tests {
 
     #[test]
     fn a_row_says_whether_it_has_noticed_the_player_only_when_stealth_is_running() {
-        let mut stage = Stage::new((NearbyViewPlugin, rl_bevy::StealthPlugin));
+        // Stealth is decided in the minds' pass, so it needs the minds.
+        let mut stage = Stage::new((NearbyViewPlugin, rl_bevy::MindsPlugin, rl_bevy::StealthPlugin));
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(Stealth::default());
         let hunting = stage.actor("hunting", 'h', 2, 0);

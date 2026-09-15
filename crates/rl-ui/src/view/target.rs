@@ -29,6 +29,7 @@
 //! spends the turn. Nothing about which key does it is the engine's
 //! business.
 
+use crate::controls::AddControls;
 use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
@@ -152,6 +153,9 @@ impl Plugin for TargetViewPlugin {
 
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<crate::UiPlugin>(app, "TargetViewPlugin");
+        // After the game's own, so its groups are listed first.
+        crate::focus::declare_cursor_controls(app);
+        app.add_control(crate::focus::CURSOR_GROUP, "confirm an aim", crate::controls::EngineKey::Confirm);
     }
 }
 

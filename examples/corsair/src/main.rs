@@ -34,8 +34,8 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
-    AbilityPanel, AddModal, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, TargetPanel, Tones,
-    ViewSet, VitalsPanel, panel,
+    AbilityPanel, AddModal, ControlsPanel, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel,
+    TargetPanel, Tones, ViewSet, VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -66,6 +66,8 @@ struct Screen {
     scrollback: Rect,
     target: Rect,
     abilities: Rect,
+    controls: Rect,
+    hint: Rect,
 }
 
 impl Screen {
@@ -74,12 +76,16 @@ impl Screen {
         let (map, log) = panel::split_bottom(left, LOG_ROWS);
         let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
+        // The last row of the rail says how to see the controls.
+        let (nearby, hint) = panel::split_bottom(nearby, 1);
         let inspect = Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10);
-        // The whole map area, since reading back is all you are doing.
+        // The whole map area, since reading back is all you are doing, and
+        // the same for the controls.
         let scrollback = map.inflate(-2);
+        let controls = map.inflate(-2);
         let target = Rect::new(map.x, map.bottom() - 1, map.width, 1);
         let abilities = Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14);
-        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities }
+        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, controls, hint }
     }
 }
 
@@ -139,6 +145,10 @@ fn main() -> AppExit {
             // of what can be called on with the reasons any cannot.
             TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
             AbilityPanel::new(screen.abilities).title("What you can call on").hints("[a] close"),
+            // Every key `input::declare_controls` and the engine's screens
+            // declare, on one screen, with the hint that opens it in the
+            // rail's last row.
+            ControlsPanel::new(screen.controls).hint(screen.hint),
         ))
         .insert_resource(Seed(seed))
         .insert_resource(StartOptions { regions, resume })
@@ -191,8 +201,9 @@ fn main() -> AppExit {
         .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
     app.add_plugins(StealthPlugin);
     // Corsair's own screens, declared while building so the lookups in
-    // `inventory` and `quests` find them.
+    // `inventory` and `quests` find them, and every key, once.
     app.add_modal(inventory::MODAL).add_modal(quests::MODAL);
+    input::declare_controls(&mut app);
     app.run()
 }
 

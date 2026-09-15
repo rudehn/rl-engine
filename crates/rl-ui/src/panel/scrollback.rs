@@ -17,6 +17,7 @@
 //!
 //! [`LogPanel`]: crate::panel::LogPanel
 
+use crate::controls::{AddControls, EngineKey};
 use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::{EngineSet, PresentSet};
@@ -141,6 +142,14 @@ impl Plugin for ScrollbackPanel {
         app.init_resource::<Scrollback>().init_resource::<ScrollbackKeys>().insert_resource(self.0.clone());
         app.add_modal(SCROLLBACK_MODAL);
         app.add_systems(Update, scrollback_keys.in_set(EngineSet::Input)).add_systems(Update, draw_scrollback.in_set(PresentSet::Overlay));
+    }
+
+    fn finish(&self, app: &mut App) {
+        // Declared once the game has declared its own, so the controls
+        // screen lists the game's groups first.
+        app.add_control("Log", "read the whole log", EngineKey::OpenLog);
+        app.add_control("Log", "scroll it", EngineKey::ScrollLog);
+        app.add_control("Log", "filter it by tone", EngineKey::FilterLog);
     }
 }
 
