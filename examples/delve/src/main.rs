@@ -67,7 +67,7 @@ fn main() -> AppExit {
         .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
         // A floor fills the moment it is entered, inside the turn.
         .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-        .add_systems(Update, (narrate, narrate_knacks).in_set(PresentSet::Narrate));
+        .add_systems(Update, (narrate, narrate_knacks, narrate_items).in_set(PresentSet::Narrate));
     app.run()
 }
 
@@ -142,7 +142,8 @@ fn registries() -> Registries {
 /// The player, and only while it holds the turn.
 type PlayerHolding = (With<Player>, With<MyTurn>);
 
-/// Marks the torch, so `d` knows which carried thing to set down.
+/// Marks a flame to carry, a torch or a lamp, so `d` knows which carried
+/// thing to set down.
 #[derive(Component, Clone, Copy)]
 struct Torch;
 
@@ -398,12 +399,14 @@ fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntere
                 pool.insert(Vents { gas: reek, amount: 16 });
             }
         }
-        // A whaler's lamp, left burning by whoever came before: a fixture, so
-        // it lives in the static layer and never moves.
+        // A whaler's lamp, left burning by whoever came before. Brighter than
+        // a torch and never running dry, and as free to carry off.
         let mut kit = seed.stream(b"whale.lamps", floor as u64);
         if let Some(at) = spot_between(place.terrain.bounds(), map, ev.entry, 6, 14, &mut kit) {
             commands.spawn((
                 Position(at),
+                Item,
+                Torch,
                 Name::new("a whaler's lamp"),
                 LightSource::new(235, 9, FLAME).flickering(150),
                 Glyph::new('*', Color::srgb(1.0, 0.75, 0.3)).on_layer(1),
@@ -550,22 +553,40 @@ fn spot_between(bounds: Rect, map: &WorldMap, entry: Point, min: i32, max: i32, 
         .find(|p| map.is_walkable(*p) && (min..=max).contains(&geometry::chebyshev(*p, entry)))
 }
 
-/// `g` picks up whatever lies here; `d` sets the torch down, where it goes on
-/// lighting the floor.
-fn pick_and_drop(
-    keys: Res<ButtonInput<KeyCode>>,
-    player: Query<(Entity, &Inventory), PlayerHolding>,
-    torches: Query<(), With<Torch>>,
-    mut picks: MessageWriter<Intent<PickUp>>,
-    mut drops: MessageWriter<Intent<DropItem>>,
-) {
-    let Ok((me, bag)) = player.single() else { return };
-    if keys.just_pressed(KeyCode::KeyG) {
-        picks.write(Intent::new(me, PickUp));
-    } else if keys.just_pressed(KeyCode::KeyD)
-        && let Some(torch) = bag.items.iter().copied().find(|i| torches.contains(*i))
-    {
-        drops.write(Intent::new(me, DropItem(torch)));
+/// What picking up and setting down read and write.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Hands<'w, 's> {
+    keys: Res<'w, ButtonInput<KeyCode>>,
+    map: Res<'w, WorldMap>,
+    turns: Res<'w, Turns>,
+    log: ResMut<'w, MessageLog>,
+    player: Query<'w, 's, (Entity, &'static Position, &'static Inventory), PlayerHolding>,
+    torches: Query<'w, 's, (), With<Torch>>,
+    ground: Query<'w, 's, (&'static Position, Option<&'static OnMap>), With<Item>>,
+    picks: MessageWriter<'w, Intent<PickUp>>,
+    drops: MessageWriter<'w, Intent<DropItem>>,
+}
+
+/// `g` picks up whatever lies here; `d` sets a carried flame down, where it
+/// goes on lighting the floor. Either says so when there is nothing to do,
+/// rather than a key that does nothing.
+fn pick_and_drop(mut hands: Hands) {
+    let Ok((me, pos, bag)) = hands.player.single() else { return };
+    let turn = hands.turns.turn_number();
+    if hands.keys.just_pressed(KeyCode::KeyG) {
+        let here = hands.map.current();
+        if hands.ground.iter().any(|(p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here) {
+            hands.picks.write(Intent::new(me, PickUp));
+        } else {
+            hands.log.muted("There is nothing here to pick up.", turn);
+        }
+    } else if hands.keys.just_pressed(KeyCode::KeyD) {
+        match bag.items.iter().copied().find(|i| hands.torches.contains(*i)) {
+            Some(flame) => {
+                hands.drops.write(Intent::new(me, DropItem(flame)));
+            }
+            None => hands.log.muted("You carry no flame to set down.", turn),
+        }
     }
 }
 
@@ -644,6 +665,23 @@ fn narrate_knacks(
     }
 }
 
+/// What the player picks up and sets down.
+fn narrate_items(mut items: MessageReader<ItemEvent>, turns: Res<Turns>, mut log: ResMut<MessageLog>, names: Query<&Name>, players: Query<(), With<Player>>) {
+    let turn = turns.turn_number();
+    let named = |e: Entity| names.get(e).map(|n| n.as_str().to_string()).unwrap_or_else(|_| "something".into());
+    for ev in items.read() {
+        match *ev {
+            ItemEvent::PickedUp { actor, item, merged_into } if players.contains(actor) => {
+                log.push(format!("You pick up {}.", named(merged_into.unwrap_or(item))), Tones::TEXT, turn);
+            }
+            ItemEvent::Dropped { actor, item, .. } if players.contains(actor) => {
+                log.push(format!("You set down {}.", named(item)), Tones::TEXT, turn);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn upper_first(s: &str) -> String {
     let mut c = s.chars();
     match c.next() {
@@ -661,7 +699,6 @@ fn show_pools(mut vitals: ResMut<VitalsView>, registries: Res<Registries>, playe
     }
 }
 
-/// Hits, deaths, and the end of the run either way.
 /// What narration reads and writes.
 #[derive(bevy::ecs::system::SystemParam)]
 struct Voice<'w, 's> {
@@ -913,8 +950,8 @@ mod tests {
         let (mut app, player) = settled(7);
         let torch = {
             let w = app.world_mut();
-            let mut q = w.query_filtered::<Entity, With<Torch>>();
-            q.single(w).expect("a torch on the first floor")
+            let mut q = w.query_filtered::<(Entity, &Name), With<Torch>>();
+            q.iter(w).find(|(_, n)| n.as_str() == "a whaler's torch").map(|(e, _)| e).expect("a torch on the first floor")
         };
         let at = app.world().get::<Position>(torch).unwrap().0;
         // Smother the brand, so the only flame near the player is the torch.
@@ -936,6 +973,38 @@ mod tests {
         app.update();
         assert_eq!(app.world().get::<Position>(torch).map(|p| p.0), Some(here), "set down where the player stands");
         assert!(app.world().get::<LightSource>(torch).is_some(), "and still burning on the floor");
+    }
+
+    #[test]
+    fn the_whalers_lamp_can_be_picked_up_carried_and_set_down_again() {
+        let (mut app, player) = settled(7);
+        let lamp = {
+            let w = app.world_mut();
+            let mut q = w.query::<(Entity, &Name)>();
+            q.iter(w).find(|(_, n)| n.as_str() == "a whaler's lamp").map(|(e, _)| e).expect("a lamp on the first floor")
+        };
+        let at = app.world().get::<Position>(lamp).unwrap().0;
+        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(1), arrive: Arrive::At(at) } });
+        app.update();
+
+        app.world_mut().write_message(Intent::new(player, PickUp));
+        app.update();
+        app.update();
+        assert!(app.world().get::<Inventory>(player).unwrap().contains(lamp), "picked up");
+        assert!(app.world().get::<Position>(lamp).is_none(), "and off the floor");
+
+        // `d` sets down whichever flame is carried, the lamp as much as a torch.
+        {
+            use bevy::ecs::system::RunSystemOnce;
+            let mut keys = ButtonInput::<KeyCode>::default();
+            keys.press(KeyCode::KeyD);
+            app.insert_resource(keys);
+            app.world_mut().run_system_once(pick_and_drop).expect("the drop key ran");
+        }
+        app.update();
+        app.update();
+        let here = app.world().get::<Position>(player).unwrap().0;
+        assert_eq!(app.world().get::<Position>(lamp).map(|p| p.0), Some(here), "set down again");
     }
 
     #[test]
