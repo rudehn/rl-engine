@@ -35,10 +35,6 @@ fn main() -> AppExit {
 }
 // ANCHOR_END: main
 
-/// The seed the whole run derives from.
-#[derive(Resource, Clone, Copy)]
-struct Seed(RunSeed);
-
 // ANCHOR: tiles
 /// The warren's tiles, and how each one looks in full light.
 struct Warren {

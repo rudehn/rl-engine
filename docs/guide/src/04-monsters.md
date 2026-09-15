@@ -12,7 +12,7 @@ That decision is `MindsPlugin`'s, and what a blow does once it is struck is `Com
 They are two plugins because a mind is where every choice a monster has meets: the abilities it may fire later in this guide arrive there too, and combat never has to hear of them.
 Forget `MindsPlugin` and the first monster spawned says so in the log, rather than standing still all run.
 
-`CombatPlugin` needs two resources before play begins, and panics naming them if they are missing:
+`CombatPlugin` needs its rules before play begins, and panics naming them if they are missing:
 
 ```rust
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
@@ -21,14 +21,13 @@ Forget `MindsPlugin` and the first monster spawned says so in the log, rather th
     let mut factions = Factions::new(&sides);
     factions.set_mutual(you, vermin, Relation::Hostile);
     commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
-    commands.insert_resource(CombatRng::for_run(seed.0));
 ```
 
 Damage kinds and factions are registries, like tiles.
 `Factions` is a relation matrix, so hostility is a fact about a pair rather than a flag on a monster: three-way wars cost nothing extra.
 
-`CombatRng::for_run` derives the combat stream from the run seed.
-Randomness always comes through `RunSeed`, never from entropy and never from a constant.
+Combat rolls from a stream the engine derives from the run's `Seed`, which `main` inserted in chapter one; a game never inserts a stream of its own.
+Its own draws come from `seed.stream(name, index)`, below: randomness always comes from the seed, never from entropy and never from a constant.
 
 ## A brain is a priority list
 

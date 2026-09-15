@@ -171,9 +171,8 @@ pub fn save_run(world: &mut World) -> Result<(), SaveError> {
         );
         (player, monsters, items, transitions, rest)
     };
-    let seed = world.resource::<WorldRes>().seed();
     let regions = (world.resource::<WorldRes>().width(), world.resource::<WorldRes>().height());
-    let engine = EngineSave::capture(world, seed, &mut remap);
+    let engine = EngineSave::capture(world, &mut remap);
     let save = RunSave {
         regions,
         engine,

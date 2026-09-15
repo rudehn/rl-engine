@@ -227,13 +227,13 @@ pub enum AbilityEvent {
 /// The stream abilities roll from.
 ///
 /// Its own domain, so adding an ability does not shift the combat stream
-/// and change every monster's rolls in a run that was going fine.
+/// and change every monster's rolls in a run that was going fine. Derived
+/// from the run's [`Seed`](crate::seed::Seed) by [`AbilitiesPlugin`].
 #[derive(Resource, Deref, DerefMut)]
 pub struct AbilityRng(pub StdRng);
 
-impl AbilityRng {
-    /// The stream for `seed`.
-    pub fn for_run(seed: RunSeed) -> Self {
+impl crate::seed::Stream for AbilityRng {
+    fn for_run(seed: RunSeed) -> Self {
         Self(seed.rng(SeedDomain::new(b"ability"), 0))
     }
 }
@@ -887,8 +887,8 @@ pub fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>, Option<&Equ
 /// Abilities: the use action, the state a use spends, and the seam every
 /// effect is registered through.
 ///
-/// Needs [`Abilities`], [`AbilityRng`] and [`StatRules`] before play
-/// begins, and combat, since an ability's damage goes down the same
+/// Needs [`Abilities`], [`StatRules`] and the run's [`Seed`](crate::seed::Seed)
+/// before play begins, and combat, since an ability's damage goes down the same
 /// pipeline a sword's does. Register every effect an ability file names
 /// with [`AddEffect::add_effect`] while the app is built, then build
 /// [`Abilities`] from the loaded definitions.
@@ -909,6 +909,7 @@ impl Plugin for AbilitiesPlugin {
     fn build(&self, app: &mut App) {
         use crate::components::Actor;
         use crate::plugin::Needs;
+        use crate::seed::AddStream;
         app.register_required_components::<Actor, Known>();
         app.register_required_components::<Actor, Pools>();
         app.register_required_components::<Actor, Cooldowns>();
@@ -917,7 +918,7 @@ impl Plugin for AbilitiesPlugin {
             .add_message::<AbilityEvent>()
             .add_action::<Use>()
             .needs::<Abilities>("AbilitiesPlugin", "`Abilities::load(ron, &EffectKinds, &names)`, the game's abilities with their effects built")
-            .needs::<AbilityRng>("AbilitiesPlugin", "`AbilityRng::for_run(seed)`, the stream abilities roll from")
+            .add_stream::<AbilityRng>("AbilitiesPlugin")
             .needs::<StatRules>("AbilitiesPlugin", "`StatRules(registry)`, the stats ability costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
             .add_systems(Turn, resolve_abilities.in_set(ResolveSet::Act))
@@ -934,7 +935,7 @@ impl Plugin for AbilitiesPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::combat::{CombatRng, CombatRules, DamageDealt, Faction};
+    use crate::combat::{CombatRules, DamageDealt, Faction};
     use crate::components::{Actor, Player, RevealsMap};
     use crate::effects::AddEngineEffects;
     use crate::status::StatusRules;
@@ -1068,8 +1069,7 @@ mod tests {
 
         let start = crate::testing::surface(&mut app);
         app.insert_resource(CombatRules { kinds: content.kinds, factions });
-        app.insert_resource(CombatRng::for_run(RunSeed(5)));
-        app.insert_resource(AbilityRng::for_run(RunSeed(5)));
+        app.insert_resource(crate::seed::Seed(RunSeed(5)));
         app.insert_resource(StatusRules { defs: content.statuses });
         app.insert_resource(StatRules(content.stats));
         app.insert_resource(crate::items::Slots(content.slots));

@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-14, after a template to start a game from.
+Last updated: 2026-09-14, after the engine owned the run's seed.
 
 ## The shape
 
@@ -85,6 +85,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 
 - One plugin per subsystem, each opt-in: `CorePlugin` holds the loop, the map and its places; field of view, combat, minds, statuses, items, lighting, streaming and facts are added by name. A plugin says what it needs with `app.needs::<R>(plugin, hint)`, and on entering play one check lists every missing piece at once with how to make it, `CorePlugin`'s own `WorldMap` included, rather than a subsystem, or the whole frame, quietly doing nothing all run. A plugin that depends on another checks in `finish`, so the order a game lists its plugins in never matters, and a world built while play never began is warned about.
 - The engine-owned loop: a `Turn` schedule run as many passes per frame as it takes, input once per frame, refusals that cost nothing, stall recovery.
+- `Seed`, the run's seed, the one thing about randomness a game supplies, with `Seed::from_args` for `--seed`. Each subsystem that rolls owns a `Stream` (`CombatRng`, `AbilityRng`) that `add_stream` derives from the seed before the first turn and again whenever it changes, so a continued run reseeds by setting it; `Seed::stream(name, index)` is a game's own named draw, and `EngineSave` records the seed it captures.
 - A mind may choose an action the engine has never heard of: a tactic returns a number of the game's own, the engine reports it as `MindChose`, and the game answers it in `DecideSet::Game`. A game's tactic can sit anywhere in the priority list beside the engine's.
 - A reaction phase inside the turn: `TurnSet::React` runs after the actions of a pass resolve and before the turn is requeued, which is where a game answers what just happened. A drink heals before the next blow lands, a bite poisons on the bite, gear counts from the moment it is worn.
 - Drawing is layered by `PresentSet`: narration, then the map, then the chrome, then whatever covers them. No crate orders itself after another crate's draw function.

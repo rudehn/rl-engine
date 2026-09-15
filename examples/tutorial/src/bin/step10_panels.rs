@@ -141,10 +141,6 @@ fn main() -> AppExit {
 }
 // ANCHOR_END: main
 
-/// The seed the whole run derives from.
-#[derive(Resource, Clone, Copy)]
-struct Seed(RunSeed);
-
 // ANCHOR: tiles
 /// The warren's tiles, and how each one looks in full light.
 struct Warren {
@@ -306,7 +302,6 @@ fn start(
     let mut factions = Factions::new(&sides);
     factions.set_mutual(you, vermin, Relation::Hostile);
     commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
-    commands.insert_resource(CombatRng::for_run(seed.0));
     // What a hit passes through on its way to the target. One stage here;
     // resistances, a shield, a critical rule would each be another.
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
@@ -464,7 +459,7 @@ fn populate(
         let bounds = place.terrain.bounds();
         // A stream of its own, keyed by name: adding another spawner later
         // cannot shift the numbers this one draws.
-        let mut rng = seed.0.rng(SeedDomain::new(b"warren.rats"), ev.map.0 as u64);
+        let mut rng = seed.stream(b"warren.rats", ev.map.0 as u64);
 
         // The stairs. A transition is an entity on a cell, nothing more.
         let stone = Color::srgb(0.86, 0.86, 0.70);

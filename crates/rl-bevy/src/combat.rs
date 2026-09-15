@@ -88,13 +88,15 @@ pub struct CombatRules {
 #[derive(Resource, Default)]
 pub struct DamageStages(pub Vec<Box<dyn DamageStage<Entity> + Send + Sync>>);
 
-/// The combat stream for the run.
+/// The stream combat rolls from.
+///
+/// Derived from the run's [`Seed`](crate::seed::Seed) by [`CombatPlugin`], so
+/// a game never inserts it.
 #[derive(Resource, Deref, DerefMut)]
 pub struct CombatRng(pub StdRng);
 
-impl CombatRng {
-    /// The stream for `seed`.
-    pub fn for_run(seed: RunSeed) -> Self {
+impl crate::seed::Stream for CombatRng {
+    fn for_run(seed: RunSeed) -> Self {
         Self(seed.rng(SeedDomain::new(b"combat"), 0))
     }
 }
@@ -271,13 +273,15 @@ pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
 /// Combat: health, factions, strikes down a line of fire, the damage
 /// pipeline and deaths.
 ///
-/// Needs [`CombatRules`] and [`CombatRng`] before play begins. Monsters that
+/// Needs [`CombatRules`] and the run's [`Seed`](crate::seed::Seed) before
+/// play begins, and derives [`CombatRng`] from the seed. Monsters that
 /// choose whom to strike come with [`MindsPlugin`](crate::minds::MindsPlugin).
 pub struct CombatPlugin;
 
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{CleanupSet, Needs, ResolveSet, Turn};
+        use crate::seed::AddStream;
         use crate::turn::AddAction;
         app.add_message::<DamageEvent>()
             .add_message::<DamageDealt>()
@@ -285,7 +289,7 @@ impl Plugin for CombatPlugin {
             .init_resource::<DamageStages>()
             .add_action::<Attack>()
             .needs::<CombatRules>("CombatPlugin", "`CombatRules { kinds, factions }`, a registry of damage kinds and a faction matrix")
-            .needs::<CombatRng>("CombatPlugin", "`CombatRng::for_run(seed)`, the stream combat rolls from")
+            .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
             .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))

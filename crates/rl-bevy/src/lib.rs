@@ -25,6 +25,7 @@ pub mod lighting;
 pub mod minds;
 pub mod places;
 pub mod plugin;
+pub mod seed;
 pub mod state;
 pub mod status;
 pub mod stealth;
@@ -52,6 +53,7 @@ pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
 pub use plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, Requirements, ResolveSet, Turn, TurnSet, depends_on};
+pub use seed::{AddStream, Seed, Stream};
 pub use state::EngineState;
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning, Watchers};
@@ -88,6 +90,7 @@ pub mod prelude {
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
     pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
+    pub use crate::seed::{AddStream, Seed};
     pub use crate::state::EngineState;
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Watchers};

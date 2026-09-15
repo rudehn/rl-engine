@@ -425,10 +425,10 @@ mod tests {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
         let missing = app.world().resource::<Requirements>().missing(app.world());
-        assert_eq!(missing.len(), 3, "the map, the rule table and the stream: {missing:#?}");
+        assert_eq!(missing.len(), 3, "the map, the rule table and the seed: {missing:#?}");
         assert!(missing.iter().any(|m| m.starts_with("CorePlugin needs") && m.contains("WorldMap::new")), "{missing:#?}");
         assert!(missing.iter().any(|m| m.starts_with("CombatPlugin needs") && m.contains("CombatRules { kinds, factions }")), "{missing:#?}");
-        assert!(missing.iter().any(|m| m.contains("CombatRng::for_run")), "{missing:#?}");
+        assert!(missing.iter().any(|m| m.starts_with("CombatPlugin needs") && m.contains("Seed(RunSeed(n))")), "{missing:#?}");
 
         // A plugin added twice, or two asking for the same thing, is one line
         // per plugin rather than a list that repeats itself.

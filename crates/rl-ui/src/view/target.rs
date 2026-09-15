@@ -309,7 +309,6 @@ pub(crate) mod harness {
         let content = Content::new();
         let built = Abilities::load(ABILITIES, app.world().resource::<EffectKinds>(), &content.names()).expect("the abilities load and build");
         app.insert_resource(built);
-        app.insert_resource(AbilityRng::for_run(rl_core::RunSeed(3)));
         app.insert_resource(StatRules(content.stats));
     }
 

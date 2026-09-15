@@ -185,7 +185,7 @@ impl Plugin for StatusPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::combat::{Armor, CombatRng, CombatRules, DamageStages, Health};
+    use crate::combat::{Armor, CombatRules, DamageStages, Health};
     use crate::components::{Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
@@ -221,7 +221,7 @@ mod tests {
         let (venom, hearty) = (defs.expect("venom"), defs.expect("hearty"));
         app.insert_resource(CombatRules { kinds, factions: Factions::new(&facs) });
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
-        app.insert_resource(CombatRng::for_run(RunSeed(5)));
+        app.insert_resource(crate::seed::Seed(RunSeed(5)));
         app.insert_resource(StatusRules { defs });
         let player = app
             .world_mut()

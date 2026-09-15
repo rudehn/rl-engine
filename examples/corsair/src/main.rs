@@ -140,7 +140,8 @@ fn main() -> AppExit {
             TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
             AbilityPanel::new(screen.abilities).title("What you can call on").hints("[a] close"),
         ))
-        .insert_resource(StartSeed { seed, regions, resume })
+        .insert_resource(Seed(seed))
+        .insert_resource(StartOptions { regions, resume })
         .insert_resource(Saves::platform_default("corsair"))
         .insert_resource(OverworldLayout { viewport: screen.map })
         .init_resource::<inventory::InventoryScreen>()
@@ -207,8 +208,7 @@ fn balance_report() -> String {
 }
 
 #[derive(Resource, Clone, Copy)]
-struct StartSeed {
-    seed: RunSeed,
+struct StartOptions {
     regions: (i32, i32),
     resume: bool,
 }
@@ -216,7 +216,7 @@ struct StartSeed {
 /// Generates the world and either spawns a fresh player at the first
 /// port or restores the saved run into it, then starts play.
 fn start_world(world: &mut World) {
-    let start = *world.resource::<StartSeed>();
+    let start = *world.resource::<StartOptions>();
     let saved = if start.resume {
         match save::load_run(world.resource::<Saves>()) {
             Ok(Some(s)) => Some(s),
@@ -232,7 +232,9 @@ fn start_world(world: &mut World) {
     } else {
         None
     };
-    let (seed, regions) = saved.as_ref().map(|s| (s.engine.seed, s.regions)).unwrap_or((start.seed, start.regions));
+    let (seed, regions) = saved.as_ref().map(|s| (s.engine.seed, s.regions)).unwrap_or((world.resource::<Seed>().0, start.regions));
+    // A continued run keeps the seed it was saved with, and every stream follows.
+    world.insert_resource(Seed(seed));
 
     let content = Content::new();
     // Islands rather than a continent: less land, more of it coast.
@@ -260,7 +262,6 @@ fn start_world(world: &mut World) {
     let built = abilities::load(&armory, &bestiary, &status_rules, world.resource::<EffectKinds>());
     bestiary.resolve_abilities(&built);
     world.insert_resource(StatRules(armory.stats.clone()));
-    world.insert_resource(AbilityRng::for_run(seed));
     world.insert_resource(status_rules);
     world.insert_resource(built);
     let cove = graph.sites().iter().position(|s| s.kind == content::COVE);
@@ -269,7 +270,6 @@ fn start_world(world: &mut World) {
     world.insert_resource(facts);
     world.insert_resource(rules);
     world.insert_resource(monsters::stages());
-    world.insert_resource(CombatRng::for_run(seed));
     world.insert_resource(content.tile_appearance());
     world.insert_resource(content.band_appearance());
     world.insert_resource(WorldMap::new(content.tiles().tables()));

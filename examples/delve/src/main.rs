@@ -38,11 +38,7 @@ const LOG_ROWS: i32 = 4;
 const BEASTS_RON: &str = include_str!("../assets/beasts.ron");
 
 fn main() -> AppExit {
-    let mut seed = RunSeed::fresh();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(i) = args.iter().position(|a| a == "--seed") {
-        seed = RunSeed(args[i + 1].parse().expect("seed"));
-    }
     let first = args.iter().position(|a| a == "--floor").map(|i| args[i + 1].parse::<u32>().expect("floor").clamp(1, FLOORS)).unwrap_or(1);
     let screen = Screen::new();
     let mut app = App::new();
@@ -52,7 +48,7 @@ fn main() -> AppExit {
         .add_engine_effects()
         .add_effect::<effects::Drain>()
         .init_resource::<LightOverlay>()
-        .insert_resource(Seed(seed))
+        .insert_resource(Seed::from_args())
         .insert_resource(FirstFloor(first))
         .add_plugins((
             VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
@@ -74,9 +70,6 @@ fn main() -> AppExit {
         .add_systems(Update, (narrate, narrate_knacks).in_set(PresentSet::Narrate));
     app.run()
 }
-
-#[derive(Resource, Clone, Copy)]
-struct Seed(RunSeed);
 
 /// The screen, cut once so the map and every panel agree on it: a rail down
 /// the right for vitals and what is in sight, the log under the map, and the
@@ -292,9 +285,7 @@ fn start(
     commands.insert_resource(StatRules(rules.stats.clone()));
     commands.insert_resource(StatusRules { defs: rules.statuses.clone() });
     commands.insert_resource(Slots(rules.slots.clone()));
-    commands.insert_resource(AbilityRng::for_run(seed.0));
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
-    commands.insert_resource(CombatRng::for_run(seed.0));
     commands.insert_resource(whale.appearance());
     commands.insert_resource(WorldMap::new(whale.tiles().tables()));
     commands.insert_resource(Bile(whale.bile()));
@@ -412,7 +403,7 @@ fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntere
         }
         // A whaler's lamp, left burning by whoever came before: a fixture, so
         // it lives in the static layer and never moves.
-        let mut kit = seed.0.rng(SeedDomain::new(b"whale.lamps"), floor as u64);
+        let mut kit = seed.stream(b"whale.lamps", floor as u64);
         if let Some(at) = spot_between(place.terrain.bounds(), map, ev.entry, 6, 14, &mut kit) {
             commands.spawn((
                 Position(at),
@@ -440,7 +431,7 @@ fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntere
         for spot in place.spots.iter().filter(|s| s.tag == 'W' as u32) {
             beasts.spawn(&mut commands, beasts.defs.expect("heart warden"), spot.at);
         }
-        let mut rng = seed.0.rng(SeedDomain::new(b"whale.beasts"), floor as u64);
+        let mut rng = seed.stream(b"whale.beasts", floor as u64);
         let bounds = place.terrain.bounds();
         let mut placed_groups = 0;
         for _ in 0..40 {

@@ -7,7 +7,7 @@
 //! only keep entries whose ids were bound.
 
 use bevy::prelude::*;
-use rl_bevy::{Charges, Cooldowns, Knowledge, KnowledgeSave, Occupancy, Pools, Turns, WorldMap, WorldMapSave};
+use rl_bevy::{Charges, Cooldowns, Knowledge, KnowledgeSave, Occupancy, Pools, Seed, Turns, WorldMap, WorldMapSave};
 use rl_core::RunSeed;
 use rl_rules::StatId;
 use rl_rules::ability::AbilityId;
@@ -87,10 +87,11 @@ impl AbilityState {
 }
 
 impl EngineSave {
-    /// Captures the engine's state from `world`. Every actor in the queue
-    /// is given a save id through `remap`, so call this after the game
-    /// captured its own entities.
-    pub fn capture(world: &mut World, seed: RunSeed, remap: &mut EntityRemap) -> Self {
+    /// Captures the engine's state from `world`, the run's [`Seed`] included.
+    /// Every actor in the queue is given a save id through `remap`, so call
+    /// this after the game captured its own entities.
+    pub fn capture(world: &mut World, remap: &mut EntityRemap) -> Self {
+        let seed = world.resource::<Seed>().0;
         // The game's own entities, read before the queue hands ids to actors
         // the game never saved and so could never restore.
         let abilities: Vec<(SaveId, AbilityState)> = remap.bound().filter_map(|(id, e)| AbilityState::of(world, e).map(|s| (id, s))).collect();
@@ -159,7 +160,10 @@ mod tests {
         // Capture: the game numbers its entities, then the engine.
         let mut remap = EntityRemap::new();
         let (p_id, o_id) = (remap.save_id(player), remap.save_id(other));
-        let save = EngineSave::capture(app.world_mut(), RunSeed(5), &mut remap);
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
         let text = crate::encode(1, &save).unwrap();
         let back: EngineSave = crate::decode(1, &text).unwrap();
         assert_eq!(back.now, save.now);
@@ -204,7 +208,10 @@ mod tests {
 
         let mut remap = EntityRemap::new();
         let (p_id, w_id) = (remap.save_id(player), remap.save_id(wand));
-        let save = EngineSave::capture(app.world_mut(), RunSeed(5), &mut remap);
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
         let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
 
         let (mut app2, _) = fresh();

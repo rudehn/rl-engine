@@ -39,13 +39,6 @@ const FLOOR: MapId = MapId(1);
 const TORCH: LightSource = LightSource::new(210, 7, Rgb::new(255, 180, 110)).flickering(70);
 
 fn main() -> AppExit {
-    // `--seed 7` replays a run; without it every run is new.
-    let seed = std::env::args()
-        .skip_while(|arg| arg != "--seed")
-        .nth(1)
-        .map(|n| RunSeed(n.parse().expect("--seed takes a number")))
-        .unwrap_or_else(RunSeed::fresh);
-
     let mut app = App::new();
     // The window and glyph terminal, the turn loop, field of view, the map
     // between the status row and the log, and the base every panel needs.
@@ -61,7 +54,8 @@ fn main() -> AppExit {
             LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),
             InspectPanel::new(Rect::new(2, ROWS - LOG_ROWS - 11, 50, 10)),
         ))
-        .insert_resource(Seed(seed))
+        // `--seed 7` replays a run; without it every run is new.
+        .insert_resource(Seed::from_args())
         .add_systems(Startup, start)
         // Keys become intents once a frame, and only while no screen, such as
         // the look cursor, has them.
@@ -74,10 +68,6 @@ fn main() -> AppExit {
         .add_systems(Update, narrate.in_set(PresentSet::Narrate));
     app.run()
 }
-
-/// The seed the whole run derives from.
-#[derive(Resource, Clone, Copy)]
-struct Seed(RunSeed);
 
 /// The floor's tiles, and how each looks in full light. The renderer works
 /// out darkness and remembered tiles from these colours.
@@ -206,7 +196,6 @@ fn start(
         kinds: kinds.clone(),
         factions,
     });
-    commands.insert_resource(CombatRng::for_run(seed.0));
     // What a blow passes through on its way in; armor, here.
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(Goblins {
@@ -349,9 +338,7 @@ fn populate(
         let bounds = place.terrain.bounds();
         // A random stream of its own, by name: a spawner added later draws
         // from its own and cannot change what this one places.
-        let mut rng = seed
-            .0
-            .rng(SeedDomain::new(b"starter.populate"), ev.map.0 as u64);
+        let mut rng = seed.stream(b"starter.populate", ev.map.0 as u64);
         let mut taken = vec![ev.entry];
 
         for _ in 0..5 {
