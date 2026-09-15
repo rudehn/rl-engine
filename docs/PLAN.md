@@ -196,6 +196,9 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
 - 2026-09-14: Corsair's tasks name their subjects the way the rest of its content does.
   An objective was `(kind: "killed", subject: "cutthroat")`: two strings, matched in a closure to decide which registry the subject was in, parsed as a number for a cave level, compared against "port" and "cove" by hand, and validated in one pass and resolved again in a second.
   `On` is a variant per fact, `Killed("cutthroat")`, `EnteredCave(2)`, `EnteredSite(Port)`, each naming its subject as a `NameRef` to a monster, a side or an item, or as a number or a site, so a subject of the wrong kind is a parse error and an unknown name is reported by the load under the task. `after` names tasks in the same file, the one reference still checked by hand.
+- 2026-09-14: releases are tags, and the template names one.
+  The template depended on the engine's `main`, so a breaking change there reached every game generated afterwards the moment it was pushed, and a game's lockfile pinned whatever commit that happened to be.
+  A release is a tag, `v` and the workspace version: `v0.1.0` is the first. The template, the README and the guide pin it, `scripts/check-template.sh` refuses a template whose tag is not the workspace version, and a release is cut by bumping the version, which fails that check until the template names the new tag, then tagging the commit that does.
 - Next: the rest of the deferred pieces (throwing, a character sheet, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

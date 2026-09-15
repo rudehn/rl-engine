@@ -5,7 +5,9 @@ edition = "2024"
 publish = false
 
 [dependencies]
-rl-engine = { git = "https://github.com/rudehn/rl-engine" }
+# The release this template was written against. A newer engine is a new
+# tag: change it here, and read the release notes for what moved.
+rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v0.1.0" }
 # `system_font_discovery` lets the terminal ask the system for a monospace
 # font; Bevy's built-in one has no box-drawing glyphs.
 bevy = { version = "0.19", features = ["system_font_discovery"] }

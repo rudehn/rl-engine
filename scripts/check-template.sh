@@ -23,6 +23,16 @@ if find templates -name Cargo.toml | grep .; then
   exit 1
 fi
 
+# The template pins the engine to a release tag, and a tag is the workspace
+# version with a v in front. Bumping the version without the template, or
+# the template without the version, is a template that generates games
+# against an engine it was not written for.
+version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+if ! grep -q "tag = \"v$version\"" templates/starter/Cargo.toml.liquid; then
+  echo "error: templates/starter pins a tag other than v$version, the workspace version" >&2
+  exit 1
+fi
+
 out="${TMPDIR:-/tmp}/rl-engine-starter-check/my-game"
 rm -rf "$out"
 mkdir -p "$(dirname "$out")"

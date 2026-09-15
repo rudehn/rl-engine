@@ -35,7 +35,7 @@ The `rl-engine` crate re-exports every other crate in the workspace.
 
 ```toml
 [dependencies]
-rl-engine = { git = "https://github.com/rudehn/rl-engine" }
+rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v0.1.0" }
 bevy = "0.19"
 rand = { version = "0.9", features = ["std", "std_rng"] }
 serde = { version = "1", features = ["derive"] }
