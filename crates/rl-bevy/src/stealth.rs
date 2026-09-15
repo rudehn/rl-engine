@@ -307,7 +307,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::combat::{Armor, CombatPlugin, CombatRules, Health, MeleeAttack};
+    use crate::combat::{Armor, CombatPlugin, Health, MeleeAttack};
     use crate::components::{Actor, Blocks, RevealsMap};
     use crate::fov::FovPlugin;
     use crate::minds::MindsPlugin;
@@ -416,7 +416,7 @@ mod tests {
         field.wait();
         assert!(!field.aware().knows(field.player));
         let (watcher, player) = (field.watcher, field.player);
-        let kind = field.app.world().resource::<CombatRules>().kinds.expect("kinetic");
+        let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
         field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, 1), dealt: 1 });
         field.wait();
         assert!(field.aware().knows(player), "struck, so it knows where from");

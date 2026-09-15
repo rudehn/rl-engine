@@ -7,7 +7,6 @@
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::Point;
-use rl_rules::content::Registry;
 
 /// A world, a player standing in it, and the ids a test needs to spawn
 /// something the player can see.
@@ -44,7 +43,6 @@ impl Stage {
 
         let at = rl_bevy::testing::surface(&mut app);
         let rl_bevy::testing::Sides { ours, theirs, kind } = rl_bevy::testing::two_sides(&mut app);
-        app.insert_resource(StatusRules { defs: Registry::from_defs(Vec::<rl_rules::StatusDef>::new()).unwrap() });
 
         let player = app
             .world_mut()

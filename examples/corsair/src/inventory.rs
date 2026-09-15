@@ -11,7 +11,6 @@ use rl_engine::rl_render::Terminal;
 use rl_engine::rl_ui::{ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu};
 
 use crate::items::{Armory, ItemKind};
-use crate::monsters::Bestiary;
 
 /// The name the sea chest's modal is declared under.
 pub const MODAL: &str = "chest";
@@ -110,7 +109,7 @@ pub fn inventory_keys(
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Ledger<'w, 's> {
     armory: Res<'w, Armory>,
-    bestiary: Res<'w, Bestiary>,
+    registries: Res<'w, Registries>,
     bag: Bag<'w, 's>,
     items: Query<'w, 's, (&'static ItemKind, Option<&'static Stack>, Option<&'static Enchant>)>,
 }
@@ -120,7 +119,7 @@ pub fn draw_inventory(mut screen: ResMut<InventoryScreen>, modals: Res<Modals>, 
     if !modals.is_open(modal(&modals)) {
         return;
     }
-    let Ledger { armory, bestiary, bag, items } = &world;
+    let Ledger { armory, registries, bag, items } = &world;
     let Ok((inventory, worn)) = bag.single() else { return };
     let rows: Vec<MenuRow> = inventory
         .items
@@ -131,18 +130,18 @@ pub fn draw_inventory(mut screen: ResMut<InventoryScreen>, modals: Res<Modals>, 
             let mut detail = Vec::new();
             if let (Some(dice), Some(kind_name)) = (&d.attack, &d.kind) {
                 let dice = enchant.map(|e| e.0.strike(*dice, &armory.rule(kind.0))).unwrap_or(*dice);
-                detail.push(format!("{dice} {kind_name}"));
+                detail.push(format!("{dice} {}", registries.damage_kinds.name(kind_name.id())));
             }
             if let Some((range, dice, kind_name)) = &d.ranged {
-                detail.push(format!("shoots {dice} {kind_name} to {range}"));
+                detail.push(format!("shoots {dice} {} to {range}", registries.damage_kinds.name(kind_name.id())));
             }
             if let Some(e) = enchant {
                 for (k, dice) in e.0.strikes(&armory.affixes) {
-                    detail.push(format!("+{dice} {}", bestiary.kinds.name(k)));
+                    detail.push(format!("+{dice} {}", registries.damage_kinds.name(k)));
                 }
                 for m in e.0.modifiers(&armory.affixes, &armory.rule(kind.0), 0) {
                     if let rl_engine::rl_rules::Op::Add(n) = m.op {
-                        detail.push(format!("{} {n:+}", armory.stats.name(m.stat)));
+                        detail.push(format!("{} {n:+}", registries.stats.name(m.stat)));
                     }
                 }
             }
@@ -153,14 +152,14 @@ pub fn draw_inventory(mut screen: ResMut<InventoryScreen>, modals: Res<Modals>, 
                 detail.push(format!("restores {} health when drunk", d.heal));
             }
             if let Some(s) = &d.slot {
-                detail.push(format!("worn on the {s}"));
+                detail.push(format!("worn on the {}", registries.slots.name(s.id())));
             }
             let label = match stack {
                 Some(s) if s.count > 1 => format!("{} {}", s.count, d.name),
                 _ => armory.display_name(kind.0, enchant),
             };
             let tag = match worn.slot_of(item) {
-                Some(slot) => format!("({})", armory.slots.name(slot)),
+                Some(slot) => format!("({})", registries.slots.name(slot)),
                 None => String::new(),
             };
             let category = if worn.contains(item) { Tones::NOTICE } else { Tones::TEXT };

@@ -192,9 +192,11 @@ fn start(
     let (you, goblins) = (sides.expect("you"), sides.expect("goblins"));
     let mut factions = Factions::new(&sides);
     factions.set_mutual(you, goblins, Relation::Hostile);
-    commands.insert_resource(CombatRules {
-        kinds: kinds.clone(),
-        factions,
+    commands.insert_resource(CombatRules { factions });
+    commands.insert_resource(Registries {
+        damage_kinds: kinds.clone(),
+        factions: sides,
+        ..default()
     });
     // What a blow passes through on its way in; armor, here.
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));

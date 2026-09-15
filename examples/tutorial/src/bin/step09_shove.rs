@@ -248,7 +248,8 @@ fn start(
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     let mut factions = Factions::new(&sides);
     factions.set_mutual(you, vermin, Relation::Hostile);
-    commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
+    commands.insert_resource(CombatRules { factions });
+    commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
     // What a hit passes through on its way to the target. One stage here;
     // resistances, a shield, a critical rule would each be another.
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));

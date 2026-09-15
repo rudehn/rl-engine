@@ -13,7 +13,8 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::damage::DamageKind;
-use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, Modifier, Names, Op, SlotDef, StatDef, StatId, TagDef, TagId, affix, roll_affixes};
+use rl_engine::rl_rules::damage::DamageKindId;
+use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, Modifier, NameRef, Op, SlotDef, SlotId, StatId, TagDef, TagId, affix, roll_affixes};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
@@ -30,19 +31,19 @@ pub struct ItemDef {
     pub glyph: char,
     pub color: (f32, f32, f32),
     #[serde(default)]
-    pub slot: Option<String>,
+    pub slot: Option<NameRef<SlotDef>>,
     #[serde(default)]
-    pub also: Vec<String>,
+    pub also: Vec<NameRef<SlotDef>>,
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub tags: Vec<NameRef<TagDef>>,
     #[serde(default)]
     pub armor: i32,
     #[serde(default)]
     pub attack: Option<DiceRoll>,
     #[serde(default)]
-    pub kind: Option<String>,
+    pub kind: Option<NameRef<DamageKind>>,
     #[serde(default)]
-    pub ranged: Option<(i32, DiceRoll, String)>,
+    pub ranged: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
     #[serde(default)]
     pub heal: i32,
     #[serde(default)]
@@ -88,12 +89,14 @@ pub struct ItemKind(pub Id<ItemDef>);
 #[derive(Resource)]
 pub struct Armory {
     pub defs: Registry<ItemDef>,
-    pub slots: Registry<SlotDef>,
-    pub stats: Registry<StatDef>,
-    pub tags: Registry<TagDef>,
     pub affixes: Registry<AffixDef>,
     pub armor_stat: StatId,
     pub attack_stat: StatId,
+    pub weapon_tag: TagId,
+    pub armor_tag: TagId,
+    pub main_hand: SlotId,
+    /// What a bare fist deals.
+    pub fist: DamageKindId,
     shapes: Vec<Option<EquipShape>>,
     item_tags: Vec<Vec<TagId>>,
     table: BandedTable<Id<ItemDef>>,
@@ -103,30 +106,13 @@ pub struct Armory {
 }
 
 impl Armory {
-    /// Loads and validates the items; panics with every problem listed.
-    pub fn load(seed: RunSeed, home: Point, kinds: &Registry<DamageKind>) -> Self {
-        let slots = Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand"), SlotDef::new("body"), SlotDef::new("head")]).unwrap();
-        let stats = Registry::from_defs(vec![StatDef::new("armor", 0).clamp(0, 20), StatDef::new("attack", 0)]).unwrap();
-        let tags = Registry::from_defs(["weapon", "blade", "gun", "armor", "shield", "hat", "powder", "rum"].map(TagDef::new).to_vec()).unwrap();
-        let defs: Registry<ItemDef> = Registry::from_ron_str(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+    /// Loads the items and their affixes against `registries`; panics with
+    /// every problem listed.
+    pub fn load(seed: RunSeed, home: Point, registries: &Registries) -> Self {
+        let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(|d, _| {
-            for t in &d.tags {
-                if tags.id(t).is_none() {
-                    return Err(format!("unknown tag {t:?}"));
-                }
-            }
-            if let Some((range, _, kind)) = &d.ranged {
-                if *range < 2 {
-                    return Err("a ranged weapon reaches at least 2".into());
-                }
-                if kinds.id(kind).is_none() {
-                    return Err(format!("unknown damage kind {kind:?}"));
-                }
-            }
-            for s in d.slot.iter().chain(d.also.iter()) {
-                if slots.id(s).is_none() {
-                    return Err(format!("unknown slot {s:?}"));
-                }
+            if d.ranged.as_ref().is_some_and(|(range, _, _)| *range < 2) {
+                return Err("a ranged weapon reaches at least 2".into());
             }
             if d.slot.is_none() && !d.also.is_empty() {
                 return Err("also without a slot".into());
@@ -134,29 +120,22 @@ impl Armory {
             if d.attack.is_some() != d.kind.is_some() {
                 return Err("attack and kind go together".into());
             }
-            if let Some(k) = &d.kind
-                && kinds.id(k).is_none()
-            {
-                return Err(format!("unknown damage kind {k:?}"));
-            }
             if d.stack && d.slot.is_some() {
                 return Err("a worn item cannot stack".into());
             }
             Ok(())
         })
         .unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
-
-        let names = Names::new().tags(&tags).stats(&stats).damage_kinds(kinds);
-        let affixes = affix::load(AFFIXES_RON, &names).unwrap_or_else(|e| panic!("assets/affixes.ron: {e}"));
+        let affixes = affix::load(AFFIXES_RON, &registries.names()).unwrap_or_else(|e| panic!("assets/affixes.ron: {e}"));
         let mut shapes = Vec::new();
         let mut item_tags = Vec::new();
         let mut table = BandedTable::default();
         for (id, d) in defs.iter() {
-            item_tags.push(d.tags.iter().map(|t| tags.expect(t)).collect::<Vec<_>>());
-            shapes.push(d.slot.as_ref().map(|s| {
-                let mut shape = EquipShape::in_slot(slots.expect(s));
+            item_tags.push(d.tags.iter().map(|t| t.id()).collect::<Vec<_>>());
+            shapes.push(d.slot.map(|s| {
+                let mut shape = EquipShape::in_slot(s.id());
                 for a in &d.also {
-                    shape = shape.and_claims(slots.expect(a));
+                    shape = shape.and_claims(a.id());
                 }
                 shape
             }));
@@ -165,12 +144,13 @@ impl Armory {
             }
         }
         Self {
-            armor_stat: stats.expect("armor"),
-            attack_stat: stats.expect("attack"),
+            armor_stat: registries.stats.expect("armor"),
+            attack_stat: registries.stats.expect("attack"),
+            weapon_tag: registries.tags.expect("weapon"),
+            armor_tag: registries.tags.expect("armor"),
+            main_hand: registries.slots.expect("main hand"),
+            fist: registries.damage_kinds.expect("fist"),
             defs,
-            slots,
-            stats,
-            tags,
             affixes,
             shapes,
             item_tags,
@@ -190,10 +170,10 @@ impl Armory {
     pub fn rule(&self, id: Id<ItemDef>) -> EnhanceRule {
         let tags = self.tags_of(id);
         let mut rule = EnhanceRule::default();
-        if tags.contains(&self.tags.expect("weapon")) {
+        if tags.contains(&self.weapon_tag) {
             rule.damage_per_level = 1;
         }
-        if tags.contains(&self.tags.expect("armor")) {
+        if tags.contains(&self.armor_tag) {
             rule.per_level.push((self.armor_stat, 1));
         }
         rule
@@ -308,9 +288,9 @@ pub fn drop_loot(
 ) {
     for d in deaths.read() {
         let Ok(kind) = kinds.get(d.entity) else { continue };
-        for (name, pct) in &bestiary.defs.get(kind.0).drops {
+        for (item, pct) in &bestiary.defs.get(kind.0).drops {
             if rng.random_range(0..100) < *pct {
-                let id = armory.defs.expect(name);
+                let id = item.id();
                 let n = armory.stack_size(id, &mut **rng);
                 let enchant = armory.roll_quality(id, Quality::FOUND, &mut **rng);
                 armory.spawn_with(&mut commands, id, n, Some(d.at), enchant);
@@ -324,7 +304,7 @@ pub fn drop_loot(
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Using<'w, 's> {
     armory: Res<'w, Armory>,
-    statuses: Res<'w, StatusRules>,
+    registries: Res<'w, Registries>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
     afflict: MessageWriter<'w, Afflict>,
@@ -336,7 +316,7 @@ pub struct Using<'w, 's> {
 /// Applies what using an item does, and consumes it. Drink heals, cures
 /// what a bite left and makes you hearty for a while.
 pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, mut using: Using) {
-    let Using { armory, statuses, turns, log, afflict, cure, users, items } = &mut using;
+    let Using { armory, registries, turns, log, afflict, cure, users, items } = &mut using;
     for ev in events.read() {
         let ItemEvent::Used { actor, item } = *ev else { continue };
         let Ok((kind, stack)) = items.get_mut(item) else { continue };
@@ -350,9 +330,9 @@ pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, m
             hp.hp = (hp.hp + d.heal).min(hp.max);
             log.push(format!("You drink the {}. It restores {} health.", d.name, hp.hp - before), Tones::GOOD, turns.turn_number());
             for name in ["venom", "bleeding"] {
-                cure.write(Cure { target: actor, status: statuses.defs.expect(name) });
+                cure.write(Cure { target: actor, status: registries.statuses.expect(name) });
             }
-            afflict.write(Afflict { target: actor, status: statuses.defs.expect("hearty"), turns: 10, by: None });
+            afflict.write(Afflict { target: actor, status: registries.statuses.expect("hearty"), turns: 10, by: None });
         }
         match stack {
             Some(mut s) if s.count > 1 => s.count -= 1,
@@ -369,11 +349,11 @@ type WearerData = (Entity, &'static Equipped, &'static mut StatBlock, &'static m
 pub fn refresh_gear(
     mut commands: Commands,
     armory: Res<Armory>,
-    bestiary: Res<crate::monsters::Bestiary>,
+    registries: Res<Registries>,
     mut wearers: Query<WearerData, Changed<Equipped>>,
     items: Query<(&ItemKind, Option<&Enchant>)>,
 ) {
-    let main_hand = armory.slots.expect("main hand");
+    let main_hand = armory.main_hand;
     for (wearer, worn, mut sheet, mut armor, mut attack, mut strikes) in &mut wearers {
         // Gear is rebuilt from scratch; what statuses put there stays.
         let mut stats = std::mem::take(&mut sheet.0);
@@ -390,13 +370,13 @@ pub fn refresh_gear(
                     stats.add(m);
                 }
             }
-            if let Some((range, dice, kind_name)) = &d.ranged {
+            if let Some((range, dice, shot_kind)) = &d.ranged {
                 let dice = enchant.map(|e| e.0.strike(*dice, &armory.rule(kind.0))).unwrap_or(*dice);
-                shot = Some(RangedAttack { kind: bestiary.kinds.expect(kind_name), dice, range: *range });
+                shot = Some(RangedAttack { kind: shot_kind.id(), dice, range: *range });
             }
         }
-        armor.0 = stats.value(armory.armor_stat, &armory.stats);
-        let bonus = stats.value(armory.attack_stat, &armory.stats);
+        armor.0 = stats.value(armory.armor_stat, &registries.stats);
+        let bonus = stats.value(armory.attack_stat, &registries.stats);
         let wielded = worn.in_slot(main_hand).and_then(|e| items.get(e).ok());
         (*attack, strikes.0) = match wielded {
             Some((kind, enchant)) if armory.defs.get(kind.0).attack.is_some() => {
@@ -404,10 +384,10 @@ pub fn refresh_gear(
                 let base = d.attack.expect("checked");
                 let dice = enchant.map(|e| e.0.strike(base, &armory.rule(kind.0))).unwrap_or(base);
                 let extra = enchant.map(|e| e.0.strikes(&armory.affixes)).unwrap_or_default();
-                (MeleeAttack { kind: bestiary.kinds.expect(d.kind.as_deref().expect("checked")), dice: DiceRoll { bonus: dice.bonus + bonus, ..dice } }, extra)
+                (MeleeAttack { kind: d.kind.expect("checked").id(), dice: DiceRoll { bonus: dice.bonus + bonus, ..dice } }, extra)
             }
             _ => {
-                let bare = unarmed(&bestiary);
+                let bare = unarmed(&armory);
                 (MeleeAttack { dice: DiceRoll { bonus: bare.dice.bonus + bonus, ..bare.dice }, ..bare }, Vec::new())
             }
         };
@@ -424,8 +404,8 @@ pub fn refresh_gear(
 }
 
 /// A bare-knuckle strike.
-pub fn unarmed(bestiary: &crate::monsters::Bestiary) -> MeleeAttack {
-    MeleeAttack { kind: bestiary.kinds.expect("fist"), dice: DiceRoll::new(1, 3) }
+pub fn unarmed(armory: &Armory) -> MeleeAttack {
+    MeleeAttack { kind: armory.fist, dice: DiceRoll::new(1, 3) }
 }
 
 /// Turns item events into log lines.
@@ -489,12 +469,12 @@ mod tests {
 
     #[test]
     fn the_armory_loads_its_affixes_and_rolls_the_hoard_rich() {
-        let (bestiary, _) = crate::monsters::Bestiary::load(RunSeed(1), Point::ZERO);
-        let armory = Armory::load(RunSeed(1), Point::ZERO, &bestiary.kinds);
+        let loaded = crate::rules::load(RunSeed(1), Point::ZERO, &crate::rules::effect_kinds());
+        let armory = &loaded.armory;
         assert_eq!(armory.affixes.len(), 4);
         let cutlass = armory.defs.expect("cutlass");
         let pistol = armory.defs.expect("pistol");
-        assert!(armory.tags_of(cutlass).contains(&armory.tags.expect("blade")));
+        assert!(armory.tags_of(cutlass).contains(&loaded.registries.tags.expect("blade")));
         assert_eq!(armory.rule(cutlass).damage_per_level, 1);
         assert_eq!(armory.rule(armory.defs.expect("tricorne")).per_level, vec![(armory.armor_stat, 1)]);
         assert!(armory.defs.get(pistol).ranged.is_some());

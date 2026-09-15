@@ -102,7 +102,7 @@ pub struct Run<'w, 's> {
     entrances: Res<'w, Entrances>,
     quests: Res<'w, Quests>,
     turns: Res<'w, Turns>,
-    statuses: Res<'w, StatusRules>,
+    registries: Res<'w, Registries>,
 }
 
 /// The game's entities, captured.
@@ -123,8 +123,8 @@ fn capture_game(run: &Run, remap: &mut EntityRemap) -> Option<Captured> {
         map: map_of(on),
         hp: hp.hp,
         bag: bag.items.iter().map(|i| remap.save_id(*i)).collect(),
-        worn: worn.worn().map(|(slot, item)| (run.armory.slots.name(slot).to_string(), remap.save_id(item))).collect(),
-        statuses: afflicted.iter().map(|s| (run.statuses.defs.name(s.id).to_string(), s.turns)).collect(),
+        worn: worn.worn().map(|(slot, item)| (run.registries.slots.name(slot).to_string(), remap.save_id(item))).collect(),
+        statuses: afflicted.iter().map(|s| (run.registries.statuses.name(s.id).to_string(), s.turns)).collect(),
     };
     let monsters = run
         .monsters
@@ -242,17 +242,17 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
         ));
     }
     let p = &save.player;
-    let mut worn = Equipment::for_slots(&armory.slots);
+    let mut worn = Equipment::for_slots(&world.resource::<Registries>().slots);
     for (slot, id) in &p.worn {
         let item = remap.entity(*id).expect("worn item restored");
         let kind = world.get::<ItemKind>(item).expect("a restored item has a kind").0;
-        let _ = armory.slots.expect(slot);
+        let _ = world.resource::<Registries>().slots.expect(slot);
         if let Some(shape) = armory.shape(kind) {
             worn.equip(item, shape).expect("the slots exist");
         }
     }
     let bag: Vec<Entity> = p.bag.iter().filter_map(|id| remap.entity(*id)).collect();
-    let (faction, unarmed, max_hp) = (bestiary.factions.expect("player"), crate::items::unarmed(&bestiary), 30);
+    let (faction, unarmed, max_hp) = (world.resource::<Registries>().factions.expect("player"), crate::items::unarmed(&armory), 30);
     let grants = crate::abilities::player_grants(world.resource::<rl_engine::rl_bevy::Abilities>());
     let player = world
         .spawn((
@@ -276,7 +276,7 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
     // Statuses go back on by request, so their modifiers are installed
     // the same way they were the first time.
     for (name, turns) in &p.statuses {
-        let status = world.resource::<StatusRules>().defs.expect(name);
+        let status = world.resource::<Registries>().statuses.expect(name);
         world.write_message(Afflict { target: player, status, turns: *turns, by: None });
     }
     save.engine.restore(world, &remap);

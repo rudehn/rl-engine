@@ -103,45 +103,30 @@ impl Screen {
     }
 }
 
-/// Every registry the delve's content names, kept together so one [`Names`]
-/// borrows them all when the knacks load.
-#[derive(Resource, Clone)]
-struct Rules {
-    kinds: Registry<DamageKind>,
-    stats: Registry<StatDef>,
-    statuses: Registry<StatusDef>,
-    tags: Registry<TagDef>,
-    slots: Registry<SlotDef>,
-}
-
-impl Rules {
-    fn new() -> Self {
-        let kinds = Registry::from_defs(vec![
-            DamageKind::new("bite"),
-            DamageKind::new("blade"),
-            DamageKind::new("blunt"),
-            DamageKind::new("bile"),
-            DamageKind::new("fire").unarmored(),
-            DamageKind::new("care").unarmored(),
+/// Every registry the delve's content names, filled before anything is
+/// loaded against them.
+fn registries() -> Registries {
+    let damage_kinds = Registry::from_defs(vec![
+        DamageKind::new("bite"),
+        DamageKind::new("blade"),
+        DamageKind::new("blunt"),
+        DamageKind::new("bile"),
+        DamageKind::new("fire").unarmored(),
+        DamageKind::new("care").unarmored(),
+    ])
+    .unwrap();
+    let fire = damage_kinds.expect("fire");
+    Registries {
+        factions: Registry::from_defs(vec![FactionDef { name: "you".into() }, FactionDef { name: "whale".into() }]).unwrap(),
+        stats: Registry::from_defs(vec![StatDef::new("mana", 30)]).unwrap(),
+        statuses: Registry::from_defs(vec![
+            StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
+            StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
         ])
-        .unwrap();
-        let fire = kinds.expect("fire");
-        Self {
-            stats: Registry::from_defs(vec![StatDef::new("mana", 30)]).unwrap(),
-            statuses: Registry::from_defs(vec![
-                StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
-                StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
-            ])
-            .unwrap(),
-            tags: Registry::from_defs(vec![TagDef::new("shield")]).unwrap(),
-            slots: Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap(),
-            kinds,
-        }
-    }
-
-    /// Every table, for a load.
-    fn names(&self) -> Names<'_> {
-        Names::new().stats(&self.stats).statuses(&self.statuses).tags(&self.tags).slots(&self.slots).damage_kinds(&self.kinds)
+        .unwrap(),
+        tags: Registry::from_defs(vec![TagDef::new("shield")]).unwrap(),
+        slots: Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap(),
+        damage_kinds,
     }
 }
 
@@ -189,7 +174,7 @@ struct BeastDef {
     #[serde(default)]
     notice: Option<NoticeStats>,
     #[serde(default)]
-    abilities: Vec<String>,
+    abilities: Vec<NameRef<AbilityDef>>,
 }
 
 impl Named for BeastDef {
@@ -210,8 +195,6 @@ struct Beasts {
     brains: Vec<Arc<Brain<Entity>>>,
     bite: rl_engine::rl_rules::damage::DamageKindId,
     whale: rl_engine::rl_rules::FactionId,
-    /// What each kind knows, resolved against the built abilities.
-    grants: Vec<Vec<AbilityId>>,
 }
 
 impl Beasts {
@@ -229,8 +212,8 @@ impl Beasts {
                 Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5),
             ),
         ));
-        if let Some(grants) = self.grants.get(id.index()).filter(|g| !g.is_empty()) {
-            beast.insert(Grants(grants.clone()));
+        if !d.abilities.is_empty() {
+            beast.insert(Grants(d.abilities.iter().map(|a| a.id()).collect()));
         }
         if let Some(glow) = d.glow {
             beast.insert(glow);
@@ -256,16 +239,15 @@ fn start(
     effect_kinds: Res<EffectKinds>,
 ) {
     let whale = Whale::new(seed.0);
-    let rules = Rules::new();
-    let kinds = rules.kinds.clone();
-    // The knacks, built against the rules and the effects registered while
-    // the app was built, so a file naming one nobody added fails here.
-    let abilities = Abilities::load(ABILITIES_RON, &effect_kinds, &rules.names()).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
-    let facs = Registry::from_defs(vec![FactionDef { name: "you".into() }, FactionDef { name: "whale".into() }]).unwrap();
-    let (you, whale_side) = (facs.expect("you"), facs.expect("whale"));
-    let mut factions = Factions::new(&facs);
+    let registries = registries();
+    // The knacks, built against the registries and the effects registered
+    // while the app was built, so a file naming one nobody added fails here.
+    let abilities = Abilities::load(ABILITIES_RON, &effect_kinds, &registries.names()).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
+    let (you, whale_side) = (registries.factions.expect("you"), registries.factions.expect("whale"));
+    let mut factions = Factions::new(&registries.factions);
     factions.set_mutual(you, whale_side, Relation::Hostile);
-    let defs: Registry<BeastDef> = Registry::from_ron_str(BEASTS_RON).unwrap_or_else(|e| panic!("assets/beasts.ron: {e}"));
+    // A beast names the knacks it knows, so the bestiary loads against them too.
+    let defs: Registry<BeastDef> = registries.names().with("ability", abilities.defs()).load(BEASTS_RON).unwrap_or_else(|e| panic!("assets/beasts.ron: {e}"));
     let mut table = BandedTable::default();
     let mut brains = Vec::new();
     for (id, b) in defs.iter() {
@@ -279,12 +261,8 @@ fn start(
         // Hunt what it sees, search where it last saw you, then drift.
         brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 30 })));
     }
-    let grants = defs.iter().map(|(_, b)| b.abilities.iter().map(|n| abilities.expect(n)).collect()).collect();
-    commands.insert_resource(Beasts { defs, table, brains, bite: kinds.expect("bite"), whale: whale_side, grants });
-    commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
-    commands.insert_resource(StatRules(rules.stats.clone()));
-    commands.insert_resource(StatusRules { defs: rules.statuses.clone() });
-    commands.insert_resource(Slots(rules.slots.clone()));
+    commands.insert_resource(Beasts { defs, table, brains, bite: registries.damage_kinds.expect("bite"), whale: whale_side });
+    commands.insert_resource(CombatRules { factions });
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(whale.appearance());
     commands.insert_resource(WorldMap::new(whale.tiles().tables()));
@@ -294,21 +272,21 @@ fn start(
     commands.insert_resource(Lighting::dark());
 
     // A shield on the arm, which is what shield bash asks the slot graph for.
-    let off_hand = rules.slots.expect("off hand");
+    let off_hand = registries.slots.expect("off hand");
     let shield = commands
         .spawn((
             Item,
             Name::new("a whalebone shield"),
-            Tagged(vec![rules.tags.expect("shield")]),
+            Tagged(vec![registries.tags.expect("shield")]),
             Wearable(EquipShape::in_slot(off_hand)),
             Glyph::new(']', Color::srgb(0.9, 0.88, 0.8)),
         ))
         .id();
-    let mut worn = Equipment::with_slot_count(rules.slots.len());
+    let mut worn = Equipment::with_slot_count(registries.slots.len());
     worn.equip(shield, &EquipShape::in_slot(off_hand)).expect("one shield, one arm");
-    let mana = rules.stats.expect("mana");
+    let mana = registries.stats.expect("mana");
     let mut pools = Pools::new();
-    pools.set(mana, rules.stats.get(mana).base);
+    pools.set(mana, registries.stats.get(mana).base);
     let knacks: Vec<AbilityId> = KNACKS.iter().map(|n| abilities.expect(n)).collect();
     let player = commands
         .spawn((
@@ -317,7 +295,7 @@ fn start(
                 Health::full(30),
                 Armor(1),
                 Faction(you),
-                MeleeAttack { kind: kinds.expect("blade"), dice: DiceRoll::new(1, 6) },
+                MeleeAttack { kind: registries.damage_kinds.expect("blade"), dice: DiceRoll::new(1, 6) },
                 BRAND,
                 // A brand burns down while it is lit, and keeps what is left
                 // while it is smothered.
@@ -333,7 +311,7 @@ fn start(
         ))
         .id();
     commands.insert_resource(abilities);
-    commands.insert_resource(rules);
+    commands.insert_resource(registries);
     // No surface: the first floor is the first place, and the run starts in it.
     warps.write(WarpRequest::into_place(player, map_of(first.map(|f| f.0).unwrap_or(1))));
     log.push(format!("Seed {}. The whale's jaw is propped open with a mast.", seed.0.0), Tones::NOTICE, 0);
@@ -648,10 +626,10 @@ fn upper_first(s: &str) -> String {
 
 /// The player's pools as bars beside health: a pool is a quantity with a
 /// maximum, so the panel draws it without learning what mana is.
-fn show_pools(mut vitals: ResMut<VitalsView>, rules: Res<StatRules>, player: Query<(&Pools, &StatBlock), With<Player>>) {
+fn show_pools(mut vitals: ResMut<VitalsView>, registries: Res<Registries>, player: Query<(&Pools, &StatBlock), With<Player>>) {
     let Ok((pools, stats)) = player.single() else { return };
-    for (id, def) in rules.0.iter() {
-        vitals.bars.push(Bar::new(def.name.clone(), pools.get(id), stats.0.value(id, &rules.0), Tones::NOTICE));
+    for (id, def) in registries.stats.iter() {
+        vitals.bars.push(Bar::new(def.name.clone(), pools.get(id), stats.0.value(id, &registries.stats), Tones::NOTICE));
     }
 }
 
@@ -814,7 +792,7 @@ mod tests {
     #[test]
     fn drain_hurts_what_it_hits_and_pours_mana_back_into_the_pool() {
         let (mut app, player) = settled(7);
-        let mana = app.world().resource::<Rules>().stats.expect("mana");
+        let mana = app.world().resource::<Registries>().stats.expect("mana");
         app.world_mut().get_mut::<Pools>(player).unwrap().set(mana, 10);
         let crab = beside(&mut app, player, "stomach crab");
         let at = app.world().get::<Position>(crab).unwrap().0;

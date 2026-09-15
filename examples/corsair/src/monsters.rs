@@ -9,7 +9,6 @@ use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
-use rl_engine::rl_rules::AbilityId;
 use rl_engine::rl_rules::Brain;
 use rl_engine::rl_rules::ai::awareness::NoticeStats;
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
@@ -17,8 +16,8 @@ use rl_engine::rl_rules::ai::tactics::UseAbility;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::{AbilityDef, NameRef, Names, StatusDef};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
-use rl_engine::rl_rules::{Factions, Relation};
 use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
 
@@ -35,23 +34,23 @@ pub struct MonsterDef {
     pub hp: i32,
     pub armor: i32,
     pub attack: DiceRoll,
-    pub kind: String,
-    pub faction: String,
+    pub kind: NameRef<DamageKind>,
+    pub faction: NameRef<FactionDef>,
     pub perception: i32,
     pub speed: u32,
     pub flee_at: i32,
     pub wander: u32,
     pub spawn: (i32, i32, u32, u32, u32),
     #[serde(default)]
-    pub drops: Vec<(String, u32)>,
+    pub drops: Vec<(NameRef<crate::items::ItemDef>, u32)>,
     #[serde(default)]
-    pub inflicts: Option<(String, u32, u32)>,
+    pub inflicts: Option<(NameRef<StatusDef>, u32, u32)>,
     #[serde(default)]
     pub lantern: Option<LightSource>,
     #[serde(default)]
     pub notice: Option<NoticeStats>,
     #[serde(default)]
-    pub abilities: Vec<String>,
+    pub abilities: Vec<NameRef<AbilityDef>>,
     #[serde(default)]
     pub purse: Option<(u32, u32)>,
 }
@@ -85,63 +84,20 @@ pub struct MonsterKind(pub rl_engine::rl_core::Id<MonsterDef>);
 #[derive(Resource)]
 pub struct Bestiary {
     pub defs: Registry<MonsterDef>,
-    pub kinds: Registry<DamageKind>,
-    pub factions: Registry<FactionDef>,
     pub table: BandedTable<rl_engine::rl_core::Id<MonsterDef>>,
     brains: Vec<Arc<Brain<Entity>>>,
     seed: RunSeed,
     home: Point,
     spawned: BTreeSet<Point>,
-    /// What each kind knows, resolved against the built abilities once they
-    /// exist. Empty until then, and for a kind that knows nothing.
-    grants: Vec<Vec<AbilityId>>,
 }
 
 impl Bestiary {
-    /// Loads and validates the bestiary; panics with every problem listed.
-    pub fn load(seed: RunSeed, home: Point) -> (Self, CombatRules) {
-        let kinds = Registry::from_defs(vec![
-            DamageKind::new("cutlass"),
-            DamageKind::new("pistol"),
-            DamageKind::new("bite"),
-            DamageKind::new("claw"),
-            DamageKind::new("fist"),
-            DamageKind::new("fire"),
-            // What a swig mends with: nothing in the way of it.
-            DamageKind::new("care").unarmored(),
-        ])
-        .unwrap();
-        let factions = Registry::from_defs(vec![
-            FactionDef { name: "player".into() },
-            FactionDef { name: "beasts".into() },
-            FactionDef { name: "cutthroats".into() },
-            FactionDef { name: "navy".into() },
-        ])
-        .unwrap();
-        let defs: Registry<MonsterDef> = Registry::from_ron_str(MONSTERS_RON).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
-        defs.validate(|m, _| {
-            if kinds.id(&m.kind).is_none() {
-                return Err(format!("unknown damage kind {:?}", m.kind));
-            }
-            if factions.id(&m.faction).is_none() {
-                return Err(format!("unknown faction {:?}", m.faction));
-            }
-            if m.hp <= 0 {
-                return Err("hp must be positive".into());
-            }
-            Ok(())
-        })
-        .unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
-
-        let mut relations = Factions::new(&factions);
-        let (player, beasts, cutthroats, navy) = (factions.expect("player"), factions.expect("beasts"), factions.expect("cutthroats"), factions.expect("navy"));
-        relations.set_mutual(player, beasts, Relation::Hostile);
-        relations.set_mutual(player, cutthroats, Relation::Hostile);
-        relations.set_mutual(player, navy, Relation::Hostile);
-        relations.set_mutual(beasts, cutthroats, Relation::Hostile);
-        relations.set_mutual(beasts, navy, Relation::Hostile);
-        // The navy hunts pirates; pirates would rather not meet the navy.
-        relations.set(navy, cutthroats, Relation::Hostile);
+    /// Loads the bestiary against `names`, which must hold the damage kinds,
+    /// the sides, the items, the statuses and the abilities a monster is
+    /// written with; panics listing every problem.
+    pub fn load(seed: RunSeed, home: Point, names: &Names) -> Self {
+        let defs: Registry<MonsterDef> = names.load(MONSTERS_RON).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
+        defs.validate(|m, _| if m.hp <= 0 { Err("hp must be positive".into()) } else { Ok(()) }).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
 
         let mut table = BandedTable::default();
         let mut brains = Vec::new();
@@ -156,8 +112,7 @@ impl Bestiary {
             }
             brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: m.wander })));
         }
-        let rules = CombatRules { kinds: kinds.clone(), factions: relations };
-        (Self { defs, kinds, factions, table, brains, seed, home, spawned: BTreeSet::new(), grants: Vec::new() }, rules)
+        Self { defs, table, brains, seed, home, spawned: BTreeSet::new() }
     }
 }
 
@@ -187,15 +142,6 @@ impl Bestiary {
         e
     }
 
-    /// Resolves each kind's ability names against the built registry.
-    ///
-    /// # Panics
-    /// Panics naming the ability, when `monsters.ron` names one
-    /// `abilities.ron` does not have.
-    pub fn resolve_abilities(&mut self, abilities: &Abilities) {
-        self.grants = self.defs.iter().map(|(_, m)| m.abilities.iter().map(|n| abilities.expect(n)).collect()).collect();
-    }
-
     /// Spawns one `id` standing at `p` on the current map.
     pub fn spawn(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
         let m = self.defs.get(id);
@@ -206,8 +152,8 @@ impl Bestiary {
                 Position(p),
                 Health::full(m.hp),
                 Armor(m.armor),
-                Faction(self.factions.expect(&m.faction)),
-                MeleeAttack { kind: self.kinds.expect(&m.kind), dice: m.attack },
+                Faction(m.faction.id()),
+                MeleeAttack { kind: m.kind.id(), dice: m.attack },
                 Perception(m.perception),
                 Speed(m.speed),
                 Mind(self.brains[id.index()].clone()),
@@ -217,8 +163,8 @@ impl Bestiary {
                 Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),
             ))
             .id();
-        if let Some(grants) = self.grants.get(id.index()).filter(|g| !g.is_empty()) {
-            commands.entity(e).insert(Grants(grants.clone()));
+        if !m.abilities.is_empty() {
+            commands.entity(e).insert(Grants(m.abilities.iter().map(|a| a.id()).collect()));
         }
         if let Some((min, max)) = m.purse {
             // From the position rather than a stream, so a monster restored

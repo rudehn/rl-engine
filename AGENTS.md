@@ -30,7 +30,7 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 - **A game's rules answer the turn inside it.** Anything that reacts to what a turn caused goes in `TurnSet::React`, not in the drawing phase; drawing goes in its `PresentSet` layer. Never order a system after another crate's system function.
 - **Costs and clocks are integers.** Hundredths of a step, the same unit everywhere.
 - **Doc comments say why and why-not**, at the density of `rl-core/src/turn.rs`, not more.
-- **A resource may still be optional data.** The distinction is whether the subsystem is optional or the game's setup is wrong. `Lighting` absent means a lit world and no cost; `StatusRules` absent means no badges on a health bar. But a `GearPanel` with no slot registry is a mistake, so it asserts. Read an optional one as `Option<Res<_>>` and say in the docs what its absence means.
+- **A resource may still be optional data.** The distinction is whether the subsystem is optional or the game's setup is wrong. `Lighting` absent means a lit world and no cost; no statuses in `Registries` means no badges on a health bar. But a `GearPanel` in a game with no `Registries` at all is a mistake, so it asserts. Read an optional one as `Option<Res<_>>` and say in the docs what its absence means.
 - **Tests**: property-over-seed-range where a property exists, fingerprint tripwires labelled as such where none does, and a name that reads as a sentence describing the property.
 - **Every RON schema** carries a top-of-file comment listing the full option space.
 - **No `TODO` comments in source.** Outstanding work is tracked in `docs/PLAN.md` or an issue.

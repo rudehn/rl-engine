@@ -50,10 +50,10 @@ impl VitalsView {
 
 /// Keeps [`VitalsView`] current.
 ///
-/// Needs nothing. Badges come from [`StatusRules`], which is an opt-in
-/// subsystem the way [`Lighting`] is: a game with no
-/// statuses gets no badges and pays nothing for the idea, rather than
-/// being made to insert an empty registry to have a health bar.
+/// Needs nothing. Badges come from the statuses in [`Registries`], read if
+/// the game inserted any the way [`Lighting`] is: a game with no statuses
+/// gets no badges and pays nothing for the idea, rather than being made to
+/// insert an empty registry to have a health bar.
 pub struct VitalsViewPlugin;
 
 impl Plugin for VitalsViewPlugin {
@@ -73,7 +73,7 @@ type Vitals = (Entity, &'static Position, Option<&'static Name>, Option<&'static
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Me<'w, 's> {
     turns: Res<'w, Turns>,
-    statuses: Option<Res<'w, StatusRules>>,
+    registries: Option<Res<'w, Registries>>,
     facets: ResMut<'w, crate::facet::Facets>,
     watchers: Watchers<'w, 's>,
     player: Query<'w, 's, Vitals, With<Player>>,
@@ -104,9 +104,9 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
         };
         view.bars.push(Bar::new("health", health.hp, health.max, tone));
     }
-    let Some(statuses) = &me.statuses else { return };
+    let Some(registries) = &me.registries else { return };
     for active in afflicted.into_iter().flat_map(|a| a.iter()) {
-        if let Some(glyph) = statuses.defs.get(active.id).badge {
+        if let Some(glyph) = registries.statuses.get(active.id).badge {
             view.badges.push(me.facets.facet("badge", glyph.to_string()).toned(Tones::NOTICE));
         }
     }
@@ -167,7 +167,7 @@ mod tests {
         ])
         .unwrap();
         let (venom, quiet) = (defs.expect("venom"), defs.expect("quiet"));
-        stage.app.insert_resource(StatusRules { defs });
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
         let player = stage.player;
         stage.app.world_mut().write_message(Afflict { target: player, status: venom, turns: 5, by: None });
         stage.app.world_mut().write_message(Afflict { target: player, status: quiet, turns: 5, by: None });

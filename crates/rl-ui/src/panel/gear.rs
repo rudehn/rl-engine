@@ -114,10 +114,10 @@ mod tests {
 
     #[test]
     fn every_slot_gets_a_line_and_an_empty_one_reads_as_a_dash() {
-        let slots = || rl_bevy::Slots(rl_rules::Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("body")]).unwrap());
+        let slots = || rl_rules::Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("body")]).unwrap();
         let hand = slots().expect("main hand");
         let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 26, 6)), move |app| {
-            app.insert_resource(slots());
+            app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
         })
         .screen(26, 6);
 

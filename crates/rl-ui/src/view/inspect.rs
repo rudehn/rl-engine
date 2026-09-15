@@ -53,7 +53,7 @@ impl InspectView {
 /// Adds the look cursor and keeps [`InspectView`] current.
 ///
 /// Needs [`WorldMap`] for the window the cursor moves in, and
-/// [`CombatRules`] for the damage kinds the forecast resolves through. Its
+/// [`Registries`] for the damage kinds the forecast resolves through. Its
 /// keys are [`CursorKeys`], the ones the targeting cursor answers to.
 pub struct InspectViewPlugin;
 
@@ -63,7 +63,8 @@ impl Plugin for InspectViewPlugin {
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
         app.add_modal(INSPECT_MODAL);
-        app.needs::<CombatRules>("InspectViewPlugin", "`CombatRules { kinds, factions }`, the damage kinds the forecast resolves through")
+        app.needs::<Registries>("InspectViewPlugin", "`Registries`, with the damage kinds the forecast resolves through")
+            .needs::<CombatRules>("InspectViewPlugin", "`CombatRules { factions }`, for how the subject stands to the player")
             .add_systems(Update, move_cursor.in_set(EngineSet::Input))
             .add_systems(Update, collect_inspect.in_set(crate::ViewSet::Collect));
     }
@@ -140,6 +141,7 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, lo
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Duelists<'w, 's> {
     rules: Res<'w, CombatRules>,
+    registries: Res<'w, Registries>,
     stages: Res<'w, DamageStages>,
     modals: Res<'w, Modals>,
     map: Res<'w, WorldMap>,
@@ -209,7 +211,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         strikes: &their_strikes,
     };
     let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = duelists.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
-    view.duel = Some(duel(&asker, &other, &duelists.rules.kinds, &stages));
+    view.duel = Some(duel(&asker, &other, &duelists.registries.damage_kinds, &stages));
 }
 
 /// Whether the subject is something the player is at odds with, for a

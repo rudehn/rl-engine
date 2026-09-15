@@ -128,7 +128,8 @@ fn start(
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     let mut factions = Factions::new(&sides);
     factions.set_mutual(you, vermin, Relation::Hostile);
-    commands.insert_resource(CombatRules { kinds: kinds.clone(), factions });
+    commands.insert_resource(CombatRules { factions });
+    commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
     commands.insert_resource(Rats {
         // Asked in order: chase what you can see, otherwise mill about.
         mind: Arc::new(Brain::new().then(Hunt).then(Wander { chance_pct: 40 })),

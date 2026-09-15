@@ -25,6 +25,7 @@ pub mod lighting;
 pub mod minds;
 pub mod places;
 pub mod plugin;
+pub mod registries;
 pub mod seed;
 pub mod state;
 pub mod status;
@@ -45,7 +46,7 @@ pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed,
 pub use effects::{AddEngineEffects, Cleanse, Harm, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fov::FovPlugin;
-pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Tagged, Unequip, UseItem, Wearable};
+pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged, Unequip, UseItem, Wearable};
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
 pub use minds::{FlowFields, Mind, MindChose, MindsPlugin, Perception, Profile};
@@ -53,9 +54,10 @@ pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
 pub use plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, Requirements, ResolveSet, Turn, TurnSet, depends_on};
+pub use registries::Registries;
 pub use seed::{AddStream, Seed, Stream};
 pub use state::EngineState;
-pub use status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
+pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning, Watchers};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, TurnEnd, Turns, Wait};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
@@ -80,9 +82,7 @@ pub mod prelude {
     pub use crate::effects::AddEngineEffects;
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fov::FovPlugin;
-    pub use crate::items::{
-        DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Slots, Stack, Tagged, Unequip, UseItem, Wearable,
-    };
+    pub use crate::items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged, Unequip, UseItem, Wearable};
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
     pub use crate::minds::{Mind, MindChose, MindsPlugin, Perception, Profile};
@@ -90,9 +90,10 @@ pub mod prelude {
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
     pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
+    pub use crate::registries::Registries;
     pub use crate::seed::{AddStream, Seed};
     pub use crate::state::EngineState;
-    pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
+    pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Watchers};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, TurnEnd, Turns, Wait};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};

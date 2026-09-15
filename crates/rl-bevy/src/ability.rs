@@ -33,7 +33,8 @@ use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position, Viewshed};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
-use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules};
+use crate::registries::Registries;
+use crate::status::{Afflict, Afflicted, Cure, StatBlock};
 use crate::turn::{Action, AddAction, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
 
@@ -511,7 +512,7 @@ pub struct UserState<'w, 's> {
     gear: Query<'w, 's, Bearing>,
     charges: Query<'w, 's, &'static mut Charges>,
     tagged: Query<'w, 's, (Option<&'static Tagged>, Option<&'static mut Stack>)>,
-    stats: Res<'w, StatRules>,
+    registries: Res<'w, Registries>,
     commands: Commands<'w, 's>,
 }
 
@@ -695,7 +696,7 @@ fn gate(user: Entity, id: AbilityId, def: &AbilityDef, source: Option<Entity>, s
         .unwrap_or_default();
     let no_stats = rl_rules::Stats::default();
     let block = block.map(|s| &s.0).unwrap_or(&no_stats);
-    let stat = |s: StatId| block.value(s, &state.stats.0);
+    let stat = |s: StatId| block.value(s, &state.registries.stats);
     let gates = Gates { statuses, worn: &worn, stat: &stat };
 
     let no_pools = Pools::default();
@@ -887,7 +888,7 @@ pub fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>, Option<&Equ
 /// Abilities: the use action, the state a use spends, and the seam every
 /// effect is registered through.
 ///
-/// Needs [`Abilities`], [`StatRules`] and the run's [`Seed`](crate::seed::Seed)
+/// Needs [`Abilities`], [`Registries`] and the run's [`Seed`](crate::seed::Seed)
 /// before play begins, and combat, since an ability's damage goes down the same
 /// pipeline a sword's does. Register every effect an ability file names
 /// with [`AddEffect::add_effect`] while the app is built, then build
@@ -919,7 +920,7 @@ impl Plugin for AbilitiesPlugin {
             .add_action::<Use>()
             .needs::<Abilities>("AbilitiesPlugin", "`Abilities::load(ron, &EffectKinds, &names)`, the game's abilities with their effects built")
             .add_stream::<AbilityRng>("AbilitiesPlugin")
-            .needs::<StatRules>("AbilitiesPlugin", "`StatRules(registry)`, the stats ability costs and requirements name")
+            .needs::<Registries>("AbilitiesPlugin", "`Registries`, with the stats an ability's costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
             .add_systems(Turn, resolve_abilities.in_set(ResolveSet::Act))
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
@@ -938,7 +939,6 @@ mod tests {
     use crate::combat::{CombatRules, DamageDealt, Faction};
     use crate::components::{Actor, Player, RevealsMap};
     use crate::effects::AddEngineEffects;
-    use crate::status::StatusRules;
     use rl_core::{Direction, RunSeed};
     use rl_grid::TileId;
     use rl_rules::content::Registry;
@@ -1068,11 +1068,16 @@ mod tests {
         factions.set_mutual(content.factions.expect("us"), content.factions.expect("them"), Relation::Hostile);
 
         let start = crate::testing::surface(&mut app);
-        app.insert_resource(CombatRules { kinds: content.kinds, factions });
+        app.insert_resource(CombatRules { factions });
         app.insert_resource(crate::seed::Seed(RunSeed(5)));
-        app.insert_resource(StatusRules { defs: content.statuses });
-        app.insert_resource(StatRules(content.stats));
-        app.insert_resource(crate::items::Slots(content.slots));
+        app.insert_resource(Registries {
+            damage_kinds: content.kinds,
+            factions: content.factions,
+            stats: content.stats,
+            statuses: content.statuses,
+            tags: content.tags,
+            slots: content.slots,
+        });
         app.insert_resource(abilities);
         (app, start)
     }

@@ -92,14 +92,14 @@ impl Named for QuestRon {
 
 /// Loads the tasks, resolving every name to an id; panics listing every
 /// problem, as the other content loaders do.
-pub fn load(bestiary: &Bestiary, armory: &Armory) -> (Quests, Facts) {
+pub fn load(bestiary: &Bestiary, armory: &Armory, registries: &Registries) -> (Quests, Facts) {
     let facts = Facts::new();
     let authored: Registry<QuestRon> = Registry::from_ron_str(QUESTS_RON).unwrap_or_else(|e| panic!("assets/quests.ron: {e}"));
     let subject = |kind: &str, name: &str| -> Result<u64, String> {
         let unknown = || format!("unknown {kind} subject {name:?}");
         match kind {
             "killed" => bestiary.defs.id(name).map(|id| id.raw() as u64).ok_or_else(unknown),
-            "killed_faction" => bestiary.factions.id(name).map(|id| id.raw() as u64).ok_or_else(unknown),
+            "killed_faction" => registries.factions.id(name).map(|id| id.raw() as u64).ok_or_else(unknown),
             "picked_up" | "carrying" | "used" | "equipped" => armory.defs.id(name).map(|id| id.raw() as u64).ok_or_else(unknown),
             "entered_cave" => name.parse::<u64>().map_err(|_| unknown()),
             "entered_site" => match name {
@@ -340,9 +340,9 @@ mod tests {
 
     #[test]
     fn the_tasks_load_and_chain_to_a_victory() {
-        let (bestiary, _) = Bestiary::load(RunSeed(1), Point::ZERO);
-        let armory = Armory::load(RunSeed(1), Point::ZERO, &bestiary.kinds);
-        let (quests, facts) = load(&bestiary, &armory);
+        let loaded = crate::rules::load(RunSeed(1), Point::ZERO, &crate::rules::effect_kinds());
+        let (armory, facts) = (&loaded.armory, &loaded.facts);
+        let quests = &loaded.quests;
         let retire = quests.defs.expect("retire");
         let hoard = quests.defs.expect("hoard");
         assert!(quests.defs.get(retire).victory);

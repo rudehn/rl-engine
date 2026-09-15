@@ -23,6 +23,7 @@ use rl_rules::{FactionId, Factions, Registry, Relation};
 use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, SiteKindId, Surroundings, WorldConfig, WorldGraph, WorldRules};
 
 use crate::combat::{CombatRules, DamageStages};
+use crate::registries::Registries;
 use crate::world::{ChunkRulesRes, WorldMap, WorldRes};
 
 /// The seed every test world and stream is built from, so a test that
@@ -121,7 +122,7 @@ pub struct Sides {
     pub kind: DamageKindId,
 }
 
-/// Inserts combat rules for a test that fights: the two sides of [`Sides`],
+/// Inserts combat rules and [`Registries`] for a test that fights: the two sides of [`Sides`],
 /// mutually hostile, one armored damage kind, armor subtracted, and
 /// [`TEST_SEED`] as the run's seed.
 pub fn two_sides(app: &mut App) -> Sides {
@@ -131,7 +132,8 @@ pub fn two_sides(app: &mut App) -> Sides {
     let (ours, theirs) = (names.expect("ours"), names.expect("theirs"));
     let mut factions = Factions::new(&names);
     factions.set_mutual(ours, theirs, Relation::Hostile);
-    app.insert_resource(CombatRules { kinds, factions })
+    app.insert_resource(CombatRules { factions })
+        .insert_resource(Registries { damage_kinds: kinds, factions: names, ..Default::default() })
         .insert_resource(DamageStages(vec![Box::new(SubtractArmor)]))
         .insert_resource(crate::seed::Seed(TEST_SEED));
     Sides { ours, theirs, kind }

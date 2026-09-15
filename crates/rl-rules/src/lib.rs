@@ -56,7 +56,7 @@ pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
-pub use names::Names;
+pub use names::{NameRef, Names};
 pub use stats::{Modifier, Op, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 
@@ -75,7 +75,7 @@ pub mod prelude {
     };
     pub use crate::faction::{FactionId, Factions, Relation};
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
-    pub use crate::names::Names;
+    pub use crate::names::{NameRef, Names};
     pub use crate::stats::{Modifier, Op, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
 }

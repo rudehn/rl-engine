@@ -20,6 +20,7 @@ mod items;
 mod monsters;
 mod places;
 mod quests;
+mod rules;
 mod save;
 mod statuses;
 #[cfg(test)]
@@ -40,7 +41,6 @@ use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
 use crate::items::{Armory, ItemKind};
-use crate::monsters::Bestiary;
 use rl_engine::rl_save::Saves;
 
 /// Terminal size in cells.
@@ -195,7 +195,8 @@ fn main() -> AppExit {
 
 /// The spawn table scored band by band, for `--balance`.
 fn balance_report() -> String {
-    let (bestiary, _) = monsters::Bestiary::load(RunSeed(0), rl_engine::rl_core::Point::ZERO);
+    let loaded = rules::load(RunSeed(0), rl_engine::rl_core::Point::ZERO, &rules::effect_kinds());
+    let bestiary = &loaded.bestiary;
     let report = rl_engine::rl_rules::Report::over(&bestiary.table, 0..=40, |id| {
         let m = bestiary.defs.get(*id);
         (m.name.clone(), rl_engine::rl_rules::threat(m))
@@ -244,27 +245,18 @@ fn start_world(world: &mut World) {
     let town = graph.sites().iter().find(|s| s.kind == PORT).expect("a world with a town");
     let spawn = graph.region_tiles(town.position).center();
 
-    let (mut bestiary, rules) = monsters::Bestiary::load(seed, town.position);
-    let armory = Armory::load(seed, town.position, &bestiary.kinds);
-    bestiary
-        .defs
-        .validate(|m, _| m.drops.iter().find(|(name, _)| armory.defs.id(name).is_none()).map_or(Ok(()), |(name, _)| Err(format!("unknown drop {name:?}"))))
-        .unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
-    let (quest_log, facts) = quests::load(&bestiary, &armory);
-    let status_rules = statuses::load(&armory, &bestiary);
-    // The abilities, built against the registries above and the effects
-    // registered while the app was built, so a file naming one nobody added
-    // fails here rather than the first time its key is pressed.
-    let built = abilities::load(&armory, &bestiary, &status_rules, world.resource::<EffectKinds>());
-    bestiary.resolve_abilities(&built);
-    world.insert_resource(StatRules(armory.stats.clone()));
-    world.insert_resource(status_rules);
-    world.insert_resource(built);
+    // Every table, against the effects registered while the app was built, so
+    // a file naming an effect nobody added fails here rather than the first
+    // time its key is pressed.
+    let rules::Loaded { registries, combat, armory, abilities, bestiary, quests: quest_log, facts } =
+        rules::load(seed, town.position, world.resource::<EffectKinds>());
+    world.insert_resource(abilities);
     let cove = graph.sites().iter().position(|s| s.kind == content::COVE);
 
     world.insert_resource(quest_log);
     world.insert_resource(facts);
-    world.insert_resource(rules);
+    world.insert_resource(combat);
+    world.insert_resource(registries);
     world.insert_resource(monsters::stages());
     world.insert_resource(content.tile_appearance());
     world.insert_resource(content.band_appearance());
@@ -273,7 +265,6 @@ fn start_world(world: &mut World) {
     world.insert_resource(WorldRes(graph));
     world.insert_resource(PlaceRulesRes(Box::new(places::Caves::new(content.clone()))));
     world.insert_resource(ChunkRulesRes(Box::new(content)));
-    world.insert_resource(Slots(armory.slots.clone()));
     world.insert_resource(armory);
     world.insert_resource(bestiary);
 
@@ -315,23 +306,21 @@ fn start_world(world: &mut World) {
 fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
     // The armory comes out while its spawner borrows commands.
     let armory = world.remove_resource::<Armory>().expect("the armory is inserted first");
+    let equipment = rl_engine::rl_rules::Equipment::for_slots(&world.resource::<Registries>().slots);
     let (cutlass, rum, powder, worn) = {
         let mut commands = world.commands();
         let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
         let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
         // Enough for a few broadsides before the first port.
         let powder = armory.spawn(&mut commands, armory.defs.expect("powder"), 6, None);
-        let mut worn = Equipped(rl_engine::rl_rules::Equipment::for_slots(&armory.slots));
+        let mut worn = Equipped(equipment);
         worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
         (cutlass, rum, powder, worn)
     };
     world.flush();
     world.insert_resource(armory);
-    let (faction, unarmed) = {
-        let bestiary = world.resource::<Bestiary>();
-        let faction: FactionId = bestiary.factions.expect("player");
-        (faction, items::unarmed(bestiary))
-    };
+    let faction: FactionId = world.resource::<Registries>().factions.expect("player");
+    let unarmed = items::unarmed(world.resource::<Armory>());
     let grants = abilities::player_grants(world.resource::<Abilities>());
     world.spawn((
         (Actor, Player, Blocks, Position(spawn), Viewshed::new(12), RevealsMap),
@@ -391,7 +380,7 @@ fn note_discoveries(knowledge: Res<Knowledge>, world: Res<WorldRes>, turns: Res<
 /// armory and no idea what a weapon is. One facet per row, pushed in
 /// [`ViewSet::Annotate`].
 fn note_what_they_wield(mut nearby: ResMut<NearbyView>, mut facets: ResMut<Facets>, armory: Res<Armory>, worn: Query<&Equipped>, kinds: Query<&ItemKind>) {
-    let main = armory.slots.expect("main hand");
+    let main = armory.main_hand;
     for row in nearby.actors.iter_mut() {
         let Some(held) = worn.get(row.entity).ok().and_then(|w| w.in_slot(main)) else { continue };
         let Ok(kind) = kinds.get(held) else { continue };

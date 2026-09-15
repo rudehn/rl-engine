@@ -13,7 +13,6 @@ use rl_engine::prelude::*;
 use rl_engine::rl_rules::ability::RawValue;
 
 use crate::items::Armory;
-use crate::monsters::Bestiary;
 
 /// The abilities, compiled in so the binary runs from anywhere.
 const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
@@ -31,11 +30,10 @@ pub struct Purse(pub u32);
 /// Loads and builds the abilities; panics naming every problem, at startup
 /// rather than the first time a key is pressed.
 ///
-/// No new tables: the stats, tags and slots are the armory's, the damage
-/// kinds the bestiary's, the statuses the ones `statuses.ron` defines.
-pub fn load(armory: &Armory, bestiary: &Bestiary, statuses: &StatusRules, kinds: &EffectKinds) -> Abilities {
-    let names = Names::new().stats(&armory.stats).tags(&armory.tags).slots(&armory.slots).damage_kinds(&bestiary.kinds).statuses(&statuses.defs);
-    Abilities::load(ABILITIES_RON, kinds, &names).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"))
+/// Written in the words of the registries, statuses included, so `names`
+/// comes from them.
+pub fn load(names: &Names, kinds: &EffectKinds) -> Abilities {
+    Abilities::load(ABILITIES_RON, kinds, names).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"))
 }
 
 /// The player's grants.
@@ -154,6 +152,7 @@ fn upper_first(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::items::ItemKind;
+    use crate::monsters::Bestiary;
     use rl_engine::rl_core::RunSeed;
 
     /// A headless Corsair holding the player's first turn, and where its

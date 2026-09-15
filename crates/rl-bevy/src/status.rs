@@ -7,32 +7,18 @@
 //! and an [`Afflicted`] list, resolves [`Afflict`] requests, and on every
 //! whole turn ticks the statuses of the actors on the current map,
 //! sending their damage through the same pipeline a blow goes through.
-//! Opt-in: a game that inserts no [`StatusRules`] pays nothing.
+//! Opt-in: a game that never adds [`StatusPlugin`] pays nothing, and the
+//! statuses themselves are content, in [`Registries`].
 
 use bevy::prelude::*;
-use rl_rules::Registry;
-use rl_rules::{Hit, Stats, StatusDef, StatusId, Statuses};
+use rl_rules::{Hit, Stats, StatusId, Statuses};
 
 use crate::combat::DamageEvent;
 use crate::components::Actor;
 use crate::places::{MapId, OnMap};
+use crate::registries::Registries;
 use crate::turn::TurnEnd;
 use crate::world::WorldMap;
-
-/// The status definitions.
-#[derive(Resource)]
-pub struct StatusRules {
-    /// What exists.
-    pub defs: Registry<StatusDef>,
-}
-
-/// The stat definitions every [`StatBlock`] is read against.
-///
-/// Apart from [`StatusRules`] because a game may have stats and no
-/// statuses, and because an ability's requirements need it whether or not
-/// anything is ever afflicted.
-#[derive(Resource, Debug, Clone, Deref)]
-pub struct StatRules(pub Registry<rl_rules::StatDef>);
 
 /// An actor's stats: base values and every modifier from gear, statuses
 /// and whatever else the game folds in.
@@ -97,12 +83,12 @@ pub fn resolve_afflictions(
     mut afflicts: MessageReader<Afflict>,
     mut cures: MessageReader<Cure>,
     mut events: MessageWriter<StatusEvent>,
-    rules: Res<StatusRules>,
+    registries: Res<Registries>,
     mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
 ) {
     for a in afflicts.read() {
         let Ok((mut statuses, mut stats)) = actors.get_mut(a.target) else { continue };
-        if statuses.0.apply(a.status, a.turns, a.by.map(|e| e.to_bits()), &rules.defs, &mut stats.0) {
+        if statuses.0.apply(a.status, a.turns, a.by.map(|e| e.to_bits()), &registries.statuses, &mut stats.0) {
             events.write(StatusEvent::Applied { target: a.target, status: a.status });
         }
     }
@@ -121,7 +107,7 @@ pub fn tick_statuses(
     mut ends: MessageReader<TurnEnd>,
     mut damage: MessageWriter<DamageEvent>,
     mut events: MessageWriter<StatusEvent>,
-    rules: Res<StatusRules>,
+    registries: Res<Registries>,
     map: Res<WorldMap>,
     mut actors: Query<(Entity, &mut Afflicted, &mut StatBlock, Option<&OnMap>), With<Actor>>,
 ) {
@@ -135,7 +121,7 @@ pub fn tick_statuses(
             continue;
         }
         for _ in 0..turns {
-            let report = statuses.0.tick(&rules.defs, &mut stats.0);
+            let report = statuses.0.tick(&registries.statuses, &mut stats.0);
             for t in report.ticks {
                 let credit = t.source.and_then(Entity::try_from_bits);
                 damage.write(DamageEvent { target: entity, hit: Hit::from_source(credit, t.kind, t.amount) });
@@ -147,15 +133,10 @@ pub fn tick_statuses(
     }
 }
 
-/// Whether the game inserted status rules.
-pub fn statuses_ready(rules: Option<Res<StatusRules>>) -> bool {
-    rules.is_some()
-}
-
 /// Statuses: what is afflicted, what it costs each turn, what cures it.
 ///
 /// Ticks go through the damage pipeline, so combat comes with it, and
-/// [`StatusRules`] must be in place before play begins.
+/// [`Registries`] must be in place before play begins, with the statuses in it.
 ///
 /// Every [`Actor`] is given an empty [`Afflicted`] and [`StatBlock`] the
 /// moment it is spawned, so a monster spawned without them still takes a
@@ -173,7 +154,7 @@ impl Plugin for StatusPlugin {
         app.add_message::<Afflict>()
             .add_message::<Cure>()
             .add_message::<StatusEvent>()
-            .needs::<StatusRules>("StatusPlugin", "`StatusRules { defs }`, a registry of `StatusDef`s, which may be empty")
+            .needs::<Registries>("StatusPlugin", "`Registries`, with the statuses, which may be empty")
             .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects));
     }
 
@@ -194,7 +175,7 @@ mod tests {
     use rl_core::RunSeed;
     use rl_rules::damage::{DamageKind, SubtractArmor};
     use rl_rules::faction::FactionDef;
-    use rl_rules::{Factions, Op, Stacking, StatDef};
+    use rl_rules::{Factions, Op, Registry, Stacking, StatDef, StatusDef};
 
     #[derive(Resource, Default)]
     struct Heard(Vec<StatusEvent>);
@@ -219,10 +200,10 @@ mod tests {
         ])
         .unwrap();
         let (venom, hearty) = (defs.expect("venom"), defs.expect("hearty"));
-        app.insert_resource(CombatRules { kinds, factions: Factions::new(&facs) });
+        app.insert_resource(CombatRules { factions: Factions::new(&facs) });
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
         app.insert_resource(crate::seed::Seed(RunSeed(5)));
-        app.insert_resource(StatusRules { defs });
+        app.insert_resource(Registries { damage_kinds: kinds, factions: facs, stats: stats.clone(), statuses: defs, ..Default::default() });
         let player = app
             .world_mut()
             .spawn((

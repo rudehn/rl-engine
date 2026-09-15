@@ -31,7 +31,7 @@ impl Effect for Drain {
             // The stat says how large the pool may be, so a delver with more
             // mana to hold can drain further into it.
             let max = {
-                let defs = &w.resource::<StatRules>().0;
+                let defs = &w.resource::<Registries>().stats;
                 w.get::<StatBlock>(user).map(|s| s.0.value(pool, defs)).unwrap_or(0)
             };
             if let Some(mut pools) = w.get_mut::<Pools>(user) {

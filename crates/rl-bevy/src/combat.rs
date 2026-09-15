@@ -13,8 +13,7 @@
 use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
-use rl_rules::Registry;
-use rl_rules::damage::{DamageKind, DamageKindId, Defender};
+use rl_rules::damage::{DamageKindId, Defender};
 use rl_rules::{DamageStage, Factions, Hit, Resistances};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
@@ -75,11 +74,13 @@ pub struct RangedAttack {
 #[derive(Component, Debug, Clone, Default)]
 pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
 
-/// The registries combat reads.
+/// Who is hostile to whom.
+///
+/// A rule rather than content: the sides themselves are a registry in
+/// [`Registries`](crate::registries::Registries), and this is the matrix
+/// over them.
 #[derive(Resource)]
 pub struct CombatRules {
-    /// Damage kinds.
-    pub kinds: Registry<DamageKind>,
     /// Who hates whom.
     pub factions: Factions,
 }
@@ -215,7 +216,7 @@ pub fn apply_damage(
     mut events: MessageReader<DamageEvent>,
     mut dealt: MessageWriter<DamageDealt>,
     mut deaths: MessageWriter<DeathEvent>,
-    rules: Res<CombatRules>,
+    registries: Res<crate::registries::Registries>,
     stages: Res<DamageStages>,
     mut targets: Query<DefenderData>,
 ) {
@@ -227,7 +228,7 @@ pub fn apply_damage(
         let defender = Defender { armor: armor.map(|a| a.0).unwrap_or(0), blocked: false };
         let none = Resistances::new();
         let stage_refs: Vec<&dyn DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
-        let amount = rl_rules::resolve(&ev.hit, &defender, resist.map(|r| &r.0).unwrap_or(&none), &rules.kinds, &stage_refs);
+        let amount = rl_rules::resolve(&ev.hit, &defender, resist.map(|r| &r.0).unwrap_or(&none), &registries.damage_kinds, &stage_refs);
         health.hp = (health.hp - amount).min(health.max);
         dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount });
         if health.hp <= 0 {
@@ -273,8 +274,9 @@ pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
 /// Combat: health, factions, strikes down a line of fire, the damage
 /// pipeline and deaths.
 ///
-/// Needs [`CombatRules`] and the run's [`Seed`](crate::seed::Seed) before
-/// play begins, and derives [`CombatRng`] from the seed. Monsters that
+/// Needs [`CombatRules`], [`Registries`](crate::registries::Registries) for
+/// the damage kinds, and the run's [`Seed`](crate::seed::Seed) before play
+/// begins, and derives [`CombatRng`] from the seed. Monsters that
 /// choose whom to strike come with [`MindsPlugin`](crate::minds::MindsPlugin).
 pub struct CombatPlugin;
 
@@ -288,7 +290,8 @@ impl Plugin for CombatPlugin {
             .add_message::<DeathEvent>()
             .init_resource::<DamageStages>()
             .add_action::<Attack>()
-            .needs::<CombatRules>("CombatPlugin", "`CombatRules { kinds, factions }`, a registry of damage kinds and a faction matrix")
+            .needs::<CombatRules>("CombatPlugin", "`CombatRules { factions }`, who is hostile to whom")
+            .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))

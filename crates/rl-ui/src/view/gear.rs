@@ -5,7 +5,8 @@
 //! the game registered, in registration order, and leaves the item `None`
 //! where nothing is worn.
 //!
-//! The slot names come from [`Slots`], which the game inserts. The engine
+//! The slot names come from the slots in [`Registries`], which the game
+//! inserts. The engine
 //! stores what is worn by slot id, and an id is an index; printing it needs
 //! the registry the index came from.
 
@@ -54,13 +55,13 @@ impl GearView {
 
 /// Keeps [`GearView`] current.
 ///
-/// Needs [`Slots`], the registry the worn ids index into.
+/// Needs [`Registries`], whose slots the worn ids index into.
 pub struct GearViewPlugin;
 
 impl Plugin for GearViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GearView>()
-            .needs::<Slots>("GearViewPlugin", "`Slots(registry)`, the equipment slots the worn ids index into")
+            .needs::<Registries>("GearViewPlugin", "`Registries`, with the equipment slots the worn ids index into")
             .add_systems(Update, collect_gear.in_set(crate::ViewSet::Collect));
     }
 
@@ -72,13 +73,13 @@ impl Plugin for GearViewPlugin {
 /// Fills [`GearView`] from what the player wears.
 pub fn collect_gear(
     mut view: ResMut<GearView>,
-    slots: Res<Slots>,
+    registries: Res<Registries>,
     player: Query<&Equipped, With<Player>>,
     items: Query<(Option<&Name>, Option<&Glyph>, Option<&Stack>)>,
 ) {
     view.slots.clear();
     let worn = player.single().ok();
-    for (slot, def) in slots.iter() {
+    for (slot, def) in registries.slots.iter() {
         let item = worn.and_then(|w| w.in_slot(slot)).map(|entity| {
             let (name, glyph, stack) = items.get(entity).unwrap_or((None, None, None));
             let shown = match (name, stack) {
@@ -98,15 +99,15 @@ mod tests {
     use crate::harness::Stage;
     use rl_rules::{EquipShape, SlotDef};
 
-    fn slots() -> Slots {
-        Slots(rl_rules::Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("body")]).unwrap())
+    fn slots() -> rl_rules::Registry<SlotDef> {
+        rl_rules::Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("body")]).unwrap()
     }
 
     #[test]
     fn every_slot_is_a_row_and_an_empty_one_is_as_visible_as_a_full_one() {
         let hand = slots().expect("main hand");
         let mut stage = Stage::new_with(GearViewPlugin, |app| {
-            app.insert_resource(slots());
+            app.world_mut().resource_mut::<Registries>().slots = slots();
         });
         let player = stage.player;
 
@@ -130,7 +131,7 @@ mod tests {
     fn a_stack_of_more_than_one_says_how_many() {
         let hand = slots().expect("main hand");
         let mut stage = Stage::new_with(GearViewPlugin, |app| {
-            app.insert_resource(slots());
+            app.world_mut().resource_mut::<Registries>().slots = slots();
         });
         let player = stage.player;
 

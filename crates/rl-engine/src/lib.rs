@@ -137,7 +137,7 @@ impl PluginGroup for RoguelikePlugins {
 /// // One name from each crate the prelude covers, named rather than
 /// // glob-imported, so a future collision with Bevy fails here.
 /// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain<BaseContext>, _: WorldGraph) {}
-/// fn rules(_: Registry<StatDef>, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
+/// fn rules(_: Registry<StatDef>, _: NameRef<StatDef>, _: Names, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
 /// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
 /// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: OverworldPlugin, _: Saves) {}
 /// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
