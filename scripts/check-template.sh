@@ -45,9 +45,12 @@ if grep -rn '{{' --include='*.rs' --include='*.toml' --include='*.md' .; then
   exit 1
 fi
 
-# Its own target directory: a game outside the workspace resolves its own
-# features, and sharing the workspace's would rebuild both in turn.
-export CARGO_TARGET_DIR="$root/target/starter"
+# The workspace's own target directory: the lockfile and the profile match,
+# so the game reuses every dependency the workspace already built rather
+# than compiling a second Bevy beside it, which was fifteen gigabytes. The
+# engine's own crates build at the game's optimisation level, so the next
+# workspace build recompiles those few, and nothing else.
+export CARGO_TARGET_DIR="$root/target"
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
