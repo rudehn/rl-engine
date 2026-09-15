@@ -15,6 +15,7 @@ use rl_core::{Direction, Point, TurnQueue};
 use rl_grid::SpatialGrid;
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Speed, Viewshed};
+use crate::cue::TurnHold;
 use crate::places::{MapId, OnMap};
 use crate::world::WorldMap;
 
@@ -275,8 +276,11 @@ pub fn schedule(
     holding: Query<Entity, With<MyTurn>>,
     actors: Query<(&Position, Option<&OnMap>), With<Actor>>,
     map: Res<WorldMap>,
+    hold: Res<TurnHold>,
 ) {
-    if !holding.is_empty() {
+    // Nothing is dealt while something flies: what it does when it lands
+    // comes before whatever the next actor would do.
+    if !holding.is_empty() || hold.in_flight() {
         return;
     }
     let mut advanced = false;

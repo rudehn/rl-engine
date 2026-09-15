@@ -48,7 +48,8 @@ pub type Resolve<'a> = dyn Fn(&Anchor) -> Point + 'a;
 /// The line is drawn again every frame between where the anchors are
 /// now, and the head's place along it is the share of the flight's time
 /// that has passed, so a target that moves bends the flight rather than
-/// leaving it in the air.
+/// leaving it in the air. The cell it leaves from is not part of it: what
+/// stands there is what threw it, and stays drawn.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Trail {
     /// Where it leaves from.
@@ -69,7 +70,7 @@ impl Trail {
     /// A flight from `from` to `to` at `cell_secs` a cell, timed by the
     /// line between them as they stand now.
     pub fn new(from: Anchor, to: Anchor, glyph: char, color: Color, cell_secs: f32) -> Self {
-        Self { from, to, glyph, color, cell_secs, cells: line(from.at, to.at).count() }
+        Self { from, to, glyph, color, cell_secs, cells: line(from.at, to.at).skip(1).count() }
     }
 }
 
@@ -116,7 +117,7 @@ impl Beat {
                 if duration <= 0.0 || t >= duration {
                     return Vec::new();
                 }
-                let path: Vec<Point> = line(at(&trail.from), at(&trail.to)).collect();
+                let path: Vec<Point> = line(at(&trail.from), at(&trail.to)).skip(1).collect();
                 let head = ((t / duration) * path.len() as f32).floor() as usize;
                 let Some(cell) = path.get(head) else { return Vec::new() };
                 let mut sparks = vec![Spark { at: *cell, glyph: trail.glyph, color: trail.color, faded: 0.0 }];
@@ -422,7 +423,7 @@ mod tests {
     }
 
     fn trail() -> Trail {
-        Trail::new(Anchor::cell(Point::new(1, 0)), Anchor::cell(Point::new(4, 0)), '*', Color::WHITE, 0.1)
+        Trail::new(Anchor::cell(Point::new(0, 0)), Anchor::cell(Point::new(4, 0)), '*', Color::WHITE, 0.1)
     }
 
     #[test]
@@ -430,7 +431,7 @@ mod tests {
         let step = Beat::Trail(trail());
         assert_eq!(step.duration(), 0.4);
         let first = step.frame(0.0, &fixed);
-        assert_eq!((first[0].at, first[0].glyph, first.len()), (Point::new(1, 0), '*', 1), "no tail yet");
+        assert_eq!((first[0].at, first[0].glyph, first.len()), (Point::new(1, 0), '*', 1), "one cell out, and no tail yet");
         let third = step.frame(0.25, &fixed);
         assert_eq!(third[0].at, Point::new(3, 0), "the third cell, a quarter second in");
         assert_eq!(third.len(), 3, "the head and two cells of tail");
@@ -444,13 +445,13 @@ mod tests {
     fn a_trail_follows_what_its_anchor_follows() {
         let them = Entity::from_bits(7);
         let step = Beat::Trail(Trail::new(Anchor::cell(Point::new(0, 0)), Anchor::on(them, Point::new(4, 0)), '*', Color::WHITE, 0.1));
-        assert_eq!(step.duration(), 0.5, "timed by the line as it was");
+        assert_eq!(step.duration(), 0.4, "timed by the line as it was, the cell it leaves from left out");
         let moved = |a: &Anchor| if a.follow == Some(them) { Point::new(4, 2) } else { a.at };
         let midway = step.frame(0.25, &moved);
-        let bent: Vec<Point> = line(Point::new(0, 0), Point::new(4, 2)).collect();
+        let bent: Vec<Point> = line(Point::new(0, 0), Point::new(4, 2)).skip(1).collect();
         assert_eq!(midway[0].at, bent[2], "on the line to where they are now");
-        assert_eq!(step.frame(0.49, &moved)[0].at, Point::new(4, 2), "and lands on them");
-        assert_eq!(step.frame(0.49, &fixed)[0].at, Point::new(4, 0), "or where they were, if they are gone");
+        assert_eq!(step.frame(0.39, &moved)[0].at, Point::new(4, 2), "and lands on them");
+        assert_eq!(step.frame(0.39, &fixed)[0].at, Point::new(4, 0), "or where they were, if they are gone");
     }
 
     #[test]

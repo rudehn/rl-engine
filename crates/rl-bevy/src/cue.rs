@@ -20,6 +20,14 @@
 //! the flight follows them instead. Without a watcher the cues are
 //! written and forgotten, and the loop runs as if there were none, which
 //! is what a headless game gets.
+//!
+//! A flight lands when it has been seen. A resolver that cued one, with
+//! something watching, puts what the flight does aside and tells the hold
+//! it has [`launched`](TurnHold::launch); no turn is dealt while anything
+//! is in the air, and the first pass after the hold lets go lands it,
+//! which is when the fire starts and the blow falls, and cues the burst
+//! that is then waited on in turn. Without a watcher nothing is put
+//! aside and a use lands the moment it is cast, as it always did.
 
 use bevy::prelude::*;
 use rl_core::Point;
@@ -117,6 +125,8 @@ pub struct Cued {
 pub struct TurnHold {
     watched: bool,
     held: bool,
+    /// Flights cued and not yet landed.
+    in_flight: u32,
 }
 
 impl TurnHold {
@@ -143,6 +153,21 @@ impl TurnHold {
     /// Whether the loop is stopped.
     pub fn is_held(&self) -> bool {
         self.held
+    }
+
+    /// Something has been cued to fly whose landing waits on being seen.
+    pub fn launch(&mut self) {
+        self.in_flight += 1;
+    }
+
+    /// One of them has landed.
+    pub fn land(&mut self) {
+        self.in_flight = self.in_flight.saturating_sub(1);
+    }
+
+    /// Whether anything is in the air, during which no turn is dealt.
+    pub fn in_flight(&self) -> bool {
+        self.in_flight > 0
     }
 }
 

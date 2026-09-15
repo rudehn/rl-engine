@@ -31,7 +31,7 @@ use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position, Viewshed};
-use crate::cue::{Anchor, Cue, Cued, LookOf};
+use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
@@ -646,12 +646,20 @@ impl Bystanders<'_, '_> {
     }
 }
 
-/// The abilities a game registered, and the clock their cooldowns run on.
+/// The abilities a game registered, the clock their cooldowns run on, and
+/// the uses in the air.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Catalog<'w> {
     abilities: Res<'w, Abilities>,
     turns: Res<'w, Turns>,
+    hold: ResMut<'w, TurnHold>,
+    airborne: ResMut<'w, Airborne>,
 }
+
+/// Uses that have been cast and are flying, to land on the first pass
+/// after their flight has been seen.
+#[derive(Resource, Debug, Default)]
+pub struct Airborne(Vec<Landing>);
 
 /// Resolves a use: gate, pay, aim, land.
 ///
@@ -668,7 +676,7 @@ pub fn resolve_abilities(
     bystanders: Bystanders,
     mut world: EffectWorld,
 ) {
-    let Catalog { abilities, turns } = catalog;
+    let Catalog { abilities, turns, mut hold, mut airborne } = catalog;
     let now = turns.now();
     for intent in intents.read() {
         let user = intent.actor;
@@ -705,39 +713,76 @@ pub fn resolve_abilities(
             cooldowns.set(id, now + def.cooldown);
         }
 
-        let targets = landing.targets.clone();
-        for cue in cues_of(&landing, &world) {
-            world.cues.write(Cued { actor: user, cue });
-        }
-        for built in &abilities.built[id.index()] {
-            if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
+        // The turn is spent on the cast. With something watching, a
+        // projectile is seen to fly before it lands: what it does waits in
+        // the air for the first pass after the flight has been seen.
+        if let Some(flight) = flight_of(&landing, &world) {
+            world.cues.write(Cued { actor: user, cue: flight });
+            if hold.is_watched() {
+                hold.launch();
+                airborne.0.push(landing);
+                resolution.done(user, def.time);
                 continue;
             }
-            built.effect.apply(&landing, &mut world);
         }
-        events.write(AbilityEvent::Used { user, ability: id, aim, targets });
+        land(landing, &abilities, &mut world, &mut events);
         resolution.done(user, def.time);
     }
 }
 
-/// What a use is worth seeing: the flight to where a projectile stopped,
-/// and the burst over the footprint. An anchor follows the target standing
-/// on it, so a burst on someone knocked back goes with them and a bolt at
-/// someone walking away still lands on them; a cell with nobody on it is
-/// the cell.
-fn cues_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Vec<Cue> {
-    let look = LookOf::Ability(landing.ability);
-    let anchor = |cell: Point| landing.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell));
-    let mut cues = Vec::new();
-    if let Some(stop) = landing.landed_at
-        && stop != landing.origin
-    {
-        cues.push(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor(stop), look });
+/// Lands every use in the air. A pass runs only while nothing is held,
+/// so whatever is in the air when one runs has been seen to fly; landing
+/// counts as progress, so the loop goes on to deal the next turn once the
+/// burst has been seen in turn.
+pub fn land_abilities(
+    abilities: Res<Abilities>,
+    mut hold: ResMut<TurnHold>,
+    mut airborne: ResMut<Airborne>,
+    mut turns: ResMut<Turns>,
+    mut world: EffectWorld,
+    mut events: MessageWriter<AbilityEvent>,
+) {
+    for landing in std::mem::take(&mut airborne.0) {
+        land(landing, &abilities, &mut world, &mut events);
+        hold.land();
+        turns.progress = true;
     }
-    if !landing.cells.is_empty() {
-        cues.push(Cue::Burst { on: landing.cells.iter().map(|c| anchor(*c)).collect(), look });
+}
+
+/// Lands a use: the burst over the footprint, the effects, and the report.
+fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>, events: &mut MessageWriter<AbilityEvent>) {
+    let (user, id) = (landing.user, landing.ability);
+    if let Some(burst) = burst_of(&landing, world) {
+        world.cues.write(Cued { actor: user, cue: burst });
     }
-    cues
+    for built in &abilities.built[id.index()] {
+        if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
+            continue;
+        }
+        built.effect.apply(&landing, world);
+    }
+    events.write(AbilityEvent::Used { user, ability: id, aim: landing.aim, targets: landing.targets });
+}
+
+/// `cell` as a cue anchors it: the target standing on it, so a burst on
+/// someone knocked back goes with them and a bolt at someone walking away
+/// still lands on them, or the cell itself when nobody does.
+fn anchor_of(landing: &Landing, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
+    landing.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
+}
+
+/// The flight to where a projectile stopped, for a shape that has one.
+fn flight_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
+    let stop = landing.landed_at.filter(|stop| *stop != landing.origin)?;
+    Some(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor_of(landing, world, stop), look: LookOf::Ability(landing.ability) })
+}
+
+/// The burst over the footprint, for a shape that covers anything.
+fn burst_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
+    if landing.cells.is_empty() {
+        return None;
+    }
+    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability) })
 }
 
 /// Every reason `def` may not be used by `user` right now.
@@ -980,13 +1025,15 @@ impl Plugin for AbilitiesPlugin {
         app.register_required_components::<Actor, Cooldowns>();
         app.init_resource::<EffectKinds>()
             .init_resource::<Offered>()
+            .init_resource::<Airborne>()
             .add_message::<AbilityEvent>()
             .add_action::<Use>()
             .needs::<Abilities>("AbilitiesPlugin", "`Abilities::load(ron, &EffectKinds, &names)`, the game's abilities with their effects built")
             .add_stream::<AbilityRng>("AbilitiesPlugin")
             .needs::<Registries>("AbilitiesPlugin", "`Registries`, with the stats an ability's costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
-            .add_systems(Turn, resolve_abilities.in_set(ResolveSet::Act))
+            // What has landed, then what is cast this pass.
+            .add_systems(Turn, (land_abilities, resolve_abilities).chain().in_set(ResolveSet::Act))
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
     }
 
@@ -1184,6 +1231,46 @@ mod tests {
 
     fn hp(app: &App, e: Entity) -> i32 {
         app.world().get::<Health>(e).expect("health").hp
+    }
+
+    fn cues(app: &mut App) -> Vec<Cue> {
+        app.world_mut().resource_mut::<Messages<Cued>>().drain().map(|c| c.cue).collect()
+    }
+
+    /// With something watching, a bolt is in the air until its flight has
+    /// been seen: nothing is hurt and nobody is dealt a turn until the hold
+    /// lets go, and then it lands, burns, and is waited on again for its
+    /// burst before the turn comes round.
+    #[test]
+    fn watched_a_bolt_lands_only_after_its_flight_has_been_seen() {
+        let (mut app, start) = app();
+        let bolt = ability(&app, "bolt");
+        let me = caster(&mut app, start, 20, &[bolt]);
+        let them = foe(&mut app, start.offset(3, 0));
+        settle(&mut app);
+        app.world_mut().resource_mut::<TurnHold>().watch();
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
+        app.update();
+        assert_eq!(hp(&app, them), 20, "in the air");
+        assert!(matches!(cues(&mut app).as_slice(), [Cue::Flight { .. }]), "the flight, and nothing else yet");
+        let hold = *app.world().resource::<TurnHold>();
+        assert!(hold.is_held() && hold.in_flight(), "held for the flight, with one in the air");
+        assert_eq!(app.world().get::<Pools>(me).unwrap().get(StatId::from_raw(0)), 15, "paid on the cast");
+        app.update();
+        assert_eq!(hp(&app, them), 20, "still, while held");
+
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        assert_eq!(hp(&app, them), 16, "seen to fly, it lands");
+        assert!(matches!(cues(&mut app).as_slice(), [Cue::Burst { .. }]), "and bursts where it did");
+        let hold = *app.world().resource::<TurnHold>();
+        assert!(hold.is_held() && !hold.in_flight(), "held again for the burst, nothing in the air");
+        assert!(app.world().get::<MyTurn>(me).is_none(), "no turn dealt while the burst is seen");
+
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        assert!(app.world().get::<MyTurn>(me).is_some(), "then the turn comes round");
     }
 
     /// The whole loop in one test: a bolt is paid for out of a pool, flies

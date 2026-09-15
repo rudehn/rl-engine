@@ -21,9 +21,9 @@ use rl_rules::damage::DamageKindId;
 
 use crate::combat::{CombatRng, DamageEvent, Dead, Health};
 use crate::components::{MyTurn, Position};
-use crate::cue::{Anchor, Cue, Cued, LookOf};
+use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
 use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack};
-use crate::places::OnMap;
+use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
 use crate::world::WorldMap;
 
@@ -92,7 +92,26 @@ pub struct Launch<'w, 's> {
     throwers: Query<'w, 's, (&'static Position, &'static mut Inventory, Option<&'static mut Equipped>), With<MyTurn>>,
     missiles: Query<'w, 's, (&'static Throwable, Option<&'static mut Stack>), With<Item>>,
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
+    cues: MessageWriter<'w, Cued>,
+    hold: ResMut<'w, TurnHold>,
+    airborne: ResMut<'w, AirborneThrows>,
 }
+
+/// A throw that has left the hand and not yet come down: what it will do
+/// when it does.
+#[derive(Debug, Clone, Copy)]
+pub struct ThrowLanding {
+    actor: Entity,
+    item: Entity,
+    rests: Point,
+    struck: Option<Entity>,
+    strike: Option<(DamageKindId, DiceRoll)>,
+}
+
+/// Throws in the air, to land on the first pass after their flight has
+/// been seen.
+#[derive(Resource, Debug, Default)]
+pub struct AirborneThrows(Vec<ThrowLanding>);
 
 /// Resolves [`Throw`] for the actor holding the turn: the flight, the one
 /// that leaves the hand, the blow if it strikes anyone, and where it lands.
@@ -103,9 +122,8 @@ pub fn resolve_throws(
     launch: Launch,
     mut damage: MessageWriter<DamageEvent>,
     mut events: MessageWriter<ItemEvent>,
-    mut cues: MessageWriter<Cued>,
 ) {
-    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive } = launch;
+    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut hold, mut airborne } = launch;
     for intent in intents.read() {
         let (actor, Throw { item, at }) = (intent.actor, intent.action);
         if !resolution.claim(actor) {
@@ -140,22 +158,64 @@ pub fn resolve_throws(
                 item
             }
         };
-        commands.entity(thrown).insert((Position(rests), OnMap(map.current())));
-
-        let struck = struck.filter(|who| alive.contains(*who));
-        if let (Some(target), Some((kind, dice))) = (struck, strike) {
-            // Floored where it is rolled, as a blow is: a throw that rolls
-            // below nothing has missed, not healed.
-            let amount = dice.roll_at_least(&mut **rng, 0);
-            damage.write(DamageEvent { target, hit: Hit::by(actor, kind, amount) });
-        }
         // The flight, in the item's own glyph, landing on whoever it struck
         // wherever they are by the time it is seen.
+        let struck = struck.filter(|who| alive.contains(*who));
         let to = struck.map(|who| Anchor::on(who, rests)).unwrap_or(Anchor::cell(rests));
         cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Item(thrown) } });
-        events.write(ItemEvent::Thrown { actor, item: thrown, at: Position(rests), struck });
+        let landing = ThrowLanding { actor, item: thrown, rests, struck, strike };
         resolution.done(actor, BASE_ACTION_COST);
+        // The turn is spent on the throw. With something watching, the
+        // knife is in the air until its flight has been seen, and lies
+        // nowhere until it comes down.
+        if hold.is_watched() {
+            hold.launch();
+            airborne.0.push(landing);
+            continue;
+        }
+        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut damage, &mut events);
     }
+}
+
+/// Lands every throw in the air, on the first pass after its flight has
+/// been seen. Landing counts as progress, so the loop goes on to deal the
+/// next turn.
+pub fn land_throws(
+    mut commands: Commands,
+    launch: Launch,
+    mut damage: MessageWriter<DamageEvent>,
+    mut events: MessageWriter<ItemEvent>,
+    mut turns: ResMut<crate::turn::Turns>,
+) {
+    let Launch { map, mut rng, alive, mut hold, mut airborne, .. } = launch;
+    for landing in std::mem::take(&mut airborne.0) {
+        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut damage, &mut events);
+        hold.land();
+        turns.progress = true;
+    }
+}
+
+/// Where the thrown thing comes down: on the ground where it rests, and
+/// into whoever it struck.
+fn land(
+    landing: ThrowLanding,
+    map: MapId,
+    commands: &mut Commands,
+    rng: &mut CombatRng,
+    alive: &Query<(), (With<Health>, Without<Dead>)>,
+    damage: &mut MessageWriter<DamageEvent>,
+    events: &mut MessageWriter<ItemEvent>,
+) {
+    let ThrowLanding { actor, item, rests, struck, strike } = landing;
+    commands.entity(item).insert((Position(rests), OnMap(map)));
+    let struck = struck.filter(|who| alive.contains(*who));
+    if let (Some(target), Some((kind, dice))) = (struck, strike) {
+        // Floored where it is rolled, as a blow is: a throw that rolls
+        // below nothing has missed, not healed.
+        let amount = dice.roll_at_least(&mut **rng, 0);
+        damage.write(DamageEvent { target, hit: Hit::by(actor, kind, amount) });
+    }
+    events.write(ItemEvent::Thrown { actor, item, at: Position(rests), struck });
 }
 
 /// Throwing: [`Throw`], resolved beside every other action, down combat's
@@ -171,7 +231,7 @@ impl Plugin for ThrowingPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{ResolveSet, Turn};
         use crate::turn::AddAction;
-        app.add_action::<Throw>().add_systems(Turn, resolve_throws.in_set(ResolveSet::Act));
+        app.init_resource::<AirborneThrows>().add_action::<Throw>().add_systems(Turn, (land_throws, resolve_throws).chain().in_set(ResolveSet::Act));
     }
 
     fn finish(&self, app: &mut App) {
@@ -245,6 +305,33 @@ mod tests {
         fn now(&self) -> u32 {
             self.app.world().resource::<Turns>().now()
         }
+    }
+
+    /// With something watching, a knife that has left the hand lies
+    /// nowhere and hurts nobody until its flight has been seen.
+    #[test]
+    fn watched_a_thrown_knife_comes_down_only_after_its_flight_has_been_seen() {
+        let mut rig = Rig::new();
+        let knife = rig.knives(1);
+        let near = rig.mark(2);
+        rig.app.world_mut().resource_mut::<TurnHold>().watch();
+
+        let events = rig.throw(knife, 4);
+        assert!(events.is_empty(), "nothing has landed");
+        assert!(!rig.app.world().get::<Inventory>(rig.player).unwrap().contains(knife), "it left the hand");
+        assert!(rig.app.world().get::<Position>(knife).is_none(), "and lies nowhere");
+        assert_eq!(rig.hp(near), 20);
+        assert_eq!(rig.now(), 0, "no turn is dealt while it flies, so the clock waits with it");
+        assert!(rig.app.world().resource::<TurnHold>().in_flight());
+
+        rig.app.world_mut().resource_mut::<TurnHold>().release();
+        rig.app.update();
+        let events: Vec<ItemEvent> = rig.app.world_mut().resource_mut::<Messages<ItemEvent>>().drain().collect();
+        assert!(matches!(events.as_slice(), [ItemEvent::Thrown { struck: Some(who), .. }] if *who == near), "{events:?}");
+        assert_eq!(rig.app.world().get::<Position>(knife).map(|p| p.0), Some(rig.start.offset(2, 0)), "at their feet");
+        assert_eq!(rig.hp(near), 17, "and it hurt");
+        assert!(!rig.app.world().resource::<TurnHold>().in_flight());
+        assert_eq!(rig.now(), 100, "and the turn the throw spent goes by");
     }
 
     #[test]
