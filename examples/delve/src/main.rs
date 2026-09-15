@@ -860,6 +860,9 @@ mod tests {
             .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, Vec2::ONE))
             .init_resource::<LightOverlay>()
             .add_plugins((rl_engine::rl_render::MapViewPlugin::new(screen.map), rl_engine::rl_render::ParticlesPlugin))
+            // Cues are written and read, but nothing plays and the turns
+            // are never held for it.
+            .insert_resource(rl_engine::rl_render::ParticleStyle::instant())
             .add_plugins((TargetPanel::new(screen.target), AbilityPanel::new(screen.knacks).called("knacks")))
             .add_systems(Update, (call_on, (tend_brand, pick_and_drop, toggle_overlay, player_input).chain().run_if(no_modal)).chain().in_set(EngineSet::Input))
             .add_systems(Startup, start)
@@ -1087,7 +1090,8 @@ mod tests {
         let events: Vec<AbilityEvent> = app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().collect();
         assert!(matches!(events.as_slice(), [AbilityEvent::Used { .. }]), "the fireball was used: {events:?}");
         assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < hp), "and the crab burned");
-        assert!(app.world().resource::<rl_engine::rl_render::Particles>().is_playing(), "and its flight and burst are playing over the map");
+        let cues: Vec<Cue> = app.world_mut().resource_mut::<Messages<Cued>>().drain().filter(|c| c.actor == player).map(|c| c.cue).collect();
+        assert!(matches!(cues.as_slice(), [Cue::Flight { .. }, Cue::Burst { .. }]), "its flight and its burst were cued for the map: {cues:?}");
         assert!(app.world().get::<Pools>(player).unwrap().get(app.world().resource::<Registries>().stats.expect("mana")) < mana, "and it cost mana");
         assert!(!app.world().resource::<Modals>().any_open(), "the cursor went away");
     }

@@ -21,6 +21,7 @@ use rl_rules::damage::DamageKindId;
 
 use crate::combat::{CombatRng, DamageEvent, Dead, Health};
 use crate::components::{MyTurn, Position};
+use crate::cue::{Anchor, Cue, Cued, LookOf};
 use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack};
 use crate::places::OnMap;
 use crate::turn::{Action, Intent, Occupancy, Resolution};
@@ -102,6 +103,7 @@ pub fn resolve_throws(
     launch: Launch,
     mut damage: MessageWriter<DamageEvent>,
     mut events: MessageWriter<ItemEvent>,
+    mut cues: MessageWriter<Cued>,
 ) {
     let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive } = launch;
     for intent in intents.read() {
@@ -118,7 +120,7 @@ pub fn resolve_throws(
             continue;
         }
         let Throwable { range, strike } = *throwable;
-        let Flight { struck, rests, path } = flight(&map, &occupancy, pos.0, at, range);
+        let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range);
 
         // One leaves the hand: off the top of a stack, which makes it a
         // thing of its own, or the item itself.
@@ -147,7 +149,11 @@ pub fn resolve_throws(
             let amount = dice.roll_at_least(&mut **rng, 0);
             damage.write(DamageEvent { target, hit: Hit::by(actor, kind, amount) });
         }
-        events.write(ItemEvent::Thrown { actor, item: thrown, at: Position(rests), struck, path });
+        // The flight, in the item's own glyph, landing on whoever it struck
+        // wherever they are by the time it is seen.
+        let to = struck.map(|who| Anchor::on(who, rests)).unwrap_or(Anchor::cell(rests));
+        cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Item(thrown) } });
+        events.write(ItemEvent::Thrown { actor, item: thrown, at: Position(rests), struck });
         resolution.done(actor, BASE_ACTION_COST);
     }
 }

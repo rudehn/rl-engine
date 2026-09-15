@@ -38,6 +38,14 @@ impl Effect for Drain {
                 pools.fill(pool, amount, max);
             }
         });
+        // What was drained is seen to come back: a flight from the one it
+        // was taken from to the user, after the burst that took it.
+        if let Some(&target) = landing.targets.first()
+            && let Some(at) = world.position(target)
+        {
+            let look = LookOf::Ability(landing.ability);
+            world.cues.write(Cued { actor: user, cue: Cue::Flight { from: Anchor::on(target, at), to: Anchor::on(user, landing.origin), look } });
+        }
     }
 
     fn describe(&self, registries: &Registries) -> String {

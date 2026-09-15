@@ -16,6 +16,7 @@
 pub mod ability;
 pub mod combat;
 pub mod components;
+pub mod cue;
 pub mod doors;
 pub mod effects;
 pub mod events;
@@ -48,6 +49,7 @@ pub use combat::{
     Resists, Strikes, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+pub use cue::{Anchor, Cue, Cued, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent};
 pub use effects::{AddEngineEffects, Cleanse, Emit, Harm, Ignite, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
@@ -92,6 +94,7 @@ pub mod prelude {
         RangedAttack, Resists, Strikes, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+    pub use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent};
     pub use crate::effects::AddEngineEffects;
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};

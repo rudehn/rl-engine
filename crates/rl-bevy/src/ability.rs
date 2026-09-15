@@ -31,6 +31,7 @@ use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position, Viewshed};
+use crate::cue::{Anchor, Cue, Cued, LookOf};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
@@ -213,11 +214,6 @@ pub enum AbilityEvent {
         aim: Point,
         /// Everyone under the footprint that the aim wanted there.
         targets: Vec<Entity>,
-        /// The cells a projectile flew through, landing included, for
-        /// whatever draws the flight. Empty for a shape with none.
-        path: Vec<Point>,
-        /// Every cell the footprint covered, for whatever draws it land.
-        cells: Vec<Point>,
     },
     /// It could not be used, for every reason at once.
     Refused {
@@ -286,6 +282,10 @@ pub struct EffectWorld<'w, 's> {
     pub cure: MessageWriter<'w, Cure>,
     /// The ability stream, for an effect that rolls.
     pub rng: ResMut<'w, AbilityRng>,
+    /// What is worth seeing, for whatever draws. The flight and the burst
+    /// of the use itself are cued before any effect runs, so a cue an
+    /// effect adds plays after them.
+    pub cues: MessageWriter<'w, Cued>,
     actors: Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>)>,
     occupancy: ResMut<'w, Occupancy>,
     map: Res<'w, WorldMap>,
@@ -706,15 +706,38 @@ pub fn resolve_abilities(
         }
 
         let targets = landing.targets.clone();
+        for cue in cues_of(&landing, &world) {
+            world.cues.write(Cued { actor: user, cue });
+        }
         for built in &abilities.built[id.index()] {
             if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
                 continue;
             }
             built.effect.apply(&landing, &mut world);
         }
-        events.write(AbilityEvent::Used { user, ability: id, aim, targets, path: landing.path.clone(), cells: landing.cells.clone() });
+        events.write(AbilityEvent::Used { user, ability: id, aim, targets });
         resolution.done(user, def.time);
     }
+}
+
+/// What a use is worth seeing: the flight to where a projectile stopped,
+/// and the burst over the footprint. An anchor follows the target standing
+/// on it, so a burst on someone knocked back goes with them and a bolt at
+/// someone walking away still lands on them; a cell with nobody on it is
+/// the cell.
+fn cues_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Vec<Cue> {
+    let look = LookOf::Ability(landing.ability);
+    let anchor = |cell: Point| landing.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell));
+    let mut cues = Vec::new();
+    if let Some(stop) = landing.landed_at
+        && stop != landing.origin
+    {
+        cues.push(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor(stop), look });
+    }
+    if !landing.cells.is_empty() {
+        cues.push(Cue::Burst { on: landing.cells.iter().map(|c| anchor(*c)).collect(), look });
+    }
+    cues
 }
 
 /// Every reason `def` may not be used by `user` right now.

@@ -91,7 +91,7 @@ pub struct Stack {
 
 /// What happened to an item, for narration and for the game's own
 /// reactions. Written in [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve).
-#[derive(Message, Debug, Clone, PartialEq, Eq)]
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemEvent {
     /// `actor` took `item` off the ground. `merged_into` names the carried
     /// stack it joined, in which case `item` no longer exists.
@@ -147,9 +147,6 @@ pub enum ItemEvent {
         at: Position,
         /// Whoever it struck.
         struck: Option<Entity>,
-        /// The cells it flew through, the rest included, for whatever
-        /// draws the flight.
-        path: Vec<Point>,
     },
 }
 
