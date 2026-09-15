@@ -21,6 +21,7 @@
 use bevy::prelude::*;
 use rl_core::{Direction, Point, Rect};
 
+use crate::controls::Repeats;
 use crate::focus::{Focus, Sighting, cycle};
 use crate::keys::DirectionKeys;
 
@@ -79,15 +80,11 @@ pub fn shifted(input: &ButtonInput<KeyCode>) -> bool {
 /// start of the list otherwise, so a cursor nudged off its target snaps
 /// back to the first. Two things on one tile are two stops, and landing on
 /// the second counts as a move although the cell is the same.
-pub fn steer(
-    at: &mut Point,
-    focus: &mut Focus,
-    input: &ButtonInput<KeyCode>,
-    keys: &CursorKeys,
-    steps: &DirectionKeys,
-    bounds: Rect,
-    candidates: impl FnOnce() -> Vec<Sighting>,
-) -> Steer {
+///
+/// A direction key held down steps again at the pace `repeats` says, the
+/// same pace a held key walks at.
+pub fn steer(at: &mut Point, focus: &mut Focus, keyed: &Keyed<'_>, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
+    let Keyed { input, keys, steps, repeats } = *keyed;
     if input.just_pressed(keys.close) {
         return Steer::Close;
     }
@@ -103,7 +100,7 @@ pub fn steer(
         focus.set(Some(next.entity));
         return if moved { Steer::Moved } else { Steer::Stay };
     }
-    let Some(step) = steps.just_pressed(input) else { return Steer::Stay };
+    let Some(step) = steps.just_pressed(input).or_else(|| repeats.firing(false)) else { return Steer::Stay };
     let to = stepped(*at, step, bounds);
     if to == *at {
         return Steer::Stay;
@@ -115,12 +112,27 @@ pub fn steer(
     Steer::Moved
 }
 
+/// One frame's keys and the bindings they are read against, borrowed
+/// together for [`steer`].
+#[derive(Clone, Copy)]
+pub struct Keyed<'a> {
+    /// What is down.
+    pub input: &'a ButtonInput<KeyCode>,
+    /// The cursor's own keys.
+    pub keys: &'a CursorKeys,
+    /// The direction keys.
+    pub steps: &'a DirectionKeys,
+    /// Which direction a held key repeats this frame.
+    pub repeats: &'a Repeats,
+}
+
 /// The keys a cursor system reads, borrowed together.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct CursorInput<'w> {
     input: Res<'w, ButtonInput<KeyCode>>,
     keys: Res<'w, CursorKeys>,
     steps: Res<'w, DirectionKeys>,
+    repeats: Res<'w, Repeats>,
 }
 
 impl CursorInput<'_> {
@@ -141,7 +153,7 @@ impl CursorInput<'_> {
 
     /// [`steer`], over this frame's keys.
     pub fn steer(&self, at: &mut Point, focus: &mut Focus, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
-        steer(at, focus, &self.input, &self.keys, &self.steps, bounds, candidates)
+        steer(at, focus, &Keyed { input: &self.input, keys: &self.keys, steps: &self.steps, repeats: &self.repeats }, bounds, candidates)
     }
 }
 
@@ -188,11 +200,26 @@ mod tests {
             input.press(*key);
         }
         let (mut at, mut focus, mut asked) = (at, focus, false);
-        let steer = steer(&mut at, &mut focus, &input, &CursorKeys::default(), &DirectionKeys::default(), Rect::new(0, 0, 10, 10), || {
+        let keyed = Keyed { input: &input, keys: &CursorKeys::default(), steps: &DirectionKeys::default(), repeats: &Repeats::default() };
+        let steer = steer(&mut at, &mut focus, &keyed, Rect::new(0, 0, 10, 10), || {
             asked = true;
             candidates.to_vec()
         });
         Frame { at, focus, steer, asked }
+    }
+
+    /// A direction key held down keeps the cursor stepping, at the pace a
+    /// held key walks.
+    #[test]
+    fn a_held_direction_key_steps_the_cursor_again() {
+        let input = ButtonInput::<KeyCode>::default();
+        let mut repeats = Repeats::default();
+        let pace = crate::controls::RepeatPace { delay: 0.1, every: 0.1 };
+        repeats.advance(Some((Direction::East, false)), false, &pace, 0.2);
+        let (mut at, mut focus) = (Point::new(5, 5), Focus::default());
+        let keyed = Keyed { input: &input, keys: &CursorKeys::default(), steps: &DirectionKeys::default(), repeats: &repeats };
+        let steer = steer(&mut at, &mut focus, &keyed, Rect::new(0, 0, 10, 10), Vec::new);
+        assert_eq!((at, steer), (Point::new(6, 5), Steer::Moved));
     }
 
     #[test]

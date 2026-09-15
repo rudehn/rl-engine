@@ -168,7 +168,13 @@ impl Plugin for UiPlugin {
             .init_resource::<MessageLog>()
             .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate).chain().in_set(rl_bevy::PresentSet::Narrate))
             .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
-            .add_systems(Update, (controls::advance_repeats.before(rl_bevy::EngineSet::Input), modal::close_on_escape.in_set(rl_bevy::EngineSet::Input)))
+            .add_systems(Update, controls::advance_repeats.before(rl_bevy::EngineSet::Input))
+            // After every screen has had the key, so the one on top answers
+            // it itself when it can and this is only the fallback.
+            .add_systems(
+                Update,
+                modal::close_on_escape.after(rl_bevy::EngineSet::Input).before(rl_bevy::EngineSet::Turns).run_if(in_state(rl_bevy::EngineState::Playing)),
+            )
             .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones);
         // The one facet key the engine itself pushes: a status badge.
         app.world_mut().resource_mut::<Facets>().declare("badge");

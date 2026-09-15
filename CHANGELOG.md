@@ -28,7 +28,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - `panel::tint`, and `panel::bar` draws on the background its cells already have.
 - `Controls`, the registry every key a game answers to is declared in, with `AddControls::add_control`, `ControlId`, `Chord` (a key with Shift or not, matched exactly), `Keys` (chords, the direction keys with or without Shift, or one of the engine's own bindings as an `EngineKey`, read from its resource when listed), and `ControlInput`, this frame's keys read through it. The engine's cursors, scrollback, overworld map and controls screen declare their own keys, in `finish`, so a game's groups are listed first.
 - A held direction key repeats: `Repeats` and `RepeatPace` in `rl-ui`, read by `ControlInput::direction`, so every game's walk, cursor and shove repeats at one pace. Corsair's own timer is gone.
-- The cursors' close key closes whatever screen is on top when no screen answered it, through `Modals`.
+- The cursors' close key closes whatever screen is on top when no screen answered it, through `Modals`, after every screen has read its keys.
+- Fixed: an aim outlived its screen when the screen was closed by anything but the cursor's own key, and its overlay stayed on the map while the player walked. `TargetView` forgets the aim whenever the target screen is not open.
+- Both cursors step again while a direction key is held, at the same pace a held key walks.
 - `InspectView` names the ground under the cursor (`ground`, `burning`, `gas`) from the new `TileTables::names`, and `InspectPanel` prints it and draws the cursor as four pulsing pointers around the cell rather than a block over it.
 - A refused aim draws the shape the player asked for at the cursor, in the tone that says no, rather than at the stop.
 - `Hit` gains `status`, the status whose tick it is, through `Hit::from_status`, so a narrator can say what hurt.

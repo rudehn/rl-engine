@@ -399,6 +399,12 @@ fn mark(occupancy: &Occupancy, user: Entity, cell: Point, alive: impl Fn(Entity)
 
 /// Puts the cursor away and forgets what it was aiming.
 fn close(view: &mut TargetView, modals: &mut Modals, modal: ModalId) {
+    forget(view);
+    modals.close_one(modal);
+}
+
+/// Forgets what the cursor was aiming.
+fn forget(view: &mut TargetView) {
     view.ability = None;
     view.throwing = None;
     view.firing = false;
@@ -409,7 +415,6 @@ fn close(view: &mut TargetView, modals: &mut Modals, modal: ModalId) {
     view.beyond.clear();
     view.targets.clear();
     view.why.clear();
-    modals.close_one(modal);
 }
 
 /// Anything the cursor might land on, as a row is built from it.
@@ -460,7 +465,14 @@ impl Reach<'_, '_> {
 /// the map, the names in the banner and whether it reads as refused are
 /// what will happen when the player confirms. A preview computed any other
 /// way is a preview that drifts.
-pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
+pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: Reach) {
+    // The screen is the one truth about whether the cursor is up. Closed
+    // by anything but its own key, a game's action that closes every
+    // screen or the close key answered by the stack, the aim is forgotten
+    // here, so an overlay never stays on the map after the cursor is gone.
+    if view.aiming() && !modals.is_open(target_modal(&modals)) {
+        forget(&mut view);
+    }
     view.cells.clear();
     view.path.clear();
     view.targets.clear();
@@ -1019,6 +1031,34 @@ mod tests {
         assert_eq!(intents(&mut stage), vec![Use { ability: steel, aim: at }]);
         assert!(!stage.app.world().resource::<Modals>().any_open(), "nothing opened");
         assert!(!stage.app.world().resource::<TargetView>().aiming());
+    }
+
+    /// However the screen goes away, the aim goes with it: the close key,
+    /// answered by the cursor or by the stack for it, and a game closing
+    /// every screen at once, all leave nothing drawn on the map.
+    #[test]
+    fn the_aim_is_forgotten_whenever_its_screen_is_gone() {
+        let mut stage = staged();
+        let (bolt, _, _) = arm(&mut stage);
+        stage.actor("them", 't', 2, 0);
+        stage.tick();
+        let user = stage.player;
+        let aim = |stage: &mut Stage| {
+            stage.app.world_mut().write_message(AimAt { user, ability: bolt });
+            stage.tick();
+            assert!(stage.app.world().resource::<TargetView>().aiming(), "up");
+        };
+
+        aim(&mut stage);
+        stage.press(CursorKeys::default().close);
+        assert!(!stage.app.world().resource::<TargetView>().aiming(), "the close key puts the aim away");
+        assert_eq!(stage.app.world().resource::<Modals>().top(), None, "and only the one screen went");
+
+        aim(&mut stage);
+        stage.app.world_mut().resource_mut::<Modals>().close_all();
+        stage.tick();
+        assert!(!stage.app.world().resource::<TargetView>().aiming(), "closed from outside, the aim is still forgotten");
+        assert!(stage.app.world().resource::<TargetView>().cells.is_empty(), "and nothing is left to draw");
     }
 
     /// Every ability known, in a stable order, with the reasons the gate
