@@ -63,6 +63,12 @@ pub struct MonsterSave {
     pub at: Point,
     pub map: MapId,
     pub hp: i32,
+    /// What it carries, empty for a monster without hands.
+    #[serde(default)]
+    pub bag: Vec<SaveId>,
+    /// Which of those it wears.
+    #[serde(default)]
+    pub worn: Vec<SaveId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,7 +92,8 @@ pub struct TransitionSave {
 /// The player as a capture sees it.
 type PlayerData = (Entity, &'static Position, Option<&'static OnMap>, &'static Health, &'static Inventory, &'static Equipped, &'static Afflicted);
 /// A monster as a capture sees it.
-type MonsterData = (Entity, &'static MonsterKind, &'static Position, Option<&'static OnMap>, &'static Health);
+type MonsterData =
+    (Entity, &'static MonsterKind, &'static Position, Option<&'static OnMap>, &'static Health, Option<&'static Inventory>, Option<&'static Equipped>);
 /// An item as a capture sees it.
 type ItemData = (Entity, &'static ItemKind, Option<&'static Stack>, Option<&'static Position>, Option<&'static OnMap>, Option<&'static Enchant>);
 
@@ -129,18 +136,23 @@ fn capture_game(run: &Run, remap: &mut EntityRemap) -> Option<Captured> {
     let monsters = run
         .monsters
         .iter()
-        .map(|(e, kind, pos, on, hp)| MonsterSave {
+        .map(|(e, kind, pos, on, hp, carried, worn)| MonsterSave {
             id: remap.save_id(e),
             def: run.bestiary.defs.name(kind.0).to_string(),
             at: pos.0,
             map: map_of(on),
             hp: hp.hp,
+            bag: carried.map(|b| b.items.iter().map(|i| remap.save_id(*i)).collect()).unwrap_or_default(),
+            worn: worn.map(|w| w.worn().map(|(_, i)| remap.save_id(i)).collect()).unwrap_or_default(),
         })
         .collect();
+    // Everything carried, the player's and every monster's, since an item in
+    // a bag has no position to be found by.
+    let carried: Vec<Entity> = bag.items.iter().copied().chain(run.monsters.iter().filter_map(|m| m.5).flat_map(|b| b.items.iter().copied())).collect();
     let items = run
         .items
         .iter()
-        .filter(|(e, _, _, pos, _, _)| pos.is_some() || bag.contains(*e))
+        .filter(|(e, _, _, pos, _, _)| pos.is_some() || carried.contains(e))
         .map(|(e, kind, stack, pos, on, enchant)| ItemSave {
             id: remap.save_id(e),
             def: run.armory.defs.name(kind.0).to_string(),
@@ -232,6 +244,17 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
         };
         world.flush();
         remap.bind(m.id, e);
+        // What it carried and wore, rather than the kit a fresh one gets.
+        if !m.bag.is_empty() {
+            let items: Vec<Entity> = m.bag.iter().filter_map(|id| remap.entity(*id)).collect();
+            let mut worn = Equipment::for_slots(&world.resource::<Registries>().slots);
+            for item in m.worn.iter().filter_map(|id| remap.entity(*id)) {
+                if let Some(shape) = world.get::<ItemKind>(item).and_then(|k| armory.shape(k.0)) {
+                    let _ = worn.equip(item, shape);
+                }
+            }
+            world.entity_mut(e).insert((Inventory { items }, Equipped(worn)));
+        }
     }
     for t in &save.transitions {
         world.spawn((
@@ -393,6 +416,49 @@ mod tests {
         assert!(wielding, "the cutlass is back in hand");
         assert_eq!(monsters(&mut back), monster_count, "every monster came back, none were respawned");
         assert_eq!(on_ground(&mut back), ground, "the dropped bottle is still on the ground");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A monster saved carrying knives is continued carrying the same knives,
+    /// not the kit a fresh one would be handed.
+    #[test]
+    fn a_monster_keeps_what_it_carries_across_a_save() {
+        let dir = std::env::temp_dir().join(format!("corsair-save-bag-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = headless(RunSeed(7), false, &dir);
+        app.update();
+        app.update();
+        let me = player(&mut app);
+        let at = app.world().get::<Position>(me).unwrap().0.offset(0, 5);
+        let kind = app.world().resource::<Bestiary>().defs.expect("cutthroat");
+        let cutthroat = app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
+            world.resource_scope(|world: &mut World, armory: Mut<Armory>| {
+                let mut queue = bevy::ecs::world::CommandQueue::default();
+                let mut commands = Commands::new(&mut queue, world);
+                let e = bestiary.spawn(&mut commands, kind, at);
+                bestiary.arm(&mut commands, &armory, e, kind);
+                queue.apply(world);
+                e
+            })
+        });
+        app.update();
+        let knives = |app: &App, who: Entity| -> Vec<u32> {
+            let w = app.world();
+            w.get::<Inventory>(who).map(|b| b.items.iter().filter_map(|i| w.get::<Stack>(*i).map(|s| s.count)).collect()).unwrap_or_default()
+        };
+        let carried = knives(&app, cutthroat);
+        assert!(!carried.is_empty(), "it came armed");
+        save_run(app.world_mut()).unwrap();
+
+        let mut back = headless(RunSeed(7), true, &dir);
+        back.update();
+        back.update();
+        let restored = {
+            let w = back.world_mut();
+            let mut q = w.query::<(Entity, &MonsterKind, &Position)>();
+            q.iter(w).find(|(_, k, p)| k.0 == kind && p.0 == at).map(|(e, _, _)| e).expect("the cutthroat came back where it stood")
+        };
+        assert_eq!(knives(&back, restored), carried, "with the knives it had");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

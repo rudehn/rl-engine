@@ -1,17 +1,22 @@
 //! Items: on the ground, in a bag, or worn.
 //!
-//! An item is an entity. On the ground it has a [`Position`]; in a bag it
-//! is listed in the carrier's [`Inventory`] and has none; worn, it is also
-//! claimed in the carrier's [`Equipped`] slots. The engine resolves the
-//! moves between those three states and charges a turn for each. What an
-//! item does when used is the game's: the engine reports
-//! [`ItemEvent::Used`] and the game reads it, applies the effect, and
-//! despawns the item if it was consumed.
+//! An item is an entity. On the ground it has a [`Position`] and the
+//! [`OnMap`] it lies on; in a bag it is listed in the carrier's
+//! [`Inventory`] and has neither, since a carried thing goes wherever its
+//! carrier does; worn, it is also claimed in the carrier's [`Equipped`]
+//! slots. The engine resolves the moves between those three states and
+//! charges a turn for each. What an item does when used is the game's: the
+//! engine reports [`ItemEvent::Used`] and the game reads it, applies the
+//! effect, and despawns the item if it was consumed.
+//!
+//! Throwing one is [`throwing`](crate::throwing), which needs combat as well.
 
 use bevy::prelude::*;
+use rl_core::Point;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_rules::{EquipShape, Equipment};
 
+use crate::combat::DeathEvent;
 use crate::components::{MyTurn, Position};
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Resolution};
@@ -49,6 +54,16 @@ pub struct Equipped(pub Equipment<Entity>);
 /// Where an item goes when worn. Items without this cannot be equipped.
 #[derive(Component, Debug, Clone)]
 pub struct Wearable(pub EquipShape);
+
+/// How much wearing an item is worth, in the game's own units, so a mind
+/// can tell better gear from worse without knowing what armor is.
+///
+/// A mind weighs an item lying in sight against the worn items it would
+/// displace, and one worth more than all of them together is worth putting
+/// on. Gear without a score is never worth changing into; only the
+/// comparison matters, so any scale the game likes will do.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct GearScore(pub i32);
 
 /// An item's enchant level and affixes, for the game's stat folding.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
@@ -88,7 +103,8 @@ pub enum ItemEvent {
         /// The stack it was merged into, if any.
         merged_into: Option<Entity>,
     },
-    /// `actor` put `item` on the ground at `at`.
+    /// `actor` put `item` on the ground at `at`, or let it fall there on
+    /// dying.
     Dropped {
         /// Who.
         actor: Entity,
@@ -118,6 +134,19 @@ pub enum ItemEvent {
         actor: Entity,
         /// What.
         item: Entity,
+    },
+    /// `actor` threw `item`, which came to rest at `at` after striking
+    /// `struck`, if it met anyone on the way. A throw from a stack names the
+    /// one that left the hand, which is an entity of its own from then on.
+    Thrown {
+        /// Who.
+        actor: Entity,
+        /// What.
+        item: Entity,
+        /// Where it came to rest.
+        at: Position,
+        /// Whoever it struck.
+        struck: Option<Entity>,
     },
 }
 
@@ -152,6 +181,18 @@ impl Action for DropItem {}
 pub struct Equip(pub Entity);
 impl Action for Equip {}
 
+/// Take an item lying on the actor's cell and put it on, in one action.
+///
+/// It costs [`EQUIP_FROM_GROUND_COST`], half as much again as picking up or
+/// putting on alone: quicker than doing both, dearer than either, so taking
+/// up a sword in the middle of a fight is a real choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EquipFromGround(pub Entity);
+impl Action for EquipFromGround {}
+
+/// What [`EquipFromGround`] costs, in hundredths of a step.
+pub const EQUIP_FROM_GROUND_COST: u32 = BASE_ACTION_COST * 3 / 2;
+
 /// Take a worn item off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Unequip(pub Entity);
@@ -165,12 +206,24 @@ impl Action for UseItem {}
 
 /// This module's actions as its resolver sees them, in one list, so that
 /// one turn spends one of them whichever kind it is.
+#[derive(Clone, Copy)]
 enum Which {
     PickUp,
     Drop(Entity),
     Equip(Entity),
+    EquipFromGround(Entity),
     Unequip(Entity),
     Use(Entity),
+}
+
+impl Which {
+    /// What the action costs, done or failed.
+    fn cost(self) -> u32 {
+        match self {
+            Which::EquipFromGround(_) => EQUIP_FROM_GROUND_COST,
+            _ => BASE_ACTION_COST,
+        }
+    }
 }
 
 /// Every item intent written this pass.
@@ -179,6 +232,7 @@ pub struct ItemIntents<'w, 's> {
     pick_ups: MessageReader<'w, 's, Intent<PickUp>>,
     drops: MessageReader<'w, 's, Intent<DropItem>>,
     equips: MessageReader<'w, 's, Intent<Equip>>,
+    from_ground: MessageReader<'w, 's, Intent<EquipFromGround>>,
     unequips: MessageReader<'w, 's, Intent<Unequip>>,
     uses: MessageReader<'w, 's, Intent<UseItem>>,
 }
@@ -188,6 +242,7 @@ impl ItemIntents<'_, '_> {
         let mut out: Vec<(Entity, Which)> = self.pick_ups.read().map(|i| (i.actor, Which::PickUp)).collect();
         out.extend(self.drops.read().map(|i| (i.actor, Which::Drop(i.action.0))));
         out.extend(self.equips.read().map(|i| (i.actor, Which::Equip(i.action.0))));
+        out.extend(self.from_ground.read().map(|i| (i.actor, Which::EquipFromGround(i.action.0))));
         out.extend(self.unequips.read().map(|i| (i.actor, Which::Unequip(i.action.0))));
         out.extend(self.uses.read().map(|i| (i.actor, Which::Use(i.action.0))));
         out
@@ -195,12 +250,14 @@ impl ItemIntents<'_, '_> {
 }
 
 /// Resolves pickups, drops, equips, unequips and uses for the actor
-/// holding the turn. Each costs one action. An impossible one, such as
-/// picking up from bare ground, is refused for the player and treated as
-/// a wait for anyone else, like an impossible move.
+/// holding the turn. Each costs one action, and equipping from the ground
+/// half as much again. An impossible one, such as picking up from bare
+/// ground, is refused for the player and treated as a wait for anyone else,
+/// like an impossible move.
 pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resolution: Resolution, world: ItemWorld, mut events: MessageWriter<ItemEvent>) {
     let ItemWorld { mut carriers, ground, stacks, wearables, map } = world;
     let this_map = map.current();
+    let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map);
     for (actor, which) in intents.drain() {
         if !resolution.claim(actor) {
             continue;
@@ -214,7 +271,7 @@ pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resol
                     let here: Vec<Entity> =
                         ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map).map(|(e, _, _)| e).collect();
                     for item in &here {
-                        commands.entity(*item).remove::<Position>();
+                        commands.entity(*item).remove::<(Position, OnMap)>();
                         let merged_into = stacks.get(*item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));
                         match merged_into {
                             Some(into) => {
@@ -238,7 +295,8 @@ pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resol
                         {
                             events.write(ItemEvent::Unequipped { actor, item });
                         }
-                        commands.entity(item).insert(*pos);
+                        // On the map it is put down on, whichever it was picked up from.
+                        commands.entity(item).insert((*pos, OnMap(this_map)));
                         events.write(ItemEvent::Dropped { actor, item, at: *pos });
                         true
                     }
@@ -256,6 +314,28 @@ pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resol
                             }
                             Err(e) => {
                                 warn!("{actor:?} could not equip {item:?}: {e}");
+                                false
+                            }
+                        },
+                        _ => false,
+                    }
+                }
+                Which::EquipFromGround(item) => {
+                    let Ok((pos, mut bag, worn)) = carriers.get_mut(actor) else { break 'attempt false };
+                    match (worn, wearables.get(item)) {
+                        (Some(mut worn), Ok(shape)) if lies_at(item, pos.0) => match worn.equip(item, &shape.0) {
+                            Ok(displaced) => {
+                                commands.entity(item).remove::<(Position, OnMap)>();
+                                bag.items.push(item);
+                                events.write(ItemEvent::PickedUp { actor, item, merged_into: None });
+                                for other in displaced {
+                                    events.write(ItemEvent::Unequipped { actor, item: other });
+                                }
+                                events.write(ItemEvent::Equipped { actor, item });
+                                true
+                            }
+                            Err(e) => {
+                                warn!("{actor:?} could not equip {item:?} from the ground: {e}");
                                 false
                             }
                         },
@@ -282,9 +362,9 @@ pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resol
             }
         };
         if ok {
-            resolution.done(actor, BASE_ACTION_COST);
+            resolution.done(actor, which.cost());
         } else {
-            resolution.failed(actor, BASE_ACTION_COST);
+            resolution.failed(actor, which.cost());
         }
     }
 }
@@ -305,7 +385,37 @@ pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: 
     }
 }
 
-/// Items: on the ground, in a bag, in a slot, and the five actions that
+/// Lets whatever a dead actor carried fall where it died.
+///
+/// Otherwise a monster that picked up a knife takes it out of the world
+/// with it, since the dead are despawned and a carried item has no place of
+/// its own. The player is left to the game, which may yet revive it.
+pub fn drop_what_the_dead_carried(
+    mut commands: Commands,
+    mut deaths: MessageReader<DeathEvent>,
+    map: Res<WorldMap>,
+    mut carriers: Query<(&mut Inventory, Option<&mut Equipped>)>,
+    mut events: MessageWriter<ItemEvent>,
+) {
+    for death in deaths.read() {
+        if death.was_player {
+            continue;
+        }
+        let Ok((mut bag, worn)) = carriers.get_mut(death.entity) else { continue };
+        if let Some(mut worn) = worn {
+            for item in &bag.items {
+                worn.unequip(*item);
+            }
+        }
+        let at = Position(death.at);
+        for item in bag.items.drain(..) {
+            commands.entity(item).insert((at, OnMap(map.current())));
+            events.write(ItemEvent::Dropped { actor: death.entity, item, at });
+        }
+    }
+}
+
+/// Items: on the ground, in a bag, in a slot, and the six actions that
 /// move them between the three.
 pub struct ItemsPlugin;
 
@@ -314,12 +424,17 @@ impl Plugin for ItemsPlugin {
         use crate::plugin::{CleanupSet, ResolveSet, Turn};
         use crate::turn::AddAction;
         app.add_message::<ItemEvent>()
+            // Read to let the dead drop what they carried. A game without
+            // combat has no deaths, and the reader reads nothing.
+            .add_message::<DeathEvent>()
             .add_action::<PickUp>()
             .add_action::<DropItem>()
             .add_action::<Equip>()
+            .add_action::<EquipFromGround>()
             .add_action::<Unequip>()
             .add_action::<UseItem>()
             .add_systems(Turn, resolve_items.in_set(ResolveSet::Act))
+            .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
     }
 
@@ -335,7 +450,6 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::Turns;
-    use rl_core::Point;
     use rl_rules::Registry;
     use rl_rules::SlotDef;
 
@@ -379,6 +493,7 @@ mod tests {
         let events = act(&mut r, PickUp);
         assert_eq!(events.len(), 2);
         assert!(r.app.world().get::<Position>(sword).is_none(), "off the ground");
+        assert!(r.app.world().get::<OnMap>(sword).is_none(), "and on no map while carried");
         assert_eq!(r.app.world().get::<Inventory>(r.player).unwrap().items, vec![sword, axe]);
         assert_eq!(r.app.world().resource::<Turns>().now(), 100, "picking up cost a turn");
 
@@ -400,6 +515,31 @@ mod tests {
         assert_eq!(r.app.world().get::<Position>(axe).unwrap().0, r.start);
         assert!(!r.app.world().get::<Inventory>(r.player).unwrap().contains(axe));
         assert!(r.app.world().get::<Equipped>(r.player).unwrap().is_free(r.main));
+    }
+
+    #[test]
+    fn equipping_from_the_ground_is_one_action_and_half_again() {
+        let mut r = rig();
+        let sword = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
+        r.app.update();
+        let events = act(&mut r, EquipFromGround(sword));
+        assert_eq!(events, vec![ItemEvent::PickedUp { actor: r.player, item: sword, merged_into: None }, ItemEvent::Equipped { actor: r.player, item: sword }]);
+        assert_eq!(r.app.world().get::<Equipped>(r.player).unwrap().in_slot(r.main), Some(sword), "worn");
+        assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(sword), "and carried");
+        assert!(r.app.world().get::<Position>(sword).is_none(), "and off the ground");
+        assert_eq!(r.app.world().resource::<Turns>().now(), EQUIP_FROM_GROUND_COST, "for a turn and a half: less than picking up and equipping on two");
+    }
+
+    #[test]
+    fn equipping_from_the_ground_takes_only_what_lies_underfoot() {
+        let mut r = rig();
+        let beside = r.app.world_mut().spawn((Item, Position(r.start.offset(1, 0)), Wearable(EquipShape::in_slot(r.main)))).id();
+        let plain = r.app.world_mut().spawn((Item, Position(r.start))).id();
+        r.app.update();
+        assert!(act(&mut r, EquipFromGround(beside)).is_empty(), "a step away is not underfoot");
+        assert!(act(&mut r, EquipFromGround(plain)).is_empty(), "and what cannot be worn is not put on");
+        assert_eq!(r.app.world().resource::<Turns>().now(), 0, "refusals cost nothing");
+        assert_eq!(r.app.world().get::<Position>(beside).unwrap().0, r.start.offset(1, 0));
     }
 
     #[test]

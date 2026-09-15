@@ -9,8 +9,9 @@
 //   armor:      flat damage removed from each hit
 //   attack:     dice notation, "NdS+B" or a flat number
 //   wits:       what it can manage: "mindless" fights on and forgets you out of sight, "animal"
-//               also runs when hurt and searches for you, "sapient" also opens doors; or a list
-//               of "flees" | "searches" | "opens_doors", which may name a preset too
+//               also runs when hurt and searches for you, "sapient" also opens doors, picks things
+//               up, throws them and puts on better gear; or a list of "flees" | "searches" |
+//               "opens_doors" | "picks_up" | "equips" | "throws", which may name a preset too
 //   perception: tiles at which it notices you
 //   speed:      percent, 100 normal
 //   flee_at:    percent health at or below which it runs; 0 never flees

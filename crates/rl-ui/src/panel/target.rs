@@ -60,14 +60,7 @@ impl Plugin for TargetPanel {
 }
 
 /// Paints the footprint and the banner.
-pub fn draw_target(
-    mut terminal: ResMut<Terminal>,
-    layout: Res<TargetLayout>,
-    view: Res<TargetView>,
-    map: Option<Res<MapView>>,
-    abilities: Option<Res<rl_bevy::Abilities>>,
-    palette: Res<Palette>,
-) {
+pub fn draw_target(mut terminal: ResMut<Terminal>, layout: Res<TargetLayout>, view: Res<TargetView>, map: Option<Res<MapView>>, palette: Res<Palette>) {
     if !view.aiming() {
         return;
     }
@@ -98,7 +91,7 @@ pub fn draw_target(
     }
     let bg = palette.get(Tones::SURFACE);
     terminal.fill(rect, rl_render::Cell::new(' ', bg).on(bg));
-    let name = abilities.as_deref().and_then(|a| view.ability.map(|id| a.get(id).name.clone())).unwrap_or_default();
+    let name = if view.throwing.is_some() { format!("throw {}", view.what) } else { view.what.clone() };
     let at = match view.targets.as_slice() {
         [] => "nothing".to_string(),
         [one] if !one.label.is_empty() => one.label.clone(),
@@ -140,7 +133,7 @@ mod tests {
     /// A stage with the map drawn under the overlay, so the test sees the
     /// same cells a player would.
     fn staged() -> Stage {
-        let mut stage = Stage::new_with((AbilitiesPlugin, TargetPanel::new(Rect::new(0, 0, 40, 1)).hints("[enter]")), |app| {
+        let mut stage = Stage::new_with((AbilitiesPlugin, rl_bevy::ThrowingPlugin, TargetPanel::new(Rect::new(0, 0, 40, 1)).hints("[enter]")), |app| {
             app.add_engine_effects();
             abilities(app);
             app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 1, 40, 20)));
@@ -200,6 +193,25 @@ mod tests {
         let view = stage.app.world().resource::<TargetView>();
         assert!(!view.legal);
         assert_ne!(palette.get(Tones::BAD), palette.get(Tones::SELECT), "the two tones are told apart");
+    }
+
+    /// A throw's banner says it is a throw, and of what.
+    #[test]
+    fn a_throw_is_named_as_one_in_the_banner() {
+        let mut stage = staged();
+        let (user, kind) = (stage.player, stage.kind);
+        let knife = stage
+            .app
+            .world_mut()
+            .spawn((rl_bevy::Item, Name::new("knife"), rl_bevy::Throwable { range: 6, strike: Some((kind, rl_core::DiceRoll::flat(2))) }))
+            .id();
+        stage.app.world_mut().get_mut::<rl_bevy::Inventory>(user).expect("a bag").items.push(knife);
+        stage.actor("them", 't', 2, 0);
+        stage.tick();
+
+        stage.app.world_mut().write_message(crate::view::target::AimThrow { user, item: knife });
+        stage.tick();
+        assert_eq!(stage.row(0), "throw knife at them             [enter]");
     }
 
     /// Nothing is drawn while nothing is being aimed.

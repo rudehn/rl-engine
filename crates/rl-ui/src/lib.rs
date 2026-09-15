@@ -110,8 +110,8 @@ pub use panel::{
 };
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones};
 pub use view::{
-    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin,
-    Row, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
+    NearbyViewPlugin, Row, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
 };
 
 use bevy::prelude::*;
@@ -180,8 +180,8 @@ pub mod prelude {
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones};
     pub use crate::view::{
-        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView, NearbyViewPlugin, Row,
-        TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimThrow, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
+        NearbyViewPlugin, Row, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};
 }

@@ -27,6 +27,30 @@ impl<A: Copy> ActorView<A> {
     }
 }
 
+/// Something the actor carries that it could throw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Missile<A: Copy> {
+    /// The item.
+    pub item: A,
+    /// How far it reaches.
+    pub range: i32,
+}
+
+/// Something lying where the actor can see it, as far as a mind can tell
+/// what it is worth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemView<A: Copy> {
+    /// The item.
+    pub id: A,
+    /// Where it lies.
+    pub pos: Point,
+    /// How far it reaches if thrown, when it can be.
+    pub throw_range: Option<i32>,
+    /// How much better off the actor would be wearing it than wearing what
+    /// it would displace, when it can wear it at all. Above zero is better.
+    pub gain: Option<i32>,
+}
+
 /// The world from one actor's point of view, built once per turn.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot<A: Copy> {
@@ -48,21 +72,37 @@ pub struct Snapshot<A: Copy> {
     /// What the actor is able to do. A tactic that needs a capability asks
     /// here before it decides, whatever the brain it sits in would like.
     pub wits: Wits,
+    /// What it carries that it could throw. Empty for an actor with no bag,
+    /// which is most of them.
+    pub missiles: Vec<Missile<A>>,
+    /// What lies where it can see, nearest first.
+    pub items: Vec<ItemView<A>>,
 }
 
 impl<A: Copy> Snapshot<A> {
     /// A snapshot with nothing in sight, of a mind with the default wits.
     pub fn alone(me: ActorView<A>) -> Self {
-        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None, usable: Vec::new(), last_known: None, wits: Wits::default() }
+        Self {
+            me,
+            enemies: Vec::new(),
+            allies: Vec::new(),
+            came_from: None,
+            usable: Vec::new(),
+            last_known: None,
+            wits: Wits::default(),
+            missiles: Vec::new(),
+            items: Vec::new(),
+        }
     }
 
-    /// Sorts enemies and allies nearest first, ties by position, so two
-    /// runs agree on who is "nearest".
+    /// Sorts enemies, allies and items nearest first, ties by position, so
+    /// two runs agree on what is "nearest".
     pub fn sort(&mut self) {
         let me = self.me.pos;
         let key = |v: &ActorView<A>| (geometry::chebyshev(me, v.pos), v.pos);
         self.enemies.sort_by_key(key);
         self.allies.sort_by_key(key);
+        self.items.sort_by_key(|i| (geometry::chebyshev(me, i.pos), i.pos));
     }
 
     /// The nearest visible enemy.

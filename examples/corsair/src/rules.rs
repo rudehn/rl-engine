@@ -63,7 +63,7 @@ pub fn load(seed: RunSeed, home: Point, effects: &EffectKinds) -> Loaded {
     registries.statuses = crate::statuses::load(&registries.names());
     let armory = Armory::load(seed, home, &registries);
     let abilities = crate::abilities::load(&registries.names(), effects);
-    let bestiary = Bestiary::load(seed, home, &registries.names().with("item", &armory.defs).with("ability", abilities.defs()));
+    let bestiary = Bestiary::load(seed, home, &registries.names().with("item", &armory.defs).with("ability", abilities.defs()), registries.slots.len());
     let (quests, facts) = crate::quests::load(&bestiary, &armory, &registries);
     let combat = relations(&registries.factions);
     Loaded { registries, combat, armory, abilities, bestiary, quests, facts }

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::Terminal;
-use rl_engine::rl_ui::{ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu};
+use rl_engine::rl_ui::{AimThrow, ListMenu, MenuRow, ModalId, Modals, Palette, Tones, draw_menu};
 
 use crate::items::{Armory, ItemKind};
 
@@ -25,7 +25,7 @@ pub struct InventoryScreen {
 impl Default for InventoryScreen {
     fn default() -> Self {
         let mut menu = ListMenu::new("Sea chest");
-        menu.hints = "[e]quip/remove  [d]rop  [u]se  [esc]".into();
+        menu.hints = "[e]quip/remove  [d]rop  [u]se  [t]hrow  [esc]".into();
         menu.empty = "Nothing but lint.".into();
         Self { menu }
     }
@@ -51,6 +51,7 @@ pub struct ChestIntents<'w> {
     unequips: MessageWriter<'w, Intent<Unequip>>,
     drops: MessageWriter<'w, Intent<DropItem>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
+    throws: MessageWriter<'w, AimThrow>,
 }
 
 pub fn inventory_keys(
@@ -58,7 +59,7 @@ pub fn inventory_keys(
     mut screen: ResMut<InventoryScreen>,
     mut modals: ResMut<Modals>,
     player: PlayerTurn,
-    bag: Bag,
+    (bag, missiles): (Bag, Query<(), With<Throwable>>),
     mut intents: ChestIntents,
 ) {
     let chest = modal(&modals);
@@ -94,6 +95,10 @@ pub fn inventory_keys(
         true
     } else if keys.any_just_pressed([KeyCode::KeyU, KeyCode::Enter]) {
         intents.uses.write(Intent::new(entity, UseItem(item)));
+        true
+    } else if keys.just_pressed(KeyCode::KeyT) && missiles.contains(item) {
+        // The chest closes and the targeting cursor opens in its place.
+        intents.throws.write(AimThrow { user: entity, item });
         true
     } else {
         false
@@ -134,6 +139,9 @@ pub fn draw_inventory(mut screen: ResMut<InventoryScreen>, modals: Res<Modals>, 
             }
             if let Some((range, dice, kind_name)) = &d.ranged {
                 detail.push(format!("shoots {dice} {} to {range}", registries.damage_kinds.name(kind_name.id())));
+            }
+            if let Some((range, dice, kind_name)) = &d.thrown {
+                detail.push(format!("thrown {dice} {} to {range}", registries.damage_kinds.name(kind_name.id())));
             }
             if let Some(e) = enchant {
                 for (k, dice) in e.0.strikes(&armory.affixes) {

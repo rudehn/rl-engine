@@ -13,10 +13,10 @@ use rl_engine::rl_rules::Brain;
 use rl_engine::rl_rules::ai::awareness::NoticeStats;
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
 use rl_engine::rl_rules::ai::tactics::UseAbility;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
+use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Scavenge, ThrowAtRange, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::{AbilityDef, NameRef, Names, StatusDef, Wits};
+use rl_engine::rl_rules::{AbilityDef, Equipment, NameRef, Names, StatusDef, Wits};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
@@ -54,6 +54,19 @@ pub struct MonsterDef {
     pub abilities: Vec<NameRef<AbilityDef>>,
     #[serde(default)]
     pub purse: Option<(u32, u32)>,
+    #[serde(default)]
+    pub kit: Vec<(NameRef<crate::items::ItemDef>, u32)>,
+}
+
+/// What a monster fights with before it puts anything on: the blow and hide
+/// its kind was written with, which the gear it finds adds to rather than
+/// replaces.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Innate {
+    /// Its own blow.
+    pub attack: MeleeAttack,
+    /// Its own armor.
+    pub armor: i32,
 }
 
 impl Named for MonsterDef {
@@ -87,6 +100,8 @@ pub struct Bestiary {
     pub defs: Registry<MonsterDef>,
     pub table: BandedTable<rl_engine::rl_core::Id<MonsterDef>>,
     brains: Vec<Arc<Brain<Entity>>>,
+    /// How many equipment slots a monster with hands has to fill.
+    slots: usize,
     seed: RunSeed,
     home: Point,
     spawned: BTreeSet<Point>,
@@ -95,25 +110,37 @@ pub struct Bestiary {
 impl Bestiary {
     /// Loads the bestiary against `names`, which must hold the damage kinds,
     /// the sides, the items, the statuses and the abilities a monster is
-    /// written with; panics listing every problem.
-    pub fn load(seed: RunSeed, home: Point, names: &Names) -> Self {
+    /// written with, for monsters that wear up to `slots` things; panics
+    /// listing every problem.
+    pub fn load(seed: RunSeed, home: Point, names: &Names, slots: usize) -> Self {
         let defs: Registry<MonsterDef> = names.load(MONSTERS_RON).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
-        defs.validate(|m, _| if m.hp <= 0 { Err("hp must be positive".into()) } else { Ok(()) }).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
+        defs.validate(|m, _| {
+            if m.hp <= 0 {
+                return Err("hp must be positive".into());
+            }
+            if !m.kit.is_empty() && !m.wits.has(Wits::PICKS_UP) && !m.wits.has(Wits::EQUIPS) {
+                return Err("a kit needs wits that pick up or equip, or there is no bag to carry it in".into());
+            }
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
 
         let mut table = BandedTable::default();
         let mut brains = Vec::new();
         for (id, m) in defs.iter() {
             let (lo, hi, w, gmin, gmax) = m.spawn;
             table.push(BandedEntry::new(id).bands(lo, hi).weight(w).group(gmin, gmax));
-            // A kind that knows an ability leads with it when one is worth
-            // firing, and fights as it would without otherwise.
+            // One shape of brain for the whole bestiary: a kind that knows an
+            // ability leads with it when one is worth firing, and the wits say
+            // which of the rest a crab can manage and a cutthroat can.
             let mut brain = if m.abilities.is_empty() { Brain::new() } else { Brain::new().then(UseAbility { chance_pct: 35 }) }.then(MeleeAdjacent);
             if m.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: m.flee_at });
             }
+            let brain = brain.then(ThrowAtRange { chance_pct: 70 }).then(Scavenge { reach: 4 });
             brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: m.wander })));
         }
-        Self { defs, table, brains, seed, home, spawned: BTreeSet::new() }
+        Self { defs, table, brains, slots, seed, home, spawned: BTreeSet::new() }
     }
 }
 
@@ -177,8 +204,36 @@ impl Bestiary {
             let coin = min + (rl_engine::rl_core::seed::position_hash(self.seed.0, p.x, p.y) % span) as u32;
             commands.entity(e).insert(crate::abilities::Purse(coin));
         }
+        // Hands: a bag to carry what it picks up, slots for what it puts on,
+        // and its own blow and hide for the gear to add to.
+        if m.wits.has(Wits::PICKS_UP) || m.wits.has(Wits::EQUIPS) {
+            let innate = Innate { attack: MeleeAttack { kind: m.kind.id(), dice: m.attack }, armor: m.armor };
+            commands.entity(e).insert((Inventory::default(), Equipped(Equipment::with_slot_count(self.slots)), Strikes::default(), innate));
+        }
         e
     }
+
+    /// Hands a freshly spawned `id` what its kind carries when it first
+    /// appears. Not for a monster restored from a save, which carries what it
+    /// had when it was saved.
+    pub fn arm(&self, commands: &mut Commands, armory: &crate::items::Armory, monster: Entity, id: rl_engine::rl_core::Id<MonsterDef>) {
+        let kit = &self.defs.get(id).kit;
+        if kit.is_empty() {
+            return;
+        }
+        let items = kit.iter().map(|(item, count)| armory.spawn(commands, item.id(), *count, None)).collect();
+        commands.entity(monster).insert(Inventory { items });
+    }
+}
+
+/// Where a region's monsters are placed: the world, the map, who already
+/// stands where, and the player they must not appear beside.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct SpawnSite<'w, 's> {
+    world: Res<'w, WorldRes>,
+    map: Res<'w, WorldMap>,
+    occupancy: Res<'w, Occupancy>,
+    player: Query<'w, 's, &'static Position, With<Player>>,
 }
 
 /// Populates each region the first time it streams in, by its distance
@@ -187,11 +242,10 @@ pub fn spawn_on_load(
     mut commands: Commands,
     mut loaded: MessageReader<ChunkLoaded>,
     mut bestiary: ResMut<Bestiary>,
-    world: Res<WorldRes>,
-    map: Res<WorldMap>,
-    occupancy: Res<Occupancy>,
-    player: Query<&Position, With<Player>>,
+    armory: Res<crate::items::Armory>,
+    site: SpawnSite,
 ) {
+    let SpawnSite { world, map, occupancy, player } = site;
     let player_pos = player.single().map(|p| p.0).unwrap_or(Point::ZERO);
     for ev in loaded.read() {
         let region = ev.region;
@@ -215,7 +269,8 @@ pub fn spawn_on_load(
                 if !map.is_walkable(p) || occupancy.is_occupied(p) || geometry::chebyshev(p, player_pos) < 6 {
                     continue;
                 }
-                bestiary.spawn(&mut commands, id, p);
+                let monster = bestiary.spawn(&mut commands, id, p);
+                bestiary.arm(&mut commands, &armory, monster, id);
                 placed += 1;
             }
         }
@@ -312,7 +367,7 @@ pub fn stages() -> DamageStages {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_core::RunSeed;
+    use rl_engine::rl_core::{Direction, RunSeed};
     use rl_engine::rl_ui::{VitalsView, VitalsViewPlugin};
 
     /// The bestiary's wits load as written: a crab has none to speak of, a
@@ -325,6 +380,63 @@ mod tests {
         assert_eq!(wits("crab"), Wits::MINDLESS);
         assert!(wits("wild dog").has(Wits::FLEES) && !wits("wild dog").has(Wits::OPENS_DOORS));
         assert!(wits("cutthroat").has(Wits::OPENS_DOORS));
+    }
+
+    /// A cutthroat comes with knives, throws one at a player out of arm's
+    /// reach, and the knife lies on the ground where it fell.
+    #[test]
+    fn a_cutthroat_throws_one_of_its_knives_at_a_player_out_of_arms_reach() {
+        #[derive(Resource, Default)]
+        struct Throws(Vec<(Entity, Entity)>);
+        fn record(mut events: MessageReader<ItemEvent>, mut throws: ResMut<Throws>) {
+            throws.0.extend(events.read().filter_map(|e| match *e {
+                ItemEvent::Thrown { actor, item, .. } => Some((actor, item)),
+                _ => None,
+            }));
+        }
+        let dir = std::env::temp_dir().join(format!("corsair-knives-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        app.init_resource::<Throws>().add_systems(PostUpdate, record);
+        app.update();
+        app.update();
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let at = app.world().get::<Position>(me).unwrap().0;
+        // Four steps off down a clear line, on whichever side has one.
+        let along = |dir: Direction, n: i32| {
+            let (dx, dy) = dir.delta();
+            at.offset(dx * n, dy * n)
+        };
+        let clear = |app: &App, dir: Direction| {
+            (1..=4).all(|n| app.world().resource::<WorldMap>().is_walkable(along(dir, n)) && !app.world().resource::<Occupancy>().is_occupied(along(dir, n)))
+        };
+        let side = Direction::ALL.into_iter().find(|d| !d.is_diagonal() && clear(&app, *d)).expect("a clear line from the player");
+        let kind = app.world().resource::<Bestiary>().defs.expect("cutthroat");
+        let cutthroat = app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
+            world.resource_scope(|world: &mut World, armory: Mut<crate::items::Armory>| {
+                let mut queue = bevy::ecs::world::CommandQueue::default();
+                let mut commands = Commands::new(&mut queue, world);
+                let e = bestiary.spawn(&mut commands, kind, along(side, 4));
+                bestiary.arm(&mut commands, &armory, e, kind);
+                // Throwing and nothing else, so the test is about the knives
+                // rather than about which tactic the dice favoured.
+                commands.entity(e).insert(Mind(Arc::new(Brain::new().then(ThrowAtRange::default()))));
+                queue.apply(world);
+                e
+            })
+        });
+        app.update();
+        let carried = app.world().get::<Inventory>(cutthroat).map(|b| b.items.len());
+        assert_eq!(carried, Some(1), "it came with a stack of knives");
+
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        let throws = &app.world().resource::<Throws>().0;
+        let [(by, knife)] = throws.as_slice() else { panic!("one throw: {throws:?}") };
+        assert_eq!(*by, cutthroat);
+        assert!(app.world().get::<Health>(me).is_some_and(|h| h.hp < h.max), "the knife struck");
+        assert_eq!(app.world().get::<Position>(*knife).map(|p| p.0), Some(at), "and lies at the player's feet");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Reported from play: on the surface, a cutthroat was cutting the

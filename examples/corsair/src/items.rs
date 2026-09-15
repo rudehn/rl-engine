@@ -45,6 +45,8 @@ pub struct ItemDef {
     #[serde(default)]
     pub ranged: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
     #[serde(default)]
+    pub thrown: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
+    #[serde(default)]
     pub heal: i32,
     #[serde(default)]
     pub stack: bool,
@@ -113,6 +115,9 @@ impl Armory {
         defs.validate(|d, _| {
             if d.ranged.as_ref().is_some_and(|(range, _, _)| *range < 2) {
                 return Err("a ranged weapon reaches at least 2".into());
+            }
+            if d.thrown.as_ref().is_some_and(|(range, _, _)| *range < 2) {
+                return Err("a thrown item reaches at least 2".into());
             }
             if d.slot.is_none() && !d.also.is_empty() {
                 return Err("also without a slot".into());
@@ -213,6 +218,16 @@ impl Armory {
         self.shapes[id.index()].as_ref()
     }
 
+    /// What wearing `id` enchanted as `enchant` is worth, for a monster
+    /// choosing between two things to wear: its armor twice over, its
+    /// average blow, half its average shot, and a point for each level and
+    /// affix on top.
+    pub fn gear_score(&self, id: Id<ItemDef>, enchant: &Enchanted) -> i32 {
+        let d = self.defs.get(id);
+        let blow = d.attack.map_or(0.0, |a| a.avg()) + d.ranged.as_ref().map_or(0.0, |(_, roll, _)| roll.avg() / 2.0);
+        d.armor * 2 + blow.round() as i32 + enchant.level + enchant.affixes.len() as i32
+    }
+
     /// Spawns one `id`, or a stack of `count`, on the ground at `at` or
     /// nowhere when `at` is `None`.
     pub fn spawn(&self, commands: &mut Commands, id: Id<ItemDef>, count: u32, at: Option<Point>) -> Entity {
@@ -232,7 +247,10 @@ impl Armory {
             e.insert(Tagged(tags.to_vec()));
         }
         if let Some(shape) = self.shape(id) {
-            e.insert((Wearable(shape.clone()), Enchant(enchant)));
+            e.insert((Wearable(shape.clone()), GearScore(self.gear_score(id, &enchant)), Enchant(enchant)));
+        }
+        if let Some((range, dice, kind)) = &d.thrown {
+            e.insert(Throwable { range: *range, strike: Some((kind.id(), *dice)) });
         }
         if d.stack {
             e.insert(Stack { key: id.raw() as u64, count });
@@ -342,10 +360,19 @@ pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, m
 }
 
 /// A wearer as the gear refresh sees it.
-type WearerData = (Entity, &'static Equipped, &'static mut StatBlock, &'static mut Armor, &'static mut MeleeAttack, &'static mut Strikes);
+type WearerData = (
+    Entity,
+    &'static Equipped,
+    &'static mut StatBlock,
+    &'static mut Armor,
+    &'static mut MeleeAttack,
+    &'static mut Strikes,
+    Option<&'static crate::monsters::Innate>,
+);
 
 /// Rebuilds a wearer's stats, armor, attack, extra strikes and shot from
-/// what it wears: the items' own numbers, their affixes and their levels.
+/// what it wears: the items' own numbers, their affixes and their levels,
+/// on top of a monster's own claws and hide, or a bare fist.
 pub fn refresh_gear(
     mut commands: Commands,
     armory: Res<Armory>,
@@ -354,7 +381,7 @@ pub fn refresh_gear(
     items: Query<(&ItemKind, Option<&Enchant>)>,
 ) {
     let main_hand = armory.main_hand;
-    for (wearer, worn, mut sheet, mut armor, mut attack, mut strikes) in &mut wearers {
+    for (wearer, worn, mut sheet, mut armor, mut attack, mut strikes, innate) in &mut wearers {
         // Gear is rebuilt from scratch; what statuses put there stays.
         let mut stats = std::mem::take(&mut sheet.0);
         stats.retain_sources(rl_engine::rl_rules::is_status_source);
@@ -375,7 +402,7 @@ pub fn refresh_gear(
                 shot = Some(RangedAttack { kind: shot_kind.id(), dice, range: *range });
             }
         }
-        armor.0 = stats.value(armory.armor_stat, &registries.stats);
+        armor.0 = innate.map_or(0, |i| i.armor) + stats.value(armory.armor_stat, &registries.stats);
         let bonus = stats.value(armory.attack_stat, &registries.stats);
         let wielded = worn.in_slot(main_hand).and_then(|e| items.get(e).ok());
         (*attack, strikes.0) = match wielded {
@@ -387,7 +414,7 @@ pub fn refresh_gear(
                 (MeleeAttack { kind: d.kind.expect("checked").id(), dice: DiceRoll { bonus: dice.bonus + bonus, ..dice } }, extra)
             }
             _ => {
-                let bare = unarmed(&armory);
+                let bare = innate.map_or_else(|| unarmed(&armory), |i| i.attack);
                 (MeleeAttack { dice: DiceRoll { bonus: bare.dice.bonus + bonus, ..bare.dice }, ..bare }, Vec::new())
             }
         };
@@ -408,14 +435,24 @@ pub fn unarmed(armory: &Armory) -> MeleeAttack {
     MeleeAttack { kind: armory.fist, dice: DiceRoll::new(1, 3) }
 }
 
-/// Turns item events into log lines.
+/// Who might see an item change hands: the player's eyes, and where and
+/// what everyone else is.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Onlookers<'w, 's> {
+    player: Query<'w, 's, (Entity, &'static Viewshed), With<Player>>,
+    others: Query<'w, 's, (&'static Name, &'static Position), Without<Player>>,
+}
+
+/// Turns item events into log lines: everything the player does, and what a
+/// monster in sight takes up, puts on or throws, which is how a player learns
+/// which of them have hands.
 pub fn narrate_items(
     mut events: MessageReader<ItemEvent>,
     armory: Res<Armory>,
     turns: Res<Turns>,
     mut log: ResMut<MessageLog>,
     items: Query<(&ItemKind, Option<&Stack>, Option<&Enchant>)>,
-    players: Query<(), With<Player>>,
+    onlookers: Onlookers,
 ) {
     let turn = turns.turn_number();
     let describe = |item: Entity| -> String {
@@ -425,24 +462,41 @@ pub fn narrate_items(
             Err(_) => "something".into(),
         }
     };
+    let wielded = |item: Entity| items.get(item).is_ok_and(|(k, _, _)| armory.defs.get(k.0).attack.is_some() || armory.defs.get(k.0).ranged.is_some());
+    let Ok((you, sight)) = onlookers.player.single() else { return };
     for ev in events.read() {
-        let (actor, text, cat) = match *ev {
-            ItemEvent::PickedUp { actor, item, merged_into } => (actor, format!("You pick up {}.", describe(merged_into.unwrap_or(item))), Tones::TEXT),
-            ItemEvent::Dropped { actor, item, .. } => (actor, format!("You drop {}.", describe(item)), Tones::TEXT),
-            ItemEvent::Equipped { actor, item } => {
-                let verb = if items.get(item).is_ok_and(|(k, _, _)| armory.defs.get(k.0).attack.is_some() || armory.defs.get(k.0).ranged.is_some()) {
-                    "wield"
-                } else {
-                    "put on"
-                };
-                (actor, format!("You {verb} {}.", describe(item)), Tones::TEXT)
-            }
-            ItemEvent::Unequipped { actor, item } => (actor, format!("You take off {}.", describe(item)), Tones::MUTED),
-            ItemEvent::Used { .. } => continue,
+        let actor = match *ev {
+            ItemEvent::PickedUp { actor, .. }
+            | ItemEvent::Dropped { actor, .. }
+            | ItemEvent::Equipped { actor, .. }
+            | ItemEvent::Unequipped { actor, .. }
+            | ItemEvent::Used { actor, .. }
+            | ItemEvent::Thrown { actor, .. } => actor,
         };
-        if players.get(actor).is_ok() {
-            log.push(text, cat, turn);
+        if actor == you {
+            let (text, tone) = match *ev {
+                ItemEvent::PickedUp { item, merged_into, .. } => (format!("You pick up {}.", describe(merged_into.unwrap_or(item))), Tones::TEXT),
+                ItemEvent::Dropped { item, .. } => (format!("You drop {}.", describe(item)), Tones::TEXT),
+                ItemEvent::Equipped { item, .. } => (format!("You {} {}.", if wielded(item) { "wield" } else { "put on" }, describe(item)), Tones::TEXT),
+                ItemEvent::Unequipped { item, .. } => (format!("You take off {}.", describe(item)), Tones::MUTED),
+                ItemEvent::Thrown { item, .. } => (format!("You throw {}.", describe(item)), Tones::TEXT),
+                ItemEvent::Used { .. } => continue,
+            };
+            log.push(text, tone, turn);
+            continue;
         }
+        // A monster's hands, when the player can see them at work.
+        let Ok((name, at)) = onlookers.others.get(actor) else { continue };
+        if !sight.can_see(at.0) {
+            continue;
+        }
+        let text = match *ev {
+            ItemEvent::PickedUp { item, merged_into, .. } => format!("The {name} picks up {}.", describe(merged_into.unwrap_or(item))),
+            ItemEvent::Equipped { item, .. } => format!("The {name} {} {}.", if wielded(item) { "wields" } else { "puts on" }, describe(item)),
+            ItemEvent::Thrown { item, .. } => format!("The {name} throws {}.", describe(item)),
+            _ => continue,
+        };
+        log.push(text, Tones::NOTICE, turn);
     }
 }
 
@@ -486,6 +540,57 @@ mod tests {
             assert!(name.contains("cutlass") && name.contains('+'), "{name}");
         }
         assert_eq!(armory.roll_quality(armory.defs.expect("rum"), Quality::HOARD, &mut rng), Enchanted::plain(), "drink is never enchanted");
+    }
+
+    /// A knife can be thrown and gear is scored, better gear higher, so a
+    /// monster can tell which of two things to wear without an armory.
+    #[test]
+    fn a_knife_is_made_to_be_thrown_and_gear_is_scored_better_for_better() {
+        let loaded = crate::rules::load(RunSeed(1), Point::ZERO, &crate::rules::effect_kinds());
+        let armory = &loaded.armory;
+        let score = |name: &str, level: i32| armory.gear_score(armory.defs.expect(name), &Enchanted { level, affixes: Vec::new() });
+        assert!(score("buckler", 0) > 0, "a buckler is worth something");
+        assert!(score("buckler", 2) > score("buckler", 0), "and more enchanted");
+        assert!(score("boarding axe", 0) > score("cutlass", 0), "an axe hits harder than a cutlass");
+        let (range, _, _) = armory.defs.get(armory.defs.expect("throwing knife")).thrown.expect("a knife is thrown");
+        assert!(range >= 2);
+    }
+
+    /// A marine that puts on a buckler keeps its own pistol-whip and hide,
+    /// and wears the buckler's armor on top of them, rather than dropping to
+    /// a bare fist the moment it wears anything.
+    #[test]
+    fn a_monster_wears_gear_on_top_of_what_its_kind_fights_with() {
+        let dir = std::env::temp_dir().join(format!("corsair-marine-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        app.update();
+        app.update();
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let at = app.world().get::<Position>(me).unwrap().0.offset(0, 6);
+        let kind = app.world().resource::<crate::monsters::Bestiary>().defs.expect("marine");
+        let (marine, buckler) = app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<crate::monsters::Bestiary>| {
+            world.resource_scope(|world: &mut World, armory: Mut<Armory>| {
+                let mut queue = bevy::ecs::world::CommandQueue::default();
+                let mut commands = Commands::new(&mut queue, world);
+                let marine = bestiary.spawn(&mut commands, kind, at);
+                let buckler = armory.spawn(&mut commands, armory.defs.expect("buckler"), 1, None);
+                queue.apply(world);
+                (marine, buckler)
+            })
+        });
+        app.update();
+        let def = app.world().resource::<crate::monsters::Bestiary>().defs.get(kind).clone();
+        assert_eq!(app.world().get::<Armor>(marine).map(|a| a.0), Some(def.armor), "its own hide before it wears anything");
+
+        let shape = app.world().resource::<Armory>().shape(app.world().resource::<Armory>().defs.expect("buckler")).unwrap().clone();
+        app.world_mut().get_mut::<Inventory>(marine).unwrap().items.push(buckler);
+        app.world_mut().get_mut::<Equipped>(marine).unwrap().equip(buckler, &shape).unwrap();
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        assert_eq!(app.world().get::<Armor>(marine).map(|a| a.0), Some(def.armor + 1), "the buckler's armor on top");
+        assert_eq!(app.world().get::<MeleeAttack>(marine).map(|m| m.dice), Some(def.attack), "and its own blow, not a fist");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A drink is a reaction to an item event, and reactions run after the

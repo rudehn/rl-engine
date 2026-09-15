@@ -25,6 +25,17 @@ pub enum Decision<A: Copy> {
     },
     /// Do nothing this turn.
     Wait,
+    /// Take everything lying where it stands.
+    PickUp,
+    /// Take the item lying where it stands and put it on, in one action.
+    EquipFromGround(A),
+    /// Throw a carried item at a cell.
+    Throw {
+        /// What.
+        item: A,
+        /// Where it is aimed.
+        at: Point,
+    },
     /// Something of the game's own, in the game's own numbering, the way
     /// a map's spots are tagged. The engine carries the number back to
     /// the game and lets it decide what the actor actually does, so a

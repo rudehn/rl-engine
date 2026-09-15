@@ -11,8 +11,9 @@
 //   faction:    "beasts" | "cutthroats" | "navy"
 //   wits:       what it can manage whatever it would like: "mindless" fights on and forgets you
 //               out of sight, "animal" also runs when hurt and searches for you, "sapient" also
-//               opens doors; or a list of "flees" | "searches" | "opens_doors", which may name a
-//               preset too, as ["animal", "opens_doors"]
+//               opens doors, picks things up, throws them and puts on better gear; or a list of
+//               "flees" | "searches" | "opens_doors" | "picks_up" | "equips" | "throws", which may
+//               name a preset too, as ["animal", "opens_doors"]
 //   perception: tiles at which it notices you
 //   speed:      percent, 100 normal
 //   flee_at:    percent health at or below which it runs; 0 never flees
@@ -32,11 +33,13 @@
 //   abilities:  optional; names from `abilities.ron` it knows; it leads with one when one is worth
 //               firing, and otherwise fights as it would without
 //   purse:      optional; (min, max) doubloons it carries, which `plunder` spills at its feet
+//   kit:        optional; [(item name, count)] it carries when it first appears, which falls where
+//               it dies; only a kind that picks up or equips carries anything
 #![enable(implicit_some)]
 [
     (name: "crab", glyph: 'c', color: (0.9, 0.4, 0.3), hp: 4, armor: 2, attack: "1d3", kind: "claw", faction: "beasts", wits: "mindless", perception: 4, speed: 80, flee_at: 0, wander: 30, spawn: (0, 8, 5, 2, 5), inflicts: ("bleeding", 3, 40)),
     (name: "wild dog", glyph: 'd', color: (0.7, 0.6, 0.4), hp: 8, armor: 0, attack: "1d4", kind: "bite", faction: "beasts", wits: "animal", perception: 9, speed: 130, flee_at: 30, wander: 35, spawn: (1, 40, 3, 2, 4)),
-    (name: "cutthroat", glyph: 'p', color: (0.8, 0.3, 0.3), hp: 12, armor: 1, attack: "1d6", kind: "cutlass", faction: "cutthroats", wits: "sapient", perception: 8, speed: 100, flee_at: 20, wander: 25, spawn: (3, 40, 3, 1, 3), drops: [("doubloons", 60), ("rum", 25), ("cutlass", 10)], lantern: (intensity: 150, radius: 5, color: (r: 255, g: 185, b: 105), flicker: 60), notice: (certain: 2, chance_pct: 25, lit_bonus: 4, memory: 6), abilities: ["grapnel"], purse: (2, 12)),
+    (name: "cutthroat", glyph: 'p', color: (0.8, 0.3, 0.3), hp: 12, armor: 1, attack: "1d6", kind: "cutlass", faction: "cutthroats", wits: "sapient", perception: 8, speed: 100, flee_at: 20, wander: 25, spawn: (3, 40, 3, 1, 3), drops: [("doubloons", 60), ("rum", 25), ("cutlass", 10)], lantern: (intensity: 150, radius: 5, color: (r: 255, g: 185, b: 105), flicker: 60), notice: (certain: 2, chance_pct: 25, lit_bonus: 4, memory: 6), abilities: ["grapnel"], purse: (2, 12), kit: [("throwing knife", 3)]),
     (name: "marine", glyph: 'M', color: (0.3, 0.4, 0.9), hp: 14, armor: 2, attack: "1d8", kind: "pistol", faction: "navy", wits: "sapient", perception: 8, speed: 100, flee_at: 0, wander: 15, spawn: (5, 40, 2, 2, 3), drops: [("doubloons", 40), ("tricorne", 15), ("buckler", 15)], lantern: (intensity: 170, radius: 6, color: (r: 255, g: 225, b: 170), flicker: 25), notice: (certain: 3, chance_pct: 30, lit_bonus: 5, memory: 8), purse: (5, 20)),
     (name: "jaguar", glyph: 'J', color: (0.9, 0.7, 0.2), hp: 24, armor: 1, attack: "2d4", kind: "claw", faction: "beasts", wits: "animal", perception: 10, speed: 140, flee_at: 0, wander: 20, spawn: (8, 40, 1, 1, 1), drops: [("rum", 50)], inflicts: ("venom", 5, 60)),
 ]

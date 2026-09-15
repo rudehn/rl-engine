@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Direction;
-use rl_engine::rl_ui::{DirectionKeys, MessageLog, Modals, Tones};
+use rl_engine::rl_ui::{AimThrow, DirectionKeys, MessageLog, Modals, Tones};
 
 /// How long a held key waits before repeating, and between repeats.
 const REPEAT_DELAY: f32 = 0.25;
@@ -76,6 +76,55 @@ pub fn fire(mut aim: Aim, mut intents: MessageWriter<Intent<Attack>>) {
             intents.write(Intent::new(me, Attack(target)));
         }
         None => aim.log.push("Nothing in range to shoot.", Tones::MUTED, turn),
+    }
+}
+
+/// The player while it holds the turn, and what it carries.
+type Holder = (Entity, &'static Position, &'static Inventory);
+/// Something lying about that can be put on.
+type LyingWearable = (Entity, &'static Position, Option<&'static OnMap>);
+
+/// What throwing and putting on from the ground read.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Hands<'w, 's> {
+    keys: Res<'w, ButtonInput<KeyCode>>,
+    modals: Res<'w, Modals>,
+    map: Res<'w, WorldMap>,
+    turns: Res<'w, Turns>,
+    log: ResMut<'w, MessageLog>,
+    player: Query<'w, 's, Holder, (With<Player>, With<MyTurn>)>,
+    missiles: Query<'w, 's, (), With<Throwable>>,
+    ground: Query<'w, 's, LyingWearable, (With<Item>, With<Wearable>)>,
+}
+
+/// `r`: throw the first thing carried that can be thrown, through the
+/// targeting cursor, which picks the nearest foe and throws on confirm.
+pub fn hurl(mut hands: Hands, mut aims: MessageWriter<AimThrow>) {
+    if hands.modals.any_open() || !hands.keys.just_pressed(KeyCode::KeyR) {
+        return;
+    }
+    let Ok((me, _, bag)) = hands.player.single() else { return };
+    match bag.items.iter().copied().find(|item| hands.missiles.contains(*item)) {
+        Some(item) => {
+            aims.write(AimThrow { user: me, item });
+        }
+        None => hands.log.push("You have nothing to throw.", Tones::MUTED, hands.turns.turn_number()),
+    }
+}
+
+/// `e`: put on what lies underfoot, in one action and half again, which is
+/// quicker than picking it up and putting it on.
+pub fn equip_underfoot(mut hands: Hands, mut intents: MessageWriter<Intent<EquipFromGround>>) {
+    if hands.modals.any_open() || !hands.keys.just_pressed(KeyCode::KeyE) {
+        return;
+    }
+    let Ok((me, at, _)) = hands.player.single() else { return };
+    let here = hands.map.current();
+    match hands.ground.iter().find(|(_, p, on)| p.0 == at.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here) {
+        Some((item, _, _)) => {
+            intents.write(Intent::new(me, EquipFromGround(item)));
+        }
+        None => hands.log.push("There is nothing here to put on.", Tones::MUTED, hands.turns.turn_number()),
     }
 }
 

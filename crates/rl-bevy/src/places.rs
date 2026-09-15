@@ -326,7 +326,7 @@ pub fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fresh: Quer
 mod tests {
     use super::*;
     use crate::components::{Actor, MyTurn, RevealsMap};
-    use crate::items::{Inventory, Item, ItemEvent, PickUp};
+    use crate::items::{DropItem, Inventory, Item, ItemEvent, PickUp};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::Turns;
@@ -451,6 +451,26 @@ mod tests {
         let events: Vec<ItemEvent> = r.app.world_mut().resource_mut::<Messages<ItemEvent>>().drain().collect();
         assert_eq!(events.len(), 1);
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin));
+    }
+
+    /// Found while building throwing: an item picked up on one map and put
+    /// down on another kept the map it was picked up on, so it lay where
+    /// nobody on the map it was dropped on could see it or take it back.
+    #[test]
+    fn an_item_carried_to_another_map_and_dropped_lies_on_the_map_it_was_dropped_on() {
+        let mut r = rig();
+        let coin = r.app.world_mut().spawn((Item, Position(r.start))).id();
+        r.app.update();
+        intend(&mut r, PickUp);
+        assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin));
+
+        let cave = MapId(3);
+        r.app.world_mut().write_message(WarpRequest::into_place(r.player, cave));
+        r.app.update();
+        intend(&mut r, DropItem(coin));
+        assert_eq!(r.app.world().get::<OnMap>(coin).map(|m| m.0), Some(cave), "it lies on the map it was dropped on");
+        intend(&mut r, PickUp);
+        assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin), "and can be taken back up there");
     }
 
     #[test]

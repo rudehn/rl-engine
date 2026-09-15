@@ -231,7 +231,8 @@ pub fn populate_places(mut commands: Commands, mut entered: MessageReader<PlaceE
                 if !stock.map.is_walkable(p) || stock.occupancy.is_occupied(p) || geometry::chebyshev(p, ev.entry) < 8 {
                     continue;
                 }
-                stock.bestiary.spawn_underground(&mut commands, id, p);
+                let monster = stock.bestiary.spawn_underground(&mut commands, id, p);
+                stock.bestiary.arm(&mut commands, &stock.armory, monster, id);
                 placed += 1;
             }
         }

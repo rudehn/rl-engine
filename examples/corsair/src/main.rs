@@ -119,7 +119,7 @@ fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("Corsair", COLS, ROWS).font(FONT).map(screen.map))
-        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin))
+        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin))
         // The engine's seven effects, and the one Corsair adds.
         .add_engine_effects()
         .add_effect::<abilities::Plunder>()
@@ -150,7 +150,9 @@ fn main() -> AppExit {
         .add_systems(Startup, start_world)
         .add_systems(
             Update,
-            (quests::ledger_keys, inventory::inventory_keys, abilities::ability_keys, input::player_input, input::fire).chain().in_set(EngineSet::Input),
+            (quests::ledger_keys, inventory::inventory_keys, abilities::ability_keys, input::player_input, input::fire, input::hurl, input::equip_underfoot)
+                .chain()
+                .in_set(EngineSet::Input),
         )
         // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
         .add_systems(Update, save::save_keys.after(EngineSet::Present))
@@ -303,20 +305,23 @@ fn start_world(world: &mut World) {
     world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
 }
 
-/// A new player at `spawn` with a cutlass in hand and a bottle in the bag.
+/// A new player at `spawn` with a cutlass in hand, and a bottle, powder and
+/// knives in the bag.
 fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
     // The armory comes out while its spawner borrows commands.
     let armory = world.remove_resource::<Armory>().expect("the armory is inserted first");
     let equipment = rl_engine::rl_rules::Equipment::for_slots(&world.resource::<Registries>().slots);
-    let (cutlass, rum, powder, worn) = {
+    let (cutlass, rum, powder, knives, worn) = {
         let mut commands = world.commands();
         let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
         let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
         // Enough for a few broadsides before the first port.
         let powder = armory.spawn(&mut commands, armory.defs.expect("powder"), 6, None);
+        // A few to throw, and the cutthroats carry more.
+        let knives = armory.spawn(&mut commands, armory.defs.expect("throwing knife"), 3, None);
         let mut worn = Equipped(equipment);
         worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
-        (cutlass, rum, powder, worn)
+        (cutlass, rum, powder, knives, worn)
     };
     world.flush();
     world.insert_resource(armory);
@@ -330,7 +335,7 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             Armor(0),
             Faction(faction),
             unarmed,
-            Inventory { items: vec![cutlass, rum, powder] },
+            Inventory { items: vec![cutlass, rum, powder, knives] },
             worn,
             Name::new("you"),
             // Quiet enough that a smuggler in the dark has to be close,
@@ -407,6 +412,9 @@ fn note_where_you_are(
     let band = below.as_deref().unwrap_or_else(|| world.layers().band(region).map(content::band_name).unwrap_or("nowhere"));
     vitals.facets.push(facets.facet("whereabouts", band.to_string()));
     if let Some(here) = items::whats_here(pos.0, &armory, &ground) {
-        vitals.facets.push(facets.facet("underfoot", format!("here: {here} [g]")).toned(Tones::NOTICE));
+        // `e` as well when something here can be put on straight from the ground.
+        let wearable = ground.iter().any(|(at, kind, _, _)| at.0 == pos.0 && armory.shape(kind.0).is_some());
+        let keys = if wearable { "[g] [e]" } else { "[g]" };
+        vitals.facets.push(facets.facet("underfoot", format!("here: {here} {keys}")).toned(Tones::NOTICE));
     }
 }

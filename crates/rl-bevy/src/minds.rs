@@ -3,9 +3,10 @@
 //! A [`Mind`] holds a brain, a priority list of tactics from
 //! [`rl_rules::ai`]. On its turn the engine builds the snapshot its tactics
 //! read (who it perceives, sorted into allies and enemies by the faction
-//! matrix, the trail it is on, and what it may use) and turns the decision
-//! into the intent of the action that answers it: a step, an attack, a
-//! wait, an ability, or a number of the game's own.
+//! matrix, the trail it is on, what it may use, what it carries and what it
+//! sees lying about) and turns the decision into the intent of the action
+//! that answers it: a step, an attack, a wait, an ability, a pickup, a throw,
+//! or a number of the game's own.
 //!
 //! Its own plugin rather than part of combat, because this is the one place
 //! every action a monster can choose meets. Combat resolves a blow whoever
@@ -21,13 +22,15 @@ use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{Direction, Point, geometry};
 use rl_grid::{DijkstraMap, PathRules};
-use rl_rules::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
+use rl_rules::{ActorView, Brain, Decision, ItemView, Missile, MovementProfile, Snapshot, TacticCtx, Wits};
 
 use crate::ability::{Offered, Use};
 use crate::combat::{Attack, CombatRng, CombatRules, Faction, Health};
 use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
+use crate::items::{EquipFromGround, Equipped, GearScore, Inventory, Item, PickUp, Wearable};
 use crate::lighting::{DarkSight, Lighting, perceives};
 use crate::places::{MapId, OnMap};
+use crate::throwing::{Throw, Throwable};
 use crate::turn::{Acting, Intent, Occupancy, Step, Turns, Wait};
 use crate::world::WorldMap;
 
@@ -186,7 +189,40 @@ pub struct MindIntents<'w> {
     abilities: MessageWriter<'w, Intent<Use>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
     waits: MessageWriter<'w, Intent<Wait>>,
+    pick_ups: MessageWriter<'w, Intent<PickUp>>,
+    equips: MessageWriter<'w, Intent<EquipFromGround>>,
+    throws: MessageWriter<'w, Intent<Throw>>,
     chose: MessageWriter<'w, MindChose>,
+}
+
+/// An item lying about, as a mind weighs it.
+type Lying = (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Throwable>, Option<&'static Wearable>, Option<&'static GearScore>);
+
+/// What a mind carries and wears, and what it might see lying about.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Belongings<'w, 's> {
+    bags: Query<'w, 's, (Option<&'static Inventory>, Option<&'static Equipped>)>,
+    missiles: Query<'w, 's, &'static Throwable>,
+    scores: Query<'w, 's, &'static GearScore>,
+    lying: Query<'w, 's, Lying, With<Item>>,
+}
+
+impl Belongings<'_, '_> {
+    /// What `thinker` carries that it could throw.
+    fn missiles(&self, thinker: Entity) -> Vec<Missile<Entity>> {
+        let Ok((Some(bag), _)) = self.bags.get(thinker) else { return Vec::new() };
+        bag.items.iter().filter_map(|item| self.missiles.get(*item).ok().map(|t| Missile { item: *item, range: t.range })).collect()
+    }
+
+    /// How much better `thinker` would be for wearing `item` in `shape`,
+    /// scored `score`, than for what it would displace; `None` when it wears
+    /// nothing or the item is not scored.
+    fn gain(&self, thinker: Entity, item: Entity, shape: &Wearable, score: &GearScore) -> Option<i32> {
+        let Ok((_, Some(worn))) = self.bags.get(thinker) else { return None };
+        // Tried on a copy: what the real equip would displace, and nothing moved.
+        let displaced = worn.0.clone().equip(item, &shape.0).ok()?;
+        Some(score.0 - displaced.iter().map(|d| self.scores.get(*d).map_or(0, |s| s.0)).sum::<i32>())
+    }
 }
 
 /// Lets every non-player holding a turn decide it.
@@ -195,7 +231,7 @@ pub struct MindIntents<'w> {
 /// [`TurnSet::Decide`](crate::plugin::TurnSet::Decide), and the mind
 /// leaves that actor alone, so a monster can take an action the engine
 /// has never heard of.
-pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut world: MindWorld, sight: Sight) {
+pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut world: MindWorld, sight: Sight, belongings: Belongings) {
     let Ok((player_pos, player_sight)) = sight.player.single() else { return };
     let Ok((thinker, mind, profile, intelligence)) = sight.minds.single() else { return };
     let Ok((_, my_pos, my_hp, my_faction, perception, _)) = sight.actors.get(thinker) else { return };
@@ -231,6 +267,22 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
             snapshot.enemies.push(view);
         } else if rules.factions.is_allied(my_faction.0, faction.0) {
             snapshot.allies.push(view);
+        }
+    }
+    // What it carries to throw, and what lies about worth having, weighed
+    // only by a mind with the wits to want either.
+    snapshot.missiles = belongings.missiles(thinker);
+    if wits.has(Wits::PICKS_UP) || wits.has(Wits::EQUIPS) {
+        for (item, pos, on, throwable, wearable, score) in belongings.lying.iter() {
+            if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || geometry::chebyshev(pos.0, my_pos.0) > reach {
+                continue;
+            }
+            // What it stands on it can feel; anything else it has to see.
+            if pos.0 != my_pos.0 && !perceivable(player_pos.0, player_sight, lighting, my_pos.0, dark_sight, pos.0) {
+                continue;
+            }
+            let gain = wearable.zip(score).and_then(|(shape, score)| belongings.gain(thinker, item, shape, score));
+            snapshot.items.push(ItemView { id: item, pos: pos.0, throw_range: throwable.map(|t| t.range), gain });
         }
     }
     snapshot.sort();
@@ -305,6 +357,15 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
         Decision::Wait => {
             intents.waits.write(Intent::new(thinker, Wait));
         }
+        Decision::PickUp => {
+            intents.pick_ups.write(Intent::new(thinker, PickUp));
+        }
+        Decision::EquipFromGround(item) => {
+            intents.equips.write(Intent::new(thinker, EquipFromGround(item)));
+        }
+        Decision::Throw { item, at } => {
+            intents.throws.write(Intent::new(thinker, Throw { item, at }));
+        }
         // The game's own: hand the number back and let it act.
         Decision::Game(choice) => {
             intents.chose.write(MindChose { actor: thinker, choice });
@@ -335,11 +396,15 @@ pub struct MindsPlugin;
 
 impl Plugin for MindsPlugin {
     fn build(&self, app: &mut App) {
-        // The minds may choose an ability, so the message they would write
-        // it into exists whether or not the game added abilities. Registering
-        // it twice is what `add_message` is built for.
+        // The minds may choose an ability, a pickup or a throw, so the
+        // messages they would write them into exist whether or not the game
+        // added abilities, items or throwing. Registering one twice is what
+        // `add_message` is built for.
         app.init_resource::<MindsRunning>()
             .add_message::<Intent<Use>>()
+            .add_message::<Intent<PickUp>>()
+            .add_message::<Intent<EquipFromGround>>()
+            .add_message::<Intent<Throw>>()
             .add_message::<MindChose>()
             .add_systems(crate::plugin::Turn, decide_minds.in_set(crate::plugin::DecideSet::Minds));
     }
@@ -618,6 +683,111 @@ mod tests {
         let start = app.world().get::<Position>(player).unwrap().0;
         assert!(geometry::chebyshev(outside, start) > 3, "it waits outside the ring: {outside:?}");
         let _ = monster;
+    }
+
+    /// A thrower with nothing in hand, a knife a step away and the player six
+    /// off, run for a dozen turns of the player waiting.
+    fn with_a_knife_in_reach(wits: Wits) -> (App, Entity, Entity) {
+        use rl_rules::ai::tactics::{Scavenge, ThrowAtRange};
+        let mut app = headless_app();
+        app.add_plugins((
+            crate::fov::FovPlugin,
+            CombatPlugin,
+            MindsPlugin,
+            crate::items::ItemsPlugin,
+            crate::throwing::ThrowingPlugin,
+            crate::world::StreamingPlugin,
+        ));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1) },
+            ))
+            .id();
+        let knife = app.world_mut().spawn((Item, Position(start.offset(5, 0)), Throwable { range: 6, strike: Some((sides.kind, DiceRoll::flat(4))) })).id();
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(start.offset(6, 0)),
+            Health::full(10),
+            Faction(sides.theirs),
+            Perception(8),
+            Inventory::default(),
+            Mind(Arc::new(Brain::new().then(MeleeAdjacent).then(ThrowAtRange::default()).then(Scavenge { reach: 3 }))),
+            Intelligence(wits),
+        ));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..12 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        (app, player, knife)
+    }
+
+    #[test]
+    fn a_sapient_mind_fetches_a_knife_it_sees_and_throws_it_where_an_animal_walks_past() {
+        let (app, player, knife) = with_a_knife_in_reach(Wits::SAPIENT);
+        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 26, "it took the knife up and threw it");
+        let at_player = app.world().get::<Position>(player).unwrap().0;
+        assert_eq!(app.world().get::<Position>(knife).map(|p| p.0), Some(at_player), "and the knife lies at the player's feet");
+
+        let (app, player, knife) = with_a_knife_in_reach(Wits::ANIMAL);
+        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30, "an animal has no use for a knife");
+        let start = app.world().get::<Position>(player).unwrap().0;
+        assert_eq!(app.world().get::<Position>(knife).map(|p| p.0), Some(start.offset(5, 0)), "which lies where it lay");
+    }
+
+    #[test]
+    fn a_mind_that_equips_puts_on_better_gear_it_finds_and_leaves_worse_alone() {
+        use rl_rules::ai::tactics::Scavenge;
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, _) = arena();
+        app.add_plugins(crate::items::ItemsPlugin);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let old = app.world_mut().spawn((Item, Wearable(hand.clone()), GearScore(1))).id();
+        let better = app.world_mut().spawn((Item, Position(start.offset(4, 0)), Wearable(hand.clone()), GearScore(3))).id();
+        let worse = app.world_mut().spawn((Item, Position(start.offset(2, 0)), Wearable(hand.clone()), GearScore(0))).id();
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(old, &hand).unwrap();
+        let marine = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(3, 0)),
+                Health::full(10),
+                Faction(sides.theirs),
+                Perception(8),
+                Inventory { items: vec![old] },
+                Equipped(worn),
+                Mind(Arc::new(Brain::new().then(Scavenge { reach: 3 }))),
+                Intelligence(Wits::SAPIENT),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..8 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        let w = app.world();
+        assert_eq!(w.get::<Equipped>(marine).unwrap().in_slot(SlotId::from_raw(0)), Some(better), "it put on the better one");
+        assert!(w.get::<Inventory>(marine).unwrap().contains(old), "and kept the old one in its bag");
+        assert_eq!(w.get::<Position>(worse).map(|p| p.0), Some(start.offset(2, 0)), "and left the worse one lying");
     }
 
     #[test]

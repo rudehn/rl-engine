@@ -1,12 +1,14 @@
 //! The tactics every roguelike needs.
 
+use std::collections::VecDeque;
+
 use rand::Rng;
 use rl_core::{Direction, Point, geometry};
-use rl_grid::footprint;
+use rl_grid::{clear_shot, footprint};
 
 use crate::ability::{Aim, Usable};
 use crate::ai::brain::{Decision, Tactic, TacticCtx};
-use crate::ai::snapshot::{ActorView, Snapshot};
+use crate::ai::snapshot::{ActorView, ItemView, Snapshot};
 use crate::ai::wits::Wits;
 use crate::faction::Relation;
 
@@ -259,10 +261,165 @@ impl<A: Copy> Tactic<A> for UseAbility {
     }
 }
 
+/// Throw something carried at the nearest enemy it reaches down a clear
+/// line, when that enemy is not already at its elbow.
+///
+/// Only for a mind with [`Wits::THROWS`] carrying something to throw. It
+/// leaves an adjacent enemy to [`MeleeAdjacent`], which belongs above it: a
+/// blow in reach beats a knife that has to be fetched back. The line is
+/// judged by `blocks_shot`, the predicate a throw flies by, so a mind never
+/// throws into a wall it thought was clear.
+#[derive(Debug, Clone, Copy)]
+pub struct ThrowAtRange {
+    /// Percentage chance of throwing on a turn a throw is there to be made.
+    /// Below a hundred so a thrower sometimes closes in instead.
+    pub chance_pct: u32,
+}
+
+impl Default for ThrowAtRange {
+    fn default() -> Self {
+        Self { chance_pct: 100 }
+    }
+}
+
+impl<A: Copy> Tactic<A> for ThrowAtRange {
+    fn name(&self) -> &'static str {
+        "throw_at_range"
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let s = ctx.snapshot;
+        if !s.wits.has(Wits::THROWS) || s.missiles.is_empty() || s.enemies.is_empty() {
+            return None;
+        }
+        if self.chance_pct < 100 && !ctx.rng.random_ratio(self.chance_pct.min(100), 100) {
+            return None;
+        }
+        let me = s.me.pos;
+        for enemy in &s.enemies {
+            let distance = geometry::chebyshev(me, enemy.pos);
+            if distance < 2 {
+                continue;
+            }
+            let clear = |range| clear_shot(me, enemy.pos, range, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p));
+            if let Some(missile) = s.missiles.iter().find(|m| m.range >= distance && clear(m.range)) {
+                return Some(Decision::Throw { item: missile.item, at: enemy.pos });
+            }
+        }
+        None
+    }
+}
+
+/// Fetch what is worth having from where it lies: gear better than what it
+/// wears, or something to throw while it carries nothing to throw.
+///
+/// Standing on it, it takes it: [`Decision::EquipFromGround`] for gear,
+/// which is quicker than picking up and putting on, and
+/// [`Decision::PickUp`] for something to throw. Otherwise it walks toward
+/// the nearest such thing no more than `reach` away, by the shortest walk
+/// round whatever is in the way. Gear takes [`Wits::EQUIPS`]; something to
+/// throw takes [`Wits::PICKS_UP`] and [`Wits::THROWS`], since a knife it
+/// will never throw is not worth the walk.
+///
+/// Where it sits in a brain says when it is worth the detour: above
+/// [`Hunt`], a thrower fetches a knife on its way into a fight; below it,
+/// only once nothing is in sight.
+#[derive(Debug, Clone, Copy)]
+pub struct Scavenge {
+    /// The furthest it will go for something, in steps.
+    pub reach: i32,
+}
+
+impl Scavenge {
+    /// Whether `item` is worth having to a mind that knows `snapshot`, and
+    /// whether that is as gear.
+    fn wanted<A: Copy>(snapshot: &Snapshot<A>, item: &ItemView<A>) -> Option<Worth> {
+        if snapshot.wits.has(Wits::EQUIPS) && item.gain.is_some_and(|g| g > 0) {
+            return Some(Worth::Gear);
+        }
+        let throws = snapshot.wits.has(Wits::PICKS_UP.with(Wits::THROWS));
+        (throws && item.throw_range.is_some() && snapshot.missiles.is_empty()).then_some(Worth::Missile)
+    }
+}
+
+/// Why something is worth fetching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Worth {
+    Gear,
+    Missile,
+}
+
+impl<A: Copy> Tactic<A> for Scavenge {
+    fn name(&self) -> &'static str {
+        "scavenge"
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let s = ctx.snapshot;
+        let me = s.me.pos;
+        if let Some((item, worth)) = s.items.iter().filter(|i| i.pos == me).find_map(|i| Self::wanted(s, i).map(|w| (i, w))) {
+            return Some(match worth {
+                Worth::Gear => Decision::EquipFromGround(item.id),
+                Worth::Missile => Decision::PickUp,
+            });
+        }
+        let target = s.items.iter().filter(|i| geometry::chebyshev(me, i.pos) <= self.reach).find(|i| Self::wanted(s, i).is_some())?;
+        first_step(me, target.pos, self.reach + 2, ctx.can_step).map(Decision::Step)
+    }
+}
+
+/// The first step of a shortest walk from `from` to `to` through cells
+/// `can_step` allows, never straying more than `limit` from `from`.
+///
+/// A diagonal step may not cut between two cells it cannot step on, the
+/// rule a move is resolved by, so the walk is one the mover can take. Ties
+/// go to the first direction in [`Direction::ALL`], so two runs agree.
+fn first_step(from: Point, to: Point, limit: i32, can_step: &dyn Fn(Point) -> bool) -> Option<Point> {
+    if from == to {
+        return None;
+    }
+    let side = 2 * limit + 1;
+    let corner = Point::new(from.x - limit, from.y - limit);
+    let index = |p: Point| {
+        let (x, y) = (p.x - corner.x, p.y - corner.y);
+        (x >= 0 && y >= 0 && x < side && y < side).then_some((y * side + x) as usize)
+    };
+    // Where each reached cell was reached from, in a square around `from`
+    // rather than a map, so the search allocates once and in order.
+    let mut came_from: Vec<Option<Point>> = vec![None; (side * side) as usize];
+    came_from[index(from)?] = Some(from);
+    let mut frontier = VecDeque::from([from]);
+    while let Some(at) = frontier.pop_front() {
+        for d in Direction::ALL {
+            let next = at + d.offset();
+            let Some(i) = index(next) else { continue };
+            let (dx, dy) = d.delta();
+            let squeezes = d.is_diagonal() && !(can_step(at.offset(dx, 0)) && can_step(at.offset(0, dy)));
+            if came_from[i].is_some() || squeezes || !can_step(next) {
+                continue;
+            }
+            came_from[i] = Some(at);
+            if next == to {
+                let mut step = next;
+                loop {
+                    let prev = came_from[index(step)?]?;
+                    if prev == from {
+                        return Some(step);
+                    }
+                    step = prev;
+                }
+            }
+            frontier.push_back(next);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ai::brain::Brain;
+    use crate::ai::snapshot::Missile;
     use crate::ai::snapshot::{ActorView, Snapshot};
     use rand::{SeedableRng, rngs::StdRng};
     use rl_core::Id;
@@ -578,6 +735,107 @@ mod tests {
         let wall = |p: Point| p == Point::new(2, 5);
         let mut ctx = TacticCtx { snapshot: &walled, approach: None, escape: None, can_step: &can_step, blocks_shot: &wall, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None, "the wall is in the way");
+    }
+
+    fn missile(item: u32, range: i32) -> Missile<u32> {
+        Missile { item, range }
+    }
+
+    /// A thrower throws at what it reaches down a clear line, and leaves
+    /// what is at its elbow to the blow above it in the brain.
+    #[test]
+    fn a_thrower_throws_down_a_clear_line_at_what_is_out_of_arms_reach() {
+        let mut rng = StdRng::seed_from_u64(2);
+        let can_step = |_: Point| true;
+        let decide = |s: &Snapshot<u32>, blocks: &dyn Fn(Point) -> bool, rng: &mut StdRng| {
+            ThrowAtRange::default().evaluate(&mut TacticCtx {
+                snapshot: s,
+                approach: None,
+                escape: None,
+                can_step: &can_step,
+                blocks_shot: blocks,
+                bounds: arena(),
+                rng,
+            })
+        };
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.missiles = vec![missile(40, 5)];
+        s.enemies = vec![view(2, 4, 5, 10)];
+        assert_eq!(decide(&s, &nothing_blocks, &mut rng), Some(Decision::Throw { item: 40, at: Point::new(4, 5) }));
+        let wall = |p: Point| p == Point::new(2, 5);
+        assert_eq!(decide(&s, &wall, &mut rng), None, "not through a wall");
+        s.enemies = vec![view(2, 8, 5, 10)];
+        assert_eq!(decide(&s, &nothing_blocks, &mut rng), None, "not past its reach");
+        s.enemies = vec![view(2, 1, 5, 10)];
+        assert_eq!(decide(&s, &nothing_blocks, &mut rng), None, "not at its elbow, where a blow is better");
+        s.enemies = vec![view(2, 4, 5, 10)];
+        s.wits = Wits::ANIMAL;
+        assert_eq!(decide(&s, &nothing_blocks, &mut rng), None, "and never without the wits to throw");
+    }
+
+    /// A scavenger walks round a wall to gear better than what it wears,
+    /// puts it on where it lies, and leaves gear worse than its own alone.
+    #[test]
+    fn a_scavenger_fetches_better_gear_round_a_wall_and_puts_it_on_where_it_lies() {
+        let (mut t, r) = open();
+        for y in 3..=7 {
+            t.set(Point::new(6, y), r.expect("wall"));
+        }
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(3);
+        let blade = ItemView { id: 50, pos: Point::new(8, 5), throw_range: None, gain: Some(2) };
+        let rag = ItemView { id: 51, pos: Point::new(4, 5), throw_range: None, gain: Some(-1) };
+        let mut me = Point::new(5, 5);
+        for turn in 0..16 {
+            let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
+            s.items = vec![rag, blade];
+            s.sort();
+            let mut ctx =
+                TacticCtx { snapshot: &s, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+            let decision = Scavenge { reach: 5 }.evaluate(&mut ctx);
+            match decision {
+                Some(Decision::Step(to)) => {
+                    assert!(view_t.is_walkable(to) && geometry::is_adjacent(me, to), "turn {turn}: a step from {me:?} to {to:?}");
+                    me = to;
+                }
+                Some(Decision::EquipFromGround(id)) => {
+                    assert_eq!((id, me), (50, blade.pos), "turn {turn}: put on the blade where it lay");
+                    return;
+                }
+                other => panic!("turn {turn}: {other:?}"),
+            }
+        }
+        panic!("never reached the blade, and stopped at {me:?}");
+    }
+
+    /// Something to throw is worth picking up while there is nothing in
+    /// hand to throw, and only to a mind that would throw it.
+    #[test]
+    fn a_scavenger_takes_something_to_throw_only_while_it_has_nothing_to_throw() {
+        let mut rng = StdRng::seed_from_u64(3);
+        let can_step = |_: Point| true;
+        let mut decide = |s: &Snapshot<u32>| {
+            Scavenge { reach: 4 }.evaluate(&mut TacticCtx {
+                snapshot: s,
+                approach: None,
+                escape: None,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                bounds: arena(),
+                rng: &mut rng,
+            })
+        };
+        let mut s = Snapshot::alone(view(1, 5, 5, 10));
+        s.items = vec![ItemView { id: 60, pos: Point::new(5, 5), throw_range: Some(5), gain: None }];
+        assert_eq!(decide(&s), Some(Decision::PickUp), "underfoot, it is taken up");
+        s.missiles = vec![missile(61, 5)];
+        assert_eq!(decide(&s), None, "with one in hand, the next is left");
+        s.missiles.clear();
+        s.wits = Wits::ANIMAL;
+        assert_eq!(decide(&s), None, "an animal has no use for it");
+        s.wits = Wits::SAPIENT.without(Wits::THROWS);
+        assert_eq!(decide(&s), None, "nor has a mind that will not throw it");
     }
 
     /// An actor with nothing to use never reaches for one.
