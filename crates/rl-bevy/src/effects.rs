@@ -23,6 +23,7 @@ use rl_rules::{Hit, Names, StatusId};
 
 use crate::ability::{AddEffect, Effect, EffectWorld, FromArgs, Landing};
 use crate::combat::DamageEvent;
+use crate::registries::Registries;
 use crate::status::{Afflict, Cure};
 
 /// Damage everyone the ability's aim wanted under its footprint.
@@ -44,6 +45,10 @@ impl Effect for Harm {
             let amount = self.roll.roll_at_least(&mut **world.rng, 0);
             world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, amount) });
         }
+    }
+
+    fn describe(&self, registries: &Registries) -> String {
+        format!("{} {}", self.roll, registries.damage_kinds.name(self.kind))
     }
 }
 
@@ -81,6 +86,10 @@ impl Effect for Mend {
             world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, -amount) });
         }
     }
+
+    fn describe(&self, registries: &Registries) -> String {
+        format!("mends {} {}", self.roll, registries.damage_kinds.name(self.kind))
+    }
 }
 
 impl FromArgs for Mend {
@@ -115,6 +124,10 @@ impl Effect for Inflict {
             world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns, by: Some(landing.user) });
         }
     }
+
+    fn describe(&self, registries: &Registries) -> String {
+        format!("{} for {} turns", registries.statuses.name(self.status), self.turns)
+    }
 }
 
 impl FromArgs for Inflict {
@@ -139,6 +152,10 @@ pub struct Cleanse {
 }
 
 impl Effect for Cleanse {
+    fn describe(&self, registries: &Registries) -> String {
+        format!("cures {}", registries.statuses.name(self.status))
+    }
+
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in &landing.targets {
             world.cure.write(Cure { target: *target, status: self.status });
@@ -171,6 +188,10 @@ pub struct Shove {
 }
 
 impl Effect for Shove {
+    fn describe(&self, _: &Registries) -> String {
+        format!("shoves {} back", cells(self.cells))
+    }
+
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in landing.targets.clone() {
             let Some(at) = world.position(target) else { continue };
@@ -201,6 +222,10 @@ pub struct Pull {
 }
 
 impl Effect for Pull {
+    fn describe(&self, _: &Registries) -> String {
+        format!("pulls {} closer", cells(self.cells))
+    }
+
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in landing.targets.clone() {
             let Some(at) = world.position(target) else { continue };
@@ -231,6 +256,10 @@ impl FromArgs for Pull {
 pub struct Teleport;
 
 impl Effect for Teleport {
+    fn describe(&self, _: &Registries) -> String {
+        "moves you there".to_string()
+    }
+
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         let Some(to) = landing.landed_at.or(Some(landing.aim)) else { return };
         world.place(landing.user, to);
@@ -262,6 +291,10 @@ impl Effect for Ignite {
         for cell in &landing.cells {
             world.commands.write_message(crate::fire::Kindle { at: *cell, turns: self.turns });
         }
+    }
+
+    fn describe(&self, _: &Registries) -> String {
+        format!("sets the ground alight for {} turns", self.turns)
     }
 }
 
@@ -296,6 +329,15 @@ impl Effect for Emit {
             world.commands.write_message(crate::gas::Release { gas: self.gas, at: *cell, amount: self.amount });
         }
     }
+
+    fn describe(&self, registries: &Registries) -> String {
+        format!("gives off {}", registries.gases.name(self.gas))
+    }
+}
+
+/// `n` cells, as a phrase.
+fn cells(n: i32) -> String {
+    if n == 1 { "a cell".to_string() } else { format!("{n} cells") }
 }
 
 impl FromArgs for Emit {

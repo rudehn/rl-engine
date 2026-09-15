@@ -16,6 +16,8 @@ tier = 2
 
 [dependencies]
 rl-core.workspace = true
+# For `TargetMode`, the shape an ability menu describes.
+rl-grid.workspace = true
 rl-bevy.workspace = true
 bevy.workspace = true
 rl-rules.workspace = true
@@ -26,6 +28,5 @@ rl-render.workspace = true
 # generation crates and the tiles. Dev-only, so nothing downstream pays for
 # them. The targeting cursor itself resolves nothing: it asks the resolver's
 # own `Bystanders::land`.
-rl-grid.workspace = true
 rl-mapgen.workspace = true
 rl-world.workspace = true

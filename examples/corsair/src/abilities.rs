@@ -54,6 +54,10 @@ pub fn player_grants(abilities: &Abilities) -> Grants {
 pub struct Plunder;
 
 impl Effect for Plunder {
+    fn describe(&self, _: &Registries) -> String {
+        "spills its purse at its feet".to_string()
+    }
+
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in landing.targets.clone() {
             world.commands.queue(move |w: &mut World| {
@@ -79,8 +83,8 @@ impl FromArgs for Plunder {
     }
 }
 
-/// `1` to `4` aim the abilities the player knows, in order; `a` lists them
-/// with the reasons any is out of reach.
+/// `1` to `4` aim the abilities the player knows, in order, from the map or
+/// from the list the engine's menu shows on `a`.
 ///
 /// A key writes [`AimAt`] and stops. Whether a cursor opens, where, how it
 /// is steered and what the use costs are the engine's, which is why nothing
@@ -93,17 +97,14 @@ pub fn ability_keys(
     mut aims: MessageWriter<AimAt>,
 ) {
     let list = ability_modal(&modals);
-    if keys.just_pressed(binds.abilities) && (modals.is_top(list) || !modals.any_open()) {
-        modals.toggle(list);
-        return;
-    }
-    if modals.any_open() {
+    if modals.any_open() && !modals.is_top(list) {
         return;
     }
     let Ok((user, known)) = player.single() else { return };
     if let Some(slot) = keys.which(binds.call_on)
         && let Some((ability, _)) = known.iter().nth(slot)
     {
+        modals.close_one(list);
         aims.write(AimAt { user, ability });
     }
 }

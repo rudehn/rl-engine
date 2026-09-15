@@ -213,6 +213,9 @@ impl Clone for EffectSpec {
 pub struct AbilityDef {
     /// The name content refers to it by.
     pub name: String,
+    /// What it is, in the game's words, for a menu. Empty when the game
+    /// wrote none.
+    pub description: String,
     /// What it wants under its footprint.
     pub aim: Aim,
     /// The shape. Range lives inside the shape.
@@ -389,6 +392,8 @@ pub fn read_args<T: serde::de::DeserializeOwned>(args: &RawValue) -> Result<T, S
 struct Authored {
     name: String,
     #[serde(default)]
+    description: String,
+    #[serde(default)]
     aim: Aim,
     mode: TargetMode,
     #[serde(default = "yes")]
@@ -489,7 +494,18 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<AbilityDef>, Conte
         if a.time == 0 {
             errors.push(format!("{}: a use that costs no time is a use that can be repeated forever", a.name));
         }
-        defs.push(AbilityDef { name: a.name.clone(), aim: a.aim, mode: a.mode, sight: a.sight, requires, costs, time: a.time, cooldown: a.cooldown, effects });
+        defs.push(AbilityDef {
+            name: a.name.clone(),
+            description: a.description.clone(),
+            aim: a.aim,
+            mode: a.mode,
+            sight: a.sight,
+            requires,
+            costs,
+            time: a.time,
+            cooldown: a.cooldown,
+            effects,
+        });
     }
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));

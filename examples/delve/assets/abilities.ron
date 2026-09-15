@@ -1,8 +1,9 @@
 // The delver's knacks, and the one a beast has.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:      unique; the player knows the first five in the order `1` to `5` aim them,
-//              and a beast names the ones it knows in `beasts.ron`
+//   name:        unique; the player knows the first five in the order `1` to `5` aim them,
+//                and a beast names the ones it knows in `beasts.ron`
+//   description: optional; what it is, in a sentence, for the knack list
 //   aim:       Foe (default) | Ally | SelfOnly | Ground | Anyone
 //   mode:      Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
 //              Beam(range:) | Cone(length:)
@@ -26,6 +27,7 @@
 [
     (
         name: "fireball",
+        description: "A gout of whale oil, lit. It bursts where it lands and leaves the fat burning.",
         mode: Ball(range: 8, radius: 2),
         costs: [Pool("mana", 12)],
         cooldown: 200,
@@ -37,6 +39,7 @@
     ),
     (
         name: "blink",
+        description: "A step that skips the ground between. Only to somewhere you can see.",
         aim: Ground,
         mode: Bolt(range: 7),
         costs: [Pool("mana", 5)],
@@ -45,6 +48,7 @@
     ),
     (
         name: "mend",
+        description: "Knit your own flesh. It takes the turn, and a fight rarely waits.",
         aim: SelfOnly,
         mode: Own,
         costs: [Pool("mana", 6)],
@@ -52,6 +56,7 @@
     ),
     (
         name: "drain",
+        description: "A thread of fire that burns what it touches and pours the heat back into you.",
         mode: Bolt(range: 6),
         effects: [
             (kind: "Harm", args: (kind: "fire", roll: "1d6")),
@@ -60,6 +65,7 @@
     ),
     (
         name: "shield bash",
+        description: "The whalebone shield, swung. Whatever it hits is knocked back and left reeling.",
         mode: Adjacent,
         requires: [InSlot("off hand", "shield")],
         cooldown: 300,

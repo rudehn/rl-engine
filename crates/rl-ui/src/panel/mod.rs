@@ -28,7 +28,7 @@ pub mod sheet;
 pub mod target;
 pub mod vitals;
 
-pub use ability::{AbilityLayout, AbilityMenu, AbilityPanel, ability_modal};
+pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability_modal, reach};
 pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;

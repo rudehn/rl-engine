@@ -86,7 +86,8 @@ impl Screen {
         let controls = map.inflate(-2);
         let sheet = map.inflate(-2);
         let target = Rect::new(map.x, map.bottom() - 1, map.width, 1);
-        let abilities = Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14);
+        // Four rows, a rule, and a described ability with its effects.
+        let abilities = Rect::new(map.x + map.width / 2 - 21, map.y + 3, 42, 20);
         Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, controls, sheet, hint }
     }
 }
@@ -148,7 +149,7 @@ fn main() -> AppExit {
             // The cursor's reading of what an ability would cover, and the list
             // of what can be called on with the reasons any cannot.
             TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
-            AbilityPanel::new(screen.abilities).title("What you can call on").hints("[a] close"),
+            AbilityPanel::new(screen.abilities).title("What you can call on").called("abilities"),
             // Every key `input::declare_controls` and the engine's screens
             // declare, on one screen, with the hint that opens it in the
             // rail's last row.

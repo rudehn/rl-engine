@@ -368,6 +368,15 @@ impl EffectWorld<'_, '_> {
 pub trait Effect: Send + Sync + 'static {
     /// What this does to `landing`.
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>);
+
+    /// What this does, in a few words for a menu, with every id named
+    /// through `registries`: `3d6 fire`, `scorched for 4 turns`. Empty
+    /// means the menu says nothing about it, which is the default so an
+    /// effect a game writes in a hurry still loads.
+    fn describe(&self, registries: &crate::registries::Registries) -> String {
+        let _ = registries;
+        String::new()
+    }
 }
 
 /// An effect that knows how to build itself out of an ability's RON.
@@ -486,6 +495,25 @@ impl Abilities {
     /// One definition.
     pub fn get(&self, id: AbilityId) -> &AbilityDef {
         self.defs.get(id)
+    }
+
+    /// What `id` does, one line per effect that has something to say,
+    /// with its chance in front when it is not certain: what a menu lists
+    /// under an ability.
+    pub fn describe(&self, id: AbilityId, registries: &crate::registries::Registries) -> Vec<String> {
+        self.built[id.index()]
+            .iter()
+            .filter_map(|b| {
+                let what = b.effect.describe(registries);
+                if what.is_empty() {
+                    None
+                } else if b.chance >= 100 {
+                    Some(what)
+                } else {
+                    Some(format!("{}% chance of {what}", b.chance))
+                }
+            })
+            .collect()
     }
 
     /// The id named `name`, if there is one.

@@ -39,6 +39,10 @@ impl Effect for Drain {
             }
         });
     }
+
+    fn describe(&self, registries: &Registries) -> String {
+        format!("gives you back {} {}", self.amount, registries.stats.name(self.pool))
+    }
 }
 
 impl FromArgs for Drain {

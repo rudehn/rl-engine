@@ -329,6 +329,10 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
         if !modals.is_open(modal) {
             modals.open(modal);
         }
+        // Opened this frame, and not steered this frame: the key that asked
+        // for the cursor is still down, and if it was a menu's confirm key
+        // it would confirm the aim before the player had seen it.
+        return;
     }
 
     if !modals.is_top(modal) {
@@ -547,7 +551,7 @@ pub(crate) mod harness {
 
     /// Two abilities: one that flies and bursts, one that wants no cursor.
     pub const ABILITIES: &str = r#"[
-        (name: "bolt", mode: Bolt(range: 6), costs: [Pool("focus", 5)], effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))]),
+        (name: "bolt", description: "a bolt of force", mode: Bolt(range: 6), costs: [Pool("focus", 5)], effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))]),
         (name: "burst", aim: Ground, mode: Ball(range: 6, radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "2"))]),
         (name: "steel", aim: SelfOnly, mode: Own, effects: []),
         (name: "dear", mode: Bolt(range: 6), costs: [Pool("focus", 99)], effects: []),

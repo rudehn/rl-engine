@@ -43,6 +43,9 @@ pub type ModalId = Id<Modal>;
 pub struct Modals {
     names: Interner<Modal>,
     stack: Vec<ModalId>,
+    /// Whether a screen closed this frame. The key that closed it is still
+    /// down, and the world must not read it as its own.
+    closing: bool,
 }
 
 impl Modals {
@@ -79,18 +82,26 @@ impl Modals {
 
     /// Closes the top screen and returns to the one under it, if any.
     pub fn close(&mut self) -> Option<ModalId> {
+        self.closing = true;
         self.stack.pop()
     }
 
     /// Closes everything and gives input back to the world. What an action
     /// that ends a turn does, since the turn loop assumes no screen is up.
     pub fn close_all(&mut self) {
+        self.closing = true;
         self.stack.clear();
     }
 
     /// Closes `modal` wherever it is in the stack, leaving the rest.
     pub fn close_one(&mut self, modal: ModalId) {
+        self.closing = true;
         self.stack.retain(|m| *m != modal);
+    }
+
+    /// Forgets that a screen closed. The first thing in every frame.
+    pub fn begin_frame(&mut self) {
+        self.closing = false;
     }
 
     /// Opens `modal` if it is closed, closes it if it is open. What a
@@ -118,9 +129,17 @@ impl Modals {
         self.top() == Some(modal)
     }
 
-    /// Whether anything is open.
+    /// Whether anything is open, or was until this frame: the world does
+    /// not have the keys either way.
+    ///
+    /// A screen closed by a key is closed while that key is still down,
+    /// and whichever system reads keys next would read it again as the
+    /// world's: the Enter that confirmed an aim would also be the Enter
+    /// that takes the stairs, and the stairs, refused, would spend the
+    /// turn the aim was for. So a frame that closed a screen counts as one
+    /// with a screen up, for everyone gated on this.
     pub fn any_open(&self) -> bool {
-        !self.stack.is_empty()
+        !self.stack.is_empty() || self.closing
     }
 
     /// The stack, outermost first. Panels draw in this order.
@@ -207,7 +226,8 @@ mod tests {
         modals.close();
         assert!(modals.is_top(bag), "closing the child returns to the parent");
         modals.close();
-        assert!(!modals.any_open(), "and closing that gives input back to the world");
+        modals.begin_frame();
+        assert!(!modals.any_open(), "and closing that gives input back to the world, from the next frame");
     }
 
     #[test]
@@ -231,7 +251,25 @@ mod tests {
         modals.open(bag);
         modals.open(detail);
         modals.close_all();
-        assert!(!modals.any_open());
         assert_eq!(modals.top(), None);
+        modals.begin_frame();
+        assert!(!modals.any_open());
+    }
+
+    /// The key that closes a screen is still down when the world's input
+    /// runs, so the frame it closed on still counts as a screen being up.
+    #[test]
+    fn the_world_does_not_get_the_keys_back_until_the_frame_after_a_screen_closes() {
+        let mut modals = Modals::default();
+        let aim = modals.declare("aim");
+        modals.open(aim);
+        modals.close_one(aim);
+        assert!(!modals.is_open(aim), "closed");
+        assert!(modals.any_open(), "but the world does not have the keys yet");
+        modals.begin_frame();
+        assert!(!modals.any_open(), "it does from the next frame");
+        modals.open(aim);
+        modals.close();
+        assert!(modals.any_open(), "however it was closed");
     }
 }

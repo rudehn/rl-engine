@@ -44,6 +44,7 @@ use rl_core::Direction;
 
 use crate::cursor::{CursorKeys, shifted};
 use crate::keys::DirectionKeys;
+use crate::panel::ability::AbilityKeys;
 use crate::panel::scrollback::ScrollbackKeys;
 use crate::panel::sheet::SheetKeys;
 
@@ -232,6 +233,8 @@ pub enum EngineKey {
     ShowControls,
     /// Opening the character sheet, from [`SheetKeys::toggle`].
     OpenSheet,
+    /// Opening the ability menu, from [`AbilityKeys::toggle`].
+    ListAbilities,
 }
 
 /// What asks for a control.
@@ -337,6 +340,8 @@ pub struct Bindings<'a> {
     pub log: Option<&'a ScrollbackKeys>,
     /// The character sheet's, when there is one.
     pub sheet: Option<&'a SheetKeys>,
+    /// The ability menu's, when there is one.
+    pub abilities: Option<&'a AbilityKeys>,
 }
 
 impl Bindings<'_> {
@@ -362,6 +367,7 @@ impl Bindings<'_> {
             EngineKey::FilterLog => self.log.map(|log| vec![log.filter.into()]).unwrap_or_default(),
             EngineKey::ShowControls => vec![self.help.toggle],
             EngineKey::OpenSheet => self.sheet.map(|sheet| vec![sheet.toggle]).unwrap_or_default(),
+            EngineKey::ListAbilities => self.abilities.map(|menu| vec![menu.toggle]).unwrap_or_default(),
         }
     }
 
@@ -546,12 +552,20 @@ pub struct ControlInput<'w> {
     help: Res<'w, ControlsKeys>,
     log: Option<Res<'w, ScrollbackKeys>>,
     sheet: Option<Res<'w, SheetKeys>>,
+    abilities: Option<Res<'w, AbilityKeys>>,
 }
 
 impl ControlInput<'_> {
     /// The binding resources, borrowed together.
     pub fn bindings(&self) -> Bindings<'_> {
-        Bindings { directions: &self.directions, cursor: &self.cursor, help: &self.help, log: self.log.as_deref(), sheet: self.sheet.as_deref() }
+        Bindings {
+            directions: &self.directions,
+            cursor: &self.cursor,
+            help: &self.help,
+            log: self.log.as_deref(),
+            sheet: self.sheet.as_deref(),
+            abilities: self.abilities.as_deref(),
+        }
     }
 
     /// The registry.
@@ -612,7 +626,7 @@ mod tests {
     /// Default bindings, borrowed for one assertion.
     fn with_defaults<R>(log: bool, f: impl FnOnce(&Bindings) -> R) -> R {
         let (directions, cursor, help, scrollback) = (DirectionKeys::default(), CursorKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
-        f(&Bindings { directions: &directions, cursor: &cursor, help: &help, log: log.then_some(&scrollback), sheet: None })
+        f(&Bindings { directions: &directions, cursor: &cursor, help: &help, log: log.then_some(&scrollback), sheet: None, abilities: None })
     }
 
     #[test]
@@ -667,7 +681,7 @@ mod tests {
         });
         let wasd = DirectionKeys::none().bind(KeyCode::KeyW, Direction::North).bind(KeyCode::KeyS, Direction::South).bind(KeyCode::Space, Direction::East);
         let (cursor, help) = (CursorKeys::default(), ControlsKeys::default());
-        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None, sheet: None };
+        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None };
         assert_eq!(controls.label(walk, &bindings), "sw space", "letters outside the custom sort after it, and any other key on its own");
     }
 
@@ -680,7 +694,7 @@ mod tests {
         let log = controls.add("Log", "open the log", EngineKey::OpenLog);
         let (directions, help, scrollback) = (DirectionKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
         let cursor = CursorKeys { next: KeyCode::KeyN, ..CursorKeys::default() };
-        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None };
+        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None };
         assert_eq!(controls.label(next, &bindings), "n", "rebound, and listed as rebound");
         assert_eq!(controls.label(log, &bindings), "", "no scrollback, nothing to list");
         assert_eq!(controls.label(log, &Bindings { log: Some(&scrollback), ..bindings }), "p");

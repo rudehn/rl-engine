@@ -109,8 +109,8 @@ pub use log::{LogEntry, MessageLog};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use panel::{
-    AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys,
-    SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, sheet_modal,
+    AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel,
+    SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, sheet_modal,
 };
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones};
 pub use view::{
@@ -162,6 +162,7 @@ impl Plugin for UiPlugin {
             .init_resource::<ControlsKeys>()
             .init_resource::<MessageLog>()
             .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate).chain().in_set(rl_bevy::PresentSet::Narrate))
+            .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
             .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones);
         // The one facet key the engine itself pushes: a status badge.
         app.world_mut().resource_mut::<Facets>().declare("badge");
@@ -186,8 +187,8 @@ pub mod prelude {
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
     pub use crate::panel::{
-        AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys,
-        SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, sheet_modal,
+        AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel,
+        SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, sheet_modal,
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones};
     pub use crate::view::{

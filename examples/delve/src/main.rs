@@ -57,7 +57,8 @@ fn main() -> AppExit {
             InspectPanel::new(screen.inspect),
             ScrollbackPanel::new(screen.scrollback),
             TargetPanel::new(screen.target).hints("[enter] use  [tab] next  [esc] back"),
-            AbilityPanel::new(screen.knacks).title("Knacks").hints("[a] close"),
+            // The list of knacks, walked, described and aimed by the engine.
+            AbilityPanel::new(screen.knacks).title("Knacks").called("knacks"),
             // Every key declared in `declare_controls` and by the engine's
             // own screens, on one screen, with the hint that opens it in
             // the rail's last row.
@@ -110,7 +111,9 @@ impl Screen {
             inspect: Rect::new(map.x + 2, map.bottom() - 11, map.width.min(50), 10),
             scrollback: map.inflate(-2),
             target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
-            knacks: Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14),
+            // Five rows of knacks, a rule, and a description with three
+            // effects under it, without cutting any short.
+            knacks: Rect::new(map.x + map.width / 2 - 21, map.y + 3, 42, 22),
             controls: map.inflate(-2),
             sheet: map.inflate(-2),
             hint,
@@ -486,7 +489,6 @@ struct Binds {
     drop: ControlId,
     brand: ControlId,
     knacks: ControlId,
-    list: ControlId,
     overlay: ControlId,
     quit: ControlId,
 }
@@ -503,7 +505,6 @@ fn declare_controls(app: &mut App) {
         drop: app.add_control("Act", "set down the flame you carry", KeyCode::KeyD),
         brand: app.add_control("Act", "smother the brand, or light it", Chord::shift(KeyCode::KeyL)),
         knacks: app.add_control("Knacks", "use a knack", [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5]),
-        list: app.add_control("Knacks", "list them, and what blocks any", KeyCode::KeyA),
         overlay: app.add_control("Game", "show the light on each tile", KeyCode::KeyV),
         quit: app.add_control("Game", "quit", KeyCode::KeyQ),
     };
@@ -639,22 +640,19 @@ fn toggle_overlay(keys: ControlInput, binds: Res<Binds>, mut overlay: ResMut<Lig
     }
 }
 
-/// `1` to `5` aim the knacks in order; `a` lists them with the reasons any is
-/// out of reach. A key writes `AimAt` and stops: the cursor, the preview and
-/// the use are the engine's.
+/// `1` to `5` aim the knacks in order, from the map or from the list the
+/// engine's menu shows on `a`. A key writes `AimAt` and stops: the cursor,
+/// the preview and the use are the engine's.
 fn call_on(keys: ControlInput, binds: Res<Binds>, mut modals: ResMut<Modals>, player: Query<(Entity, &Known), PlayerHolding>, mut aims: MessageWriter<AimAt>) {
     let list = ability_modal(&modals);
-    if keys.just_pressed(binds.list) && (modals.is_top(list) || !modals.any_open()) {
-        modals.toggle(list);
-        return;
-    }
-    if modals.any_open() {
+    if modals.any_open() && !modals.is_top(list) {
         return;
     }
     let Ok((user, known)) = player.single() else { return };
     if let Some(slot) = keys.which(binds.knacks)
         && let Some((ability, _)) = known.iter().nth(slot)
     {
+        modals.close_one(list);
         aims.write(AimAt { user, ability });
     }
 }
@@ -815,13 +813,19 @@ fn note_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: R
 mod tests {
     use super::*;
 
-    /// A headless whale: the engine plugins and the delve's own systems.
+    /// A headless whale: the engine plugins and the delve's own systems,
+    /// with the keys wired as `main` wires them, so a test can play it.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, FirePlugin, GasPlugin));
         app.add_engine_effects().add_effect::<effects::Drain>();
+        let screen = Screen::new();
         app.insert_resource(Seed(RunSeed(seed)))
-            .add_plugins(UiPlugin)
+            .add_plugins((UiPlugin, rl_engine::rl_bevy::testing::KeyScriptPlugin))
+            .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, Vec2::ONE))
+            .init_resource::<LightOverlay>()
+            .add_plugins((TargetPanel::new(screen.target), AbilityPanel::new(screen.knacks).called("knacks")))
+            .add_systems(Update, (call_on, (tend_brand, pick_and_drop, toggle_overlay, player_input).chain().run_if(no_modal)).chain().in_set(EngineSet::Input))
             .add_systems(Startup, start)
             .add_systems(Turn, populate_floor.in_set(TurnSet::React))
             .add_systems(Update, narrate.in_set(PresentSet::Narrate));
@@ -1027,6 +1031,73 @@ mod tests {
         app.update();
         assert_eq!(app.world().get::<Position>(torch).map(|p| p.0), Some(here), "set down where the player stands");
         assert!(app.world().get::<LightSource>(torch).is_some(), "and still burning on the floor");
+    }
+
+    /// Through the real keys, the way a player casts: `1` opens the cursor
+    /// on the crab, Enter throws the fireball at it.
+    #[test]
+    fn pressing_one_then_enter_casts_the_fireball_on_the_nearest_beast() {
+        use rl_engine::rl_bevy::testing::press;
+        let (mut app, player) = settled(7);
+        let crab = beside(&mut app, player, "stomach crab");
+        let hp = app.world().get::<Health>(crab).unwrap().hp;
+        let mana = app.world().get::<Pools>(player).unwrap().get(app.world().resource::<Registries>().stats.expect("mana"));
+
+        press(&mut app, KeyCode::Digit1);
+        assert!(app.world().resource::<Modals>().any_open(), "the targeting cursor opened");
+        assert_eq!(app.world().resource::<TargetView>().targets.len(), 1, "on the crab");
+        let _ = app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().count();
+        press(&mut app, KeyCode::Enter);
+        let events: Vec<AbilityEvent> = app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().collect();
+        assert!(matches!(events.as_slice(), [AbilityEvent::Used { .. }]), "the fireball was used: {events:?}");
+        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < hp), "and the crab burned");
+        assert!(app.world().get::<Pools>(player).unwrap().get(app.world().resource::<Registries>().stats.expect("mana")) < mana, "and it cost mana");
+        assert!(!app.world().resource::<Modals>().any_open(), "the cursor went away");
+    }
+
+    /// The knack list: `a` opens it, the direction keys walk it, Enter aims
+    /// the row picked out and Enter again casts it. Two frame hazards live
+    /// on this path: the Enter that aims must not confirm the cursor it
+    /// opened, and the Enter that casts must not also be read as the
+    /// stairs key once the cursor has gone.
+    #[test]
+    fn the_knack_list_walks_aims_and_casts_through_the_real_keys() {
+        use rl_engine::rl_bevy::testing::press;
+        let (mut app, player) = settled(7);
+        let crab = beside(&mut app, player, "stomach crab");
+        let hp = app.world().get::<Health>(crab).unwrap().hp;
+
+        press(&mut app, KeyCode::KeyA);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_open(ability_modal(modals)), "the list opened");
+        // Down three times and back one: to drain, the fourth knack.
+        for key in [KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::Numpad2, KeyCode::ArrowUp, KeyCode::ArrowDown] {
+            press(&mut app, key);
+        }
+        assert_eq!(app.world().resource::<rl_engine::rl_ui::AbilityMenu>().selected, 3);
+        press(&mut app, KeyCode::Enter);
+        let modals = app.world().resource::<Modals>();
+        assert!(!modals.is_open(ability_modal(modals)), "the list closed");
+        assert!(modals.is_open(target_modal(modals)), "and the cursor opened, still up: the Enter that opened it did not confirm it");
+        let clock = app.world().resource::<Turns>().now();
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.world().resource::<Modals>().any_open(), "cast and closed");
+        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < hp), "the drain landed");
+        let turns = app.world().resource::<Turns>().now() - clock;
+        assert_eq!(turns, 100, "one turn spent, by the knack alone: the Enter was not also the stairs");
+    }
+
+    /// A hotkey works from inside the list too, and closes it.
+    #[test]
+    fn a_knack_hotkey_pressed_over_the_list_aims_it() {
+        use rl_engine::rl_bevy::testing::press;
+        let (mut app, player) = settled(7);
+        beside(&mut app, player, "stomach crab");
+        press(&mut app, KeyCode::KeyA);
+        press(&mut app, KeyCode::Digit1);
+        let modals = app.world().resource::<Modals>();
+        assert!(!modals.is_open(ability_modal(modals)) && modals.is_open(target_modal(modals)), "the list gave way to the cursor");
+        assert_eq!(app.world().resource::<TargetView>().what, "fireball");
     }
 
     #[test]

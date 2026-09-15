@@ -1,8 +1,9 @@
 // Corsair's abilities: what a pirate calls on besides a cutlass.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:      unique; the player knows the first four in the order `1` to `4` aim them,
-//              and a monster names the ones it knows in `monsters.ron`
+//   name:        unique; the player knows the first four in the order `1` to `4` aim them,
+//                and a monster names the ones it knows in `monsters.ron`
+//   description: optional; what it is, in a sentence, for the list on `a`
 //   aim:       Foe (default) | Ally | SelfOnly | Ground | Anyone
 //   mode:      Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
 //              Beam(range:) | Cone(length:)
@@ -21,6 +22,7 @@
 [
     (
         name: "broadside",
+        description: "Every pistol you carry, fired at once into whatever stands in the spread.",
         mode: Cone(length: 5),
         costs: [Item("powder", 1)],
         cooldown: 400,
@@ -31,12 +33,14 @@
     ),
     (
         name: "grapnel",
+        description: "A hook on a line, thrown. Whatever it catches is hauled in.",
         mode: Bolt(range: 7),
         cooldown: 300,
         effects: [(kind: "Pull", args: (cells: 3))],
     ),
     (
         name: "swig",
+        description: "A pull of rum. It closes a wound and stops the bleeding, and costs the bottle.",
         aim: SelfOnly,
         mode: Own,
         costs: [Item("rum", 1)],
@@ -47,6 +51,7 @@
     ),
     (
         name: "plunder",
+        description: "A shakedown. Whoever is beside you empties their purse onto the sand.",
         mode: Adjacent,
         effects: [(kind: "Plunder")],
     ),
