@@ -114,6 +114,10 @@ One gate on `player_input` covers the look cursor and every screen Warren might 
 A stack rather than a "return to" slot, because a slot can be pushed twice and lose the first target.
 An action that spends a turn calls `close_all`: the turn loop assumes nothing is open.
 
+With no screen up, `tab` steps down the rail and lights the row and its tile on the map, and `shift` with it steps back.
+That is the engine's `Focus`, the one thing picked out of what is in sight, and the look cursor opens on it and moves it as it goes.
+Warren wrote none of it: `NearbyPanel` and `InspectPanel` share it through the same list.
+
 ## Two presenters, one view
 
 Press `p` and the whole log opens, scrollable, ruled off by turn, and filterable by tone with `tab`.
@@ -145,3 +149,4 @@ It is pure and lives in tier 1, which means it is tested without an `App` and a 
 - Give a rat no `Name` and watch it vanish from the rail while staying on the map.
 - Push a facet keyed `mood` from two different systems and see both print, in order.
 - Log fifty lines, open `p`, and hold `tab`: the filter offers only the tones Warren actually logs in.
+- Press `tab` twice with nothing open, then `x`: the look cursor opens on the second row, not the nearest rat.

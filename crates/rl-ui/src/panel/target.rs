@@ -13,10 +13,10 @@
 
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
-use rl_core::{Point, Rect};
+use rl_core::Rect;
 use rl_render::{MapView, Terminal};
 
-use crate::panel::clip;
+use crate::panel::{clip, tint};
 use crate::tone::{Palette, Tones};
 use crate::view::target::{TargetView, TargetViewPlugin};
 
@@ -65,25 +65,19 @@ pub fn draw_target(mut terminal: ResMut<Terminal>, layout: Res<TargetLayout>, vi
         return;
     }
     let Some(map) = map else { return };
-    let ground = palette.get(if view.legal { Tones::SELECT } else { Tones::BAD });
-    let flight = palette.get(Tones::NOTICE);
+    let ground = if view.legal { Tones::SELECT } else { Tones::BAD };
 
     // The flight first, so a cell that is both lands as a hit rather than
     // as the path it arrived by.
     for cell in view.path.iter().filter(|p| !view.cells.contains(p)) {
-        tint(&mut terminal, &map, *cell, flight);
+        tint(&mut terminal, &map, *cell, Tones::NOTICE, &palette);
     }
     for cell in &view.cells {
-        tint(&mut terminal, &map, *cell, ground);
+        tint(&mut terminal, &map, *cell, ground, &palette);
     }
     // The cursor itself last and brightest, since a ball's burst can
     // cover it and a player needs to know where the keys are moving.
-    if let Some(screen) = map.to_screen(view.cursor)
-        && let Some(mut cell) = terminal.get(screen.x, screen.y)
-    {
-        cell.bg = palette.get(Tones::TITLE);
-        terminal.set(screen.x, screen.y, cell);
-    }
+    tint(&mut terminal, &map, view.cursor, Tones::TITLE, &palette);
 
     let rect = layout.rect;
     if rect.height < 1 || rect.width < 8 {
@@ -91,7 +85,11 @@ pub fn draw_target(mut terminal: ResMut<Terminal>, layout: Res<TargetLayout>, vi
     }
     let bg = palette.get(Tones::SURFACE);
     terminal.fill(rect, rl_render::Cell::new(' ', bg).on(bg));
-    let name = if view.throwing.is_some() { format!("throw {}", view.what) } else { view.what.clone() };
+    let name = match (view.throwing, view.firing) {
+        (Some(_), _) => format!("throw {}", view.what),
+        (None, true) => "fire".to_string(),
+        (None, false) => view.what.clone(),
+    };
     let at = match view.targets.as_slice() {
         [] => "nothing".to_string(),
         [one] if !one.label.is_empty() => one.label.clone(),
@@ -114,14 +112,6 @@ pub fn draw_target(mut terminal: ResMut<Terminal>, layout: Res<TargetLayout>, vi
     }
 }
 
-/// Repaints one cell's background, leaving whatever glyph is on it.
-fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, bg: Color) {
-    let Some(screen) = map.to_screen(cell) else { return };
-    let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
-    drawn.bg = bg;
-    terminal.set(screen.x, screen.y, drawn);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +119,7 @@ mod tests {
     use crate::view::target::AimAt;
     use crate::view::target::harness::{abilities, arm};
     use rl_bevy::{Abilities, AbilitiesPlugin, AddEngineEffects};
+    use rl_core::Point;
 
     /// A stage with the map drawn under the overlay, so the test sees the
     /// same cells a player would.

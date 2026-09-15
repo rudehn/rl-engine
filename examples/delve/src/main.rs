@@ -158,7 +158,7 @@ const FLAME: Rgb = Rgb::new(255, 170, 90);
 /// Columns given to the rail down the right.
 const RAIL: i32 = 26;
 /// The keys, in two lines because one ran past the edge of the log.
-const KEY_HINTS: [&str; 2] = ["1-5 knacks  a list  x look  p log", "g get  d drop torch  L brand  v light"];
+const KEY_HINTS: [&str; 2] = ["1-5 knacks  a list  x look  tab pick  p log", "g get  d drop flame  L brand  v light"];
 /// The delver's knacks and the one a beast has, compiled in.
 const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
 /// What the player knows, in the order `1` to `5` aim them.
@@ -640,6 +640,7 @@ fn narrate_knacks(
                 let (who, verb) = if is_you(*user) { ("You".to_string(), "use") } else { (upper_first(&named(*user)), "uses") };
                 let line = match targets.as_slice() {
                     [] => format!("{who} {verb} {what}."),
+                    [one] if one == user => format!("{who} {verb} {what} on {}.", if is_you(*user) { "yourself".to_string() } else { "itself".to_string() }),
                     [one] => format!("{who} {verb} {what} on {}.", named(*one)),
                     many => format!("{who} {verb} {what}, catching {}.", many.len()),
                 };
@@ -721,6 +722,19 @@ fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<Deat
         }
     };
     for d in dealt.read() {
+        // A knack a delver turns on itself, a mend most often, is narrated
+        // as the knack; only one that hurt is worth a line of its own.
+        if d.hit.attacker == Some(d.target) {
+            if d.dealt > 0 && players.get(d.target).is_ok() {
+                log.push(format!("You hurt yourself for {}.", d.dealt), Tones::BAD, turn);
+            }
+            continue;
+        }
+        if d.dealt < 0 {
+            let who = name(d.target);
+            log.push(format!("{}{} mends for {}.", who[..1].to_uppercase(), &who[1..], -d.dealt), Tones::GOOD, turn);
+            continue;
+        }
         let attacker = d.hit.attacker.map(name).unwrap_or_else(|| "something".into());
         let target = name(d.target);
         let (verb, cat) = if attacker == "you" { ("hit", Tones::TEXT) } else { ("hits", Tones::BAD) };

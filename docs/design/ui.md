@@ -204,6 +204,12 @@ A stack rather than a single-slot pointer because a stack cannot be double-pushe
 
 The look cursor is the same shape: moving the cursor, cycling to the next visible target and clearing the selection are engine behaviour over the viewshed, what the cursor reports is `InspectView`, and how that is drawn is a presenter.
 
+What is cycled is written once, in `rl-ui`'s `focus` module.
+`InSight` is what the player can see, actors nearest first and then things, the order the nearby rail prints; `Focus` is the one entity picked out of it.
+With nothing open, Tab steps the focus down that list, and the nearby panel draws the row and its map tile on the selection tone.
+The look cursor and the targeting cursor cycle the same list, entity by entity, open on the focus when they can take it, and move it as they go, so the row highlighted, the thing looked at and the thing aimed at are one choice.
+An aim narrows the list by `Aim::cycles_to`, and an aim at the ground cycles what is in sight rather than cells, which the direction keys already reach.
+
 ## 8. What the engine does not get
 
 - Main menu, settings, save slots, key rebinding screens.

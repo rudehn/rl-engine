@@ -90,6 +90,7 @@ pub(crate) mod harness;
 
 pub mod cursor;
 pub mod facet;
+pub mod focus;
 pub mod keys;
 pub mod log;
 pub mod menu;
@@ -100,6 +101,7 @@ pub mod view;
 
 pub use cursor::{CursorKeys, Steer};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
+pub use focus::{Focus, InSight, Sighting};
 pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog};
 pub use menu::{ListMenu, MenuRow, draw_menu};
@@ -110,7 +112,7 @@ pub use panel::{
 };
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones};
 pub use view::{
-    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
     NearbyViewPlugin, Row, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
 };
 
@@ -133,7 +135,8 @@ pub enum ViewSet {
 
 /// The base every other plugin in this crate needs: tones, the palette,
 /// facet keys, the modal stack, the direction bindings, the keys the
-/// cursors answer to, and the message log every game writes to.
+/// cursors answer to, the [`Focus`] the nearby list and both cursors
+/// share, and the message log every game writes to.
 ///
 /// The log is here rather than with the panels that draw it because a game
 /// writes to it from its own systems whether or not it draws it: a headless
@@ -151,6 +154,7 @@ impl Plugin for UiPlugin {
             .init_resource::<Modals>()
             .init_resource::<DirectionKeys>()
             .init_resource::<CursorKeys>()
+            .init_resource::<Focus>()
             .init_resource::<MessageLog>()
             .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate).chain().in_set(rl_bevy::PresentSet::Narrate))
             .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones);
@@ -167,6 +171,7 @@ impl Plugin for UiPlugin {
 pub mod prelude {
     pub use crate::cursor::CursorKeys;
     pub use crate::facet::{Facet, FacetId, Facets};
+    pub use crate::focus::{Focus, InSight, Sighting};
     pub use crate::keys::DirectionKeys;
     pub use crate::log::{LogEntry, MessageLog};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
@@ -180,7 +185,7 @@ pub mod prelude {
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones};
     pub use crate::view::{
-        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimThrow, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
         NearbyViewPlugin, Row, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};

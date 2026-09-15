@@ -246,10 +246,23 @@ pub fn resolve_attacks(
     }
 }
 
+/// Where a shot from `from` at `to` flies within `range`: the cells it
+/// passes through, landing included, and the cell it stops in.
+///
+/// It stops at `to`, or short of it at the first thing that stops
+/// projectiles or anyone standing in between. [`line_of_fire`] is this
+/// landing on `to`, and a targeting preview draws this same call, so what
+/// the player is shown and what the resolver decides cannot disagree.
+pub fn shot(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> rl_grid::Footprint {
+    rl_grid::footprint(rl_grid::TargetMode::Bolt { range }, from, to, map.window_tiles(), |p| {
+        p != to && (map.blocks_projectiles(p) || occupancy.is_occupied(p))
+    })
+}
+
 /// Whether a shot from `from` reaches `to` within `range`: nothing that
 /// stops projectiles and nobody standing in between.
 pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> bool {
-    rl_grid::clear_shot(from, to, range, map.window_tiles(), |p| p != to && (map.blocks_projectiles(p) || occupancy.is_occupied(p)))
+    shot(map, occupancy, from, to, range).landing == Some(to)
 }
 
 /// Runs the damage stages and applies what is left to health.

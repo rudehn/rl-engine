@@ -1,12 +1,18 @@
 //! The nearby rail: who is in sight, and what is lying about.
+//!
+//! The row picked out is drawn on the selection tone, and so is the map
+//! tile it names while no cursor is up, so a player stepping down the list
+//! with Tab sees which glyph each row is. A cursor draws its own mark on
+//! the map, and the rail leaves the map to it.
 
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
 use rl_core::Rect;
-use rl_render::Terminal;
+use rl_render::{Cell, MapView, Terminal};
 use rl_rules::Relation;
 
-use crate::panel::{bar, clear, clip, frame, section};
+use crate::modal::Modals;
+use crate::panel::{bar, clear, clip, frame, section, tint};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::{NearbyView, NearbyViewPlugin, Row};
 
@@ -77,8 +83,20 @@ pub fn relation_tone(relation: Option<Relation>) -> ToneId {
     }
 }
 
-/// Paints the rail.
-pub fn draw_nearby(mut terminal: ResMut<Terminal>, layout: Res<NearbyLayout>, view: Res<NearbyView>, palette: Res<Palette>) {
+/// Paints the rail, and the tile of the row picked out.
+pub fn draw_nearby(
+    mut terminal: ResMut<Terminal>,
+    layout: Res<NearbyLayout>,
+    view: Res<NearbyView>,
+    palette: Res<Palette>,
+    modals: Res<Modals>,
+    map: Option<Res<MapView>>,
+) {
+    if let (Some(focused), Some(map)) = (view.focused, map.as_deref())
+        && !modals.any_open()
+    {
+        tint(&mut terminal, map, focused.at, Tones::SELECT, &palette);
+    }
     let rect = layout.rect;
     if rect.width < 6 || rect.height < 4 {
         return;
@@ -98,19 +116,24 @@ pub fn draw_nearby(mut terminal: ResMut<Terminal>, layout: Res<NearbyLayout>, vi
         }
         section(&mut terminal, inner, y, heading, count, &palette);
         y += 2;
-        for row in rows {
+        // Keep the row picked out on the rail: when it falls below the rows
+        // that fit, the list starts late enough to show it last.
+        let room = (bottom - y).max(0) as usize;
+        let skip = rows.iter().position(|r| view.is_focused(r)).map_or(0, |i| (i + 1).saturating_sub(room));
+        for row in rows.iter().skip(skip) {
             if y >= bottom {
                 break;
             }
-            draw_row(&mut terminal, inner, y, row, layout.bar_width, &palette);
+            draw_row(&mut terminal, inner, y, row, view.is_focused(row), layout.bar_width, &palette);
             y += 1;
         }
         y += 1;
     }
 }
 
-fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, bar_width: i32, palette: &Palette) {
-    let bg = palette.get(Tones::SURFACE);
+fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, bar_width: i32, palette: &Palette) {
+    let bg = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
+    terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', bg).on(bg));
     terminal.print_on(inner.x, y, &row.glyph.ch.to_string(), row.glyph.fg, bg);
     let has_bar = row.health.is_some() && inner.width > bar_width + 4;
     let name_width = if has_bar { inner.width - bar_width - 3 } else { inner.width - 2 };
@@ -139,6 +162,7 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, bar_width: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cursor::CursorKeys;
     use crate::harness::Stage;
 
     #[test]
@@ -184,5 +208,57 @@ mod tests {
     fn an_empty_rail_draws_no_headings_at_all() {
         let stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         assert!(stage.rows().iter().all(|r| r.is_empty()), "nothing in sight is nothing drawn: {:?}", stage.rows());
+    }
+
+    /// The background of the terminal cell at `x, y`.
+    fn bg(stage: &Stage, x: i32, y: i32) -> Color {
+        stage.app.world().resource::<Terminal>().get(x, y).expect("on the screen").bg
+    }
+
+    #[test]
+    fn the_row_picked_out_is_drawn_on_the_selection_bar_and_all_and_so_is_its_tile() {
+        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 24, 10)).titled(""), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(64, 20);
+        stage.actor("crab", 'c', 2, 0);
+        stage.actor("gull", 'g', 3, 0);
+        stage.tick();
+        let (select, surface) = {
+            let palette = stage.app.world().resource::<Palette>();
+            (palette.get(Tones::SELECT), palette.get(Tones::SURFACE))
+        };
+        let tile = stage.app.world().resource::<MapView>().to_screen(stage.at.offset(3, 0)).expect("the gull is on the map");
+        assert_eq!(bg(&stage, 45, 3), surface, "nothing is picked out yet");
+
+        stage.press(CursorKeys::default().next);
+        stage.press(CursorKeys::default().next);
+        assert!(stage.rows()[3].contains("g gull"), "{:?}", stage.rows()[3]);
+        for x in [40, 45, 63] {
+            assert_eq!(bg(&stage, x, 3), select, "the gull's row, edge to edge and under its bar, at column {x}");
+        }
+        assert_eq!(bg(&stage, 45, 2), surface, "and not the crab's");
+        assert_eq!(bg(&stage, tile.x, tile.y), select, "the gull's tile on the map");
+        assert_eq!(stage.app.world().resource::<Terminal>().get(tile.x, tile.y).map(|c| c.glyph), Some('g'), "still showing the gull");
+
+        stage.press(CursorKeys::default().close);
+        assert_eq!(bg(&stage, 45, 3), surface, "let go");
+        assert_ne!(bg(&stage, tile.x, tile.y), select);
+    }
+
+    #[test]
+    fn a_row_picked_out_below_the_rail_scrolls_the_list_to_show_it() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 5)).titled("")).screen(24, 5);
+        for (i, name) in ["ant", "bee", "cat", "dog", "eel"].into_iter().enumerate() {
+            stage.actor(name, name.chars().next().unwrap(), i as i32 + 1, 0);
+        }
+        stage.tick();
+        assert!(stage.rows()[4].starts_with("c cat"), "three rows fit: {:?}", stage.rows());
+        for _ in 0..5 {
+            stage.press(CursorKeys::default().next);
+        }
+        let rows = stage.rows();
+        assert!(rows[4].starts_with("e eel"), "the eel is shown last: {rows:?}");
+        assert!(rows[2].starts_with("c cat"), "and the list starts late enough: {rows:?}");
     }
 }

@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Direction;
-use rl_engine::rl_ui::{AimThrow, DirectionKeys, MessageLog, Modals, Tones};
+use rl_engine::rl_ui::{AimFire, AimThrow, DirectionKeys, MessageLog, Modals, Tones};
 
 /// How long a held key waits before repeating, and between repeats.
 const REPEAT_DELAY: f32 = 0.25;
@@ -34,48 +34,27 @@ pub struct InputWorld<'w, 's> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Aim<'w, 's> {
     keys: Res<'w, ButtonInput<KeyCode>>,
-    map: Res<'w, WorldMap>,
-    occupancy: Res<'w, Occupancy>,
-    rules: Res<'w, CombatRules>,
+    modals: Res<'w, Modals>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
-    player: Query<'w, 's, Shooter, (With<Player>, With<MyTurn>)>,
-    others: Query<'w, 's, Mark, (With<Actor>, Without<Player>)>,
+    player: Query<'w, 's, Gunner, (With<Player>, With<MyTurn>)>,
 }
 
-/// The player as a shooter.
-type Shooter = (Entity, &'static Position, &'static Viewshed, &'static Faction, Option<&'static RangedAttack>);
-/// Anyone who might be shot.
-type Mark = (Entity, &'static Position, &'static Faction, Option<&'static OnMap>);
+/// The player, and whether it has anything to shoot with.
+type Gunner = (Entity, Has<RangedAttack>);
 
-/// `f`: shoot the nearest foe in sight with a clear line of fire.
-pub fn fire(mut aim: Aim, mut intents: MessageWriter<Intent<Attack>>) {
-    if !aim.keys.just_pressed(KeyCode::KeyF) {
+/// `f`: fire through the targeting cursor, which opens on the nearest foe,
+/// cycles the rest with Tab, previews the line of fire, and shoots on
+/// confirm.
+pub fn fire(mut aim: Aim, mut aims: MessageWriter<AimFire>) {
+    if aim.modals.any_open() || !aim.keys.just_pressed(KeyCode::KeyF) {
         return;
     }
-    let Ok((me, pos, sight, faction, gun)) = aim.player.single() else { return };
-    let turn = aim.turns.turn_number();
-    let Some(gun) = gun else {
-        aim.log.push("You have nothing to shoot with.", Tones::MUTED, turn);
-        return;
-    };
-    let here = aim.map.current();
-    let target = aim
-        .others
-        .iter()
-        .filter(|(_, p, f, on)| {
-            on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here
-                && aim.rules.factions.is_hostile(faction.0, f.0)
-                && sight.can_see(p.0)
-                && line_of_fire(&aim.map, &aim.occupancy, pos.0, p.0, gun.range)
-        })
-        .min_by_key(|(_, p, _, _)| rl_engine::rl_core::geometry::chebyshev(pos.0, p.0))
-        .map(|(e, _, _, _)| e);
-    match target {
-        Some(target) => {
-            intents.write(Intent::new(me, Attack(target)));
-        }
-        None => aim.log.push("Nothing in range to shoot.", Tones::MUTED, turn),
+    let Ok((me, armed)) = aim.player.single() else { return };
+    if armed {
+        aims.write(AimFire { user: me });
+    } else {
+        aim.log.push("You have nothing to shoot with.", Tones::MUTED, aim.turns.turn_number());
     }
 }
 

@@ -110,6 +110,24 @@ impl Aim {
             Aim::Foe | Aim::Ground | Aim::Anyone => !is_user && relation == Some(Relation::Hostile),
         }
     }
+
+    /// Whether a cursor aiming this stops on something in sight when the
+    /// player cycles through targets. `actor` is whether it is an actor
+    /// rather than a thing lying about.
+    ///
+    /// Wider than [`worth_aiming_at`](Self::worth_aiming_at), which picks
+    /// where the cursor opens: cycling offers everything the aim could be
+    /// pointed at, so a player can mend an ally who is not yet hurt. An aim
+    /// at the ground stops on anything in sight, things included, and never
+    /// on bare cells, which are what the direction keys are for. Every other
+    /// aim stops only on an actor it would hit.
+    pub fn cycles_to(self, relation: Option<Relation>, is_user: bool, actor: bool) -> bool {
+        match self {
+            Aim::SelfOnly => false,
+            Aim::Ground => !is_user,
+            Aim::Foe | Aim::Ally | Aim::Anyone => actor && self.hits(relation, is_user),
+        }
+    }
 }
 
 /// What a use spends. All or nothing: a use that cannot pay every cost
@@ -729,6 +747,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn cycling_stops_on_whatever_an_aim_opens_on_and_an_aim_at_the_ground_on_anything() {
+        for aim in [Aim::Foe, Aim::Ally, Aim::Ground, Aim::Anyone] {
+            for relation in [None, Some(Relation::Hostile), Some(Relation::Neutral), Some(Relation::Allied)] {
+                for (is_user, hurt) in [(false, false), (false, true), (true, false), (true, true)] {
+                    if aim.worth_aiming_at(relation, is_user, hurt) {
+                        assert!(aim.cycles_to(relation, is_user, true), "{aim:?} opens on {relation:?} (user: {is_user}) and would cycle past it");
+                    }
+                }
+            }
+        }
+        assert!(Aim::Ground.cycles_to(None, false, false), "a thing lying about, for an aim at the ground");
+        assert!(!Aim::Ground.cycles_to(Some(Relation::Hostile), true, true), "but never the user");
+        assert!(!Aim::Foe.cycles_to(None, false, false), "an aim at foes has no use for things");
+        assert!(Aim::Ally.cycles_to(Some(Relation::Allied), false, true), "a whole ally, which it does not open on");
+        assert!(Aim::Ally.cycles_to(Some(Relation::Hostile), true, true), "and the user, its own ally");
+        assert!(!Aim::SelfOnly.cycles_to(None, true, true), "no cursor, nothing to cycle");
     }
 
     #[test]

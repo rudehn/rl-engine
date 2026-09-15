@@ -35,8 +35,8 @@ pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPan
 pub use target::{TargetLayout, TargetPanel};
 pub use vitals::VitalsPanel;
 
-use rl_core::Rect;
-use rl_render::{Cell, Terminal};
+use rl_core::{Point, Rect};
+use rl_render::{Cell, MapView, Terminal};
 
 use crate::tone::{Palette, ToneId, Tones};
 
@@ -97,12 +97,27 @@ pub fn section(terminal: &mut Terminal, rect: Rect, y: i32, title: &str, count: 
 /// Rounds the filled length up, so anything left at all shows as at least
 /// one cell: a bar that reads empty while its owner is alive is a bar that
 /// lies at the moment it matters most.
+///
+/// Drawn on whatever background its cells already have, so a bar on a
+/// highlighted row stays part of the highlight.
 pub fn bar(terminal: &mut Terminal, x: i32, y: i32, width: i32, fraction: f32, tone: ToneId, palette: &Palette) {
     let filled = if fraction <= 0.0 { 0 } else { ((fraction.clamp(0.0, 1.0) * width as f32).ceil() as i32).min(width).max(1) };
     for i in 0..width {
         let (glyph, color) = if i < filled { ('\u{2588}', palette.get(tone)) } else { ('\u{2591}', palette.get(Tones::MUTED)) };
-        terminal.set(x + i, y, Cell::new(glyph, color).on(palette.get(Tones::SURFACE)));
+        let under = terminal.get(x + i, y).map_or(palette.get(Tones::SURFACE), |cell| cell.bg);
+        terminal.set(x + i, y, Cell::new(glyph, color).on(under));
     }
+}
+
+/// Repaints the background of the map cell showing world `cell` in `tone`,
+/// keeping whatever glyph the map drew there, so a highlight marks a
+/// monster without hiding it. Nothing happens for a cell the map view is
+/// not showing.
+pub fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, tone: ToneId, palette: &Palette) {
+    let Some(screen) = map.to_screen(cell) else { return };
+    let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
+    drawn.bg = palette.get(tone);
+    terminal.set(screen.x, screen.y, drawn);
 }
 
 /// Cuts `text` to `width` characters, with an ellipsis when it did not

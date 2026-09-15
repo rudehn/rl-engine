@@ -1,33 +1,44 @@
-//! The targeting cursor: where an ability would land, or a thrown item fly,
-//! before it does.
+//! The targeting cursor: where an ability would land, a thrown item fly, or
+//! a shot go, before it does.
 //!
 //! Two pieces that only look like one, the way the look cursor is. The
 //! cursor is behaviour the engine owns: it opens onto the nearest thing
-//! worth aiming at, steps with the direction keys, cycles through the rest,
-//! refuses to leave the loaded window, and on confirm writes the [`Use`] or
-//! the [`Throw`] intent itself. The picture is a view: the cells it would
-//! cover from here and who it would hit, resolved by [`Bystanders::land`]
-//! for an ability and [`flight`] for a throw, the calls the
-//! resolvers act on, so what is shown is what will happen.
+//! worth aiming at, steps with the direction keys, cycles through what the
+//! aim can take, refuses to leave the loaded window, and on confirm writes
+//! the [`Use`], the [`Throw`] or the [`Attack`] itself. The picture is a
+//! view: the cells it would cover from here and who it would hit, resolved
+//! by [`Bystanders::land`] for an ability, [`flight`] for a throw and
+//! [`shot`] for a shot, the calls the resolvers act on, so what is shown is
+//! what will happen.
+//!
+//! Cycling steps through what is in sight in the nearby list's order, held
+//! to what the aim can take by [`Aim::cycles_to`]: foes for an ability aimed
+//! at foes, allies and the user for one aimed at allies, and anything in
+//! sight, things included, for one aimed at the ground, which would
+//! otherwise have nothing to stop on but cells. A throw or a shot stops on
+//! any actor but whoever sends it. The direction keys still reach every
+//! cell, and wherever the cursor goes the [`Focus`] follows.
 //!
 //! The cursor is a modal, declared under the name `target`, so a game
 //! gates its movement keys on [`no_modal`](crate::no_modal) and gets the
 //! exclusion from the bag and the look cursor for free.
 //!
-//! A game opens it by writing [`AimAt`] for an ability or [`AimThrow`] for
-//! something carried, which is all the code the key needs: the engine picks
-//! the first target, runs the cursor, and spends the turn. Nothing about
-//! which key does it is the engine's business.
+//! A game opens it by writing [`AimAt`] for an ability, [`AimThrow`] for
+//! something carried, or [`AimFire`] for a shot, which is all the code the
+//! key needs: the engine picks the first target, runs the cursor, and
+//! spends the turn. Nothing about which key does it is the engine's
+//! business.
 
 use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
-use rl_bevy::{Aimed, Bystanders, Landed, Offered, flight};
+use rl_bevy::{Aimed, Bystanders, Landed, Offered, flight, shot};
 use rl_core::Point;
 use rl_render::Glyph;
 use rl_rules::ability::{AbilityId, Aim, Blocked};
 
-use crate::cursor::{self, CursorInput, CursorKeys, Steer};
+use crate::cursor::{CursorInput, CursorKeys, Steer};
+use crate::focus::{Focus, InSight, Sighting};
 use crate::modal::{ModalId, Modals};
 use crate::view::Row;
 
@@ -63,6 +74,19 @@ pub struct AimThrow {
     pub item: Entity,
 }
 
+/// Open the targeting cursor on a shot with the user's [`RangedAttack`].
+///
+/// What a game writes when its fire key is pressed. The cursor opens on the
+/// nearest foe, previews through [`shot`] the line the shot takes and
+/// whether it reaches, and writes an [`Attack`] on whoever stands under the
+/// cursor when the player confirms. Needs [`CombatPlugin`] to be resolved,
+/// and does nothing for a user with no [`RangedAttack`].
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AimFire {
+    /// Who is firing.
+    pub user: Entity,
+}
+
 /// What is being aimed, and where it would land.
 #[derive(Resource, Debug, Default)]
 pub struct TargetView {
@@ -70,8 +94,10 @@ pub struct TargetView {
     pub ability: Option<AbilityId>,
     /// The item being thrown, while the cursor is open on a throw.
     pub throwing: Option<Entity>,
+    /// Whether the cursor is open on a shot.
+    pub firing: bool,
     /// What is being aimed, by the name the game gave it: the ability's, or
-    /// the thrown item's.
+    /// the thrown item's. Empty for a shot, which has no name of its own.
     pub what: String,
     /// Who is aiming it.
     pub user: Option<Entity>,
@@ -94,24 +120,30 @@ pub struct TargetView {
 impl TargetView {
     /// Whether the cursor is up.
     pub fn aiming(&self) -> bool {
-        self.ability.is_some() || self.throwing.is_some()
+        self.ability.is_some() || self.throwing.is_some() || self.firing
     }
 }
 
 /// Adds the targeting cursor and keeps [`TargetView`] current.
 ///
-/// Needs [`WorldMap`]; an ability needs the abilities the game loaded, and
-/// a throw needs [`ThrowingPlugin`] to be resolved. Its keys are
-/// [`CursorKeys`], the ones the look cursor answers to.
+/// Needs [`WorldMap`]; an ability needs the abilities the game loaded, a
+/// throw needs [`ThrowingPlugin`] to be resolved, and a shot
+/// [`CombatPlugin`]. Its keys are [`CursorKeys`], the ones the look cursor
+/// answers to.
 pub struct TargetViewPlugin;
 
 impl Plugin for TargetViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TargetView>().init_resource::<CursorKeys>().add_message::<AimAt>().add_message::<AimThrow>();
-        // The two intents the cursor writes on confirm, registered whether or
+        app.init_resource::<TargetView>()
+            .init_resource::<CursorKeys>()
+            .init_resource::<Focus>()
+            .add_message::<AimAt>()
+            .add_message::<AimThrow>()
+            .add_message::<AimFire>();
+        // The intents the cursor writes on confirm, registered whether or
         // not the game added the plugin that resolves each: a game that
         // throws and has no abilities still runs this cursor.
-        app.add_message::<Intent<Use>>().add_message::<Intent<Throw>>();
+        app.add_message::<Intent<Use>>().add_message::<Intent<Throw>>().add_message::<Intent<Attack>>();
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
         app.add_modal(TARGET_MODAL);
@@ -131,6 +163,40 @@ pub fn target_modal(modals: &Modals) -> ModalId {
     modals.get(TARGET_MODAL).expect("TargetViewPlugin declares the target modal")
 }
 
+/// What the cursor is aiming, when it is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pointing {
+    Ability(AbilityId),
+    Throw(Entity),
+    Fire,
+}
+
+impl Pointing {
+    /// What the view says is being aimed, if anything is.
+    fn of(view: &TargetView) -> Option<Pointing> {
+        match (view.ability, view.throwing, view.firing) {
+            (Some(ability), _, _) => Some(Pointing::Ability(ability)),
+            (None, Some(item), _) => Some(Pointing::Throw(item)),
+            (None, None, true) => Some(Pointing::Fire),
+            (None, None, false) => None,
+        }
+    }
+
+    /// Writes this into the view, over whatever was aimed before.
+    fn into_view(self, view: &mut TargetView, user: Entity) {
+        view.ability = match self {
+            Pointing::Ability(ability) => Some(ability),
+            _ => None,
+        };
+        view.throwing = match self {
+            Pointing::Throw(item) => Some(item),
+            _ => None,
+        };
+        view.firing = self == Pointing::Fire;
+        view.user = Some(user);
+    }
+}
+
 /// Everything the cursor steers by.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Aiming<'w, 's> {
@@ -138,37 +204,68 @@ pub struct Aiming<'w, 's> {
     map: Res<'w, WorldMap>,
     abilities: Option<Res<'w, Abilities>>,
     occupancy: Res<'w, Occupancy>,
+    focus: ResMut<'w, Focus>,
+    sight: InSight<'w, 's>,
     bystanders: Bystanders<'w, 's>,
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>)>,
     living: Query<'w, 's, &'static Health, Without<Dead>>,
     missiles: Query<'w, 's, (), With<Throwable>>,
-}
-
-/// What the cursor is aiming, when it is open.
-#[derive(Debug, Clone, Copy)]
-enum Pointing {
-    Ability(AbilityId),
-    Throw(Entity),
+    shooters: Query<'w, 's, (), With<RangedAttack>>,
 }
 
 impl Aiming<'_, '_> {
-    /// The cells this ability is worth pointing at, nearest to the user
-    /// first.
+    /// The aim a pointing is judged by. A throw and a shot are for foes,
+    /// which is where they open.
+    fn aim(&self, pointing: Pointing) -> Aim {
+        match pointing {
+            Pointing::Ability(ability) => self.abilities.as_deref().map_or(Aim::Foe, |a| a.get(ability).aim),
+            Pointing::Throw(_) | Pointing::Fire => Aim::Foe,
+        }
+    }
+
+    /// What the cursor stops on when cycling, in the nearby list's order,
+    /// with the user first when the aim can take its user.
+    ///
+    /// Held to what the user can see as well as the player, for a user
+    /// that is not the player.
+    fn candidates(&self, user: Entity, pointing: Pointing) -> Vec<Sighting> {
+        let Ok((from, sight)) = self.users.get(user) else { return Vec::new() };
+        let aim = self.aim(pointing);
+        let me = Sighting { entity: user, at: from.0, actor: true, distance: 0 };
+        std::iter::once(me)
+            .chain(self.sight.list().into_iter().filter(|s| s.entity != user))
+            .filter(|s| {
+                let is_user = s.entity == user;
+                let seen = is_user || sight.is_none_or(|v| v.can_see(s.at));
+                let relation = self.bystanders.relation(user, s.entity);
+                seen && match pointing {
+                    Pointing::Ability(_) => aim.cycles_to(relation, is_user, s.actor),
+                    // Something thrown or shot can be sent at anyone but
+                    // whoever sends it.
+                    Pointing::Throw(_) | Pointing::Fire => s.actor && !is_user,
+                }
+            })
+            .collect()
+    }
+
+    /// Where the cursor opens: on what is picked out, when the aim can take
+    /// it, and otherwise on the nearest thing worth aiming at.
     ///
     /// [`Aim::worth_aiming_at`] is the rule the mind's tactic aims by, so
     /// the cursor opens on what a monster would have picked, the user's own
     /// cell included when there is a hurt user to mend, and a player who
-    /// just presses confirm gets the sensible shot.
-    fn candidates(&self, user: Entity, from: Point, aim: Aim, sight: Option<&Viewshed>) -> Vec<Point> {
-        if !aim.needs_cursor() {
-            return vec![from];
+    /// just presses confirm gets the sensible shot. `None` when there is
+    /// neither, and the cursor opens on the user.
+    fn opening(&self, user: Entity, pointing: Pointing) -> Option<Sighting> {
+        let list = self.candidates(user, pointing);
+        if let Some(picked) = self.focus.within(&list) {
+            return Some(*picked);
         }
-        let wanted = self.occupancy.iter().filter(|(p, who)| {
-            let Ok(health) = self.living.get(*who) else { return false };
-            let seen = *who == user || sight.is_none_or(|s| s.can_see(*p));
-            seen && aim.worth_aiming_at(self.bystanders.relation(user, *who), *who == user, health.hp < health.max)
-        });
-        cursor::ordered(from, wanted.map(|(p, _)| p))
+        let aim = self.aim(pointing);
+        list.into_iter().find(|s| {
+            let Ok(health) = self.living.get(s.entity) else { return false };
+            aim.worth_aiming_at(self.bystanders.relation(user, s.entity), s.entity == user, health.hp < health.max)
+        })
     }
 }
 
@@ -177,6 +274,7 @@ impl Aiming<'_, '_> {
 pub struct AimRequests<'w, 's> {
     abilities: MessageReader<'w, 's, AimAt>,
     throws: MessageReader<'w, 's, AimThrow>,
+    fires: MessageReader<'w, 's, AimFire>,
 }
 
 /// What the cursor writes when the player confirms.
@@ -184,77 +282,92 @@ pub struct AimRequests<'w, 's> {
 pub struct AimIntents<'w> {
     uses: MessageWriter<'w, Intent<Use>>,
     throws: MessageWriter<'w, Intent<Throw>>,
+    attacks: MessageWriter<'w, Intent<Attack>>,
 }
 
 /// Opens, steps, cycles, confirms and cancels the cursor.
-pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut requests: AimRequests, mut intents: AimIntents, aiming: Aiming) {
+pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut requests: AimRequests, mut intents: AimIntents, mut aiming: Aiming) {
     let modal = target_modal(&modals);
 
+    // The last request of a frame is the one aimed, and the cursor opens
+    // once for it.
+    let mut asked: Option<(Entity, Pointing)> = None;
     for request in requests.abilities.read() {
-        let (Some(abilities), Ok((from, sight))) = (aiming.abilities.as_deref(), aiming.users.get(request.user)) else { continue };
-        let def = abilities.get(request.ability);
+        let (Some(abilities), Ok((from, _))) = (aiming.abilities.as_deref(), aiming.users.get(request.user)) else { continue };
         // An ability that wants no cursor is used where it stands. A game
         // binds every ability the same way and never asks which kind it is.
-        if !def.aim.needs_cursor() {
+        if !abilities.get(request.ability).aim.needs_cursor() {
             intents.uses.write(Intent::new(request.user, Use { ability: request.ability, aim: from.0 }));
             continue;
         }
-        let candidates = aiming.candidates(request.user, from.0, def.aim, sight);
-        view.ability = Some(request.ability);
-        view.throwing = None;
-        view.user = Some(request.user);
-        view.cursor = candidates.first().copied().unwrap_or(from.0);
-        modals.open(modal);
+        asked = Some((request.user, Pointing::Ability(request.ability)));
     }
     for request in requests.throws.read() {
-        let Ok((from, sight)) = aiming.users.get(request.user) else { continue };
-        if !aiming.missiles.contains(request.item) {
-            continue;
+        if aiming.missiles.contains(request.item) {
+            asked = Some((request.user, Pointing::Throw(request.item)));
         }
-        // A throw is at whoever it would hurt, so it opens on the nearest foe.
-        let candidates = aiming.candidates(request.user, from.0, Aim::Foe, sight);
-        view.ability = None;
-        view.throwing = Some(request.item);
-        view.user = Some(request.user);
-        view.cursor = candidates.first().copied().unwrap_or(from.0);
-        modals.open(modal);
+    }
+    for request in requests.fires.read() {
+        if aiming.shooters.contains(request.user) {
+            asked = Some((request.user, Pointing::Fire));
+        }
+    }
+    if let Some((user, pointing)) = asked
+        && let Ok((from, _)) = aiming.users.get(user)
+    {
+        let from = from.0;
+        let opens_on = aiming.opening(user, pointing);
+        pointing.into_view(&mut view, user);
+        view.cursor = opens_on.map_or(from, |s| s.at);
+        if let Some(target) = opens_on {
+            aiming.focus.set(Some(target.entity));
+        }
+        if !modals.is_open(modal) {
+            modals.open(modal);
+        }
     }
 
     if !modals.is_top(modal) {
         return;
     }
-    let aimed = match (view.ability, view.throwing) {
-        (Some(ability), _) => Some(Pointing::Ability(ability)),
-        (None, Some(item)) => Some(Pointing::Throw(item)),
-        (None, None) => None,
-    };
-    let (Some(aimed), Some(user)) = (aimed, view.user) else {
+    let (Some(pointing), Some(user)) = (Pointing::of(&view), view.user) else {
         // The cursor is up with nothing in it, which can only mean the
         // aimer is gone. Put it away rather than leave input trapped.
         modals.close_one(modal);
         return;
     };
-    let Ok((from, sight)) = aiming.users.get(user) else {
+    if aiming.users.get(user).is_err() {
         // The aimer left the world: there is nothing to aim from.
         close(&mut view, &mut modals, modal);
         return;
-    };
-    let aim = match aimed {
-        Pointing::Ability(ability) => aiming.abilities.as_deref().map_or(Aim::Foe, |a| a.get(ability).aim),
-        Pointing::Throw(_) => Aim::Foe,
-    };
-    match aiming.input.steer(&mut view.cursor, aiming.map.window_tiles(), || aiming.candidates(user, from.0, aim, sight)) {
+    }
+    // Steered on a copy, so the candidates can be borrowed while the focus
+    // moves, and written back only when it did.
+    let mut focus = *aiming.focus;
+    let steer = aiming.input.steer(&mut view.cursor, &mut focus, aiming.map.window_tiles(), || aiming.candidates(user, pointing));
+    if focus != *aiming.focus {
+        *aiming.focus = focus;
+    }
+    match steer {
         Steer::Close => close(&mut view, &mut modals, modal),
         Steer::Confirm => {
             // Refused aims are the resolver's to report, not the cursor's: a
             // player who insists gets the refusal in the log with its reason,
             // which is better than a key that does nothing.
-            match aimed {
+            match pointing {
                 Pointing::Ability(ability) => {
                     intents.uses.write(Intent::new(user, Use { ability, aim: view.cursor }));
                 }
                 Pointing::Throw(item) => {
                     intents.throws.write(Intent::new(user, Throw { item, at: view.cursor }));
+                }
+                Pointing::Fire => {
+                    // A shot is at someone rather than at a cell. With nobody
+                    // under the cursor there is no attack to write, and the
+                    // banner already says there is no target, so the cursor
+                    // stays up for the player to move.
+                    let Some(target) = mark(&aiming.occupancy, user, view.cursor, |who| aiming.living.contains(who)) else { return };
+                    intents.attacks.write(Intent::new(user, Attack(target)));
                 }
             }
             close(&mut view, &mut modals, modal);
@@ -263,10 +376,18 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
     }
 }
 
+/// Who a shot at `cell` is at: whoever living stands there, never the one
+/// shooting. The one rule the cursor writes the attack by and the preview
+/// names its target by.
+fn mark(occupancy: &Occupancy, user: Entity, cell: Point, alive: impl Fn(Entity) -> bool) -> Option<Entity> {
+    occupancy.first_at(cell).filter(|who| *who != user && alive(*who))
+}
+
 /// Puts the cursor away and forgets what it was aiming.
 fn close(view: &mut TargetView, modals: &mut Modals, modal: ModalId) {
     view.ability = None;
     view.throwing = None;
+    view.firing = false;
     view.what.clear();
     view.user = None;
     view.cells.clear();
@@ -297,6 +418,8 @@ pub struct Reach<'w, 's> {
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>, Option<&'static Inventory>)>,
     subjects: Query<'w, 's, Standing>,
     missiles: Query<'w, 's, (&'static Throwable, Option<&'static Name>)>,
+    guns: Query<'w, 's, (&'static RangedAttack, Has<MeleeAttack>)>,
+    living: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
 }
 
 impl Reach<'_, '_> {
@@ -317,11 +440,11 @@ impl Reach<'_, '_> {
 
 /// Fills [`TargetView`] from wherever the cursor is.
 ///
-/// Through [`Bystanders::land`] for an ability and [`flight`] for a throw,
-/// the calls the resolvers act on, so the cells lit on the map, the names in
-/// the banner and whether it reads as refused are what will happen when the
-/// player confirms. A preview computed any other way is a preview that
-/// drifts.
+/// Through [`Bystanders::land`] for an ability, [`flight`] for a throw and
+/// [`shot`] for a shot, the calls the resolvers act on, so the cells lit on
+/// the map, the names in the banner and whether it reads as refused are
+/// what will happen when the player confirms. A preview computed any other
+/// way is a preview that drifts.
 pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
     view.cells.clear();
     view.path.clear();
@@ -332,6 +455,25 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
     let Some(user) = view.user else { return };
     let Ok((from, sight, bag)) = reach.users.get(user) else { return };
     let from = from.0;
+
+    if view.firing {
+        let Ok((gun, has_melee)) = reach.guns.get(user) else { return };
+        view.what.clear();
+        let flies = shot(&reach.map, &reach.occupancy, from, view.cursor, gun.range);
+        let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who));
+        // Point blank is a blow, struck with whatever the user fights with
+        // in hand; anything further needs a clear line to the target.
+        let reaches = target.is_some() && if rl_core::geometry::is_adjacent(from, view.cursor) { has_melee } else { flies.landing == Some(view.cursor) };
+        if !reaches {
+            view.why.push(Blocked::NoTarget);
+        }
+        view.legal = reaches;
+        view.targets.extend(target.filter(|_| reaches).and_then(|who| reach.row(user, from, who)));
+        view.cells = flies.landing.into_iter().collect();
+        view.landing = flies.landing;
+        view.path = flies.path;
+        return;
+    }
 
     if let Some(item) = view.throwing {
         let Ok((throwable, name)) = reach.missiles.get(item) else { return };
@@ -459,6 +601,12 @@ mod tests {
         stage.tick();
     }
 
+    /// The player's own side, for an actor that should read as an ally.
+    fn befriend(stage: &mut Stage, who: Entity) {
+        let ours = stage.app.world().get::<Faction>(stage.player).expect("the player takes a side").0;
+        stage.app.world_mut().entity_mut(who).insert(Faction(ours));
+    }
+
     /// The cursor opens on the nearest thing the ability wants, which is
     /// the same choice a mind's tactic would have made.
     #[test]
@@ -495,6 +643,73 @@ mod tests {
         assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(2, 0), "round the end");
         stage.press(KeyCode::ArrowUp);
         assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(2, -1), "stepped off the target");
+    }
+
+    /// An ability aimed at foes stops only on foes, however much else is in
+    /// sight.
+    #[test]
+    fn an_aim_at_foes_cycles_past_allies_and_things() {
+        let mut stage = staged();
+        let (bolt, _, _) = arm(&mut stage);
+        let friend = stage.actor("friend", 'a', 1, 0);
+        befriend(&mut stage, friend);
+        stage.thing("a coin", '$', 1, 1);
+        stage.actor("foe", 'f', 3, 0);
+        stage.tick();
+        aim_at(&mut stage, bolt);
+        let at = stage.at;
+        assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(3, 0));
+        stage.press(KeyCode::Tab);
+        assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(3, 0), "the foe is the only stop");
+    }
+
+    /// An ability aimed at the ground has no cells to cycle through, so it
+    /// cycles through what is in sight instead, things included, in the
+    /// order the nearby list prints them.
+    #[test]
+    fn an_aim_at_the_ground_cycles_through_everything_in_sight() {
+        let mut stage = staged();
+        let (_, burst, _) = arm(&mut stage);
+        let friend = stage.actor("friend", 'a', -2, 0);
+        befriend(&mut stage, friend);
+        stage.actor("them", 't', 3, 0);
+        stage.thing("a coin", '$', 1, 0);
+        stage.tick();
+        aim_at(&mut stage, burst);
+        let at = stage.at;
+        let cursor = |stage: &Stage| stage.app.world().resource::<TargetView>().cursor;
+        assert_eq!(cursor(&stage), at.offset(3, 0), "it opens on the foe worth bursting");
+        stage.press(KeyCode::Tab);
+        assert_eq!(cursor(&stage), at.offset(1, 0), "then the coin, after every actor");
+        stage.press(KeyCode::Tab);
+        assert_eq!(cursor(&stage), at.offset(-2, 0), "then round to the ally, the nearest actor");
+        stage.press(KeyCode::Tab);
+        assert_eq!(cursor(&stage), at.offset(3, 0));
+    }
+
+    /// Something picked out before the cursor opened is where it opens,
+    /// when the aim can take it, and what the cursor lands on stays picked
+    /// out after it closes.
+    #[test]
+    fn the_cursor_opens_on_what_is_picked_out_when_the_aim_can_take_it() {
+        let mut stage = staged();
+        let (bolt, _, _) = arm(&mut stage);
+        stage.actor("near one", 'n', 2, 0);
+        let far = stage.actor("far one", 'f', 4, 0);
+        let coin = stage.thing("a coin", '$', 1, 0);
+        stage.tick();
+        let at = stage.at;
+
+        stage.app.world_mut().resource_mut::<Focus>().set(Some(far));
+        aim_at(&mut stage, bolt);
+        assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(4, 0), "on the one picked out, not the nearest");
+        stage.press(KeyCode::Escape);
+
+        stage.app.world_mut().resource_mut::<Focus>().set(Some(coin));
+        aim_at(&mut stage, bolt);
+        assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(2, 0), "a bolt at foes cannot take a coin");
+        stage.press(KeyCode::Escape);
+        assert_ne!(stage.app.world().resource::<Focus>().get(), Some(coin), "the cursor moved the focus to what it opened on");
     }
 
     /// What the cursor shows is what the resolver will do: the same
@@ -680,6 +895,61 @@ mod tests {
         let thrown: Vec<Throw> = stage.app.world_mut().resource_mut::<Messages<Intent<Throw>>>().drain().map(|i| i.action).collect();
         assert_eq!(thrown, vec![Throw { item: knife, at: at.offset(4, 0) }], "confirm throws it where it was aimed");
         assert!(!stage.app.world().resource::<TargetView>().aiming());
+    }
+
+    /// A shot is aimed like a throw, and the preview is the resolver's own
+    /// line of fire: a foe behind another reads as out of reach, and
+    /// confirming writes the attack on whoever is under the cursor.
+    #[test]
+    fn a_shot_opens_on_the_nearest_foe_previews_its_line_and_confirm_attacks_who_is_under_the_cursor() {
+        let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
+        stage.tick();
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack { kind, dice: rl_core::DiceRoll::flat(2), range: 6 });
+        let near = stage.actor("near", 'n', 2, 0);
+        let far = stage.actor("far", 'f', 4, 0);
+        stage.tick();
+        let at = stage.at;
+        let attacks = |stage: &mut Stage| stage.app.world_mut().resource_mut::<Messages<Intent<Attack>>>().drain().map(|i| i.action.0).collect::<Vec<_>>();
+
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert!(view.aiming() && view.firing);
+        assert_eq!(view.cursor, at.offset(2, 0), "the nearest foe");
+        assert!(view.legal);
+        assert_eq!(view.targets.iter().map(|r| r.entity).collect::<Vec<_>>(), vec![near]);
+
+        stage.press(KeyCode::Tab);
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.cursor, at.offset(4, 0));
+        assert!(!view.legal, "the near one stands in the line of fire");
+        assert_eq!(view.why, vec![Blocked::NoTarget]);
+        assert_eq!(view.landing, Some(at.offset(2, 0)), "and the shot would stop at them");
+
+        stage.press(KeyCode::ArrowUp);
+        let _ = attacks(&mut stage);
+        stage.press(KeyCode::Enter);
+        assert!(attacks(&mut stage).is_empty(), "nobody under the cursor, so nothing is shot at");
+        assert!(stage.app.world().resource::<TargetView>().aiming(), "and the cursor stays up");
+
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::Enter);
+        assert_eq!(attacks(&mut stage), vec![far], "the resolver judges the blocked line, as it would any attack");
+        assert!(!stage.app.world().resource::<TargetView>().aiming());
+    }
+
+    /// A user with nothing to shoot with opens no cursor.
+    #[test]
+    fn a_shot_without_a_ranged_attack_opens_nothing() {
+        let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
+        let user = stage.player;
+        stage.actor("them", 't', 2, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        assert!(!stage.app.world().resource::<TargetView>().aiming());
+        assert!(!stage.app.world().resource::<Modals>().any_open());
     }
 
     /// An ability that wants no cursor is used where it stands, so a game

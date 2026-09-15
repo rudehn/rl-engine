@@ -45,7 +45,7 @@ pub use ability::{
 };
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, MeleeAttack, RangedAttack,
-    Resists, Strikes, line_of_fire,
+    Resists, Strikes, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use doors::{Close, DoorEvent};
@@ -89,7 +89,7 @@ pub mod prelude {
     };
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, MeleeAttack,
-        RangedAttack, Resists, Strikes, line_of_fire,
+        RangedAttack, Resists, Strikes, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::doors::{Close, DoorEvent};

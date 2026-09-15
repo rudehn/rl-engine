@@ -21,6 +21,11 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - `Ignite` and `Emit` ability effects, registered by the fire and gas plugins.
 - `ResolveSet::Fields`, between `Act` and `Effects`, with `FieldSet::Fire` before `FieldSet::Gas`.
 - `FieldAppearance`: how the map view draws flames and gas. `EngineSave::fields` keeps both.
+- `InSight`, what the player can see in the nearby list's order, and `Focus`, the one entity picked out of it. With nothing open, Tab steps the focus down the nearby rows and Escape lets go; `NearbyPanel` draws the row picked out and its map tile on the selection tone. `NearbyView` gains `focused`.
+- Both cursors cycle `InSight` rather than the actors alone, entity by entity, so two things on one tile are two stops, and Shift with Tab steps back. They open on the focus when they can take it and move it as they go. `cursor::steer` takes the `Focus` and `Sighting` candidates; `cursor::ordered` and `next_of` are gone, for `focus::cycle`.
+- The look cursor stops on things as well as actors. The targeting cursor cycles by `Aim::cycles_to`: an aim at the ground stops on anything in sight rather than on cells.
+- `AimFire`, a shot through the targeting cursor with a `RangedAttack`; `TargetView` gains `firing`. `shot` is the line a shot flies, which `line_of_fire` now answers by.
+- `panel::tint`, and `panel::bar` draws on the background its cells already have.
 
 ## 0.1.0
 

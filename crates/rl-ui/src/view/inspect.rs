@@ -21,8 +21,9 @@ use rl_rules::Relation;
 use rl_rules::damage::DamageKindId;
 use rl_rules::forecast::{Combatant, Duel, duel};
 
-use crate::cursor::{self, CursorInput, CursorKeys, Steer};
+use crate::cursor::{CursorInput, CursorKeys, Steer};
 use crate::facet::Facet;
+use crate::focus::{Focus, InSight};
 use crate::modal::{ModalId, Modals};
 use crate::view::Row;
 
@@ -59,7 +60,7 @@ pub struct InspectViewPlugin;
 
 impl Plugin for InspectViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<InspectView>().init_resource::<CursorKeys>();
+        app.init_resource::<InspectView>().init_resource::<CursorKeys>().init_resource::<Focus>();
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
         app.add_modal(INSPECT_MODAL);
@@ -82,10 +83,6 @@ pub fn inspect_modal(modals: &Modals) -> ModalId {
     modals.get(INSPECT_MODAL).expect("InspectViewPlugin declares the inspect modal")
 }
 
-/// Where something is, and on which map.
-type Standing = (&'static Position, Option<&'static OnMap>);
-/// Everyone but the player, and only the living.
-type OtherActors = (With<Actor>, Without<Player>, Without<Dead>);
 /// Everything the panel names the thing under the cursor by.
 type Subject = (Entity, &'static Position, &'static Name, &'static Glyph, Option<&'static OnMap>);
 /// Anything but the player: the cursor describes what you are looking
@@ -98,29 +95,27 @@ type NotYou = (Without<Dead>, Without<Player>);
 pub struct Look<'w, 's> {
     input: CursorInput<'w>,
     map: Res<'w, WorldMap>,
-    player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
-    actors: Query<'w, 's, Standing, OtherActors>,
+    sight: InSight<'w, 's>,
+    focus: ResMut<'w, Focus>,
 }
 
 /// Opens, closes, steps and cycles the cursor.
 ///
-/// Cycling walks the actors in sight by distance, so pressing it twice
-/// from the same place always lands on the same second thing.
-pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, look: Look) {
+/// It opens on what is picked out, while that is still in sight, and on the
+/// top of the nearby list otherwise: the nearest actor, or the nearest thing
+/// when nobody is about. Cycling walks that same list in the same order,
+/// things as well as actors, and the [`Focus`] moves with the cursor.
+pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mut look: Look) {
     let modal = inspect_modal(&modals);
-    let Ok((origin, viewshed)) = look.player.single() else { return };
-    let here = look.map.current();
-    let in_sight = || {
-        cursor::ordered(
-            origin.0,
-            look.actors.iter().filter(|(pos, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && viewshed.can_see(pos.0)).map(|(pos, _)| pos.0),
-        )
-    };
+    let Some((_, origin)) = look.sight.viewer() else { return };
 
     let toggled = look.input.just_pressed(look.input.keys().look);
     if toggled && !modals.any_open() {
         modals.open(modal);
-        view.cursor = in_sight().first().copied().unwrap_or(origin.0);
+        let list = look.sight.list();
+        let opens_on = look.focus.within(&list).or(list.first()).copied();
+        view.cursor = opens_on.map_or(origin, |s| s.at);
+        look.focus.set(opens_on.map(|s| s.entity));
         return;
     }
     if !modals.is_top(modal) {
@@ -130,7 +125,14 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, lo
         modals.close_one(modal);
         return;
     }
-    match look.input.steer(&mut view.cursor, look.map.window_tiles(), in_sight) {
+    // Steered on a copy, so the list can be borrowed while the focus moves,
+    // and written back only when it did.
+    let mut focus = *look.focus;
+    let steer = look.input.steer(&mut view.cursor, &mut focus, look.map.window_tiles(), || look.sight.list());
+    if focus != *look.focus {
+        *look.focus = focus;
+    }
+    match steer {
         Steer::Close => modals.close_one(modal),
         // Looking spends nothing, so there is nothing to confirm.
         Steer::Confirm | Steer::Moved | Steer::Stay => {}
@@ -145,6 +147,7 @@ pub struct Duelists<'w, 's> {
     stages: Res<'w, DamageStages>,
     modals: Res<'w, Modals>,
     map: Res<'w, WorldMap>,
+    focus: Res<'w, Focus>,
     player: Query<'w, 's, (&'static Position, Fighter, Option<&'static Faction>), With<Player>>,
     subjects: Query<'w, 's, Subject, NotYou>,
     fighters: Query<'w, 's, (Fighter, Option<&'static Faction>)>,
@@ -171,13 +174,16 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     }
     let Ok((origin, mine, my_faction)) = duelists.player.single() else { return };
     let here = duelists.map.current();
-    // The topmost glyph, which is the one the map drew, so the panel and
-    // the map never disagree about what is being pointed at.
+    // What the cursor picked out, when that is here, so Tab onto the second
+    // of two things on one tile describes the second. Otherwise the topmost
+    // glyph, the one the map drew, so the panel and the map never disagree
+    // about what is being pointed at.
+    let focused = duelists.focus.get();
     let under = duelists
         .subjects
         .iter()
         .filter(|(_, pos, _, _, on)| pos.0 == view.cursor && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here)
-        .max_by_key(|(_, _, _, glyph, _)| glyph.layer);
+        .max_by_key(|(entity, _, _, glyph, _)| (Some(*entity) == focused, glyph.layer));
     let Some((entity, pos, name, glyph, _)) = under else { return };
     let mut row = Row::new(entity, name.as_str().to_string(), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();
@@ -264,6 +270,57 @@ mod tests {
         assert_eq!(seen(&stage).as_deref(), Some("far one"));
         stage.press(CursorKeys::default().next);
         assert_eq!(seen(&stage).as_deref(), Some("near one"), "and round again");
+    }
+
+    #[test]
+    fn tab_stops_on_things_as_well_as_actors_in_the_order_the_nearby_list_prints() {
+        let mut stage = stage();
+        stage.actor("near one", 'n', 2, 0);
+        stage.thing("a coin", '$', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let seen = |stage: &Stage| stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone());
+        assert_eq!(seen(&stage).as_deref(), Some("near one"), "actors first, though the coin is nearer");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(seen(&stage).as_deref(), Some("a coin"));
+        stage.press(CursorKeys::default().next);
+        assert_eq!(seen(&stage).as_deref(), Some("near one"), "and round again");
+    }
+
+    #[test]
+    fn tab_onto_the_second_of_two_things_on_one_tile_describes_that_one() {
+        let mut stage = stage();
+        stage.actor("crab", 'c', 1, 0);
+        stage.thing("a coin", '$', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let seen = |stage: &Stage| stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone());
+        assert_eq!(seen(&stage).as_deref(), Some("crab"), "the one drawn on top");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(stage.app.world().resource::<InspectView>().cursor, stage.at.offset(1, 0), "the same tile");
+        assert_eq!(seen(&stage).as_deref(), Some("a coin"), "but the coin beneath it");
+    }
+
+    #[test]
+    fn the_cursor_opens_on_the_row_picked_out_and_leaves_picked_out_what_it_was_on() {
+        let mut stage = Stage::new((InspectViewPlugin, crate::NearbyViewPlugin));
+        stage.actor("near one", 'n', 2, 0);
+        let far = stage.actor("far one", 'f', 6, 0);
+        stage.tick();
+        let keys = CursorKeys::default();
+        stage.press(keys.next);
+        stage.press(keys.next);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), Some(far), "Tab with nothing open walks the list");
+
+        stage.press(keys.look);
+        assert_eq!(stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.as_str()), Some("far one"), "opened on the row picked out");
+        stage.press(keys.close);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), Some(far), "closing keeps it picked out");
+
+        stage.press(keys.look);
+        stage.press(KeyCode::ArrowRight);
+        stage.press(keys.close);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "the cursor was left on bare ground");
     }
 
     #[test]
