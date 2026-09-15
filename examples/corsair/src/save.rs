@@ -15,7 +15,7 @@ use rl_engine::rl_core::Point;
 use rl_engine::rl_rules::Tracker;
 use rl_engine::rl_rules::{Enchanted, Equipment};
 use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, Stash, decode, encode};
-use rl_engine::rl_ui::{Bindings, Controls, MessageLog, ScrollbackKeys, Tones};
+use rl_engine::rl_ui::{Bindings, Controls, MessageLog, ScrollbackKeys, SheetKeys, Tones};
 use serde::{Deserialize, Serialize};
 
 use crate::input::Binds;
@@ -354,7 +354,13 @@ pub fn save_keys(world: &mut World) {
         let keys = world.resource::<ButtonInput<KeyCode>>();
         let controls = world.resource::<Controls>();
         let binds = world.resource::<Binds>();
-        let bindings = Bindings { directions: world.resource(), cursor: world.resource(), help: world.resource(), log: world.get_resource::<ScrollbackKeys>() };
+        let bindings = Bindings {
+            directions: world.resource(),
+            cursor: world.resource(),
+            help: world.resource(),
+            log: world.get_resource::<ScrollbackKeys>(),
+            sheet: world.get_resource::<SheetKeys>(),
+        };
         (controls.which(binds.save, keys, &bindings).is_some(), controls.which(binds.quit, keys, &bindings).is_some())
     };
     if !wants_save && !wants_quit {

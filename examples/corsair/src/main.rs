@@ -34,8 +34,8 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
-    AbilityPanel, AddModal, ControlsPanel, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel,
-    TargetPanel, Tones, ViewSet, VitalsPanel, panel,
+    AbilityPanel, AddModal, Chord, ControlsPanel, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel,
+    SheetKeys, SheetPanel, SheetView, TargetPanel, Tones, ViewSet, VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -67,6 +67,7 @@ struct Screen {
     target: Rect,
     abilities: Rect,
     controls: Rect,
+    sheet: Rect,
     hint: Rect,
 }
 
@@ -83,9 +84,10 @@ impl Screen {
         // the same for the controls.
         let scrollback = map.inflate(-2);
         let controls = map.inflate(-2);
+        let sheet = map.inflate(-2);
         let target = Rect::new(map.x, map.bottom() - 1, map.width, 1);
         let abilities = Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14);
-        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, controls, hint }
+        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, controls, sheet, hint }
     }
 }
 
@@ -151,7 +153,11 @@ fn main() -> AppExit {
             // declare, on one screen, with the hint that opens it in the
             // rail's last row.
             ControlsPanel::new(screen.controls).hint(screen.hint),
+            // Every number the captain is made of, and what moved each.
+            SheetPanel::new(screen.sheet).titled("Ship's articles"),
         ))
+        // `c` shuts a door here, so the sheet is on `@`.
+        .insert_resource(SheetKeys { toggle: Chord::shift(KeyCode::Digit2), close: KeyCode::Escape })
         .insert_resource(Seed(seed))
         .insert_resource(StartOptions { regions, resume })
         .insert_resource(Saves::platform_default("corsair"))
@@ -201,7 +207,7 @@ fn main() -> AppExit {
         // What the engine cannot know about a row: what an enemy is holding,
         // and what is underfoot. Named by set, not by ordering after a
         // collector.
-        .add_systems(Update, (note_what_they_wield, note_where_you_are).in_set(ViewSet::Annotate))
+        .add_systems(Update, (note_what_they_wield, note_where_you_are, note_what_moved_a_stat).in_set(ViewSet::Annotate))
         .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
     app.add_plugins(StealthPlugin);
     // Corsair's own screens, declared while building so the lookups in
@@ -394,6 +400,20 @@ fn note_discoveries(knowledge: Res<Knowledge>, world: Res<WorldRes>, turns: Res<
             log.push(format!("You discover {kind}."), Tones::GOOD, turns.turn_number());
         }
         seen.0 = count;
+    }
+}
+
+/// What moved each stat on the sheet: the gear refresh tags a modifier with
+/// the item's entity bits, and only Corsair knows that, so it names them.
+/// A status's modifiers the engine already names.
+fn note_what_moved_a_stat(mut sheet: ResMut<SheetView>, armory: Res<Armory>, kinds: Query<&ItemKind>) {
+    let sources: Vec<u64> = sheet.stats.iter().flat_map(|s| s.changes.iter()).filter(|c| c.from.is_empty()).map(|c| c.source).collect();
+    for source in sources {
+        if let Some(item) = Entity::try_from_bits(source)
+            && let Ok(kind) = kinds.get(item)
+        {
+            sheet.name_source(source, armory.defs.get(kind.0).name.clone());
+        }
     }
 }
 

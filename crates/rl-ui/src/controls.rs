@@ -45,6 +45,7 @@ use rl_core::Direction;
 use crate::cursor::{CursorKeys, shifted};
 use crate::keys::DirectionKeys;
 use crate::panel::scrollback::ScrollbackKeys;
+use crate::panel::sheet::SheetKeys;
 
 /// One key, with Shift held or not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -172,12 +173,24 @@ fn digit(key: KeyCode) -> Option<char> {
     DIGITS.iter().position(|k| *k == key).map(|i| (b'0' + i as u8) as char)
 }
 
-/// What Shift makes of a punctuation key on the layout the engine's names
-/// are written for. Digits are left out: `shift+1` reads more plainly than
-/// a symbol that moves between layouts.
+/// What Shift makes of a punctuation or digit key on the US layout, the
+/// one the engine's names are written for. A key code is a physical key,
+/// so `@` is the key that types `@` there and whatever it types elsewhere;
+/// `?` and `>` already read that way, and `@` is what a player expects to
+/// read beside a character sheet.
 fn shifted_symbol(key: KeyCode) -> Option<char> {
     use KeyCode::*;
     Some(match key {
+        Digit1 => '!',
+        Digit2 => '@',
+        Digit3 => '#',
+        Digit4 => '$',
+        Digit5 => '%',
+        Digit6 => '^',
+        Digit7 => '&',
+        Digit8 => '*',
+        Digit9 => '(',
+        Digit0 => ')',
         Period => '>',
         Comma => '<',
         Slash => '?',
@@ -217,6 +230,8 @@ pub enum EngineKey {
     FilterLog,
     /// Opening this list, from [`ControlsKeys::toggle`].
     ShowControls,
+    /// Opening the character sheet, from [`SheetKeys::toggle`].
+    OpenSheet,
 }
 
 /// What asks for a control.
@@ -308,9 +323,8 @@ impl Default for ControlsKeys {
 
 /// The binding resources an engine key is read from, borrowed together.
 ///
-/// The scrollback's are optional because a game without a
-/// [`ScrollbackPanel`](crate::ScrollbackPanel) has none, and a control
-/// naming them then lists no keys.
+/// The scrollback's and the sheet's are optional because a game without
+/// that panel has none, and a control naming them then lists no keys.
 #[derive(Debug, Clone, Copy)]
 pub struct Bindings<'a> {
     /// The eight directions.
@@ -321,6 +335,8 @@ pub struct Bindings<'a> {
     pub help: &'a ControlsKeys,
     /// The scrollback's, when there is one.
     pub log: Option<&'a ScrollbackKeys>,
+    /// The character sheet's, when there is one.
+    pub sheet: Option<&'a SheetKeys>,
 }
 
 impl Bindings<'_> {
@@ -345,6 +361,7 @@ impl Bindings<'_> {
             EngineKey::ScrollLog => self.log.map(|log| [log.up, log.down, log.page_up, log.page_down].map(Chord::key).to_vec()).unwrap_or_default(),
             EngineKey::FilterLog => self.log.map(|log| vec![log.filter.into()]).unwrap_or_default(),
             EngineKey::ShowControls => vec![self.help.toggle],
+            EngineKey::OpenSheet => self.sheet.map(|sheet| vec![sheet.toggle]).unwrap_or_default(),
         }
     }
 
@@ -528,12 +545,13 @@ pub struct ControlInput<'w> {
     cursor: Res<'w, CursorKeys>,
     help: Res<'w, ControlsKeys>,
     log: Option<Res<'w, ScrollbackKeys>>,
+    sheet: Option<Res<'w, SheetKeys>>,
 }
 
 impl ControlInput<'_> {
     /// The binding resources, borrowed together.
     pub fn bindings(&self) -> Bindings<'_> {
-        Bindings { directions: &self.directions, cursor: &self.cursor, help: &self.help, log: self.log.as_deref() }
+        Bindings { directions: &self.directions, cursor: &self.cursor, help: &self.help, log: self.log.as_deref(), sheet: self.sheet.as_deref() }
     }
 
     /// The registry.
@@ -594,7 +612,7 @@ mod tests {
     /// Default bindings, borrowed for one assertion.
     fn with_defaults<R>(log: bool, f: impl FnOnce(&Bindings) -> R) -> R {
         let (directions, cursor, help, scrollback) = (DirectionKeys::default(), CursorKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
-        f(&Bindings { directions: &directions, cursor: &cursor, help: &help, log: log.then_some(&scrollback) })
+        f(&Bindings { directions: &directions, cursor: &cursor, help: &help, log: log.then_some(&scrollback), sheet: None })
     }
 
     #[test]
@@ -605,7 +623,7 @@ mod tests {
         assert_eq!(Chord::shift(KeyCode::Period).label(), ">");
         assert_eq!(Chord::key(KeyCode::Period).label(), ".");
         assert_eq!(Chord::shift(KeyCode::Tab).label(), "shift+tab");
-        assert_eq!(Chord::shift(KeyCode::Digit1).label(), "shift+1");
+        assert_eq!(Chord::shift(KeyCode::Digit2).label(), "@");
         assert_eq!(Chord::key(KeyCode::Numpad5).label(), "num5");
         assert_eq!(Chord::key(KeyCode::ArrowUp).label(), "\u{2191}");
         assert_eq!(Chord::key(KeyCode::Escape).label(), "esc");
@@ -649,7 +667,7 @@ mod tests {
         });
         let wasd = DirectionKeys::none().bind(KeyCode::KeyW, Direction::North).bind(KeyCode::KeyS, Direction::South).bind(KeyCode::Space, Direction::East);
         let (cursor, help) = (CursorKeys::default(), ControlsKeys::default());
-        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None };
+        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None, sheet: None };
         assert_eq!(controls.label(walk, &bindings), "sw space", "letters outside the custom sort after it, and any other key on its own");
     }
 
@@ -662,7 +680,7 @@ mod tests {
         let log = controls.add("Log", "open the log", EngineKey::OpenLog);
         let (directions, help, scrollback) = (DirectionKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
         let cursor = CursorKeys { next: KeyCode::KeyN, ..CursorKeys::default() };
-        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None };
+        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None };
         assert_eq!(controls.label(next, &bindings), "n", "rebound, and listed as rebound");
         assert_eq!(controls.label(log, &bindings), "", "no scrollback, nothing to list");
         assert_eq!(controls.label(log, &Bindings { log: Some(&scrollback), ..bindings }), "p");

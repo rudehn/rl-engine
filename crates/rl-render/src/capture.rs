@@ -11,7 +11,8 @@
 //! `RL_CAPTURE` the plugin does nothing.
 //!
 //! Keys are separated by spaces. A letter is its key and a capital letter
-//! is that key with shift; `.` `,` `>` `<` `/` `?` are what they look like;
+//! is that key with shift; `.` `,` `>` `<` `/` `?` and the symbols over the
+//! digits on a US layout, `!` to `)`, are what they look like;
 //! `up`, `down`, `left`, `right`, `enter`, `esc`, `tab` and `space` name
 //! the rest; `x*4` repeats a key. So `RL_CAPTURE_KEYS="l*5 L ."` walks east
 //! five times, presses shift and L, then waits.
@@ -130,6 +131,16 @@ fn chord(key: &str) -> Option<Vec<KeyCode>> {
         '>' => vec![shift, KeyCode::Period],
         '<' => vec![shift, KeyCode::Comma],
         '?' => vec![shift, KeyCode::Slash],
+        '!' => vec![shift, KeyCode::Digit1],
+        '@' => vec![shift, KeyCode::Digit2],
+        '#' => vec![shift, KeyCode::Digit3],
+        '$' => vec![shift, KeyCode::Digit4],
+        '%' => vec![shift, KeyCode::Digit5],
+        '^' => vec![shift, KeyCode::Digit6],
+        '&' => vec![shift, KeyCode::Digit7],
+        '*' => vec![shift, KeyCode::Digit8],
+        '(' => vec![shift, KeyCode::Digit9],
+        ')' => vec![shift, KeyCode::Digit0],
         '0'..='9' => vec![DIGITS[c as usize - '0' as usize]],
         'a'..='z' => vec![LETTERS[c as usize - 'a' as usize]],
         'A'..='Z' => vec![shift, LETTERS[c as usize - 'A' as usize]],

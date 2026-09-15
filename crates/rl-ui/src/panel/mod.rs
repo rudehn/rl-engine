@@ -24,6 +24,7 @@ pub mod inspect;
 pub mod log;
 pub mod nearby;
 pub mod scrollback;
+pub mod sheet;
 pub mod target;
 pub mod vitals;
 
@@ -34,6 +35,7 @@ pub use inspect::InspectPanel;
 pub use log::LogPanel;
 pub use nearby::NearbyPanel;
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
+pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
 pub use target::{TargetLayout, TargetPanel};
 pub use vitals::VitalsPanel;
 

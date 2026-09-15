@@ -4765,6 +4765,7 @@ dependencies = [
  "rl-world",
  "ron 0.10.1",
  "serde",
+ "wasm-bindgen",
  "web-sys",
 ]
 

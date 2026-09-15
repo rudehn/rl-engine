@@ -62,6 +62,8 @@ fn main() -> AppExit {
             // own screens, on one screen, with the hint that opens it in
             // the rail's last row.
             ControlsPanel::new(screen.controls).hint(screen.hint),
+            // Every number the delver is made of, on `c`.
+            SheetPanel::new(screen.sheet),
         ))
         .add_systems(Update, (note_floor, show_pools).in_set(ViewSet::Annotate))
         .add_systems(Startup, start)
@@ -89,6 +91,7 @@ struct Screen {
     target: Rect,
     knacks: Rect,
     controls: Rect,
+    sheet: Rect,
     hint: Rect,
 }
 
@@ -109,6 +112,7 @@ impl Screen {
             target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
             knacks: Rect::new(map.x + map.width / 2 - 18, map.y + 4, 36, 14),
             controls: map.inflate(-2),
+            sheet: map.inflate(-2),
             hint,
         }
     }
