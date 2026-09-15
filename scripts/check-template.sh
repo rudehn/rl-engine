@@ -14,11 +14,21 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$(pwd)
 
+# A game that depends on the engine from git makes Cargo read every
+# Cargo.toml in this repository, and one holding a placeholder is an error
+# printed in every build of every game. The template's manifest is
+# Cargo.toml.liquid, which cargo-generate renames as it renders.
+if find templates -name Cargo.toml | grep .; then
+  echo "error: a template manifest must be named Cargo.toml.liquid, or Cargo reads it from every game's git dependency" >&2
+  exit 1
+fi
+
 out="${TMPDIR:-/tmp}/rl-engine-starter-check/my-game"
 rm -rf "$out"
 mkdir -p "$(dirname "$out")"
 cp -R templates/starter "$out"
 rm "$out/cargo-generate.toml"
+mv "$out/Cargo.toml.liquid" "$out/Cargo.toml"
 # The workspace's lockfile, so the generated game resolves the same Bevy
 # the engine was tested with; cargo prunes what it does not use.
 cp Cargo.lock "$out/"
