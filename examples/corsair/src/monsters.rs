@@ -337,7 +337,7 @@ pub fn stages() -> DamageStages {
 mod tests {
     use super::*;
     use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_ui::{UiPlugin, VitalsView, VitalsViewPlugin};
+    use rl_engine::rl_ui::{VitalsView, VitalsViewPlugin};
 
     /// Reported from play: on the surface, a cutthroat was cutting the
     /// player down while the vitals strip still read "hidden". Surface
@@ -348,9 +348,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("corsair-seen-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut app = crate::testing::headless(RunSeed(7), false, &dir);
-        // The real game's panels and stealth, which the shared harness
+        // The real game's vitals and stealth, which the shared harness
         // leaves out.
-        app.add_plugins((StealthPlugin, UiPlugin, VitalsViewPlugin));
+        app.add_plugins((StealthPlugin, VitalsViewPlugin));
         app.update();
         app.update();
 

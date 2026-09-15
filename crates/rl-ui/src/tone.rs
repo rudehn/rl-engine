@@ -157,6 +157,25 @@ impl Default for Palette {
     }
 }
 
+/// Declares a tone and its colour while the app is being built.
+pub trait AddTone {
+    /// Declares the tone `name` and colours it `color`, in one call.
+    ///
+    /// Look the id up again with [`Tones::get`] where it is used. Makes sure
+    /// [`Tones`] and [`Palette`] exist first, so it works whether it comes
+    /// before [`UiPlugin`](crate::UiPlugin) or after.
+    fn add_tone(&mut self, name: &str, color: Color) -> &mut Self;
+}
+
+impl AddTone for App {
+    fn add_tone(&mut self, name: &str, color: Color) -> &mut Self {
+        self.init_resource::<Tones>().init_resource::<Palette>();
+        let tone = self.world_mut().resource_mut::<Tones>().declare(name);
+        self.world_mut().resource_mut::<Palette>().set(tone, color);
+        self
+    }
+}
+
 /// Warns once, when play begins, about tones nothing gave a colour.
 ///
 /// A game that declares a tone and forgets the colour would otherwise see
@@ -171,6 +190,19 @@ pub fn report_unset_tones(tones: Res<Tones>, palette: Res<Palette>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tone_added_while_building_has_its_colour_and_keeps_the_built_ins() {
+        let mut app = App::new();
+        let pale = Color::srgb(0.6, 0.8, 1.0);
+        app.add_tone("fleeing", pale);
+        app.init_resource::<Tones>().init_resource::<Palette>();
+        let tones = app.world().resource::<Tones>();
+        let fleeing = tones.get("fleeing").expect("declared");
+        assert_eq!(app.world().resource::<Palette>().get(fleeing), pale);
+        assert_eq!(tones.get("text"), Some(Tones::TEXT), "the built-ins are still where they were");
+        assert!(app.world().resource::<Palette>().unset(tones).is_empty(), "and nothing is left without a colour");
+    }
 
     #[test]
     fn the_built_in_constants_are_the_ids_the_names_intern_to() {

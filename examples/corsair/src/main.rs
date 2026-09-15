@@ -33,8 +33,8 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
-    AbilityPanel, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, TargetPanel, Tones, ViewSet,
-    VitalsPanel, panel,
+    AbilityPanel, AddModal, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel, TargetPanel, Tones,
+    ViewSet, VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -189,11 +189,7 @@ fn main() -> AppExit {
     app.add_plugins(StealthPlugin);
     // Corsair's own screens, declared while building so the lookups in
     // `inventory` and `quests` find them.
-    {
-        let mut modals = app.world_mut().resource_mut::<Modals>();
-        modals.declare(inventory::MODAL);
-        modals.declare(quests::MODAL);
-    }
+    app.add_modal(inventory::MODAL).add_modal(quests::MODAL);
     app.run()
 }
 

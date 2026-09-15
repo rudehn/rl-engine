@@ -12,6 +12,7 @@ Warren's tests run the real game: the same `start` system, the same map generati
 ```
 
 `headless_app` is `MinimalPlugins`, states and `CorePlugin`.
+`UiPlugin` goes in too, though nothing draws: it owns the log your systems write to.
 You add the engine plugins your game uses and your own systems, exactly as `main` does, minus the three that draw.
 
 Two `update` calls start a run: the first runs `Startup` and the warp that builds floor one, the second deals the player its first turn.

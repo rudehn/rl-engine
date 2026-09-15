@@ -129,6 +129,24 @@ impl Modals {
     }
 }
 
+/// Declares a screen while the app is being built.
+pub trait AddModal {
+    /// Declares the modal `name`, so a key handler or a run condition can
+    /// look its id up by that name.
+    ///
+    /// Makes sure [`Modals`] exists first, so a plugin that declares a screen
+    /// works whether it was added before [`UiPlugin`](crate::UiPlugin) or
+    /// after.
+    fn add_modal(&mut self, name: &str) -> &mut Self;
+}
+
+impl AddModal for App {
+    fn add_modal(&mut self, name: &str) -> &mut Self {
+        self.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(name);
+        self
+    }
+}
+
 /// A run condition: true while `modal` is the screen on top.
 ///
 /// On top rather than merely open, so a screen that opened a child stops
@@ -152,6 +170,17 @@ pub fn no_modal(modals: Res<Modals>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_modal_added_while_building_is_found_by_name() {
+        let mut app = App::new();
+        app.add_modal("chest").add_modal("ledger").add_modal("chest");
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.get("chest").is_some() && modals.get("ledger").is_some());
+        assert_ne!(modals.get("chest"), modals.get("ledger"));
+        app.init_resource::<Modals>();
+        assert!(app.world().resource::<Modals>().get("chest").is_some(), "the base plugin, added after, does not forget it");
+    }
 
     /// A plugin that declares a modal may be listed before the plugin that
     /// owns the stack: the order a game adds its plugins in is not something

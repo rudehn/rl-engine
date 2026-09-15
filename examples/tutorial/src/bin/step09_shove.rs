@@ -607,7 +607,7 @@ mod tests {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
-            .init_resource::<MessageLog>()
+            .add_plugins(UiPlugin)
             .add_action::<Shove>()
             .add_message::<Shoved>()
             .add_systems(Startup, start)

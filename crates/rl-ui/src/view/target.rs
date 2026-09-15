@@ -18,6 +18,7 @@
 //! spends the turn. Nothing about which ability is bound to which key is
 //! the engine's business.
 
+use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_bevy::{Aimed, Bystanders, Landed, Offered};
@@ -90,7 +91,7 @@ impl Plugin for TargetViewPlugin {
         app.init_resource::<TargetView>().init_resource::<CursorKeys>().add_message::<AimAt>();
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
-        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(TARGET_MODAL);
+        app.add_modal(TARGET_MODAL);
         app.add_systems(Update, aim_cursor.in_set(EngineSet::Input)).add_systems(Update, collect_target.in_set(crate::ViewSet::Collect));
     }
 

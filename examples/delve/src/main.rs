@@ -724,7 +724,7 @@ mod tests {
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin));
         app.add_engine_effects().add_effect::<effects::Drain>();
         app.insert_resource(Seed(RunSeed(seed)))
-            .init_resource::<MessageLog>()
+            .add_plugins(UiPlugin)
             .add_systems(Startup, start)
             .add_systems(Turn, populate_floor.in_set(TurnSet::React))
             .add_systems(Update, narrate.in_set(PresentSet::Narrate));

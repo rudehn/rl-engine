@@ -96,7 +96,7 @@ The engine ships nine roles (`text`, `muted`, `good`, `bad`, `notice`, `title`, 
 ```
 
 Warren's fleeing rats read in a pale blue nothing in the engine has an opinion about.
-Declare a tone and forget the colour and a warning at startup names it, rather than the rows quietly coming out in the text colour.
+`add_tone` declares the role and colours it in one call, and a tone declared any other way and never coloured is named by a warning at startup, rather than the rows quietly coming out in the text colour.
 
 A widget that took a `Color` would be a widget every game forked. That is the whole argument.
 

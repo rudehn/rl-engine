@@ -14,6 +14,7 @@ use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, Rect};
 use rl_render::{Cell, Terminal};
+use rl_ui::AddModal;
 use rl_ui::{ModalId, Modals};
 use rl_world::BandId;
 
@@ -132,7 +133,7 @@ pub struct OverworldPlugin;
 
 impl Plugin for OverworldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(OVERWORLD_MODAL);
+        app.add_modal(OVERWORLD_MODAL);
         app.needs::<OverworldLayout>("OverworldPlugin", "`OverworldLayout { viewport }`, the terminal cells the overworld is drawn in")
             .init_resource::<OverworldScreen>()
             .init_resource::<BandAppearance>()

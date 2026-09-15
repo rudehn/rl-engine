@@ -488,8 +488,7 @@ mod tests {
             StealthPlugin,
             KeyScriptPlugin,
         ))
-        .init_resource::<MessageLog>()
-        .init_resource::<DirectionKeys>()
+        .add_plugins(UiPlugin)
         .insert_resource(Seed(RunSeed(seed)))
         .add_systems(Startup, start)
         .add_systems(Update, player_input.in_set(EngineSet::Input))

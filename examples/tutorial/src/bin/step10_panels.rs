@@ -134,8 +134,7 @@ fn main() -> AppExit {
     // ANCHOR: tone
     // A role the engine never heard of, and the colour for it. Every
     // widget that takes a tone honours it from here on.
-    let fleeing = app.world_mut().resource_mut::<Tones>().declare("fleeing");
-    app.world_mut().resource_mut::<Palette>().set(fleeing, Color::srgb(0.6, 0.8, 1.0));
+    app.add_tone("fleeing", Color::srgb(0.6, 0.8, 1.0));
     // ANCHOR_END: tone
     app.run()
 }
@@ -691,7 +690,7 @@ mod tests {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
-            .init_resource::<MessageLog>()
+            .add_plugins(UiPlugin)
             .add_action::<Shove>()
             .add_message::<Shoved>()
             .add_systems(Startup, start)

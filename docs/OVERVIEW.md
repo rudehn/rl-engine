@@ -4,7 +4,7 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-14, after the engine owned the run's seed.
+Last updated: 2026-09-14, after the UI base owned the log, tones and screens.
 
 ## The shape
 
@@ -122,7 +122,8 @@ Every panel splits three ways: a view (a resource of plain data), a collector (t
 The query is the half a game reuses; the drawing is the half it may replace or drop.
 Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 
-- Tones: a semantic role interned as a `ToneId` over a `Palette` a game extends with roles the engine never heard of, warned about by name at startup if one has no colour. No widget takes a `Color`.
+- `UiPlugin` owns the `MessageLog`, because a game writes to the log from its own systems whether or not it draws it: a headless test adds the plugin and has a log with no panel.
+- Tones: a semantic role interned as a `ToneId` over a `Palette` a game extends with roles the engine never heard of, with `add_tone(name, colour)` declaring and colouring one while the app is built, and a warning by name at startup for any left without a colour. No widget takes a `Color`.
 - Facets: `Facet { key, text, tone }` pushed onto a row in `ViewSet::Annotate`, so a game's vocabulary reaches a panel without an engine type learning a word.
 - Views and their collectors: `NearbyView` (actors and things in the viewshed, nearest first, with health and a relation), `VitalsView` (bars, armor, status badges, turn, position), `GearView` (every registered slot, filled or not), `InspectView` (the look cursor's subject and a duel forecast), `TargetView` (the ability being aimed, the footprint it would cover, whether the resolver would accept it and why not, and what is under it), `AbilityView` (every ability the turn-holder knows, in registration order, with the gate's reasons for the ones it cannot use).
 - Panels: `NearbyPanel`, `VitalsPanel`, `GearPanel`, `InspectPanel`, `LogPanel`, `ScrollbackPanel`, `TargetPanel` and `AbilityPanel`, each a plugin holding its rectangle and its headings.
@@ -135,7 +136,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
   An ability that wants no cursor is used at once, so a game binds every ability the same way.
   The overlay repaints the backgrounds the map already drew, keeping every glyph: the cells hit, the flight to them, and the whole footprint in the bad tone with the reason in the banner when the resolver would refuse.
 - Awareness on the panels: `Row::aware` says whether each actor in sight has noticed the player, the rail mutes the ones that have not and marks the ones that have, and `VitalsView::seen` reads hidden or seen.
-- `Modals`: a stack of interned modal ids with `modal_is`, `modal_open` and `no_modal` run conditions, so one gate covers every screen a game adds.
+- `Modals`: a stack of interned modal ids with `modal_is`, `modal_open` and `no_modal` run conditions, so one gate covers every screen a game adds, declared with `add_modal(name)` by the engine's own screens and a game's alike.
 - `DirectionKeys`: arrows, vi keys and the numpad to the eight directions, in one resource a game may replace.
 - A message log carrying a tone per line, folding a repeat into a count, filterable by tone.
 - A framed scrolling list menu.

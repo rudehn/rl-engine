@@ -12,6 +12,7 @@
 //! gates its own movement keys on [`no_modal`](crate::no_modal) and gets
 //! the exclusion for free.
 
+use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, geometry};
@@ -61,7 +62,7 @@ impl Plugin for InspectViewPlugin {
         app.init_resource::<InspectView>().init_resource::<CursorKeys>();
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
-        app.init_resource::<Modals>().world_mut().resource_mut::<Modals>().declare(INSPECT_MODAL);
+        app.add_modal(INSPECT_MODAL);
         app.needs::<CombatRules>("InspectViewPlugin", "`CombatRules { kinds, factions }`, the damage kinds the forecast resolves through")
             .add_systems(Update, move_cursor.in_set(EngineSet::Input))
             .add_systems(Update, collect_inspect.in_set(crate::ViewSet::Collect));

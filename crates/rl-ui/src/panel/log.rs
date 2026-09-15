@@ -37,7 +37,7 @@ impl LogPanel {
 
 impl Plugin for LogPanel {
     fn build(&self, app: &mut App) {
-        app.init_resource::<MessageLog>().insert_resource(self.0.clone()).add_systems(Update, draw_log.in_set(PresentSet::Chrome));
+        app.insert_resource(self.0.clone()).add_systems(Update, draw_log.in_set(PresentSet::Chrome));
     }
 }
 
