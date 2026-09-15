@@ -58,18 +58,24 @@ pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, TurnEnd, Turns, Wait};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
-/// The names most callers want in scope.
+/// The names a game writes.
+///
+/// What a game spawns, sends, reads and registers, and the traits whose
+/// methods it calls. Not what other engine crates build on, such as
+/// `Bystanders` and `Offered`, nor the effects a game names only in RON:
+/// those stay at the crate root, and an effect in the prelude was a name
+/// that collided with a game's own `Shove` action.
 pub mod prelude {
     pub use crate::ability::{
-        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs,
-        Grants, Known, Landed, Landing, Offered, Pools, Use,
+        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants, Known,
+        Landing, Pools, Use,
     };
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, MeleeAttack,
         RangedAttack, Resists, Strikes, line_of_fire,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    pub use crate::effects::{AddEngineEffects, Pull, Shove, Teleport};
+    pub use crate::effects::AddEngineEffects;
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fov::FovPlugin;
     pub use crate::items::{
@@ -77,14 +83,14 @@ pub mod prelude {
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-    pub use crate::minds::{FlowFields, Mind, MindChose, MindsPlugin, Perception, Profile};
+    pub use crate::minds::{Mind, MindChose, MindsPlugin, Perception, Profile};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
     pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, Needs, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
     pub use crate::state::EngineState;
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatRules, StatusEvent, StatusPlugin, StatusRules};
-    pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning, Watchers};
+    pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Watchers};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, TurnEnd, Turns, Wait};
-    pub use crate::world::{ChunkLoaded, ChunkRulesRes, PlaceMap, StreamingPlugin, WindowView, WorldMap, WorldRes, WorldSettings};
+    pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
 }

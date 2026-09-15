@@ -12,6 +12,7 @@
 //! panel prints a plain fallback when the game says nothing.
 
 use bevy::prelude::*;
+use rl_bevy::Offered;
 use rl_bevy::prelude::*;
 use rl_rules::ability::{AbilityId, Aim, Blocked};
 

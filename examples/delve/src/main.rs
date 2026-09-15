@@ -169,6 +169,8 @@ const BRAND: LightSource = LightSource::new(200, 8, Rgb::new(255, 190, 120)).fli
 const FLAME: Rgb = Rgb::new(255, 170, 90);
 /// Columns given to the rail down the right.
 const RAIL: i32 = 26;
+/// The keys, in two lines because one ran past the edge of the log.
+const KEY_HINTS: [&str; 2] = ["1-5 knacks  a list  x look  p log", "g get  d drop torch  L brand  v light"];
 /// The delver's knacks and the one a beast has, compiled in.
 const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
 /// What the player knows, in the order `1` to `5` aim them.
@@ -345,9 +347,6 @@ fn start(
     warps.write(WarpRequest::into_place(player, map_of(first.map(|f| f.0).unwrap_or(1))));
     log.push(format!("Seed {}. The whale's jaw is propped open with a mast.", seed.0.0), Tones::NOTICE, 0);
     log.push("You light a brand and climb in.", Tones::NOTICE, 0);
-    // Two lines, because one ran past the edge of the log.
-    log.push("1-5 knacks  a list  x look  p log", Tones::MUTED, 0);
-    log.push("g get  d drop torch  L brand  v light", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 
@@ -371,14 +370,23 @@ struct Stock<'w> {
     map: Res<'w, WorldMap>,
     bile: Res<'w, Bile>,
     seed: Res<'w, Seed>,
+    first: Option<Res<'w, FirstFloor>>,
 }
 
 /// Stairs, glowing bile and beasts, the first time a floor is entered.
 fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
-    let Stock { beasts, map, bile, seed } = &stock;
+    let Stock { beasts, map, bile, seed, first } = &stock;
     for ev in entered.read() {
         let floor = floor_of(ev.map);
         log.push(format!("Floor {floor}: {}.", name_of(floor)), Tones::NOTICE, turns.turn_number());
+        // The keys, once, under the name of the floor the run starts on. Not
+        // in `start`: the name is written when the warp lands, a frame later,
+        // and would read as if it came after them.
+        if ev.first && floor == first.as_ref().map_or(1, |f| f.0) {
+            for line in KEY_HINTS {
+                log.push(line, Tones::MUTED, turns.turn_number());
+            }
+        }
         if !ev.first {
             continue;
         }
@@ -797,6 +805,19 @@ mod tests {
         let ability = app.world().resource::<Abilities>().expect(name);
         app.world_mut().write_message(Intent::new(player, Use { ability, aim }));
         app.update();
+    }
+
+    /// The log reads in the order things happened: the climb, the floor it
+    /// lands on, and only then the keys.
+    #[test]
+    fn the_first_floor_is_named_before_the_keys_are_listed() {
+        let (app, _) = settled(7);
+        let lines: Vec<&str> = app.world().resource::<MessageLog>().iter().map(|e| e.text.as_str()).collect();
+        let at = |needle: &str| lines.iter().position(|l| l.starts_with(needle)).unwrap_or_else(|| panic!("no {needle:?} in {lines:#?}"));
+        assert!(at("You light a brand") < at("Floor 1:"), "{lines:#?}");
+        assert!(at("Floor 1:") < at(KEY_HINTS[0]), "{lines:#?}");
+        assert_eq!(lines[at(KEY_HINTS[0])..at(KEY_HINTS[0]) + 2], KEY_HINTS, "both key lines, together and once");
+        assert_eq!(lines.iter().filter(|l| **l == KEY_HINTS[0]).count(), 1);
     }
 
     #[test]
