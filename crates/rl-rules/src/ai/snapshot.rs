@@ -2,6 +2,7 @@
 
 use crate::FactionId;
 use crate::ability::Usable;
+use crate::ai::Wits;
 use rl_core::{Point, geometry};
 
 /// One actor as another sees it.
@@ -44,12 +45,15 @@ pub struct Snapshot<A: Copy> {
     /// seen: what a search walks toward. `None` for an actor that is
     /// tracking nothing, and always `None` in a game without stealth.
     pub last_known: Option<Point>,
+    /// What the actor is able to do. A tactic that needs a capability asks
+    /// here before it decides, whatever the brain it sits in would like.
+    pub wits: Wits,
 }
 
 impl<A: Copy> Snapshot<A> {
-    /// A snapshot with nothing in sight.
+    /// A snapshot with nothing in sight, of a mind with the default wits.
     pub fn alone(me: ActorView<A>) -> Self {
-        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None, usable: Vec::new(), last_known: None }
+        Self { me, enemies: Vec::new(), allies: Vec::new(), came_from: None, usable: Vec::new(), last_known: None, wits: Wits::default() }
     }
 
     /// Sorts enemies and allies nearest first, ties by position, so two

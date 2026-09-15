@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
+use rl_engine::rl_core::Direction;
 use rl_engine::rl_ui::{DirectionKeys, MessageLog, Modals, Tones};
 
 /// How long a held key waits before repeating, and between repeats.
@@ -25,6 +26,7 @@ pub struct InputWorld<'w, 's> {
     binds: Res<'w, DirectionKeys>,
     modals: Res<'w, Modals>,
     occupancy: Res<'w, Occupancy>,
+    map: Res<'w, WorldMap>,
     player: PlayerTurn<'w, 's>,
 }
 
@@ -85,11 +87,12 @@ pub struct PlayerIntents<'w> {
     waits: MessageWriter<'w, Intent<Wait>>,
     transits: MessageWriter<'w, Intent<GoThrough>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
+    closes: MessageWriter<'w, Intent<Close>>,
 }
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
 pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: PlayerIntents) {
-    let InputWorld { keys, time, binds, modals, occupancy, player } = world;
+    let InputWorld { keys, time, binds, modals, occupancy, map, player } = world;
     // One gate for every screen there is, and every screen a game adds
     // later: the stack is empty or the world does not have the keys.
     if modals.any_open() {
@@ -136,7 +139,64 @@ pub fn player_input(world: InputWorld, mut repeat: Local<Repeat>, mut intents: P
         intents.waits.write(Intent::new(entity, Wait));
     } else if keys.just_pressed(KeyCode::KeyG) || keys.just_pressed(KeyCode::Comma) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
+    } else if keys.just_pressed(KeyCode::KeyC) {
+        // `c`: shut the open door beside you. Walking into a shut one opens it.
+        if let Some(dir) = Direction::ALL.into_iter().find(|d| map.closes(pos.0 + d.offset()).is_some()) {
+            intents.closes.write(Intent::new(entity, Close(dir)));
+        }
     } else if keys.just_pressed(KeyCode::Enter) {
         intents.transits.write(Intent::new(entity, GoThrough));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+    use rl_engine::rl_core::{Point, RunSeed};
+
+    /// Through the real keys: walking into a shut door opens it and leaves
+    /// you where you stood, `c` shuts it again, and the log says both.
+    #[test]
+    fn walking_into_a_door_opens_it_and_c_shuts_it_again() {
+        let dir = std::env::temp_dir().join(format!("corsair-doors-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        app.add_plugins(KeyScriptPlugin)
+            .add_systems(Update, player_input.in_set(EngineSet::Input))
+            .add_systems(Update, crate::monsters::narrate_doors.in_set(PresentSet::Narrate));
+        app.update();
+        app.update();
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let at = app.world().get::<Position>(me).unwrap().0;
+
+        // A door on whichever side of the player is clear ground.
+        let tiles = crate::content::Content::new().tiles().clone();
+        let (shut, open) = (tiles.expect("door"), tiles.expect("open door"));
+        let lying: Vec<Point> = app.world_mut().query_filtered::<&Position, With<Item>>().iter(app.world()).map(|p| p.0).collect();
+        let sides = [
+            (KeyCode::ArrowRight, Direction::East),
+            (KeyCode::ArrowLeft, Direction::West),
+            (KeyCode::ArrowUp, Direction::North),
+            (KeyCode::ArrowDown, Direction::South),
+        ];
+        let (key, door) = sides
+            .into_iter()
+            .map(|(key, dir)| (key, at + dir.offset()))
+            .find(|(_, p)| app.world().resource::<WorldMap>().is_walkable(*p) && !app.world().resource::<Occupancy>().is_occupied(*p) && !lying.contains(p))
+            .expect("clear ground beside the player");
+        app.world_mut().resource_mut::<WorldMap>().set_tile(door, shut);
+        app.update();
+
+        let said = |app: &App, line: &str| app.world().resource::<MessageLog>().iter().any(|e| e.text == line);
+        press(&mut app, key);
+        assert_eq!(app.world().resource::<WorldMap>().tile(door), Some(open), "the door opened");
+        assert_eq!(app.world().get::<Position>(me).unwrap().0, at, "and the player stayed put");
+        assert!(said(&app, "You open the door."));
+
+        press(&mut app, KeyCode::KeyC);
+        assert_eq!(app.world().resource::<WorldMap>().tile(door), Some(shut), "`c` shut it");
+        assert!(said(&app, "You close the door."));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

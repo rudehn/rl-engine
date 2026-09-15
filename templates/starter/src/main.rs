@@ -149,6 +149,10 @@ impl Goblins {
                 },
                 Perception(10),
                 Mind(self.mind.clone()),
+                // Sapient: it searches where it lost you, and opens doors.
+                // `Wits::ANIMAL` would stop at a door, and `Wits::MINDLESS`
+                // would forget you the moment it lost sight of you.
+                Intelligence(Wits::SAPIENT),
             ),
             // It sees three steps without light, always notices you two
             // steps away (further while you stand in light), sometimes

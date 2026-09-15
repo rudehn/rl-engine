@@ -124,8 +124,9 @@ pub fn run_turns(world: &mut World) {
 ///
 /// The state, the system sets, the turn schedule and the loop that runs
 /// it, the clock, the occupancy index, the map and its places, and the
-/// three actions that need nothing else: step, wait, and go through what
-/// stands here. Everything else is a plugin of its own, and a game adds
+/// actions that need nothing else: step, which opens a door it walks into,
+/// wait, close a door, and go through what stands here. Everything else is
+/// a plugin of its own, and a game adds
 /// the ones it wants: nothing turns itself on because a resource happens
 /// to exist.
 ///
@@ -148,6 +149,7 @@ impl Plugin for CorePlugin {
             .add_message::<places::WarpRequest>()
             .add_message::<places::MapChanged>()
             .add_message::<places::PlaceEntered>()
+            .add_message::<crate::doors::DoorEvent>()
             .init_schedule(Turn)
             .configure_sets(
                 Update,
@@ -163,9 +165,13 @@ impl Plugin for CorePlugin {
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
             .add_action::<places::GoThrough>()
+            .add_action::<crate::doors::Close>()
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
             .add_systems(Turn, (turn::start_pass, places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
-            .add_systems(Turn, (turn::resolve_moves, turn::resolve_waits, places::resolve_warps).chain().in_set(ResolveSet::Travel))
+            .add_systems(
+                Turn,
+                (turn::resolve_moves, turn::resolve_waits, crate::doors::resolve_closes, places::resolve_warps).chain().in_set(ResolveSet::Travel),
+            )
             .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(CleanupSet::Requeue))
             .needs::<WorldMap>("CorePlugin", "`WorldMap::new(tiles.tables())`, the map every engine system reads")
             .add_systems(OnEnter(EngineState::Playing), check_requirements)

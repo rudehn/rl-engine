@@ -7,6 +7,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 ## Unreleased
 
 - `cargo generate` instructions name the release with `--tag`, so the template and the engine it pins come from the same release.
+- `Wits`, what a mind is able to do whatever its brain would like, with `MINDLESS`, `ANIMAL` and `SAPIENT` presets, carried as `Intelligence(Wits)`. A `Mind` is sapient unless its spawn says otherwise. `FleeWhenHurt` needs the wits to flee and `SearchLastKnown` the wits to search. `Snapshot` gains `wits`.
+- Doors: `TileProps::opens_to` and `closes_to`, walking into a closed door opens it, `Close(Direction)` shuts one, and `DoorEvent` reports both. The standard `door_closed` and `door_open` now open and close. `FlowFields::approach` takes whether the mover opens doors.
 
 ## 0.1.0
 

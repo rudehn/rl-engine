@@ -209,6 +209,9 @@ pub struct WorldMap {
     /// Bumped every time an edit changes what blocks sight, so viewsheds
     /// and light know to recompute without anyone moving.
     opacity_epoch: u64,
+    /// Bumped every time an edit changes where an actor may walk or what a
+    /// step costs, so flow fields know a door opened while nobody moved.
+    cost_epoch: u64,
     current: MapId,
     surface: Surface,
     places: BTreeMap<MapId, PlaceMap>,
@@ -219,7 +222,7 @@ impl WorldMap {
     /// world graph gets its surface on the first stream, region size and
     /// all; a delve never gets one and never asks for one.
     pub fn new(tables: TileTables) -> Self {
-        Self { tables, generation: 0, opacity_epoch: 0, current: MapId::SURFACE, surface: Surface::default(), places: BTreeMap::new() }
+        Self { tables, generation: 0, opacity_epoch: 0, cost_epoch: 0, current: MapId::SURFACE, surface: Surface::default(), places: BTreeMap::new() }
     }
 
     /// The map every reader reads right now.
@@ -286,6 +289,12 @@ impl WorldMap {
         self.opacity_epoch
     }
 
+    /// Changes whenever an edit changes where an actor may walk or what a
+    /// step costs.
+    pub fn cost_epoch(&self) -> u64 {
+        self.cost_epoch
+    }
+
     /// The flag tables tiles are read through.
     pub fn tables(&self) -> &TileTables {
         &self.tables
@@ -313,8 +322,12 @@ impl WorldMap {
             was
         };
         let Some(was) = was else { return false };
-        if self.tables.opaque[was.index()] != self.tables.opaque[id.index()] {
+        let (was, now) = (was.index(), id.index());
+        if self.tables.opaque[was] != self.tables.opaque[now] {
             self.opacity_epoch += 1;
+        }
+        if self.tables.walkable[was] != self.tables.walkable[now] || self.tables.move_cost[was] != self.tables.move_cost[now] {
+            self.cost_epoch += 1;
         }
         true
     }
@@ -322,6 +335,16 @@ impl WorldMap {
     /// Whether an actor can stand on `p` now.
     pub fn is_walkable(&self, p: Point) -> bool {
         self.tile(p).is_some_and(|t| self.tables.walkable[t.index()])
+    }
+
+    /// What `p` becomes when opened, if it is something that opens.
+    pub fn opens(&self, p: Point) -> Option<TileId> {
+        self.tile(p).and_then(|t| self.tables.opens[t.index()])
+    }
+
+    /// What `p` becomes when closed, if it is something that closes.
+    pub fn closes(&self, p: Point) -> Option<TileId> {
+        self.tile(p).and_then(|t| self.tables.closes[t.index()])
     }
 
     /// Whether `p` blocks sight. Unloaded tiles do.
@@ -362,7 +385,14 @@ impl WorldMap {
     /// A view of the window that grid algorithms can run over, in
     /// window-local coordinates.
     pub fn view(&self) -> WindowView<'_> {
-        WindowView { map: self }
+        WindowView { map: self, opening: false }
+    }
+
+    /// The same view for a mover that opens what it walks into: a closed
+    /// door costs the turn spent opening it and then the step onto what it
+    /// opens into, so a flood routes through it when that is shorter.
+    pub fn opening_view(&self) -> WindowView<'_> {
+        WindowView { map: self, opening: true }
     }
 
     /// Moves the surface window to cover `regions`, generating what is
@@ -431,6 +461,8 @@ pub struct WorldMapSave {
 #[derive(Debug, Clone, Copy)]
 pub struct WindowView<'a> {
     map: &'a WorldMap,
+    /// Whether a tile that opens costs its opening rather than blocking.
+    opening: bool,
 }
 
 impl WindowView<'_> {
@@ -462,7 +494,12 @@ impl OpacitySource for WindowView<'_> {
 
 impl CostSource for WindowView<'_> {
     fn cost_idx(&self, idx: usize) -> Option<u32> {
-        self.map.cost(self.world(idx))
+        let p = self.world(idx);
+        let opened = || {
+            let into = self.map.opens(p)?.index();
+            self.map.tables.walkable[into].then(|| rl_core::turn::BASE_ACTION_COST + self.map.tables.move_cost[into])
+        };
+        self.map.cost(p).or_else(|| if self.opening { opened() } else { None })
     }
 }
 

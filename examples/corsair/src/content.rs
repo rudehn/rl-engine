@@ -60,6 +60,7 @@ pub struct Content {
     door: TileId,
     timber: TileId,
     plank: TileId,
+    open_door: TileId,
 }
 
 impl Content {
@@ -75,10 +76,14 @@ impl Content {
         let road = tiles.register(TileProps::floor("road").move_cost(80)).unwrap();
         let plaza = tiles.register(TileProps::floor("dock")).unwrap();
         let cave = tiles.register(TileProps::floor("cave")).unwrap();
-        let door = tiles.register(TileProps::floor("door").opaque(true)).unwrap();
+        // Shut until someone with hands opens it: a crab or a dog is kept out,
+        // a cutthroat is not.
+        let door = tiles.register(TileProps::named("door").passable(true).opaque(true).blocks_projectiles(true).opens_to("open door")).unwrap();
         let timber = tiles.register(TileProps::wall("timber")).unwrap();
         let plank = tiles.register(TileProps::floor("plank")).unwrap();
-        Self { tiles, water, sand, grass, tree, rock, marsh, road, plaza, cave, door, timber, plank }
+        // Registered last, so a saved map's tile ids still mean what they meant.
+        let open_door = tiles.register(TileProps::floor("open door").closes_to("door")).unwrap();
+        Self { tiles, water, sand, grass, tree, rock, marsh, road, plaza, cave, door, timber, plank, open_door }
     }
 
     pub fn tiles(&self) -> &TileRegistry {
@@ -104,6 +109,7 @@ impl Content {
         look.set_varied(self.door, Cell::new('+', c(0.95, 0.7, 0.4)).on(c(0.42, 0.26, 0.12)), stone);
         look.set_varied(self.timber, Cell::new('#', c(0.88, 0.62, 0.35)).on(c(0.48, 0.3, 0.15)), stone);
         look.set_varied(self.plank, Cell::new('.', c(0.82, 0.64, 0.4)).on(c(0.34, 0.23, 0.12)), Vary::new(0.2, 0.05));
+        look.set_varied(self.open_door, Cell::new('\'', c(0.95, 0.7, 0.4)).on(c(0.22, 0.2, 0.18)), stone);
         look
     }
 
@@ -422,7 +428,10 @@ mod tests {
         assert!(terrain.count(content.timber) >= 2 * 12, "{} timber", terrain.count(content.timber));
         let c = terrain.bounds().center();
         assert!(tables.walkable[terrain.get(c).unwrap().index()], "the plaza centre is open");
-        assert!(tables.walkable[content.door.index()] && tables.opaque[content.door.index()], "a door is walked through and blocks sight");
+        let (shut, open) = (content.door.index(), content.open_door.index());
+        assert!(!tables.walkable[shut] && tables.opaque[shut], "a shut door stops a step and blocks sight");
+        assert_eq!(tables.opens[shut], Some(content.open_door), "until it is opened");
+        assert!(tables.walkable[open] && !tables.opaque[open] && tables.closes[open] == Some(content.door), "and open, it is walked through and shut again");
     }
 }
 

@@ -16,6 +16,7 @@
 pub mod ability;
 pub mod combat;
 pub mod components;
+pub mod doors;
 pub mod effects;
 pub mod events;
 pub mod fov;
@@ -43,13 +44,14 @@ pub use combat::{
     Resists, Strikes, line_of_fire,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+pub use doors::{Close, DoorEvent};
 pub use effects::{AddEngineEffects, Cleanse, Harm, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fov::FovPlugin;
 pub use items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged, Unequip, UseItem, Wearable};
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-pub use minds::{FlowFields, Mind, MindChose, MindsPlugin, Perception, Profile};
+pub use minds::{FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
@@ -79,13 +81,14 @@ pub mod prelude {
         RangedAttack, Resists, Strikes, line_of_fire,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+    pub use crate::doors::{Close, DoorEvent};
     pub use crate::effects::AddEngineEffects;
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fov::FovPlugin;
     pub use crate::items::{DropItem, Enchant, Equip, Equipped, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged, Unequip, UseItem, Wearable};
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-    pub use crate::minds::{Mind, MindChose, MindsPlugin, Perception, Profile};
+    pub use crate::minds::{Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };

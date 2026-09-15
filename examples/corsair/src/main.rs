@@ -171,6 +171,7 @@ fn main() -> AppExit {
             (
                 note_discoveries,
                 monsters::narrate,
+                monsters::narrate_doors,
                 items::narrate_items,
                 statuses::narrate_statuses,
                 quests::report_facts,

@@ -7,6 +7,7 @@ use rl_grid::footprint;
 use crate::ability::{Aim, Usable};
 use crate::ai::brain::{Decision, Tactic, TacticCtx};
 use crate::ai::snapshot::{ActorView, Snapshot};
+use crate::ai::wits::Wits;
 use crate::faction::Relation;
 
 /// Attack an adjacent enemy, the nearest by position on a tie.
@@ -24,6 +25,8 @@ impl<A: Copy> Tactic<A> for MeleeAdjacent {
 
 /// Run when health falls below a share, descending the escape map, or
 /// away from the nearest enemy if there is none.
+///
+/// Only for a mind with [`Wits::FLEES`]: a mindless thing fights on.
 #[derive(Debug, Clone, Copy)]
 pub struct FleeWhenHurt {
     /// Flee at or below this percentage of health.
@@ -35,7 +38,7 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
         "flee_when_hurt"
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
-        if ctx.snapshot.me.hp_pct() > self.at_pct || ctx.snapshot.enemies.is_empty() {
+        if !ctx.snapshot.wits.has(Wits::FLEES) || ctx.snapshot.me.hp_pct() > self.at_pct || ctx.snapshot.enemies.is_empty() {
             return None;
         }
         let me = ctx.snapshot.me.pos;
@@ -96,6 +99,9 @@ impl<A: Copy> Tactic<A> for Hunt {
 /// shared fields point at where the enemy is, and a search that followed
 /// them would be a search that cheats. On the remembered tile it returns
 /// `None`, so the next tactic mills about there until the memory runs out.
+///
+/// Only for a mind with [`Wits::SEARCHES`]: a mindless thing forgets what it
+/// cannot perceive.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SearchLastKnown;
 
@@ -104,7 +110,7 @@ impl<A: Copy> Tactic<A> for SearchLastKnown {
         "search_last_known"
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
-        if !ctx.snapshot.enemies.is_empty() {
+        if !ctx.snapshot.wits.has(Wits::SEARCHES) || !ctx.snapshot.enemies.is_empty() {
             return None;
         }
         let target = ctx.snapshot.last_known?;
@@ -316,6 +322,43 @@ mod tests {
         assert_eq!(decide(&arrived), (Decision::Wait, Some("wander")), "on the tile the search has nothing left to do");
 
         assert_eq!(decide(&Snapshot::alone(view(1, 5, 5, 10))).1, Some("wander"), "tracking nothing, it drifts");
+    }
+
+    /// The brain is what a mind would like; its wits are what it manages. A
+    /// mindless one hurt beside its enemy fights on through a flee it was
+    /// given, and forgets a trail it was told to search.
+    #[test]
+    fn a_mind_without_the_wits_to_run_or_search_does_neither() {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(1);
+        let b: Brain<u32> = Brain::new().then(FleeWhenHurt { at_pct: 50 }).then(SearchLastKnown).then(Hunt);
+        let mut decide = |snapshot: &Snapshot<u32>| {
+            b.decide(&mut TacticCtx {
+                snapshot,
+                approach: None,
+                escape: None,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                bounds: arena(),
+                rng: &mut rng,
+            })
+            .1
+        };
+
+        let mut hurt = Snapshot::alone(view(1, 5, 5, 2));
+        hurt.enemies.push(view(2, 8, 5, 10));
+        assert_eq!(decide(&hurt), Some("flee_when_hurt"));
+        hurt.wits = Wits::MINDLESS;
+        assert_eq!(decide(&hurt), Some("hunt"), "a mindless thing hunts on at two health in ten");
+
+        let mut lost = Snapshot::alone(view(1, 5, 5, 10));
+        lost.last_known = Some(Point::new(9, 5));
+        lost.wits = Wits::ANIMAL;
+        assert_eq!(decide(&lost), Some("search_last_known"), "an animal follows the trail");
+        lost.wits = Wits::MINDLESS;
+        assert_eq!(decide(&lost), None, "a mindless thing has nothing to follow");
     }
 
     #[test]

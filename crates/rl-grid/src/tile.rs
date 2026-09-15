@@ -56,12 +56,30 @@ pub struct TileProps {
     /// Cost to enter, in hundredths of a normal step. `0` is treated as normal.
     #[serde(default)]
     pub move_cost: u16,
+    /// The tile this becomes when it is opened, by name: a closed door names
+    /// its open self. Stepping into it opens it, for an actor able to, and a
+    /// mind that opens doors paths through it.
+    #[serde(default)]
+    pub opens_to: Option<String>,
+    /// The tile this becomes when it is closed, by name: an open door names
+    /// its closed self.
+    #[serde(default)]
+    pub closes_to: Option<String>,
 }
 
 impl TileProps {
     /// A tile with the given name and every flag off.
     pub fn named(name: impl Into<String>) -> Self {
-        Self { name: name.into(), walkable: false, passable: None, opaque: false, blocks_projectiles: false, move_cost: NORMAL_MOVE_COST }
+        Self {
+            name: name.into(),
+            walkable: false,
+            passable: None,
+            opaque: false,
+            blocks_projectiles: false,
+            move_cost: NORMAL_MOVE_COST,
+            opens_to: None,
+            closes_to: None,
+        }
     }
 
     /// A walkable, transparent tile.
@@ -101,6 +119,18 @@ impl TileProps {
     /// Builder: sets `move_cost`.
     pub fn move_cost(mut self, v: u16) -> Self {
         self.move_cost = v;
+        self
+    }
+
+    /// Builder: opening this makes it the tile called `name`.
+    pub fn opens_to(mut self, name: impl Into<String>) -> Self {
+        self.opens_to = Some(name.into());
+        self
+    }
+
+    /// Builder: closing this makes it the tile called `name`.
+    pub fn closes_to(mut self, name: impl Into<String>) -> Self {
+        self.closes_to = Some(name.into());
         self
     }
 
@@ -153,14 +183,14 @@ impl TileRegistry {
     ///
     /// `void` is id 0 and is what an unwritten cell holds: not walkable,
     /// opaque, so an unfinished map is a solid block rather than an open
-    /// field.
+    /// field. The two doors open and close into each other.
     pub fn standard() -> Self {
         let mut r = Self::new();
         r.register(TileProps::wall("void")).expect("empty registry");
         r.register(TileProps::wall("wall")).expect("fresh name");
         r.register(TileProps::floor("floor")).expect("fresh name");
-        r.register(TileProps::named("door_closed").passable(true).opaque(true).blocks_projectiles(true)).expect("fresh name");
-        r.register(TileProps::floor("door_open")).expect("fresh name");
+        r.register(TileProps::named("door_closed").passable(true).opaque(true).blocks_projectiles(true).opens_to("door_open")).expect("fresh name");
+        r.register(TileProps::floor("door_open").closes_to("door_closed")).expect("fresh name");
         r
     }
 
@@ -232,13 +262,23 @@ impl TileRegistry {
     ///
     /// Built once per registry and cached by the callers that sit in hot
     /// loops, so a FOV or a flood never chases a `Vec<TileProps>` pointer.
+    ///
+    /// # Panics
+    /// Panics naming the tile if one opens or closes into a name nobody
+    /// registered. Names are resolved here rather than at registration so a
+    /// door may be registered before the tile it opens into.
     pub fn tables(&self) -> TileTables {
+        let resolve = |props: &TileProps, into: &Option<String>, verb: &str| {
+            into.as_ref().map(|name| self.id(name).unwrap_or_else(|| panic!("tile {:?} {verb} {name:?}, which is not registered", props.name)))
+        };
         TileTables {
             walkable: self.props.iter().map(|p| p.walkable).collect(),
             passable: self.props.iter().map(|p| p.is_passable()).collect(),
             opaque: self.props.iter().map(|p| p.opaque).collect(),
             blocks_projectiles: self.props.iter().map(|p| p.blocks_projectiles).collect(),
             move_cost: self.props.iter().map(|p| p.effective_move_cost()).collect(),
+            opens: self.props.iter().map(|p| resolve(p, &p.opens_to, "opens to")).collect(),
+            closes: self.props.iter().map(|p| resolve(p, &p.closes_to, "closes to")).collect(),
         }
     }
 }
@@ -256,6 +296,10 @@ pub struct TileTables {
     pub blocks_projectiles: Vec<bool>,
     /// Entry cost in hundredths of a step.
     pub move_cost: Vec<u32>,
+    /// What each tile becomes when opened, if it opens.
+    pub opens: Vec<Option<TileId>>,
+    /// What each tile becomes when closed, if it closes.
+    pub closes: Vec<Option<TileId>>,
 }
 
 #[cfg(test)]
@@ -294,6 +338,26 @@ mod tests {
             assert_eq!(t.opaque[id.index()], props.opaque);
             assert_eq!(t.passable[id.index()], props.is_passable());
         }
+    }
+
+    #[test]
+    fn a_door_opens_into_the_tile_it_names_and_closes_back() {
+        let r = TileRegistry::standard();
+        let t = r.tables();
+        let (closed, open) = (r.expect("door_closed"), r.expect("door_open"));
+        assert_eq!(t.opens[closed.index()], Some(open));
+        assert_eq!(t.closes[open.index()], Some(closed));
+        assert_eq!(t.opens[r.expect("wall").index()], None, "a wall opens into nothing");
+        let gate: TileProps = ron::from_str(r#"(name: "gate", passable: Some(true), opens_to: Some("gate_open"))"#).unwrap();
+        assert_eq!(gate.opens_to.as_deref(), Some("gate_open"));
+    }
+
+    #[test]
+    #[should_panic(expected = "tile \"hatch\" opens to \"hatch_opne\", which is not registered")]
+    fn a_door_into_a_tile_nobody_registered_is_refused_by_name() {
+        let mut r = TileRegistry::standard();
+        r.register(TileProps::named("hatch").opens_to("hatch_opne")).unwrap();
+        r.tables();
     }
 
     #[test]

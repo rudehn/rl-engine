@@ -11,6 +11,8 @@
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
 //! - [`snapshot`]: [`Snapshot`] and [`ActorView`].
 //! - [`tactics`]: the tactics every roguelike needs.
+//! - [`wits`]: [`Wits`], what a mind is able to do whatever its brain would
+//!   like, as capabilities with mindless, animal and sapient presets.
 //!
 //! A game adds its own by implementing [`Tactic`] and inserting it
 //! anywhere in the list.
@@ -20,8 +22,10 @@ pub mod brain;
 pub mod profile;
 pub mod snapshot;
 pub mod tactics;
+pub mod wits;
 
 pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Decision, Tactic, TacticCtx};
 pub use profile::MovementProfile;
 pub use snapshot::{ActorView, Snapshot};
+pub use wits::Wits;

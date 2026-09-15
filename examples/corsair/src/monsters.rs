@@ -16,7 +16,7 @@ use rl_engine::rl_rules::ai::tactics::UseAbility;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::{AbilityDef, NameRef, Names, StatusDef};
+use rl_engine::rl_rules::{AbilityDef, NameRef, Names, StatusDef, Wits};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
 use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
@@ -36,6 +36,7 @@ pub struct MonsterDef {
     pub attack: DiceRoll,
     pub kind: NameRef<DamageKind>,
     pub faction: NameRef<FactionDef>,
+    pub wits: Wits,
     pub perception: i32,
     pub speed: u32,
     pub flee_at: i32,
@@ -157,6 +158,9 @@ impl Bestiary {
                 Perception(m.perception),
                 Speed(m.speed),
                 Mind(self.brains[id.index()].clone()),
+                // One brain shape for the whole bestiary; the wits say how
+                // much of it a crab can use.
+                Intelligence(m.wits),
                 MonsterKind(id),
                 // What the panels call it. The engine has no bestiary.
                 Name::new(m.name.clone()),
@@ -266,6 +270,32 @@ pub fn narrate(
     }
 }
 
+/// Doors in words: the ones you work, and the ones a monster works where you
+/// can see it, which is how you learn that a cutthroat is not a crab.
+pub fn narrate_doors(
+    mut doors: MessageReader<DoorEvent>,
+    bestiary: Res<Bestiary>,
+    turns: Res<Turns>,
+    mut log: ResMut<MessageLog>,
+    kinds: Query<&MonsterKind>,
+    player: Query<(Entity, &Viewshed), With<Player>>,
+) {
+    let Ok((you, sight)) = player.single() else { return };
+    for ev in doors.read() {
+        let (actor, at, verb) = match *ev {
+            DoorEvent::Opened { actor, at } => (actor, at, "open"),
+            DoorEvent::Closed { actor, at } => (actor, at, "close"),
+        };
+        if actor == you {
+            log.push(format!("You {verb} the door."), Tones::MUTED, turns.turn_number());
+        } else if let Ok(kind) = kinds.get(actor)
+            && sight.can_see(at)
+        {
+            log.push(format!("The {} {verb}s a door.", bestiary.defs.get(kind.0).name), Tones::NOTICE, turns.turn_number());
+        }
+    }
+}
+
 fn cap(s: &str) -> String {
     let mut c = s.chars();
     match c.next() {
@@ -284,6 +314,18 @@ mod tests {
     use super::*;
     use rl_engine::rl_core::RunSeed;
     use rl_engine::rl_ui::{VitalsView, VitalsViewPlugin};
+
+    /// The bestiary's wits load as written: a crab has none to speak of, a
+    /// dog runs but cannot work a latch, and a cutthroat can.
+    #[test]
+    fn the_bestiary_says_who_can_work_a_door() {
+        let loaded = crate::rules::load(RunSeed(1), Point::ZERO, &crate::rules::effect_kinds());
+        let defs = &loaded.bestiary.defs;
+        let wits = |name: &str| defs.get(defs.expect(name)).wits;
+        assert_eq!(wits("crab"), Wits::MINDLESS);
+        assert!(wits("wild dog").has(Wits::FLEES) && !wits("wild dog").has(Wits::OPENS_DOORS));
+        assert!(wits("cutthroat").has(Wits::OPENS_DOORS));
+    }
 
     /// Reported from play: on the surface, a cutthroat was cutting the
     /// player down while the vitals strip still read "hidden". Surface

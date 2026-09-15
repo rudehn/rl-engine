@@ -21,7 +21,7 @@ use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{Direction, Point, geometry};
 use rl_grid::{DijkstraMap, PathRules};
-use rl_rules::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx};
+use rl_rules::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 
 use crate::ability::{Offered, Use};
 use crate::combat::{Attack, CombatRng, CombatRules, Faction, Health};
@@ -43,42 +43,65 @@ pub struct Profile(pub MovementProfile);
 
 /// The brain deciding a non-player's turns. Shared, since most monsters of
 /// a kind think alike.
+///
+/// Requires [`Intelligence`], sapient unless the spawn says otherwise.
 #[derive(Component, Clone)]
 #[component(on_add = report_mind_without_plugin)]
+#[require(Intelligence)]
 pub struct Mind(pub Arc<Brain<Entity>>);
 
-/// One approach map per movement class, rebuilt when the player moves.
+/// What an actor is able to do, whatever its brain would like: whether it
+/// runs, searches, and works doors.
+///
+/// Every [`Mind`] carries one, sapient unless the spawn says otherwise, so a
+/// monster nobody flagged does all its brain asks. Flag the ones that should
+/// not: `Intelligence(Wits::ANIMAL)` stops at a door, and
+/// `Intelligence(Wits::MINDLESS)` fights to the death and forgets what it
+/// cannot see. On an actor with no mind, the player included, it still
+/// decides what its moves may do, such as open a door.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Deref)]
+pub struct Intelligence(pub Wits);
+
+/// The map a movement class paths by: its profile, and whether it opens
+/// doors, which changes what a closed door costs.
+type FieldKey = (MovementProfile, bool);
+
+/// One approach map per movement class, rebuilt when the player moves or
+/// the map changes where anyone may walk.
 #[derive(Resource, Default)]
 pub struct FlowFields {
-    built_at: Option<Point>,
-    approach: BTreeMap<MovementProfile, DijkstraMap>,
-    escape: BTreeMap<MovementProfile, DijkstraMap>,
+    /// The player's cell and the map's cost epoch the maps were built for.
+    built_at: Option<(Point, u64)>,
+    approach: BTreeMap<FieldKey, DijkstraMap>,
+    escape: BTreeMap<FieldKey, DijkstraMap>,
 }
 
 impl FlowFields {
-    fn ensure(&mut self, profile: MovementProfile, player: Point, map: &WorldMap) {
-        if self.built_at != Some(player) {
+    fn ensure(&mut self, key: FieldKey, player: Point, map: &WorldMap) {
+        let stamp = (player, map.cost_epoch());
+        if self.built_at != Some(stamp) {
             self.approach.clear();
             self.escape.clear();
-            self.built_at = Some(player);
+            self.built_at = Some(stamp);
         }
-        if self.approach.contains_key(&profile) {
+        if self.approach.contains_key(&key) {
             return;
         }
-        let view = map.view();
+        let view = if key.1 { map.opening_view() } else { map.view() };
         let Some(local) = map.to_local(player) else { return };
         let mut approach = DijkstraMap::covering(&view);
         approach.build(&view, [local], PathRules::default());
         let mut escape = approach.clone();
         escape.scale(-12, 10);
         escape.rescan(&view, PathRules::default());
-        self.approach.insert(profile, approach);
-        self.escape.insert(profile, escape);
+        self.approach.insert(key, approach);
+        self.escape.insert(key, escape);
     }
 
-    /// The approach map for `profile`, if built this turn.
-    pub fn approach(&self, profile: MovementProfile) -> Option<&DijkstraMap> {
-        self.approach.get(&profile)
+    /// The approach map for `profile`, as a mover that does or does not open
+    /// doors reads it, if built this turn.
+    pub fn approach(&self, profile: MovementProfile, opens_doors: bool) -> Option<&DijkstraMap> {
+        self.approach.get(&(profile, opens_doors))
     }
 
     /// Forgets every map, so the next mind rebuilds them: the player
@@ -93,7 +116,7 @@ impl FlowFields {
 /// What a mind reads about any actor.
 type ActorData = (Entity, &'static Position, &'static Health, &'static Faction, Option<&'static Perception>, Option<&'static OnMap>);
 /// The mind holding the turn.
-type MindData = (Entity, &'static Mind, Option<&'static Profile>);
+type MindData = (Entity, &'static Mind, Option<&'static Profile>, Option<&'static Intelligence>);
 
 /// Everyone a mind might see, and the mind whose turn it is.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -174,16 +197,18 @@ pub struct MindIntents<'w> {
 /// has never heard of.
 pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut world: MindWorld, sight: Sight) {
     let Ok((player_pos, player_sight)) = sight.player.single() else { return };
-    let Ok((thinker, mind, profile)) = sight.minds.single() else { return };
+    let Ok((thinker, mind, profile, intelligence)) = sight.minds.single() else { return };
     let Ok((_, my_pos, my_hp, my_faction, perception, _)) = sight.actors.get(thinker) else { return };
     let MindWorld { fields, offered, rng, map, occupancy, rules, turns } = &mut world;
     let (fields, rng, map, occupancy, rules, turns) = (&mut **fields, &mut **rng, &**map, &**occupancy, &**rules, &**turns);
     let actors = &sight.actors;
-    let profile = profile.map(|p| p.0).unwrap_or_default();
+    let wits = intelligence.map(|i| i.0).unwrap_or_default();
+    let key = (profile.map(|p| p.0).unwrap_or_default(), wits.has(Wits::OPENS_DOORS));
     let reach = perception.map(|p| p.0).unwrap_or(8);
 
     let me = ActorView { id: thinker, pos: my_pos.0, hp: my_hp.hp, max_hp: my_hp.max, faction: my_faction.0 };
     let mut snapshot = Snapshot::alone(me);
+    snapshot.wits = wits;
     let dark_sight = sight.dark.get(thinker).map(|d| d.0).unwrap_or(0);
     let lighting = sight.lighting.as_deref();
     let here = map.current();
@@ -231,14 +256,16 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
     let maps_allowed = aware.is_none() || player_seen;
     let wants_maps = !snapshot.enemies.is_empty() && maps_allowed;
     if wants_maps {
-        fields.ensure(profile, player_pos.0, map);
+        fields.ensure(key, player_pos.0, map);
     }
     let origin = map.window_tiles().origin();
     // Maps are window-local; translate through a local copy of the
     // decision so tactics stay in world coordinates.
-    let approach = fields.approach.get(&profile);
-    let escape = fields.escape.get(&profile);
-    let can_step = |p: Point| map.is_walkable(p) && !occupancy.is_occupied(p);
+    let approach = fields.approach.get(&key);
+    let escape = fields.escape.get(&key);
+    // A closed door is a step for a mind that opens doors, since stepping
+    // into one opens it, and a wall for one that does not.
+    let can_step = |p: Point| (map.is_walkable(p) || (key.1 && map.opens(p).is_some())) && !occupancy.is_occupied(p);
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
@@ -516,6 +543,81 @@ mod tests {
         assert!(app.world().get_entity(monster).is_err(), "the monster despawned by the end of the frame");
         assert!(!app.world().resource::<Occupancy>().is_occupied(mpos));
         assert!(!app.world().resource::<Turns>().contains(monster));
+    }
+
+    /// The player behind a ring of wall with one gate in it, a gate that can
+    /// be seen through, and a monster of `wits` outside it hunting.
+    fn behind_a_gate(wits: Wits) -> (App, Entity, Entity, Point, rl_grid::TileRegistry) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::world::StreamingPlugin));
+        let mut tiles = rl_grid::TileRegistry::standard();
+        tiles.register(rl_grid::TileProps::named("gate").passable(true).opens_to("gate_open")).unwrap();
+        tiles.register(rl_grid::TileProps::floor("gate_open").closes_to("gate")).unwrap();
+        let start = crate::testing::surface_with(&mut app, tiles.clone());
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1) },
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let gate = start.offset(3, 0);
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            for dy in -3..=3 {
+                for dx in -3..=3 {
+                    let p = start.offset(dx, dy);
+                    if geometry::chebyshev(p, start) == 3 {
+                        map.set_tile(p, if p == gate { tiles.expect("gate") } else { tiles.expect("wall") });
+                    }
+                }
+            }
+        }
+        let monster = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(6, 0)),
+                Health::full(20),
+                Faction(sides.theirs),
+                Perception(8),
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(3) },
+                Mind(Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt))),
+                Intelligence(wits),
+            ))
+            .id();
+        for _ in 0..40 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        (app, player, monster, gate, tiles)
+    }
+
+    #[test]
+    fn a_mind_that_works_doors_comes_through_a_gate_an_animal_cannot() {
+        let (app, player, monster, gate, tiles) = behind_a_gate(Wits::SAPIENT);
+        assert_eq!(app.world().resource::<WorldMap>().tile(gate), Some(tiles.expect("gate_open")), "it opened the gate");
+        assert!(app.world().get::<Health>(player).unwrap().hp < 30, "and came through to strike");
+
+        let (app, player, monster_outside, gate, tiles) = behind_a_gate(Wits::ANIMAL);
+        assert_eq!(app.world().resource::<WorldMap>().tile(gate), Some(tiles.expect("gate")), "the gate held");
+        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30, "and nothing reached the player");
+        let outside = app.world().get::<Position>(monster_outside).unwrap().0;
+        let start = app.world().get::<Position>(player).unwrap().0;
+        assert!(geometry::chebyshev(outside, start) > 3, "it waits outside the ring: {outside:?}");
+        let _ = monster;
     }
 
     #[test]
