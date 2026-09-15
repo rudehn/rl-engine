@@ -11,12 +11,12 @@
 //! While something that holds the turns plays, the turns wait: the plugin
 //! watches the [`TurnHold`] and lets go when the last of it has played, so
 //! the eel is seen to spit before the crab moves, and two casters are two
-//! flights one after the other. A cue that lands on the player never
-//! holds, so the player is never kept from acting by what is aimed at
-//! them. And a key pressed while the turns wait is a player who has seen
-//! enough: what holds them is dropped, the turns run on at once, and the
-//! key is read with the turn it was waiting for in hand, so nothing a
-//! quick player presses is lost to a fade.
+//! flights one after the other. A key pressed while the turns wait is a
+//! player who has seen enough: everything that holds them is dropped, the
+//! turns run on to the player's own, and the key is read with that turn
+//! in hand, so nothing a quick player presses is lost to a fade. Once the
+//! player holds a turn nothing holds the turns, since there is nothing
+//! left to wait for; what still plays, plays over the player's move.
 //!
 //! Two shapes cover what a roguelike animates: a [`Trail`] between two
 //! anchors and a [`Burst`] over some. An [`Animation`] is a list of them
@@ -310,7 +310,6 @@ pub struct Cues<'w, 's> {
     map: Res<'w, WorldMap>,
     style: Res<'w, ParticleStyle>,
     glyphs: Query<'w, 's, &'static Glyph>,
-    players: Query<'w, 's, Entity, With<Player>>,
 }
 
 impl Cues<'_, '_> {
@@ -341,21 +340,16 @@ impl Cues<'_, '_> {
 }
 
 /// Queues one animation per actor that cued something this frame, its
-/// cues in the order written, holding the turns unless every one of them
-/// lands on the player.
+/// cues in the order written, each holding the turns.
 pub fn play_cues(mut particles: ResMut<Particles>, mut cues: Cues) {
     let here = cues.map.current();
     let mut per_actor: Vec<(Entity, Animation)> = Vec::new();
     let cued: Vec<Cued> = cues.cued.read().cloned().collect();
     for Cued { actor, cue } in &cued {
-        let holds = !cues.players.iter().any(|p| cue.lands_on(p));
         let beat = cues.beat(cue);
         match per_actor.iter_mut().find(|(a, _)| a == actor) {
-            Some((_, animation)) => {
-                animation.steps.push(beat);
-                animation.holds |= holds;
-            }
-            None => per_actor.push((*actor, Animation { map: here, steps: vec![beat], holds })),
+            Some((_, animation)) => animation.steps.push(beat),
+            None => per_actor.push((*actor, Animation { map: here, steps: vec![beat], holds: true })),
         }
     }
     for (_, animation) in per_actor {
@@ -399,15 +393,29 @@ pub fn skip_on_key(world: &mut World) {
     if !pressed {
         return;
     }
-    world.resource_mut::<Particles>().skip_held();
-    world.resource_mut::<TurnHold>().release();
-    rl_bevy::plugin::run_turns(world);
+    // Through every hold in the way: a flight skipped lands, and its
+    // burst would hold again, and a second caster's flight after that.
+    // Bounded, since the turn loop's own bound is per call.
+    for _ in 0..MAX_SKIPS {
+        world.resource_mut::<Particles>().skip_held();
+        world.resource_mut::<TurnHold>().release();
+        rl_bevy::plugin::run_turns(world);
+        if !world.resource::<TurnHold>().is_held() {
+            return;
+        }
+    }
 }
 
-/// Keeps the turns held exactly while something that holds them plays,
-/// after the frame that would have dropped what finished.
-pub fn hold_turns(particles: Res<Particles>, mut hold: ResMut<TurnHold>) {
-    if particles.is_holding() {
+/// Holds the loop skips through at most on one key.
+const MAX_SKIPS: usize = 64;
+
+/// Keeps the turns held exactly while something that holds them plays and
+/// there is a turn to wait for, after the frame that would have dropped
+/// what finished. With the player holding a turn nothing is waited for:
+/// the loop would not run anyway, and holding it would only keep the
+/// player's next key from being read.
+pub fn hold_turns(particles: Res<Particles>, mut hold: ResMut<TurnHold>, player: Query<(), (With<Player>, With<MyTurn>)>) {
+    if particles.is_holding() && player.is_empty() {
         hold.hold();
     } else {
         hold.release();
@@ -502,9 +510,8 @@ mod tests {
     }
 
     /// Through the plugin: one actor's cues in one frame are one animation
-    /// in the order written, holding the turns; a cue that lands on the
-    /// player holds nothing; and the hold lets go when the last of it has
-    /// played.
+    /// in the order written, holding the turns, one at the player as much
+    /// as any; and the hold lets go when the last of it has played.
     #[test]
     fn cues_become_one_animation_per_actor_that_holds_the_turns_until_it_has_played() {
         use rl_core::Rect;
@@ -532,7 +539,7 @@ mod tests {
         assert_eq!(particles.playing.len(), 2, "one per actor");
         let (eels, crabs) = (&particles.playing[0].0, &particles.playing[1].0);
         assert!(matches!(eels.steps.as_slice(), [Beat::Trail(_), Beat::Burst(_)]) && eels.holds, "the flight, then the burst, and the turns wait");
-        assert!(matches!(crabs.steps.as_slice(), [Beat::Trail(_)]) && !crabs.holds, "at the player: waited on by nobody");
+        assert!(matches!(crabs.steps.as_slice(), [Beat::Trail(_)]) && crabs.holds, "at the player, and seen to arrive like any other");
         assert!(app.world().resource::<TurnHold>().is_held());
 
         let began = app.world().resource::<Time>().elapsed_secs();

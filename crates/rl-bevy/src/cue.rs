@@ -15,11 +15,12 @@
 //! loop stops after any pass that cued something and runs no pass until
 //! the plugin lets go. That is what makes a fight legible: the crab's spit
 //! is seen to fly before the eel moves, and two monsters casting are two
-//! flights, one after the other. A cue that lands on the player never
-//! holds: the player is not made to wait for the bolt that hits them, and
-//! the flight follows them instead. Without a watcher the cues are
-//! written and forgotten, and the loop runs as if there were none, which
-//! is what a headless game gets.
+//! flights, one after the other. A cue at the player holds like any
+//! other, so the spit is seen to arrive before it hurts; what keeps the
+//! player from waiting on it is the plugin, which lets a key pressed
+//! while the turns wait skip through to the player's turn. Without a
+//! watcher the cues are written and forgotten, and the loop runs as if
+//! there were none, which is what a headless game gets.
 //!
 //! A flight lands when it has been seen. A resolver that cued one, with
 //! something watching, puts what the flight does aside and tells the hold
@@ -32,8 +33,6 @@
 use bevy::prelude::*;
 use rl_core::Point;
 use rl_rules::ability::{AbilityId, Look};
-
-use crate::components::Player;
 
 /// Where a cue plays: a cell, or an entity's cell as it stands each frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,18 +88,6 @@ pub enum Cue {
         /// What shows.
         look: LookOf,
     },
-}
-
-impl Cue {
-    /// Whether the cue ends up on `who`: the flight lands on them, or the
-    /// burst covers them. A flight that leaves from them does not count;
-    /// that is their own cast.
-    pub fn lands_on(&self, who: Entity) -> bool {
-        match self {
-            Cue::Flight { to, .. } => to.follow == Some(who),
-            Cue::Burst { on, .. } => on.iter().any(|a| a.follow == Some(who)),
-        }
-    }
 }
 
 /// A cue, and whose act it was. Cues from one actor in one pass play one
@@ -171,12 +158,11 @@ impl TurnHold {
     }
 }
 
-/// Stops the turns after a pass that cued something for anyone but the
-/// player to watch, so the next actor waits until it has been seen. Runs
-/// in the pass's cleanup, and does nothing unless something watches.
-pub fn hold_for_cues(mut cues: MessageReader<Cued>, players: Query<Entity, With<Player>>, mut hold: ResMut<TurnHold>) {
-    let holds = cues.read().any(|c| !players.iter().any(|p| c.cue.lands_on(p)));
-    if holds && hold.is_watched() {
+/// Stops the turns after a pass that cued something, so the next actor
+/// waits until it has been seen. Runs in the pass's cleanup, and does
+/// nothing unless something watches.
+pub fn hold_for_cues(mut cues: MessageReader<Cued>, mut hold: ResMut<TurnHold>) {
+    if cues.read().next().is_some() && hold.is_watched() {
         hold.hold();
     }
 }
@@ -184,7 +170,7 @@ pub fn hold_for_cues(mut cues: MessageReader<Cued>, players: Query<Entity, With<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Actor, Blocks, MyTurn, Position};
+    use crate::components::{Actor, Blocks, MyTurn, Player, Position};
     use crate::turn::{Intent, Resolution, Wait};
 
     #[test]
@@ -197,16 +183,6 @@ mod tests {
         assert!(hold.is_held());
         hold.release();
         assert!(!hold.is_held());
-    }
-
-    #[test]
-    fn a_cue_lands_on_whoever_it_ends_up_on_and_not_on_whoever_it_left() {
-        let (me, them) = (Entity::from_bits(1), Entity::from_bits(2));
-        let at = Point::new(0, 0);
-        let flight = Cue::Flight { from: Anchor::on(me, at), to: Anchor::on(them, at), look: LookOf::Plain };
-        assert!(flight.lands_on(them) && !flight.lands_on(me));
-        let burst = Cue::Burst { on: vec![Anchor::cell(at), Anchor::on(me, at)], look: LookOf::Plain };
-        assert!(burst.lands_on(me) && !burst.lands_on(them));
     }
 
     type Holding<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<MyTurn>, Without<Player>)>;
@@ -231,10 +207,10 @@ mod tests {
 
     /// With something watching, one cue stops the loop until it is let
     /// go, and the next actor's cue then stops it again: two monsters
-    /// casting are seen one after the other. One that lands on the player
-    /// stops nothing.
+    /// casting are seen one after the other, and one at the player is
+    /// seen to arrive like any other.
     #[test]
-    fn the_turns_wait_on_each_cue_in_turn_but_never_on_one_that_lands_on_the_player() {
+    fn the_turns_wait_on_each_cue_in_turn_the_ones_at_the_player_included() {
         let mut app = crate::plugin::headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
         let start = crate::testing::surface(&mut app);
@@ -251,14 +227,17 @@ mod tests {
 
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
-        assert_eq!(cued_by(&mut app), vec![near, far], "the one beside the player cued the player and held nothing; the next held the loop");
+        assert_eq!(cued_by(&mut app), vec![near], "the one beside the player cued the player, and that held the loop");
         assert!(app.world().resource::<TurnHold>().is_held());
         app.update();
         assert!(cued_by(&mut app).is_empty(), "nothing acts while it is held");
         app.world_mut().resource_mut::<TurnHold>().release();
         app.update();
-        assert_eq!(cued_by(&mut app), vec![farther], "let go, the next one acts, and is waited on in turn");
+        assert_eq!(cued_by(&mut app), vec![far], "let go, the next one acts, and is waited on in turn");
         assert!(app.world().resource::<TurnHold>().is_held());
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        assert_eq!(cued_by(&mut app), vec![farther]);
         app.world_mut().resource_mut::<TurnHold>().release();
         app.update();
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the turn comes back round");
