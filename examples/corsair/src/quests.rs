@@ -12,13 +12,14 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{Point, Rect};
 use rl_engine::rl_render::Terminal;
-use rl_engine::rl_rules::{Fact, FactDef, FactKind, Matcher, Need, Objective, QuestDef, QuestState};
+use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::{ContentError, Fact, FactDef, FactKind, Matcher, NameRef, Names, Need, Objective, QuestDef, QuestState};
 use rl_engine::rl_rules::{Named, Registry};
 use rl_engine::rl_ui::{ListMenu, MenuRow, MessageLog, Modals, Palette, Tones, draw_menu};
 
 use crate::content::{COVE, PORT};
-use crate::items::{Armory, ItemKind};
-use crate::monsters::{Bestiary, MonsterKind};
+use crate::items::{Armory, ItemDef, ItemKind};
+use crate::monsters::{Bestiary, MonsterDef, MonsterKind};
 use crate::places;
 
 const QUESTS_RON: &str = include_str!("../assets/quests.ron");
@@ -34,7 +35,6 @@ pub struct Facts {
     pub equipped: FactKind,
     pub entered_cave: FactKind,
     pub entered_site: FactKind,
-    defs: Registry<FactDef>,
 }
 
 impl Facts {
@@ -52,7 +52,6 @@ impl Facts {
             equipped: defs.expect("equipped"),
             entered_cave: defs.expect("entered_cave"),
             entered_site: defs.expect("entered_site"),
-            defs,
         }
     }
 }
@@ -73,15 +72,63 @@ struct QuestRon {
 #[derive(Debug, Clone, serde::Deserialize)]
 struct ObjectiveRon {
     text: String,
-    on: MatcherRon,
+    on: On,
     need: Need,
 }
 
+/// What an objective counts, and of what; `None` counts any.
+///
+/// One variant per fact Corsair reports, each naming its subject in the
+/// words that fact is about: a monster, a side, an item, a cave level or a
+/// kind of site. So a subject that names the wrong kind of thing is a parse
+/// error, and a name nothing registered is reported by the load.
 #[derive(Debug, Clone, serde::Deserialize)]
-struct MatcherRon {
-    kind: String,
-    #[serde(default)]
-    subject: Option<String>,
+enum On {
+    Killed(Option<NameRef<MonsterDef>>),
+    KilledFaction(Option<NameRef<FactionDef>>),
+    PickedUp(Option<NameRef<ItemDef>>),
+    Carrying(Option<NameRef<ItemDef>>),
+    Used(Option<NameRef<ItemDef>>),
+    Equipped(Option<NameRef<ItemDef>>),
+    EnteredCave(Option<u64>),
+    EnteredSite(Option<Site>),
+}
+
+/// The kinds of site a task can send the player to.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+enum Site {
+    Port,
+    Cove,
+}
+
+impl On {
+    /// The matcher the tracker counts facts with.
+    fn matcher(&self, facts: &Facts) -> Matcher {
+        let id = |r: &Option<NameRef<_>>| r.map(|r: NameRef<_>| u64::from(r.id().raw()));
+        let (kind, subject) = match self {
+            On::Killed(m) => (facts.killed, m.map(|r| u64::from(r.id().raw()))),
+            On::KilledFaction(f) => (facts.killed_faction, f.map(|r| u64::from(r.id().raw()))),
+            On::PickedUp(i) => (facts.picked_up, id(i)),
+            On::Carrying(i) => (facts.carrying, id(i)),
+            On::Used(i) => (facts.used, id(i)),
+            On::Equipped(i) => (facts.equipped, id(i)),
+            On::EnteredCave(level) => (facts.entered_cave, *level),
+            On::EnteredSite(site) => (
+                facts.entered_site,
+                site.map(|s| {
+                    u64::from(match s {
+                        Site::Port => PORT.0,
+                        Site::Cove => COVE.0,
+                    })
+                }),
+            ),
+        };
+        let any = Matcher::any(kind);
+        match subject {
+            Some(s) => any.about(s),
+            None => any,
+        }
+    }
 }
 
 impl Named for QuestRon {
@@ -90,69 +137,42 @@ impl Named for QuestRon {
     }
 }
 
-/// Loads the tasks, resolving every name to an id; panics listing every
-/// problem, as the other content loaders do.
+/// Loads the tasks against the monsters, items and sides they name; panics
+/// listing every problem, as the other content loaders do.
 pub fn load(bestiary: &Bestiary, armory: &Armory, registries: &Registries) -> (Quests, Facts) {
     let facts = Facts::new();
-    let authored: Registry<QuestRon> = Registry::from_ron_str(QUESTS_RON).unwrap_or_else(|e| panic!("assets/quests.ron: {e}"));
-    let subject = |kind: &str, name: &str| -> Result<u64, String> {
-        let unknown = || format!("unknown {kind} subject {name:?}");
-        match kind {
-            "killed" => bestiary.defs.id(name).map(|id| id.raw() as u64).ok_or_else(unknown),
-            "killed_faction" => registries.factions.id(name).map(|id| id.raw() as u64).ok_or_else(unknown),
-            "picked_up" | "carrying" | "used" | "equipped" => armory.defs.id(name).map(|id| id.raw() as u64).ok_or_else(unknown),
-            "entered_cave" => name.parse::<u64>().map_err(|_| unknown()),
-            "entered_site" => match name {
-                "port" => Ok(PORT.0 as u64),
-                "cove" => Ok(COVE.0 as u64),
-                _ => Err(unknown()),
-            },
-            _ => Err(format!("unknown fact kind {kind:?}")),
+    let names = registries.names().with("monster", &bestiary.defs).with("item", &armory.defs);
+    let defs = tasks(QUESTS_RON, &names, &facts).unwrap_or_else(|e| panic!("assets/quests.ron: {e}"));
+    (Quests::new(defs), facts)
+}
+
+/// The tasks in `text`, every subject resolved through `names`.
+///
+/// `after` names other tasks in the same file, which do not exist until the
+/// file has loaded, so it is the one name checked by hand.
+fn tasks(text: &str, names: &Names, facts: &Facts) -> Result<Registry<QuestDef>, ContentError> {
+    let authored: Registry<QuestRon> = names.load(text)?;
+    authored.validate(|q, all| {
+        if let Some(a) = q.after.iter().find(|a| all.id(a).is_none()) {
+            return Err(format!("after unknown task {a:?}"));
         }
-    };
-    authored
-        .validate(|q, all| {
-            for a in &q.after {
-                if all.id(a).is_none() {
-                    return Err(format!("{}: after unknown task {a:?}", q.name));
-                }
-            }
-            if q.objectives.is_empty() {
-                return Err(format!("{}: no objectives", q.name));
-            }
-            for o in &q.objectives {
-                if facts.defs.id(&o.on.kind).is_none() {
-                    return Err(format!("{}: unknown fact kind {:?}", q.name, o.on.kind));
-                }
-                if let Some(s) = &o.on.subject {
-                    subject(&o.on.kind, s).map_err(|e| format!("{}: {e}", q.name))?;
-                }
-            }
-            Ok(())
-        })
-        .unwrap_or_else(|e| panic!("assets/quests.ron: {e}"));
-    let defs: Vec<QuestDef> = authored
+        if q.objectives.is_empty() {
+            return Err("no objectives".into());
+        }
+        Ok(())
+    })?;
+    let defs = authored
         .iter()
         .map(|(_, q)| QuestDef {
             name: q.name.clone(),
             title: q.title.clone(),
             text: q.text.clone(),
             after: q.after.iter().map(|a| rl_engine::rl_core::Id::from_raw(authored.expect(a).raw())).collect(),
-            objectives: q
-                .objectives
-                .iter()
-                .map(|o| {
-                    let mut on = Matcher::any(facts.defs.expect(&o.on.kind));
-                    if let Some(s) = &o.on.subject {
-                        on = on.about(subject(&o.on.kind, s).expect("validated"));
-                    }
-                    Objective { text: o.text.clone(), on, need: o.need }
-                })
-                .collect(),
+            objectives: q.objectives.iter().map(|o| Objective { text: o.text.clone(), on: o.on.matcher(facts), need: o.need }).collect(),
             victory: q.victory,
         })
         .collect();
-    (Quests::new(Registry::from_defs(defs).unwrap()), facts)
+    Registry::from_defs(defs)
 }
 
 /// What fact reporting reads.
@@ -352,5 +372,25 @@ mod tests {
         let carry = &quests.defs.get(hoard).objectives[1];
         assert_eq!(carry.on, Matcher::any(facts.carrying).about(armory.defs.expect("doubloons").raw() as u64));
         assert_eq!(carry.need, Need::Latest(100));
+        let sea_legs = &quests.defs.get(quests.defs.expect("sea_legs")).objectives[0];
+        let beasts = loaded.registries.factions.expect("beasts");
+        assert_eq!(sea_legs.on, Matcher::any(facts.killed_faction).about(u64::from(beasts.raw())));
+    }
+
+    #[test]
+    fn a_task_that_names_what_nobody_registered_is_refused_naming_the_task() {
+        let loaded = crate::rules::load(RunSeed(1), Point::ZERO, &crate::rules::effect_kinds());
+        let names = loaded.registries.names().with("monster", &loaded.bestiary.defs).with("item", &loaded.armory.defs);
+        let bad = r#"[
+            (name: "a", title: "A", text: "", objectives: [(text: "", on: Killed("kraken"), need: Total(1))]),
+            (name: "b", title: "B", text: "", after: ["c"], objectives: [(text: "", on: Carrying("gold"), need: Latest(1))]),
+            (name: "any", title: "Any", text: "", objectives: [(text: "", on: Killed(None), need: Total(1))]),
+        ]"#;
+        let Err(ContentError::Invalid(errs)) = tasks(bad, &names, &loaded.facts) else { panic!("a file of unknown names loaded") };
+        assert!(errs.contains(&"a: unknown monster \"kraken\"".to_string()), "{errs:#?}");
+        assert!(errs.contains(&"b: unknown item \"gold\"".to_string()), "{errs:#?}");
+        let fine = r#"[(name: "any", title: "Any", text: "", objectives: [(text: "", on: Killed(None), need: Total(1))])]"#;
+        let any = tasks(fine, &names, &loaded.facts).expect("a subject left out counts any");
+        assert_eq!(any.get(any.expect("any")).objectives[0].on, Matcher::any(loaded.facts.killed));
     }
 }
