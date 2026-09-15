@@ -190,6 +190,9 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
 - 2026-09-14: combat rules are built by naming the pairs.
   Every game set up hostility the same four lines at a time: a `Factions` matrix, `set_mutual` with `Relation::Hostile` per pair, then `CombatRules { factions }`, and `FactionDef { name: "you".into() }` per side; Corsair's took a dozen lines for five grudges and a one-way one.
   `CombatRules::new(&sides)` starts every side neutral, and `hostile`, `hunts` and `allied` name what is not, by id, so a typo is a compile error rather than a panic; `FactionDef::new` names a side. Every tutorial step, both examples, the template and the engine's tests build their rules this way.
+- 2026-09-14: the guide teaches names in content files.
+  Chapter 8 taught `Registry::from_ron_str` over a `RatDef` that named nothing, so a reader met the engine's loading only in the form that cannot resolve a name, and the first game to need one would have written the check-by-hand pattern Corsair has just dropped.
+  The rats now name the damage kind they deal as a `NameRef<DamageKind>`, the root adder's `venom`; steps 8 to 10 load the bestiary through `Registries::names()` and keep no `bite` id of their own, and the chapter shows the load, the error a misspelt kind gives, and `with` for a game's own registries.
 - Next: the rest of the deferred pieces (throwing, a character sheet, `TileField<T>`, nights on Corsair's surface, scripted encounters, the unload bridge, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
 

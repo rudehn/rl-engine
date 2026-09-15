@@ -22,15 +22,28 @@ Every RON schema in this repository lists its full option space at the top, beca
 
 `Named` tells the registry what to key an entry by.
 `DiceRoll` deserializes straight from `"1d5+1"`.
+`NameRef<DamageKind>` is the interesting one: in the file it is a name, `kind: "venom"`, and by the time the game holds a `RatDef` it is the id of a damage kind.
 
-## Registries validate at load
+## Names become ids at load
 
 ```rust,no_run
 {{#include ../../../examples/tutorial/src/bin/step08_content.rs:bestiary}}
 ```
 
-`from_ron_str` parses and checks: names unique, every entry well formed.
+`names.load` parses and checks: names unique, every entry well formed, and every name of other content found.
 It fails at start-up naming the file, not three floors down.
+
+The names come from `Registries`, the resource `start` fills with the damage kinds and the sides before anything is loaded against them:
+
+```rust
+    commands.insert_resource(Bestiary::load(&registries.names(), vermin));
+    commands.insert_resource(registries);
+```
+
+Misspell a kind and the run stops at start-up with `root adder: unknown damage kind "vemon"`, every unknown name in the file reported at once under the creature it is in.
+They are the same tables the engine reads, so the kind a file was checked against is the kind combat mitigates.
+A game's own registries join the lookup the same way: `names.with("item", &items)` lets a creature name what it drops.
+Nothing in `RatDef` is a string that could still be wrong, and nothing spawns a rat by looking a name up.
 
 What comes back is an `Id<RatDef>`: a dense index, so `minds[id.index()]` is an array lookup, and typed, so it cannot be passed where an `Id<ItemDef>` belongs.
 
@@ -63,4 +76,4 @@ Weight zero keeps an entry out of the table, which is how the king lives in the 
 
 - Add a monster of your own to `rats.ron`. You will not touch a Rust file.
 - Give something `spawn: (1, 4, 20, 6, 10)` and meet a swarm.
-- Break the file on purpose, by duplicating a name or writing `"1z6"`, and read the error.
+- Break the file on purpose, by duplicating a name, writing `"1z6"`, or giving a rat a `kind` nobody registered, and read the error.

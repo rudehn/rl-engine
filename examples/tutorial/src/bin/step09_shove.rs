@@ -157,7 +157,8 @@ struct Crust(i32);
 
 // ANCHOR: def
 /// One kind of vermin, exactly as `assets/rats.ron` writes it. Serde
-/// parses the file; [`Named`] is how the registry knows what to key it by.
+/// parses the file; [`Named`] is how the registry knows what to key it by,
+/// and a [`NameRef`] is a name in the file that the load turns into an id.
 #[derive(Debug, Clone, Deserialize)]
 struct RatDef {
     name: String,
@@ -166,6 +167,7 @@ struct RatDef {
     hp: i32,
     armor: i32,
     attack: DiceRoll,
+    kind: NameRef<DamageKind>,
     perception: i32,
     speed: u32,
     flee_at: i32,
@@ -191,15 +193,14 @@ struct Bestiary {
     defs: Registry<RatDef>,
     table: BandedTable<Id<RatDef>>,
     minds: Vec<Arc<Brain<Entity>>>,
-    bite: rl_engine::rl_rules::damage::DamageKindId,
     faction: FactionId,
 }
 
 impl Bestiary {
-    /// Reads the file, builds a brain for each entry from its own fields,
+    /// Reads the file against `names`, builds a brain for each entry from its own fields,
     /// and bands the ones with a weight into the spawn table.
-    fn load(kinds: &Registry<DamageKind>, faction: FactionId) -> Self {
-        let defs: Registry<RatDef> = Registry::from_ron_str(RATS_RON).unwrap_or_else(|e| panic!("assets/rats.ron: {e}"));
+    fn load(names: &Names, faction: FactionId) -> Self {
+        let defs: Registry<RatDef> = names.load(RATS_RON).unwrap_or_else(|e| panic!("assets/rats.ron: {e}"));
         let mut table = BandedTable::default();
         let mut minds = Vec::new();
         for (id, def) in defs.iter() {
@@ -213,7 +214,7 @@ impl Bestiary {
             }
             minds.push(Arc::new(brain.then(Hunt).then(Wander { chance_pct: 40 })));
         }
-        Self { defs, table, minds, bite: kinds.expect("bite"), faction }
+        Self { defs, table, minds, faction }
     }
 
     /// Spawns one of `id` at `at`.
@@ -223,7 +224,7 @@ impl Bestiary {
             .spawn((
                 (Actor, Blocks, Kind(id), Position(at), Speed(def.speed), Faction(self.faction)),
                 (Health::full(def.hp), Armor(def.armor), Perception(def.perception), Mind(self.minds[id.index()].clone())),
-                (MeleeAttack { kind: self.bite, dice: def.attack }, Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
+                (MeleeAttack { kind: def.kind.id(), dice: def.attack }, Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
             ))
             .id()
     }
@@ -243,15 +244,18 @@ fn start(
 
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
-    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
+    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
-    commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
+    let registries = Registries { damage_kinds: kinds.clone(), factions: sides, ..default() };
     // What a hit passes through on its way to the target. One stage here;
     // resistances, a shield, a critical rule would each be another.
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
-    commands.insert_resource(Bestiary::load(&kinds, vermin));
+    // The bestiary names the damage each creature deals, so it loads against
+    // the registries before they are handed to the engine.
+    commands.insert_resource(Bestiary::load(&registries.names(), vermin));
+    commands.insert_resource(registries);
 
     commands.insert_resource(warren.appearance());
     commands.insert_resource(WorldMap::new(warren.tiles.tables()));
