@@ -19,10 +19,13 @@ To start a game of your own rather than follow along, generate one:
 
 ```sh
 cargo install cargo-generate
-cargo generate --git https://github.com/rudehn/rl-engine templates/starter --name my-game
+cargo generate --git https://github.com/rudehn/rl-engine --tag v0.1.0 templates/starter --name my-game
 cd my-game
 cargo run
 ```
+
+The template pins the engine to the release named by `--tag`, and `--tag` takes the template from that release too.
+Leave it off and the template comes from `main`, which may use something that release does not have yet.
 
 It is one file that runs from the first build: a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and three tests that play it without a window.
 Every chapter after this one is something to add to it.

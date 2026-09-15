@@ -47,8 +47,10 @@ The quickest start is the template: one file that runs on the first build, with 
 
 ```sh
 cargo install cargo-generate
-cargo generate --git https://github.com/rudehn/rl-engine templates/starter --name my-game
+cargo generate --git https://github.com/rudehn/rl-engine --tag v0.1.0 templates/starter --name my-game
 ```
+
+The `--tag` matters: without it the template comes from `main`, which may already use what the release it pins does not have yet.
 
 To add the engine to a project of your own instead: rl-engine is not on crates.io yet, so depend on it from git.
 The `rl-engine` crate is the facade that re-exports every other crate, and `rl_engine::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.

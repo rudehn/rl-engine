@@ -2,6 +2,11 @@
 
 A release is a tag, `v` and the workspace version.
 The starter template pins the release it was written against, and a game made from it moves to a newer one by changing that tag and reading here what moved.
+Pushing a tag publishes its release page from its section here, through `scripts/release-notes.sh`.
+
+## Unreleased
+
+- `cargo generate` instructions name the release with `--tag`, so the template and the engine it pins come from the same release.
 
 ## 0.1.0
 
