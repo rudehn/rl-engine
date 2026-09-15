@@ -118,7 +118,7 @@ pub fn resolve_throws(
             continue;
         }
         let Throwable { range, strike } = *throwable;
-        let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range);
+        let Flight { struck, rests, path } = flight(&map, &occupancy, pos.0, at, range);
 
         // One leaves the hand: off the top of a stack, which makes it a
         // thing of its own, or the item itself.
@@ -147,7 +147,7 @@ pub fn resolve_throws(
             let amount = dice.roll_at_least(&mut **rng, 0);
             damage.write(DamageEvent { target, hit: Hit::by(actor, kind, amount) });
         }
-        events.write(ItemEvent::Thrown { actor, item: thrown, at: Position(rests), struck });
+        events.write(ItemEvent::Thrown { actor, item: thrown, at: Position(rests), struck, path });
         resolution.done(actor, BASE_ACTION_COST);
     }
 }
@@ -248,7 +248,7 @@ mod tests {
         let (near, far) = (rig.mark(2), rig.mark(4));
 
         let events = rig.throw(knives, 4);
-        let [ItemEvent::Thrown { actor, item, at, struck }] = events.as_slice() else { panic!("one throw: {events:?}") };
+        let [ItemEvent::Thrown { actor, item, at, struck, .. }] = events.as_slice() else { panic!("one throw: {events:?}") };
         assert_eq!((*actor, *at, *struck), (rig.player, Position(rig.start.offset(2, 0)), Some(near)), "the near one was in the way");
         assert_eq!((rig.hp(near), rig.hp(far)), (17, 20), "and took the knife");
         assert_ne!(*item, knives, "one left the stack as a thing of its own");

@@ -74,7 +74,9 @@ fn main() -> AppExit {
         .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
         // A floor fills the moment it is entered, inside the turn.
         .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-        .add_systems(Update, (narrate, narrate_knacks, narrate_items).in_set(PresentSet::Narrate));
+        // In the order things happen: the knack, then what it did, then
+        // who died of it. A tuple would let the scheduler pick.
+        .add_systems(Update, (narrate_knacks, narrate, narrate_items).chain().in_set(PresentSet::Narrate));
     declare_controls(&mut app);
     app.run()
 }
@@ -684,8 +686,9 @@ fn narrate_knacks(
                 };
                 log.push(line, if is_you(*user) { Tones::TEXT } else { Tones::BAD }, turn);
             }
-            AbilityEvent::Refused { user, ability, .. } if is_you(*user) => {
-                log.bad(format!("You cannot use {} right now; `a` says why.", abilities.get(*ability).name), turn);
+            AbilityEvent::Refused { user, ability, why } if is_you(*user) => {
+                let reasons: Vec<&str> = why.iter().map(rl_engine::rl_ui::view::ability::plain).collect();
+                log.bad(format!("You cannot use {}: {}.", abilities.get(*ability).name, reasons.join(", ")), turn);
             }
             AbilityEvent::Refused { .. } => {}
         }
@@ -824,11 +827,12 @@ mod tests {
             .add_plugins((UiPlugin, rl_engine::rl_bevy::testing::KeyScriptPlugin))
             .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, Vec2::ONE))
             .init_resource::<LightOverlay>()
+            .add_plugins((rl_engine::rl_render::MapViewPlugin::new(screen.map), rl_engine::rl_render::ParticlesPlugin))
             .add_plugins((TargetPanel::new(screen.target), AbilityPanel::new(screen.knacks).called("knacks")))
             .add_systems(Update, (call_on, (tend_brand, pick_and_drop, toggle_overlay, player_input).chain().run_if(no_modal)).chain().in_set(EngineSet::Input))
             .add_systems(Startup, start)
             .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-            .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+            .add_systems(Update, (narrate_knacks, narrate, narrate_items).chain().in_set(PresentSet::Narrate));
         declare_controls(&mut app);
         app
     }
@@ -1051,6 +1055,7 @@ mod tests {
         let events: Vec<AbilityEvent> = app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().collect();
         assert!(matches!(events.as_slice(), [AbilityEvent::Used { .. }]), "the fireball was used: {events:?}");
         assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < hp), "and the crab burned");
+        assert!(app.world().resource::<rl_engine::rl_render::Particles>().is_playing(), "and its flight and burst are playing over the map");
         assert!(app.world().get::<Pools>(player).unwrap().get(app.world().resource::<Registries>().stats.expect("mana")) < mana, "and it cost mana");
         assert!(!app.world().resource::<Modals>().any_open(), "the cursor went away");
     }

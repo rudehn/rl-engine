@@ -213,6 +213,11 @@ pub enum AbilityEvent {
         aim: Point,
         /// Everyone under the footprint that the aim wanted there.
         targets: Vec<Entity>,
+        /// The cells a projectile flew through, landing included, for
+        /// whatever draws the flight. Empty for a shape with none.
+        path: Vec<Point>,
+        /// Every cell the footprint covered, for whatever draws it land.
+        cells: Vec<Point>,
     },
     /// It could not be used, for every reason at once.
     Refused {
@@ -615,7 +620,15 @@ impl Bystanders<'_, '_> {
         let Aimed { user, ability, def, origin, aim, sees_aim } = aimed;
         let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
         let Footprint { cells, path, landing } = footprint(def.mode, origin, aim, map.window_tiles(), stops);
-        let refused = aim_blocked(def, &cells, sees_aim);
+        let mut refused = aim_blocked(def, &cells, sees_aim);
+        // A projectile that stopped short of where it was pointed, at its
+        // range or on whatever stood in the way, is refused rather than
+        // landed where it stopped: nobody chose that spot.
+        if def.aim.needs_cursor() && landing.is_some_and(|landed| landed != aim) {
+            // First among the reasons: an aim that stops short has no
+            // target under it either, and out of reach is the one to act on.
+            refused.insert(0, Blocked::OutOfReach);
+        }
         let mut targets = Vec::new();
         if def.aim == Aim::SelfOnly {
             // Whatever the shape, the only one it wants is the one using it.
@@ -699,7 +712,7 @@ pub fn resolve_abilities(
             }
             built.effect.apply(&landing, &mut world);
         }
-        events.write(AbilityEvent::Used { user, ability: id, aim, targets });
+        events.write(AbilityEvent::Used { user, ability: id, aim, targets, path: landing.path.clone(), cells: landing.cells.clone() });
         resolution.done(user, def.time);
     }
 }

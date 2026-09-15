@@ -110,6 +110,11 @@ pub struct TargetView {
     pub path: Vec<Point>,
     /// Where a projectile would stop.
     pub landing: Option<Point>,
+    /// The cells from where the aim stops short to where it was pointed,
+    /// the stop excluded and the cursor included, when it stops short:
+    /// what the overlay paints in the tone for bad news, so a target out
+    /// of reach reads as out of reach. Empty when the aim reaches.
+    pub beyond: Vec<Point>,
     /// Whether the resolver would accept this aim.
     pub legal: bool,
     /// Why it would not, empty when it would.
@@ -400,6 +405,7 @@ fn close(view: &mut TargetView, modals: &mut Modals, modal: ModalId) {
     view.user = None;
     view.cells.clear();
     view.path.clear();
+    view.beyond.clear();
     view.targets.clear();
     view.why.clear();
     modals.close_one(modal);
@@ -458,6 +464,7 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
     view.path.clear();
     view.targets.clear();
     view.why.clear();
+    view.beyond.clear();
     view.landing = None;
     view.legal = false;
     let Some(user) = view.user else { return };
@@ -471,13 +478,18 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
         let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who));
         // Point blank is a blow, struck with whatever the user fights with
         // in hand; anything further needs a clear line to the target.
-        let reaches = target.is_some() && if rl_core::geometry::is_adjacent(from, view.cursor) { has_melee } else { flies.landing == Some(view.cursor) };
-        if !reaches {
+        let point_blank = rl_core::geometry::is_adjacent(from, view.cursor);
+        let arrives = point_blank || flies.landing == Some(view.cursor);
+        if !arrives {
+            view.why.push(Blocked::OutOfReach);
+        } else if target.is_none() || (point_blank && !has_melee) {
             view.why.push(Blocked::NoTarget);
         }
-        view.legal = reaches;
-        view.targets.extend(target.filter(|_| reaches).and_then(|who| reach.row(user, from, who)));
+        let legal = view.why.is_empty();
+        view.legal = legal;
+        view.targets.extend(target.filter(|_| legal).and_then(|who| reach.row(user, from, who)));
         view.cells = flies.landing.into_iter().collect();
+        view.beyond = beyond(flies.landing.unwrap_or(from), view.cursor);
         view.landing = flies.landing;
         view.path = flies.path;
         return;
@@ -498,6 +510,10 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
         view.legal = view.why.is_empty() && bag.is_some_and(|b| b.contains(item));
         view.targets.extend(thrown.struck.and_then(|who| reach.row(user, from, who)));
         view.cells = vec![lands];
+        // A throw is not refused for falling short, so the red segment is
+        // a warning here rather than a refusal: the knife lands where the
+        // yellow ends.
+        view.beyond = beyond(lands, view.cursor);
         view.path = thrown.path;
         view.landing = Some(lands);
         return;
@@ -521,9 +537,21 @@ pub fn collect_target(mut view: ResMut<TargetView>, reach: Reach) {
     for who in &landing.targets {
         view.targets.extend(reach.row(user, from, *who));
     }
+    // Where the aim stops short of the cursor, the rest of the way is
+    // painted as out of reach: from where the projectile stopped, or from
+    // the user for a shape that has no flight and reached nothing.
+    if view.why.contains(&Blocked::OutOfReach) || (landing.cells.is_empty() && landing.path.is_empty() && def.aim.needs_cursor()) {
+        view.beyond = beyond(landing.landed_at.unwrap_or(from), view.cursor);
+    }
     view.cells = landing.cells;
     view.path = landing.path;
     view.landing = landing.landed_at;
+}
+
+/// The cells from `stop` to `aim`, `stop` excluded and `aim` included:
+/// the part of an aim that is out of reach. Empty when the two are one.
+pub fn beyond(stop: Point, aim: Point) -> Vec<Point> {
+    rl_core::geometry::line(stop, aim).skip(1).collect()
 }
 
 #[cfg(test)]
@@ -932,8 +960,9 @@ mod tests {
         let view = stage.app.world().resource::<TargetView>();
         assert_eq!(view.cursor, at.offset(4, 0));
         assert!(!view.legal, "the near one stands in the line of fire");
-        assert_eq!(view.why, vec![Blocked::NoTarget]);
+        assert_eq!(view.why, vec![Blocked::OutOfReach]);
         assert_eq!(view.landing, Some(at.offset(2, 0)), "and the shot would stop at them");
+        assert_eq!(view.beyond, vec![at.offset(3, 0), at.offset(4, 0)], "the rest of the way is out of reach");
 
         stage.press(KeyCode::ArrowUp);
         let _ = attacks(&mut stage);

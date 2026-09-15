@@ -4,6 +4,8 @@
 //   name:        unique; the player knows the first five in the order `1` to `5` aim them,
 //                and a beast names the ones it knows in `beasts.ron`
 //   description: optional; what it is, in a sentence, for the knack list
+//   look:        optional; (glyph:, color: (r:, g:, b:)), what flies and bursts when it
+//                is used; without one the renderer's plain look is drawn
 //   aim:       Foe (default) | Ally | SelfOnly | Ground | Anyone
 //   mode:      Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
 //              Beam(range:) | Cone(length:)
@@ -28,6 +30,7 @@
     (
         name: "fireball",
         description: "A gout of whale oil, lit. It bursts where it lands and leaves the fat burning.",
+        look: (glyph: '*', color: (r: 255, g: 140, b: 40)),
         mode: Ball(range: 8, radius: 2),
         costs: [Pool("mana", 12)],
         cooldown: 200,
@@ -40,6 +43,7 @@
     (
         name: "blink",
         description: "A step that skips the ground between. Only to somewhere you can see.",
+        look: (glyph: '~', color: (r: 140, g: 180, b: 255)),
         aim: Ground,
         mode: Bolt(range: 7),
         costs: [Pool("mana", 5)],
@@ -49,6 +53,7 @@
     (
         name: "mend",
         description: "Knit your own flesh. It takes the turn, and a fight rarely waits.",
+        look: (glyph: '+', color: (r: 120, g: 230, b: 120)),
         aim: SelfOnly,
         mode: Own,
         costs: [Pool("mana", 6)],
@@ -57,6 +62,7 @@
     (
         name: "drain",
         description: "A thread of fire that burns what it touches and pours the heat back into you.",
+        look: (glyph: '-', color: (r: 255, g: 90, b: 60)),
         mode: Bolt(range: 6),
         effects: [
             (kind: "Harm", args: (kind: "fire", roll: "1d6")),
@@ -66,6 +72,7 @@
     (
         name: "shield bash",
         description: "The whalebone shield, swung. Whatever it hits is knocked back and left reeling.",
+        look: (glyph: ')', color: (r: 220, g: 220, b: 200)),
         mode: Adjacent,
         requires: [InSlot("off hand", "shield")],
         cooldown: 300,
@@ -77,6 +84,7 @@
     ),
     (
         name: "spit",
+        look: (glyph: 'o', color: (r: 160, g: 255, b: 70)),
         mode: Bolt(range: 5),
         cooldown: 300,
         effects: [(kind: "Harm", args: (kind: "bile", roll: "1d4"))],

@@ -181,6 +181,7 @@ pub fn phrase_blocked(reason: &Blocked, cooling: u32, registries: &Registries) -
         Blocked::Cannot(cost) => format!("needs {}", phrase_cost(cost, registries)),
         Blocked::Needs(requirement) => format!("needs {}", phrase_requirement(requirement, registries)),
         Blocked::NoTarget => "no target".to_string(),
+        Blocked::OutOfReach => "out of reach".to_string(),
     }
 }
 
@@ -200,6 +201,7 @@ pub fn plain(reason: &Blocked) -> &'static str {
         Blocked::Cannot(_) => "cannot pay",
         Blocked::Needs(_) => "missing something",
         Blocked::NoTarget => "no target",
+        Blocked::OutOfReach => "out of reach",
     }
 }
 

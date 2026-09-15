@@ -134,8 +134,9 @@ pub fn narrate_abilities(
                 };
                 log.push(line, if mine { Tones::TEXT } else { Tones::BAD }, turn);
             }
-            AbilityEvent::Refused { user, ability, .. } if players.contains(*user) => {
-                log.bad(format!("You cannot use {} right now; `a` says why.", abilities.get(*ability).name), turn);
+            AbilityEvent::Refused { user, ability, why } if players.contains(*user) => {
+                let reasons: Vec<&str> = why.iter().map(rl_engine::rl_ui::view::ability::plain).collect();
+                log.bad(format!("You cannot use {}: {}.", abilities.get(*ability).name, reasons.join(", ")), turn);
             }
             AbilityEvent::Refused { .. } => {}
         }

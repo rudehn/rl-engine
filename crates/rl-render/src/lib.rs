@@ -15,11 +15,13 @@
 
 pub mod capture;
 pub mod map_view;
+pub mod particles;
 pub mod shade;
 pub mod terminal;
 
 pub use capture::CapturePlugin;
 pub use map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+pub use particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Spark, Trail};
 pub use shade::{Memory, Shading, Vary};
 pub use terminal::{Cell, Terminal, TerminalPlugin};
 
@@ -27,6 +29,7 @@ pub use terminal::{Cell, Terminal, TerminalPlugin};
 pub mod prelude {
     pub use crate::capture::CapturePlugin;
     pub use crate::map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+    pub use crate::particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Trail};
     pub use crate::shade::{Memory, Shading, Vary};
     pub use crate::terminal::{Cell, Terminal, TerminalPlugin};
 }

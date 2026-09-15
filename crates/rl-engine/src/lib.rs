@@ -43,7 +43,9 @@ pub use rl_world;
 /// sampling so glyphs stay sharp; the [`TerminalPlugin`](rl_render::TerminalPlugin)
 /// grid; the engine's [`CorePlugin`](rl_bevy::CorePlugin) and
 /// [`FovPlugin`](rl_bevy::FovPlugin); the map, drawn in [`map`](Self::map)'s
-/// rectangle; [`UiPlugin`](rl_ui::UiPlugin), the base every panel needs; and
+/// rectangle, and the [`ParticlesPlugin`](rl_render::ParticlesPlugin) that
+/// plays flights and bursts over it; [`UiPlugin`](rl_ui::UiPlugin), the base
+/// every panel needs; and
 /// [`CapturePlugin`](rl_render::CapturePlugin), which does nothing unless
 /// `RL_CAPTURE` is set.
 ///
@@ -111,6 +113,10 @@ impl PluginGroup for RoguelikePlugins {
             .add(rl_bevy::CorePlugin)
             .add(rl_bevy::FovPlugin)
             .add(rl_render::MapViewPlugin::new(map))
+            // What flies and bursts over the map for a moment after a
+            // turn: presentation of the map, not a subsystem, so it comes
+            // with the map view.
+            .add(rl_render::ParticlesPlugin)
             .add(rl_ui::UiPlugin)
             .add(rl_render::CapturePlugin)
     }

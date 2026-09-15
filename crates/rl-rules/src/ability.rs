@@ -216,6 +216,9 @@ pub struct AbilityDef {
     /// What it is, in the game's words, for a menu. Empty when the game
     /// wrote none.
     pub description: String,
+    /// How a use looks in flight and where it lands, for whatever draws
+    /// it. `None` leaves the look to the renderer's default.
+    pub look: Option<Look>,
     /// What it wants under its footprint.
     pub aim: Aim,
     /// The shape. Range lives inside the shape.
@@ -244,6 +247,17 @@ impl Named for AbilityDef {
     }
 }
 
+/// How an ability looks when drawn: the glyph that flies or bursts, and
+/// its colour. Content, like a monster's glyph, so it lives with the
+/// definition rather than in a renderer's table of names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct Look {
+    /// The glyph.
+    pub glyph: char,
+    /// Its colour.
+    pub color: rl_grid::Rgb,
+}
+
 /// A registered ability id.
 pub type AbilityId = Id<AbilityDef>;
 
@@ -266,6 +280,12 @@ pub enum Blocked {
     /// Nothing the ability aims at is in reach. Only the layer that can
     /// resolve a footprint produces this; the gate here never does.
     NoTarget,
+    /// The aim is past where the shape reaches, or something in between
+    /// stopped it short: the footprint landed somewhere other than where
+    /// it was pointed. Refused rather than landed short, so a fireball
+    /// never bursts on a spot the player did not choose. As with
+    /// `NoTarget`, only the resolving layer produces this.
+    OutOfReach,
 }
 
 /// What the gate reads about a user.
@@ -394,6 +414,8 @@ struct Authored {
     #[serde(default)]
     description: String,
     #[serde(default)]
+    look: Option<Look>,
+    #[serde(default)]
     aim: Aim,
     mode: TargetMode,
     #[serde(default = "yes")]
@@ -497,6 +519,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<AbilityDef>, Conte
         defs.push(AbilityDef {
             name: a.name.clone(),
             description: a.description.clone(),
+            look: a.look,
             aim: a.aim,
             mode: a.mode,
             sight: a.sight,

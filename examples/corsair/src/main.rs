@@ -193,13 +193,15 @@ fn main() -> AppExit {
             Update,
             (
                 note_discoveries,
+                // The ability before what it did: a broadside is read
+                // before the blows it landed.
+                abilities::narrate_abilities,
                 monsters::narrate,
                 monsters::narrate_doors,
                 items::narrate_items,
                 statuses::narrate_statuses,
                 quests::report_facts,
                 quests::narrate_quests,
-                abilities::narrate_abilities,
                 save::delete_on_death,
             )
                 .chain()
