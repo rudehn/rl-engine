@@ -209,9 +209,8 @@ impl Plugin for StealthPlugin {
 /// Stealth's contribution to a mind's knowledge, in
 /// [`PerceiveSet::Filter`](crate::plugin::PerceiveSet::Filter), after
 /// combat put everyone it could see in. A mind that keeps no [`Aware`] sees
-/// on sight and is left alone. One that keeps track and has not seen the
-/// player may not descend the shared fields, which point at the player.
-pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hidden: Query<(), With<Stealth>>, player: Query<Entity, With<Player>>) {
+/// on sight and is left alone.
+pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hidden: Query<(), With<Stealth>>) {
     let Some(thinker) = thinking.actor() else { return };
     let Ok(aware) = aware.get(thinker) else { return };
     let Some(snapshot) = thinking.snapshot_mut() else { return };
@@ -223,8 +222,6 @@ pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hi
         .filter_map(|(_, state)| Some((state.stale_turns()?, state.last_known()?)))
         .min_by_key(|(stale, at)| (*stale, *at))
         .map(|(_, at)| at);
-    let player_seen = player.single().is_ok_and(|p| snapshot.enemies.iter().any(|e| e.id == p));
-    thinking.allow_fields(player_seen);
 }
 
 /// The observer holding the turn.

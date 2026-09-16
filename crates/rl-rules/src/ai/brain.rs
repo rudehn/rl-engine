@@ -5,7 +5,6 @@ use std::fmt::Debug;
 
 use rand::rngs::StdRng;
 use rl_core::{Point, Rect};
-use rl_grid::DijkstraMap;
 
 use crate::ability::AbilityId;
 
@@ -83,15 +82,46 @@ impl<A: Copy + PartialEq> PartialEq for Decision<A> {
     }
 }
 
+/// The way toward, or away from, a set of cells, answered by whoever owns
+/// the map.
+///
+/// A tactic never sees a flow field. It names the cells it wants to reach
+/// or leave, and gets back the neighbouring cells that go that way, best
+/// first, so the caller may build fields lazily, share one flood between
+/// every mind that wants the same cells, and keep them in whatever
+/// coordinates it likes. Fifty hunters after one player cost one flood.
+pub trait Fields {
+    /// The cells next to `from` that step down toward `goals`, best first;
+    /// empty when there is no way or nothing to build a field over.
+    fn descents_toward(&mut self, goals: &[Point], from: Point) -> Vec<Point>;
+
+    /// The cells next to `from` that step away from `goals`, on a map that
+    /// leads away from them and round corners rather than into them.
+    fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point>;
+}
+
+/// No fields at all: every tactic falls back to stepping straight at or
+/// away from what it sees. For a test, or a game that does no pathing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoFields;
+
+impl Fields for NoFields {
+    fn descents_toward(&mut self, _: &[Point], _: Point) -> Vec<Point> {
+        Vec::new()
+    }
+
+    fn descents_away(&mut self, _: &[Point], _: Point) -> Vec<Point> {
+        Vec::new()
+    }
+}
+
 /// Everything a tactic may consult.
 pub struct TacticCtx<'a, A: Copy> {
     /// What the actor knows.
     pub snapshot: &'a Snapshot<A>,
-    /// Costs to the nearest enemy for this actor's movement class, if the
-    /// caller built one. Descending it approaches.
-    pub approach: Option<&'a DijkstraMap>,
-    /// The safety map for this class, if built. Descending it escapes.
-    pub escape: Option<&'a DijkstraMap>,
+    /// The way toward or away from any cells, for this actor's movement
+    /// class.
+    pub fields: &'a mut dyn Fields,
     /// Whether `p` can be stepped onto right now: walkable and unoccupied.
     pub can_step: &'a dyn Fn(Point) -> bool,
     /// Whether `p` stops a projectile: a wall, or somebody standing.
@@ -102,6 +132,21 @@ pub struct TacticCtx<'a, A: Copy> {
     pub bounds: Rect,
     /// This actor's stream for the turn.
     pub rng: &'a mut StdRng,
+}
+
+impl<A: Copy> TacticCtx<'_, A> {
+    /// The first cell the actor can step onto that leads toward `goals`,
+    /// down the field, or `None` when there is no field or no free step.
+    pub fn step_toward(&mut self, goals: &[Point]) -> Option<Point> {
+        let me = self.snapshot.me.pos;
+        self.fields.descents_toward(goals, me).into_iter().find(|p| (self.can_step)(*p))
+    }
+
+    /// The first cell the actor can step onto that leads away from `goals`.
+    pub fn step_away_from(&mut self, goals: &[Point]) -> Option<Point> {
+        let me = self.snapshot.me.pos;
+        self.fields.descents_away(goals, me).into_iter().find(|p| (self.can_step)(*p))
+    }
 }
 
 /// One way an actor might spend its turn.

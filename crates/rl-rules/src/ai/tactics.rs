@@ -25,8 +25,8 @@ impl<A: Copy> Tactic<A> for MeleeAdjacent {
     }
 }
 
-/// Run when health falls below a share, descending the escape map, or
-/// away from the nearest enemy if there is none.
+/// Run when health falls below a share, down a field away from every
+/// enemy in sight, or straight away from the nearest if there is none.
 ///
 /// Only for a mind with [`Wits::FLEES`]: a mindless thing fights on.
 #[derive(Debug, Clone, Copy)]
@@ -44,12 +44,9 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
             return None;
         }
         let me = ctx.snapshot.me.pos;
-        if let Some(map) = ctx.escape {
-            for step in map.descents(me) {
-                if (ctx.can_step)(step) {
-                    return Some(Decision::Step(step));
-                }
-            }
+        let foes: Vec<Point> = ctx.snapshot.enemies.iter().map(|e| e.pos).collect();
+        if let Some(step) = ctx.step_away_from(&foes) {
+            return Some(Decision::Step(step));
         }
         let enemy = ctx.snapshot.nearest_enemy()?.pos;
         let away = Direction::between(enemy, me)?;
@@ -63,8 +60,9 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
     }
 }
 
-/// Close on the nearest enemy, descending the approach map, or stepping
-/// straight toward it when there is none.
+/// Close on the enemies in sight, down a field toward all of them, which
+/// leads to the nearest by the way round whatever is between; or straight
+/// toward the nearest when there is no field.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Hunt;
 
@@ -75,12 +73,9 @@ impl<A: Copy> Tactic<A> for Hunt {
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let target = ctx.snapshot.nearest_enemy()?.pos;
         let me = ctx.snapshot.me.pos;
-        if let Some(map) = ctx.approach {
-            for step in map.descents(me) {
-                if (ctx.can_step)(step) {
-                    return Some(Decision::Step(step));
-                }
-            }
+        let foes: Vec<Point> = ctx.snapshot.enemies.iter().map(|e| e.pos).collect();
+        if let Some(step) = ctx.step_toward(&foes) {
+            return Some(Decision::Step(step));
         }
         let toward = Direction::between(me, target)?;
         for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
@@ -97,10 +92,10 @@ impl<A: Copy> Tactic<A> for Hunt {
 ///
 /// Fires only when nothing is in sight, so it belongs below [`Hunt`] and
 /// above [`Wander`]: hunt what you see, search what you lost, drift when you
-/// have nothing. Steps greedily rather than down a flow field, because the
-/// shared fields point at where the enemy is, and a search that followed
-/// them would be a search that cheats. On the remembered tile it returns
-/// `None`, so the next tactic mills about there until the memory runs out.
+/// have nothing. Walks down a field toward the remembered cell, which is
+/// where the enemy was and not where it is, so the search does not cheat.
+/// On the remembered tile it returns `None`, so the next tactic mills about
+/// there until the memory runs out.
 ///
 /// Only for a mind with [`Wits::SEARCHES`]: a mindless thing forgets what it
 /// cannot perceive.
@@ -117,12 +112,70 @@ impl<A: Copy> Tactic<A> for SearchLastKnown {
         }
         let target = ctx.snapshot.last_known?;
         let me = ctx.snapshot.me.pos;
+        if me == target {
+            return None;
+        }
+        if let Some(step) = ctx.step_toward(&[target]) {
+            return Some(Decision::Step(step));
+        }
         let toward = Direction::between(me, target)?;
         for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
             let step = me + d.offset();
             if (ctx.can_step)(step) && geometry::chebyshev(step, target) < geometry::chebyshev(me, target) {
                 return Some(Decision::Step(step));
             }
+        }
+        None
+    }
+}
+
+/// Keep up with the allies in sight: a companion, an escort, a pack.
+///
+/// Fires when the nearest ally is further than `keep_within`, and steps
+/// down a field toward every ally in sight; or when one is closer than
+/// `no_closer_than`, and steps away, so a companion does not stand on the
+/// cell you want. In between it returns `None` and the next tactic has the
+/// turn. Above [`Wander`] and usually below [`MeleeAdjacent`], so it fights
+/// what reaches it and otherwise stays with you.
+#[derive(Debug, Clone, Copy)]
+pub struct Follow {
+    /// How far it lets the nearest ally get before it closes.
+    pub keep_within: i32,
+    /// How near it lets the nearest ally come before it gives way.
+    pub no_closer_than: i32,
+}
+
+impl Default for Follow {
+    /// Within three, never nearer than one.
+    fn default() -> Self {
+        Self { keep_within: 3, no_closer_than: 1 }
+    }
+}
+
+impl<A: Copy> Tactic<A> for Follow {
+    fn name(&self) -> &'static str {
+        "follow"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let me = ctx.snapshot.me.pos;
+        let nearest = ctx.snapshot.allies.first()?;
+        let distance = geometry::chebyshev(me, nearest.pos);
+        let allies: Vec<Point> = ctx.snapshot.allies.iter().map(|a| a.pos).collect();
+        if distance > self.keep_within {
+            if let Some(step) = ctx.step_toward(&allies) {
+                return Some(Decision::Step(step));
+            }
+            let toward = Direction::between(me, nearest.pos)?;
+            for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
+                let step = me + d.offset();
+                if (ctx.can_step)(step) && geometry::chebyshev(step, nearest.pos) < distance {
+                    return Some(Decision::Step(step));
+                }
+            }
+            return None;
+        }
+        if distance < self.no_closer_than {
+            return ctx.step_away_from(&allies).map(Decision::Step);
         }
         None
     }
@@ -428,7 +481,7 @@ fn first_step(from: Point, to: Point, limit: i32, can_step: &dyn Fn(Point) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::brain::Brain;
+    use crate::ai::brain::{Brain, Fields, NoFields};
     use crate::ai::snapshot::Missile;
     use crate::ai::snapshot::{ActorView, Snapshot};
     use rand::{SeedableRng, rngs::StdRng};
@@ -457,6 +510,39 @@ mod tests {
         (Terrain::filled(12, 12, r.expect("floor")), r)
     }
 
+    /// Fields built on demand over one terrain, the way the engine builds
+    /// them, so a test of a tactic is a test of the tactic and not of a
+    /// hand-made map.
+    struct Given<'a> {
+        view: rl_grid::TerrainView<'a>,
+    }
+
+    impl<'a> Given<'a> {
+        fn over(view: &rl_grid::TerrainView<'a>) -> Self {
+            Self { view: view.clone() }
+        }
+
+        fn field(&self, goals: &[Point], away: bool) -> DijkstraMap {
+            let mut map = DijkstraMap::covering(&self.view);
+            map.build(&self.view, goals.iter().copied(), PathRules::default());
+            if away {
+                map.scale(-12, 10);
+                map.rescan(&self.view, PathRules::default());
+            }
+            map
+        }
+    }
+
+    impl Fields for Given<'_> {
+        fn descents_toward(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+            self.field(goals, false).descents(from)
+        }
+
+        fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+            self.field(goals, true).descents(from)
+        }
+    }
+
     #[test]
     fn a_lost_enemy_is_searched_for_where_it_was_seen_and_hunting_outranks_it() {
         let (t, r) = open();
@@ -465,15 +551,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
         let b: Brain<u32> = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 0 });
         let mut decide = |snapshot: &Snapshot<u32>| {
-            b.decide(&mut TacticCtx {
-                snapshot,
-                approach: None,
-                escape: None,
-                can_step: &can_step,
-                blocks_shot: &nothing_blocks,
-                bounds: arena(),
-                rng: &mut rng,
-            })
+            b.decide(&mut TacticCtx { snapshot, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng })
         };
 
         let mut lost = Snapshot::alone(view(1, 5, 5, 10));
@@ -503,16 +581,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
         let b: Brain<u32> = Brain::new().then(FleeWhenHurt { at_pct: 50 }).then(SearchLastKnown).then(Hunt);
         let mut decide = |snapshot: &Snapshot<u32>| {
-            b.decide(&mut TacticCtx {
-                snapshot,
-                approach: None,
-                escape: None,
-                can_step: &can_step,
-                blocks_shot: &nothing_blocks,
-                bounds: arena(),
-                rng: &mut rng,
-            })
-            .1
+            b.decide(&mut TacticCtx { snapshot, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng }).1
         };
 
         let mut hurt = Snapshot::alone(view(1, 5, 5, 2));
@@ -541,8 +610,7 @@ mod tests {
         adjacent.enemies.push(view(2, 6, 5, 10));
         let (d, who) = b.decide(&mut TacticCtx {
             snapshot: &adjacent,
-            approach: None,
-            escape: None,
+            fields: &mut NoFields,
             can_step: &can_step,
             blocks_shot: &nothing_blocks,
             bounds: arena(),
@@ -554,8 +622,7 @@ mod tests {
         hurt.enemies.push(view(2, 8, 5, 10));
         let (d, who) = b.decide(&mut TacticCtx {
             snapshot: &hurt,
-            approach: None,
-            escape: None,
+            fields: &mut NoFields,
             can_step: &can_step,
             blocks_shot: &nothing_blocks,
             bounds: arena(),
@@ -565,24 +632,15 @@ mod tests {
 
         let mut far = Snapshot::alone(view(1, 5, 5, 10));
         far.enemies.push(view(2, 8, 5, 10));
-        let mut map = DijkstraMap::covering(&view_t);
-        map.build(&view_t, [Point::new(8, 5)], PathRules::default());
-        let (d, who) = b.decide(&mut TacticCtx {
-            snapshot: &far,
-            approach: Some(&map),
-            escape: None,
-            can_step: &can_step,
-            blocks_shot: &nothing_blocks,
-            bounds: arena(),
-            rng: &mut rng,
-        });
+        let mut fields = Given::over(&view_t);
+        let (d, who) =
+            b.decide(&mut TacticCtx { snapshot: &far, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng });
         assert_eq!((d, who), (Decision::Step(Point::new(6, 5)), Some("hunt")));
 
         let alone = Snapshot::alone(view(1, 5, 5, 10));
         let (d, who) = b.decide(&mut TacticCtx {
             snapshot: &alone,
-            approach: None,
-            escape: None,
+            fields: &mut NoFields,
             can_step: &can_step,
             blocks_shot: &nothing_blocks,
             bounds: arena(),
@@ -593,8 +651,7 @@ mod tests {
         assert_eq!(
             Brain::<u32>::new().decide(&mut TacticCtx {
                 snapshot: &alone,
-                approach: None,
-                escape: None,
+                fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: &nothing_blocks,
                 bounds: arena(),
@@ -608,18 +665,14 @@ mod tests {
     fn an_escape_map_beats_the_straight_line_away_and_blocked_steps_are_skipped() {
         let (t, r) = open();
         let view_t = t.view(&r);
-        let mut esc = DijkstraMap::covering(&view_t);
-        esc.build(&view_t, [Point::new(8, 5)], PathRules::default());
-        esc.scale(-12, 10);
-        esc.rescan(&view_t, PathRules::default());
         let mut hurt = Snapshot::alone(view(1, 5, 5, 1));
         hurt.enemies.push(view(2, 8, 5, 10));
         let blocked = |p: Point| p != Point::new(4, 5) && view_t.is_walkable(p);
         let mut rng = StdRng::seed_from_u64(1);
+        let mut fields = Given::over(&view_t);
         let (d, _) = brain().decide(&mut TacticCtx {
             snapshot: &hurt,
-            approach: None,
-            escape: Some(&esc),
+            fields: &mut fields,
             can_step: &blocked,
             blocks_shot: &nothing_blocks,
             bounds: arena(),
@@ -662,8 +715,7 @@ mod tests {
         many.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10), view(4, 6, 6, 10)];
         many.usable = vec![burst];
         many.sort();
-        let mut ctx =
-            TacticCtx { snapshot: &many, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &many, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         let decision = UseAbility::default().evaluate(&mut ctx);
         let Some(Decision::Ability { ability, aim }) = decision else { panic!("expected an ability, got {decision:?}") };
         assert_eq!(ability, Id::from_raw(0));
@@ -676,8 +728,7 @@ mod tests {
         mixed.usable = vec![usable(0, Aim::Ground, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
         mixed.allies = vec![view(9, 6, 6, 10)];
         mixed.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10)];
-        let mut ctx =
-            TacticCtx { snapshot: &mixed, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &mixed, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
         assert_eq!(aim, Point::new(3, 8), "one ally caught outweighs one enemy hit");
     }
@@ -698,16 +749,14 @@ mod tests {
         s.allies = vec![view(8, 6, 6, 10), view(9, 7, 6, 10)];
         s.usable = vec![usable(0, Aim::Foe, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
         s.sort();
-        let mut ctx =
-            TacticCtx { snapshot: &s, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
         assert_ne!(aim, Point::new(3, 8), "the ally under the pair costs a foe-aimed burst nothing");
 
         // The same room with the burst on the ground: now the ally burns,
         // and the loner is the better shot.
         s.usable = vec![usable(0, Aim::Ground, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
-        let mut ctx =
-            TacticCtx { snapshot: &s, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
         assert_eq!(aim, Point::new(3, 8));
 
@@ -715,15 +764,13 @@ mod tests {
         // reach is itself.
         let mut hurt = Snapshot::alone(view(1, 0, 5, 4));
         hurt.usable = vec![usable(0, Aim::Ally, rl_grid::TargetMode::Adjacent)];
-        let mut ctx =
-            TacticCtx { snapshot: &hurt, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &hurt, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(0, 5) }));
 
         // Whole again, there is nothing to mend.
         let mut whole = Snapshot::alone(view(1, 0, 5, 10));
         whole.usable = vec![usable(0, Aim::Ally, rl_grid::TargetMode::Adjacent)];
-        let mut ctx =
-            TacticCtx { snapshot: &whole, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &whole, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
     }
 
@@ -735,8 +782,7 @@ mod tests {
         let can_step = |_: Point| true;
         let mut alone = Snapshot::alone(view(1, 0, 5, 10));
         alone.usable = vec![usable(0, Aim::Foe, rl_grid::TargetMode::Bolt { range: 6 })];
-        let mut ctx =
-            TacticCtx { snapshot: &alone, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &alone, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None, "no enemies, no aim");
 
         // A wall between: the bolt stops short, so it covers nothing.
@@ -744,7 +790,7 @@ mod tests {
         walled.enemies = vec![view(2, 5, 5, 10)];
         walled.usable = vec![usable(0, Aim::Foe, rl_grid::TargetMode::Bolt { range: 6 })];
         let wall = |p: Point| p == Point::new(2, 5);
-        let mut ctx = TacticCtx { snapshot: &walled, approach: None, escape: None, can_step: &can_step, blocks_shot: &wall, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &walled, fields: &mut NoFields, can_step: &can_step, blocks_shot: &wall, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None, "the wall is in the way");
     }
 
@@ -761,8 +807,7 @@ mod tests {
         let decide = |s: &Snapshot<u32>, blocks: &dyn Fn(Point) -> bool, rng: &mut StdRng| {
             ThrowAtRange::default().evaluate(&mut TacticCtx {
                 snapshot: s,
-                approach: None,
-                escape: None,
+                fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: blocks,
                 bounds: arena(),
@@ -802,8 +847,7 @@ mod tests {
             let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
             s.items = vec![rag, blade];
             s.sort();
-            let mut ctx =
-                TacticCtx { snapshot: &s, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+            let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
             let decision = Scavenge { reach: 5 }.evaluate(&mut ctx);
             match decision {
                 Some(Decision::Step(to)) => {
@@ -829,8 +873,7 @@ mod tests {
         let mut decide = |s: &Snapshot<u32>| {
             Scavenge { reach: 4 }.evaluate(&mut TacticCtx {
                 snapshot: s,
-                approach: None,
-                escape: None,
+                fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: &nothing_blocks,
                 bounds: arena(),
@@ -856,8 +899,7 @@ mod tests {
         let can_step = |_: Point| true;
         let mut sees = Snapshot::alone(view(1, 0, 0, 10));
         sees.enemies = vec![view(2, 1, 0, 10)];
-        let mut ctx =
-            TacticCtx { snapshot: &sees, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx { snapshot: &sees, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
     }
 }

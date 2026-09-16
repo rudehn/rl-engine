@@ -84,54 +84,112 @@ pub struct Intelligence(pub Wits);
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CameFrom(pub Option<Point>);
 
-/// The map a movement class paths by: its profile, and whether it opens
-/// doors, which changes what a closed door costs.
-type FieldKey = (MovementProfile, bool);
+/// What one field is for: the cells it leads to, in world coordinates and
+/// sorted so two minds wanting the same cells share one flood; the movement
+/// class it is walked by; whether that class opens doors, which changes
+/// what a closed door costs; and whether it leads away rather than toward.
+type FieldKey = (Vec<Point>, MovementProfile, bool, bool);
 
-/// One approach map per movement class, rebuilt when the player moves or
-/// the map changes where anyone may walk.
+/// How many fields are kept before the cache starts over. A moving goal is
+/// a new key every turn, so without a bound the cache would grow for as
+/// long as nothing changed the map.
+const FIELD_CACHE: usize = 32;
+
+/// Flow fields toward or away from any cells, built on demand and shared.
+///
+/// Keyed by goal and movement class rather than built toward the player:
+/// a hunter asks for the way toward every enemy it sees, a companion toward
+/// its allies, a searcher toward a remembered cell, and every mind that
+/// asks the same question in the same movement class reads the same map.
+/// A field lives until the map's cost epoch changes, so a mind that did
+/// not move and a player who did not move cost nothing the next pass.
+///
+/// Window-local, like every grid the engine keeps; the points a tactic
+/// hands in and gets back are translated at the boundary, so no map is
+/// ever copied to shift its origin.
 #[derive(Resource, Default)]
 pub struct FlowFields {
-    /// The player's cell and the map's cost epoch the maps were built for.
-    built_at: Option<(Point, u64)>,
-    approach: BTreeMap<FieldKey, DijkstraMap>,
-    escape: BTreeMap<FieldKey, DijkstraMap>,
+    /// The map's cost epoch the fields were built for.
+    epoch: Option<u64>,
+    fields: BTreeMap<FieldKey, DijkstraMap>,
 }
 
 impl FlowFields {
-    fn ensure(&mut self, key: FieldKey, player: Point, map: &WorldMap) {
-        let stamp = (player, map.cost_epoch());
-        if self.built_at != Some(stamp) {
-            self.approach.clear();
-            self.escape.clear();
-            self.built_at = Some(stamp);
+    /// The field for `key`, built if it is not there.
+    fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
+        if self.epoch != Some(map.cost_epoch()) {
+            self.fields.clear();
+            self.epoch = Some(map.cost_epoch());
         }
-        if self.approach.contains_key(&key) {
-            return;
+        if !self.fields.contains_key(&key) {
+            if self.fields.len() >= FIELD_CACHE {
+                self.fields.clear();
+            }
+            let (goals, _, opens_doors, away) = &key;
+            let view = if *opens_doors { map.opening_view() } else { map.view() };
+            let locals: Vec<Point> = goals.iter().filter_map(|g| map.to_local(*g)).collect();
+            if locals.is_empty() {
+                return None;
+            }
+            let mut field = DijkstraMap::covering(&view);
+            field.build(&view, locals, PathRules::default());
+            if *away {
+                field.scale(-12, 10);
+                field.rescan(&view, PathRules::default());
+            }
+            self.fields.insert(key.clone(), field);
         }
-        let view = if key.1 { map.opening_view() } else { map.view() };
-        let Some(local) = map.to_local(player) else { return };
-        let mut approach = DijkstraMap::covering(&view);
-        approach.build(&view, [local], PathRules::default());
-        let mut escape = approach.clone();
-        escape.scale(-12, 10);
-        escape.rescan(&view, PathRules::default());
-        self.approach.insert(key, approach);
-        self.escape.insert(key, escape);
+        self.fields.get(&key)
     }
 
-    /// The approach map for `profile`, as a mover that does or does not open
-    /// doors reads it, if built this turn.
-    pub fn approach(&self, profile: MovementProfile, opens_doors: bool) -> Option<&DijkstraMap> {
-        self.approach.get(&(profile, opens_doors))
+    /// How many fields are built right now, for a test that a shared goal
+    /// is one flood.
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// Whether nothing is built.
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
     }
 
     /// Forgets every map, so the next mind rebuilds them: the player
     /// changed maps, or the terrain changed under everyone.
     pub fn invalidate(&mut self) {
-        self.built_at = None;
-        self.approach.clear();
-        self.escape.clear();
+        self.epoch = None;
+        self.fields.clear();
+    }
+}
+
+/// The fields as one mind asks them: its movement class, over this map.
+struct Walking<'a> {
+    fields: &'a mut FlowFields,
+    map: &'a WorldMap,
+    profile: MovementProfile,
+    opens_doors: bool,
+}
+
+impl Walking<'_> {
+    fn descents(&mut self, goals: &[Point], from: Point, away: bool) -> Vec<Point> {
+        let mut goals = goals.to_vec();
+        goals.sort();
+        goals.dedup();
+        let origin = self.map.window_tiles().origin();
+        let Some(local) = self.map.to_local(from) else { return Vec::new() };
+        match self.fields.ensure((goals, self.profile, self.opens_doors, away), self.map) {
+            Some(field) => field.descents(local).into_iter().map(|p| p + origin).collect(),
+            None => Vec::new(),
+        }
+    }
+}
+
+impl rl_rules::Fields for Walking<'_> {
+    fn descents_toward(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+        self.descents(goals, from, false)
+    }
+
+    fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+        self.descents(goals, from, true)
     }
 }
 
@@ -157,12 +215,11 @@ pub struct Thinking {
     dark_sight: i32,
     hazards: BitGrid,
     origin: Point,
-    fields_allowed: bool,
 }
 
 impl Default for Thinking {
     fn default() -> Self {
-        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, dark_sight: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO, fields_allowed: true }
+        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, dark_sight: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO }
     }
 }
 
@@ -208,15 +265,6 @@ impl Thinking {
         self.hazards.contains(p - self.origin)
     }
 
-    /// Whether the mind may descend the shared flow fields this pass.
-    ///
-    /// The fields are built toward the player, so a contributor that knows
-    /// the mind has not noticed the player forbids them, or it would walk
-    /// straight to someone it never saw. Allowed unless something says no.
-    pub fn allow_fields(&mut self, allowed: bool) {
-        self.fields_allowed = allowed;
-    }
-
     fn open(&mut self, actor: Entity, snapshot: Snapshot<Entity>, at: Point, reach: i32, dark_sight: i32, map: &WorldMap) {
         let window = map.window_tiles();
         if self.hazards.width() != window.width || self.hazards.height() != window.height {
@@ -230,7 +278,6 @@ impl Thinking {
         self.at = at;
         self.reach = reach;
         self.dark_sight = dark_sight;
-        self.fields_allowed = true;
     }
 
     fn close(&mut self) -> Option<(Entity, Snapshot<Entity>)> {
@@ -323,14 +370,12 @@ pub fn begin_thinking(mut thinking: ResMut<Thinking>, acting: Res<Acting>, map: 
 
 /// The shared state a mind reads and the stream it draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct MindWorld<'w, 's> {
+pub struct MindWorld<'w> {
     fields: ResMut<'w, FlowFields>,
     rng: ResMut<'w, CombatRng>,
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
     turns: Res<'w, Turns>,
-    /// Where the shared fields point.
-    player: Query<'w, 's, &'static Position, With<Player>>,
 }
 
 /// A mind chose something of the game's own: what its tactic returned,
@@ -424,47 +469,24 @@ pub fn decide_minds(
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
     let Ok((mind, my_pos, profile, intelligence, mut came_from)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
-    let MindWorld { fields, rng, map, occupancy, turns, player } = &mut world;
+    let MindWorld { fields, rng, map, occupancy, turns } = &mut world;
     let (fields, rng, map, occupancy, turns) = (&mut **fields, &mut **rng, &**map, &**occupancy, &**turns);
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
-    let key = (profile.map(|p| p.0).unwrap_or_default(), wits.has(Wits::OPENS_DOORS));
+    let opens_doors = wits.has(Wits::OPENS_DOORS);
     snapshot.sort();
 
-    // The shared flow fields are built toward the player, and only for a
-    // mind that has something to hunt and that no contributor forbade them.
-    let maps_allowed = thinking.fields_allowed;
-    if !snapshot.enemies.is_empty()
-        && maps_allowed
-        && let Ok(player) = player.single()
-    {
-        fields.ensure(key, player.0, map);
-    }
-    let origin = map.window_tiles().origin();
-    // Maps are window-local; translate through a local copy of the
-    // decision so tactics stay in world coordinates.
-    let approach = fields.approach.get(&key);
-    let escape = fields.escape.get(&key);
     // A closed door is a step for a mind that opens doors, since stepping
     // into one opens it, and a wall for one that does not. Nor is a cell
     // some contributor marked a hazard anywhere a mind will step.
-    let can_step = |p: Point| (map.is_walkable(p) || (key.1 && map.opens(p).is_some())) && !occupancy.is_occupied(p) && !thinking.is_hazard(p);
+    let can_step = |p: Point| (map.is_walkable(p) || (opens_doors && map.opens(p).is_some())) && !occupancy.is_occupied(p) && !thinking.is_hazard(p);
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
     let mut turn_rng: StdRng =
         rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut rng.0), my_pos.0.x, my_pos.0.y));
-    let shifted = |m: &DijkstraMap| shift_map(m, origin);
-    let approach_world = approach.filter(|_| maps_allowed).map(shifted);
-    let escape_world = escape.filter(|_| maps_allowed).map(shifted);
-    let mut ctx = TacticCtx {
-        snapshot: &snapshot,
-        approach: approach_world.as_ref(),
-        escape: escape_world.as_ref(),
-        can_step: &can_step,
-        blocks_shot: &blocks_shot,
-        bounds: map.window_tiles(),
-        rng: &mut turn_rng,
-    };
+    let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors };
+    let mut ctx =
+        TacticCtx { snapshot: &snapshot, fields: &mut walking, can_step: &can_step, blocks_shot: &blocks_shot, bounds: map.window_tiles(), rng: &mut turn_rng };
     let (decision, _which) = mind.0.decide(&mut ctx);
     if !acting.claim_decision(thinker) {
         return;
@@ -508,14 +530,6 @@ pub fn decide_minds(
             intents.chose.write(MindChose { actor: thinker, choice });
         }
     }
-}
-
-/// A copy of a window-local map re-addressed in world coordinates.
-fn shift_map(m: &DijkstraMap, origin: Point) -> DijkstraMap {
-    let r = m.region();
-    let mut out = DijkstraMap::new(rl_core::Rect::new(r.x + origin.x, r.y + origin.y, r.width, r.height));
-    out.copy_values_from(m);
-    out
 }
 
 /// Minds: every non-player carrying a [`Mind`] decides its own turn.
@@ -999,5 +1013,77 @@ mod tests {
         let at = app.world().get::<Position>(sniffer).unwrap().0;
         assert!(at.x < start.x + 4, "it walked toward the scent, which only the game knew: {at:?}");
         assert!(app.world().get::<CameFrom>(sniffer).unwrap().0.is_some(), "and remembers where it stepped from");
+    }
+
+    /// Sixty hunters after one player are one flood: every mind that
+    /// wants the way toward the same cells in the same movement class reads
+    /// the same field, and it is kept while the map and the goals stand.
+    #[test]
+    fn hunters_after_one_player_share_one_field_that_lives_across_passes() {
+        let (mut app, start, blunt) = arena();
+        let us = rl_rules::FactionId::from_raw(0);
+        let them = rl_rules::FactionId::from_raw(1);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let brain = Arc::new(Brain::new().then(Hunt));
+        for (dx, dy) in [(5, 0), (0, 5), (-5, 0), (0, -5), (4, 4)] {
+            app.world_mut().spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(dx, dy)),
+                Health::full(5),
+                Faction(them),
+                Perception(8),
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(1) },
+                Mind(brain.clone()),
+            ));
+        }
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+        assert_eq!(app.world().resource::<FlowFields>().len(), 1, "five hunters, one goal, one field");
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+        assert_eq!(app.world().resource::<FlowFields>().len(), 1, "and the same one the next turn, since nothing moved the goal");
+    }
+
+    /// A companion keeps up with the player and gives way when it is
+    /// underfoot: `Follow` asks for the way toward its allies and the
+    /// engine builds it, so a game with a companion writes no pathing.
+    #[test]
+    fn a_companion_follows_the_player_and_keeps_out_from_underfoot() {
+        use rl_rules::ai::tactics::Follow;
+        let (mut app, start, _) = arena();
+        let us = rl_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let dog = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(-2, 0)),
+                Health::full(10),
+                Faction(us),
+                Perception(10),
+                Mind(Arc::new(Brain::new().then(Follow { keep_within: 2, no_closer_than: 1 }))),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        // The player walks east six cells; the dog is never left more than
+        // two behind once it has had its turns.
+        for _ in 0..6 {
+            app.world_mut().write_message(Intent::new(player, Step(Direction::East)));
+            app.update();
+        }
+        for _ in 0..3 {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+        let (me, it) = (app.world().get::<Position>(player).unwrap().0, app.world().get::<Position>(dog).unwrap().0);
+        assert!(geometry::chebyshev(me, it) <= 2, "the dog kept up: player {me:?}, dog {it:?}");
+        assert!(geometry::chebyshev(me, it) >= 1, "and is not on the player's cell");
     }
 }

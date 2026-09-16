@@ -46,7 +46,8 @@ The brain holds no state about any particular rat, so sixty rats share one `Arc`
 What a tactic needs is passed in: a snapshot of what that actor can see, its health, its position.
 
 `Hunt` does not pathfind per rat per turn.
-The engine keeps a Dijkstra flow field per movement profile and every hunter reads its downhill step off the same field.
+It asks the engine for the way toward the enemies it sees, and the engine keeps one Dijkstra flow field per set of goals and movement class, so sixty rats after one player read their downhill step off one flood.
+A companion asks the same way toward its allies, with `Follow`, and a searcher toward the cell it last saw you on.
 
 ## Filling the floor
 

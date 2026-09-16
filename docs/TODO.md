@@ -16,30 +16,19 @@ Nothing is left in this section; its three items and the swap below were built o
 
 ## 2. Open the minds
 
-- **A perceive set instead of one god-module.**
-  `Sight`, `MindWorld` and `Belongings` in `crates/rl-bevy/src/minds.rs` enumerate abilities, items, throwing, lighting, stealth and fire, so every new subsystem edits `minds.rs`, and `Snapshot` is closed to a game's own knowledge.
-  A `DecideSet::Perceive` set in which each plugin fills its part of the snapshot inverts the dependency and gives a game tactic a slot of its own in the same motion.
-- **A typed decision for the game.**
-  `Decision::Game(u32)` is a magic number answered by a match in `DecideSet::Game`, which is the `Custom { id }` shape one level down.
-  Carry a typed payload, or let a game tactic write its own intent through the perceive set's seam.
 - **Minds without combat.**
   `MindsPlugin` depends on `CombatPlugin`, and every perceivable actor must carry `Health` and `Faction` (`ActorData` in `minds.rs`), so a stealth-only or non-violent game cannot field a mind, and a prop or a civilian is invisible to one.
   Make the faction matrix and health optional inputs to the snapshot.
 - **Sight that is not the player's.**
   `perceivable` uses the player's viewshed as the one line-of-sight oracle, so nothing perceives anything the player has no line to.
   Deliberate and documented, and the limit on faction wars and a living world; the conversion the plan's "Next" line names will need per-faction or per-actor sight.
-- **Flow fields toward goals other than the player.**
-  Section 3.7 of the plan promised maps toward items, exits and allies; `FlowFields` builds only toward the player, so a companion cannot be hunted and a fetch cannot be pathed.
-  Key the fields by goal set as well as profile.
 - **Tactics that are missing, and weights that are fixed.**
   No pack or leader behaviour, no keep-at-range for a shooter, no patrol or idle routine, no noise or scent, though `DijkstraMap` is the right tool for the last two.
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
 - **A stream of the minds' own.**
   `decide_minds` seeds a per-turn generator from `CombatRng` and a position hash (`minds.rs`, `turn_rng`).
   Give minds a `Stream` like combat and abilities have, so adding a tactic cannot shift combat's rolls.
-- **Dead field.**
-  `Snapshot::came_from` (`crates/rl-rules/src/ai/snapshot.rs`) is never written and never read.
-  Delete it, or fill it from the last step and let `Wander` stop doubling back.
+  Lands with the last stage of `docs/design/minds.md`.
 
 ## 3. Make what exists real
 
