@@ -2,7 +2,7 @@
 //!
 //! Every roguelike's walk key means three things: step onto open ground,
 //! open the door in the way, strike the foe standing there. Nine copies of
-//! the same match on [`Occupancy::first_at`] in nine input systems is the
+//! the same match on `Occupancy::first_at` in nine input systems is the
 //! signal that the choice is the engine's to make, so [`Bump`] is an action
 //! whose whole job is to resolve to one of [`Step`], [`Open`] or [`Attack`].
 //!

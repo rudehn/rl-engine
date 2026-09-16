@@ -8,13 +8,13 @@
 //! offer a new run on a fresh seed, the same seed again, and quitting, and
 //! each of those is one message: [`Restart`], or `AppExit`. Nothing here
 //! knows how a game starts; the game's start runs again in
-//! [`NewRun`](rl_bevy::NewRun) the way it ran the first time.
+//! [`NewRun`] the way it ran the first time.
 //!
 //! On the frame the run ends the menu also files the obituary, when the
 //! game inserted a [`Morgue`]: the header from the [`Ending`], what the
 //! player was from the character sheet if there is one, the last lines of
 //! the log, and whatever sections the game pushed in reaction to
-//! [`RunOver`](rl_bevy::RunOver). A game that wants no file inserts no
+//! [`RunOver`]. A game that wants no file inserts no
 //! morgue.
 
 use crate::modal::AddModal;

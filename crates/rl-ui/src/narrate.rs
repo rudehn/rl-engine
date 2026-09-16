@@ -10,7 +10,7 @@
 //! The view, [`NarrationView`], is rows of [`Said`]: which [`Phrase`], who
 //! did it, to whom, with what, how much, where, and whether the player saw
 //! it. No string the game did not supply. The collector runs in
-//! [`TurnSet::React`](rl_bevy::TurnSet::React), once per pass rather than
+//! [`TurnSet::React`], once per pass rather than
 //! once per frame, because one pass is one actor's action and reading that
 //! pass's events in a fixed order gives the true order across a frame of
 //! many turns: the cast, then the blow it landed, then the next actor's

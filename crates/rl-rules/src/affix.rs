@@ -8,7 +8,7 @@
 //! says what one level buys on the item itself. Everything folds down to
 //! the vocabulary the rest of the rules already speak: changes to
 //! registered stats, which the layer that folds gear turns into
-//! [`Modifier`]s, and dice of a registered damage kind. The names, the
+//! [`Modifier`](crate::stats::Modifier)s, and dice of a registered damage kind. The names, the
 //! tags, the stats and the kinds are the game's; the shape is here.
 
 use crate::content::{ContentError, Named, Registry};

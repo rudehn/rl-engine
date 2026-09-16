@@ -102,7 +102,7 @@ pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
 /// Who is hostile to whom, and which stats a blow reads.
 ///
 /// A rule rather than content: the sides themselves are a registry in
-/// [`Registries`](crate::registries::Registries), and this is the matrix
+/// [`Registries`], and this is the matrix
 /// over them. Built by naming the pairs:
 ///
 /// ```
@@ -506,7 +506,7 @@ pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
 /// Combat: health, factions, strikes down a line of fire, the damage
 /// pipeline and deaths.
 ///
-/// Needs [`CombatRules`], [`Registries`](crate::registries::Registries) for
+/// Needs [`CombatRules`], [`Registries`] for
 /// the damage kinds, and the run's [`Seed`](crate::seed::Seed) before play
 /// begins, and derives [`CombatRng`] from the seed. Monsters that
 /// choose whom to strike come with [`MindsPlugin`](crate::minds::MindsPlugin).

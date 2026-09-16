@@ -280,9 +280,28 @@ pub fn restart_runs(world: &mut World) {
 /// idle: sets the seed and runs the game's start.
 fn begin_pending_run(world: &mut World) {
     let Some(PendingRun { seed }) = world.remove_resource::<PendingRun>() else { return };
-    let seed = seed.unwrap_or_else(RunSeed::fresh);
+    let previous = world.get_resource::<crate::seed::Seed>().map(|s| s.0).unwrap_or(RunSeed(0));
+    let seed = seed.unwrap_or_else(|| next_run_seed(previous));
     world.insert_resource(crate::seed::Seed(seed));
     world.run_schedule(NewRun);
+}
+
+/// The seed for a run no [`Restart`] named, given the one the last run used.
+///
+/// Off wasm the wall clock and a per-process counter give one. On wasm
+/// there is no `SystemTime`, and no engine crate reads entropy of its own,
+/// so the next run is derived from the last instead: two runs in a session
+/// differ, and a page opened on one seed plays the same sequence of runs.
+fn next_run_seed(previous: RunSeed) -> RunSeed {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = previous;
+        RunSeed::fresh()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        RunSeed::from_entropy(previous.derive(rl_core::SeedDomain::new(b"restart"), 0))
+    }
 }
 
 /// Takes the run out of the world: everything that stands, lies or acts on

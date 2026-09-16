@@ -11,7 +11,7 @@
 //! its part in [`DecideSet::Perceive`](crate::plugin::DecideSet::Perceive):
 //! combat sorts who is seen into sides, stealth takes out what has not
 //! been noticed, items say what is carried and what lies about, abilities
-//! what may be used, fire where not to step, and a game pushes a [`Sense`]
+//! what may be used, fire where not to step, and a game pushes a [`Sense`](rl_rules::Sense)
 //! of its own. This module opens the snapshot, closes it, and decides;
 //! nothing here knows what a faction, a knife or a flame is. A subsystem
 //! added later adds a contributor and edits nothing here.
