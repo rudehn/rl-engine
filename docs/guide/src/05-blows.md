@@ -42,7 +42,7 @@ fn player_input(
 
 The walk keys no longer write a `Step`.
 They write a `Bump`, and the engine decides what a bump comes to: a step onto open ground, a blow at a foe standing there, or the door in the way opened.
-That is an alternate action, an intent that resolves to another, and `Bump` is the engine's own example of one.
+An alternate action is an intent that resolves to another one, and `Bump` is the engine's own example.
 
 It works in `ResolveSet::Redirect`, the stage before any resolver claims the turn.
 The bump is read, the intent it stands for is written, and the resolver that owns that intent spends the turn as if the player had written it.
@@ -62,7 +62,8 @@ A `Hit` carries the kind, the dice and who threw it.
 Each stage in turn may change the number before it lands.
 
 Warren has one stage.
-Resistances by damage kind, a shield that eats the first hit each turn, a critical rule reading the attacker's stats: each is another entry in that list, in the order you put them.
+Resistances by damage kind, a shield that eats the first hit each turn, a critical rule reading the attacker's stats.
+Each is another entry in that list, in the order you put them.
 
 ```rust
             (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
@@ -73,7 +74,7 @@ Resistances by damage kind, a shield that eats the first hit each turn, a critic
 ## Two events
 
 - `DamageEvent` is a hit on its way in, before the stages run. Write one to hurt somebody: poison, a fall, a trap.
-- `DamageDealt` is what landed, after the stages, with the final number.
+- `DamageDealt` is the blow that landed, after the stages, with the final number.
 
 `DeathEvent` carries `was_player` and who gets the credit.
 The dead linger until the end of the frame, so anything that wanted to react to a death still finds the entity.
@@ -105,7 +106,7 @@ A name in a template is drawn in the colour of the thing it names, so the rat in
 Your own blows are in the `hit` tone and your kills in the `kill` tone, both brighter than text, so what you did stands out from what was done to you.
 
 The rats need a `Name` for any of this to say more than `something`.
-That is the same `Name` the rail will use in [chapter 10](10-panels.md).
+The rail in [chapter 10](10-panels.md) uses that same `Name`.
 
 What the engine cannot know stays yours.
 Warren will narrate what eating a crust means in the next chapter, by pushing its own line to the log, as it always could.
@@ -118,7 +119,8 @@ Escape opens the same menu during a run, with a way back in.
 
 Choosing a new run writes `Restart`.
 The engine tears the run down, everything that stood or lay on a map with it, and runs your start again in `NewRun`, on a fresh seed or the same one.
-That is why `start` lives in `NewRun` rather than `Startup`: the same system starts the first run and the tenth.
+`start` lives in `NewRun` instead of `Startup` for that reason.
+The same system starts the first run and the tenth.
 
 The `Morgue` writes each run down as a text file when it ends: the seed, the turn, how it ended, what you were, and the last lines of the log.
 A game adds sections of its own by pushing them when it reads `RunOver`.

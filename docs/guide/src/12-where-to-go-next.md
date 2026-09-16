@@ -7,7 +7,7 @@ Here is the rest, as what to add, what you supply and what you get back.
 
 - **Add** one resource: `commands.insert_resource(Lighting::dark());`
 - **You supply** a `LightSource` on a prop, an actor or an item, `Fuel` if it burns down, and `DarkSight` on whoever sees without one.
-- **You get** the `Viewshed` split from [chapter 3](03-what-the-player-knows.md) earning its keep: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only where a light reaches it.
+- **You get** the `Viewshed` split from [chapter 3](03-what-the-player-knows.md) starting to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only where a light reaches it.
   `Fuel` reports `LightEvent::BurntOut`.
 - **Worked examples** `heist`, where wall lamps are the only light, snuffing one is how you cross a room, and the watch light them again.
   `delve` below the Maw: a brand that can be smothered, a torch to set down, and `v` to see the light as digits.
@@ -53,7 +53,7 @@ Here is the rest, as what to add, what you supply and what you get back.
 - **Add** `SavePlugin` and a backend resource: files, memory or browser storage, all behind one trait.
 - **You supply** `Saveable` on the component that marks each kind of thing your game spawns, saying how to write one down and spawn it again, registered with `save_kind`.
 - **You get** the rest of the walk: where each thing stands, its health, its bag, its slots and its statuses, along with the scheduler's queue, the world's edits and places, and what has been explored.
-  The envelope is versioned and refuses a mismatch rather than guessing, entities are remapped on the way back in, and `SavePlugin` keeps the save a turn behind the run so a closed window saves.
+  The envelope is versioned and refuses a mismatch instead of guessing, entities are remapped on the way back in, and `SavePlugin` keeps the save a turn behind the run so a closed window saves.
   It forgets the save when the run ends.
 - **Worked example** Corsair's `save.rs`: four kinds and four resources, in about four hundred lines.
 
@@ -99,7 +99,7 @@ cargo run -p corsair -- --balance
 | 3 | `rl-engine` | facade |
 
 Map generation, field of view, pathfinding, the damage pipeline and the AI brains are tier 1.
-They run headless, test in milliseconds and build for WebAssembly, which is what makes [chapter 11](11-testing.md) possible, and CI enforces the boundary.
+They run headless, test in milliseconds and build for WebAssembly, so the tests in [chapter 11](11-testing.md) cost milliseconds, and CI enforces the boundary.
 A tool that needs only one of them can depend on that crate alone and never compile Bevy.
 
 ## The examples

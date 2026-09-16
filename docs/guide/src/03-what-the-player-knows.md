@@ -12,7 +12,7 @@
         tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
 ```
 
-Which is what makes doors possible.
+Doors depend on it.
 Adding `Doors` to the chain puts one in every corridor mouth:
 
 ```rust
@@ -64,13 +64,13 @@ fn note_explored(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, kno
 }
 ```
 
-That is a facet: a note pushed onto the view in `ViewSet::Annotate`, in words the engine could not have written.
+A facet is a note pushed onto the view in `ViewSet::Annotate`, in words the engine could not have written.
 
 Drawing is layered by `PresentSet`: `Narrate`, `Map`, `Chrome`, `Overlay`.
 You work out what to say in `Narrate`; the map is painted under it, chrome over it, modals over everything.
 No crate orders itself after another crate's draw function.
 
-The log takes a tone rather than a colour, so the palette decides what bad news looks like.
+The log takes a tone instead of a colour, so the palette decides what bad news looks like.
 
 ## Try it
 

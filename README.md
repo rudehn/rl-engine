@@ -155,9 +155,9 @@ Loot lies on the sand and in the pockets of the dead, with affixes and enchant l
 A pistol shoots along a clear line of fire, venom and bleeding tick by the turn, and rum cures them.
 Smugglers' caves under the coves lead down to a treasure vault, and a ledger of tasks from RON ends in a victory.
 A broadside that spends powder, a grapnel that hauls a foe in, a swig of rum, and a shakedown that spills a purse at a foe's feet are abilities in `assets/abilities.ron`; the last is the one effect Corsair adds to the engine's seven, in `src/abilities.rs`, and cutthroats throw the grapnel back.
-In the caves the smugglers notice a quiet player rather than seeing it at once, and the rail down the right marks which of them has.
+In the caves the smugglers have to notice a quiet player instead of seeing it at once, and the rail down the right marks which of them has.
 A message log, a sea chest to equip from, and a world map with a portal picker round it out.
-It is what a game on this engine looks like.
+A game on this engine looks like that.
 
 ```sh
 cargo run -p corsair -- --seed 7
@@ -210,7 +210,7 @@ Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `t`
 
 ### Abilities in any genre
 
-That abilities are data and serve any genre is a test rather than a game: `crates/rl-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.
+Abilities being data that serves any genre is proved by a test, not a game: `crates/rl-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.
 
 ### Pictures of your own
 

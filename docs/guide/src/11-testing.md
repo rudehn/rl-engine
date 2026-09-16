@@ -56,7 +56,7 @@ The suite runs in about forty milliseconds.
 
 `rl_engine::rl_bevy::testing` is the engine's own test kit, and a game's tests use the same copy:
 
-- `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system rather than writing intents by hand.
+- `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system instead of writing intents by hand.
 - `surface(&mut app)` stands an open test world up and hands back ground to start on, for a test that needs a map and not the game's own.
 - `two_sides(&mut app)` inserts combat rules for two sides at war, for a test that fights.
 
@@ -83,7 +83,7 @@ Where a property exists, assert it over a range of seeds.
     }
 ```
 
-Forty-eight generated floors, and the assertion is what actually has to be true: you can stand where you arrive, and there is somewhere to go on to.
+Forty-eight generated floors, and the assertion is the thing that has to be true: you can stand where you arrive, and there is somewhere to go on to.
 It does not care where the rooms are, so tuning `min_size` does not break it, and it does catch a cave generator that walls off the stairs on seed 9.
 
 It also never builds an `App`, which is why forty-eight floors cost milliseconds.
@@ -103,7 +103,7 @@ a_shove_at_nobody_is_refused_costs_nothing_and_leaves_the_turn_in_hand
 <!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:shove_tests -->
 ```rust,no_run
     /// A walkable cell next to the player with another walkable cell
-    /// behind it, which is what a shove needs to land.
+    /// behind it, which a shove needs in order to land.
     fn room_to_shove(app: &App, from: Point) -> Direction {
         let map = app.world().resource::<WorldMap>();
         Direction::ALL
@@ -180,6 +180,6 @@ A wrong refusal crashes nothing; it silently eats a turn or freezes the loop.
 
 - Break `resolve_shoves` on purpose and watch which test says so first.
 - Add a seed to the property test's range and see the cost stay flat.
-- Write a test that presses a key with `press` rather than writing the intent, and delete `player_input` to watch it fail.
+- Write a test that presses a key with `press` instead of writing the intent, and delete `player_input` to watch it fail.
 
 Next: [where to go next](12-where-to-go-next.md).

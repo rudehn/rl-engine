@@ -4,7 +4,7 @@
 >
 > Source: [`step02_walking.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step02_walking.rs)
 
-## An intent, not a move
+## Keys write intents
 
 <!-- include: ../../../examples/tutorial/src/bin/step02_walking.rs:input -->
 ```rust,no_run
@@ -75,7 +75,7 @@ A frame next to a dozen rats runs a dozen passes.
 | `Schedule` | The clock advances and one actor is dealt `MyTurn` |
 | `Decide` | Minds choose for everyone who is not the player |
 | `Resolve` | Intents become changes to the world |
-| `Sweep` | Anything nobody resolved is refused, loudly |
+| `Sweep` | Anything nobody resolved is refused, with a warning naming it |
 | `React` | The game answers what the turn caused |
 | `Cleanup` | The actor is charged and requeued |
 

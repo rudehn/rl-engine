@@ -147,8 +147,8 @@ Nothing in `RatDef` is a string that could still be wrong, and nothing spawns a 
 What comes back is an `Id<RatDef>`: a dense index, so `minds[id.index()]` is an array lookup, and typed, so it cannot be passed where an `Id<ItemDef>` belongs.
 
 Note what the loop does with `flee_at`.
-It builds a different brain per definition, from that definition's fields, so a rat that never flees gets a brain with no `FleeWhenHurt` in it rather than one that checks a flag every turn.
-Content driving structure, not just numbers.
+It builds a different brain per definition, from that definition's fields, so a rat that never flees gets a brain with no `FleeWhenHurt` in it, instead of one that checks a flag every turn.
+The file decides the shape of the brain, not only its numbers.
 
 ## Bands say what belongs where
 
@@ -169,12 +169,12 @@ Weight zero keeps an entry out of the table, which is how the king lives in the 
                 bestiary.spawn(&mut commands, bestiary.defs.expect("rat king"), throne);
 ```
 
-`rl-rules` ships a threat score and a band report over this same table, which is what `cargo run -p corsair -- --balance` prints.
+`rl-rules` ships a threat score and a band report over this same table, and `cargo run -p corsair -- --balance` prints it.
 
 ## The tiles too
 
 The largest block of Rust in [chapter 1](01-a-map-on-screen.md) was three lines of colour literals.
-That is content as well, so it goes in a file of the same shape:
+Colour is content as well, so it goes in a file of the same shape:
 
 <!-- include: ../../../examples/tutorial/assets/tiles.ron -->
 ```ron
@@ -209,7 +209,7 @@ That is content as well, so it goes in a file of the same shape:
 ```
 
 The load is checked against the registry the same way the bestiary is checked against the damage kinds.
-A tile the file forgets, a name it misspells or a tile it describes twice stops the run at start-up with every problem listed, rather than showing up as a magenta question mark three floors down.
+A tile the file forgets, a name it misspells or a tile it describes twice stops the run at start-up with every problem listed, instead of showing up as a magenta question mark three floors down.
 What a tile *is* stays in `Warren::new`, because the engine reads that; what it looks like is the renderer's business and the file's.
 
 ## Try it

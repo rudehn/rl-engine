@@ -539,7 +539,7 @@ fn populate(
             if !map.is_walkable(p) {
                 continue;
             }
-            // The `Name` is what puts it on the rail. Without one the
+            // A `Name` is what puts it on the rail. Without one the
             // collector skips it: a nameless row is a spawn that forgot,
             // and a blank line is the hardest kind of that to notice.
             commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
@@ -650,7 +650,7 @@ struct Shoved {
 // ANCHOR_END: action
 
 // ANCHOR: resolver
-/// The hog's move: shove whoever stands beside it rather than bite. A
+/// The hog's move: shove whoever stands beside it instead of biting. A
 /// tactic of Warren's own, in the brain beside the engine's, that decides
 /// Warren's own action.
 struct ShoveAdjacent;
@@ -803,7 +803,7 @@ mod tests {
 
     // ANCHOR: shove_tests
     /// A walkable cell next to the player with another walkable cell
-    /// behind it, which is what a shove needs to land.
+    /// behind it, which a shove needs in order to land.
     fn room_to_shove(app: &App, from: Point) -> Direction {
         let map = app.world().resource::<WorldMap>();
         Direction::ALL

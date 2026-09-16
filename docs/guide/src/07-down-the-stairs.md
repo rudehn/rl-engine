@@ -38,7 +38,7 @@ Everything above it is a *place*: built the first time it is entered, then kept.
 
 Kept, not regenerated.
 Leaving freezes the actors and items where they stand; the rat you ran from is still in the corridor at the health you left it.
-Actors on other maps are skipped by the scheduler rather than simulated, so a deep run costs no more per turn than a shallow one.
+Actors on other maps are skipped by the scheduler instead of simulated, so a deep run costs no more per turn than a shallow one.
 
 Every positioned entity is on exactly one map, tagged `OnMap`, which the engine fills in.
 
@@ -81,10 +81,11 @@ On one to three that point is the stairs down; on the last there are none, so it
             ));
 ```
 
-No stairs table, no special tile flag, nothing stopping you putting one on a rat.
+There is no stairs table and no special tile flag.
+Nothing stops you putting one on a rat.
 
 `Arrive` says where you land: the map's `Entry`, its `Exit`, or a cell.
-Down arrives at the entry, up arrives at the exit, which is what lines the stairs up both ways.
+Down arrives at the entry, up arrives at the exit, which lines the stairs up both ways.
 
 `GoThrough` takes one and is refused off a transition.
 `WarpRequest` does the same from anywhere, which is how the run started and how a trapdoor would work.

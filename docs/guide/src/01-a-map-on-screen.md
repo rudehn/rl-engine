@@ -22,7 +22,7 @@ fn main() -> AppExit {
 }
 ```
 
-`RoguelikePlugins` is what every game adds, in one line.
+Every game adds `RoguelikePlugins`, in one line.
 It opens a window sized to an 80 by 40 cell glyph terminal and adds the plugins no game goes without:
 
 - `TerminalPlugin`, the glyph grid, one Bevy sprite per cell. Nothing about it is roguelike; every other drawing plugin writes into it.
@@ -40,7 +40,7 @@ Leave out the `WorldMap` and play refuses to begin, listing everything missing a
 
 Two lines beside it carry the rest of a run.
 `Seed` is where all randomness comes from: every stream the engine draws on is derived from it, so the same number always builds the same warren, and [chapter 7](07-down-the-stairs.md) takes it off the command line.
-`NewRun` is the schedule that starts a run, and the engine runs it again on a restart with the old run torn down first, which is why a game's setup goes there rather than in Bevy's `Startup`.
+`NewRun` is the schedule that starts a run, and the engine runs it again on a restart with the old run torn down first, so a game's setup goes there instead of in Bevy's `Startup`.
 
 ## Tiles are ids
 
@@ -73,7 +73,7 @@ impl Warren {
 ```
 
 `register` returns a dense `TileId`; `expect` looks one up by name and panics if it is missing.
-The engine knows whether a tile is walkable and whether it blocks sight, and nothing else.
+All the engine knows about a tile is whether it is walkable and whether it blocks sight.
 There is no `Tile::Wall` to extend, so lava, glass or a tile only ghosts can cross needs no engine change.
 
 `TileAppearance` holds what each id looks like in full light.
@@ -136,7 +136,7 @@ The player is components, not a class.
 
 Map zero is the streamed surface, which Warren has none of, so its one floor is map one.
 `WarpRequest::into_place` puts the player there, which triggers the build.
-The engine's system sets do not run outside `EngineState::Playing`, which is what lets a title screen exist.
+The engine's system sets do not run outside `EngineState::Playing`, so a title screen can stand in front of a run that has not begun.
 
 ## Try it
 

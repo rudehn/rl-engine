@@ -109,7 +109,7 @@ fn resolve_shoves(mut intents: MessageReader<Intent<Shove>>, mut resolution: Res
 
 `SHOVE_COST` is `BASE_ACTION_COST / 2`: fifty against a step's hundred, both scaled by `Speed`.
 
-Reporting through a `Shoved` message rather than logging from inside the resolver keeps narration out of it and lets anything else react later.
+Reporting through a `Shoved` message instead of logging from inside the resolver keeps narration out of it and lets anything else react later.
 
 ## A monster that shoves
 
@@ -117,7 +117,7 @@ The hog shoves too, and it takes three lines more than the player did.
 
 <!-- include: ../../../examples/tutorial/src/bin/step09_shove.rs:tactic -->
 ```rust,no_run
-/// The hog's move: shove whoever stands beside it rather than bite. A
+/// The hog's move: shove whoever stands beside it instead of biting. A
 /// tactic of Warren's own, in the brain beside the engine's, that decides
 /// Warren's own action.
 struct ShoveAdjacent;

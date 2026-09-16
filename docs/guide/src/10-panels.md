@@ -14,7 +14,7 @@ Every panel reads a resource the engine rebuilds each frame, and the interesting
 
 ## The three layers
 
-A panel is split in three, and the split is the whole reason any of this is in an engine:
+A panel is split in three, and the split is why any of this belongs in an engine:
 
 | Layer | What it is | Where |
 |---|---|---|
@@ -26,7 +26,7 @@ A panel is split in three, and the split is the whole reason any of this is in a
 A gold-ruled rail with small-caps headings is one game's taste.
 So the engine owns the query and offers the drawing.
 
-That gives you five places to stop, and you can stop at any of them:
+You can stop at any of five places:
 
 1. Add the panel and be done.
 2. Change the `Palette`, and every panel restyles at once.
@@ -68,7 +68,7 @@ impl Screen {
 ```
 
 `panel::split_right`, `split_bottom` and `split_top` take a rectangle and a size and hand back both halves.
-That is the entire extent of the engine's opinion about layout.
+The engine has no other opinion about layout.
 There is no layout resource to fill in and no panel that decides where it goes: each one is told.
 
 ## Adding them
@@ -107,14 +107,14 @@ The panels land in `Chrome`; the look cursor lands in `Overlay`, over the map it
 The engine has no bestiary, no item table and no idea what a crust is.
 Two things bridge that, and Warren uses both.
 
-**A `Name` on the entity.** That is the whole of it:
+**A `Name` on the entity**, and that is all it takes:
 
 ```rust,no_run
             commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', ...)));
 ```
 
 Bevy's own `Name`, not a component of the engine's.
-Leave it off and the collector skips the entity rather than drawing a blank row, because a nameless row is a spawn that forgot and a blank line is the hardest kind of that to notice.
+Leave it off and the collector skips the entity instead of drawing a blank row, because a nameless row is a spawn that forgot and a blank line is the hardest kind of that to notice.
 
 **A `Facet` on the row.** A key, some words, and a tone, pushed in `ViewSet::Annotate`:
 
@@ -176,7 +176,7 @@ The engine ships nine roles (`text`, `muted`, `good`, `bad`, `notice`, `title`, 
 ```
 
 Warren's fleeing rats read in a pale blue nothing in the engine has an opinion about.
-`add_tone` declares the role and colours it in one call, and a tone declared any other way and never coloured is named by a warning at startup, rather than the rows quietly coming out in the text colour.
+`add_tone` declares the role and colours it in one call, and a tone declared any other way and never coloured is named by a warning at startup, instead of the rows coming out in the text colour with nothing said.
 
 ## One screen at a time
 
@@ -195,7 +195,7 @@ One gate on `player_input` covers the look cursor and every screen Warren might 
 An action that spends a turn calls `close_all`, because the turn loop assumes nothing is open.
 
 With no screen up, `tab` steps down the rail and lights the row and its tile on the map, and `shift` with it steps back.
-That is the engine's `Focus`, the one thing picked out of what is in sight, and the look cursor opens on it and moves it as it goes.
+`Focus` is the engine's own, the one thing picked out of what is in sight, and the look cursor opens on it and moves it as it goes.
 Warren wrote none of it: `NearbyPanel` and `InspectPanel` share it through the same list.
 
 ## Every key, once
@@ -241,13 +241,12 @@ fn declare_controls(app: &mut App) {
 ```
 
 `player_input` asks `keys.direction(binds.walk)` and `keys.just_pressed(binds.eat)`, never `KeyCode::KeyE`.
-That buys more than tidiness.
 `ControlsPanel` lists the same registry, so `?` shows exactly the keys Warren reads, and a key Warren stops reading leaves the screen with its declaration.
 The engine's own screens declare theirs the same way, the look cursor's, the log's and `?` itself, and list them from the resources that bind them, so a game that moves "look" off `x` sees the new key on the screen without telling anyone.
 A `Chord` is a key with Shift held or not, matched exactly: the shove is Shift with a direction, and `L` is never read as a step east.
 
 Steps 2 to 9 read `KeyCode`s straight off `ButtonInput` in `player_input`, and that is the right size for a game with four keys and no screen to list them on.
-The registry earns its keep here, where the `?` screen arrives, and everything Warren grows from now on is declared into it.
+The registry pays for itself here, where the `?` screen arrives, and everything Warren grows from now on is declared into it.
 
 ## Two presenters, one view
 
@@ -261,7 +260,8 @@ Nothing about the log changed to make that work.
 `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same `MessageLog`, and neither knows the other exists.
 The scrollback keeps its own cursor and filter in a `Scrollback` resource, because where you have scrolled to is not something the log should know.
 
-It wraps its lines rather than clipping them, with `panel::wrap`, which is the same function your own presenter would want.
+It wraps its lines with `panel::wrap` instead of clipping them.
+Your own presenter would want the same function.
 
 ## What the forecast is made of
 

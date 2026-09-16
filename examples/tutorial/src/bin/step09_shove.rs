@@ -525,7 +525,7 @@ struct Shoved {
 // ANCHOR_END: action
 
 // ANCHOR: tactic
-/// The hog's move: shove whoever stands beside it rather than bite. A
+/// The hog's move: shove whoever stands beside it instead of biting. A
 /// tactic of Warren's own, in the brain beside the engine's, that decides
 /// Warren's own action.
 struct ShoveAdjacent;

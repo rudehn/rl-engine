@@ -9,8 +9,8 @@ Rats that hunt you. They cannot bite yet.
 ## Combat, and the minds that choose it
 
 Deciding where to move and deciding whom to hit are the same decision, asked of the same priority list.
-That decision is `MindsPlugin`'s, and what a blow does once it is struck is `CombatPlugin`'s, so a monster that thinks needs both.
-Forget `MindsPlugin` and the first monster spawned says so in the log, rather than standing still all run.
+`MindsPlugin` owns that decision and `CombatPlugin` owns what a blow does once it is struck, so a monster that thinks needs both.
+Forget `MindsPlugin` and the first monster spawned says so in the log, instead of standing still all run.
 
 `CombatPlugin` needs its rules before play begins, and panics naming them if they are missing:
 
@@ -51,7 +51,7 @@ Next chapter puts `MeleeAdjacent` at the front and `FleeWhenHurt` behind it, and
 The brain holds no state about any particular rat, so sixty rats share one `Arc`.
 What a tactic needs is passed in: a snapshot of what that actor can see, its health, its position.
 
-That snapshot is cut to the actor's own `Viewshed`, the same component the player has had since [chapter 3](03-what-the-player-knows.md), and then to its `Perception`, which is how far its mind considers what it sees and is eight cells unless you say otherwise.
+The snapshot is cut to the actor's own `Viewshed`, the same component the player has had since [chapter 3](03-what-the-player-knows.md), and then to its `Perception`, which is how far its mind considers what it sees and is eight cells unless you say otherwise.
 
 `Hunt` does not pathfind per rat per turn.
 It asks the engine for the way toward the enemies it sees, and the engine keeps one Dijkstra flow field per set of goals and movement class, so sixty rats after one player read their downhill step off one flood.
@@ -91,14 +91,14 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
 ```
 
 `PlaceEntered::first` is true exactly once: the arrival that built the map.
-Spawning behind it is what stops the floor restocking every time you come back down.
-It runs in `TurnSet::React`, inside the turn rather than after the frame is drawn, which [chapter 6](06-items.md) explains.
+Spawning behind it stops the floor restocking every time you come back down.
+It runs in `TurnSet::React`, inside the turn, not after the frame is drawn, which [chapter 6](06-items.md) explains.
 
 The random stream is named for this spawner and keyed by the floor.
 Add a spawner for crusts later and it asks for a stream of its own, so it cannot shift the numbers this one draws.
 
 Rats spawn at least eight cells from the arrival.
-The engine will happily drop one on the player's head; fairness is your call.
+The engine will drop one on the player's head if you let it. Fairness is your call.
 
 ## Try it
 
