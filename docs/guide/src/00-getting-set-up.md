@@ -19,7 +19,7 @@ To start a game of your own rather than follow along, generate one:
 
 ```sh
 cargo install cargo-generate
-cargo generate --git https://github.com/rudehn/rl-engine --tag v0.1.0 templates/starter --name my-game
+cargo generate --git https://github.com/rudehn/rl-engine --tag v0.2.0 templates/starter --name my-game
 cd my-game
 cargo run
 ```
@@ -38,7 +38,7 @@ The `rl-engine` crate re-exports every other crate in the workspace.
 
 ```toml
 [dependencies]
-rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v0.1.0" }
+rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v0.2.0" }
 bevy = "0.19"
 rand = { version = "0.9", features = ["std", "std_rng"] }
 serde = { version = "1", features = ["derive"] }
