@@ -27,6 +27,7 @@ use rl_rules::{ActorView, Brain, Decision, ItemView, Missile, MovementProfile, S
 use crate::ability::{Offered, Use};
 use crate::combat::{Attack, CombatRng, CombatRules, Faction, Health};
 use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
+use crate::doors::Open;
 use crate::items::{EquipFromGround, Equipped, GearScore, Inventory, Item, PickUp, Wearable};
 use crate::lighting::{DarkSight, Lighting, perceives};
 use crate::places::{MapId, OnMap};
@@ -188,6 +189,7 @@ pub struct MindChose {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MindIntents<'w> {
     moves: MessageWriter<'w, Intent<Step>>,
+    opens: MessageWriter<'w, Intent<Open>>,
     abilities: MessageWriter<'w, Intent<Use>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
     waits: MessageWriter<'w, Intent<Wait>>,
@@ -344,7 +346,12 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
         return;
     }
     match decision {
+        // A step onto a shut door is the turn spent opening it: the door is
+        // its own action, and the mind knows what it is walking into.
         Decision::Step(to) => match Direction::between(my_pos.0, to) {
+            Some(d) if map.opens(to).is_some() => {
+                intents.opens.write(Intent::new(thinker, Open(d)));
+            }
             Some(d) => {
                 intents.moves.write(Intent::new(thinker, Step(d)));
             }

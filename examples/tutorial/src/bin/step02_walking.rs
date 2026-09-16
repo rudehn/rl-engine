@@ -27,7 +27,7 @@ fn main() -> AppExit {
     // `CapturePlugin` inside it only takes this guide's screenshots.
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS))
         .insert_resource(Seed(RunSeed(7)))
-        .add_systems(Startup, start)
+        .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.
         .add_systems(Update, player_input.in_set(EngineSet::Input));

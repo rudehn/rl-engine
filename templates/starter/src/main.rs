@@ -12,7 +12,7 @@
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, and walk into a goblin
 //! to attack it; `.` to wait; `t` to put your torch out or light it again;
-//! `x` to look around; `q` to quit; `?` lists them all. Each is declared
+//! `x` to look around; Escape for the menu; `q` to quit; `?` lists them all. Each is declared
 //! once, in `declare_controls`, and read by name: that one list is what the
 //! `?` screen shows and what the input system checks, so the two cannot
 //! disagree.
@@ -54,6 +54,16 @@ fn main() -> AppExit {
         // The panels draw themselves from views the engine keeps current.
         // The controls screen lists every key declared below, and prints the
         // one hint that opens it at the right of the status row.
+        // The engine narrates blows, deaths and what is picked up, naming
+        // things in their own colours; the menu on Escape offers a new run,
+        // the same seed again, or quitting, and opens by itself when you die;
+        // the morgue writes each run down beside the executable.
+        .add_plugins((
+            NarratorPlugin::default(),
+            GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12))
+                .died("The dark closes over you."),
+        ))
+        .insert_resource(Morgue::platform_default(TITLE, TITLE))
         .add_plugins((
             VitalsPanel::new(Rect::new(0, 0, COLS - 12, 1)),
             LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),
@@ -67,7 +77,7 @@ fn main() -> AppExit {
         ))
         // `--seed 7` replays a run; without it every run is new.
         .insert_resource(Seed::from_args())
-        .add_systems(Startup, start)
+        .add_systems(NewRun, start)
         // Keys become intents once a frame, and only while no screen, such as
         // the look cursor, has them.
         .add_systems(
@@ -75,8 +85,7 @@ fn main() -> AppExit {
             player_input.in_set(EngineSet::Input).run_if(no_modal),
         )
         // Inside the turn: the floor fills the moment it is first entered.
-        .add_systems(Turn, populate.in_set(TurnSet::React))
-        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        .add_systems(Turn, populate.in_set(TurnSet::React));
     // The keys, once, for the input system and the `?` screen alike.
     declare_controls(&mut app);
     app.run()
@@ -277,8 +286,7 @@ fn start(
 /// What the player's keys can ask for.
 #[derive(bevy::ecs::system::SystemParam)]
 struct PlayerIntents<'w> {
-    steps: MessageWriter<'w, Intent<Step>>,
-    attacks: MessageWriter<'w, Intent<Attack>>,
+    bumps: MessageWriter<'w, Intent<Bump>>,
     waits: MessageWriter<'w, Intent<Wait>>,
 }
 
@@ -320,7 +328,6 @@ fn declare_controls(app: &mut App) {
 fn player_input(
     keys: ControlInput,
     binds: Res<Binds>,
-    occupancy: Res<Occupancy>,
     player: PlayerTurn,
     mut intents: PlayerIntents,
     mut commands: Commands,
@@ -331,20 +338,13 @@ fn player_input(
         return;
     }
     // No turn in hand means it is somebody else's move.
-    let Ok((me, at, lit)) = player.single() else {
+    let Ok((me, _, lit)) = player.single() else {
         return;
     };
     if let Some(dir) = keys.direction(binds.walk) {
-        // Walking into someone is an attack; that is the game's rule, not
-        // the engine's.
-        match occupancy.first_at(at.0 + dir.offset()) {
-            Some(other) => {
-                intents.attacks.write(Intent::new(me, Attack(other)));
-            }
-            None => {
-                intents.steps.write(Intent::new(me, Step(dir)));
-            }
-        }
+        // A bump is a step, a blow at whoever hostile stands there, or the
+        // door in the way opened: the engine decides which.
+        intents.bumps.write(Intent::new(me, Bump(dir)));
     } else if keys.just_pressed(binds.torch) {
         // Dark, you are hidden from anything that needs light to see you,
         // and as blind as it is. Either way it takes the turn.
@@ -428,91 +428,6 @@ fn open_cell(
         })
 }
 
-/// What narration reads and writes.
-#[derive(bevy::ecs::system::SystemParam)]
-struct Voice<'w, 's> {
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
-    next: ResMut<'w, NextState<EngineState>>,
-    names: Query<'w, 's, (&'static Name, Has<Player>)>,
-}
-
-/// What the turns caused, in words: blows, being noticed, and deaths.
-fn narrate(
-    mut dealt: MessageReader<DamageDealt>,
-    mut noticed: MessageReader<Noticed>,
-    mut deaths: MessageReader<DeathEvent>,
-    mut voice: Voice,
-) {
-    let Voice {
-        turns,
-        log,
-        next,
-        names,
-    } = &mut voice;
-    let turn = turns.turn_number();
-    let is_you = |e: Entity| names.get(e).is_ok_and(|(_, you)| you);
-    let called = |e: Entity| match names.get(e) {
-        Ok((_, true)) => "you".to_string(),
-        Ok((name, false)) => format!("the {}", name.as_str()),
-        Err(_) => "something".to_string(),
-    };
-    for d in dealt.read() {
-        let Some(by) = d.hit.attacker else { continue };
-        let (verb, tone) = if is_you(by) {
-            ("hit", Tones::TEXT)
-        } else {
-            ("hits", Tones::BAD)
-        };
-        let result = if d.dealt > 0 {
-            format!(" for {}.", d.dealt)
-        } else {
-            ", to no effect.".to_string()
-        };
-        log.push(
-            format!(
-                "{} {verb} {}{result}",
-                capital(&called(by)),
-                called(d.target)
-            ),
-            tone,
-            turn,
-        );
-    }
-    for n in noticed.read() {
-        if is_you(n.subject) {
-            log.push(
-                format!("{} notices you.", capital(&called(n.observer))),
-                Tones::NOTICE,
-                turn,
-            );
-        }
-    }
-    for d in deaths.read() {
-        if d.was_player {
-            log.push("You die. Press q to quit.", Tones::BAD, turn);
-            // Leaving `Playing` stops the turns and the input, and leaves
-            // the last frame on the screen.
-            next.set(EngineState::Idle);
-        } else {
-            log.push(
-                format!("{} dies.", capital(&called(d.entity))),
-                Tones::GOOD,
-                turn,
-            );
-        }
-    }
-}
-
-/// `s` with its first letter raised.
-fn capital(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -531,10 +446,9 @@ mod tests {
         ))
         .add_plugins(UiPlugin)
         .insert_resource(Seed(RunSeed(seed)))
-        .add_systems(Startup, start)
+        .add_systems(NewRun, start)
         .add_systems(Update, player_input.in_set(EngineSet::Input))
-        .add_systems(Turn, populate.in_set(TurnSet::React))
-        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        .add_systems(Turn, populate.in_set(TurnSet::React));
         declare_controls(&mut app);
         app
     }

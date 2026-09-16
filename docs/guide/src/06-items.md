@@ -13,7 +13,7 @@ It has no opinion about what an item is.
 ```
 
 ```rust
-            commands.spawn((Item, Crust(8), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+            commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
 ```
 
 `Item` says the engine may move it.

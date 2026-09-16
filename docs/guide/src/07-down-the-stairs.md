@@ -68,11 +68,12 @@ Down arrives at the entry, up arrives at the exit, which is what lines the stair
 ## Winning
 
 ```rust
-        } else if kings.contains(d.entity) {
-            log.push("The rat king falls. The scratching stops. Press q to quit.", Tones::NOTICE, turn);
+        if kings.contains(d.entity) {
+            over.write(RunOver::won().saying("The rat king falls. The scratching stops."));
 ```
 
-A victory condition is a component and an `if`.
+A victory condition is a component and an `if`, and the ending is one message.
+`RunOver::won()` ends the run the way the player's death does: the menu opens over the last frame with Warren's words above it, and the morgue file says `Won`.
 [Chapter 12](12-where-to-go-next.md) points at the quest system, which is this with the objectives in a file.
 
 ## Try it

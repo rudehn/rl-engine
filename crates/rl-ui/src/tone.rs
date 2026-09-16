@@ -48,10 +48,15 @@ impl Tones {
     pub const SURFACE: ToneId = ToneId::from_raw(7);
     /// The background of whatever the cursor is on.
     pub const SELECT: ToneId = ToneId::from_raw(8);
+    /// A blow the player landed: brighter than text, so what you did to
+    /// them stands out from what they did to you.
+    pub const HIT: ToneId = ToneId::from_raw(9);
+    /// A kill the player made: the brightest line in the log.
+    pub const KILL: ToneId = ToneId::from_raw(10);
 
     /// The engine's tones, in the order their ids are handed out. The
     /// constants above are the indices into this.
-    pub const BUILT_IN: [&'static str; 9] = ["text", "muted", "good", "bad", "notice", "title", "frame", "surface", "select"];
+    pub const BUILT_IN: [&'static str; 11] = ["text", "muted", "good", "bad", "notice", "title", "frame", "surface", "select", "hit", "kill"];
 
     /// The id for `name`, assigning a new one if it is unseen.
     ///
@@ -152,9 +157,32 @@ impl Default for Palette {
             .set(Tones::TITLE, Color::srgb(0.95, 0.90, 0.70))
             .set(Tones::FRAME, Color::srgb(0.45, 0.45, 0.50))
             .set(Tones::SURFACE, Color::srgb(0.06, 0.06, 0.08))
-            .set(Tones::SELECT, Color::srgb(0.20, 0.22, 0.30));
+            .set(Tones::SELECT, Color::srgb(0.20, 0.22, 0.30))
+            .set(Tones::HIT, Color::srgb(1.00, 0.97, 0.86))
+            .set(Tones::KILL, Color::srgb(1.00, 0.66, 0.22));
         p
     }
+}
+
+/// `color` as content the eye can read against the palette's surface.
+///
+/// A name in the log is drawn in the colour of the thing it names, and a
+/// thing may be drawn dark on purpose: a shadow, a slate wall, a black cat.
+/// Below a floor of luminance the colour is moved toward the text colour
+/// until it clears the floor, so the hue survives and the word does not
+/// vanish into the surface. Bright colours come back untouched.
+pub fn readable(color: Color, palette: &Palette) -> Color {
+    use bevy::color::{Luminance, Mix};
+    const FLOOR: f32 = 0.16;
+    let own = color.to_linear();
+    let lum = own.luminance();
+    if lum >= FLOOR {
+        return color;
+    }
+    let text = palette.get(Tones::TEXT).to_linear();
+    let reach = (text.luminance() - lum).max(f32::EPSILON);
+    let share = ((FLOOR - lum) / reach).clamp(0.0, 1.0);
+    own.mix(&text, share).into()
 }
 
 /// Declares a tone and its colour while the app is being built.
@@ -209,8 +237,24 @@ mod tests {
         let tones = Tones::default();
         assert_eq!(tones.get("text"), Some(Tones::TEXT));
         assert_eq!(tones.get("select"), Some(Tones::SELECT));
+        assert_eq!(tones.get("kill"), Some(Tones::KILL));
         assert_eq!(tones.len(), Tones::BUILT_IN.len());
         assert_eq!(tones.name(Tones::NOTICE), "notice");
+    }
+
+    /// A dark colour is lifted toward the text colour until it can be read,
+    /// keeping its hue; a bright one is left alone.
+    #[test]
+    fn a_dark_content_colour_is_lifted_to_readable_and_a_bright_one_is_kept() {
+        use bevy::color::Luminance;
+        let palette = Palette::default();
+        let bright = Color::srgb(0.2, 0.9, 0.3);
+        assert_eq!(readable(bright, &palette), bright);
+        let near_black_red = Color::srgb(0.10, 0.02, 0.02);
+        let lifted = readable(near_black_red, &palette);
+        assert!(lifted.to_linear().luminance() >= 0.16 - 0.01, "{lifted:?}");
+        let l = lifted.to_srgba();
+        assert!(l.red > l.green && l.red > l.blue, "still reddish: {l:?}");
     }
 
     #[test]

@@ -12,14 +12,6 @@ The first section is what every game hits in its first week.
 
 ## 1. Own the loops the games keep rewriting
 
-- **A default narrator.**
-  Ten files across the two games, the tutorial and the template turn `DamageDealt` and `DeathEvent` into the same log lines (`grep -l DamageDealt examples templates`).
-  The plan's section 3.2 lists a `Narrator` trait that was never built.
-  A collector in `PresentSet::Narrate` that renders engine events through game-supplied templates keeps the rule that a view holds no string the game did not supply.
-- **Bump to attack as an opt-in.**
-  Walking into a hostile becomes an `Attack` in nine copies of the same match on `Occupancy::first_at`.
-  By the facet rule, the second game that writes a thing is the signal it belongs in the engine; the ninth is overdue.
-  A `CombatPlugin` option, or a `Step` resolver that consults `CombatRules` when the way is blocked by an actor.
 - **Consumables through abilities.**
   `UseItem` is only an event, so Corsair's `use_items` hardcodes what rum does.
   Abilities already have costs, charges and effects.
@@ -64,6 +56,9 @@ The first section is what every game hits in its first week.
 - **Movement profiles that change costs.**
   `FlowFields::ensure` keys the cache by `MovementProfile` but builds every map with `PathRules::default()`, so a swimmer and a walker see the same map and the sailing profile the plan's river section promised is not wired.
   `TileProps` needs a per-profile walkability mask, and the flood needs to read it.
+- **Swap places on a bump.**
+  A bump into an ally is a free refusal.
+  Every game with a companion wants to swap places instead; a `BumpRules { allies: Swap | Refuse }` in `ResolveSet::Redirect` is where it goes.
 - **Anyone travels.**
   `WarpRequest` and `GoThrough` ignore everyone but the player (`crates/rl-bevy/src/places.rs`, `resolve_warps`).
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.

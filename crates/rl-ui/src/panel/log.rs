@@ -6,7 +6,7 @@ use rl_core::Rect;
 use rl_render::Terminal;
 
 use crate::log::MessageLog;
-use crate::panel::{clear, clip};
+use crate::panel::{clear, clip_rich, print_rich, wrap_rich};
 use crate::tone::{Palette, Tones};
 
 /// Where the log is drawn.
@@ -51,7 +51,10 @@ pub fn draw_log(mut terminal: ResMut<Terminal>, layout: Res<LogLayout>, log: Res
     let bg = palette.get(Tones::SURFACE);
     for (i, entry) in log.recent(rect.height as usize).enumerate() {
         let y = if layout.newest_last { rect.bottom() - 1 - i as i32 } else { rect.y + i as i32 };
-        terminal.print_on(rect.x, y, &clip(&entry.display(), rect.width as usize), palette.get(entry.tone), bg);
+        // One row per entry, clipped rather than wrapped: the strip is for
+        // the last few things, and the scrollback for reading them whole.
+        let runs = clip_rich(&wrap_rich(&entry.display(), &entry.spans, usize::MAX).remove(0), rect.width as usize);
+        print_rich(&mut terminal, rect.x, y, &runs, palette.get(entry.tone), bg, &palette);
     }
 }
 
@@ -83,6 +86,26 @@ mod tests {
         stage.tick();
         assert_eq!(stage.row(2), "the crab nips you (x3)");
         assert_eq!(stage.row(1), "", "one line, not three");
+    }
+
+    /// A name carries the colour of what it names, lifted to readable; the
+    /// rest of the line stays in its tone.
+    #[test]
+    fn a_span_is_drawn_in_its_own_colour_and_the_rest_in_the_tone() {
+        let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
+        let green = Color::srgb(0.2, 0.9, 0.3);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_spans(
+            "the slime nips you",
+            vec![crate::log::Span { start: 4, len: 5, color: green }],
+            Tones::BAD,
+            1,
+        );
+        stage.tick();
+        let t = stage.app.world().resource::<rl_render::Terminal>();
+        let palette = stage.app.world().resource::<Palette>();
+        assert_eq!(t.get(0, 2).unwrap().fg, palette.get(Tones::BAD), "'the' in the tone");
+        assert_eq!(t.get(4, 2).unwrap().fg, green, "'slime' in its own green");
+        assert_eq!(t.get(10, 2).unwrap().fg, palette.get(Tones::BAD), "'nips' in the tone again");
     }
 
     #[test]

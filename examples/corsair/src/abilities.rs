@@ -109,48 +109,6 @@ pub fn ability_keys(
     }
 }
 
-/// Abilities used and refused, in words.
-pub fn narrate_abilities(
-    mut events: MessageReader<AbilityEvent>,
-    abilities: Res<Abilities>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
-    names: Query<&Name>,
-    players: Query<(), With<Player>>,
-) {
-    let turn = turns.turn_number();
-    let named =
-        |e: Entity| if players.contains(e) { "you".to_string() } else { names.get(e).map(|n| n.as_str().to_string()).unwrap_or_else(|_| "something".into()) };
-    for ev in events.read() {
-        match ev {
-            AbilityEvent::Used { user, ability, targets, .. } => {
-                let what = &abilities.get(*ability).name;
-                let mine = players.contains(*user);
-                let (who, verb) = if mine { ("You".to_string(), "use") } else { (upper_first(&named(*user)), "uses") };
-                let line = match targets.as_slice() {
-                    [] => format!("{who} {verb} {what}."),
-                    [one] => format!("{who} {verb} {what} on {}.", named(*one)),
-                    many => format!("{who} {verb} {what}, catching {}.", many.len()),
-                };
-                log.push(line, if mine { Tones::TEXT } else { Tones::BAD }, turn);
-            }
-            AbilityEvent::Refused { user, ability, why } if players.contains(*user) => {
-                let reasons: Vec<&str> = why.iter().map(rl_engine::rl_ui::view::ability::plain).collect();
-                log.bad(format!("You cannot use {}: {}.", abilities.get(*ability).name, reasons.join(", ")), turn);
-            }
-            AbilityEvent::Refused { .. } => {}
-        }
-    }
-}
-
-fn upper_first(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

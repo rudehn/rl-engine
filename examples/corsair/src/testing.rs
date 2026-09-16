@@ -33,7 +33,7 @@ pub fn headless(seed: RunSeed, resume: bool, dir: &std::path::Path) -> App {
         .add_systems(Last, crate::save::refresh_stash)
         .init_resource::<crate::places::Entrances>()
         .init_resource::<crate::quests::LedgerScreen>()
-        .add_systems(Startup, crate::start_world)
+        .add_systems(NewRun, crate::start_world)
         .add_systems(Update, (crate::monsters::spawn_on_load, crate::items::scatter_on_load, crate::places::mark_entrances).in_set(EngineSet::Stream));
     crate::input::declare_controls(&mut app);
     app

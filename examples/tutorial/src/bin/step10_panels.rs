@@ -123,7 +123,16 @@ fn main() -> AppExit {
         // ordering after a collector function.
         .add_systems(Update, (note_bag_and_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate))
         // ANCHOR_END: panels
-        .add_systems(Startup, start)
+        // The engine narrates blows, deaths and pickups into the log, naming
+        // things in their own colours. Warren changes one phrase: what a rat
+        // does to you is a bite.
+        .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
+        // Escape opens the menu. The run's end opens it by itself, under these
+        // words, offering a new run or the same seed again; the morgue writes
+        // the run down beside the executable.
+        .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .insert_resource(Morgue::platform_default("warren", "Warren"))
+        .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.
         // The game's own action: registered, then resolved alongside the
@@ -382,8 +391,7 @@ fn declare_controls(app: &mut App) {
 /// as many actions as the game grows.
 #[derive(bevy::ecs::system::SystemParam)]
 struct PlayerIntents<'w> {
-    steps: MessageWriter<'w, Intent<Step>>,
-    attacks: MessageWriter<'w, Intent<Attack>>,
+    bumps: MessageWriter<'w, Intent<Bump>>,
     waits: MessageWriter<'w, Intent<Wait>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
@@ -399,33 +407,19 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position, &'static Inv
 /// Keys to intents. Writing an intent is the whole of asking to act: the
 /// engine claims the turn, charges it, and refuses what cannot be done.
 ///
-/// Bump to attack is a decision the game makes, not the engine: a step
-/// into an occupied cell is written as an [`Attack`] instead.
-fn player_input(
-    keys: ControlInput,
-    binds: Res<Binds>,
-    occupancy: Res<Occupancy>,
-    player: PlayerTurn,
-    mut intents: PlayerIntents,
-    mut exit: MessageWriter<AppExit>,
-) {
+/// The walk keys write a [`Bump`], which the engine resolves to a step, a
+/// blow at a foe, or opening a door, whichever is in the way.
+fn player_input(keys: ControlInput, binds: Res<Binds>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(binds.quit) {
         exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
-    let Ok((entity, pos, bag)) = player.single() else { return };
+    let Ok((entity, _, bag)) = player.single() else { return };
     if let Some(dir) = keys.direction(binds.shove) {
         intents.shoves.write(Intent::new(entity, Shove(dir)));
     } else if let Some(dir) = keys.direction(binds.walk) {
-        match occupancy.first_at(pos.0 + dir.offset()) {
-            Some(other) => {
-                intents.attacks.write(Intent::new(entity, Attack(other)));
-            }
-            None => {
-                intents.steps.write(Intent::new(entity, Step(dir)));
-            }
-        }
+        intents.bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(binds.stairs) {
         intents.stairs.write(Intent::new(entity, GoThrough));
     } else if keys.just_pressed(binds.pick_up) {
@@ -578,67 +572,31 @@ fn populate(
 struct Voice<'w, 's> {
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
-    next: ResMut<'w, NextState<EngineState>>,
+    over: MessageWriter<'w, RunOver>,
     bestiary: Res<'w, Bestiary>,
-    players: Query<'w, 's, (), With<Player>>,
     kinds: Query<'w, 's, &'static Kind>,
+    names: Query<'w, 's, &'static Name>,
 }
 
-/// Turns what the pipeline reported into English.
-fn narrate(
-    mut items: MessageReader<ItemEvent>,
-    mut shoved: MessageReader<Shoved>,
-    mut dealt: MessageReader<DamageDealt>,
-    mut deaths: MessageReader<DeathEvent>,
-    mut voice: Voice,
-) {
-    let Voice { turns, log, next, bestiary, players, kinds } = &mut voice;
+/// What only Warren can put into words: what eating a crust means, a
+/// shove, and the win. Blows, deaths and pickups are the engine's
+/// narrator's.
+fn narrate(mut items: MessageReader<ItemEvent>, mut shoved: MessageReader<Shoved>, mut deaths: MessageReader<DeathEvent>, mut voice: Voice) {
+    let Voice { turns, log, over, bestiary, kinds, names } = &mut voice;
     let turn = turns.turn_number();
-    let name = |e: Entity| -> String {
-        if players.contains(e) {
-            "you".into()
-        } else {
-            kinds.get(e).map(|k| format!("the {}", bestiary.defs.get(k.0).name)).unwrap_or_else(|_| "something".into())
-        }
-    };
     for ev in items.read() {
-        match *ev {
-            ItemEvent::PickedUp { .. } => log.push("You pocket a crust of bread.", Tones::TEXT, turn),
-            ItemEvent::Used { .. } => log.push("You eat the crust. It helps.", Tones::GOOD, turn),
-            _ => {}
+        if let ItemEvent::Used { .. } = *ev {
+            log.push("You eat the crust. It helps.", Tones::GOOD, turn);
         }
     }
     for ev in shoved.read() {
-        log.push(format!("You shove {} back.", name(ev.target)), Tones::TEXT, turn);
-    }
-    for d in dealt.read() {
-        let attacker = d.hit.attacker.map(&name).unwrap_or_else(|| "something".into());
-        let mine = attacker == "you";
-        let (verb, category) = if mine { ("hit", Tones::TEXT) } else { ("bites", Tones::BAD) };
-        let tail = if d.dealt <= 0 { " and does nothing.".to_string() } else { format!(" for {}.", d.dealt) };
-        log.push(format!("{} {verb} {}{tail}", capital(&attacker), name(d.target)), category, turn);
+        let target = names.get(ev.target).map(|n| format!("the {}", n.as_str())).unwrap_or_else(|_| "something".into());
+        log.push(format!("You shove {target} back."), Tones::TEXT, turn);
     }
     for d in deaths.read() {
-        if d.was_player {
-            log.push("The warren keeps you. Press q to quit.", Tones::BAD, turn);
-            // Leaving `Playing` stops the loop: no turns, no input, but
-            // the last frame stays on the screen.
-            next.set(EngineState::Idle);
-        } else if kinds.get(d.entity).is_ok_and(|k| bestiary.defs.get(k.0).name == "rat king") {
-            log.push("The rat king falls. The scratching stops. Press q to quit.", Tones::NOTICE, turn);
-            next.set(EngineState::Idle);
-        } else {
-            log.push(format!("{} dies.", capital(&name(d.entity))), Tones::GOOD, turn);
+        if kinds.get(d.entity).is_ok_and(|k| bestiary.defs.get(k.0).name == "rat king") {
+            over.write(RunOver::won().saying("The rat king falls. The scratching stops."));
         }
-    }
-}
-
-/// The same string with its first letter raised.
-fn capital(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
     }
 }
 // ANCHOR_END: narrate
@@ -740,7 +698,7 @@ mod tests {
             .add_plugins(UiPlugin)
             .add_action::<Shove>()
             .add_message::<Shoved>()
-            .add_systems(Startup, start)
+            .add_systems(NewRun, start)
             .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
             .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
             .add_systems(Update, narrate.in_set(PresentSet::Narrate));

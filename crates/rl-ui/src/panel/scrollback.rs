@@ -26,7 +26,7 @@ use rl_render::Terminal;
 
 use crate::log::MessageLog;
 use crate::modal::{ModalId, Modals};
-use crate::panel::{clear, frame, wrap};
+use crate::panel::{clear, frame};
 use crate::tone::{Palette, ToneId, Tones};
 
 /// The name the scrollback's modal is declared under.
@@ -165,8 +165,8 @@ pub fn scrollback_modal(modals: &Modals) -> ModalId {
 enum Line {
     /// A turn boundary, drawn as a rule carrying the number.
     Rule(u32),
-    /// One wrapped line of one entry.
-    Text(String, ToneId),
+    /// One wrapped line of one entry, as runs of colour.
+    Text(Vec<crate::panel::Segment>, ToneId),
 }
 
 /// Opens, closes, scrolls and filters.
@@ -252,7 +252,7 @@ fn lines_of(log: &MessageLog, scrollback: &Scrollback, turn_rules: bool, width: 
             lines.push(Line::Rule(entry.turn));
             last_turn = Some(entry.turn);
         }
-        for line in wrap(&entry.display(), width) {
+        for line in crate::panel::runs_of(entry, width) {
             lines.push(Line::Text(line, entry.tone));
         }
     }
@@ -307,7 +307,7 @@ pub fn draw_scrollback(
                     terminal.put(x, y, '\u{2500}', palette.get(Tones::FRAME));
                 }
             }
-            Line::Text(text, tone) => terminal.print_on(inner.x, y, text, palette.get(*tone), bg),
+            Line::Text(runs, tone) => crate::panel::print_rich(&mut terminal, inner.x, y, runs, palette.get(*tone), bg, &palette),
         }
     }
 }

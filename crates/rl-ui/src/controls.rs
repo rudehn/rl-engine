@@ -43,6 +43,7 @@ use bevy::prelude::*;
 use rl_core::Direction;
 
 use crate::cursor::{CursorKeys, shifted};
+use crate::game_menu::MenuKeys;
 use crate::keys::DirectionKeys;
 use crate::panel::ability::AbilityKeys;
 use crate::panel::inventory::InventoryKeys;
@@ -247,6 +248,8 @@ pub enum EngineKey {
     UseCarried,
     /// Throwing it, from [`InventoryKeys::throw`].
     ThrowCarried,
+    /// Opening the menu, from [`MenuKeys::toggle`].
+    OpenMenu,
 }
 
 /// What asks for a control.
@@ -356,6 +359,8 @@ pub struct Bindings<'a> {
     pub abilities: Option<&'a AbilityKeys>,
     /// The bag's, when there is one.
     pub inventory: Option<&'a InventoryKeys>,
+    /// The menu's, when there is one.
+    pub menu: Option<&'a MenuKeys>,
 }
 
 impl Bindings<'_> {
@@ -387,6 +392,7 @@ impl Bindings<'_> {
             EngineKey::Drop => self.inventory.map(|bag| vec![bag.drop]).unwrap_or_default(),
             EngineKey::UseCarried => self.inventory.map(|bag| vec![bag.use_it, cursor.confirm.into(), cursor.also_confirm.into()]).unwrap_or_default(),
             EngineKey::ThrowCarried => self.inventory.map(|bag| vec![bag.throw]).unwrap_or_default(),
+            EngineKey::OpenMenu => self.menu.map(|menu| vec![menu.toggle.into()]).unwrap_or_default(),
         }
     }
 
@@ -573,6 +579,7 @@ pub struct ControlInput<'w> {
     sheet: Option<Res<'w, SheetKeys>>,
     abilities: Option<Res<'w, AbilityKeys>>,
     inventory: Option<Res<'w, InventoryKeys>>,
+    menu: Option<Res<'w, MenuKeys>>,
     repeats: Res<'w, Repeats>,
 }
 
@@ -587,6 +594,7 @@ impl ControlInput<'_> {
             sheet: self.sheet.as_deref(),
             abilities: self.abilities.as_deref(),
             inventory: self.inventory.as_deref(),
+            menu: self.menu.as_deref(),
         }
     }
 
@@ -762,7 +770,16 @@ mod tests {
     /// Default bindings, borrowed for one assertion.
     fn with_defaults<R>(log: bool, f: impl FnOnce(&Bindings) -> R) -> R {
         let (directions, cursor, help, scrollback) = (DirectionKeys::default(), CursorKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
-        f(&Bindings { directions: &directions, cursor: &cursor, help: &help, log: log.then_some(&scrollback), sheet: None, abilities: None, inventory: None })
+        f(&Bindings {
+            directions: &directions,
+            cursor: &cursor,
+            help: &help,
+            log: log.then_some(&scrollback),
+            sheet: None,
+            abilities: None,
+            inventory: None,
+            menu: None,
+        })
     }
 
     #[test]
@@ -817,7 +834,7 @@ mod tests {
         });
         let wasd = DirectionKeys::none().bind(KeyCode::KeyW, Direction::North).bind(KeyCode::KeyS, Direction::South).bind(KeyCode::Space, Direction::East);
         let (cursor, help) = (CursorKeys::default(), ControlsKeys::default());
-        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None };
+        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None, menu: None };
         assert_eq!(controls.label(walk, &bindings), "sw space", "letters outside the custom sort after it, and any other key on its own");
     }
 
@@ -830,7 +847,7 @@ mod tests {
         let log = controls.add("Log", "open the log", EngineKey::OpenLog);
         let (directions, help, scrollback) = (DirectionKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
         let cursor = CursorKeys { next: KeyCode::KeyN, ..CursorKeys::default() };
-        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None };
+        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None, menu: None };
         assert_eq!(controls.label(next, &bindings), "n", "rebound, and listed as rebound");
         assert_eq!(controls.label(log, &bindings), "", "no scrollback, nothing to list");
         assert_eq!(controls.label(log, &Bindings { log: Some(&scrollback), ..bindings }), "p");

@@ -61,22 +61,37 @@ pub trait SaveBackend {
 /// Saves as files in a directory, one per slot.
 pub struct FileBackend {
     dir: std::path::PathBuf,
+    /// What a slot's file ends in: `save.ron` for a save, `txt` for a
+    /// morgue file someone will open in an editor.
+    extension: String,
 }
 
 impl FileBackend {
     /// Saves under `dir`, created on first write.
     pub fn new(dir: impl Into<std::path::PathBuf>) -> Self {
-        Self { dir: dir.into() }
+        Self { dir: dir.into(), extension: "save.ron".into() }
     }
 
     /// Saves next to the running executable.
     pub fn beside_executable() -> Self {
-        let dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.to_path_buf())).unwrap_or_else(|| std::path::PathBuf::from("."));
-        Self::new(dir)
+        Self::new(Self::dir_beside_executable())
     }
 
-    fn path(&self, slot: &str) -> std::path::PathBuf {
-        self.dir.join(format!("{slot}.save.ron"))
+    /// The directory the running executable is in, or the working
+    /// directory when that cannot be found.
+    pub fn dir_beside_executable() -> std::path::PathBuf {
+        std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.to_path_buf())).unwrap_or_else(|| std::path::PathBuf::from("."))
+    }
+
+    /// Files ending in `.extension` rather than `.save.ron`.
+    pub fn with_extension(mut self, extension: impl Into<String>) -> Self {
+        self.extension = extension.into();
+        self
+    }
+
+    /// Where `slot` is written.
+    pub fn path(&self, slot: &str) -> std::path::PathBuf {
+        self.dir.join(format!("{slot}.{}", self.extension))
     }
 }
 

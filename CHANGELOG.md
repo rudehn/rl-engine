@@ -52,6 +52,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - `Modifier::source` is a `Source`: a status by id and instance, a worn item by handle, or `Source::Game(n)` for a game's own. `is_status_source` is gone for `Source::is_status`; `Enchanted::modifiers` is `grants`, untagged, since the fold tags. `SheetView::name_source` takes a `Source`, and the sheet names a worn item's changes after the item itself.
 - `CombatRules` gains `armor` and `attack`; the `needs` hint reads `CombatRules::new(&sides)`.
 - `InventoryView` and `InventoryViewPlugin`: the player's bag as `ItemRow`s, each with its name, glyph, count, the slot it is worn in, where it could go, and its worth read off its own components in the registries' names. `InventoryPanel`, `InventoryKeys` and `inventory_modal`: the bag as a screen the engine runs, on `i` by default, with `e` to wear or take off, `d` to drop, `u` or confirm to use and `t` to throw through the targeting cursor. `EngineKey` gains `OpenInventory`, `Wear`, `Drop`, `UseCarried` and `ThrowCarried`, and `Bindings` a field for the bag's keys.
+- `Bump(Direction)`, the walk key's action: in the new `ResolveSet::Redirect` it becomes a `Step`, an `Open` or an `Attack` by what is in the way, or a free refusal reported as `Bumped`. `Open(Direction)` is a door's own action; a step into a shut door is refused, and minds write `Open` at a door. An alternate action of a game's own follows the same shape.
+- The run's life: `NewRun`, the schedule a game's start system goes in (in place of `Startup`), `EndRun` for what it forgets, `RunOver` with an `Outcome` and epitaph, `Ending`, `Restart`, and `EngineState::Over`, in which the world is drawn and nothing runs. Combat writes `RunOver` on the player's death unless `CombatRules::death_is_not_the_end`. `clear_run` tears a run down.
+- The narrator: `NarrationView`, `NarrationViewPlugin`, `NarratorPlugin`, `Phrase`, `Phrasebook` and `Said`, and `ViewSet::Speak`. `MessageLog` lines carry `Span`s, `push_spans` writes them, and `readable` lifts a dark content colour to legible; `Tones::HIT` and `Tones::KILL`. `panel::wrap_rich`, `clip_rich`, `print_rich`.
+- `GameMenuPanel`, `MenuKeys`, `game_menu_modal` and `EngineKey::OpenMenu`: the menu on Escape and the screen a run ends on. `Modals::just_opened`, so the key that opened a screen does not close it.
+- `Morgue` and `Obituary` in `rl-save`, and `FileBackend::with_extension`.
+- Removed: `is_status_source` (see above), the door branch of `resolve_moves`.
 
 ## 0.1.0
 

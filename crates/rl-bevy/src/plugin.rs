@@ -2,11 +2,12 @@
 
 use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
+use rl_core::RunSeed;
 
-use crate::components::{MyTurn, Player};
+use crate::components::{Actor, MyTurn, Player, Position};
 use crate::cue::TurnHold;
 use crate::knowledge::Knowledge;
-use crate::state::EngineState;
+use crate::state::{EngineState, Restart, RunOver};
 use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
 use crate::{places, turn};
@@ -63,6 +64,27 @@ pub enum PresentSet {
 /// which is why player input lives in [`EngineSet::Input`] instead.
 #[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Turn;
+
+/// Where a game begins a run: the schedule its start system goes in.
+///
+/// Run once at startup and again after every [`Restart`], with the
+/// previous run torn down and the [`Seed`](crate::seed::Seed) set for the
+/// next. A game puts here what it used to put in `Startup`: the rules, the
+/// map, the player, the warp in and the flip to [`EngineState::Playing`].
+/// Nothing of the old run is left when it runs, so the same system starts
+/// the first run and the tenth.
+#[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NewRun;
+
+/// Where a game forgets a run: the schedule run before the engine tears one
+/// down for a [`Restart`].
+///
+/// The engine despawns everything that stands, lies or acts on a map and
+/// resets what it keeps about the run; a game puts here whatever it keeps
+/// of its own, such as which regions it has populated or a flag that
+/// resumes a save, so the next run does not inherit it.
+#[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EndRun;
 
 /// The stages of one [`Turn`] pass, in order.
 ///
@@ -131,12 +153,12 @@ pub fn run_turns(world: &mut World) {
 /// The engine's core, and the only plugin every game needs.
 ///
 /// The state, the system sets, the turn schedule and the loop that runs
-/// it, the clock, the occupancy index, the map and its places, and the
-/// actions that need nothing else: step, which opens a door it walks into,
-/// wait, close a door, and go through what stands here. Everything else is
-/// a plugin of its own, and a game adds
-/// the ones it wants: nothing turns itself on because a resource happens
-/// to exist.
+/// it, the clock, the occupancy index, the map and its places, the run's
+/// beginning and end, and the actions that need nothing else: step, wait,
+/// open and close a door, go through what stands here, and bump, which
+/// comes to one of the others. Everything else is a plugin of its own, and
+/// a game adds the ones it wants: nothing turns itself on because a
+/// resource happens to exist.
 ///
 /// Needs a [`WorldMap`] before play begins, and checks what every other
 /// plugin said it needs at the same moment, through [`Requirements`].
@@ -156,41 +178,135 @@ impl Plugin for CorePlugin {
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
             .add_message::<TurnEnd>()
+            .add_message::<RunOver>()
+            .add_message::<Restart>()
             .add_message::<places::WarpRequest>()
             .add_message::<places::MapChanged>()
             .add_message::<places::PlaceEntered>()
             .add_message::<crate::doors::DoorEvent>()
+            .add_message::<crate::bump::Bumped>()
+            // A bump may come to a blow, so the message it would write exists
+            // whether or not the game added combat; nothing resolves it then.
+            .add_message::<turn::Intent<crate::combat::Attack>>()
             .init_schedule(Turn)
+            .init_schedule(NewRun)
+            .init_schedule(EndRun)
+            // The loops run only while playing; drawing runs while there is a
+            // world to draw, which a run that is over still is.
+            .configure_sets(Update, (EngineSet::Stream, EngineSet::Input, EngineSet::Turns, EngineSet::Light, EngineSet::Fov, EngineSet::Present).chain())
             .configure_sets(
                 Update,
-                (EngineSet::Stream, EngineSet::Input, EngineSet::Turns, EngineSet::Light, EngineSet::Fov, EngineSet::Present)
-                    .chain()
-                    .run_if(in_state(EngineState::Playing)),
+                (EngineSet::Stream, EngineSet::Input, EngineSet::Turns, EngineSet::Light, EngineSet::Fov).run_if(in_state(EngineState::Playing)),
             )
+            .configure_sets(Update, EngineSet::Present.run_if(crate::state::world_is_shown))
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
             .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
             .configure_sets(
                 Turn,
-                (ResolveSet::Travel, ResolveSet::Act, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage).chain().in_set(TurnSet::Resolve),
+                (ResolveSet::Redirect, ResolveSet::Travel, ResolveSet::Act, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage)
+                    .chain()
+                    .in_set(TurnSet::Resolve),
             )
             .configure_sets(Turn, (FieldSet::Fire, FieldSet::Gas).chain().in_set(ResolveSet::Fields))
             .configure_sets(Turn, (CleanupSet::Remove, CleanupSet::Requeue).chain().in_set(TurnSet::Cleanup))
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
+            .add_action::<crate::bump::Bump>()
             .add_action::<places::GoThrough>()
+            .add_action::<crate::doors::Open>()
             .add_action::<crate::doors::Close>()
             .add_systems(Update, run_turns.in_set(EngineSet::Turns))
             .add_systems(Turn, (turn::start_pass, places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
+            .add_systems(Turn, crate::bump::redirect_bumps.in_set(ResolveSet::Redirect))
             .add_systems(
                 Turn,
-                (turn::resolve_moves, turn::resolve_waits, crate::doors::resolve_closes, places::resolve_warps).chain().in_set(ResolveSet::Travel),
+                (turn::resolve_moves, turn::resolve_waits, crate::doors::resolve_opens, crate::doors::resolve_closes, places::resolve_warps)
+                    .chain()
+                    .in_set(ResolveSet::Travel),
             )
             .add_systems(Turn, (turn::cleanup_turns, turn::forget_removed_blockers).chain().in_set(CleanupSet::Requeue))
             .add_systems(Turn, crate::cue::hold_for_cues.in_set(TurnSet::Cleanup))
             .needs::<WorldMap>("CorePlugin", "`WorldMap::new(tiles.tables())`, the map every engine system reads")
             .add_systems(OnEnter(EngineState::Playing), check_requirements)
-            .add_systems(Update, warn_if_play_never_began);
+            .add_systems(Update, warn_if_play_never_began)
+            // The run's life: begun at startup, ended by the first `RunOver`,
+            // torn down and begun again by a `Restart`.
+            .add_systems(Startup, begin_first_run)
+            .add_systems(PostUpdate, crate::state::end_runs)
+            .add_systems(Last, restart_runs)
+            .add_systems(OnEnter(EngineState::Idle), begin_pending_run);
+    }
+}
+
+/// Runs the game's start for the first time.
+fn begin_first_run(world: &mut World) {
+    world.run_schedule(NewRun);
+}
+
+/// The run a [`Restart`] asked for, waiting for the state to have left the
+/// old one.
+#[derive(Resource, Debug, Clone, Copy)]
+struct PendingRun {
+    seed: Option<RunSeed>,
+}
+
+/// Answers the frame's [`Restart`], if there was one: the game forgets the
+/// run, the engine tears it down, and the state goes back to
+/// [`EngineState::Idle`] so the next run is begun through the same door
+/// the first was.
+pub fn restart_runs(world: &mut World) {
+    let asked: Option<Restart> = world.resource_mut::<Messages<Restart>>().drain().last();
+    let Some(restart) = asked else { return };
+    world.run_schedule(EndRun);
+    clear_run(world);
+    world.insert_resource(PendingRun { seed: restart.seed });
+    world.resource_mut::<NextState<EngineState>>().set(EngineState::Idle);
+}
+
+/// Begins the run a [`Restart`] asked for, once the state has come round to
+/// idle: sets the seed and runs the game's start.
+fn begin_pending_run(world: &mut World) {
+    let Some(PendingRun { seed }) = world.remove_resource::<PendingRun>() else { return };
+    let seed = seed.unwrap_or_else(RunSeed::fresh);
+    world.insert_resource(crate::seed::Seed(seed));
+    world.run_schedule(NewRun);
+}
+
+/// Takes the run out of the world: everything that stands, lies or acts on
+/// a map is despawned, and everything the engine keeps about a run is
+/// reset. The [`WorldMap`] is removed rather than emptied, so a start that
+/// forgets to make one is told so by the same check as the first time.
+///
+/// What a game keeps of its own is its own to forget, in [`EndRun`].
+pub fn clear_run(world: &mut World) {
+    let doomed: Vec<Entity> = world
+        .query_filtered::<Entity, Or<(With<Position>, With<places::OnMap>, With<crate::items::Item>, With<Actor>, With<crate::combat::Dead>)>>()
+        .iter(world)
+        .collect();
+    for e in doomed {
+        world.despawn(e);
+    }
+    world.insert_resource(Turns::default());
+    world.insert_resource(Occupancy::default());
+    world.insert_resource(Acting::default());
+    world.insert_resource(Knowledge::default());
+    world.resource_mut::<TurnHold>().reset();
+    world.resource_mut::<crate::minds::FlowFields>().invalidate();
+    world.remove_resource::<WorldMap>();
+    world.remove_resource::<crate::state::Ending>();
+    fn reset<R: Resource + Default>(world: &mut World) {
+        if world.contains_resource::<R>() {
+            world.insert_resource(R::default());
+        }
+    }
+    reset::<crate::fire::Fire>(world);
+    reset::<crate::gas::Gases>(world);
+    reset::<crate::ability::Offered>(world);
+    reset::<crate::ability::Airborne>(world);
+    reset::<crate::throwing::AirborneThrows>(world);
+    if world.contains_resource::<crate::lighting::Lighting>() {
+        world.insert_resource(crate::lighting::Lighting::dark());
     }
 }
 
@@ -228,6 +344,11 @@ pub enum DecideSet {
 /// its turn.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResolveSet {
+    /// Where one intent becomes another before anything claims the turn:
+    /// a bump becomes a step, an opening or a blow. An alternate action of
+    /// a game's own reads its intent here, writes the one it comes to, and
+    /// claims nothing.
+    Redirect,
     /// Going somewhere: a step, a wait, a door, and any warp a reaction
     /// asked for, so a place a warp builds exists before anything acts in it.
     Travel,

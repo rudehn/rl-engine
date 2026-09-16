@@ -23,7 +23,7 @@ fn main() -> AppExit {
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map across the whole terminal, and the UI base.
     // `CapturePlugin` inside it only takes this guide's screenshots.
-    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS)).insert_resource(Seed(RunSeed(7))).add_systems(Startup, start);
+    app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS)).insert_resource(Seed(RunSeed(7))).add_systems(NewRun, start);
     app.run()
 }
 // ANCHOR_END: main

@@ -70,18 +70,24 @@ fn main() -> AppExit {
             ControlsPanel::new(screen.controls).hint(screen.hint),
             // Every number the delver is made of, on `c`.
             SheetPanel::new(screen.sheet),
+            // Escape: a new run, the same seed again, or quit; and the screen
+            // the run ends on.
+            GameMenuPanel::new(screen.menu).title("The Hollow Whale").died("The whale keeps you.").won("Daylight."),
         ))
+        // The engine narrates the fight and the knacks; the one phrase the
+        // delve rewords is the brand going out.
+        .add_plugins(NarratorPlugin::default().phrase(Phrase::YourLightGoesOut, "Your brand gutters and goes out.", Tones::BAD))
+        .insert_resource(Morgue::platform_default("delve", "The Hollow Whale"))
         .add_systems(Update, (note_floor, show_pools).in_set(ViewSet::Annotate))
-        .add_systems(Startup, start)
+        .add_systems(NewRun, start)
         // A screen that is up owns the keys: the knack keys decide that for
         // themselves, and everything else waits for the stack to be empty.
         .add_systems(Update, (call_on, (tend_brand, pick_and_drop, toggle_overlay, player_input).chain().run_if(no_modal)).chain().in_set(EngineSet::Input))
         .add_systems(Update, set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
         // A floor fills the moment it is entered, inside the turn.
         .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-        // In the order things happen: the knack, then what it did, then
-        // who died of it. A tuple would let the scheduler pick.
-        .add_systems(Update, (narrate_knacks, narrate, narrate_items).chain().in_set(PresentSet::Narrate));
+        // The one thing the engine cannot narrate: what the warden's death means.
+        .add_systems(Update, heart_stops.in_set(PresentSet::Narrate));
     declare_controls(&mut app);
     app.run()
 }
@@ -99,6 +105,7 @@ struct Screen {
     target: Rect,
     knacks: Rect,
     pack: Rect,
+    menu: Rect,
     controls: Rect,
     sheet: Rect,
     hint: Rect,
@@ -124,6 +131,7 @@ impl Screen {
             knacks: Rect::new(map.x + map.width / 2 - 21, map.y + 3, 42, 22),
             // What the delver carries: a shield, a flame or two.
             pack: Rect::new(map.x + map.width / 2 - 24, map.y + 3, 48, 20),
+            menu: Rect::new(map.x + map.width / 2 - 22, map.y + 6, 44, 14),
             controls: map.inflate(-2),
             sheet: map.inflate(-2),
             hint,
@@ -524,36 +532,21 @@ fn declare_controls(app: &mut App) {
 /// What the player's keys can ask for.
 #[derive(bevy::ecs::system::SystemParam)]
 struct PlayerIntents<'w> {
-    steps: MessageWriter<'w, Intent<Step>>,
-    attacks: MessageWriter<'w, Intent<Attack>>,
+    bumps: MessageWriter<'w, Intent<Bump>>,
     waits: MessageWriter<'w, Intent<Wait>>,
     stairs: MessageWriter<'w, Intent<GoThrough>>,
 }
 
-/// Keys to intents: walk, bump to attack, wait, take the stairs, quit.
-fn player_input(
-    keys: ControlInput,
-    binds: Res<Binds>,
-    occupancy: Res<Occupancy>,
-    player: PlayerTurn,
-    mut intents: PlayerIntents,
-    mut exit: MessageWriter<AppExit>,
-) {
+/// Keys to intents: walk, wait, take the stairs, quit. A walk is a bump,
+/// which the engine resolves to a step, a blow or an opened door.
+fn player_input(keys: ControlInput, binds: Res<Binds>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(binds.quit) {
         exit.write(AppExit::Success);
         return;
     }
-    let Ok((entity, pos)) = player.single() else { return };
+    let Ok((entity, _)) = player.single() else { return };
     if let Some(dir) = keys.direction(binds.walk) {
-        // Bump to attack: walking into someone is a strike.
-        match occupancy.first_at(pos.0 + dir.offset()) {
-            Some(other) => {
-                intents.attacks.write(Intent::new(entity, Attack(other)));
-            }
-            None => {
-                intents.steps.write(Intent::new(entity, Step(dir)));
-            }
-        }
+        intents.bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(binds.stairs) {
         intents.stairs.write(Intent::new(entity, GoThrough));
     } else if keys.just_pressed(binds.wait) {
@@ -667,76 +660,12 @@ fn call_on(keys: ControlInput, binds: Res<Binds>, mut modals: ResMut<Modals>, pl
     }
 }
 
-/// Knacks used and refused, a brand or a torch going out, and standing in
-/// fire.
-fn narrate_knacks(
-    mut used: MessageReader<AbilityEvent>,
-    mut lights: MessageReader<LightEvent>,
-    mut fires: MessageReader<FireEvent>,
-    abilities: Res<Abilities>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
-    names: Query<(&Name, Has<Player>)>,
-) {
-    let turn = turns.turn_number();
-    let named = |e: Entity| names.get(e).map(|(n, _)| n.as_str().to_string()).unwrap_or_else(|_| "something".into());
-    let is_you = |e: Entity| names.get(e).is_ok_and(|(_, you)| you);
-    for ev in used.read() {
-        match ev {
-            AbilityEvent::Used { user, ability, targets, .. } => {
-                let what = &abilities.get(*ability).name;
-                let (who, verb) = if is_you(*user) { ("You".to_string(), "use") } else { (upper_first(&named(*user)), "uses") };
-                let line = match targets.as_slice() {
-                    [] => format!("{who} {verb} {what}."),
-                    [one] if one == user => format!("{who} {verb} {what} on {}.", if is_you(*user) { "yourself".to_string() } else { "itself".to_string() }),
-                    [one] => format!("{who} {verb} {what} on {}.", named(*one)),
-                    many => format!("{who} {verb} {what}, catching {}.", many.len()),
-                };
-                log.push(line, if is_you(*user) { Tones::TEXT } else { Tones::BAD }, turn);
-            }
-            AbilityEvent::Refused { user, ability, why } if is_you(*user) => {
-                let reasons: Vec<&str> = why.iter().map(rl_engine::rl_ui::view::ability::plain).collect();
-                log.bad(format!("You cannot use {}: {}.", abilities.get(*ability).name, reasons.join(", ")), turn);
-            }
-            AbilityEvent::Refused { .. } => {}
+/// The heart warden's death is the win.
+fn heart_stops(mut deaths: MessageReader<DeathEvent>, beasts: Res<Beasts>, kinds: Query<&Kind>, mut over: MessageWriter<RunOver>) {
+    for d in deaths.read() {
+        if kinds.get(d.entity).is_ok_and(|k| beasts.defs.get(k.0).name == "heart warden") {
+            over.write(RunOver::won().saying("The heart stops. The whale shudders, and daylight opens above you."));
         }
-    }
-    for ev in lights.read() {
-        let LightEvent::BurntOut { entity } = *ev;
-        let what = if is_you(entity) { "Your brand".to_string() } else { upper_first(&named(entity)) };
-        log.bad(format!("{what} gutters and goes out."), turn);
-    }
-    for ev in fires.read() {
-        if let FireEvent::Scorched { entity, .. } = *ev
-            && is_you(entity)
-        {
-            log.bad("You are standing in fire.", turn);
-        }
-    }
-}
-
-/// What the player picks up and sets down.
-fn narrate_items(mut items: MessageReader<ItemEvent>, turns: Res<Turns>, mut log: ResMut<MessageLog>, names: Query<&Name>, players: Query<(), With<Player>>) {
-    let turn = turns.turn_number();
-    let named = |e: Entity| names.get(e).map(|n| n.as_str().to_string()).unwrap_or_else(|_| "something".into());
-    for ev in items.read() {
-        match *ev {
-            ItemEvent::PickedUp { actor, item, merged_into } if players.contains(actor) => {
-                log.push(format!("You pick up {}.", named(merged_into.unwrap_or(item))), Tones::TEXT, turn);
-            }
-            ItemEvent::Dropped { actor, item, .. } if players.contains(actor) => {
-                log.push(format!("You set down {}.", named(item)), Tones::TEXT, turn);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn upper_first(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
     }
 }
 
@@ -746,90 +675,6 @@ fn show_pools(mut vitals: ResMut<VitalsView>, registries: Res<Registries>, playe
     let Ok((pools, stats)) = player.single() else { return };
     for (id, def) in registries.stats.iter() {
         vitals.bars.push(Bar::new(def.name.clone(), pools.get(id), stats.0.value(id, &registries.stats), Tones::NOTICE));
-    }
-}
-
-/// What narration reads and writes.
-#[derive(bevy::ecs::system::SystemParam)]
-struct Voice<'w, 's> {
-    beasts: Res<'w, Beasts>,
-    registries: Res<'w, Registries>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
-    next: ResMut<'w, NextState<EngineState>>,
-    kinds: Query<'w, 's, &'static Kind>,
-    players: Query<'w, 's, (), With<Player>>,
-}
-
-fn narrate(mut dealt: MessageReader<DamageDealt>, mut deaths: MessageReader<DeathEvent>, mut voice: Voice) {
-    let Voice { beasts, registries, turns, log, next, kinds, players } = &mut voice;
-    let turn = turns.turn_number();
-    let name = |e: Entity| -> String {
-        if players.get(e).is_ok() {
-            "you".into()
-        } else {
-            kinds.get(e).map(|k| format!("the {}", beasts.defs.get(k.0).name)).unwrap_or_else(|_| "something".into())
-        }
-    };
-    for d in dealt.read() {
-        // A status ticking is the status, not "something", doing it.
-        if let Some(status) = d.hit.status
-            && d.dealt > 0
-        {
-            let who = name(d.target);
-            let tone = if who == "you" { Tones::BAD } else { Tones::TEXT };
-            log.push(
-                format!(
-                    "{}{} take{} {} from {}.",
-                    who[..1].to_uppercase(),
-                    &who[1..],
-                    if who == "you" { "" } else { "s" },
-                    d.dealt,
-                    registries.statuses.name(status)
-                ),
-                tone,
-                turn,
-            );
-            continue;
-        }
-        // A knack a delver turns on itself, a mend most often, is narrated
-        // as the knack; only one that hurt is worth a line of its own.
-        if d.hit.attacker == Some(d.target) {
-            if d.dealt > 0 && players.get(d.target).is_ok() {
-                log.push(format!("You hurt yourself for {}.", d.dealt), Tones::BAD, turn);
-            }
-            continue;
-        }
-        if d.dealt < 0 {
-            let who = name(d.target);
-            log.push(format!("{}{} mends for {}.", who[..1].to_uppercase(), &who[1..], -d.dealt), Tones::GOOD, turn);
-            continue;
-        }
-        let attacker = d.hit.attacker.map(name).unwrap_or_else(|| "something".into());
-        let target = name(d.target);
-        let (verb, cat) = if attacker == "you" { ("hit", Tones::TEXT) } else { ("hits", Tones::BAD) };
-        let mut line = format!("{}{} {verb} {target}", attacker[..1].to_uppercase(), &attacker[1..]);
-        line.push_str(&if d.dealt <= 0 { " but does nothing.".to_string() } else { format!(" for {}.", d.dealt) });
-        log.push(line, cat, turn);
-    }
-    for d in deaths.read() {
-        if d.was_player {
-            log.push("The whale keeps you. Press q to quit.", Tones::BAD, turn);
-            next.set(EngineState::Idle);
-        } else if kinds.get(d.entity).is_ok_and(|k| beasts.defs.get(k.0).name == "heart warden") {
-            log.push("The heart stops. The whale shudders, and daylight opens above you.", Tones::NOTICE, turn);
-            log.push("You have won. Press q to quit.", Tones::NOTICE, turn);
-            next.set(EngineState::Idle);
-        } else {
-            log.push(
-                format!("{} dies.", {
-                    let n = name(d.entity);
-                    format!("{}{}", n[..1].to_uppercase(), &n[1..])
-                }),
-                Tones::GOOD,
-                turn,
-            );
-        }
     }
 }
 
@@ -873,9 +718,9 @@ mod tests {
             .insert_resource(rl_engine::rl_render::ParticleStyle::instant())
             .add_plugins((TargetPanel::new(screen.target), AbilityPanel::new(screen.knacks).called("knacks")))
             .add_systems(Update, (call_on, (tend_brand, pick_and_drop, toggle_overlay, player_input).chain().run_if(no_modal)).chain().in_set(EngineSet::Input))
-            .add_systems(Startup, start)
+            .add_systems(NewRun, start)
             .add_systems(Turn, populate_floor.in_set(TurnSet::React))
-            .add_systems(Update, (narrate_knacks, narrate, narrate_items).chain().in_set(PresentSet::Narrate));
+            .add_systems(Update, heart_stops.in_set(PresentSet::Narrate));
         declare_controls(&mut app);
         app
     }

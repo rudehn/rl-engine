@@ -252,7 +252,7 @@ pub fn narrate_quests(
     quests: Res<Quests>,
     turns: Res<Turns>,
     mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
+    mut over: MessageWriter<RunOver>,
 ) {
     let turn = turns.turn_number();
     for c in changes.read() {
@@ -265,8 +265,7 @@ pub fn narrate_quests(
                 let q = quests.defs.get(quest);
                 log.push(format!("Task complete: {}.", q.title), Tones::NOTICE, turn);
                 if victory {
-                    log.push("You have won. The sea is yours. Press q to quit.", Tones::NOTICE, turn);
-                    next.set(EngineState::Idle);
+                    over.write(RunOver::won().saying("You retire rich. The sea is yours."));
                 }
             }
             rl_engine::rl_rules::Change::QuestOpened { quest } => {

@@ -1,5 +1,5 @@
-//! Monsters: definitions from RON, spawning as regions stream in, and the
-//! narration of what they do.
+//! Monsters: definitions from RON, and spawning as regions stream in. What
+//! they do is narrated by the engine, from the events they raise.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -18,7 +18,6 @@ use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{AbilityDef, Equipment, NameRef, Names, StatusDef, Wits};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
-use rl_engine::rl_ui::{MessageLog, Tones};
 use serde::Deserialize;
 
 use crate::content::PORT;
@@ -263,99 +262,6 @@ pub fn spawn_on_load(
                 placed += 1;
             }
         }
-    }
-}
-
-/// What narration writes.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Voice<'w> {
-    log: ResMut<'w, MessageLog>,
-    next: ResMut<'w, NextState<EngineState>>,
-    registries: Res<'w, Registries>,
-}
-
-/// Turns hits and deaths into log lines.
-pub fn narrate(
-    mut dealt: MessageReader<DamageDealt>,
-    mut deaths: MessageReader<DeathEvent>,
-    mut voice: Voice,
-    turns: Res<Turns>,
-    bestiary: Res<Bestiary>,
-    names: Query<&MonsterKind>,
-    players: Query<(), With<Player>>,
-) {
-    let Voice { log, next, registries } = &mut voice;
-    let name = |e: Entity| -> String {
-        if players.get(e).is_ok() {
-            "you".to_string()
-        } else {
-            names.get(e).map(|k| format!("the {}", bestiary.defs.get(k.0).name)).unwrap_or_else(|_| "something".into())
-        }
-    };
-    let turn = turns.turn_number();
-    for d in dealt.read() {
-        // A status ticking is the status, not "something", doing it.
-        if let Some(status) = d.hit.status
-            && d.dealt > 0
-        {
-            let target = name(d.target);
-            let verb = if target == "you" { "take" } else { "takes" };
-            let tone = if target == "you" { Tones::BAD } else { Tones::TEXT };
-            log.push(format!("{} {verb} {} from {}.", cap(&target), d.dealt, registries.statuses.name(status)), tone, turn);
-            continue;
-        }
-        let attacker = d.hit.attacker.map(name).unwrap_or_else(|| "something".into());
-        let target = name(d.target);
-        let you_hit = attacker == "you";
-        let verb = if you_hit { "hit" } else { "hits" };
-        let (text, cat) = if d.dealt <= 0 {
-            (format!("{} {} {} but {} nothing.", cap(&attacker), verb, target, if you_hit { "do" } else { "does" }), Tones::MUTED)
-        } else {
-            (format!("{} {} {} for {}.", cap(&attacker), verb, target, d.dealt), if target == "you" { Tones::BAD } else { Tones::TEXT })
-        };
-        log.push(text, cat, turn);
-    }
-    for d in deaths.read() {
-        if d.was_player {
-            log.push("You die. Press q to quit.", Tones::BAD, turn);
-            next.set(EngineState::Idle);
-        } else {
-            log.push(format!("{} dies.", cap(&name(d.entity))), Tones::GOOD, turn);
-        }
-    }
-}
-
-/// Doors in words: the ones you work, and the ones a monster works where you
-/// can see it, which is how you learn that a cutthroat is not a crab.
-pub fn narrate_doors(
-    mut doors: MessageReader<DoorEvent>,
-    bestiary: Res<Bestiary>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
-    kinds: Query<&MonsterKind>,
-    player: Query<(Entity, &Viewshed), With<Player>>,
-) {
-    let Ok((you, sight)) = player.single() else { return };
-    for ev in doors.read() {
-        let (actor, at, verb) = match *ev {
-            DoorEvent::Opened { actor, at } => (actor, at, "open"),
-            DoorEvent::Closed { actor, at } => (actor, at, "close"),
-        };
-        if actor == you {
-            log.push(format!("You {verb} the door."), Tones::MUTED, turns.turn_number());
-        } else if let Ok(kind) = kinds.get(actor)
-            && sight.can_see(at)
-        {
-            log.push(format!("The {} {verb}s a door.", bestiary.defs.get(kind.0).name), Tones::NOTICE, turns.turn_number());
-        }
-    }
-}
-
-fn cap(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
     }
 }
 

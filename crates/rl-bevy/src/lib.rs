@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ability;
+pub mod bump;
 pub mod combat;
 pub mod components;
 pub mod cue;
@@ -45,13 +46,14 @@ pub use ability::{
     Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants,
     Known, Landed, Landing, Offered, Pools, Use,
 };
+pub use bump::{Bump, Bumped};
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
     RangedAttack, Resists, Strikes, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use cue::{Anchor, Cue, Cued, LookOf, TurnHold};
-pub use doors::{Close, DoorEvent};
+pub use doors::{Close, DoorEvent, Open};
 pub use effects::{AddEngineEffects, Cleanse, Emit, Harm, Ignite, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::{MapFields, SavedField};
@@ -68,11 +70,13 @@ pub use minds::{FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Percepti
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
-pub use plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, FieldSet, Needs, PresentSet, Requirements, ResolveSet, Turn, TurnSet, depends_on};
+pub use plugin::{
+    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PresentSet, Requirements, ResolveSet, Turn, TurnSet, clear_run, depends_on,
+};
 pub use registries::Registries;
 pub use replay::{Pressed, Recording};
 pub use seed::{AddStream, Seed, Stream};
-pub use state::EngineState;
+pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
@@ -91,13 +95,14 @@ pub mod prelude {
         Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants, Known,
         Landing, Pools, Use,
     };
+    pub use crate::bump::{Bump, Bumped};
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
         RangedAttack, Resists, Strikes, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
-    pub use crate::doors::{Close, DoorEvent};
+    pub use crate::doors::{Close, DoorEvent, Open};
     pub use crate::effects::AddEngineEffects;
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
@@ -113,10 +118,10 @@ pub mod prelude {
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
-    pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EngineSet, FieldSet, Needs, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
+    pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
     pub use crate::registries::Registries;
     pub use crate::seed::{AddStream, Seed};
-    pub use crate::state::EngineState;
+    pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};

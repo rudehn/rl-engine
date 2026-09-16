@@ -43,13 +43,23 @@ fn main() -> AppExit {
         // bottom. Each draws itself; neither needs a system of yours.
         .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[.] wait  [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-        .add_systems(Startup, start)
+        // ANCHOR: narrator
+        // The engine narrates blows, deaths and pickups into the log, naming
+        // things in their own colours. Warren changes one phrase: what a rat
+        // does to you is a bite.
+        .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
+        // Escape opens the menu. The run's end opens it by itself, under these
+        // words, offering a new run or the same seed again; the morgue writes
+        // the run down beside the executable.
+        .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .insert_resource(Morgue::platform_default("warren", "Warren"))
+        // ANCHOR_END: narrator
+        .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.
         .add_systems(Update, player_input.in_set(EngineSet::Input))
         // A floor fills the first time it is entered, inside the turn.
-        .add_systems(Turn, populate.in_set(TurnSet::React))
-        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        .add_systems(Turn, populate.in_set(TurnSet::React));
     app.run()
 }
 // ANCHOR_END: main
@@ -180,14 +190,12 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Playe
 /// Keys to intents. Writing an intent is the whole of asking to act: the
 /// engine claims the turn, charges it, and refuses what cannot be done.
 ///
-/// Bump to attack is a decision the game makes, not the engine: a step
-/// into an occupied cell is written as an [`Attack`] instead.
+/// The walk keys write a [`Bump`], which the engine resolves to a step, a
+/// blow at a foe, or opening a door, whichever is in the way.
 fn player_input(
     keys: Res<ButtonInput<KeyCode>>,
-    occupancy: Res<Occupancy>,
     player: PlayerTurn,
-    mut steps: MessageWriter<Intent<Step>>,
-    mut attacks: MessageWriter<Intent<Attack>>,
+    mut bumps: MessageWriter<Intent<Bump>>,
     mut waits: MessageWriter<Intent<Wait>>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -196,16 +204,9 @@ fn player_input(
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
-    let Ok((entity, pos)) = player.single() else { return };
+    let Ok((entity, _)) = player.single() else { return };
     if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
-        match occupancy.first_at(pos.0 + dir.offset()) {
-            Some(other) => {
-                attacks.write(Intent::new(entity, Attack(other)));
-            }
-            None => {
-                steps.write(Intent::new(entity, Step(*dir)));
-            }
-        }
+        bumps.write(Intent::new(entity, Bump(*dir)));
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
         waits.write(Intent::new(entity, Wait));
     }
@@ -235,51 +236,10 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
                 (Health::full(6), Armor(0), Perception(7), Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5)),
-                (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3) },),
+                (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3) }, Name::new("rat")),
             ));
             placed += 1;
         }
     }
 }
 // ANCHOR_END: populate
-
-// ANCHOR: narrate
-/// Turns what the pipeline reported into English.
-fn narrate(
-    mut dealt: MessageReader<DamageDealt>,
-    mut deaths: MessageReader<DeathEvent>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
-    players: Query<(), With<Player>>,
-) {
-    let turn = turns.turn_number();
-    let name = |e: Entity| if players.contains(e) { "you" } else { "the rat" };
-    for d in dealt.read() {
-        let attacker = d.hit.attacker.map(name).unwrap_or("something");
-        let mine = attacker == "you";
-        let (verb, category) = if mine { ("hit", Tones::TEXT) } else { ("bites", Tones::BAD) };
-        let tail = if d.dealt <= 0 { " and does nothing.".to_string() } else { format!(" for {}.", d.dealt) };
-        log.push(format!("{} {verb} {}{tail}", capital(attacker), name(d.target)), category, turn);
-    }
-    for d in deaths.read() {
-        if d.was_player {
-            log.push("The warren keeps you. Press q to quit.", Tones::BAD, turn);
-            // Leaving `Playing` stops the loop: no turns, no input, but
-            // the last frame stays on the screen.
-            next.set(EngineState::Idle);
-        } else {
-            log.push("The rat dies.", Tones::GOOD, turn);
-        }
-    }
-}
-
-/// The same string with its first letter raised.
-fn capital(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
-    }
-}
-// ANCHOR_END: narrate

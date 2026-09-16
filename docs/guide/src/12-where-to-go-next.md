@@ -54,6 +54,15 @@ The grown-up version of [chapter 7](07-down-the-stairs.md)'s `if the king died`.
 `rl-save` has backends for files, memory and browser storage behind one resource, a versioned envelope that refuses a mismatch rather than guessing, and entity remapping.
 The engine exports the scheduler's queue, the world's edits and places, and what has been explored.
 
+## The run's beginning and end
+
+Your start system lives in `NewRun`, and the engine runs it again after every `Restart`, on a fresh seed or the same one, with the old run torn down first.
+Whatever a game keeps of a run that the engine does not, it forgets in `EndRun`.
+`RunOver` ends a run, from the player's death unless `CombatRules` say otherwise, or from any condition of your own; `GameMenuPanel` opens over the ending and offers the next run, and `Morgue` writes the run down.
+
+The `NarratorPlugin` speaks every engine event through its `Phrasebook`, split by who did what to whom, with names in the colours of the things they name.
+Reword a phrase, silence one, or read the `NarrationView` and say it your own way.
+
 ## A world above the dungeon
 
 `rl-world` generates one: FBM noise, elevation banding, priority-flood hydrology, climate, scored site placement and a road router.

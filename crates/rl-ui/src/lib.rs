@@ -92,10 +92,12 @@ pub mod controls;
 pub mod cursor;
 pub mod facet;
 pub mod focus;
+pub mod game_menu;
 pub mod keys;
 pub mod log;
 pub mod menu;
 pub mod modal;
+pub mod narrate;
 pub mod panel;
 pub mod replay;
 pub mod tone;
@@ -105,17 +107,19 @@ pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInpu
 pub use cursor::{CursorKeys, Steer};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighting};
+pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, game_menu_modal};
 pub use keys::DirectionKeys;
-pub use log::{LogEntry, MessageLog};
+pub use log::{LogEntry, MessageLog, Span};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
+pub use narrate::{NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said};
 pub use panel::{
     AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel,
     NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, inventory_modal,
     sheet_modal,
 };
 pub use replay::ReplayPlugin;
-pub use tone::{AddTone, Palette, Tone, ToneId, Tones};
+pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin,
     InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
@@ -137,6 +141,9 @@ pub enum ViewSet {
     Collect,
     /// The game pushes what the engine cannot know.
     Annotate,
+    /// The narrator writes the log from what the turns did, after the game
+    /// has had its say about the rows.
+    Speak,
 }
 
 /// The base every other plugin in this crate needs: tones, the palette,
@@ -170,7 +177,7 @@ impl Plugin for UiPlugin {
             .init_resource::<RepeatPace>()
             .init_resource::<Repeats>()
             .init_resource::<MessageLog>()
-            .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate).chain().in_set(rl_bevy::PresentSet::Narrate))
+            .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate, ViewSet::Speak).chain().in_set(rl_bevy::PresentSet::Narrate))
             .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
             .add_systems(Update, controls::advance_repeats.before(rl_bevy::EngineSet::Input))
             // After every screen has had the key, so the one on top answers
@@ -179,7 +186,9 @@ impl Plugin for UiPlugin {
                 Update,
                 modal::close_on_escape.after(rl_bevy::EngineSet::Input).before(rl_bevy::EngineSet::Turns).run_if(in_state(rl_bevy::EngineState::Playing)),
             )
-            .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones);
+            .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones)
+            // A new run starts with an empty log and no screen up.
+            .add_systems(rl_bevy::EndRun, forget_run);
         // The one facet key the engine itself pushes: a status badge.
         app.world_mut().resource_mut::<Facets>().declare("badge");
     }
@@ -189,16 +198,24 @@ impl Plugin for UiPlugin {
     }
 }
 
+/// Forgets the run's words and screens, for the one that begins next.
+fn forget_run(mut log: ResMut<MessageLog>, mut modals: ResMut<Modals>) {
+    log.clear();
+    modals.close_all();
+}
+
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
     pub use crate::cursor::CursorKeys;
     pub use crate::facet::{Facet, FacetId, Facets};
     pub use crate::focus::{Focus, InSight, Sighting};
+    pub use crate::game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
     pub use crate::keys::DirectionKeys;
-    pub use crate::log::{LogEntry, MessageLog};
+    pub use crate::log::{LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
     pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};
+    pub use crate::narrate::{NarrationView, NarratorPlugin, Phrase, Phrasebook, Said};
     pub use crate::replay::ReplayPlugin;
     // The module itself, for `panel::split_right` and the drawing
     // helpers a game writing its own presenter reaches for.
@@ -208,7 +225,7 @@ pub mod prelude {
         LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal,
         inventory_modal, sheet_modal,
     };
-    pub use crate::tone::{AddTone, Palette, ToneId, Tones};
+    pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView,
         InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,

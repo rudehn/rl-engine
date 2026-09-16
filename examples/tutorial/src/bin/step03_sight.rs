@@ -34,7 +34,7 @@ fn main() -> AppExit {
         // bottom. Each draws itself; neither needs a system of yours.
         .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[.] wait  [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-        .add_systems(Startup, start)
+        .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.
         .add_systems(Update, player_input.in_set(EngineSet::Input))

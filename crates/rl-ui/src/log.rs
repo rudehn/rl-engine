@@ -5,6 +5,12 @@
 //! English. A repeated line folds into the one above it with a count
 //! rather than filling the panel, which is what turns "you are bitten"
 //! five times into one readable line.
+//!
+//! A line may carry [`Span`]s: runs of its text in a colour of their own,
+//! which is how a name in the log wears the colour of the thing it names.
+//! That colour is content, the way a glyph's is, and not a tone: a green
+//! slime is green in every palette. A presenter keeps it readable against
+//! its surface with [`readable`](crate::tone::readable).
 
 use std::collections::VecDeque;
 
@@ -12,17 +18,41 @@ use bevy::prelude::*;
 
 use crate::tone::{ToneId, Tones};
 
+/// A run of a line's text in its own colour.
+///
+/// Offsets count characters, not bytes, since a panel lays a line out a
+/// character at a time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Span {
+    /// The first character.
+    pub start: usize,
+    /// How many characters.
+    pub len: usize,
+    /// The colour, as content: what the thing named is drawn in.
+    pub color: Color,
+}
+
+impl Span {
+    /// Whether the character at `index` is inside.
+    pub fn covers(&self, index: usize) -> bool {
+        index >= self.start && index < self.start + self.len
+    }
+}
+
 /// One line of the log.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LogEntry {
     /// The text.
     pub text: String,
-    /// How it reads.
+    /// How it reads, apart from any span.
     pub tone: ToneId,
     /// The whole turn it was logged on.
     pub turn: u32,
     /// How many times in a row it was logged. Always at least one.
     pub count: u32,
+    /// Runs of the text in a colour of their own, in order and not
+    /// overlapping. Empty for a line all in its tone.
+    pub spans: Vec<Span>,
 }
 
 impl LogEntry {
@@ -58,6 +88,12 @@ impl MessageLog {
     /// event is a log that has stopped reporting; the count keeps the
     /// information and the room.
     pub fn push(&mut self, text: impl Into<String>, tone: ToneId, turn: u32) {
+        self.push_spans(text, Vec::new(), tone, turn);
+    }
+
+    /// Appends a message with runs of its text in colours of their own,
+    /// folding as [`push`](Self::push) does.
+    pub fn push_spans(&mut self, text: impl Into<String>, spans: Vec<Span>, tone: ToneId, turn: u32) {
         let text = text.into();
         if let Some(last) = self.entries.back_mut()
             && last.text == text
@@ -70,7 +106,7 @@ impl MessageLog {
         if self.entries.len() == self.capacity {
             self.entries.pop_front();
         }
-        self.entries.push_back(LogEntry { text, tone, turn, count: 1 });
+        self.entries.push_back(LogEntry { text, tone, turn, count: 1, spans });
     }
 
     /// Appends plain narration.
@@ -166,5 +202,16 @@ mod tests {
         log.bad("it moves", 1);
         assert_eq!(log.len(), 2);
         assert_eq!(log.in_tone(Tones::BAD).count(), 1);
+    }
+
+    #[test]
+    fn a_span_marks_characters_and_survives_a_fold() {
+        let mut log = MessageLog::default();
+        let green = Color::srgb(0.0, 1.0, 0.0);
+        log.push_spans("the slime nips you", vec![Span { start: 4, len: 5, color: green }], Tones::BAD, 1);
+        log.push_spans("the slime nips you", vec![Span { start: 4, len: 5, color: green }], Tones::BAD, 2);
+        let entry = log.recent(1).next().unwrap();
+        assert_eq!((entry.count, entry.spans.len()), (2, 1));
+        assert!(entry.spans[0].covers(4) && entry.spans[0].covers(8) && !entry.spans[0].covers(9));
     }
 }

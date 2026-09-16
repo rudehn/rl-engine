@@ -41,10 +41,12 @@ pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet
 pub use target::{TargetLayout, TargetPanel};
 pub use vitals::VitalsPanel;
 
+use bevy::prelude::Color;
 use rl_core::{Point, Rect};
 use rl_render::{Cell, MapView, Terminal};
 
-use crate::tone::{Palette, ToneId, Tones};
+use crate::log::{LogEntry, Span};
+use crate::tone::{Palette, ToneId, Tones, readable};
 
 /// Clears `rect` to the surface colour. Every panel starts here: a shorter
 /// line must not leave the tail of a longer one behind it.
@@ -151,42 +153,126 @@ pub fn clip(text: &str, width: usize) -> String {
 /// the end of a sentence is worse than spending a second row on it, and
 /// public because a game writing its own presenter wants the same.
 pub fn wrap(text: &str, width: usize) -> Vec<String> {
+    wrap_rich(text, &[], width).into_iter().map(|line| line.into_iter().map(|(run, _)| run).collect()).collect()
+}
+
+/// A run of characters on one drawn line, in its own colour or, when
+/// `None`, in the line's tone.
+pub type Segment = (String, Option<Color>);
+
+/// [`wrap`], keeping each character's [`Span`] colour: the lines come back
+/// as runs, one per change of colour, so a name coloured in the log stays
+/// coloured when the line breaks in the middle of it.
+pub fn wrap_rich(text: &str, spans: &[Span], width: usize) -> Vec<Vec<Segment>> {
     if width == 0 {
         return Vec::new();
     }
-    let mut lines = Vec::new();
-    let mut line = String::new();
-    let mut len = 0;
-    for word in text.split_whitespace() {
-        let word_len = word.chars().count();
-        if word_len > width {
-            if len > 0 {
-                lines.push(std::mem::take(&mut line));
-                len = 0;
+    let chars: Vec<char> = text.chars().collect();
+    // Words as ranges of character indices, so every character drawn knows
+    // which character of the original it was and which span covers it.
+    let mut words: Vec<(usize, usize)> = Vec::new();
+    let mut start = None;
+    for (i, c) in chars.iter().enumerate() {
+        match (c.is_whitespace(), start) {
+            (false, None) => start = Some(i),
+            (true, Some(s)) => {
+                words.push((s, i));
+                start = None;
             }
-            for chunk in word.chars().collect::<Vec<_>>().chunks(width) {
-                lines.push(chunk.iter().collect());
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        words.push((s, chars.len()));
+    }
+    // Each line is the character indices it shows, `None` for a space
+    // between words.
+    let mut lines: Vec<Vec<Option<usize>>> = Vec::new();
+    let mut line: Vec<Option<usize>> = Vec::new();
+    for (s, e) in words {
+        let word_len = e - s;
+        if word_len > width {
+            if !line.is_empty() {
+                lines.push(std::mem::take(&mut line));
+            }
+            for chunk in (s..e).collect::<Vec<_>>().chunks(width) {
+                lines.push(chunk.iter().map(|i| Some(*i)).collect());
             }
             continue;
         }
-        if len > 0 && len + 1 + word_len > width {
+        if !line.is_empty() && line.len() + 1 + word_len > width {
             lines.push(std::mem::take(&mut line));
-            len = 0;
         }
-        if len > 0 {
-            line.push(' ');
-            len += 1;
+        if !line.is_empty() {
+            line.push(None);
         }
-        line.push_str(word);
-        len += word_len;
+        line.extend((s..e).map(Some));
     }
-    if len > 0 {
+    if !line.is_empty() {
         lines.push(line);
     }
     if lines.is_empty() {
-        lines.push(String::new());
+        lines.push(Vec::new());
     }
+    let colour_at = |i: Option<usize>| i.and_then(|i| spans.iter().find(|s| s.covers(i)).map(|s| s.color));
     lines
+        .into_iter()
+        .map(|indices| {
+            let mut runs: Vec<Segment> = Vec::new();
+            for i in indices {
+                let (c, colour) = (i.map_or(' ', |i| chars[i]), colour_at(i));
+                match runs.last_mut() {
+                    Some((run, last)) if *last == colour => run.push(c),
+                    _ => runs.push((c.to_string(), colour)),
+                }
+            }
+            if runs.is_empty() {
+                runs.push((String::new(), None));
+            }
+            runs
+        })
+        .collect()
+}
+
+/// Cuts `runs` to `width` characters, with an ellipsis when they did not
+/// fit, the way [`clip`] cuts a plain string.
+pub fn clip_rich(runs: &[Segment], width: usize) -> Vec<Segment> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let total: usize = runs.iter().map(|(r, _)| r.chars().count()).sum();
+    if total <= width {
+        return runs.to_vec();
+    }
+    let mut out: Vec<Segment> = Vec::new();
+    let mut left = width.saturating_sub(1);
+    for (run, colour) in runs {
+        if left == 0 {
+            break;
+        }
+        let take: String = run.chars().take(left).collect();
+        left -= take.chars().count();
+        out.push((take, *colour));
+    }
+    out.push(("\u{2026}".to_string(), None));
+    out
+}
+
+/// Prints `runs` from `x`, each in its own colour made readable against the
+/// palette, or in `fg` where it has none.
+pub fn print_rich(terminal: &mut Terminal, x: i32, y: i32, runs: &[Segment], fg: Color, bg: Color, palette: &Palette) {
+    let mut x = x;
+    for (run, colour) in runs {
+        let colour = colour.map_or(fg, |c| readable(c, palette));
+        terminal.print_on(x, y, run, colour, bg);
+        x += run.chars().count() as i32;
+    }
+}
+
+/// The spans of an entry as its display line carries them: the same, since
+/// a count is appended after the text.
+pub fn runs_of(entry: &LogEntry, width: usize) -> Vec<Vec<Segment>> {
+    wrap_rich(&entry.display(), &entry.spans, width)
 }
 
 /// Splits `rect` into everything left of a column `width` wide and that

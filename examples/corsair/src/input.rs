@@ -64,7 +64,6 @@ pub struct InputWorld<'w, 's> {
     keys: ControlInput<'w>,
     binds: Res<'w, Binds>,
     modals: Res<'w, Modals>,
-    occupancy: Res<'w, Occupancy>,
     map: Res<'w, WorldMap>,
     player: PlayerTurn<'w, 's>,
 }
@@ -151,8 +150,7 @@ pub fn equip_underfoot(mut hands: Hands, mut intents: MessageWriter<Intent<Equip
 /// What the player's keys can ask for.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct PlayerIntents<'w> {
-    steps: MessageWriter<'w, Intent<Step>>,
-    attacks: MessageWriter<'w, Intent<Attack>>,
+    bumps: MessageWriter<'w, Intent<Bump>>,
     waits: MessageWriter<'w, Intent<Wait>>,
     transits: MessageWriter<'w, Intent<GoThrough>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
@@ -161,7 +159,7 @@ pub struct PlayerIntents<'w> {
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn.
 pub fn player_input(world: InputWorld, mut intents: PlayerIntents) {
-    let InputWorld { keys, binds, modals, occupancy, map, player } = world;
+    let InputWorld { keys, binds, modals, map, player } = world;
     // One gate for every screen there is, and every screen a game adds
     // later: the stack is empty or the world does not have the keys.
     if modals.any_open() {
@@ -170,15 +168,9 @@ pub fn player_input(world: InputWorld, mut intents: PlayerIntents) {
     let Ok((entity, pos)) = player.single() else { return };
 
     if let Some(dir) = keys.direction(binds.walk) {
-        // Bump to attack: walking into someone is a strike.
-        match occupancy.first_at(pos.0 + dir.offset()) {
-            Some(other) => {
-                intents.attacks.write(Intent::new(entity, Attack(other)));
-            }
-            None => {
-                intents.steps.write(Intent::new(entity, Step(dir)));
-            }
-        }
+        // A step, a blow at a foe, or a door opened: the engine decides
+        // which of the three a bump comes to.
+        intents.bumps.write(Intent::new(entity, Bump(dir)));
         return;
     }
     if keys.just_pressed(binds.go_through) {
@@ -209,9 +201,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("corsair-doors-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut app = crate::testing::headless(RunSeed(7), false, &dir);
-        app.add_plugins(KeyScriptPlugin)
-            .add_systems(Update, player_input.in_set(EngineSet::Input))
-            .add_systems(Update, crate::monsters::narrate_doors.in_set(PresentSet::Narrate));
+        app.add_plugins((KeyScriptPlugin, rl_engine::rl_ui::NarratorPlugin::default())).add_systems(Update, player_input.in_set(EngineSet::Input));
         app.update();
         app.update();
         let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();

@@ -15,7 +15,7 @@ use rl_engine::rl_core::Point;
 use rl_engine::rl_rules::Tracker;
 use rl_engine::rl_rules::{Enchanted, Equipment};
 use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, Stash, decode, encode};
-use rl_engine::rl_ui::{AbilityKeys, Bindings, Controls, InventoryKeys, MessageLog, ScrollbackKeys, SheetKeys, Tones};
+use rl_engine::rl_ui::{AbilityKeys, Bindings, Controls, InventoryKeys, MenuKeys, MessageLog, ScrollbackKeys, SheetKeys, Tones};
 use serde::{Deserialize, Serialize};
 
 use crate::input::Binds;
@@ -361,6 +361,7 @@ pub fn save_keys(world: &mut World) {
             sheet: world.get_resource::<SheetKeys>(),
             abilities: world.get_resource::<AbilityKeys>(),
             inventory: world.get_resource::<InventoryKeys>(),
+            menu: world.get_resource::<MenuKeys>(),
         };
         (controls.which(binds.save, keys, &bindings).is_some(), controls.which(binds.quit, keys, &bindings).is_some())
     };

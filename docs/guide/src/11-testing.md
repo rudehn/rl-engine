@@ -15,7 +15,7 @@ Warren's tests run the real game: the same `start` system, the same map generati
 `UiPlugin` goes in too, though nothing draws: it owns the log your systems write to.
 You add the engine plugins your game uses and your own systems, exactly as `main` does, minus the three that draw.
 
-Two `update` calls start a run: the first runs `Startup` and the warp that builds floor one, the second deals the player its first turn.
+Two `update` calls start a run: the first runs `NewRun`, your start system, and the warp that builds floor one, the second deals the player its first turn.
 After that, one per action.
 
 Writing an intent is how the game plays itself.

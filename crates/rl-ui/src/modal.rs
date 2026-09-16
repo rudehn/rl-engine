@@ -46,6 +46,9 @@ pub struct Modals {
     /// Whether a screen closed this frame. The key that closed it is still
     /// down, and the world must not read it as its own.
     closing: bool,
+    /// Whether a screen opened this frame, so the key that opened it is not
+    /// read again as the key that closes whatever is on top.
+    opened: bool,
 }
 
 impl Modals {
@@ -78,6 +81,7 @@ impl Modals {
     pub fn open(&mut self, modal: ModalId) {
         self.stack.retain(|m| *m != modal);
         self.stack.push(modal);
+        self.opened = true;
     }
 
     /// Closes the top screen and returns to the one under it, if any.
@@ -99,14 +103,20 @@ impl Modals {
         self.stack.retain(|m| *m != modal);
     }
 
-    /// Forgets that a screen closed. The first thing in every frame.
+    /// Forgets that a screen opened or closed. The first thing in every frame.
     pub fn begin_frame(&mut self) {
         self.closing = false;
+        self.opened = false;
     }
 
     /// Whether a screen closed this frame.
     pub fn closing(&self) -> bool {
         self.closing
+    }
+
+    /// Whether a screen opened this frame.
+    pub fn just_opened(&self) -> bool {
+        self.opened
     }
 
     /// Opens `modal` if it is closed, closes it if it is open. What a
@@ -193,7 +203,7 @@ pub fn modal_open(modal: ModalId) -> impl Fn(Res<Modals>) -> bool + Clone {
 /// puts a screen away. A screen that closed this frame has answered, so
 /// the same press never closes the one under it as well.
 pub fn close_on_escape(input: Res<ButtonInput<KeyCode>>, keys: Res<crate::cursor::CursorKeys>, mut modals: ResMut<Modals>) {
-    if input.just_pressed(keys.close) && !modals.closing() && modals.top().is_some() {
+    if input.just_pressed(keys.close) && !modals.closing() && !modals.just_opened() && modals.top().is_some() {
         modals.close();
     }
 }

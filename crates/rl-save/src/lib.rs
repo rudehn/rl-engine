@@ -18,12 +18,14 @@
 
 pub mod backend;
 pub mod engine;
+pub mod morgue;
 pub mod remap;
 pub mod unload;
 pub mod versioned;
 
 pub use backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
 pub use engine::EngineSave;
+pub use morgue::{Morgue, Obituary};
 pub use remap::{EntityRemap, SaveId};
 pub use unload::{Stash, UnloadPlugin};
 pub use versioned::{Versioned, decode, encode};
@@ -32,6 +34,7 @@ pub use versioned::{Versioned, decode, encode};
 pub mod prelude {
     pub use crate::backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
     pub use crate::engine::EngineSave;
+    pub use crate::morgue::{Morgue, Obituary};
     pub use crate::remap::{EntityRemap, SaveId};
     pub use crate::unload::{Stash, UnloadPlugin};
     pub use crate::versioned::{Versioned, decode, encode};

@@ -133,13 +133,24 @@ pub struct CombatRules {
     /// The stat whose value is added to the roll of the blow and the shot,
     /// if any.
     pub attack: Option<StatId>,
+    /// Whether the player's death ends the run, which it does unless the
+    /// game says otherwise: one that revives, or plays on as a ghost, keeps
+    /// the ending for itself.
+    pub death_ends_run: bool,
 }
 
 impl CombatRules {
     /// Every side in `sides` allied with itself and neutral to every other,
-    /// until a pair is named, and no stat read by a blow.
+    /// until a pair is named, no stat read by a blow, and the player's death
+    /// the end of the run.
     pub fn new(sides: &Registry<FactionDef>) -> Self {
-        Self { factions: Factions::new(sides), armor: None, attack: None }
+        Self { factions: Factions::new(sides), armor: None, attack: None, death_ends_run: true }
+    }
+
+    /// The player's death does not end the run; the game says when it ends.
+    pub fn death_is_not_the_end(mut self) -> Self {
+        self.death_ends_run = false;
+        self
     }
 
     /// Reads `stat` as armor: its value is added to whatever a defender
@@ -473,6 +484,18 @@ pub fn process_deaths(
     }
 }
 
+/// Ends the run on the player's death, when the rules say a death does.
+///
+/// Inside the turn, so the run is over before the next actor acts: the
+/// monster that would have struck the corpse never gets the turn.
+pub fn end_run_on_player_death(mut deaths: MessageReader<DeathEvent>, rules: Res<CombatRules>, mut over: MessageWriter<crate::state::RunOver>) {
+    for death in deaths.read() {
+        if death.was_player && rules.death_ends_run {
+            over.write(crate::state::RunOver::died(death.credit));
+        }
+    }
+}
+
 /// Despawns whoever died this frame, once every system has seen them go.
 pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
     for e in &dead {
@@ -504,6 +527,7 @@ impl Plugin for CombatPlugin {
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
+            .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))
             .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))
             // In `Last`, after everything that reads the frame's deaths has
             // run, which is the promise that the dead linger until the frame

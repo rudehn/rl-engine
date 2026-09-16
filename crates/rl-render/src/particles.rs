@@ -282,7 +282,8 @@ impl Plugin for ParticlesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Particles>().init_resource::<ParticleStyle>().init_resource::<TurnHold>();
         app.add_message::<Cued>().add_message::<MapChanged>();
-        app.add_systems(OnEnter(EngineState::Playing), watch_unless_instant)
+        app.add_systems(rl_bevy::EndRun, |mut particles: ResMut<Particles>| *particles = Particles::default())
+            .add_systems(OnEnter(EngineState::Playing), watch_unless_instant)
             .add_systems(Update, skip_on_key.before(EngineSet::Input).run_if(in_state(EngineState::Playing)))
             .add_systems(Update, play_cues.in_set(PresentSet::Narrate))
             .add_systems(Update, (draw_particles, hold_turns).chain().in_set(PresentSet::Map).after(draw_map));

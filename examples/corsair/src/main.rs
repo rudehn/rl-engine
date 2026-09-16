@@ -33,14 +33,14 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
-    AbilityPanel, AddModal, Chord, ControlsPanel, Facets, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryPanel, LogPanel, MessageLog, Modals, NearbyPanel,
-    NearbyView, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, Tones, ViewSet, VitalsPanel, panel,
+    AbilityPanel, AddModal, Chord, ControlsPanel, Facets, GameMenuPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryPanel, LogPanel, MessageLog,
+    Modals, NarratorPlugin, NearbyPanel, NearbyView, Phrase, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, Tones, ViewSet, VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
 use crate::items::{Armory, ItemKind};
-use rl_engine::rl_save::{Saves, UnloadPlugin};
+use rl_engine::rl_save::{Morgue, Saves, UnloadPlugin};
 
 /// Terminal size in cells.
 const COLS: i32 = 100;
@@ -66,6 +66,7 @@ struct Screen {
     target: Rect,
     abilities: Rect,
     chest: Rect,
+    menu: Rect,
     controls: Rect,
     sheet: Rect,
     hint: Rect,
@@ -91,7 +92,8 @@ impl Screen {
         // Room for the bag's rows, a rule, and what the row picked out is
         // worth, centred over the map.
         let chest = Rect::new(map.x + map.width / 2 - 28, map.y + 2, 56, 24);
-        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, chest, controls, sheet, hint }
+        let menu = Rect::new(map.x + map.width / 2 - 22, map.y + 6, 44, 14);
+        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, chest, menu, controls, sheet, hint }
     }
 }
 
@@ -163,7 +165,15 @@ fn main() -> AppExit {
             ControlsPanel::new(screen.controls).hint(screen.hint),
             // Every number the captain is made of, and what moved each.
             SheetPanel::new(screen.sheet).titled("Ship's articles"),
+            // Escape: a new run, the same seed again, or quit; and the screen
+            // the run ends on, where the morgue file is named.
+            GameMenuPanel::new(screen.menu).title("Corsair").died("The sea takes you.").won("The sea is yours."),
         ))
+        // The engine narrates the fight, the doors and what changes hands;
+        // Corsair keeps its own words for its statuses, since venom reads as
+        // poisoned, so those three phrases are silenced.
+        .add_plugins(NarratorPlugin::default().silence(Phrase::YouAreAfflicted).silence(Phrase::YouAreNoLonger).silence(Phrase::YourAfflictionPasses))
+        .insert_resource(Morgue::platform_default("corsair", "Corsair"))
         // `c` shuts a door here, so the sheet is on `@`.
         .insert_resource(SheetKeys { toggle: Chord::shift(KeyCode::Digit2), close: KeyCode::Escape })
         .insert_resource(Seed(seed))
@@ -172,7 +182,9 @@ fn main() -> AppExit {
         .insert_resource(OverworldLayout { viewport: screen.map })
         .init_resource::<places::Entrances>()
         .init_resource::<quests::LedgerScreen>()
-        .add_systems(Startup, start_world)
+        .add_systems(NewRun, start_world)
+        // A new run resumes no save and remembers no cave mouths.
+        .add_systems(EndRun, forget_run)
         .add_systems(
             Update,
             (quests::ledger_keys, abilities::ability_keys, input::player_input, input::fire, input::hurl, input::equip_underfoot)
@@ -194,19 +206,7 @@ fn main() -> AppExit {
         // Once a frame, in words: everything the chrome is about to draw.
         .add_systems(
             Update,
-            (
-                note_discoveries,
-                // The ability before what it did: a broadside is read
-                // before the blows it landed.
-                abilities::narrate_abilities,
-                monsters::narrate,
-                monsters::narrate_doors,
-                items::narrate_items,
-                statuses::narrate_statuses,
-                quests::report_facts,
-                quests::narrate_quests,
-                save::delete_on_death,
-            )
+            (note_discoveries, statuses::narrate_statuses, quests::report_facts, quests::narrate_quests, save::delete_on_death)
                 .chain()
                 .in_set(PresentSet::Narrate),
         )
@@ -221,6 +221,13 @@ fn main() -> AppExit {
     app.add_modal(quests::MODAL);
     input::declare_controls(&mut app);
     app.run()
+}
+
+/// What Corsair keeps of a run that the engine does not: whether to resume
+/// a save, and which coves have their mouths.
+fn forget_run(mut options: ResMut<StartOptions>, mut entrances: ResMut<places::Entrances>) {
+    options.resume = false;
+    entrances.0.clear();
 }
 
 /// The spawn table scored band by band, for `--balance`.

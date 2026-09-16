@@ -97,11 +97,18 @@ impl Occupancy {
 /// The engine ships the actions every roguelike needs, each owned by the
 /// module that owns the mechanic: [`Step`] and [`Wait`] here,
 /// [`Attack`](crate::combat::Attack) in combat, the item actions in
-/// items, [`GoThrough`](crate::places::GoThrough) in places. A game adds its own
-/// by implementing this on a type of its own, registering it with
-/// [`AddAction::add_action`], and resolving it in
+/// items, [`Open`](crate::doors::Open) and [`Close`](crate::doors::Close)
+/// in doors, [`GoThrough`](crate::places::GoThrough) in places. A game
+/// adds its own by implementing this on a type of its own, registering it
+/// with [`AddAction::add_action`], and resolving it in
 /// [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve). There is no
 /// list of actions anywhere for a new one to be added to.
+///
+/// An action may instead be an alternate: one that comes to another. It is
+/// read in [`ResolveSet::Redirect`](crate::plugin::ResolveSet::Redirect),
+/// the intent it comes to is written, and nothing is claimed, so the
+/// resolver of that intent spends the turn. [`Bump`](crate::bump::Bump),
+/// which comes to a step, an opening or a blow, is the engine's own.
 pub trait Action: Send + Sync + 'static {}
 
 /// A decision for the actor holding [`MyTurn`]: written by the game's input
@@ -335,8 +342,7 @@ pub fn admit_new_actors(
 }
 
 /// The actor holding the turn, as the resolver sees it.
-type TurnHolder<'w, 's> =
-    Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>, Option<&'static crate::minds::Intelligence>), With<MyTurn>>;
+type TurnHolder<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>), With<MyTurn>>;
 
 /// The actor holding the turn, as the cleanup sees it.
 type Holding<'w, 's> = Query<'w, 's, (Entity, Option<&'static Speed>, Has<Player>), With<MyTurn>>;
@@ -345,41 +351,29 @@ type Holding<'w, 's> = Query<'w, 's, (Entity, Option<&'static Speed>, Has<Player
 ///
 /// A move into an unwalkable or occupied cell is refused for the player
 /// and treated as a wait for anyone else, which is what keeps a blocked
-/// monster from retrying forever. A move into a closed door opens it
-/// instead, for an actor with the wits to, and spends the turn where it
-/// stands; see [`doors`](crate::doors).
+/// monster from retrying forever. A shut door is unwalkable: opening one
+/// is [`Open`](crate::doors::Open), which a [`Bump`](crate::bump::Bump)
+/// comes to when that is what is in the way.
 pub fn resolve_moves(
     mut intents: MessageReader<Intent<Step>>,
     mut resolution: Resolution,
-    mut map: ResMut<WorldMap>,
+    map: Res<WorldMap>,
     mut occupancy: ResMut<Occupancy>,
     mut actors: TurnHolder,
-    mut doors: MessageWriter<crate::doors::DoorEvent>,
 ) {
     for intent in intents.read() {
         if !resolution.claim(intent.actor) {
             debug!("actor {:?} holds no turn or already acted this pass; dropped {:?}", intent.actor, intent.action);
             continue;
         }
-        let Ok((mut pos, viewshed, blocks, intelligence)) = actors.get_mut(intent.actor) else {
+        let Ok((mut pos, viewshed, blocks)) = actors.get_mut(intent.actor) else {
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         };
         let dir = intent.action.0;
         let target = pos.0 + dir.offset();
-        if occupancy.is_occupied(target) || !corner_ok(&map, pos.0, dir) {
+        if occupancy.is_occupied(target) || !corner_ok(&map, pos.0, dir) || !map.is_walkable(target) {
             resolution.failed(intent.actor, BASE_ACTION_COST);
-            continue;
-        }
-        if !map.is_walkable(target) {
-            match map.opens(target) {
-                Some(open) if crate::doors::works_doors(intelligence) => {
-                    map.set_tile(target, open);
-                    doors.write(crate::doors::DoorEvent::Opened { actor: intent.actor, at: target });
-                    resolution.done(intent.actor, BASE_ACTION_COST);
-                }
-                _ => resolution.failed(intent.actor, BASE_ACTION_COST),
-            }
             continue;
         }
         let cost = map.cost(target).unwrap_or(BASE_ACTION_COST);

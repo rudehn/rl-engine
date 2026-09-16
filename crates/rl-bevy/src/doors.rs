@@ -3,9 +3,12 @@
 //! A door is any tile whose [`TileProps`](rl_grid::TileProps) names what it
 //! opens or closes into; the standard registry's `door_closed` and
 //! `door_open` are one such pair and a game registers as many as it likes.
-//! Opening is a step: walking into a closed door opens it and spends the
-//! turn where the actor stands, resolved with every other step in
-//! [`resolve_moves`](crate::turn::resolve_moves). Closing is [`Close`], here.
+//! [`Open`] and [`Close`] are actions of their own, spent where the actor
+//! stands, because working a door is not stepping: what blocks sight
+//! changes, so light and every viewshed are recast, and a step into a shut
+//! door is a step into a wall. A walk key that should open the door in its
+//! way writes [`Bump`](crate::bump::Bump), which comes to an [`Open`] when
+//! there is one to open; a mind that reaches a door writes [`Open`] itself.
 //!
 //! Both need the wits for it, [`Wits::OPENS_DOORS`]. An actor carrying no
 //! [`Intelligence`] at all, the player unless a game says otherwise, has
@@ -24,6 +27,14 @@ use crate::minds::Intelligence;
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
 use crate::world::WorldMap;
+
+/// Open the door in the next cell in this direction.
+///
+/// Refused when there is nothing there that opens, or the actor lacks the
+/// wits to. The actor stays where it stands: going through is the next step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Open(pub Direction);
+impl Action for Open {}
 
 /// Close the door in the next cell in this direction.
 ///
@@ -61,6 +72,35 @@ pub fn works_doors(intelligence: Option<&Intelligence>) -> bool {
 
 /// Anything with a position, for asking whether a doorway is clear.
 type Lying<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static OnMap>)>;
+
+/// Resolves [`Open`] for the actor holding the turn.
+pub fn resolve_opens(
+    mut intents: MessageReader<Intent<Open>>,
+    mut resolution: Resolution,
+    mut map: ResMut<WorldMap>,
+    openers: Query<(&Position, Option<&Intelligence>), With<MyTurn>>,
+    mut doors: MessageWriter<DoorEvent>,
+) {
+    for intent in intents.read() {
+        let actor = intent.actor;
+        if !resolution.claim(actor) {
+            continue;
+        }
+        let Ok((pos, intelligence)) = openers.get(actor) else {
+            resolution.failed(actor, BASE_ACTION_COST);
+            continue;
+        };
+        let at = pos.0 + intent.action.0.offset();
+        match map.opens(at) {
+            Some(open) if works_doors(intelligence) => {
+                map.set_tile(at, open);
+                doors.write(DoorEvent::Opened { actor, at });
+                resolution.done(actor, BASE_ACTION_COST);
+            }
+            _ => resolution.failed(actor, BASE_ACTION_COST),
+        }
+    }
+}
 
 /// Resolves [`Close`] for the actor holding the turn.
 pub fn resolve_closes(
@@ -166,12 +206,16 @@ mod tests {
     }
 
     #[test]
-    fn walking_into_a_closed_door_opens_it_and_spends_the_turn_where_you_stand() {
+    fn opening_a_closed_door_spends_the_turn_where_you_stand_and_a_step_into_one_is_refused() {
         let mut rig = Rig::new("door_closed");
         let beyond = rig.start.offset(3, 0);
         assert!(!rig.app.world().get::<Viewshed>(rig.player).unwrap().can_see(beyond), "the closed door hides what is past it");
 
         rig.act(Step(Direction::East));
+        assert!(rig.is(rig.door(), "door_closed"), "a step is a step: it does not work a latch");
+        assert_eq!((rig.at(), rig.now()), (rig.start, 0), "refused, for nothing");
+
+        rig.act(Open(Direction::East));
         assert!(rig.is(rig.door(), "door_open"));
         assert_eq!(rig.at(), rig.start, "opening is not stepping");
         assert_eq!(rig.now(), 100, "and it took the turn");
@@ -180,6 +224,8 @@ mod tests {
 
         rig.act(Step(Direction::East));
         assert_eq!(rig.at(), rig.door(), "the next step goes through");
+        rig.act(Open(Direction::East));
+        assert_eq!(rig.now(), 200, "open ground has nothing to open, and costs nothing to try");
     }
 
     #[test]
@@ -209,7 +255,7 @@ mod tests {
     fn an_actor_without_the_wits_for_doors_is_stopped_by_one() {
         let mut rig = Rig::new("door_closed");
         rig.app.world_mut().entity_mut(rig.player).insert(Intelligence(Wits::ANIMAL));
-        rig.act(Step(Direction::East));
+        rig.act(Open(Direction::East));
         assert!(rig.is(rig.door(), "door_closed"), "a paw does not work a latch");
         assert_eq!((rig.at(), rig.now()), (rig.start, 0), "refused, where it stood, for nothing");
 

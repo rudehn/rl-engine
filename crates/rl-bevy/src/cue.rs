@@ -117,6 +117,13 @@ pub struct TurnHold {
 }
 
 impl TurnHold {
+    /// Lets go of everything for a new run, keeping whether anything
+    /// watches: what was in the air belonged to the run that ended.
+    pub fn reset(&mut self) {
+        self.held = false;
+        self.in_flight = 0;
+    }
+
     /// Something will play the cues and let go when they are done.
     pub fn watch(&mut self) {
         self.watched = true;
