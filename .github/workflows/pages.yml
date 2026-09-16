@@ -30,7 +30,13 @@ jobs:
           curl -sSfL "https://github.com/rust-lang/mdBook/releases/download/v$MDBOOK_VERSION/mdbook-v$MDBOOK_VERSION-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
       - name: build the guide
         run: mdbook build docs/guide
+      # The repository has no Pages site until something makes one, and
+      # the action's own failure is the only place that is said. This
+      # turns it on for the workflow rather than leaving it a setting
+      # somebody has to have clicked.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/guide/book
