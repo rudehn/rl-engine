@@ -7,7 +7,7 @@
 //! movement class, so fifty hunters cost one flood, not fifty searches.
 //!
 //! - [`awareness`]: [`NoticeStats`], [`StealthStats`], [`notices`] and [`Awareness`]: who has noticed whom.
-//! - [`brain`]: [`Brain`], [`Tactic`], [`TacticCtx`] and [`Decision`].
+//! - [`brain`]: [`Brain`], [`Tactic`], [`TacticCtx`], [`Decision`], and [`Choice`], a decision of the game's own.
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
 //! - [`snapshot`]: [`Snapshot`], [`ActorView`], what it carries and sees lying about, [`Missile`] and [`ItemView`], and a game's own [`Sense`].
 //! - [`tactics`]: the tactics every roguelike needs.
@@ -25,7 +25,7 @@ pub mod tactics;
 pub mod wits;
 
 pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
-pub use brain::{Brain, Decision, Tactic, TacticCtx};
+pub use brain::{Brain, Choice, Decision, Tactic, TacticCtx};
 pub use profile::MovementProfile;
 pub use snapshot::{ActorView, ItemView, Missile, Sense, Snapshot};
 pub use wits::Wits;

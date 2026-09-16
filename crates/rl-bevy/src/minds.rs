@@ -30,7 +30,7 @@ use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{Direction, Grid2D, Point, geometry};
 use rl_grid::{BitGrid, DijkstraMap, PathRules};
-use rl_rules::{ActorView, Brain, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
+use rl_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 
 use crate::ability::Use;
 use crate::combat::{Attack, CombatRng, Faction, Health};
@@ -40,7 +40,7 @@ use crate::items::{EquipFromGround, PickUp};
 use crate::lighting::{DarkSight, Lighting, perceives};
 use crate::places::{MapId, OnMap};
 use crate::throwing::Throw;
-use crate::turn::{Acting, Intent, Occupancy, Step, Turns, Wait};
+use crate::turn::{Acting, Action, AddAction, Intent, Occupancy, Step, Turns, Wait};
 use crate::world::WorldMap;
 
 /// How far a non-player notices things, in tiles. Sight is symmetric,
@@ -333,20 +333,61 @@ pub struct MindWorld<'w, 's> {
     player: Query<'w, 's, &'static Position, With<Player>>,
 }
 
-/// A mind chose something of the game's own: whatever number its tactic
-/// returned, and who chose it.
+/// A mind chose something of the game's own: what its tactic returned,
+/// and who chose it.
 ///
 /// Written in [`DecideSet::Minds`](crate::plugin::DecideSet::Minds) and
-/// answered by the game in [`DecideSet::Game`](crate::plugin::DecideSet::Game),
-/// which is where it turns the number into one of its own actions. The
-/// actor's decision is already claimed, so nothing else will decide for
-/// it this pass.
-#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+/// answered in [`DecideSet::Game`](crate::plugin::DecideSet::Game). A game
+/// rarely reads it: [`AddChoice::add_choice`] turns a choice that is also
+/// an action into its intent, once, for every game. The actor's decision
+/// is already claimed, so nothing else will decide for it this pass.
+#[derive(Message, Debug)]
 pub struct MindChose {
     /// Who chose.
     pub actor: Entity,
-    /// What, in the game's own numbering.
-    pub choice: u32,
+    /// What.
+    pub choice: Box<dyn Choice>,
+}
+
+impl MindChose {
+    /// The choice, if it is an `A`.
+    pub fn as_choice<A: Choice>(&self) -> Option<&A> {
+        let any: &dyn std::any::Any = &*self.choice;
+        any.downcast_ref::<A>()
+    }
+}
+
+/// Lets a mind choose an action of the game's own.
+pub trait AddChoice {
+    /// Registers `A` as an action, with its sweeper, and routes every
+    /// [`MindChose`] carrying an `A` to an `Intent<A>` in
+    /// [`DecideSet::Game`](crate::plugin::DecideSet::Game).
+    ///
+    /// A game writes the action type, the resolver and the tactic, the
+    /// same three things tutorial chapter 9 writes for a player's action,
+    /// and this line. A choice nobody routed is a choice nobody resolves,
+    /// which the sweeper refuses rather than losing.
+    fn add_choice<A: Action + Choice + Clone>(&mut self) -> &mut Self;
+}
+
+impl AddChoice for App {
+    fn add_choice<A: Action + Choice + Clone>(&mut self) -> &mut Self {
+        // Once: a game that already registered the action for its player
+        // must not get a second sweeper.
+        if !self.world().contains_resource::<Messages<Intent<A>>>() {
+            self.add_action::<A>();
+        }
+        self.add_message::<MindChose>().add_systems(crate::plugin::Turn, route_choice::<A>.in_set(crate::plugin::DecideSet::Game))
+    }
+}
+
+/// Turns each choice of type `A` into the intent for it.
+fn route_choice<A: Action + Choice + Clone>(mut chose: MessageReader<MindChose>, mut out: MessageWriter<Intent<A>>) {
+    for c in chose.read() {
+        if let Some(choice) = c.as_choice::<A>() {
+            out.write(Intent::new(c.actor, choice.clone()));
+        }
+    }
 }
 
 /// What a mind writes when it decides.
@@ -462,8 +503,8 @@ pub fn decide_minds(
         Decision::Throw { item, at } => {
             intents.throws.write(Intent::new(thinker, Throw { item, at }));
         }
-        // The game's own: hand the number back and let it act.
-        Decision::Game(choice) => {
+        // The game's own: hand it back and let the game act on it.
+        Decision::Own(choice) => {
             intents.chose.write(MindChose { actor: thinker, choice });
         }
     }
@@ -561,31 +602,23 @@ mod tests {
             "shove"
         }
         fn evaluate(&self, ctx: &mut rl_rules::ai::TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
-            ctx.snapshot.enemies.first().map(|_| Decision::Game(SHOVE))
+            ctx.snapshot.enemies.first().map(|e| Decision::own(Shoved(e.id)))
         }
     }
 
-    /// The game's number for a shove.
-    const SHOVE: u32 = 7;
-
-    /// The game's action, which the engine has never heard of.
+    /// The game's action, which the engine has never heard of, and the
+    /// choice a tactic makes of it: one type, two traits.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct Shoved(Entity);
     impl crate::turn::Action for Shoved {}
+    impl Choice for Shoved {
+        fn name(&self) -> &'static str {
+            "shoved"
+        }
+    }
 
     #[derive(Resource, Default)]
     struct Shoves(u32);
-
-    /// The game's half of the decision.
-    fn answer_the_choice(mut chose: MessageReader<MindChose>, mut shoves: MessageWriter<Intent<Shoved>>, players: Query<Entity, With<Player>>) {
-        for c in chose.read() {
-            if c.choice == SHOVE
-                && let Ok(player) = players.single()
-            {
-                shoves.write(Intent::new(c.actor, Shoved(player)));
-            }
-        }
-    }
 
     fn resolve_shoves(mut intents: MessageReader<Intent<Shoved>>, mut resolution: Resolution, mut count: ResMut<Shoves>) {
         for intent in intents.read() {
@@ -599,12 +632,8 @@ mod tests {
 
     #[test]
     fn a_mind_can_choose_an_action_the_engine_never_heard_of() {
-        use crate::turn::AddAction;
         let (mut app, start, blunt) = arena();
-        app.init_resource::<Shoves>()
-            .add_action::<Shoved>()
-            .add_systems(crate::plugin::Turn, answer_the_choice.in_set(crate::plugin::DecideSet::Game))
-            .add_systems(crate::plugin::Turn, resolve_shoves.in_set(crate::plugin::ResolveSet::Act));
+        app.init_resource::<Shoves>().add_choice::<Shoved>().add_systems(crate::plugin::Turn, resolve_shoves.in_set(crate::plugin::ResolveSet::Act));
         let us = rl_rules::FactionId::from_raw(0);
         let them = rl_rules::FactionId::from_raw(1);
         let player = app

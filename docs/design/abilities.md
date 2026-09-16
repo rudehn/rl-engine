@@ -375,7 +375,7 @@ The tactic then scores each against what the actor can see - foes covered for `A
 Who a footprint catches is `Aim::hits` and what is worth catching `Aim::worth_aiming_at`, the rules the resolver lands the use with, so a hurt caster points a heal at itself and a foe-aimed burst over an ally costs the mind nothing.
 
 `Decision` gains one variant, `Ability { id, aim }`, for the same reason `Attack` is one: it is an action the engine owns and resolves.
-Nothing about `Decision::Game` changes, and a game's own ability-like tactic keeps working through it.
+Nothing about a game's own choice changes, and a game's own ability-like tactic keeps working through `Decision::Own`.
 
 Refusing to build this is refusing to build the subsystem.
 A wand the player can fire and a monster cannot is the half-shipped shape `PLAN.md` section 1 is about.

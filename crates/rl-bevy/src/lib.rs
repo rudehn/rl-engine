@@ -66,7 +66,7 @@ pub use items::{
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-pub use minds::{CameFrom, FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Sight, Thinking, a_mind_holds_the_turn};
+pub use minds::{AddChoice, CameFrom, FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Sight, Thinking, a_mind_holds_the_turn};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
@@ -115,7 +115,7 @@ pub mod prelude {
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-    pub use crate::minds::{Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Thinking};
+    pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Thinking};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };

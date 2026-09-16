@@ -86,9 +86,10 @@ fn main() -> AppExit {
         .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.
-        // The game's own action: registered, then resolved alongside the
-        // engine's. Without the resolver the sweep would refuse every shove.
-        .add_action::<Shove>()
+        // The game's own action: registered as something a mind may choose
+        // as well as something the player may do, then resolved alongside
+        // the engine's. Without the resolver the sweep would refuse every shove.
+        .add_choice::<Shove>()
         .add_message::<Shoved>()
         .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
         .add_systems(Update, player_input.in_set(EngineSet::Input))
@@ -179,6 +180,8 @@ struct RatDef {
     perception: i32,
     speed: u32,
     flee_at: i32,
+    #[serde(default)]
+    shoves: bool,
     spawn: (i32, i32, u32, u32, u32),
 }
 
@@ -216,7 +219,13 @@ impl Bestiary {
             if weight > 0 {
                 table.push(BandedEntry::new(id).bands(first, last).weight(weight).group(group_min, group_max));
             }
-            let mut brain = Brain::new().then(MeleeAdjacent);
+            // A shover leads with its shove; the shove is a choice of Warren's
+            // own, which the engine routes to Warren's own action.
+            let mut brain = Brain::new();
+            if def.shoves {
+                brain = brain.then(ShoveAdjacent);
+            }
+            brain = brain.then(MeleeAdjacent);
             if def.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: def.flee_at });
             }
@@ -509,10 +518,17 @@ fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query
 ///
 /// An action is a type. There is no list in the engine for it to be added
 /// to; registering it makes `Intent<Shove>` a message, and the sweep
-/// refuses any that no resolver claims.
+/// refuses any that no resolver claims. It is a `Choice` as well, so a
+/// hog's brain can decide it and the engine routes the decision to the
+/// same intent the player's key writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Shove(Direction);
 impl Action for Shove {}
+impl Choice for Shove {
+    fn name(&self) -> &'static str {
+        "shove"
+    }
+}
 
 /// A shove that landed, for the log to read.
 #[derive(Message, Debug, Clone, Copy)]
@@ -520,6 +536,25 @@ struct Shoved {
     target: Entity,
 }
 // ANCHOR_END: action
+
+// ANCHOR: tactic
+/// The hog's move: shove whoever stands beside it rather than bite. A
+/// tactic of Warren's own, in the brain beside the engine's, that decides
+/// Warren's own action.
+struct ShoveAdjacent;
+
+impl Tactic<Entity> for ShoveAdjacent {
+    fn name(&self) -> &'static str {
+        "shove_adjacent"
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+        let me = ctx.snapshot.me.pos;
+        let foe = ctx.snapshot.adjacent_enemies().next()?;
+        Direction::between(me, foe.pos).map(|d| Decision::own(Shove(d)))
+    }
+}
+// ANCHOR_END: tactic
 
 // ANCHOR: resolver
 /// What the shove costs. A shove is quicker than a swing.
@@ -582,7 +617,7 @@ mod tests {
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
             .add_plugins(UiPlugin)
-            .add_action::<Shove>()
+            .add_choice::<Shove>()
             .add_message::<Shoved>()
             .add_systems(NewRun, start)
             .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
@@ -691,6 +726,36 @@ mod tests {
         act(&mut app, player, Shove(dir));
         assert_eq!(app.world().resource::<Turns>().now(), before, "no time passed");
         assert!(app.world().get::<MyTurn>(player).is_some(), "the player still holds the turn");
+    }
+
+    /// A hog's brain decides the same shove the player's key writes, and
+    /// the engine resolves it the same way: the player goes back a cell.
+    #[test]
+    fn a_hog_beside_the_player_shoves_rather_than_bites() {
+        let (mut app, player) = started(7);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        // A line of three open cells through the player: the hog behind,
+        // the player, and where the player is shoved to.
+        let dir = {
+            let map = app.world().resource::<WorldMap>();
+            Direction::ALL
+                .into_iter()
+                .find(|d| map.is_walkable(at - d.offset()) && map.is_walkable(at + d.offset()))
+                .expect("the entry of a built floor has room around it")
+        };
+        let hog_at = at - dir.offset();
+        let hog = app.world().resource::<Bestiary>().defs.expect("warren hog");
+        app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            bestiary.spawn(&mut commands, hog, hog_at);
+            queue.apply(world);
+        });
+        app.update();
+        let hp = app.world().get::<Health>(player).unwrap().current;
+        act(&mut app, player, Wait);
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, at + dir.offset(), "the hog shoved the player a cell away");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, hp, "and did not bite");
     }
     // ANCHOR_END: shove_tests
 

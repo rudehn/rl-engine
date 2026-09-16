@@ -1,5 +1,8 @@
 //! The brain: tactics in priority order.
 
+use std::any::Any;
+use std::fmt::Debug;
+
 use rand::rngs::StdRng;
 use rl_core::{Point, Rect};
 use rl_grid::DijkstraMap;
@@ -8,8 +11,24 @@ use crate::ability::AbilityId;
 
 use crate::ai::snapshot::Snapshot;
 
+/// An action of the game's own, chosen by a tactic of the game's own.
+///
+/// Any type: the engine carries it back to the game in a box and the game
+/// finds it again by type, so nothing is numbered and two games' choices
+/// cannot collide. In the Bevy layer a type that is both an action and a
+/// choice is routed to its own intent by `add_choice`, so the game writes
+/// the tactic and nothing else. `name` is for the trace, and for
+/// comparing two decisions in a test.
+pub trait Choice: Any + Debug + Send + Sync {
+    /// A stable name.
+    fn name(&self) -> &'static str;
+}
+
 /// What an actor decided to do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// `PartialEq` compares a game's choice by its name, since a boxed trait
+/// has no equality of its own and a test wants to say what was decided.
+#[derive(Debug)]
 pub enum Decision<A: Copy> {
     /// Step to an adjacent cell.
     Step(Point),
@@ -36,12 +55,32 @@ pub enum Decision<A: Copy> {
         /// Where it is aimed.
         at: Point,
     },
-    /// Something of the game's own, in the game's own numbering, the way
-    /// a map's spots are tagged. The engine carries the number back to
-    /// the game and lets it decide what the actor actually does, so a
-    /// game's tactic can sit anywhere in the priority list beside the
-    /// engine's.
-    Game(u32),
+    /// Something of the game's own. The engine carries it back to the
+    /// game, which turns it into the action it stands for, so a game's
+    /// tactic can sit anywhere in the priority list beside the engine's.
+    Own(Box<dyn Choice>),
+}
+
+impl<A: Copy> Decision<A> {
+    /// A decision of the game's own.
+    pub fn own(choice: impl Choice) -> Self {
+        Self::Own(Box::new(choice))
+    }
+}
+
+impl<A: Copy + PartialEq> PartialEq for Decision<A> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Decision::Step(a), Decision::Step(b)) => a == b,
+            (Decision::Attack(a), Decision::Attack(b)) => a == b,
+            (Decision::Ability { ability: a, aim: p }, Decision::Ability { ability: b, aim: q }) => a == b && p == q,
+            (Decision::Wait, Decision::Wait) | (Decision::PickUp, Decision::PickUp) => true,
+            (Decision::EquipFromGround(a), Decision::EquipFromGround(b)) => a == b,
+            (Decision::Throw { item: a, at: p }, Decision::Throw { item: b, at: q }) => a == b && p == q,
+            (Decision::Own(a), Decision::Own(b)) => a.name() == b.name(),
+            _ => false,
+        }
+    }
 }
 
 /// Everything a tactic may consult.
