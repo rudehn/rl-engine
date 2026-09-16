@@ -50,7 +50,19 @@ It is a resource, so a game that wants other keys replaces it and writes no matc
     .add_systems(Update, player_input.in_set(EngineSet::Input));
 ```
 
-`EngineSet` is the frame, in order: `Stream`, `Input`, `Turns`, `Light`, `Fov`, `Present`.
+`EngineSet` is the frame, in order:
+
+```text
+one frame
+  Stream    the world streams in and out around the player
+  Input     your keys become intents
+  Turns     the Turn schedule, run over and over:
+              Schedule -> Decide -> Resolve -> Sweep -> React -> Cleanup
+            until the player holds a turn, or nothing is left to move
+  Light     what every source reaches
+  Fov       what every actor can see
+  Present   the frame is drawn
+```
 
 Inside `EngineSet::Turns` the engine runs the `Turn` schedule repeatedly, until the player holds a turn again or nothing is left to move.
 A frame next to a dozen rats runs a dozen passes.
