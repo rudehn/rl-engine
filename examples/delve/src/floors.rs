@@ -13,11 +13,14 @@ use rl_engine::rl_mapgen::dungeon::{Bsp, Doors, FarthestExit, RandomStart, Rooms
 use rl_engine::rl_mapgen::passes::{CellularCave, KeepLargestRegion, Scatter};
 use rl_engine::rl_mapgen::prefab::{Placement, Prefab, StampPrefab};
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
-use rl_engine::rl_render::{Cell, TileAppearance, Vary};
+use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_world::WorldGraph;
 
 /// How deep the whale goes.
 pub const FLOORS: u32 = 5;
+
+/// How every tile looks, compiled in so the binary runs from anywhere.
+const TILES_RON: &str = include_str!("../assets/tiles.ron");
 
 /// The floor a map id is; maps count from one.
 pub fn floor_of(map: MapId) -> u32 {
@@ -59,7 +62,6 @@ pub struct Whale {
     bone: TileId,
     sinew: TileId,
     tallow: TileId,
-    cinder: TileId,
     seed: RunSeed,
 }
 
@@ -75,8 +77,8 @@ impl Whale {
         let sinew = tiles.register(TileProps::floor("sinew").opaque(true).burns(45, 4, "flesh")).unwrap();
         // Slicks of fat: quick to catch, and what is left is cinder.
         let tallow = tiles.register(TileProps::floor("tallow").burns(75, 3, "cinder")).unwrap();
-        let cinder = tiles.register(TileProps::floor("cinder")).unwrap();
-        Self { tiles, flesh, blubber, tooth, bile, bone, sinew, tallow, cinder, seed }
+        tiles.register(TileProps::floor("cinder")).unwrap();
+        Self { tiles, flesh, blubber, tooth, bile, bone, sinew, tallow, seed }
     }
 
     pub fn tiles(&self) -> &TileRegistry {
@@ -84,20 +86,10 @@ impl Whale {
     }
 
     /// Each tile in full light, both colours, and how it varies from cell
-    /// to cell. The brand's light and the dark do the rest.
+    /// to cell, from `assets/tiles.ron`; a tile the file forgets stops the
+    /// game at startup, by name.
     pub fn appearance(&self) -> TileAppearance {
-        let mut look = TileAppearance::new();
-        let flesh = Vary::new(0.28, 0.07);
-        let bone = Vary::new(0.14, 0.03);
-        look.set_varied(self.blubber, Cell::new('#', Color::srgb(0.88, 0.58, 0.58)).on(Color::srgb(0.52, 0.25, 0.29)), flesh);
-        look.set_varied(self.flesh, Cell::new('.', Color::srgb(0.88, 0.6, 0.58)).on(Color::srgb(0.3, 0.13, 0.15)), flesh);
-        look.set_varied(self.tooth, Cell::new('^', Color::srgb(1.0, 0.97, 0.88)).on(Color::srgb(0.56, 0.52, 0.45)), bone);
-        look.set_varied(self.bile, Cell::new('~', Color::srgb(0.78, 0.98, 0.32)).on(Color::srgb(0.2, 0.3, 0.05)), Vary::new(0.2, 0.05).shimmering(0.25));
-        look.set_varied(self.bone, Cell::new('#', Color::srgb(0.96, 0.94, 0.86)).on(Color::srgb(0.62, 0.6, 0.52)), bone);
-        look.set_varied(self.sinew, Cell::new('+', Color::srgb(1.0, 0.66, 0.62)).on(Color::srgb(0.46, 0.15, 0.18)), flesh);
-        look.set_varied(self.tallow, Cell::new('"', Color::srgb(1.0, 0.94, 0.7)).on(Color::srgb(0.46, 0.38, 0.22)), Vary::new(0.18, 0.05));
-        look.set_varied(self.cinder, Cell::new(',', Color::srgb(0.52, 0.46, 0.44)).on(Color::srgb(0.13, 0.1, 0.1)), Vary::new(0.25, 0.04));
-        look
+        TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 
     /// The tile that glows: bile gives off its own faint green light.
@@ -131,8 +123,6 @@ impl Whale {
         .map_err(|e| BuildError::new("heart", e))
     }
 }
-
-use bevy::prelude::Color;
 
 /// Bile or fat spilled on the floor after the rooms are carved: a scatter
 /// that runs in the finish phase, since growth may not follow structures.

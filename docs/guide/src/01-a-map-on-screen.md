@@ -41,6 +41,8 @@ There is no `Tile::Wall` to extend, so lava, glass or a tile only ghosts can cro
 `TileAppearance` holds what each id looks like in full light.
 Both colours are authored because light multiplies them channel by channel and memory fades them.
 `Vary` jitters each cell's colour by a hash of its position, so the floor is not graph paper; `shimmering` makes that jitter drift over time, which is how water moves.
+Three tiles are fine to write out like this.
+When the warren gains its bestiary in [chapter 8](08-content-in-files.md), the looks move into a file beside it, and `TileAppearance::load` reads them.
 
 ## The floor is a chain of passes
 

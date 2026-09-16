@@ -40,7 +40,7 @@ use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
 use crate::items::{Armory, ItemKind};
-use rl_engine::rl_save::{Morgue, Saves, UnloadPlugin};
+use rl_engine::rl_save::{Morgue, SaveableState, Saves, UnloadPlugin};
 
 /// Terminal size in cells.
 const COLS: i32 = 100;
@@ -157,7 +157,7 @@ fn main() -> AppExit {
             TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
             AbilityPanel::new(screen.abilities).title("What you can call on").called("abilities"),
             // The sea chest: the bag, run by the engine end to end. `i` opens
-            // it, and what a swig of rum does is a facet Corsair pushes.
+            // it, and a bottle is described by the swig it lends.
             InventoryPanel::new(screen.chest).title("Sea chest").called("sea chest").empty("Nothing but lint."),
             // Every key `input::declare_controls` and the engine's screens
             // declare, on one screen, with the hint that opens it in the
@@ -191,34 +191,28 @@ fn main() -> AppExit {
                 .chain()
                 .in_set(EngineSet::Input),
         )
-        // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns;
-        // the stash is refreshed once a turn at the end of the frame.
+        // Saving reads the whole world, so it runs outside the engine's sets, after the frame's turns.
         .add_systems(Update, save::save_keys.after(EngineSet::Present))
-        .add_systems(Last, save::refresh_stash)
         .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
         .add_systems(Update, places::light_the_way.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
         .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
         // What this turn caused, answered inside the turn: the floor that
-        // fills on first arrival, what the dead leave, what a drink does,
-        // what gear is worth, what a bite leaves behind. Inside the pass, so
-        // a drink heals before the next blow lands.
-        .add_systems(Turn, (places::populate_places, items::drop_loot, items::use_items, statuses::inflict_on_hit).chain().in_set(TurnSet::React))
+        // fills on first arrival, what the dead leave, what a bite leaves
+        // behind. Inside the pass, so a bite poisons on the bite.
+        .add_systems(Turn, (places::populate_places, items::drop_loot, statuses::inflict_on_hit).chain().in_set(TurnSet::React))
         // Once a frame, in words: everything the chrome is about to draw.
-        .add_systems(
-            Update,
-            (note_discoveries, statuses::narrate_statuses, quests::report_facts, quests::narrate_quests, save::delete_on_death)
-                .chain()
-                .in_set(PresentSet::Narrate),
-        )
+        .add_systems(Update, (note_discoveries, statuses::narrate_statuses, quests::report_facts, quests::narrate_quests).chain().in_set(PresentSet::Narrate))
         // What the engine cannot know about a row: what an enemy is holding,
         // and what is underfoot. Named by set, not by ordering after a
         // collector.
-        .add_systems(Update, (note_what_they_wield, note_where_you_are, items::note_what_a_drink_does).in_set(ViewSet::Annotate))
+        .add_systems(Update, (note_what_they_wield, note_where_you_are).in_set(ViewSet::Annotate))
         .add_systems(Update, quests::draw_ledger.in_set(PresentSet::Overlay));
     app.add_plugins(StealthPlugin);
     // Corsair's own screens, declared while building so the lookups in
     // `inventory` and `quests` find them, and every key, once.
     app.add_modal(quests::MODAL);
+    // What a saved run is made of, and the engine that keeps it.
+    save::register(&mut app);
     input::declare_controls(&mut app);
     app.run()
 }
@@ -242,9 +236,23 @@ fn balance_report() -> String {
 }
 
 #[derive(Resource, Clone, Copy)]
-struct StartOptions {
+pub struct StartOptions {
     regions: (i32, i32),
     resume: bool,
+}
+
+/// The world's size is the one thing about a run that must be known
+/// before the world exists, so it is saved as state and read back first.
+impl SaveableState for StartOptions {
+    type Saved = (i32, i32);
+
+    fn capture(&self) -> (i32, i32) {
+        self.regions
+    }
+
+    fn restore(&mut self, regions: (i32, i32)) {
+        self.regions = regions;
+    }
 }
 
 /// Generates the world and either spawns a fresh player at the first
@@ -252,7 +260,7 @@ struct StartOptions {
 fn start_world(world: &mut World) {
     let start = *world.resource::<StartOptions>();
     let saved = if start.resume {
-        match save::load_run(world.resource::<Saves>()) {
+        match rl_engine::rl_save::load_run(world) {
             Ok(Some(s)) => Some(s),
             Ok(None) => {
                 warn!("no save to continue; starting a new run");
@@ -266,7 +274,8 @@ fn start_world(world: &mut World) {
     } else {
         None
     };
-    let (seed, regions) = saved.as_ref().map(|s| (s.engine.seed, s.regions)).unwrap_or((world.resource::<Seed>().0, start.regions));
+    let (seed, regions) =
+        saved.as_ref().map(|s| (s.engine.seed, s.state::<StartOptions>().unwrap_or(start.regions))).unwrap_or((world.resource::<Seed>().0, start.regions));
     // A continued run keeps the seed it was saved with, and every stream follows.
     world.insert_resource(Seed(seed));
 
@@ -307,9 +316,9 @@ fn start_world(world: &mut World) {
 
     match saved {
         Some(saved) => {
-            save::restore_run(world, &saved);
+            saved.restore(world).unwrap_or_else(|e| panic!("the save could not be restored: {e}"));
             let text = save::describe(&saved);
-            world.resource_mut::<MessageLog>().push(text, Tones::NOTICE, saved.turn);
+            world.resource_mut::<MessageLog>().push(text, Tones::NOTICE, saved.turn());
         }
         None => {
             spawn_fresh_player(world, spawn);
@@ -339,13 +348,43 @@ fn start_world(world: &mut World) {
     world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
 }
 
+/// A captain at `at` with nothing in hand and an empty bag: what a fresh
+/// player is, and what a restored one is spawned as before the engine
+/// gives it back what it carried.
+pub fn spawn_player(world: &mut World, at: rl_engine::rl_core::Point) -> Entity {
+    let registries = world.resource::<Registries>();
+    let faction: FactionId = registries.factions.expect("player");
+    let slots = rl_engine::rl_rules::Equipment::for_slots(&registries.slots);
+    let unarmed = items::unarmed(world.resource::<Armory>());
+    let grants = abilities::player_grants(world.resource::<Abilities>());
+    world
+        .spawn((
+            (Actor, Player, save::Captain, Blocks, Position(at), Viewshed::new(12), RevealsMap),
+            (
+                Health::full(30),
+                Armor(0),
+                Faction(faction),
+                unarmed,
+                Inventory::default(),
+                Equipped(slots),
+                Name::new("you"),
+                // Quiet enough that a smuggler in the dark has to be close,
+                // or catch you in your own lantern light, to be sure of you.
+                Stealth(rl_engine::rl_rules::ai::awareness::StealthStats { quiet: 1, subtlety: 10 }),
+                Glyph::new('@', Color::WHITE).on_layer(10),
+            ),
+            grants,
+        ))
+        .id()
+}
+
 /// A new player at `spawn` with a cutlass in hand, and a bottle, powder and
 /// knives in the bag.
 fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
+    let player = spawn_player(world, spawn);
     // The armory comes out while its spawner borrows commands.
     let armory = world.remove_resource::<Armory>().expect("the armory is inserted first");
-    let equipment = rl_engine::rl_rules::Equipment::for_slots(&world.resource::<Registries>().slots);
-    let (cutlass, rum, powder, knives, worn) = {
+    let (cutlass, kit) = {
         let mut commands = world.commands();
         let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
         let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
@@ -353,32 +392,13 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
         let powder = armory.spawn(&mut commands, armory.defs.expect("powder"), 6, None);
         // A few to throw, and the cutthroats carry more.
         let knives = armory.spawn(&mut commands, armory.defs.expect("throwing knife"), 3, None);
-        let mut worn = Equipped(equipment);
-        worn.equip(cutlass, armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn")).expect("the slots exist");
-        (cutlass, rum, powder, knives, worn)
+        (cutlass, vec![cutlass, rum, powder, knives])
     };
     world.flush();
+    let shape = armory.shape(armory.defs.expect("cutlass")).expect("a cutlass is worn").clone();
     world.insert_resource(armory);
-    let faction: FactionId = world.resource::<Registries>().factions.expect("player");
-    let unarmed = items::unarmed(world.resource::<Armory>());
-    let grants = abilities::player_grants(world.resource::<Abilities>());
-    world.spawn((
-        (Actor, Player, Blocks, Position(spawn), Viewshed::new(12), RevealsMap),
-        (
-            Health::full(30),
-            Armor(0),
-            Faction(faction),
-            unarmed,
-            Inventory { items: vec![cutlass, rum, powder, knives] },
-            worn,
-            Name::new("you"),
-            // Quiet enough that a smuggler in the dark has to be close,
-            // or catch you in your own lantern light, to be sure of you.
-            Stealth(rl_engine::rl_rules::ai::awareness::StealthStats { quiet: 1, subtlety: 10 }),
-            Glyph::new('@', Color::WHITE).on_layer(10),
-        ),
-        grants,
-    ));
+    world.get_mut::<Inventory>(player).expect("a bag").items = kit;
+    world.get_mut::<Equipped>(player).expect("slots").equip(cutlass, &shape).expect("the slots exist");
 }
 
 /// Asks the engine to move the player to a discovered site when the

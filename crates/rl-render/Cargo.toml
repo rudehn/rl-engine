@@ -20,3 +20,6 @@ rl-grid.workspace = true
 rl-rules.workspace = true
 rl-bevy.workspace = true
 bevy.workspace = true
+# The tile look file.
+serde.workspace = true
+ron.workspace = true

@@ -10,7 +10,7 @@ use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::passes::ScatterBy;
 use rl_engine::rl_mapgen::{BuildContext, BuildError, Chain, Pass, Phase};
 use rl_engine::rl_overworld::BandAppearance;
-use rl_engine::rl_render::{Cell, TileAppearance, Vary};
+use rl_engine::rl_render::{Cell, TileAppearance};
 use rl_engine::rl_world::WorldGraph;
 use rl_engine::rl_world::chunk::{RiverChannel, RoadPave};
 use rl_engine::rl_world::prelude::*;
@@ -27,6 +27,9 @@ pub const MOUNTAIN: BandId = BandId(8);
 pub const VOLCANO: BandId = BandId(9);
 pub const PORT: SiteKindId = SiteKindId(1);
 pub const COVE: SiteKindId = SiteKindId(2);
+
+/// How every tile looks, compiled in so the binary runs from anywhere.
+const TILES_RON: &str = include_str!("../assets/tiles.ron");
 
 pub fn band_name(b: BandId) -> &'static str {
     match b {
@@ -56,11 +59,9 @@ pub struct Content {
     marsh: TileId,
     road: TileId,
     plaza: TileId,
-    cave: TileId,
     door: TileId,
     timber: TileId,
     plank: TileId,
-    open_door: TileId,
 }
 
 impl Content {
@@ -75,42 +76,25 @@ impl Content {
         let marsh = tiles.register(TileProps::floor("marsh").move_cost(160)).unwrap();
         let road = tiles.register(TileProps::floor("road").move_cost(80)).unwrap();
         let plaza = tiles.register(TileProps::floor("dock")).unwrap();
-        let cave = tiles.register(TileProps::floor("cave")).unwrap();
+        tiles.register(TileProps::floor("cave")).unwrap();
         // Shut until someone with hands opens it: a crab or a dog is kept out,
         // a cutthroat is not.
         let door = tiles.register(TileProps::named("door").passable(true).opaque(true).blocks_projectiles(true).opens_to("open door")).unwrap();
         let timber = tiles.register(TileProps::wall("timber")).unwrap();
         let plank = tiles.register(TileProps::floor("plank")).unwrap();
         // Registered last, so a saved map's tile ids still mean what they meant.
-        let open_door = tiles.register(TileProps::floor("open door").closes_to("door")).unwrap();
-        Self { tiles, water, sand, grass, tree, rock, marsh, road, plaza, cave, door, timber, plank, open_door }
+        tiles.register(TileProps::floor("open door").closes_to("door")).unwrap();
+        Self { tiles, water, sand, grass, tree, rock, marsh, road, plaza, door, timber, plank }
     }
 
     pub fn tiles(&self) -> &TileRegistry {
         &self.tiles
     }
 
+    /// How each tile looks in full light, from `assets/tiles.ron`; a tile
+    /// the file forgets stops the game at startup, by name.
     pub fn tile_appearance(&self) -> TileAppearance {
-        let mut look = TileAppearance::new();
-        // Both colours in full light, and how each varies from cell to
-        // cell: daylight shows these as they are, a lantern warms them.
-        let ground = Vary::new(0.22, 0.06);
-        let stone = Vary::new(0.16, 0.04);
-        let c = |r, g, b| Color::srgb(r, g, b);
-        look.set_varied(self.water, Cell::new('~', c(0.4, 0.62, 1.0)).on(c(0.05, 0.16, 0.42)), Vary::new(0.12, 0.04).shimmering(0.3));
-        look.set_varied(self.sand, Cell::new('.', c(0.95, 0.88, 0.62)).on(c(0.6, 0.52, 0.32)), ground);
-        look.set_varied(self.grass, Cell::new('.', c(0.55, 0.85, 0.4)).on(c(0.14, 0.32, 0.11)), ground);
-        look.set_varied(self.tree, Cell::new('T', c(0.3, 0.8, 0.35)).on(c(0.07, 0.24, 0.08)), ground);
-        look.set_varied(self.rock, Cell::new('#', c(0.8, 0.77, 0.72)).on(c(0.45, 0.43, 0.4)), stone);
-        look.set_varied(self.marsh, Cell::new('"', c(0.45, 0.72, 0.55)).on(c(0.1, 0.24, 0.17)), ground);
-        look.set_varied(self.road, Cell::new('+', c(0.82, 0.72, 0.55)).on(c(0.38, 0.3, 0.21)), stone);
-        look.set_varied(self.plaza, Cell::new('=', c(0.78, 0.62, 0.45)).on(c(0.38, 0.27, 0.18)), stone);
-        look.set_varied(self.cave, Cell::new('.', c(0.72, 0.67, 0.6)).on(c(0.22, 0.2, 0.18)), Vary::new(0.3, 0.07));
-        look.set_varied(self.door, Cell::new('+', c(0.95, 0.7, 0.4)).on(c(0.42, 0.26, 0.12)), stone);
-        look.set_varied(self.timber, Cell::new('#', c(0.88, 0.62, 0.35)).on(c(0.48, 0.3, 0.15)), stone);
-        look.set_varied(self.plank, Cell::new('.', c(0.82, 0.64, 0.4)).on(c(0.34, 0.23, 0.12)), Vary::new(0.2, 0.05));
-        look.set_varied(self.open_door, Cell::new('\'', c(0.95, 0.7, 0.4)).on(c(0.22, 0.2, 0.18)), stone);
-        look
+        TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 
     pub fn band_appearance(&self) -> BandAppearance {
@@ -428,9 +412,10 @@ mod tests {
         assert!(terrain.count(content.timber) >= 2 * 12, "{} timber", terrain.count(content.timber));
         let c = terrain.bounds().center();
         assert!(tables.walkable[terrain.get(c).unwrap().index()], "the plaza centre is open");
-        let (shut, open) = (content.door.index(), content.open_door.index());
+        let open_door = content.tiles.expect("open door");
+        let (shut, open) = (content.door.index(), open_door.index());
         assert!(!tables.walkable[shut] && tables.opaque[shut], "a shut door stops a step and blocks sight");
-        assert_eq!(tables.opens[shut], Some(content.open_door), "until it is opened");
+        assert_eq!(tables.opens[shut], Some(open_door), "until it is opened");
         assert!(tables.walkable[open] && !tables.opaque[open] && tables.closes[open] == Some(content.door), "and open, it is walked through and shut again");
     }
 }

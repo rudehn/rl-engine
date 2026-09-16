@@ -32,7 +32,6 @@ pub struct Facts {
     pub killed_faction: FactKind,
     pub picked_up: FactKind,
     pub carrying: FactKind,
-    pub used: FactKind,
     pub equipped: FactKind,
     pub entered_cave: FactKind,
     pub entered_site: FactKind,
@@ -40,16 +39,14 @@ pub struct Facts {
 
 impl Facts {
     fn new() -> Self {
-        let defs = Registry::from_defs(
-            ["killed", "killed_faction", "picked_up", "carrying", "used", "equipped", "entered_cave", "entered_site"].map(FactDef::new).to_vec(),
-        )
-        .unwrap();
+        let defs =
+            Registry::from_defs(["killed", "killed_faction", "picked_up", "carrying", "equipped", "entered_cave", "entered_site"].map(FactDef::new).to_vec())
+                .unwrap();
         Self {
             killed: defs.expect("killed"),
             killed_faction: defs.expect("killed_faction"),
             picked_up: defs.expect("picked_up"),
             carrying: defs.expect("carrying"),
-            used: defs.expect("used"),
             equipped: defs.expect("equipped"),
             entered_cave: defs.expect("entered_cave"),
             entered_site: defs.expect("entered_site"),
@@ -89,7 +86,6 @@ enum On {
     KilledFaction(Option<NameRef<FactionDef>>),
     PickedUp(Option<NameRef<ItemDef>>),
     Carrying(Option<NameRef<ItemDef>>),
-    Used(Option<NameRef<ItemDef>>),
     Equipped(Option<NameRef<ItemDef>>),
     EnteredCave(Option<u64>),
     EnteredSite(Option<Site>),
@@ -111,7 +107,6 @@ impl On {
             On::KilledFaction(f) => (facts.killed_faction, f.map(|r| u64::from(r.id().raw()))),
             On::PickedUp(i) => (facts.picked_up, id(i)),
             On::Carrying(i) => (facts.carrying, id(i)),
-            On::Used(i) => (facts.used, id(i)),
             On::Equipped(i) => (facts.equipped, id(i)),
             On::EnteredCave(level) => (facts.entered_cave, *level),
             On::EnteredSite(site) => (
@@ -214,7 +209,6 @@ pub fn report_facts(mut out: Outcomes, mut happened: MessageWriter<Happened>, mu
     for ev in out.items.read() {
         let (kind, item) = match *ev {
             ItemEvent::PickedUp { item, merged_into, .. } => (facts.picked_up, merged_into.unwrap_or(item)),
-            ItemEvent::Used { item, .. } => (facts.used, item),
             ItemEvent::Equipped { item, .. } => (facts.equipped, item),
             _ => continue,
         };

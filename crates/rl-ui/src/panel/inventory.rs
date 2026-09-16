@@ -6,14 +6,16 @@
 //! the rows, and four keys act on the row picked out. Wearing, dropping and
 //! using are the engine's own item actions, so the screen writes their
 //! intents itself; throwing opens the targeting cursor through
-//! [`AimThrow`], the way a game's throw key would. A game binds nothing,
-//! and what using an item means stays the game's, answered from
-//! [`ItemEvent::Used`] as before.
+//! [`AimThrow`], the way a game's throw key would. A game binds nothing.
+//! Using an item that lends an ability uses the ability: on the spot when
+//! it needs no aim, through the targeting cursor by [`AimAt`] when it does;
+//! using anything else is the game's, answered from [`ItemEvent::Used`].
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
-//! to armor or a stat, how far it flies, where it is worn or could be, and
-//! whatever the game pushed onto it in [`ViewSet::Annotate`](crate::ViewSet).
+//! to armor or a stat, how far it flies, where it is worn or could be, what
+//! it lends and how many uses are left, and whatever the game pushed onto
+//! it in [`ViewSet::Annotate`](crate::ViewSet).
 //!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
@@ -32,7 +34,7 @@ use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::inventory::{InventoryView, InventoryViewPlugin, ItemRow};
 use crate::view::sheet::Strike;
-use crate::view::target::AimThrow;
+use crate::view::target::{AimAt, AimThrow};
 
 /// The name the bag's modal is declared under.
 pub const INVENTORY_MODAL: &str = "inventory";
@@ -146,7 +148,8 @@ impl Plugin for InventoryPanel {
             .add_message::<Intent<Unequip>>()
             .add_message::<Intent<DropItem>>()
             .add_message::<Intent<UseItem>>()
-            .add_message::<AimThrow>();
+            .add_message::<AimThrow>()
+            .add_message::<AimAt>();
         app.insert_resource(self.0.clone()).init_resource::<InventoryMenu>().init_resource::<InventoryKeys>();
         app.add_systems(Update, inventory_keys.in_set(EngineSet::Input)).add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
     }
@@ -177,6 +180,7 @@ pub struct BagIntents<'w> {
     unequips: MessageWriter<'w, Intent<Unequip>>,
     drops: MessageWriter<'w, Intent<DropItem>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
+    aims: MessageWriter<'w, AimAt>,
     throws: MessageWriter<'w, AimThrow>,
 }
 
@@ -232,7 +236,15 @@ pub fn inventory_keys(
         intents.drops.write(Intent::new(user, DropItem(item)));
         true
     } else if binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm) {
-        intents.uses.write(Intent::new(user, UseItem(item)));
+        match row.lends.first() {
+            // An aimed ability wants the cursor; the bag closes for it.
+            Some(lent) if lent.aimed => {
+                intents.aims.write(AimAt { user, ability: lent.ability });
+            }
+            _ => {
+                intents.uses.write(Intent::new(user, UseItem(item)));
+            }
+        }
         true
     } else if binds.throw.just_pressed(input) && row.throw_range.is_some() {
         // The bag closes and the targeting cursor opens in its place.
@@ -285,6 +297,17 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         say(format!("worn on the {}", row.slot_name), Tones::MUTED);
     } else if row.wearable() {
         say(format!("goes on the {}", row.goes_on.join(" or the ")), Tones::MUTED);
+    }
+    for lent in &row.lends {
+        say(format!("use: {}", lent.name), Tones::TEXT);
+        if !lent.description.is_empty() {
+            say(lent.description.clone(), Tones::MUTED);
+        }
+        match lent.charges {
+            Some(1) => say("1 charge left".to_string(), Tones::MUTED),
+            Some(n) => say(format!("{n} charges left"), Tones::MUTED),
+            None => {}
+        }
     }
     for facet in &row.facets {
         say(facet.text.clone(), facet.tone);
@@ -376,8 +399,9 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
 mod tests {
     use super::*;
     use crate::harness::Stage;
-    use rl_bevy::{Intent, ThrowingPlugin};
+    use rl_bevy::{AddEngineEffects, Intent, ThrowingPlugin};
     use rl_core::DiceRoll;
+    use rl_rules::Names;
     use rl_rules::content::Registry;
     use rl_rules::{EquipShape, Equipment, SlotDef};
 
@@ -504,5 +528,57 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert(Inventory::default());
         stage.press(KeyCode::KeyI);
         assert_eq!(inside(&stage, 1), "Lint.");
+    }
+
+    /// An item that lends an ability is described in the ability's words,
+    /// and using it uses the ability: on the spot for one that needs no
+    /// aim, through the targeting cursor for one that does.
+    #[test]
+    fn an_item_that_lends_an_ability_is_used_through_it_and_an_aimed_one_opens_the_cursor() {
+        let mut stage = Stage::new_with((ThrowingPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag")), |app| {
+            app.add_engine_effects();
+            let names = Names::new().damage_kinds(&app.world().resource::<Registries>().damage_kinds);
+            let kinds = app.world().resource::<EffectKinds>();
+            let text = r#"#![enable(implicit_some)]
+[
+    (name: "quaff", description: "A swallow. It closes a wound.", aim: SelfOnly, mode: Own, costs: [Charge(1)],
+     effects: [(kind: "Mend", args: (kind: "kinetic", roll: "5"))]),
+    (name: "zap", mode: Bolt(range: 6), costs: [Charge(1)], effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))]),
+]"#;
+            let abilities = Abilities::load(text, kinds, &names).expect("the abilities load");
+            app.insert_resource(abilities);
+        })
+        .screen(52, 14);
+        let player = stage.player;
+        let (quaff, zap) = {
+            let a = stage.app.world().resource::<Abilities>();
+            (a.expect("quaff"), a.expect("zap"))
+        };
+        let potions = stage.app.world_mut().spawn((Item, Name::new("potions"), Grants(vec![quaff]), Stack { key: 1, count: 2 })).id();
+        let wand = stage.app.world_mut().spawn((Item, Name::new("a wand"), Grants(vec![zap]), Charges::full(3))).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![potions, wand] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert_eq!(inside(&stage, 1), "2 potions");
+        assert_eq!(inside(&stage, 4), "use: quaff", "described as what it lends");
+        assert_eq!(inside(&stage, 5), "A swallow. It closes a wound.", "in the game's words");
+        stage.press(KeyCode::ArrowDown);
+        assert_eq!(inside(&stage, 4), "use: zap");
+        assert_eq!(inside(&stage, 5), "3 charges left", "and counted when it counts");
+
+        stage.press(KeyCode::Enter);
+        let aims: Vec<AimAt> = stage.app.world_mut().resource_mut::<Messages<AimAt>>().drain().collect();
+        assert_eq!(aims, vec![AimAt { user: player, ability: zap }], "an aimed ability opens the cursor");
+        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "rather than using the wand on the spot");
+
+        // The bag closed for the cursor; Escape puts the cursor away too.
+        stage.press(KeyCode::Escape);
+        assert!(!stage.app.world().resource::<Modals>().any_open());
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::KeyU);
+        let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
+        assert_eq!(uses, vec![potions], "one that needs no aim is used where the player stands");
     }
 }

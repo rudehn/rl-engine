@@ -5,9 +5,11 @@
 //! [`Inventory`] and has neither, since a carried thing goes wherever its
 //! carrier does; worn, it is also claimed in the carrier's [`Equipped`]
 //! slots. The engine resolves the moves between those three states and
-//! charges a turn for each. What an item does when used is the game's: the
-//! engine reports [`ItemEvent::Used`] and the game reads it, applies the
-//! effect, and despawns the item if it was consumed.
+//! charges a turn for each. What an item does when used is written as the
+//! ability it [`Grants`](crate::ability::Grants), spent from the item by
+//! [`Cost::Charge`](rl_rules::ability::Cost::Charge), so a potion is a
+//! line of RON; an item that grants nothing is the game's, reported as
+//! [`ItemEvent::Used`] for the game to answer.
 //!
 //! What wearing an item does is the item's to say and the engine's to
 //! apply. Its combat components are read straight off it by
@@ -188,6 +190,7 @@ pub struct ItemWorld<'w, 's> {
     ground: Ground<'w, 's>,
     stacks: Query<'w, 's, &'static Stack>,
     wearables: Query<'w, 's, &'static Wearable>,
+    lends: Query<'w, 's, (), With<crate::ability::Grants>>,
     map: Res<'w, WorldMap>,
 }
 
@@ -223,8 +226,13 @@ pub const EQUIP_FROM_GROUND_COST: u32 = BASE_ACTION_COST * 3 / 2;
 pub struct Unequip(pub Entity);
 impl Action for Unequip {}
 
-/// Use a carried item. The engine charges the turn and reports
-/// [`ItemEvent::Used`]; the game does the rest.
+/// Use a carried item.
+///
+/// An item that [`Grants`](crate::ability::Grants) an ability is used
+/// through it: the abilities plugin turns this into a
+/// [`Use`](crate::ability::Use) of what the item lends, and the resolver
+/// here leaves it alone. For anything else the engine charges the turn and
+/// reports [`ItemEvent::Used`], and the game does the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseItem(pub Entity);
 impl Action for UseItem {}
@@ -280,10 +288,17 @@ impl ItemIntents<'_, '_> {
 /// ground, is refused for the player and treated as a wait for anyone else,
 /// like an impossible move.
 pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resolution: Resolution, world: ItemWorld, mut events: MessageWriter<ItemEvent>) {
-    let ItemWorld { mut carriers, ground, stacks, wearables, map } = world;
+    let ItemWorld { mut carriers, ground, stacks, wearables, lends, map } = world;
     let this_map = map.current();
     let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map);
     for (actor, which) in intents.drain() {
+        // Using what lends an ability is using the ability, which the
+        // abilities plugin has already written as a `Use` of its own.
+        if let Which::Use(item) = which
+            && lends.contains(item)
+        {
+            continue;
+        }
         if !resolution.claim(actor) {
             continue;
         }

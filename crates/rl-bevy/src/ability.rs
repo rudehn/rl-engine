@@ -32,7 +32,7 @@ use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position, Viewshed};
 use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
-use crate::items::{Equipped, Inventory, Stack, Tagged};
+use crate::items::{Equipped, Inventory, Item, Stack, Tagged, UseItem};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
 use crate::status::{Afflict, Afflicted, Cure, StatBlock};
@@ -178,14 +178,29 @@ impl Cooldowns {
     }
 }
 
-/// The abilities an item, an affix or a status lends whoever holds it.
+/// The abilities an actor knows of itself, or an item lends whoever holds
+/// it.
+///
+/// On an item it lends while the item is carried, worn or not: a wand in
+/// the bag is a wand. An ability that should work only while its item is
+/// worn says so with [`Requirement::Wielding`](rl_rules::ability::Requirement),
+/// which is what the requirement is for.
+///
+/// This is also how a consumable is written. A potion is an item that
+/// grants an ability costing [`Cost::Charge`]: the ability's effects are
+/// what drinking does, and the charge is spent from the potion, so a
+/// potion is a line of RON and no game writes a use system. Using the item
+/// itself, through [`UseItem`], comes to using what it grants.
 #[derive(Component, Debug, Clone, Default)]
 pub struct Grants(pub Vec<AbilityId>);
 
 /// Uses left in whatever carries this.
 ///
 /// On the item that granted the ability, not on the actor, so two wands
-/// are two pools of charges and a used-up one is still a wand.
+/// are two pools of charges and a used-up one is still a wand. An item
+/// with no `Charges` is spent whole by a [`Cost::Charge`]: one off its
+/// [`Stack`], or the item itself, despawned. That is what makes a potion a
+/// potion and a wand a wand, and nothing else has to say which is which.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Charges {
     /// How many are left.
@@ -545,6 +560,7 @@ pub struct UserState<'w, 's> {
     gear: Query<'w, 's, Bearing>,
     charges: Query<'w, 's, &'static mut Charges>,
     tagged: Query<'w, 's, (Option<&'static Tagged>, Option<&'static mut Stack>)>,
+    items: Query<'w, 's, (), With<Item>>,
     registries: Res<'w, Registries>,
     commands: Commands<'w, 's>,
 }
@@ -814,13 +830,45 @@ fn gate(user: Entity, id: AbilityId, def: &AbilityDef, source: Option<Entity>, s
     let items = |tag: TagId| count_tagged(inventory, tag, state);
     let purse = Purse {
         pool: &pool,
-        charges: source.and_then(|e| state.charges.get(e).ok()).map(|c| c.left),
+        charges: source.map(|e| charges_of(e, state)),
         // No health component means nothing to spend it from, and a cost
         // in health should refuse rather than silently succeed.
         health: health.map(|h| h.hp).unwrap_or(0),
         items: &items,
     };
     blocked(def, &gates, &purse, now, cooldowns.map(|c| c.ready_at(id)).unwrap_or(0))
+}
+
+/// What a charge costs `source` from: its [`Charges`] when it counts them,
+/// else its stack, else itself, which is one use.
+fn charges_of(source: Entity, state: &UserState<'_, '_>) -> u16 {
+    if let Ok(charges) = state.charges.get(source) {
+        return charges.left;
+    }
+    match state.tagged.get(source) {
+        Ok((_, Some(stack))) => stack.count.min(u32::from(u16::MAX)) as u16,
+        _ => 1,
+    }
+}
+
+/// Spends `amount` charges from `source`, by the same rule
+/// [`charges_of`] counts them: off its [`Charges`], else off its stack,
+/// else the item itself, and an item spent to nothing is despawned.
+fn spend_charges(source: Entity, amount: u16, state: &mut UserState<'_, '_>) {
+    if let Ok(mut charges) = state.charges.get_mut(source) {
+        charges.left = charges.left.saturating_sub(amount);
+        return;
+    }
+    let left = match state.tagged.get_mut(source) {
+        Ok((_, Some(mut stack))) => {
+            stack.count = stack.count.saturating_sub(u32::from(amount));
+            stack.count
+        }
+        _ => 0,
+    };
+    if left == 0 && state.items.contains(source) {
+        state.commands.entity(source).despawn();
+    }
 }
 
 /// How many items carrying `tag` are in `inventory`, stacks counted.
@@ -856,8 +904,8 @@ fn pay(user: Entity, def: &AbilityDef, source: Option<Entity>, state: &mut UserS
                 }
             }
             Cost::Charge { amount } => {
-                if let Some(mut charges) = source.and_then(|e| state.charges.get_mut(e).ok()) {
-                    charges.left = charges.left.saturating_sub(amount);
+                if let Some(source) = source {
+                    spend_charges(source, amount, state);
                 }
             }
             Cost::Item { tag, count } => spend_tagged(&carried, tag, count, state),
@@ -972,25 +1020,62 @@ pub fn offer_abilities(mut offered: ResMut<Offered>, abilities: Res<Abilities>, 
     }
 }
 
-/// Rebuilds every actor's [`Known`] from what it is and what it wears.
+/// An actor as [`refresh_known`] reads it: what it knows, what it is
+/// granted of itself, and what it wears and carries.
+type Learner = (&'static mut Known, Option<&'static Grants>, Option<&'static Equipped>, Option<&'static Inventory>);
+
+/// Rebuilds every actor's [`Known`] from what it is, wears and carries.
 ///
-/// Rebuilt rather than edited, the way gear modifiers are: an unequipped
-/// wand takes its ability with it and nothing has to remember that it did.
-/// An actor's own [`Grants`] come first, so a wand lending an ability the
-/// actor already knows does not make it depend on the wand.
-pub fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>, Option<&Equipped>)>, lent: Query<&Grants, Without<Known>>) {
-    for (mut known, innate, equipped) in &mut actors {
+/// Rebuilt rather than edited, the way gear modifiers are: a wand put down
+/// takes its ability with it and nothing has to remember that it did. An
+/// actor's own [`Grants`] come first, so a wand lending an ability the
+/// actor already knows does not make it depend on the wand; then what is
+/// worn, then the rest of the bag, so a charge is spent from what is in
+/// hand before what is in the pack.
+pub fn refresh_known(mut actors: Query<Learner>, lent: Query<&Grants, Without<Known>>) {
+    for (mut known, innate, equipped, carried) in &mut actors {
         known.clear();
         for ability in innate.map(|g| g.0.as_slice()).unwrap_or(&[]) {
             known.learn(*ability, None);
         }
-        let Some(equipped) = equipped else { continue };
-        for (_, item) in equipped.0.worn() {
+        let worn = equipped.into_iter().flat_map(|e| e.0.worn().map(|(_, item)| item));
+        let bag = carried.into_iter().flat_map(|bag| bag.items.iter().copied());
+        for item in worn.chain(bag) {
             let Ok(grants) = lent.get(item) else { continue };
             for ability in &grants.0 {
                 known.learn(*ability, Some(item));
             }
         }
+    }
+}
+
+/// Turns using an item that lends an ability into using that ability.
+///
+/// An alternate action, in the shape of [`Bump`](crate::bump::Bump): read
+/// in [`ResolveSet::Redirect`], it writes a [`Use`] of the first ability
+/// the item grants, aimed at the user's own cell, and claims nothing, so
+/// the ability resolver gates, pays and lands it as if the ability had
+/// been called on by name, with the charge spent from the item. The item
+/// resolver leaves such a use alone. An aimed ability used this way lands
+/// on the user's feet and is refused; a screen that offers the item opens
+/// the targeting cursor on it instead, through
+/// [`Known::source_of`]. A use of an item that grants nothing is the
+/// game's, reported as [`ItemEvent::Used`](crate::items::ItemEvent::Used)
+/// as before.
+pub fn redirect_item_uses(
+    mut intents: MessageReader<Intent<UseItem>>,
+    lends: Query<&Grants, With<Item>>,
+    carriers: Query<(&Position, &Inventory), With<MyTurn>>,
+    mut uses: MessageWriter<Intent<Use>>,
+) {
+    for intent in intents.read() {
+        let Ok((pos, bag)) = carriers.get(intent.actor) else { continue };
+        let item = intent.action.0;
+        if !bag.contains(item) {
+            continue;
+        }
+        let Some(ability) = lends.get(item).ok().and_then(|g| g.0.first().copied()) else { continue };
+        uses.write(Intent::new(intent.actor, Use { ability, aim: pos.0 }));
     }
 }
 
@@ -1032,6 +1117,7 @@ impl Plugin for AbilitiesPlugin {
             .add_stream::<AbilityRng>("AbilitiesPlugin")
             .needs::<Registries>("AbilitiesPlugin", "`Registries`, with the stats an ability's costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
+            .add_systems(Turn, redirect_item_uses.in_set(ResolveSet::Redirect))
             // What has landed, then what is cast this pass.
             .add_systems(Turn, (land_abilities, resolve_abilities).chain().in_set(ResolveSet::Act))
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
@@ -1125,6 +1211,13 @@ mod tests {
         name: "mend",
         aim: Ally,
         mode: Own,
+        effects: [(kind: "Mend", args: (kind: "fire", roll: "5"))],
+    ),
+    (
+        name: "quaff",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Charge(1)],
         effects: [(kind: "Mend", args: (kind: "fire", roll: "5"))],
     ),
 ]"#;
@@ -1558,5 +1651,46 @@ mod tests {
         assert!(app.world().resource::<Offered>().usable.is_empty(), "an empty pool is not an offer");
         let refusals = app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().filter(|e| matches!(e, AbilityEvent::Refused { .. })).count();
         assert_eq!(refusals, 0, "it was never offered, so it never asked");
+    }
+
+    /// A potion is an item that grants an ability costing a charge: using
+    /// the item uses the ability, the charge comes off the stack, the last
+    /// one takes the bottle with it, and a wand that counts its charges is
+    /// still a wand at zero.
+    #[test]
+    fn using_an_item_that_grants_an_ability_uses_it_and_spends_the_item() {
+        let (mut app, start) = app();
+        let quaff = ability(&app, "quaff");
+        let me = caster(&mut app, start, 0, &[]);
+        let potions = app.world_mut().spawn((Item, Grants(vec![quaff]), Stack { key: 1, count: 2 })).id();
+        let wand = app.world_mut().spawn((Item, Grants(vec![quaff]), Charges::full(1))).id();
+        app.world_mut().get_mut::<Inventory>(me).unwrap().items = vec![potions, wand];
+        app.world_mut().get_mut::<Health>(me).unwrap().hp = 10;
+        settle(&mut app);
+        assert!(app.world().get::<Known>(me).unwrap().has(quaff), "carried, not worn, and known");
+        assert_eq!(app.world().get::<Known>(me).unwrap().source_of(quaff), Some(potions), "spent from the first thing in the bag that lends it");
+
+        app.world_mut().write_message(Intent::new(me, UseItem(potions)));
+        app.update();
+        assert_eq!(hp(&app, me), 15, "drunk");
+        assert_eq!(app.world().get::<Stack>(potions).map(|s| s.count), Some(1), "one off the stack");
+        assert_eq!(app.world().resource::<Turns>().now(), 100, "for the ability's time");
+        assert!(app.world_mut().resource_mut::<Messages<crate::items::ItemEvent>>().drain().next().is_none(), "and nothing for the game to answer");
+
+        app.world_mut().write_message(Intent::new(me, UseItem(potions)));
+        app.update();
+        assert_eq!(hp(&app, me), 20);
+        assert!(app.world().get_entity(potions).is_err(), "the last one took the bottle");
+        assert_eq!(app.world().get::<Inventory>(me).unwrap().items, vec![wand], "and the bag forgot it");
+        assert_eq!(app.world().get::<Known>(me).unwrap().source_of(quaff), Some(wand), "the wand lends it now");
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: quaff, aim: start }));
+        app.update();
+        assert_eq!(hp(&app, me), 25);
+        assert_eq!(app.world().get::<Charges>(wand).copied(), Some(Charges { left: 0, max: 1 }), "a wand at zero is still a wand");
+        let clock = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(me, UseItem(wand)));
+        app.update();
+        assert_eq!((hp(&app, me), app.world().resource::<Turns>().now()), (25, clock), "and an empty one is refused for free");
     }
 }

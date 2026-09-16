@@ -16,7 +16,9 @@
 //   ranged: optional; (range, roll, kind) for a shot while worn; `f` fires at the nearest foe in sight
 //   thrown: optional; (range, roll, kind) when thrown; `r` throws the first one carried, `t` in the chest
 //           the one picked, and a sapient monster throws its own and picks up more
-//   heal:   optional; health restored when used; a usable item is consumed
+//   grants: optional; abilities from `abilities.ron` the item lends whoever carries it; using the
+//           item uses the first, and an ability that costs Charge(n) spends it from the item, one
+//           off the stack, the last one taking the bottle with it
 //   stack:  optional; whether copies merge into one counted entry
 //   spawn:  optional; (min_band, max_band, weight) for lying on the ground,
 //           where the band is the region's distance from your home port
@@ -28,7 +30,7 @@
     (name: "buckler", glyph: '[', color: (0.6, 0.6, 0.5), slot: "off hand", tags: ["armor", "shield"], armor: 1, spawn: (2, 40, 2)),
     (name: "leather jerkin", glyph: '[', color: (0.6, 0.4, 0.2), slot: "body", tags: ["armor"], armor: 1, spawn: (0, 40, 2)),
     (name: "tricorne", glyph: '[', color: (0.3, 0.3, 0.35), slot: "head", tags: ["armor", "hat"], armor: 1, spawn: (6, 40, 1)),
-    (name: "rum", glyph: '!', color: (0.9, 0.6, 0.2), tags: ["rum"], heal: 8, stack: true, spawn: (0, 40, 4)),
+    (name: "rum", glyph: '!', color: (0.9, 0.6, 0.2), tags: ["rum"], grants: ["swig"], stack: true, spawn: (0, 40, 4)),
     (name: "doubloons", glyph: '$', color: (1.0, 0.85, 0.2), stack: true, spawn: (0, 40, 4)),
     (name: "throwing knife", glyph: '/', color: (0.78, 0.8, 0.86), thrown: (6, "1d4+1", "cutlass"), stack: true, spawn: (1, 40, 2)),
     (name: "powder", glyph: ',', color: (0.4, 0.4, 0.42), tags: ["powder"], stack: true, spawn: (0, 40, 3)),

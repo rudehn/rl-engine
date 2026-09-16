@@ -1,12 +1,14 @@
-//! Items: definitions from RON, what lies about, what the dead drop, what
-//! rum does, and what wearing a jerkin is worth.
+//! Items: definitions from RON, what lies about, what the dead drop, and
+//! what wearing a jerkin is worth.
 //!
 //! The engine moves items between ground, bag and slots, charges the turns,
 //! and reads what an item does off the item itself: a spawned cutlass
-//! carries the `MeleeAttack` it is swung with, a jerkin its `Armor`, and an
+//! carries the `MeleeAttack` it is swung with, a jerkin its `Armor`, an
 //! affix what it `Bestows` on a stat, each with the rolled enchant already
-//! in it. Everything that gives an item meaning is here: the slot names,
-//! the numbers, the effect of using it, the words in the log.
+//! in it, and a bottle of rum the `swig` it `Grants`, so what a drink does
+//! is a line of `abilities.ron` and nothing here. Everything that gives an
+//! item meaning is here or in the files: the slot names, the numbers, the
+//! words in the log.
 
 use std::collections::BTreeSet;
 
@@ -15,11 +17,11 @@ use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
+use rl_engine::rl_rules::ability::AbilityDef;
 use rl_engine::rl_rules::damage::DamageKind;
 use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, NameRef, SlotDef, SlotId, StatId, TagDef, TagId, affix, roll_affixes};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
-use rl_engine::rl_ui::{Facets, InventoryView, MessageLog, Tones};
 use serde::Deserialize;
 
 use crate::content::PORT;
@@ -50,7 +52,7 @@ pub struct ItemDef {
     #[serde(default)]
     pub thrown: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
     #[serde(default)]
-    pub heal: i32,
+    pub grants: Vec<NameRef<AbilityDef>>,
     #[serde(default)]
     pub stack: bool,
     #[serde(default)]
@@ -60,13 +62,6 @@ pub struct ItemDef {
 impl Named for ItemDef {
     fn name(&self) -> &str {
         &self.name
-    }
-}
-
-impl ItemDef {
-    /// Whether using it does anything.
-    pub fn usable(&self) -> bool {
-        self.heal > 0
     }
 }
 
@@ -110,10 +105,10 @@ pub struct Armory {
 }
 
 impl Armory {
-    /// Loads the items and their affixes against `registries`; panics with
-    /// every problem listed.
-    pub fn load(seed: RunSeed, home: Point, registries: &Registries) -> Self {
-        let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+    /// Loads the items and their affixes against `registries` and the
+    /// abilities a bottle lends; panics with every problem listed.
+    pub fn load(seed: RunSeed, home: Point, registries: &Registries, abilities: &Abilities) -> Self {
+        let defs: Registry<ItemDef> = registries.names().with("ability", abilities.defs()).load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(|d, _| {
             if d.ranged.as_ref().is_some_and(|(range, _, _)| *range < 2) {
                 return Err("a ranged weapon reaches at least 2".into());
@@ -247,10 +242,14 @@ impl Armory {
         // cutlass" without ever seeing the armory.
         let name = self.display_name(id, Some(&Enchant(enchant.clone())));
         let mut e = commands.spawn((Item, ItemKind(id), Name::new(name), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
-        // Tagged, so an ability that spends powder or rum can find it in a bag.
+        // Tagged, so an ability that spends powder can find it in a bag.
         let tags = self.tags_of(id);
         if !tags.is_empty() {
             e.insert(Tagged(tags.to_vec()));
+        }
+        // What using it does: the ability it lends, spent from the stack.
+        if !d.grants.is_empty() {
+            e.insert(Grants(d.grants.iter().map(|g| g.id()).collect()));
         }
         if let Some(shape) = self.shape(id) {
             let rule = self.rule(id);
@@ -341,65 +340,10 @@ pub fn drop_loot(
     }
 }
 
-/// Applies what using an item does, and consumes it.
-/// What using an item reaches.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Using<'w, 's> {
-    armory: Res<'w, Armory>,
-    registries: Res<'w, Registries>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
-    afflict: MessageWriter<'w, Afflict>,
-    cure: MessageWriter<'w, Cure>,
-    users: Query<'w, 's, &'static mut Health>,
-    items: Query<'w, 's, (&'static ItemKind, Option<&'static mut Stack>)>,
-}
-
-/// Applies what using an item does, and consumes it. Drink heals, cures
-/// what a bite left and makes you hearty for a while.
-pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, mut using: Using) {
-    let Using { armory, registries, turns, log, afflict, cure, users, items } = &mut using;
-    for ev in events.read() {
-        let ItemEvent::Used { actor, item } = *ev else { continue };
-        let Ok((kind, stack)) = items.get_mut(item) else { continue };
-        let d = armory.defs.get(kind.0);
-        if !d.usable() {
-            log.push(format!("You cannot think what to do with the {}.", d.name), Tones::MUTED, turns.turn_number());
-            continue;
-        }
-        if let Ok(mut hp) = users.get_mut(actor) {
-            let before = hp.hp;
-            hp.hp = (hp.hp + d.heal).min(hp.max);
-            log.push(format!("You drink the {}. It restores {} health.", d.name, hp.hp - before), Tones::GOOD, turns.turn_number());
-            for name in ["venom", "bleeding"] {
-                cure.write(Cure { target: actor, status: registries.statuses.expect(name) });
-            }
-            afflict.write(Afflict { target: actor, status: registries.statuses.expect("hearty"), turns: 10, by: None });
-        }
-        match stack {
-            Some(mut s) if s.count > 1 => s.count -= 1,
-            _ => commands.entity(item).despawn(),
-        }
-    }
-}
-
 /// A bare-knuckle strike: what the player fights with when nothing worn
 /// carries a blow of its own.
 pub fn unarmed(armory: &Armory) -> MeleeAttack {
     MeleeAttack { kind: armory.fist, dice: DiceRoll::new(1, 3) }
-}
-
-/// What a swig does, which the engine cannot know from a bottle's
-/// components: one facet per usable item in the sea chest, pushed in
-/// [`ViewSet::Annotate`](rl_engine::rl_ui::ViewSet).
-pub fn note_what_a_drink_does(mut bag: ResMut<InventoryView>, mut facets: ResMut<Facets>, armory: Res<Armory>, kinds: Query<&ItemKind>) {
-    for row in bag.rows.iter_mut() {
-        let Ok(kind) = kinds.get(row.entity) else { continue };
-        let d = armory.defs.get(kind.0);
-        if d.usable() {
-            row.facets.push(facets.facet("drink", format!("restores {} health when drunk", d.heal)).toned(Tones::GOOD));
-        }
-    }
 }
 
 /// An item on the ground as the status line sees it.
@@ -558,16 +502,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A drink is a reaction to an item event, and reactions run after the
-    /// whole turn loop, so the healing lands after every monster due this
-    /// frame has already struck. At one hit point that is the difference
-    /// between a close call and a death.
+    /// Drinking the bottle is using the swig it grants: the engine resolves
+    /// it inside the pass, so the healing lands before the next monster due
+    /// this frame strikes, and the bottle is one lighter. At one hit point
+    /// that is the difference between a close call and a death.
     #[test]
-    fn a_drink_at_deaths_door_lands_before_the_next_blow() {
+    fn a_drink_at_deaths_door_lands_before_the_next_blow_and_costs_the_bottle() {
         let dir = std::env::temp_dir().join(format!("corsair-drink-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut app = crate::testing::headless(RunSeed(7), false, &dir);
-        app.add_systems(Turn, use_items.in_set(TurnSet::React));
         app.update();
         app.update();
 
@@ -583,6 +526,7 @@ mod tests {
             bag.items.iter().copied().find(|i| w.get::<ItemKind>(*i).is_some_and(|k| k.0 == rum_kind)).expect("a bottle of rum")
         };
         app.world_mut().get_mut::<Health>(me).expect("health").hp = 1;
+        let bottles = app.world().get::<Stack>(rum).map(|s| s.count).expect("the bottles stack");
 
         // A cutthroat at the player's elbow, due the moment the player's
         // turn is spent.
@@ -603,5 +547,9 @@ mod tests {
         let hp = app.world().get::<Health>(me).map(|h| h.hp);
         assert!(!died, "the drink landed after the blow: {hp:?}");
         assert!(hp.is_some_and(|hp| hp > 1), "the drink healed: {hp:?}");
+        assert_eq!(app.world().get::<Stack>(rum).map(|s| s.count), Some(bottles - 1), "and cost a bottle");
+        let hearty = app.world().resource::<Registries>().statuses.expect("hearty");
+        assert!(app.world().get::<Afflicted>(me).is_some_and(|a| a.has(hearty)), "and put heart in you");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

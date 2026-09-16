@@ -39,6 +39,11 @@ It does not heal, teleport or explode.
 Despawning the crust is enough to get it out of the bag.
 The engine drops vanished items from every inventory and every slot.
 
+That is the escape hatch, and Warren takes it because it has no abilities yet.
+The other way is for the item to `Grants` an ability whose cost is a `Charge`: the engine turns `UseItem` into a `Use` of it, spends the charge from the item, one off a stack or the item itself, and the bag describes the item by what it lends.
+A potion is then one line in a content file and no system at all.
+Corsair's rum is written that way; [chapter 12](12-where-to-go-next.md) says where to look.
+
 ## React, not Narrate
 
 ```rust,no_run

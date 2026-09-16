@@ -213,6 +213,8 @@ impl Plugin for CorePlugin {
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
             .add_action::<crate::bump::Bump>()
+            .add_action::<crate::bump::Swap>()
+            .add_message::<crate::bump::Swapped>()
             .add_action::<places::GoThrough>()
             .add_action::<crate::doors::Open>()
             .add_action::<crate::doors::Close>()
@@ -221,7 +223,14 @@ impl Plugin for CorePlugin {
             .add_systems(Turn, crate::bump::redirect_bumps.in_set(ResolveSet::Redirect))
             .add_systems(
                 Turn,
-                (turn::resolve_moves, turn::resolve_waits, crate::doors::resolve_opens, crate::doors::resolve_closes, places::resolve_warps)
+                (
+                    turn::resolve_moves,
+                    crate::bump::resolve_swaps,
+                    turn::resolve_waits,
+                    crate::doors::resolve_opens,
+                    crate::doors::resolve_closes,
+                    places::resolve_warps,
+                )
                     .chain()
                     .in_set(ResolveSet::Travel),
             )

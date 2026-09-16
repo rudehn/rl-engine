@@ -29,6 +29,8 @@ const ROWS: i32 = 40;
 const LOG_ROWS: i32 = 5;
 /// The bestiary, compiled in so the binary runs from anywhere.
 const RATS_RON: &str = include_str!("../../assets/rats.ron");
+/// How each tile looks, compiled in the same way.
+const TILES_RON: &str = include_str!("../../assets/tiles.ron");
 
 // ANCHOR: floors
 /// How deep the warren goes.
@@ -99,7 +101,8 @@ fn main() -> AppExit {
 // ANCHOR_END: main
 
 // ANCHOR: tiles
-/// The warren's tiles, and how each one looks in full light.
+/// The warren's tiles. What each one is lives here; how it looks is in a
+/// file beside the bestiary.
 struct Warren {
     tiles: TileRegistry,
     seed: RunSeed,
@@ -116,15 +119,11 @@ impl Warren {
         Self { tiles, seed }
     }
 
-    /// Both colours of every tile, and how much each cell jitters from
-    /// its neighbours. The renderer derives darkness and memory from these.
+    /// Both colours of every tile, and how much each cell strays from its
+    /// neighbours, read from `assets/tiles.ron` against the tiles registered
+    /// above. A tile the file forgets is reported at startup, by name.
     fn appearance(&self) -> TileAppearance {
-        let mut look = TileAppearance::new();
-        let t = |name| self.tiles.expect(name);
-        look.set_varied(t("earth"), Cell::new('#', Color::srgb(0.78, 0.66, 0.50)).on(Color::srgb(0.34, 0.27, 0.21)), Vary::new(0.20, 0.05));
-        look.set_varied(t("dirt"), Cell::new('.', Color::srgb(0.66, 0.58, 0.45)).on(Color::srgb(0.18, 0.15, 0.12)), Vary::new(0.28, 0.06));
-        look.set_varied(t("roots"), Cell::new('+', Color::srgb(0.55, 0.74, 0.45)).on(Color::srgb(0.16, 0.22, 0.13)), Vary::new(0.18, 0.05));
-        look
+        TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 }
 // ANCHOR_END: tiles

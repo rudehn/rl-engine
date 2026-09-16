@@ -4,8 +4,9 @@
 //! The vocabulary comes first: damage kinds, sides, stats, item tags and
 //! slots, the registries that name nothing. Then what is written in those
 //! words, each file loaded against everything before it: statuses, then the
-//! items and their affixes, then abilities, then the monsters, which name
-//! all of them, and last the ledger's tasks. A name in any file becomes an id
+//! abilities, then the items and their affixes, which name the ability a
+//! bottle lends, then the monsters, which name all of them, and last the
+//! ledger's tasks. A name in any file becomes an id
 //! as it loads, so a typo stops the game at startup saying which file and
 //! which entry, and nothing looks a name up again during play.
 
@@ -61,8 +62,8 @@ pub fn load(seed: RunSeed, home: Point, effects: &EffectKinds) -> Loaded {
         ..default()
     };
     registries.statuses = crate::statuses::load(&registries.names());
-    let armory = Armory::load(seed, home, &registries);
     let abilities = crate::abilities::load(&registries.names(), effects);
+    let armory = Armory::load(seed, home, &registries, &abilities);
     let bestiary = Bestiary::load(seed, home, &registries.names().with("item", &armory.defs).with("ability", abilities.defs()), registries.slots.len());
     let (quests, facts) = crate::quests::load(&bestiary, &armory, &registries);
     let combat = relations(&registries);

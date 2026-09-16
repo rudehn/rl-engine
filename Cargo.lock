@@ -4758,6 +4758,8 @@ dependencies = [
  "rl-core",
  "rl-grid",
  "rl-rules",
+ "ron 0.10.1",
+ "serde",
 ]
 
 [[package]]

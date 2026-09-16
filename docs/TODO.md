@@ -12,17 +12,7 @@ The first section is what every game hits in its first week.
 
 ## 1. Own the loops the games keep rewriting
 
-- **Consumables through abilities.**
-  `UseItem` is only an event, so Corsair's `use_items` hardcodes what rum does.
-  Abilities already have costs, charges and effects.
-  Let a carried item `Grants` an ability with `Cost::Charge`, and let `UseItem` resolve as `Use` of what the item grants, so a potion is a line of RON.
-- **A save seam for the game's entities.**
-  `EngineSave` captures the engine's state, and Corsair writes 546 lines (`examples/corsair/src/save.rs`) to capture and restore its own, by definition name and `SaveId`.
-  Every game that saves writes this.
-  A per-definition capture and restore registered beside the definition type, so the game says what a kind of thing is and the engine walks the world.
-- **Tile appearance from RON.**
-  Statuses, affixes and abilities load through `Names`, but every game builds `TileAppearance` in Rust with colour literals, which is the largest block of tutorial step 1.
-  A loader beside the others, and chapter 8 gains the tiles.
+Nothing is left in this section; its three items and the swap below were built on 2026-09-16, and the plan's progress log says how.
 
 ## 2. Open the minds
 
@@ -56,9 +46,6 @@ The first section is what every game hits in its first week.
 - **Movement profiles that change costs.**
   `FlowFields::ensure` keys the cache by `MovementProfile` but builds every map with `PathRules::default()`, so a swimmer and a walker see the same map and the sailing profile the plan's river section promised is not wired.
   `TileProps` needs a per-profile walkability mask, and the flood needs to read it.
-- **Swap places on a bump.**
-  A bump into an ally is a free refusal.
-  Every game with a companion wants to swap places instead; a `BumpRules { allies: Swap | Refuse }` in `ResolveSet::Redirect` is where it goes.
 - **Anyone travels.**
   `WarpRequest` and `GoThrough` ignore everyone but the player (`crates/rl-bevy/src/places.rs`, `resolve_warps`).
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.

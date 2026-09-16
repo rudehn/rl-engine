@@ -18,8 +18,11 @@ use crate::items::Armory;
 /// The abilities, compiled in so the binary runs from anywhere.
 const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
 
-/// What the player knows, in the order `1` to `4` aim them.
-pub const PLAYER_KNOWS: [&str; 4] = ["broadside", "grapnel", "swig", "plunder"];
+/// What the player knows of itself. The swig is not here: a bottle of rum
+/// lends it, and the engine spends it from the bottle. `1` to `4` aim
+/// whatever is known in file order, the swig among them while one is
+/// carried.
+pub const PLAYER_KNOWS: [&str; 3] = ["broadside", "grapnel", "plunder"];
 
 /// The player, and only while it holds the turn.
 type PlayerHolding = (With<Player>, With<MyTurn>);

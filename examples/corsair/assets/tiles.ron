@@ -1,0 +1,29 @@
+// How Corsair's tiles look in full light: daylight shows these as they
+// are, a lantern warms them, and the renderer works out darkness and
+// memory from the two colours.
+//
+// Every field (the ones marked "optional" may be left out):
+//   tile:    the tile's registered name, from `Content::new`; every registered
+//            tile needs a line, and the load says which is missing
+//   glyph:   one character
+//   fg:      (r, g, b) in 0..=1, the glyph's colour
+//   bg:      optional; (r, g, b), the cell's fill; black when left out
+//   vary:    optional; (brightness, hue), how far each cell strays from the
+//            authored colour, 0..=1 each; none when left out
+//   shimmer: optional; brightness drifting over time, 0..=1
+[
+    (tile: "void",      glyph: ' ', fg: (0.0, 0.0, 0.0)),
+    (tile: "water",     glyph: '~', fg: (0.4, 0.62, 1.0),  bg: (0.05, 0.16, 0.42), vary: (0.12, 0.04), shimmer: 0.3),
+    (tile: "sand",      glyph: '.', fg: (0.95, 0.88, 0.62), bg: (0.6, 0.52, 0.32),  vary: (0.22, 0.06)),
+    (tile: "grass",     glyph: '.', fg: (0.55, 0.85, 0.4),  bg: (0.14, 0.32, 0.11), vary: (0.22, 0.06)),
+    (tile: "palm",      glyph: 'T', fg: (0.3, 0.8, 0.35),   bg: (0.07, 0.24, 0.08), vary: (0.22, 0.06)),
+    (tile: "rock",      glyph: '#', fg: (0.8, 0.77, 0.72),  bg: (0.45, 0.43, 0.4),  vary: (0.16, 0.04)),
+    (tile: "marsh",     glyph: '"', fg: (0.45, 0.72, 0.55), bg: (0.1, 0.24, 0.17),  vary: (0.22, 0.06)),
+    (tile: "road",      glyph: '+', fg: (0.82, 0.72, 0.55), bg: (0.38, 0.3, 0.21),  vary: (0.16, 0.04)),
+    (tile: "dock",      glyph: '=', fg: (0.78, 0.62, 0.45), bg: (0.38, 0.27, 0.18), vary: (0.16, 0.04)),
+    (tile: "cave",      glyph: '.', fg: (0.72, 0.67, 0.6),  bg: (0.22, 0.2, 0.18),  vary: (0.3, 0.07)),
+    (tile: "door",      glyph: '+', fg: (0.95, 0.7, 0.4),   bg: (0.42, 0.26, 0.12), vary: (0.16, 0.04)),
+    (tile: "timber",    glyph: '#', fg: (0.88, 0.62, 0.35), bg: (0.48, 0.3, 0.15),  vary: (0.16, 0.04)),
+    (tile: "plank",     glyph: '.', fg: (0.82, 0.64, 0.4),  bg: (0.34, 0.23, 0.12), vary: (0.2, 0.05)),
+    (tile: "open door", glyph: '\'', fg: (0.95, 0.7, 0.4),  bg: (0.22, 0.2, 0.18),  vary: (0.16, 0.04)),
+]

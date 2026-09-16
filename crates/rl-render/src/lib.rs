@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod capture;
+pub mod looks;
 pub mod map_view;
 pub mod particles;
 pub mod shade;

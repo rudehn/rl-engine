@@ -49,6 +49,9 @@ impl Glyph {
 
 /// What each tile looks like in full light, indexed by [`TileId`], and
 /// how light and memory change it.
+///
+/// Filled from a file by [`load`](Self::load), or by hand with
+/// [`set_varied`](Self::set_varied) for a game whose tiles are few.
 #[derive(Resource, Debug, Clone, Default)]
 pub struct TileAppearance {
     looks: Vec<Option<(Cell, Vary)>>,

@@ -324,13 +324,21 @@ pub fn schedule(
 }
 
 /// Puts newly spawned actors into the queue and the occupancy index.
+///
+/// Actors admitted in one pass go in with the player first and the rest in
+/// the order they were spawned. A query's iteration order follows the
+/// archetypes as they happened to be created, which a new component
+/// anywhere in the engine can reorder; the first turn of a run must not
+/// depend on that.
 pub fn admit_new_actors(
     mut turns: ResMut<Turns>,
     mut occupancy: ResMut<Occupancy>,
-    added_actors: Query<Entity, Added<Actor>>,
+    added_actors: Query<(Entity, Has<Player>), Added<Actor>>,
     added_blockers: Query<(Entity, &Position, Option<&OnMap>), Added<Blocks>>,
 ) {
-    for e in &added_actors {
+    let mut fresh: Vec<(bool, Entity)> = added_actors.iter().map(|(e, player)| (!player, e)).collect();
+    fresh.sort_by_key(|(not_player, e)| (*not_player, e.index()));
+    for (_, e) in fresh {
         if !turns.queue.contains(e) {
             turns.queue.insert_now(e);
         }
@@ -390,7 +398,7 @@ pub fn resolve_moves(
 }
 
 /// A diagonal step may not squeeze between two unwalkable orthogonals.
-fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
+pub(crate) fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
     if !dir.is_diagonal() {
         return true;
     }

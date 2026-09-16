@@ -1,0 +1,23 @@
+// How the whale's tiles look in full light. The brand's light and the
+// dark do the rest; the renderer works out darkness and memory from the
+// two colours.
+//
+// Every field (the ones marked "optional" may be left out):
+//   tile:    the tile's registered name, from `Whale::new`; every registered
+//            tile needs a line, and the load says which is missing
+//   glyph:   one character
+//   fg:      (r, g, b) in 0..=1, the glyph's colour
+//   bg:      optional; (r, g, b), the cell's fill; black when left out
+//   vary:    optional; (brightness, hue), how far each cell strays from the
+//            authored colour, 0..=1 each; none when left out
+//   shimmer: optional; brightness drifting over time, 0..=1
+[
+    (tile: "blubber", glyph: '#', fg: (0.88, 0.58, 0.58), bg: (0.52, 0.25, 0.29), vary: (0.28, 0.07)),
+    (tile: "flesh",   glyph: '.', fg: (0.88, 0.6, 0.58),  bg: (0.3, 0.13, 0.15),  vary: (0.28, 0.07)),
+    (tile: "tooth",   glyph: '^', fg: (1.0, 0.97, 0.88),  bg: (0.56, 0.52, 0.45), vary: (0.14, 0.03)),
+    (tile: "bile",    glyph: '~', fg: (0.78, 0.98, 0.32), bg: (0.2, 0.3, 0.05),   vary: (0.2, 0.05), shimmer: 0.25),
+    (tile: "bone",    glyph: '#', fg: (0.96, 0.94, 0.86), bg: (0.62, 0.6, 0.52),  vary: (0.14, 0.03)),
+    (tile: "sinew",   glyph: '+', fg: (1.0, 0.66, 0.62),  bg: (0.46, 0.15, 0.18), vary: (0.28, 0.07)),
+    (tile: "tallow",  glyph: '"', fg: (1.0, 0.94, 0.7),   bg: (0.46, 0.38, 0.22), vary: (0.18, 0.05)),
+    (tile: "cinder",  glyph: ',', fg: (0.52, 0.46, 0.44), bg: (0.13, 0.1, 0.1),   vary: (0.25, 0.04)),
+]

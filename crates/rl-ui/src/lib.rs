@@ -122,7 +122,7 @@ pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin,
-    InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
+    InventoryView, InventoryViewPlugin, ItemRow, Lent, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
     VitalsViewPlugin, target_modal,
 };
 

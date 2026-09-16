@@ -1,0 +1,18 @@
+// How the warren's tiles look in full light. The renderer works out
+// darkness and memory from these two colours.
+//
+// Every field (the ones marked "optional" may be left out):
+//   tile:    the tile's registered name; every registered tile needs a line,
+//            and the load says which is missing
+//   glyph:   one character
+//   fg:      (r, g, b) in 0..=1, the glyph's colour
+//   bg:      optional; (r, g, b), the cell's fill; black when left out
+//   vary:    optional; (brightness, hue), how far each cell strays from the
+//            authored colour, 0..=1 each; none when left out
+//   shimmer: optional; brightness drifting over time, 0..=1, for water and
+//            anything else that should not sit still
+[
+    (tile: "earth", glyph: '#', fg: (0.78, 0.66, 0.50), bg: (0.34, 0.27, 0.21), vary: (0.20, 0.05)),
+    (tile: "dirt",  glyph: '.', fg: (0.66, 0.58, 0.45), bg: (0.18, 0.15, 0.12), vary: (0.28, 0.06)),
+    (tile: "roots", glyph: '+', fg: (0.55, 0.74, 0.45), bg: (0.16, 0.22, 0.13), vary: (0.18, 0.05)),
+]

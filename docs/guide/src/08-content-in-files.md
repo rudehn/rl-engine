@@ -72,8 +72,26 @@ Weight zero keeps an entry out of the table, which is how the king lives in the 
 
 `rl-rules` ships a threat score and a band report over this same table, which is what `cargo run -p corsair -- --balance` prints.
 
+## The tiles too
+
+The largest block of Rust in [chapter 1](01-a-map-on-screen.md) was three lines of colour literals.
+That is content as well, so it goes in a file of the same shape:
+
+```ron
+{{#include ../../../examples/tutorial/assets/tiles.ron}}
+```
+
+```rust,no_run
+{{#include ../../../examples/tutorial/src/bin/step08_content.rs:looks}}
+```
+
+The load is checked against the registry the same way the bestiary is checked against the damage kinds.
+A tile the file forgets, a name it misspells or a tile it describes twice stops the run at start-up with every problem listed, rather than showing up as a magenta question mark three floors down.
+What a tile *is* stays in `Warren::new`, because the engine reads that; what it looks like is the renderer's business and the file's.
+
 ## Try it
 
 - Add a monster of your own to `rats.ron`. You will not touch a Rust file.
 - Give something `spawn: (1, 4, 20, 6, 10)` and meet a swarm.
 - Break the file on purpose, by duplicating a name, writing `"1z6"`, or giving a rat a `kind` nobody registered, and read the error.
+- Recolour the roots in `tiles.ron`, then delete the line and read what the load says.

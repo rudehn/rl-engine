@@ -46,7 +46,7 @@ pub use ability::{
     Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants,
     Known, Landed, Landing, Offered, Pools, Use,
 };
-pub use bump::{Bump, Bumped};
+pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
     RangedAttack, Resists, Strikes, line_of_fire, shot,
@@ -95,7 +95,7 @@ pub mod prelude {
         Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants, Known,
         Landing, Pools, Use,
     };
-    pub use crate::bump::{Bump, Bumped};
+    pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
         RangedAttack, Resists, Strikes, line_of_fire, shot,

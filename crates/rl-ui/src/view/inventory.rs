@@ -8,18 +8,38 @@
 //! item spawned with them is described for free, in the registries' names,
 //! and a game says nothing twice.
 //!
-//! What an item does when used is the game's, so it is not here: a game
-//! pushes a [`Facet`] in [`ViewSet::Annotate`](crate::ViewSet) for "restores
-//! 8 health when drunk", and the panel prints it under the row.
+//! What an item does when used is the ability it [`Grants`], described in
+//! the ability's own words and counted in its charges, when the game
+//! inserted [`Abilities`]. Anything else an item means is a [`Facet`] the
+//! game pushes in [`ViewSet::Annotate`](crate::ViewSet), and the panel
+//! prints it under the row.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_render::Glyph;
 use rl_rules::SlotId;
+use rl_rules::ability::AbilityId;
 use rl_rules::stats::Op;
 
 use crate::facet::Facet;
 use crate::view::sheet::Strike;
+
+/// An ability an item lends whoever carries it, as a bag screen reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lent {
+    /// Which.
+    pub ability: AbilityId,
+    /// What the game called it.
+    pub name: String,
+    /// What the game said it is, empty when it said nothing.
+    pub description: String,
+    /// Whether using it needs somewhere to point, so a screen opens the
+    /// targeting cursor rather than using the item on the spot.
+    pub aimed: bool,
+    /// Uses left, for an item that counts them; a stack or a single item
+    /// is its own count.
+    pub charges: Option<u16>,
+}
 
 /// One carried item, as a bag screen reads it.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +77,9 @@ pub struct ItemRow {
     pub bestows: Vec<(String, Op)>,
     /// What it counts as, by the tags' registered names.
     pub tags: Vec<String>,
+    /// The abilities it lends, in the order it grants them; using the
+    /// item uses the first.
+    pub lends: Vec<Lent>,
     /// What the game added.
     pub facets: Vec<Facet>,
 }
@@ -116,25 +139,48 @@ type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
+/// What an item does when used: what it lends, and how many times.
+type Lends = (Option<&'static Grants>, Option<&'static Charges>);
 
 /// Fills [`InventoryView`] from the player's bag.
 pub fn collect_inventory(
     mut view: ResMut<InventoryView>,
     registries: Option<Res<Registries>>,
+    abilities: Option<Res<Abilities>>,
     player: Query<(Entity, &Inventory, Option<&Equipped>), With<Player>>,
-    items: Query<(Looks, Arms), With<Item>>,
+    items: Query<(Looks, Arms, Lends), With<Item>>,
 ) {
     view.rows.clear();
     view.entity = None;
     let Ok((entity, bag, worn)) = player.single() else { return };
     view.entity = Some(entity);
     let registries = registries.as_deref();
+    let abilities = abilities.as_deref();
     let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows))) = items.get(item) else { continue };
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (grants, charges))) = items.get(item) else {
+            continue;
+        };
         let slot = worn.and_then(|w| w.slot_of(item));
+        let lends = match (grants, abilities) {
+            (Some(grants), Some(abilities)) => grants
+                .0
+                .iter()
+                .map(|id| {
+                    let def = abilities.get(*id);
+                    Lent {
+                        ability: *id,
+                        name: def.name.clone(),
+                        description: def.description.clone(),
+                        aimed: def.aim.needs_cursor(),
+                        charges: charges.map(|c| c.left),
+                    }
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
         view.rows.push(ItemRow {
             entity: item,
             label: name.map(|n| n.as_str().to_string()).unwrap_or_default(),
@@ -153,6 +199,7 @@ pub fn collect_inventory(
                 .map(|b| b.0.iter().map(|(stat, op)| (registries.map(|r| r.stats.name(*stat).to_string()).unwrap_or_default(), *op)).collect())
                 .unwrap_or_default(),
             tags: tagged.map(|t| t.0.iter().map(|tag| registries.map(|r| r.tags.name(*tag).to_string()).unwrap_or_default()).collect()).unwrap_or_default(),
+            lends,
             facets: Vec::new(),
         });
     }

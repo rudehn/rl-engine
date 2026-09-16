@@ -32,6 +32,7 @@ A monster that has not noticed you does not act on you, one that loses you searc
 `AbilitiesPlugin` resolves abilities written as data: an aim, a shape from the targeting footprints, costs, requirements, a cooldown and a list of named effects.
 The engine ships seven effects and a game registers its own with `add_effect`.
 A key writes `AimAt`; the engine opens the cursor, previews what it would cover, and spends the turn.
+An item that `Grants` an ability lends it to whoever carries it, and a `Charge` cost is spent from the item, so a potion is a line of RON: Corsair's rum grants its swig.
 
 `delve` has five, `corsair` four, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
 
@@ -52,7 +53,9 @@ The grown-up version of [chapter 7](07-down-the-stairs.md)'s `if the king died`.
 ## Saving
 
 `rl-save` has backends for files, memory and browser storage behind one resource, a versioned envelope that refuses a mismatch rather than guessing, and entity remapping.
-The engine exports the scheduler's queue, the world's edits and places, and what has been explored.
+The engine walks the world: a game implements `Saveable` on the component that marks each kind of thing it spawns, saying how to write one down and spawn it again, registers it with `save_kind`, and the engine saves and restores where each stands, its health, its bag, its slots and its statuses, along with the scheduler's queue, the world's edits and places, and what has been explored.
+`SavePlugin` keeps the save a turn behind the run so a closed window saves, and forgets it when the run ends.
+Corsair's `save.rs` is the worked example: four kinds and four resources.
 
 ## The run's beginning and end
 

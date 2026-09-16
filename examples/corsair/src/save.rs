@@ -1,347 +1,211 @@
 //! Saving and continuing a run.
 //!
-//! One versioned RON blob: the engine's state through [`EngineSave`], and
-//! everything Corsair spawned, by definition name and save id. The world
-//! itself is not saved; it regenerates from the seed, and the engine
-//! replays the edits on top. `S` saves, `q` saves and quits, `--continue`
-//! loads, and death deletes the save so a run cannot be resumed past it.
-//! A window or tab closed on the run saves it too: every turn the run is
-//! encoded into the engine's [`Stash`], which the unload bridge writes on
-//! the way out.
+//! The engine walks the world and writes the run down; Corsair says only
+//! what each kind of thing it spawns is. A captain is spawned fresh and
+//! given back its bag, its gear, its health and its statuses by the
+//! engine; a monster is its definition, where it was spawned and what is
+//! in its purse; an item its definition and the enchant rolled for it; a
+//! stairway the glyph it is drawn with, since the engine knows where it
+//! leads. What Corsair keeps of a run outside its entities, which regions
+//! were stocked, where the cave mouths are, the ledger's state and the
+//! world's size, goes through [`SaveableState`].
+//!
+//! The world itself is not saved; it regenerates from the seed, and the
+//! engine replays the edits on top. `S` saves, `q` saves and quits,
+//! `--continue` loads, and the engine deletes the save when the run ends,
+//! so a run cannot be resumed past it. A window or tab closed on the run
+//! saves it too: the engine keeps the run encoded in its stash, which
+//! the unload bridge writes on the way out.
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Point;
-use rl_engine::rl_rules::Tracker;
-use rl_engine::rl_rules::{Enchanted, Equipment};
-use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, Stash, decode, encode};
+use rl_engine::rl_rules::Enchanted;
+use rl_engine::rl_save::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableState, save_run};
 use rl_engine::rl_ui::{AbilityKeys, Bindings, Controls, InventoryKeys, MenuKeys, MessageLog, ScrollbackKeys, SheetKeys, Tones};
 use serde::{Deserialize, Serialize};
 
+use crate::StartOptions;
 use crate::input::Binds;
 use crate::items::{Armory, ItemKind};
 use crate::monsters::{Bestiary, MonsterKind};
 use crate::places::Entrances;
 
-/// Bump when the shape below changes so an old save would parse wrongly.
+/// Bump when a kind's shape below changes so an old save would parse
+/// wrongly.
 // v1: the first shape.
 // v2: the engine's knowledge keeps its own bucket size and records the
 //     surface regions seen, rather than taking the world's region size.
-pub const VERSION: u32 = 2;
+// v3: the engine walks the world by kind; Corsair writes only these.
+pub const VERSION: u32 = 3;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "corsair";
 
-/// The whole run.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunSave {
-    pub regions: (i32, i32),
-    pub engine: EngineSave,
-    pub player: PlayerSave,
-    pub monsters: Vec<MonsterSave>,
-    pub items: Vec<ItemSave>,
-    pub transitions: Vec<TransitionSave>,
-    pub spawned_monsters: Vec<Point>,
-    pub spawned_loot: Vec<Point>,
-    pub entrances: Vec<Point>,
-    pub quests: Tracker,
-    pub turn: u32,
+/// What the save is made of: the plugin that keeps it, the four kinds, and
+/// the four resources.
+pub fn register(app: &mut App) {
+    app.add_plugins(SavePlugin::new(SLOT).version(VERSION))
+        // Items before those who carry them is not required, since every
+        // kind is spawned before any bag is filled, but it reads better.
+        .save_kind::<ItemKind>()
+        .save_kind::<MonsterKind>()
+        .save_kind::<Captain>()
+        .save_kind::<Stairway>()
+        .save_state::<StartOptions>()
+        .save_state::<Armory>()
+        .save_state::<Bestiary>()
+        .save_state::<Entrances>()
+        .save_state::<Quests>();
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlayerSave {
-    pub id: SaveId,
-    pub at: Point,
-    pub map: MapId,
-    pub hp: i32,
-    pub bag: Vec<SaveId>,
-    pub worn: Vec<(String, SaveId)>,
-    #[serde(default)]
-    pub statuses: Vec<(String, u32)>,
+/// The player, as a kind the save can name. The engine gives it back its
+/// place, its health, its bag, its gear and its statuses; what a fresh
+/// captain is, its name, its fist, what it knows and how quiet it is, is
+/// spawned again the same way the first time.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Captain;
+
+impl Saveable for Captain {
+    type Saved = ();
+
+    fn capture(_: &World, _: Entity) {}
+
+    fn restore(world: &mut World, _: &()) -> Entity {
+        crate::spawn_player(world, Point::ZERO)
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MonsterSave {
-    pub id: SaveId,
-    pub def: String,
-    pub at: Point,
-    pub map: MapId,
-    pub hp: i32,
-    /// What it carries, empty for a monster without hands.
-    #[serde(default)]
-    pub bag: Vec<SaveId>,
-    /// Which of those it wears.
-    #[serde(default)]
-    pub worn: Vec<SaveId>,
-}
-
+/// An item, as the save writes it: what it is and what was rolled for it,
+/// since the enchant is already in the components the game spawns it with.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemSave {
-    pub id: SaveId,
     pub def: String,
-    pub count: Option<u32>,
     #[serde(default)]
     pub enchant: Enchanted,
-    /// On the ground here, or `None` in the player's bag.
-    pub at: Option<(Point, MapId)>,
 }
 
+impl Saveable for ItemKind {
+    type Saved = ItemSave;
+
+    fn capture(world: &World, entity: Entity) -> ItemSave {
+        let armory = world.resource::<Armory>();
+        let kind = world.get::<ItemKind>(entity).expect("an item kind");
+        ItemSave { def: armory.defs.name(kind.0).to_string(), enchant: world.get::<Enchant>(entity).map(|e| e.0.clone()).unwrap_or_default() }
+    }
+
+    fn restore(world: &mut World, saved: &ItemSave) -> Entity {
+        // One, nowhere: the engine puts back the count and the place.
+        world.resource_scope(|world: &mut World, armory: Mut<Armory>| {
+            let id = armory.defs.expect(&saved.def);
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            let e = armory.spawn_with(&mut commands, id, 1, None, saved.enchant.clone());
+            queue.apply(world);
+            e
+        })
+    }
+}
+
+/// A monster, as the save writes it: what it is, whether it stood
+/// underground when spawned, which is what gave it a lantern, and what is
+/// in its purse, which plunder may have emptied.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransitionSave {
-    pub at: Point,
-    pub map: MapId,
-    pub to: Destination,
+pub struct MonsterSave {
+    pub def: String,
+    pub underground: bool,
+    #[serde(default)]
+    pub purse: Option<u32>,
 }
 
-/// The player as a capture sees it.
-type PlayerData = (Entity, &'static Position, Option<&'static OnMap>, &'static Health, &'static Inventory, &'static Equipped, &'static Afflicted);
-/// A monster as a capture sees it.
-type MonsterData =
-    (Entity, &'static MonsterKind, &'static Position, Option<&'static OnMap>, &'static Health, Option<&'static Inventory>, Option<&'static Equipped>);
-/// An item as a capture sees it.
-type ItemData = (Entity, &'static ItemKind, Option<&'static Stack>, Option<&'static Position>, Option<&'static OnMap>, Option<&'static Enchant>);
+impl Saveable for MonsterKind {
+    type Saved = MonsterSave;
 
-/// The parts of the world a capture reads.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Run<'w, 's> {
-    player: Query<'w, 's, PlayerData, With<Player>>,
-    monsters: Query<'w, 's, MonsterData, Without<Dead>>,
-    items: Query<'w, 's, ItemData, With<Item>>,
-    transitions: Query<'w, 's, (&'static Position, Option<&'static OnMap>, &'static Transition)>,
-    bestiary: Res<'w, Bestiary>,
-    armory: Res<'w, Armory>,
-    entrances: Res<'w, Entrances>,
-    quests: Res<'w, Quests>,
-    turns: Res<'w, Turns>,
-    registries: Res<'w, Registries>,
-}
-
-/// The game's entities, captured.
-struct Captured {
-    player: PlayerSave,
-    monsters: Vec<MonsterSave>,
-    items: Vec<ItemSave>,
-    transitions: Vec<TransitionSave>,
-}
-
-/// Captures the game's entities; the engine's state is added by the caller.
-fn capture_game(run: &Run, remap: &mut EntityRemap) -> Option<Captured> {
-    let map_of = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE);
-    let (entity, pos, on, hp, bag, worn, afflicted) = run.player.single().ok()?;
-    let player = PlayerSave {
-        id: remap.save_id(entity),
-        at: pos.0,
-        map: map_of(on),
-        hp: hp.hp,
-        bag: bag.items.iter().map(|i| remap.save_id(*i)).collect(),
-        worn: worn.worn().map(|(slot, item)| (run.registries.slots.name(slot).to_string(), remap.save_id(item))).collect(),
-        statuses: afflicted.iter().map(|s| (run.registries.statuses.name(s.id).to_string(), s.turns)).collect(),
-    };
-    let monsters = run
-        .monsters
-        .iter()
-        .map(|(e, kind, pos, on, hp, carried, worn)| MonsterSave {
-            id: remap.save_id(e),
-            def: run.bestiary.defs.name(kind.0).to_string(),
-            at: pos.0,
-            map: map_of(on),
-            hp: hp.hp,
-            bag: carried.map(|b| b.items.iter().map(|i| remap.save_id(*i)).collect()).unwrap_or_default(),
-            worn: worn.map(|w| w.worn().map(|(_, i)| remap.save_id(i)).collect()).unwrap_or_default(),
-        })
-        .collect();
-    // Everything carried, the player's and every monster's, since an item in
-    // a bag has no position to be found by.
-    let carried: Vec<Entity> = bag.items.iter().copied().chain(run.monsters.iter().filter_map(|m| m.5).flat_map(|b| b.items.iter().copied())).collect();
-    let items = run
-        .items
-        .iter()
-        .filter(|(e, _, _, pos, _, _)| pos.is_some() || carried.contains(e))
-        .map(|(e, kind, stack, pos, on, enchant)| ItemSave {
-            id: remap.save_id(e),
-            def: run.armory.defs.name(kind.0).to_string(),
-            count: stack.map(|s| s.count),
-            enchant: enchant.map(|e| e.0.clone()).unwrap_or_default(),
-            at: pos.map(|p| (p.0, map_of(on))),
-        })
-        .collect();
-    let transitions = run.transitions.iter().map(|(pos, on, t)| TransitionSave { at: pos.0, map: map_of(on), to: t.to }).collect();
-    Some(Captured { player, monsters, items, transitions })
-}
-
-/// Writes the run to the save slot, and stashes it for the bridge that
-/// writes on the way out.
-pub fn save_run(world: &mut World) -> Result<(), SaveError> {
-    let text = encode_run(world)?;
-    world.resource::<Saves>().persist(SLOT, &text)?;
-    world.resource::<Stash>().stash(SLOT, &text);
-    Ok(())
-}
-
-/// Keeps the [`Stash`] one turn behind the run at most, so a tab or a
-/// window closed on the run loses no more than the turn in hand.
-///
-/// Once a turn rather than once a frame: the run is only different after
-/// a turn, and encoding it is the whole of the cost.
-pub fn refresh_stash(world: &mut World, mut last: Local<Option<u32>>) {
-    if *world.resource::<State<EngineState>>().get() != EngineState::Playing {
-        return;
-    }
-    let turn = world.resource::<Turns>().turn_number();
-    if *last == Some(turn) {
-        return;
-    }
-    *last = Some(turn);
-    match encode_run(world) {
-        Ok(text) => world.resource::<Stash>().stash(SLOT, &text),
-        Err(e) => warn!("the run could not be stashed: {e}"),
-    }
-}
-
-/// The run as one versioned blob.
-fn encode_run(world: &mut World) -> Result<String, SaveError> {
-    let mut remap = EntityRemap::new();
-    let mut state: bevy::ecs::system::SystemState<Run> = bevy::ecs::system::SystemState::new(world);
-    let (player, monsters, items, transitions, rest) = {
-        let run = state.get(world).expect("the run's resources exist while playing");
-        let Some(Captured { player, monsters, items, transitions }) = capture_game(&run, &mut remap) else {
-            return Err(SaveError::Encode("no player to save".into()));
-        };
-        let rest = (
-            run.bestiary.spawned().copied().collect::<Vec<_>>(),
-            run.armory.spawned().copied().collect::<Vec<_>>(),
-            run.entrances.0.iter().copied().collect::<Vec<_>>(),
-            run.quests.tracker.clone(),
-            run.turns.turn_number(),
-        );
-        (player, monsters, items, transitions, rest)
-    };
-    let regions = (world.resource::<WorldRes>().width(), world.resource::<WorldRes>().height());
-    let engine = EngineSave::capture(world, &mut remap);
-    let save = RunSave {
-        regions,
-        engine,
-        player,
-        monsters,
-        items,
-        transitions,
-        spawned_monsters: rest.0,
-        spawned_loot: rest.1,
-        entrances: rest.2,
-        quests: rest.3,
-        turn: rest.4,
-    };
-    encode(VERSION, &save)
-}
-
-/// Reads the save slot, if there is one this build can read.
-pub fn load_run(saves: &Saves) -> Result<Option<RunSave>, SaveError> {
-    match saves.load(SLOT)? {
-        Some(text) => decode::<RunSave>(VERSION, &text).map(Some),
-        None => Ok(None),
-    }
-}
-
-/// Spawns the run's entities and restores the engine's state. The world
-/// graph and the content resources must already be inserted; the player
-/// is spawned here with its bag and gear.
-pub fn restore_run(world: &mut World, save: &RunSave) {
-    let mut remap = EntityRemap::new();
-    // The registries come out while their spawners borrow commands.
-    let armory = world.remove_resource::<Armory>().expect("the armory is inserted before restoring");
-    let bestiary = world.remove_resource::<Bestiary>().expect("the bestiary is inserted before restoring");
-    // Items first, so bags and slots can point at them.
-    for item in &save.items {
-        let id = armory.defs.expect(&item.def);
-        let count = item.count.unwrap_or(1);
-        let at = item.at.map(|(p, _)| p);
-        let e = {
-            let mut commands = world.commands();
-            let e = armory.spawn_with(&mut commands, id, count, at, item.enchant.clone());
-            if let Some((_, map)) = item.at {
-                commands.entity(e).insert(OnMap(map));
-            }
-            e
-        };
-        world.flush();
-        remap.bind(item.id, e);
-    }
-    for m in &save.monsters {
-        let id = bestiary.defs.expect(&m.def);
-        let e = {
-            let mut commands = world.commands();
-            let e = if m.map.is_surface() { bestiary.spawn(&mut commands, id, m.at) } else { bestiary.spawn_underground(&mut commands, id, m.at) };
-            commands.entity(e).insert((OnMap(m.map), Health { hp: m.hp, max: bestiary.defs.get(id).hp }));
-            e
-        };
-        world.flush();
-        remap.bind(m.id, e);
-        // What it carried and wore, rather than the kit a fresh one gets.
-        if !m.bag.is_empty() {
-            let items: Vec<Entity> = m.bag.iter().filter_map(|id| remap.entity(*id)).collect();
-            let mut worn = Equipment::for_slots(&world.resource::<Registries>().slots);
-            for item in m.worn.iter().filter_map(|id| remap.entity(*id)) {
-                if let Some(shape) = world.get::<ItemKind>(item).and_then(|k| armory.shape(k.0)) {
-                    let _ = worn.equip(item, shape);
-                }
-            }
-            world.entity_mut(e).insert((Inventory { items }, Equipped(worn)));
+    fn capture(world: &World, entity: Entity) -> MonsterSave {
+        let bestiary = world.resource::<Bestiary>();
+        let kind = world.get::<MonsterKind>(entity).expect("a monster kind");
+        MonsterSave {
+            def: bestiary.defs.name(kind.0).to_string(),
+            underground: world.get::<OnMap>(entity).is_some_and(|m| !m.0.is_surface()),
+            purse: world.get::<crate::abilities::Purse>(entity).map(|p| p.0),
         }
     }
-    for t in &save.transitions {
-        world.spawn((
-            Position(t.at),
-            OnMap(t.map),
-            Transition { to: t.to },
-            rl_engine::rl_render::Glyph::new(if matches!(t.to, Destination::Surface(_)) { '<' } else { '>' }, Color::srgb(0.9, 0.9, 0.6)).on_layer(1),
-        ));
-    }
-    let p = &save.player;
-    let mut worn = Equipment::for_slots(&world.resource::<Registries>().slots);
-    for (slot, id) in &p.worn {
-        let item = remap.entity(*id).expect("worn item restored");
-        let kind = world.get::<ItemKind>(item).expect("a restored item has a kind").0;
-        let _ = world.resource::<Registries>().slots.expect(slot);
-        if let Some(shape) = armory.shape(kind) {
-            worn.equip(item, shape).expect("the slots exist");
+
+    fn restore(world: &mut World, saved: &MonsterSave) -> Entity {
+        let e = world.resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
+            let id = bestiary.defs.expect(&saved.def);
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            let e = if saved.underground { bestiary.spawn_underground(&mut commands, id, Point::ZERO) } else { bestiary.spawn(&mut commands, id, Point::ZERO) };
+            queue.apply(world);
+            e
+        });
+        // What it carried and wore comes from the save, not from the kit a
+        // fresh one is handed; and its purse is what was left in it.
+        let mut monster = world.entity_mut(e);
+        match saved.purse {
+            Some(coin) => {
+                monster.insert(crate::abilities::Purse(coin));
+            }
+            None => {
+                monster.remove::<crate::abilities::Purse>();
+            }
         }
+        e
     }
-    let bag: Vec<Entity> = p.bag.iter().filter_map(|id| remap.entity(*id)).collect();
-    let (faction, unarmed, max_hp) = (world.resource::<Registries>().factions.expect("player"), crate::items::unarmed(&armory), 30);
-    let grants = crate::abilities::player_grants(world.resource::<rl_engine::rl_bevy::Abilities>());
-    let player = world
-        .spawn((
-            (Actor, Player, Blocks, Position(p.at), OnMap(p.map), Viewshed::new(12), RevealsMap),
-            (
-                Health { hp: p.hp, max: max_hp },
-                Armor(0),
-                Faction(faction),
-                unarmed,
-                Inventory { items: bag },
-                Equipped(worn),
-                rl_engine::rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
-            ),
-            // What a fresh player has and a save does not record: what it
-            // knows, its name on the panels, and that it can hide.
-            (grants, Name::new("you"), rl_engine::rl_bevy::Stealth(rl_engine::rl_rules::ai::awareness::StealthStats { quiet: 1, subtlety: 10 })),
-        ))
-        .id();
-    remap.bind(p.id, player);
-    // Statuses go back on by request, so their modifiers are installed
-    // the same way they were the first time.
-    for (name, turns) in &p.statuses {
-        let status = world.resource::<Registries>().statuses.expect(name);
-        world.write_message(Afflict { target: player, status, turns: *turns, by: None });
+}
+
+/// A stairway or a cave mouth: the engine knows where it leads, Corsair
+/// only how it is drawn.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Stairway;
+
+impl Saveable for Stairway {
+    type Saved = char;
+
+    fn capture(world: &World, entity: Entity) -> char {
+        world.get::<rl_engine::rl_render::Glyph>(entity).map_or('>', |g| g.ch)
     }
-    save.engine.restore(world, &remap);
-    let mut bestiary = bestiary;
-    let mut armory = armory;
-    bestiary.restore_spawned(save.spawned_monsters.iter().copied());
-    armory.restore_spawned(save.spawned_loot.iter().copied());
-    world.insert_resource(armory);
-    world.insert_resource(bestiary);
-    world.resource_mut::<Entrances>().0 = save.entrances.iter().copied().collect();
-    world.resource_mut::<Quests>().tracker = save.quests.clone();
+
+    fn restore(world: &mut World, glyph: &char) -> Entity {
+        world.spawn((Stairway, crate::places::stair_glyph(*glyph))).id()
+    }
+}
+
+impl SaveableState for Entrances {
+    type Saved = Vec<Point>;
+
+    fn capture(&self) -> Vec<Point> {
+        self.0.iter().copied().collect()
+    }
+
+    fn restore(&mut self, saved: Vec<Point>) {
+        self.0 = saved.into_iter().collect();
+    }
+}
+
+impl SaveableState for Armory {
+    type Saved = Vec<Point>;
+
+    fn capture(&self) -> Vec<Point> {
+        self.spawned().copied().collect()
+    }
+
+    fn restore(&mut self, saved: Vec<Point>) {
+        self.restore_spawned(saved);
+    }
+}
+
+impl SaveableState for Bestiary {
+    type Saved = Vec<Point>;
+
+    fn capture(&self) -> Vec<Point> {
+        self.spawned().copied().collect()
+    }
+
+    fn restore(&mut self, saved: Vec<Point>) {
+        self.restore_spawned(saved);
+    }
 }
 
 /// `S` saves; `q` saves then quits. Both only while playing.
@@ -384,23 +248,9 @@ pub fn save_keys(world: &mut World) {
     }
 }
 
-/// Death ends the run: the save goes with it, and so does the stash, or
-/// closing the window afterwards would write the run back.
-pub fn delete_on_death(mut deaths: MessageReader<DeathEvent>, saves: Res<Saves>, stash: Res<Stash>) {
-    for d in deaths.read() {
-        if !d.was_player {
-            continue;
-        }
-        stash.clear();
-        if let Err(e) = saves.delete(SLOT) {
-            error!("could not delete the save: {e}");
-        }
-    }
-}
-
 /// Where continuing lands, for the log.
 pub fn describe(save: &RunSave) -> String {
-    format!("Continuing from turn {} with {} things in the bag.", save.turn, save.player.bag.len())
+    format!("Continuing from turn {} with {} things about.", save.turn(), save.count_of::<ItemKind>())
 }
 
 #[cfg(test)]
@@ -408,6 +258,7 @@ mod tests {
     use super::*;
     use crate::testing::headless;
     use rl_engine::rl_core::{Direction, RunSeed};
+    use rl_engine::rl_save::{SaveBackend, Saves, Stash};
 
     fn player(app: &mut App) -> Entity {
         let w = app.world_mut();
@@ -427,27 +278,31 @@ mod tests {
         q.iter(w).count()
     }
 
-    /// The stash follows the run a turn at a time, and death clears it, so
-    /// a window closed after dying writes nothing back.
+    /// The stash follows the run a turn at a time, and the run's end
+    /// deletes the save and clears the stash, so a window closed after
+    /// dying writes nothing back.
     #[test]
-    fn the_stash_follows_the_run_and_death_clears_it() {
+    fn the_stash_follows_the_run_and_death_forgets_the_save() {
         let dir = std::env::temp_dir().join(format!("corsair-stash-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut app = headless(RunSeed(7), false, &dir);
-        app.add_systems(Update, delete_on_death.in_set(PresentSet::Narrate));
         app.update();
         app.update();
         let stash = app.world().resource::<Stash>().clone();
         assert_eq!(stash.pending().as_deref(), Some(SLOT), "stashed by the first turn");
+        save_run(app.world_mut()).unwrap();
+        assert!(app.world().resource::<Saves>().exists(SLOT));
 
         let me = player(&mut app);
         let at = app.world().get::<Position>(me).unwrap().0;
         app.world_mut().write_message(DeathEvent { entity: me, at, credit: None, was_player: true });
         app.update();
+        app.update();
         assert_eq!(stash.pending(), None, "cleared with the save");
+        assert!(!app.world().resource::<Saves>().exists(SLOT), "the save went with the run");
         app.world_mut().write_message(AppExit::Success);
         app.update();
-        assert!(!app.world().resource::<Saves>().exists(SLOT), "closing the window after dying wrote nothing back");
+        assert!(!app.world().resource::<Saves>().exists(SLOT), "and closing the window afterwards wrote nothing back");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -494,7 +349,7 @@ mod tests {
     }
 
     /// A monster saved carrying knives is continued carrying the same knives,
-    /// not the kit a fresh one would be handed.
+    /// not the kit a fresh one would be handed, and with the purse it had.
     #[test]
     fn a_monster_keeps_what_it_carries_across_a_save() {
         let dir = std::env::temp_dir().join(format!("corsair-save-bag-{}", std::process::id()));
@@ -515,6 +370,7 @@ mod tests {
                 e
             })
         });
+        app.world_mut().entity_mut(cutthroat).insert(crate::abilities::Purse(7));
         app.update();
         let knives = |app: &App, who: Entity| -> Vec<u32> {
             let w = app.world();
@@ -533,15 +389,7 @@ mod tests {
             q.iter(w).find(|(_, k, p)| k.0 == kind && p.0 == at).map(|(e, _, _)| e).expect("the cutthroat came back where it stood")
         };
         assert_eq!(knives(&back, restored), carried, "with the knives it had");
+        assert_eq!(back.world().get::<crate::abilities::Purse>(restored).map(|p| p.0), Some(7), "and the purse it had");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn the_shape_round_trips_through_the_versioned_envelope() {
-        let text =
-            encode(VERSION, &TransitionSave { at: Point::new(1, 2), map: MapId(3), to: Destination::Place { map: MapId(4), arrive: Arrive::Exit } }).unwrap();
-        let back: TransitionSave = decode(VERSION, &text).unwrap();
-        assert_eq!(back.map, MapId(3));
-        assert!(matches!(decode::<TransitionSave>(VERSION + 1, &text), Err(SaveError::Version { .. })));
     }
 }

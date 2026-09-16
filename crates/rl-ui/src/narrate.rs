@@ -112,6 +112,8 @@ pub enum Phrase {
     ClosesDoor,
     /// You walked into someone you would not strike.
     YouBumpInto,
+    /// You changed places with someone.
+    YouSwapWith,
     /// Someone noticed you.
     NoticesYou,
     /// You used an ability on nobody in particular.
@@ -202,6 +204,7 @@ impl Plugin for NarrationViewPlugin {
             .add_message::<ItemEvent>()
             .add_message::<DoorEvent>()
             .add_message::<Bumped>()
+            .add_message::<Swapped>()
             .add_message::<StatusEvent>()
             .add_message::<Noticed>()
             .add_message::<LightEvent>()
@@ -222,6 +225,7 @@ impl Plugin for NarrationViewPlugin {
 pub struct Heard<'w, 's> {
     abilities: MessageReader<'w, 's, AbilityEvent>,
     bumps: MessageReader<'w, 's, Bumped>,
+    swaps: MessageReader<'w, 's, Swapped>,
     doors: MessageReader<'w, 's, DoorEvent>,
     items: MessageReader<'w, 's, ItemEvent>,
     dealt: MessageReader<'w, 's, DamageDealt>,
@@ -315,6 +319,11 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
     for b in heard.bumps.read() {
         if witness.is_you(b.actor) {
             rows.push(say(Phrase::YouBumpInto, Some(b.actor), Some(b.into)));
+        }
+    }
+    for s in heard.swaps.read() {
+        if witness.is_you(s.actor) {
+            rows.push(say(Phrase::YouSwapWith, Some(s.actor), Some(s.with)));
         }
     }
     for d in heard.doors.read() {
@@ -473,7 +482,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 51] = [
+        let table: [(Phrase, &str, ToneId); 52] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -506,6 +515,7 @@ impl Default for Phrasebook {
             (OpensDoor, "{Who} opens a door.", Tones::NOTICE),
             (ClosesDoor, "{Who} closes a door.", Tones::NOTICE),
             (YouBumpInto, "{Whom} is in the way.", Tones::MUTED),
+            (YouSwapWith, "You change places with {whom}.", Tones::MUTED),
             (NoticesYou, "{Who} notices you.", Tones::NOTICE),
             (YouUse, "You use {named}.", Tones::TEXT),
             (YouUseOn, "You use {named} on {whom}.", Tones::TEXT),

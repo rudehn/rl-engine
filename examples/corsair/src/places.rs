@@ -27,6 +27,7 @@ use rl_engine::rl_world::WorldGraph;
 use crate::content::{COVE, Content};
 use crate::items::Armory;
 use crate::monsters::Bestiary;
+use crate::save::Stairway;
 
 /// How deep a cave goes.
 pub const LEVELS: u32 = 2;
@@ -139,6 +140,11 @@ impl PlaceRules for Caves {
     }
 }
 
+/// How a way up or down is drawn: pale stone, under whoever stands on it.
+pub fn stair_glyph(ch: char) -> Glyph {
+    Glyph::new(ch, Color::srgb(0.9, 0.9, 0.6)).on_layer(1)
+}
+
 /// Regions whose cave mouth has been placed.
 #[derive(Resource, Default)]
 pub struct Entrances(pub std::collections::BTreeSet<Point>);
@@ -151,11 +157,7 @@ pub fn mark_entrances(mut commands: Commands, mut loaded: MessageReader<ChunkLoa
             continue;
         }
         let at = world.region_tiles(ev.region).center();
-        commands.spawn((
-            Position(at),
-            Transition { to: Destination::Place { map: cave_id(site, 0), arrive: Arrive::Entry } },
-            Glyph::new('>', Color::srgb(0.9, 0.9, 0.6)).on_layer(1),
-        ));
+        commands.spawn((Stairway, Position(at), Transition { to: Destination::Place { map: cave_id(site, 0), arrive: Arrive::Entry } }, stair_glyph('>')));
     }
 }
 
@@ -192,12 +194,13 @@ pub fn populate_places(mut commands: Commands, mut entered: MessageReader<PlaceE
         } else {
             Destination::Place { map: cave_id(site, depth - 1), arrive: Arrive::Exit }
         };
-        commands.spawn((Position(ev.entry), Transition { to: up }, Glyph::new('<', Color::srgb(0.9, 0.9, 0.6)).on_layer(1)));
+        commands.spawn((Stairway, Position(ev.entry), Transition { to: up }, stair_glyph('<')));
         if let Some(exit) = ev.exit {
             commands.spawn((
+                Stairway,
                 Position(exit),
                 Transition { to: Destination::Place { map: cave_id(site, depth + 1), arrive: Arrive::Entry } },
-                Glyph::new('>', Color::srgb(0.9, 0.9, 0.6)).on_layer(1),
+                stair_glyph('>'),
             ));
         }
         let Some(place) = stock.map.place(ev.map) else { continue };

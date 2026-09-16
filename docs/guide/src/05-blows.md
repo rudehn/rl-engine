@@ -18,6 +18,7 @@ That is an alternate action, an intent that resolves to another, and `Bump` is t
 It works in `ResolveSet::Redirect`, the stage before any resolver claims the turn.
 The bump is read, the intent it stands for is written, and the resolver that owns that intent spends the turn as if the player had written it.
 A bump into someone who is not a foe is refused for free, the way a step into a wall is, and reported as `Bumped`.
+A game with a companion inserts `BumpRules::new().swap_allies()` and a bump into an ally changes places with them instead.
 
 Bump to attack is still a decision: a game whose walk key should only ever step writes `Step`, as Warren did in [chapter 2](02-walking.md).
 An alternate of your own follows the same shape: read your intent in `Redirect`, write the engine's, claim nothing.

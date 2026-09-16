@@ -58,6 +58,11 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - `GameMenuPanel`, `MenuKeys`, `game_menu_modal` and `EngineKey::OpenMenu`: the menu on Escape and the screen a run ends on. `Modals::just_opened`, so the key that opened a screen does not close it.
 - `Morgue` and `Obituary` in `rl-save`, and `FileBackend::with_extension`.
 - Removed: `is_status_source` (see above), the door branch of `resolve_moves`.
+- `BumpRules`, `OnAlly`, the `Swap` action and `Swapped`: with `BumpRules::new().swap_allies()` a bump into an ally changes places with them for the cost of the step; the narrator says so with `Phrase::YouSwapWith`.
+- Consumables through abilities: `Known` is rebuilt from what an actor carries as well as what it wears, a `Cost::Charge` on an item with no `Charges` spends the item whole (one off its stack, or the item itself), and `UseItem` on an item that `Grants` an ability becomes a `Use` of it in `ResolveSet::Redirect`, so a potion is a line of RON. `ItemRow` gains `lends`, and the bag describes an item by what it lends, opens the targeting cursor on an aimed one, and uses the rest on the spot. Corsair's rum grants its swig and `use_items` is gone.
+- `TileAppearance::load`: tile looks from RON against the tile registry, every unknown, doubled or missing tile reported at once. The tutorial from chapter 8, Corsair and the delve read theirs from `assets/tiles.ron`.
+- The save seam: `Saveable` and `SaveableState`, `AddSaveable::save_kind` and `save_state`, `RunSave` with `EntityState` and `KindSave`, `SavePlugin`, `SaveSlot`, `save_run`, `load_run` and `forget_save` in `rl-save`; `Quests` implements `SaveableState`. Corsair's save module is four kinds and four resources.
+- Fixed: the first turn of a run could go to a monster spawned after the player, since new actors were queued in the order a query walked the archetypes. New actors are admitted with the player first and the rest in spawn order.
 
 ## 0.1.0
 

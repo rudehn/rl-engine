@@ -8,7 +8,7 @@
 //   objectives: a list of (text, on, need)
 //     on:       what it counts, and of what; None in place of the subject counts any:
 //               Killed(monster name) | KilledFaction(faction name)
-//               | PickedUp(item name) | Carrying(item name) | Used(item name) | Equipped(item name)
+//               | PickedUp(item name) | Carrying(item name) | Equipped(item name)
 //               | EnteredCave(level, 1 is the top) | EnteredSite(Port | Cove)
 //     need:     Total(n) counts matching facts (amounts add up) | Latest(n) needs one fact of amount n or more
 //   victory:    optional; finishing this task wins the run
