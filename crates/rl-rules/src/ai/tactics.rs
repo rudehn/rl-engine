@@ -28,7 +28,8 @@ impl<A: Copy> Tactic<A> for MeleeAdjacent {
 /// Run when health falls below a share, down a field away from every
 /// enemy in sight, or straight away from the nearest if there is none.
 ///
-/// Only for a mind with [`Wits::FLEES`]: a mindless thing fights on.
+/// Only for a mind with [`Wits::FLEES`]: a mindless thing fights on, and
+/// one with no health has nothing to run from.
 #[derive(Debug, Clone, Copy)]
 pub struct FleeWhenHurt {
     /// Flee at or below this percentage of health.
@@ -40,7 +41,8 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
         "flee_when_hurt"
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
-        if !ctx.snapshot.wits.has(Wits::FLEES) || ctx.snapshot.me.hp_pct() > self.at_pct || ctx.snapshot.enemies.is_empty() {
+        let hurt = ctx.snapshot.me.hp_pct().is_some_and(|p| p <= self.at_pct);
+        if !ctx.snapshot.wits.has(Wits::FLEES) || !hurt || ctx.snapshot.enemies.is_empty() {
             return None;
         }
         let me = ctx.snapshot.me.pos;
@@ -218,6 +220,51 @@ impl<A: Copy> Tactic<A> for Wander {
     }
 }
 
+/// Step out of the way of anyone who is neither friend nor foe standing
+/// too close: a civilian in a crowd, a guard treading round a shopkeeper.
+///
+/// The first tactic over [`Snapshot::others`], and what a game with no
+/// combat wants of a bystander: it fires when one of the others is within
+/// `space`, steps down a field away from all of them, and otherwise lets
+/// the next tactic have the turn.
+#[derive(Debug, Clone, Copy)]
+pub struct GiveWay {
+    /// How close another may come before this one moves off.
+    pub space: i32,
+}
+
+impl Default for GiveWay {
+    /// Moves off anyone adjacent.
+    fn default() -> Self {
+        Self { space: 1 }
+    }
+}
+
+impl<A: Copy> Tactic<A> for GiveWay {
+    fn name(&self) -> &'static str {
+        "give_way"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let me = ctx.snapshot.me.pos;
+        let crowd: Vec<Point> = ctx.snapshot.others.iter().map(|o| o.pos).collect();
+        if !crowd.iter().any(|p| geometry::chebyshev(me, *p) <= self.space) {
+            return None;
+        }
+        if let Some(step) = ctx.step_away_from(&crowd) {
+            return Some(Decision::Step(step));
+        }
+        let nearest = ctx.snapshot.others.first()?.pos;
+        let away = Direction::between(nearest, me)?;
+        for d in [away, away.rotate_cw(), away.rotate_ccw()] {
+            let step = me + d.offset();
+            if (ctx.can_step)(step) {
+                return Some(Decision::Step(step));
+            }
+        }
+        None
+    }
+}
+
 /// Use the best ability in reach, when one covers something worth
 /// covering.
 ///
@@ -267,7 +314,7 @@ impl UseAbility {
             if !cells.contains(&actor.pos) || !usable.aim.hits(Some(relation), is_user) {
                 continue;
             }
-            if usable.aim.worth_aiming_at(Some(relation), is_user, actor.hp_pct() < 100) {
+            if usable.aim.worth_aiming_at(Some(relation), is_user, actor.is_hurt()) {
                 worth += 1;
             } else if usable.aim != Aim::Ally {
                 harm += 1;
@@ -279,7 +326,7 @@ impl UseAbility {
     /// The cells worth pointing an ability at, the user's own first.
     fn aims<A: Copy>(usable: &Usable, snapshot: &Snapshot<A>) -> Vec<Point> {
         Self::everyone(snapshot)
-            .filter(|(actor, relation, is_user)| usable.aim.worth_aiming_at(Some(*relation), *is_user, actor.hp_pct() < 100))
+            .filter(|(actor, relation, is_user)| usable.aim.worth_aiming_at(Some(*relation), *is_user, actor.is_hurt()))
             .map(|(actor, _, _)| actor.pos)
             .collect()
     }
@@ -483,13 +530,13 @@ mod tests {
     use super::*;
     use crate::ai::brain::{Brain, Fields, NoFields};
     use crate::ai::snapshot::Missile;
-    use crate::ai::snapshot::{ActorView, Snapshot};
+    use crate::ai::snapshot::{ActorView, Snapshot, Vitals};
     use rand::{SeedableRng, rngs::StdRng};
     use rl_core::Id;
     use rl_grid::{DijkstraMap, PathRules, Terrain, TileRegistry};
 
     fn view(id: u32, x: i32, y: i32, hp: i32) -> ActorView<u32> {
-        ActorView { id, pos: Point::new(x, y), hp, max_hp: 10, faction: Id::from_raw(0) }
+        ActorView { id, pos: Point::new(x, y), health: Some(Vitals { current: hp, max: 10 }), faction: Some(Id::from_raw(0)) }
     }
 
     /// Room enough that no shape is clipped by the edge.
@@ -694,7 +741,9 @@ mod tests {
         s.sort();
         assert_eq!(s.enemies.iter().map(|e| e.id).collect::<Vec<_>>(), vec![2, 4, 3]);
         assert_eq!(s.adjacent_enemies().count(), 2);
-        assert_eq!(view(1, 0, 0, 3).hp_pct(), 30);
+        assert_eq!(view(1, 0, 0, 3).hp_pct(), Some(30));
+        assert_eq!(ActorView::at(9u32, Point::ZERO).hp_pct(), None, "no health, no percentage");
+        assert!(!ActorView::at(9u32, Point::ZERO).is_hurt(), "and never hurt, so nothing mends it");
     }
 
     fn usable(raw: u32, aim: Aim, mode: rl_grid::TargetMode) -> Usable {

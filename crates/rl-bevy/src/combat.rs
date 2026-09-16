@@ -26,8 +26,6 @@ use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resist
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
 use crate::items::{Equipped, Item};
-use crate::minds::{Sight, Thinking};
-use crate::places::OnMap;
 use crate::registries::Registries;
 use crate::status::StatBlock;
 use crate::turn::{Action, Intent, Occupancy, Resolution, Turns};
@@ -505,38 +503,6 @@ pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
     }
 }
 
-/// Anyone a mind might sort into a side: alive, with health to lose, on
-/// a side.
-type Sided = (Entity, &'static Position, &'static Health, &'static Faction, Option<&'static OnMap>);
-
-/// Puts everyone the mind holding the turn can see into its snapshot,
-/// sorted into enemies and allies by the faction matrix.
-///
-/// Combat's contribution to a mind's knowledge, in
-/// [`PerceiveSet::Roster`](crate::plugin::PerceiveSet::Roster): who is a
-/// foe is combat's to say, so the minds never read the matrix themselves.
-pub fn perceive_sides(mut thinking: ResMut<Thinking>, sight: Sight, rules: Res<CombatRules>, actors: Query<Sided, (With<Actor>, Without<Dead>)>) {
-    let Some(thinker) = thinking.actor() else { return };
-    let Some(mine) = thinking.snapshot().map(|s| s.me.faction) else { return };
-    let mut enemies = Vec::new();
-    let mut allies = Vec::new();
-    for (e, pos, health, faction, on) in &actors {
-        if e == thinker || !sight.perceives(&thinking, pos.0, on) {
-            continue;
-        }
-        let view = rl_rules::ActorView { id: e, pos: pos.0, hp: health.current, max_hp: health.max, faction: faction.0 };
-        if rules.factions.is_hostile(mine, faction.0) {
-            enemies.push(view);
-        } else if rules.factions.is_allied(mine, faction.0) {
-            allies.push(view);
-        }
-    }
-    if let Some(snapshot) = thinking.snapshot_mut() {
-        snapshot.enemies.extend(enemies);
-        snapshot.allies.extend(allies);
-    }
-}
-
 /// Combat: health, factions, strikes down a line of fire, the damage
 /// pipeline and deaths.
 ///
@@ -559,7 +525,6 @@ impl Plugin for CombatPlugin {
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
-            .add_systems(Turn, perceive_sides.in_set(crate::plugin::PerceiveSet::Roster))
             .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
             .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))

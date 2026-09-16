@@ -135,9 +135,8 @@ With no `Lighting` resource the two are the same buffer and nothing changes.
 With one, `visible = line ∩ (lit ≥ threshold ∪ within DarkSight ∪ adjacent)`.
 `Knowledge::mark` runs over `visible`, so a dark corridor is not remembered until it has been lit.
 
-Minds today use the player's viewshed as a symmetric oracle.
-Symmetry holds for geometry, not for light, so `decide_minds` reads `line` for "is there a sightline" and then asks the light: I see the player if the player's tile is lit, or is within my dark sight, or is adjacent.
-That one change is what makes a dark-sighted hunter dangerous and a doused player hidden.
+Every mind carries a `Viewshed` of its own, cast and gated by the same code as the player's, so a monster sees what is lit, what is within its dark sight, and what is adjacent, and nothing else.
+That is what makes a dark-sighted hunter dangerous and a doused player hidden.
 
 ### rl-render
 

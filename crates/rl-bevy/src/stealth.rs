@@ -1,8 +1,8 @@
 //! Stealth: who has noticed whom, kept on the observers.
 //!
-//! Opt-in. Without [`StealthPlugin`] no actor carries an [`Aware`], and
-//! [`decide_minds`](crate::minds::decide_minds) sees everything it has a
-//! line to exactly as it always has. With it, a subject carrying
+//! Opt-in. Without [`StealthPlugin`] no actor carries an [`Aware`], and a
+//! mind acts on everything its own sight reaches exactly as it always
+//! has. With it, a subject carrying
 //! [`Stealth`] enters an observer's list of enemies only once that observer
 //! has noticed it, and an observer that loses the trail searches where it
 //! last saw something before it forgets.
@@ -24,10 +24,9 @@ use rand::Rng;
 use rl_core::Point;
 use rl_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
 
-use crate::combat::{CombatRng, CombatRules, DamageDealt, Dead, Faction};
+use crate::combat::{CombatRules, DamageDealt, Dead, Faction};
 use crate::components::{MyTurn, Player, Position, Viewshed};
-use crate::lighting::{DarkSight, Lighting};
-use crate::minds::{Mind, Perception, Thinking, perceivable};
+use crate::minds::{DEFAULT_PERCEPTION, Mind, Perception, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::world::WorldMap;
 
@@ -106,7 +105,7 @@ type WatcherData = (
     &'static Position,
     Option<&'static Faction>,
     Option<&'static Perception>,
-    Option<&'static DarkSight>,
+    Option<&'static Viewshed>,
     Option<&'static Aware>,
     Option<&'static OnMap>,
 );
@@ -115,7 +114,7 @@ type WatcherData = (
 /// to notice, that is neither the player nor dead.
 type CanWatch = (Or<(With<Mind>, With<Notice>)>, Without<Player>, Without<Dead>);
 /// One watcher, as the query hands it back.
-type Watcher<'a> = (Entity, &'a Position, Option<&'a Faction>, Option<&'a Perception>, Option<&'a DarkSight>, Option<&'a Aware>, Option<&'a OnMap>);
+type Watcher<'a> = (Entity, &'a Position, Option<&'a Faction>, Option<&'a Perception>, Option<&'a Viewshed>, Option<&'a Aware>, Option<&'a OnMap>);
 
 /// Who is watching whom right now, by the rule the minds act on.
 ///
@@ -124,16 +123,15 @@ type Watcher<'a> = (Entity, &'a Position, Option<&'a Faction>, Option<&'a Percep
 /// it did before stealth existed, and it will attack a hider it can see.
 /// Asking only the `Aware` keepers whether a player has been seen therefore
 /// answers "hidden" while such a monster cuts the player down, which is how
-/// this came to exist. The rule here is the one `decide_minds` applies: an
+/// this came to exist. The rule here is the one the minds perceive by: an
 /// observer that keeps an `Aware` watches what it knows about, alert or
-/// searching; one that does not watches whatever it can perceive.
+/// searching; one that does not watches whatever its own sight reaches,
+/// read off the same [`Viewshed`] its turns are decided from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Watchers<'w, 's> {
     running: StealthRunning<'w>,
-    player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
     watchers: Query<'w, 's, WatcherData, CanWatch>,
     subjects: Query<'w, 's, (&'static Position, Option<&'static Faction>, Option<&'static OnMap>)>,
-    lighting: Option<Res<'w, Lighting>>,
     map: Option<Res<'w, WorldMap>>,
     rules: Option<Res<'w, CombatRules>>,
 }
@@ -160,18 +158,17 @@ impl Watchers<'_, '_> {
         self.watchers.iter().any(|w| self.judge(w, subject))
     }
 
-    fn judge(&self, (watcher, pos, faction, perception, dark, aware, on): Watcher<'_>, subject: Entity) -> bool {
+    fn judge(&self, (watcher, pos, faction, perception, sight, aware, on): Watcher<'_>, subject: Entity) -> bool {
         if watcher == subject {
             return false;
         }
-        let (Some(map), Some(rules), Ok((at, theirs, subject_on))) = (self.map.as_deref(), self.rules.as_deref(), self.subjects.get(subject)) else {
+        let (Some(map), Ok((at, theirs, subject_on))) = (self.map.as_deref(), self.subjects.get(subject)) else {
             return false;
         };
         // Only what is at odds with the subject: an ally looking on is not
-        // being seen by an enemy.
-        match (faction, theirs) {
-            (Some(mine), Some(theirs)) if rules.factions.is_hostile(mine.0, theirs.0) => {}
-            _ => return false,
+        // being seen by an enemy. With no sides, everyone is at odds.
+        if !at_odds(self.rules.as_deref(), faction, theirs) {
+            return false;
         }
         if let Some(aware) = aware {
             return aware.knows(subject);
@@ -180,9 +177,28 @@ impl Watchers<'_, '_> {
         if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || subject_on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here {
             return false;
         }
-        let Ok((player_pos, sight)) = self.player.single() else { return false };
-        awareness::within_reach(pos.0, at.0, perception.map(|p| p.0).unwrap_or(8))
-            && perceivable(player_pos.0, sight, self.lighting.as_deref(), pos.0, dark.map(|d| d.0).unwrap_or(0), at.0)
+        awareness::within_reach(pos.0, at.0, perception.map(|p| p.0).unwrap_or(DEFAULT_PERCEPTION)) && sight.is_some_and(|s| s.can_see(at.0))
+    }
+}
+
+/// Whether `mine` has anything against `theirs`: hostile by the rules
+/// when there are rules and both take a side, and otherwise yes, since a
+/// game with no sides has nobody to be friends with.
+fn at_odds(rules: Option<&CombatRules>, mine: Option<&Faction>, theirs: Option<&Faction>) -> bool {
+    match (rules, mine, theirs) {
+        (Some(rules), Some(mine), Some(theirs)) => rules.factions.is_hostile(mine.0, theirs.0),
+        _ => true,
+    }
+}
+
+/// Stealth's own stream for the notice roll, so a tactic added to the
+/// minds or a blow struck elsewhere cannot change who gets noticed.
+#[derive(Resource, Debug)]
+pub struct StealthRng(pub rand::rngs::StdRng);
+
+impl crate::seed::Stream for StealthRng {
+    fn for_run(seed: rl_core::RunSeed) -> Self {
+        Self(seed.rng(rl_core::SeedDomain::new(b"stealth"), 0))
     }
 }
 
@@ -192,7 +208,9 @@ pub struct StealthPlugin;
 impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, Turn, TurnSet};
+        use crate::seed::AddStream;
         app.add_message::<Noticed>()
+            .add_stream::<StealthRng>("StealthPlugin")
             .add_systems(Turn, update_awareness.in_set(DecideSet::Notice))
             .add_systems(Turn, filter_unnoticed.in_set(crate::plugin::PerceiveSet::Filter))
             .add_systems(Turn, wake_on_damage.in_set(TurnSet::React));
@@ -226,7 +244,7 @@ pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hi
 
 /// The observer holding the turn.
 type Observer =
-    (Entity, &'static Position, &'static Notice, &'static mut Aware, Option<&'static Perception>, Option<&'static DarkSight>, Option<&'static Faction>);
+    (Entity, &'static Position, &'static Notice, &'static mut Aware, Option<&'static Perception>, Option<&'static Viewshed>, Option<&'static Faction>);
 /// Anything that might be hiding from it.
 type Subject = (Entity, &'static Position, &'static Stealth, Option<&'static Faction>, Option<&'static OnMap>);
 /// One subject, as the query hands it back.
@@ -237,11 +255,11 @@ type Hiding<'a> = (Entity, &'a Position, &'a Stealth, Option<&'a Faction>, Optio
 pub struct Watch<'w, 's> {
     observers: Query<'w, 's, Observer, (With<MyTurn>, Without<Player>)>,
     subjects: Query<'w, 's, Subject>,
-    player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
-    lighting: Option<Res<'w, Lighting>>,
+    lighting: Option<Res<'w, crate::lighting::Lighting>>,
     map: Res<'w, WorldMap>,
-    rules: Res<'w, CombatRules>,
-    rng: ResMut<'w, CombatRng>,
+    /// Who is at odds with whom; absent, everyone is.
+    rules: Option<Res<'w, CombatRules>>,
+    rng: ResMut<'w, StealthRng>,
 }
 
 /// Rolls to notice, for the observer holding the turn, and ages what it
@@ -253,13 +271,11 @@ pub struct Watch<'w, 's> {
 /// takes `memory` turns out of sight and noticing takes one, and that
 /// asymmetry is the whole of the hysteresis.
 pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
-    let Ok((player_pos, player_sight)) = watch.player.single() else { return };
-    let (player_pos, player_sight) = (player_pos.0, player_sight.clone());
     let here = watch.map.current();
     let lighting = watch.lighting.as_deref();
-    let Ok((observer, pos, notice, mut aware, perception, dark, faction)) = watch.observers.single_mut() else { return };
-    let reach = perception.map(|p| p.0).unwrap_or(8);
-    let dark_sight = dark.map(|d| d.0).unwrap_or(0);
+    let rules = watch.rules.as_deref();
+    let Ok((observer, pos, notice, mut aware, perception, sight, faction)) = watch.observers.single_mut() else { return };
+    let reach = perception.map(|p| p.0).unwrap_or(DEFAULT_PERCEPTION);
     let mut seen = Vec::new();
     // In spawn order rather than the order the query walks the archetypes
     // in, since each subject in view costs a roll and which subject gets
@@ -272,13 +288,11 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
         }
         // Only what it is at odds with, so an ally slipping past it does
         // not make the vitals strip say the player has been seen.
-        if let (Some(mine), Some(theirs)) = (faction, theirs)
-            && !watch.rules.factions.is_hostile(mine.0, theirs.0)
-        {
+        if !at_odds(rules, faction, theirs) {
             continue;
         }
         let on_this_map = on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here;
-        let in_view = on_this_map && awareness::within_reach(pos.0, at.0, reach) && perceivable(player_pos, &player_sight, lighting, pos.0, dark_sight, at.0);
+        let in_view = on_this_map && awareness::within_reach(pos.0, at.0, reach) && sight.is_some_and(|s| s.can_see(at.0));
         let mut state = aware.of(subject);
         if in_view && state.is_alert() {
             state.saw(at.0);

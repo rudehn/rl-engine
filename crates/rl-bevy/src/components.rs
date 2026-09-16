@@ -69,6 +69,9 @@ pub struct Viewshed {
     pub range: i32,
     /// Whether `visible` is stale.
     pub dirty: bool,
+    /// The map's opacity epoch it was last cast under, so a viewshed cast
+    /// before a door opened is stale whether or not its owner moved.
+    pub epoch: u64,
     /// The world tile at the window's top-left.
     pub origin: Point,
     /// One bit per window tile: seen.
@@ -80,7 +83,7 @@ pub struct Viewshed {
 impl Viewshed {
     /// A viewshed of `range` that has never been computed.
     pub fn new(range: i32) -> Self {
-        Self { range, dirty: true, origin: Point::ZERO, visible: BitGrid::new(0, 0), line: BitGrid::new(0, 0) }
+        Self { range, dirty: true, epoch: 0, origin: Point::ZERO, visible: BitGrid::new(0, 0), line: BitGrid::new(0, 0) }
     }
 
     /// Whether the world tile `p` is currently seen.

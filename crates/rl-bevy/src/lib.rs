@@ -66,7 +66,10 @@ pub use items::{
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-pub use minds::{AddChoice, CameFrom, FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Sight, Thinking, a_mind_holds_the_turn};
+pub use minds::{
+    AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Profile, Sight, Thinking,
+    a_mind_holds_the_turn,
+};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
@@ -79,7 +82,7 @@ pub use replay::{Pressed, Recording};
 pub use seed::{AddStream, Seed, Stream};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
-pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRunning, Watchers};
+pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, TurnEnd, Turns, Wait};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};

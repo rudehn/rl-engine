@@ -330,6 +330,9 @@ pub fn clear_run(world: &mut World) {
 /// the choice has been made and written but nothing has acted on it yet.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DecideSet {
+    /// The sight of the mind about to decide, recast if it moved or the
+    /// map changed, so everything after reads what it sees now.
+    Sense,
     /// Who has noticed whom, for the actor about to decide. Empty unless
     /// the game added [`StealthPlugin`](crate::stealth::StealthPlugin).
     Notice,

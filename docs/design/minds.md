@@ -1,7 +1,7 @@
 # Minds: how a non-player decides, and why it is built this way
 
-Written 2026-09-16 as the plan for section 2 of `docs/TODO.md`, "Open the minds", after three reviews of a first draft.
-Once built, this is the description of the subsystem; the "Plan" headings become history.
+Written 2026-09-16 as the plan for section 2 of `docs/TODO.md`, "Open the minds", after three reviews of a first draft, and built the same day in the six stages of section 4.
+Section 3 describes the subsystem as it stands; sections 2 and 4 are its history.
 
 ## 1. What a mind is
 
@@ -44,9 +44,10 @@ It is in the core, beside `Acting` and `FlowFields`, so `CombatPlugin` in a game
 It is empty when no mind holds the turn or a game has already claimed the decision, which short-circuits every contributor.
 
 `DecideSet` becomes `Sense, Notice, Offer, Perceive, Minds, Game`.
-`Perceive` has three phases, `PerceiveSet::{Roster, Filter, Annotate}`, configured in `CorePlugin` the way `ViewSet` phases the panels:
+`Perceive` has four phases, `PerceiveSet::{Begin, Roster, Filter, Annotate}`, configured in `CorePlugin` the way `ViewSet` phases the panels:
 
-- `Roster`: combat sorts everyone the thinker can see into `enemies`, `allies` and `others` by the faction matrix, or all into `others` without one.
+- `Begin`: the minds open the snapshot for the actor holding the turn, after `DecideSet::Sense` recast its sight.
+- `Roster`: the minds sort everyone the thinker can see into `enemies`, `allies` and `others` by the faction matrix when combat inserted one, or all into `others` without one.
 - `Filter`: stealth removes hiders the thinker has not noticed and fills `last_known`.
 - `Annotate`: items and throwing fill `missiles` and `items`; abilities copy `Offered` into `usable`; fire marks `hazards`; a game pushes its own `Sense`.
 

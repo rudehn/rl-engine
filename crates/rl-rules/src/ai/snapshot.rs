@@ -8,25 +8,54 @@ use crate::ability::Usable;
 use crate::ai::Wits;
 use rl_core::{Point, geometry};
 
+/// Health as a mind reads it: what is left, and the most there can be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Vitals {
+    /// What is left.
+    pub current: i32,
+    /// The most.
+    pub max: i32,
+}
+
+impl Vitals {
+    /// Health as a percentage.
+    pub fn pct(&self) -> i32 {
+        if self.max <= 0 { 0 } else { (self.current as i64 * 100 / self.max as i64) as i32 }
+    }
+}
+
 /// One actor as another sees it.
+///
+/// Health and side are optional: a prop with a mind, a civilian in a game
+/// with no combat, or anyone in a game with no factions is still someone
+/// a mind can see and step round. A tactic that needs either asks.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ActorView<A: Copy> {
     /// Who.
     pub id: A,
     /// Where.
     pub pos: Point,
-    /// Current health.
-    pub hp: i32,
-    /// Maximum health.
-    pub max_hp: i32,
-    /// Which side.
-    pub faction: FactionId,
+    /// Its health, when it has any to lose.
+    pub health: Option<Vitals>,
+    /// Which side, when it takes one.
+    pub faction: Option<FactionId>,
 }
 
 impl<A: Copy> ActorView<A> {
-    /// Health as a percentage.
-    pub fn hp_pct(&self) -> i32 {
-        if self.max_hp <= 0 { 0 } else { (self.hp as i64 * 100 / self.max_hp as i64) as i32 }
+    /// Someone with no health and no side.
+    pub fn at(id: A, pos: Point) -> Self {
+        Self { id, pos, health: None, faction: None }
+    }
+
+    /// Health as a percentage, when it has health.
+    pub fn hp_pct(&self) -> Option<i32> {
+        self.health.map(|h| h.pct())
+    }
+
+    /// Whether it is below full health. False when its health is unknown,
+    /// so a mind mends nothing it cannot see the wounds of.
+    pub fn is_hurt(&self) -> bool {
+        self.health.is_some_and(|h| h.current < h.max)
     }
 }
 
@@ -83,6 +112,10 @@ pub struct Snapshot<A: Copy> {
     pub enemies: Vec<ActorView<A>>,
     /// Friendly actors it can see, nearest first.
     pub allies: Vec<ActorView<A>>,
+    /// Everyone else it can see, nearest first: neutrals, and everyone in
+    /// a game with no sides. Factions are allied with themselves, so a
+    /// bystander on the actor's own side is an ally, not one of these.
+    pub others: Vec<ActorView<A>>,
     /// The cell it stepped from on its last turn, if it stepped, so a
     /// wanderer does not step straight back.
     pub came_from: Option<Point>,
@@ -106,7 +139,7 @@ pub struct Snapshot<A: Copy> {
 }
 
 impl<A: Copy + Ord> Snapshot<A> {
-    /// Sorts enemies, allies and items nearest first, ties by position and
+    /// Sorts enemies, allies, others and items nearest first, ties by position and
     /// then by identity, so two runs agree on what is "nearest" whatever
     /// order they were seen in: a pile of things on one cell is the normal
     /// case for items, and the first of them is what a scavenger takes.
@@ -115,6 +148,7 @@ impl<A: Copy + Ord> Snapshot<A> {
         let key = |v: &ActorView<A>| (geometry::chebyshev(me, v.pos), v.pos, v.id);
         self.enemies.sort_by_key(key);
         self.allies.sort_by_key(key);
+        self.others.sort_by_key(key);
         self.items.sort_by_key(|i| (geometry::chebyshev(me, i.pos), i.pos, i.id));
     }
 }
@@ -126,6 +160,7 @@ impl<A: Copy> Snapshot<A> {
             me,
             enemies: Vec::new(),
             allies: Vec::new(),
+            others: Vec::new(),
             came_from: None,
             usable: Vec::new(),
             last_known: None,

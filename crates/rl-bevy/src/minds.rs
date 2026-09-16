@@ -33,21 +33,28 @@ use rl_grid::{BitGrid, DijkstraMap, PathRules};
 use rl_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 
 use crate::ability::Use;
-use crate::combat::{Attack, CombatRng, Faction, Health};
-use crate::components::{MyTurn, Player, Position, Viewshed};
+use crate::combat::{Attack, CombatRules, Dead, Faction, Health};
+use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
 use crate::items::{EquipFromGround, PickUp};
-use crate::lighting::{DarkSight, Lighting, perceives};
+use crate::lighting::{DarkSight, Lighting};
 use crate::places::{MapId, OnMap};
 use crate::throwing::Throw;
-use crate::turn::{Acting, Action, AddAction, Intent, Occupancy, Step, Turns, Wait};
+use crate::turn::{Acting, Action, AddAction, Intent, Occupancy, Step, Wait};
 use crate::world::WorldMap;
 
-/// How far a non-player notices things, in tiles. Sight is symmetric,
-/// so a monster sees the player exactly when the player sees it and it
-/// is within this range.
+/// How far a mind sees, in tiles: the range of its own [`Viewshed`], cast
+/// the way the player's is. Eight when a mind carries none.
+///
+/// A disc, as the player's sight is, and read through the light, so a
+/// monster in the dark sees what is lit, what is within its
+/// [`DarkSight`], and what is adjacent, and nothing the player's line has
+/// anything to do with.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Perception(pub i32);
+
+/// What a mind sees when it carries no [`Perception`].
+pub const DEFAULT_PERCEPTION: i32 = 8;
 
 /// The movement class an actor paths with.
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -56,11 +63,12 @@ pub struct Profile(pub MovementProfile);
 /// The brain deciding a non-player's turns. Shared, since most monsters of
 /// a kind think alike.
 ///
-/// Requires [`Intelligence`], sapient unless the spawn says otherwise, and
-/// [`CameFrom`], so a wanderer knows not to step straight back.
+/// Requires [`Intelligence`], sapient unless the spawn says otherwise,
+/// [`CameFrom`], so a wanderer knows not to step straight back, and a
+/// [`Viewshed`] of its own, sized by its [`Perception`] when it is cast.
 #[derive(Component, Clone)]
 #[component(on_add = report_mind_without_plugin)]
-#[require(Intelligence, CameFrom)]
+#[require(Intelligence, CameFrom, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
 pub struct Mind(pub Arc<Brain<Entity>>);
 
 /// What an actor is able to do, whatever its brain would like: whether it
@@ -212,14 +220,13 @@ pub struct Thinking {
     snapshot: Option<Snapshot<Entity>>,
     at: Point,
     reach: i32,
-    dark_sight: i32,
     hazards: BitGrid,
     origin: Point,
 }
 
 impl Default for Thinking {
     fn default() -> Self {
-        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, dark_sight: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO }
+        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO }
     }
 }
 
@@ -265,7 +272,7 @@ impl Thinking {
         self.hazards.contains(p - self.origin)
     }
 
-    fn open(&mut self, actor: Entity, snapshot: Snapshot<Entity>, at: Point, reach: i32, dark_sight: i32, map: &WorldMap) {
+    fn open(&mut self, actor: Entity, snapshot: Snapshot<Entity>, at: Point, reach: i32, map: &WorldMap) {
         let window = map.window_tiles();
         if self.hazards.width() != window.width || self.hazards.height() != window.height {
             self.hazards = BitGrid::new(window.width, window.height);
@@ -277,7 +284,6 @@ impl Thinking {
         self.snapshot = Some(snapshot);
         self.at = at;
         self.reach = reach;
-        self.dark_sight = dark_sight;
     }
 
     fn close(&mut self) -> Option<(Entity, Snapshot<Entity>)> {
@@ -287,20 +293,15 @@ impl Thinking {
     }
 }
 
-/// Whether the mind holding the turn can perceive a cell, for a contributor
+/// Whether the mind holding the turn can see a cell, for a contributor
 /// deciding what goes into the snapshot.
 ///
-/// The one line-of-sight answer, shared with noticing so the two cannot
-/// disagree about who could be seen. Lines are read off the player's
-/// viewshed, which is symmetric, so an observer has a line to the player
-/// exactly when the player has one to it, and to anyone else when the
-/// player has one to them both. Light is not symmetric, so what it then
-/// perceives along that line is whatever is lit, within its dark sight or
-/// adjacent.
+/// Read off the mind's own [`Viewshed`], cast by [`sense`] at the head of
+/// the pass, so a contributor, the notice roll and the panels all answer
+/// from the same grid and cannot disagree about who could be seen.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Sight<'w, 's> {
-    player: Query<'w, 's, (&'static Position, &'static Viewshed), With<Player>>,
-    lighting: Option<Res<'w, Lighting>>,
+    viewsheds: Query<'w, 's, &'static Viewshed>,
     map: Res<'w, WorldMap>,
 }
 
@@ -310,22 +311,30 @@ impl Sight<'_, '_> {
         self.map.current()
     }
 
-    /// Whether the thinker in `thinking` perceives `at` on the map `on`:
-    /// the same map, within its reach, and in its sight.
+    /// Whether the thinker in `thinking` sees `at` on the map `on`: the
+    /// same map, within its reach, and in its sight.
     pub fn perceives(&self, thinking: &Thinking, at: Point, on: Option<&OnMap>) -> bool {
         if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != self.map.current() || !thinking.within_reach(at) {
             return false;
         }
-        let Ok((player_pos, player_sight)) = self.player.single() else { return false };
-        perceivable(player_pos.0, player_sight, self.lighting.as_deref(), thinking.at, thinking.dark_sight, at)
+        thinking.actor().and_then(|actor| self.viewsheds.get(actor).ok()).is_some_and(|sight| sight.can_see(at))
     }
 }
 
-/// Whether an observer at `from` perceives `to`: a line through the
-/// player's viewshed, then light, dark sight or adjacency.
-pub fn perceivable(player_pos: Point, player_sight: &Viewshed, lighting: Option<&Lighting>, from: Point, dark_sight: i32, to: Point) -> bool {
-    let in_line = player_sight.in_line(from) && (to == player_pos || player_sight.in_line(to));
-    in_line && perceives(lighting, from, dark_sight, to)
+/// A viewer holding the turn, as the pass recasts its sight.
+type Seeing = (&'static Position, &'static mut Viewshed, Option<&'static DarkSight>, Option<&'static Perception>);
+
+/// Recasts the sight of the mind holding the turn when it is stale.
+///
+/// The frame's field-of-view pass runs after the turns, and dozens of
+/// minds move within one frame, so the one about to perceive casts here,
+/// through the same function, if it moved or what blocks sight changed.
+/// One that did not move pays nothing.
+pub fn sense(map: Res<WorldMap>, lighting: Option<Res<Lighting>>, mut viewers: Query<Seeing, MindsTurn>) {
+    let Ok((pos, mut viewshed, dark, perception)) = viewers.single_mut() else { return };
+    if crate::fov::is_stale(&viewshed, &map) {
+        crate::fov::cast(&map, lighting.as_deref(), pos.0, dark.map(|d| d.0).unwrap_or(0), perception.map(|p| p.0), &mut viewshed);
+    }
 }
 
 /// A mind holding the turn: not the player, whose turn is the game's.
@@ -335,11 +344,10 @@ type MindsTurn = (With<Mind>, With<MyTurn>, Without<Player>);
 type Thinker = (
     Entity,
     &'static Position,
-    &'static Health,
-    &'static Faction,
+    Option<&'static Health>,
+    Option<&'static Faction>,
     Option<&'static Perception>,
     Option<&'static Intelligence>,
-    Option<&'static DarkSight>,
     &'static CameFrom,
 );
 
@@ -356,26 +364,79 @@ pub fn a_mind_holds_the_turn(minds: Query<(), MindsTurn>) -> bool {
 /// contributor works for a decision nobody will make.
 pub fn begin_thinking(mut thinking: ResMut<Thinking>, acting: Res<Acting>, map: Res<WorldMap>, minds: Query<Thinker, MindsTurn>) {
     thinking.close();
-    let Ok((actor, pos, health, faction, perception, intelligence, dark, came_from)) = minds.single() else { return };
+    let Ok((actor, pos, health, faction, perception, intelligence, came_from)) = minds.single() else { return };
     if acting.has_decided(actor) {
         return;
     }
-    let me = ActorView { id: actor, pos: pos.0, hp: health.current, max_hp: health.max, faction: faction.0 };
+    let me = ActorView { id: actor, pos: pos.0, health: health.map(vitals), faction: faction.map(|f| f.0) };
     let mut snapshot = Snapshot::alone(me);
     snapshot.wits = intelligence.map(|i| i.0).unwrap_or_default();
     snapshot.came_from = came_from.0;
-    let reach = perception.map(|p| p.0).unwrap_or(8);
-    thinking.open(actor, snapshot, pos.0, reach, dark.map(|d| d.0).unwrap_or(0), &map);
+    let reach = perception.map(|p| p.0).unwrap_or(DEFAULT_PERCEPTION);
+    thinking.open(actor, snapshot, pos.0, reach, &map);
+}
+
+/// Health as a mind reads it.
+fn vitals(health: &Health) -> rl_rules::Vitals {
+    rl_rules::Vitals { current: health.current, max: health.max }
+}
+
+/// Anyone a mind might see: alive, wherever it stands, whether or not it
+/// has health to lose or a side to take.
+type Seen = (Entity, &'static Position, Option<&'static Health>, Option<&'static Faction>, Option<&'static OnMap>);
+
+/// Puts everyone the mind holding the turn can see into its snapshot,
+/// sorted into enemies, allies and others.
+///
+/// The roster, in [`PerceiveSet::Roster`](crate::plugin::PerceiveSet::Roster).
+/// With a [`CombatRules`] the faction matrix says who is a foe and who a
+/// friend, and a neutral, or anyone with no side, is one of the others;
+/// without one, in a game with no combat, everyone seen is one of the
+/// others, and a mind still steps round them.
+pub fn perceive_roster(mut thinking: ResMut<Thinking>, sight: Sight, rules: Option<Res<CombatRules>>, actors: Query<Seen, (With<Actor>, Without<Dead>)>) {
+    let Some(thinker) = thinking.actor() else { return };
+    let Some(mine) = thinking.snapshot().map(|s| s.me.faction) else { return };
+    let (mut enemies, mut allies, mut others) = (Vec::new(), Vec::new(), Vec::new());
+    for (e, pos, health, faction, on) in &actors {
+        if e == thinker || !sight.perceives(&thinking, pos.0, on) {
+            continue;
+        }
+        let view = ActorView { id: e, pos: pos.0, health: health.map(vitals), faction: faction.map(|f| f.0) };
+        let relation = match (rules.as_deref(), mine, faction) {
+            (Some(rules), Some(mine), Some(theirs)) => Some(rules.factions.relation(mine, theirs.0)),
+            _ => None,
+        };
+        match relation {
+            Some(rl_rules::Relation::Hostile) => enemies.push(view),
+            Some(rl_rules::Relation::Allied) => allies.push(view),
+            _ => others.push(view),
+        }
+    }
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.enemies.extend(enemies);
+        snapshot.allies.extend(allies);
+        snapshot.others.extend(others);
+    }
+}
+
+/// The minds' own stream, so adding a tactic cannot shift combat's rolls
+/// and a game with no combat still has one to draw from.
+#[derive(Resource, Debug)]
+pub struct MindRng(pub StdRng);
+
+impl crate::seed::Stream for MindRng {
+    fn for_run(seed: rl_core::RunSeed) -> Self {
+        Self(seed.rng(rl_core::SeedDomain::new(b"minds"), 0))
+    }
 }
 
 /// The shared state a mind reads and the stream it draws from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MindWorld<'w> {
     fields: ResMut<'w, FlowFields>,
-    rng: ResMut<'w, CombatRng>,
+    rng: ResMut<'w, MindRng>,
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
-    turns: Res<'w, Turns>,
 }
 
 /// A mind chose something of the game's own: what its tactic returned,
@@ -469,8 +530,8 @@ pub fn decide_minds(
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
     let Ok((mind, my_pos, profile, intelligence, mut came_from)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
-    let MindWorld { fields, rng, map, occupancy, turns } = &mut world;
-    let (fields, rng, map, occupancy, turns) = (&mut **fields, &mut **rng, &**map, &**occupancy, &**turns);
+    let MindWorld { fields, rng, map, occupancy } = &mut world;
+    let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
     let opens_doors = wits.has(Wits::OPENS_DOORS);
     snapshot.sort();
@@ -482,11 +543,9 @@ pub fn decide_minds(
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
-    let mut turn_rng: StdRng =
-        rand::SeedableRng::seed_from_u64(rl_core::seed::position_hash(turns.now() as u64 ^ rand::RngCore::next_u64(&mut rng.0), my_pos.0.x, my_pos.0.y));
     let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors };
     let mut ctx =
-        TacticCtx { snapshot: &snapshot, fields: &mut walking, can_step: &can_step, blocks_shot: &blocks_shot, bounds: map.window_tiles(), rng: &mut turn_rng };
+        TacticCtx { snapshot: &snapshot, fields: &mut walking, can_step: &can_step, blocks_shot: &blocks_shot, bounds: map.window_tiles(), rng: &mut rng.0 };
     let (decision, _which) = mind.0.decide(&mut ctx);
     if !acting.claim_decision(thinker) {
         return;
@@ -534,11 +593,13 @@ pub fn decide_minds(
 
 /// Minds: every non-player carrying a [`Mind`] decides its own turn.
 ///
-/// Needs combat, for the stream a mind rolls from, and the field of view,
-/// because the player's viewshed is the line-of-sight oracle. What a mind
-/// knows comes from whichever plugins the game added: with none of them a
-/// mind sees nobody and drifts; with combat it sees sides; with abilities
-/// it is offered what it may use; and so on.
+/// Needs the field of view, since a mind's sight is a [`Viewshed`] cast
+/// the way the player's is, and the run's `Seed`, for the stream it rolls
+/// from. Not combat: without it a mind sees everyone as one of the others
+/// and steps round them, and a blow it decides is refused by the sweeper
+/// rather than left holding the turn. What else a mind knows comes from
+/// whichever plugins the game added: with combat it sees sides; with
+/// abilities it is offered what it may use; and so on.
 ///
 /// A game that decides every monster's turn with systems of its own leaves
 /// this out. One that spawns a [`Mind`] without it is told so, once, rather
@@ -552,18 +613,24 @@ impl Plugin for MindsPlugin {
         // messages they would write them into exist whether or not the game
         // added abilities, items or throwing. Registering one twice is what
         // `add_message` is built for.
+        use crate::seed::AddStream;
         app.init_resource::<MindsRunning>()
             .add_message::<Intent<Use>>()
             .add_message::<Intent<PickUp>>()
             .add_message::<Intent<EquipFromGround>>()
             .add_message::<Intent<Throw>>()
             .add_message::<MindChose>()
+            // A blow a mind decides in a game without combat is refused,
+            // not left to hang; combat's own registration is the same one.
+            .add_action::<Attack>()
+            .add_stream::<MindRng>("MindsPlugin")
+            .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
+            .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
     fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "MindsPlugin");
         crate::plugin::depends_on::<crate::fov::FovPlugin>(app, "MindsPlugin");
     }
 }
@@ -597,6 +664,7 @@ mod tests {
     use crate::state::EngineState;
     use crate::throwing::Throwable;
     use crate::turn::Resolution;
+    use crate::turn::Turns;
     use rl_core::DiceRoll;
     use rl_rules::ai::tactics::{Hunt, MeleeAdjacent};
     use rl_rules::damage::DamageKindId;
@@ -1085,5 +1153,93 @@ mod tests {
         let (me, it) = (app.world().get::<Position>(player).unwrap().0, app.world().get::<Position>(dog).unwrap().0);
         assert!(geometry::chebyshev(me, it) <= 2, "the dog kept up: player {me:?}, dog {it:?}");
         assert!(geometry::chebyshev(me, it) >= 1, "and is not on the player's cell");
+    }
+
+    /// A game with no combat can field a mind: without `CombatPlugin`,
+    /// `CombatRules`, `Health` or `Faction`, a wanderer drifts, a
+    /// bystander is one of the others, and a mind told to give way steps
+    /// off the bystander rather than through or at it.
+    #[test]
+    fn a_mind_in_a_game_without_combat_drifts_and_gives_way_to_a_bystander() {
+        use rl_rules::ai::tactics::{GiveWay, Wander};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, MindsPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        // No sides, so no `two_sides` to insert the seed the minds roll from.
+        app.insert_resource(crate::seed::Seed(rl_core::RunSeed(3)));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8))).id();
+        let bystander = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)))).id();
+        let polite = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(4, 0)),
+                Perception(6),
+                Mind(Arc::new(Brain::new().then(GiveWay { space: 1 }).then(Wander { chance_pct: 0 }))),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        for _ in 0..3 {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+        let at = app.world().get::<Position>(polite).unwrap().0;
+        assert!(geometry::chebyshev(at, start.offset(3, 0)) > 1, "it stepped off the bystander: {at:?}");
+        assert!(app.world().get::<Position>(bystander).is_some(), "who was never struck, there being no combat to strike with");
+        assert!(app.world().get::<Health>(polite).is_none(), "and none of them has health");
+    }
+
+    /// Two monsters at war fight where the player cannot see: each sees
+    /// with its own sight, and neither needs the player's line to find the
+    /// other.
+    #[test]
+    fn two_monsters_at_war_fight_out_of_the_players_sight() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        // The player looks at nothing: a viewshed of one cell.
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(1), Health::full(30), Faction(sides.ours))).id();
+        let brain = Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt));
+        let far = start.offset(6, 0);
+        let ours = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(far),
+                Health::full(20),
+                Faction(sides.ours),
+                Perception(8),
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(2) },
+                Mind(brain.clone()),
+            ))
+            .id();
+        let theirs = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(far.offset(3, 0)),
+                Health::full(20),
+                Faction(sides.theirs),
+                Perception(8),
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(2) },
+                Mind(brain),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..12 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        assert!(!app.world().get::<Viewshed>(player).unwrap().can_see(far), "the player never saw either");
+        let hurt = |e: Entity| app.world().get::<Health>(e).is_some_and(|h| h.current < h.max);
+        assert!(hurt(ours) || hurt(theirs), "and they closed and fought anyway");
     }
 }

@@ -28,5 +28,5 @@ pub mod wits;
 pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Choice, Decision, Fields, NoFields, Tactic, TacticCtx};
 pub use profile::MovementProfile;
-pub use snapshot::{ActorView, ItemView, Missile, Sense, Snapshot};
+pub use snapshot::{ActorView, ItemView, Missile, Sense, Snapshot, Vitals};
 pub use wits::Wits;

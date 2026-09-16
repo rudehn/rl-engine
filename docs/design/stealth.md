@@ -108,8 +108,8 @@ That is the same shape `Lighting` uses and the reason a delve that wants none of
 One change: a candidate carrying `Stealth` enters `snapshot.enemies` only if the thinker is aware of it.
 Everything without a `Stealth` component is seen the way it is today.
 
-The oracle stays what it is.
-Lines are symmetric and non-players carry no viewshed, so the player's is still what decides who has a line to whom; stealth layers on top of that and does not touch it.
+Sight is the observer's own.
+Every mind carries a `Viewshed` cast the way the player's is (since 2026-09-16; before that the player's viewshed was the one oracle), and stealth layers on top of what that sight reaches.
 
 ## 4. The awareness state machine
 
@@ -254,8 +254,9 @@ Nothing here runs per frame, and nothing here allocates per turn beyond the map'
 - **Whether stealth runs is asked of the plugin, not of the components.**
   `Notice` brings an `Aware` with it, so a game that authors observers and never adds `StealthPlugin` would have got monsters that notice nothing, forever, rather than the old behaviour.
   `StealthRunning` is true only when the plugin was added, and the delve's own test harness, which does not add it, is what caught this.
-- **The line-of-sight oracle is one function.**
-  `perceivable` in `minds.rs` (it began in `combat.rs`, before the minds had a module of their own) is shared by `decide_minds` and by noticing, so the two can never disagree about who could be seen.
+- **The line-of-sight answer is one grid.**
+  The observer's own `Viewshed` is read by the perceive stage, by noticing and by `Watchers`, so the minds, the roll and the panels can never disagree about who could be seen.
+  It began as `perceivable`, a function over the player's viewshed, until every actor had sight of its own.
 
 Found on the way, both fixed: a mind that had not noticed the player could still descend the shared flow fields, which are built toward the player, and so walk straight to someone it never saw; and the delve had no way to put the brand out, so a quiet player carrying a lit brand was never quiet at all. Shift and `L` now smothers it and spends the turn.
 
@@ -272,9 +273,8 @@ Reproduced first as a Corsair test through the real wiring, with a surface cutth
 - **Stealth that is invisible to the player.**
   A mechanic the player cannot read is a mechanic that feels like the game cheating, which is why phase D is in this slice and not deferred.
   If the panels slip, the mechanic should slip with them.
-- **The oracle.**
-  Everything a mind sees is still routed through the player's viewshed.
-  That is a pre-existing simplification, it is documented in `decide_minds`, and stealth neither fixes nor worsens it, but a reader meeting stealth first will expect otherwise.
+- **Sight round corners.**
+  With sight of their own, observers notice from places the player cannot see into, so a game tuned for the old rule is harder; `perception` per kind is the dial, and the shipped games were raised by one for the corners a disc loses over a square.
 - **Games that turn it on and author nothing.**
   A `Notice` absent means noticed on sight, which is today's behaviour and the safe default.
   A `Stealth` absent means the subject is never hidden.

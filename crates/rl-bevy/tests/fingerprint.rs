@@ -111,7 +111,7 @@ fn a_seeded_run_of_minds_combat_and_stealth_comes_to_the_same_run_every_time() {
     assert_eq!(first, run(7, 120), "one seed, two runs, one fingerprint");
     assert_ne!(first, run(8, 120), "another seed is another run");
     assert_eq!(
-        first, 12_649_594_659_527_046_652,
+        first, 8_778_430_806_092_112_307,
         "fingerprint tripwire: a change moved a roll, a decision or an order; re-baseline on purpose and say so in the changelog"
     );
 }

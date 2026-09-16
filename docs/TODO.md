@@ -16,19 +16,11 @@ Nothing is left in this section; its three items and the swap below were built o
 
 ## 2. Open the minds
 
-- **Minds without combat.**
-  `MindsPlugin` depends on `CombatPlugin`, and every perceivable actor must carry `Health` and `Faction` (`ActorData` in `minds.rs`), so a stealth-only or non-violent game cannot field a mind, and a prop or a civilian is invisible to one.
-  Make the faction matrix and health optional inputs to the snapshot.
-- **Sight that is not the player's.**
-  `perceivable` uses the player's viewshed as the one line-of-sight oracle, so nothing perceives anything the player has no line to.
-  Deliberate and documented, and the limit on faction wars and a living world; the conversion the plan's "Next" line names will need per-faction or per-actor sight.
+The five items that opened this section were built in the six stages of `docs/design/minds.md` on 2026-09-16; what remains is the tactics they make room for.
+
 - **Tactics that are missing, and weights that are fixed.**
   No pack or leader behaviour, no keep-at-range for a shooter, no patrol or idle routine, no noise or scent, though `DijkstraMap` is the right tool for the last two.
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
-- **A stream of the minds' own.**
-  `decide_minds` seeds a per-turn generator from `CombatRng` and a position hash (`minds.rs`, `turn_rng`).
-  Give minds a `Stream` like combat and abilities have, so adding a tactic cannot shift combat's rolls.
-  Lands with the last stage of `docs/design/minds.md`.
 
 ## 3. Make what exists real
 

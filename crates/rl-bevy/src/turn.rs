@@ -491,12 +491,25 @@ pub fn forget_removed_blockers(mut occupancy: ResMut<Occupancy>, mut removed: Re
 /// Registers an action with the engine.
 pub trait AddAction {
     /// Registers `A` as an action: its intents become a message, and an
-    /// intent nobody resolves is refused rather than left to hang.
+    /// intent nobody resolves is refused rather than left to hang. Once:
+    /// two plugins that both register the same action, as combat and the
+    /// minds both do for a blow, get one sweeper between them.
     fn add_action<A: Action>(&mut self) -> &mut Self;
 }
 
 impl AddAction for App {
     fn add_action<A: Action>(&mut self) -> &mut Self {
+        // The message alone is not proof of a sweeper: a plugin may
+        // register the message so it can write intents it does not resolve,
+        // as the minds do, so the sweeper is what is remembered.
+        if self.world().contains_resource::<Swept<A>>() {
+            return self;
+        }
+        self.insert_resource(Swept::<A>(std::marker::PhantomData));
         self.add_message::<Intent<A>>().add_systems(crate::plugin::Turn, sweep_unclaimed::<A>.in_set(crate::plugin::TurnSet::Sweep))
     }
 }
+
+/// Present once `A` has a sweeper, so a second registration adds none.
+#[derive(Resource)]
+struct Swept<A: Action>(std::marker::PhantomData<A>);
