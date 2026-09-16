@@ -200,7 +200,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 
 ## The guide
 
-`docs/guide` is an mdBook that builds a small roguelike, Warren, in nine steps: a map on screen, walking, sight and memory, monsters, blows, items, floors, content in RON, and an action of the game's own, ending with the headless tests.
+`docs/guide` is an mdBook that builds a small roguelike, Warren, in ten steps: a map on screen, walking, sight and memory, monsters, blows, items, floors, content in RON, and an action of the game's own, ending with the headless tests.
 Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter's code is compiled by CI and can be played on its own; the chapters quote the sources through mdBook anchors rather than restating them, and `scripts/check-guide.sh` fails the build if an anchor, an image or a table-of-contents entry stops resolving.
 
 ## The dungeon: the Hollow Whale

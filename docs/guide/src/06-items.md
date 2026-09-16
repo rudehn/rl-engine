@@ -1,6 +1,7 @@
 # Things to pick up
 
 > Run it: `cargo run -p tutorial --bin step06_items`
+>
 > Source: [`step06_items.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step06_items.rs)
 
 `ItemsPlugin` moves items between the ground, a bag and a slot, with five actions: `PickUp`, `DropItem`, `Equip`, `Unequip`, `UseItem`.
@@ -8,8 +9,11 @@ It has no opinion about what an item is.
 
 ## An item
 
+<!-- include: ../../../examples/tutorial/src/bin/step06_items.rs:crust -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step06_items.rs:crust}}
+/// A crust of bread: the one item the warren has, and how much it heals.
+#[derive(Component, Clone, Copy)]
+struct Crust(i32);
 ```
 
 ```rust
@@ -20,20 +24,43 @@ It has no opinion about what an item is.
 `Position` means it is on the floor; picking it up removes that component, dropping it puts one back.
 `Crust(8)` is yours.
 
+<!-- include: ../../../examples/tutorial/src/bin/step06_items.rs:intents -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step06_items.rs:intents}}
+/// Everything the player's keys can ask for. A system may take seven
+/// parameters; bundling the writers into one `SystemParam` keeps room for
+/// as many actions as the game grows.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlayerIntents<'w> {
+    bumps: MessageWriter<'w, Intent<Bump>>,
+    waits: MessageWriter<'w, Intent<Wait>>,
+    pick_ups: MessageWriter<'w, Intent<PickUp>>,
+    uses: MessageWriter<'w, Intent<UseItem>>,
+}
 ```
 
-Clippy here refuses a system with more than seven parameters, and actions accumulate.
-Bundling the writers into a `SystemParam` is the answer; the engine's own systems do the same.
+Bundling the writers into one `SystemParam` keeps the signature short as the actions accumulate, and the engine's own systems do the same.
 
 ## Using an item
 
 `UseItem` checks the item is in the bag, spends the turn and writes `ItemEvent::Used`.
 It does not heal, teleport or explode.
 
+<!-- include: ../../../examples/tutorial/src/bin/step06_items.rs:eat -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step06_items.rs:eat}}
+/// What eating a crust means. The engine has already spent the turn and
+/// taken the item out of the bag; this is the part only the game knows.
+///
+/// It runs in [`TurnSet::React`], inside the turn, so the healing lands
+/// before the next rat is dealt its move. In the drawing phase it would
+/// land a blow too late.
+fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query<&Crust>, mut eaters: Query<&mut Health>) {
+    for ev in used.read() {
+        let ItemEvent::Used { actor, item } = *ev else { continue };
+        let (Ok(crust), Ok(mut health)) = (crusts.get(item), eaters.get_mut(actor)) else { continue };
+        health.current = (health.current + crust.0).min(health.max);
+        commands.entity(item).despawn();
+    }
+}
 ```
 
 Despawning the crust is enough to get it out of the bag.
@@ -63,3 +90,5 @@ A system that scans the whole world every frame belongs in `PresentSet::Narrate`
 - Give the crust a `Stack { key, count }`, drop six in one cell, pick them all up at once.
 - Add a `Wearable` and an equipment slot graph, and make a knife that changes your `MeleeAttack`.
 - Move `eat` to `PresentSet::Narrate` and try to catch it healing a turn late.
+
+Next: [down the stairs](07-down-the-stairs.md).

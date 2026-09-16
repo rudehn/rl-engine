@@ -1,8 +1,8 @@
 # Summary
 
 [Introduction](introduction.md)
+[Getting set up](00-getting-set-up.md)
 
-- [Getting set up](00-getting-set-up.md)
 - [A map on screen](01-a-map-on-screen.md)
 - [Walking](02-walking.md)
 - [What the player knows](03-what-the-player-knows.md)

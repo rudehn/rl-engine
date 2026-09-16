@@ -33,7 +33,6 @@ fn main() -> AppExit {
     let mut app = App::new();
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
-    // `CapturePlugin` inside it only takes this guide's screenshots.
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Minds live in the combat plugin: deciding where to move and
         // deciding whom to hit are the same decision.
@@ -177,20 +176,6 @@ fn start(
 }
 // ANCHOR_END: start
 
-// ANCHOR: keys
-/// The eight directions and every key that asks for each.
-const MOVES: [(&[KeyCode], Direction); 8] = [
-    (&[KeyCode::ArrowUp, KeyCode::KeyK, KeyCode::Numpad8], Direction::North),
-    (&[KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::Numpad2], Direction::South),
-    (&[KeyCode::ArrowLeft, KeyCode::KeyH, KeyCode::Numpad4], Direction::West),
-    (&[KeyCode::ArrowRight, KeyCode::KeyL, KeyCode::Numpad6], Direction::East),
-    (&[KeyCode::KeyY, KeyCode::Numpad7], Direction::NorthWest),
-    (&[KeyCode::KeyU, KeyCode::Numpad9], Direction::NorthEast),
-    (&[KeyCode::KeyB, KeyCode::Numpad1], Direction::SouthWest),
-    (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
-];
-// ANCHOR_END: keys
-
 // ANCHOR: intents
 /// Everything the player's keys can ask for. A system may take seven
 /// parameters; bundling the writers into one `SystemParam` keeps room for
@@ -213,15 +198,15 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position, &'static Inv
 ///
 /// The walk keys write a [`Bump`], which the engine resolves to a step, a
 /// blow at a foe, or opening a door, whichever is in the way.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
+fn player_input(keys: Res<ButtonInput<KeyCode>>, dirs: Res<DirectionKeys>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(KeyCode::KeyQ) {
         exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, _, bag)) = player.single() else { return };
-    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
-        intents.bumps.write(Intent::new(entity, Bump(*dir)));
+    if let Some(dir) = dirs.just_pressed(&keys) {
+        intents.bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(KeyCode::KeyG) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
     } else if keys.just_pressed(KeyCode::KeyE) {

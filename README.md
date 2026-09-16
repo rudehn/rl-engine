@@ -42,6 +42,8 @@ cargo run --release -p heist -- --seed 7
 
 The first build compiles Bevy and takes a few minutes.
 
+The guide builds a small roguelike one step at a time and is the place to start: read it in [`docs/guide/src`](docs/guide/src), or run `mdbook serve docs/guide` for the version with a sidebar and search.
+
 ## Use it in your game
 
 The quickest start is the template: one file that runs on the first build, with a generated floor, a player and goblins, combat, sight, light and stealth, and tests.
@@ -74,6 +76,9 @@ App::new()
     .add_plugins((CombatPlugin, MindsPlugin))
     .run();
 ```
+
+That compiles and opens a window, and then play refuses to begin until the game supplies a map, tile looks and a player, which the engine says at startup by listing everything missing at once.
+The template above is the smallest version that actually plays, and [chapter 1 of the guide](docs/guide/src/01-a-map-on-screen.md) writes it out line by line.
 
 A tool or a server that needs no window can depend on a single tier-1 crate, such as `rl-grid` for field of view and pathfinding, and never compile Bevy.
 
@@ -115,7 +120,8 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The two example games are the best guide to the Bevy side, and every mechanic the engine has is in one of them.
+The guide below builds a game one step at a time, and is the place to start.
+The three example games are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
 `examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
 
 ## Crates
@@ -208,7 +214,7 @@ That abilities are data and serve any genre is a test rather than a game: `crate
 
 ### Pictures of your own
 
-Either game photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
+Any of the games photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
 
 ```sh
 RL_CAPTURE=shot.png RL_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p delve -- --seed 7
@@ -251,7 +257,7 @@ cargo test --workspace                # everything, builds Bevy
 ## Status
 
 rl-engine is pre-1.0 and its API still moves.
-Two complete example games run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
+Three complete example games run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
 
 ## License
 

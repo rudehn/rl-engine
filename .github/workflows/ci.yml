@@ -6,8 +6,23 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # One job builds the workspace four times over: tests, the generated
+    # template in its own target directory, wasm, and the benches. Debug
+    # info is the bulk of each, and the runner has 14 GB, so this job ran
+    # the disk out. Nothing here reads a backtrace.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_PROFILE_BENCH_DEBUG: "0"
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v5
+      # The runner image ships language toolchains this build has no use
+      # for, and they are tens of gigabytes.
+      - name: room to build in
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       # Bevy links against the Linux audio, input and windowing libraries,
       # and system font discovery against fontconfig; the runner image
       # ships none of them.

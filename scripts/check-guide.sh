@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # The guide's links into the code, checked without building the book.
 #
-#   scripts/check-guide.sh   every {{#include}} names a file that exists and
-#                            an anchor that is in it, every image resolves,
-#                            every hand-written snippet line is in an
-#                            example, and every chapter is in SUMMARY.md
+#   scripts/check-guide.sh   every chapter holds the code it quotes, every
+#                            image resolves, every hand-written snippet line
+#                            is in an example, every chapter a chapter or a
+#                            source file points at is there, and every
+#                            chapter is in SUMMARY.md
 #
-# The guide quotes the tutorial crate rather than restating it, so a renamed
-# anchor or a moved file would leave a chapter silently showing an error
-# where its code should be. mdBook reports that and still exits zero, so it
-# cannot be the gate; this is.
+# The guide quotes the tutorial crate rather than restating it, so the code
+# in a chapter is code that compiles. scripts/expand-guide.py puts it there
+# and this runs it in --check mode, so a renamed anchor or a moved file
+# fails the build rather than leaving a chapter quoting something that is
+# no longer true.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -21,23 +23,10 @@ note() {
   fail=1
 }
 
-# Every {{#include path}} and {{#include path:anchor}} in every chapter.
-while IFS= read -r line; do
-  page=${line%%:*}
-  spec=${line#*:}
-  target=${spec%%:*}
-  anchor=""
-  [[ $spec == *:* ]] && anchor=${spec#*:}
-  path="$(dirname "$page")/$target"
-  if [[ ! -f $path ]]; then
-    note "$page: include names no such file: $target"
-    continue
-  fi
-  if [[ -n $anchor ]] && ! grep -q "ANCHOR: $anchor\$" "$path"; then
-    note "$page: $target has no anchor '$anchor'"
-  fi
-done < <(grep -rnoE '\{\{#include [^}]+\}\}' "$src" --include='*.md' |
-  sed -E 's/:[0-9]+:\{\{#include /:/; s/\}\}$//')
+# Every chapter holds the code it quotes, expanded from the source.
+if ! python3 scripts/expand-guide.py --check; then
+  fail=1
+fi
 
 # Every image a chapter points at.
 while IFS= read -r hit; do
@@ -56,6 +45,25 @@ done
 for page in $listed; do
   [[ -f "$src/$page" ]] || note "SUMMARY.md lists a missing page: $page"
 done
+
+# Every chapter a source file, a script or a doc points at by path. A
+# renamed chapter used to leave a module comment aimed at nothing, which
+# nothing else here would catch: the guide's own checks only look inside
+# the guide.
+while IFS= read -r hit; do
+  file=${hit%%:*}
+  rest=${hit#*:}
+  page=${rest#*:}
+  page=${page##*/}
+  [[ -f "$src/$page" ]] || note "$file: names no such chapter: $page"
+done < <(grep -rnoE 'docs/guide/src/[0-9a-z-]+\.md' crates examples templates scripts docs/*.md README.md AGENTS.md --include='*.rs' --include='*.md' --include='*.sh' 2>/dev/null)
+
+# Every link from one chapter to another.
+while IFS= read -r hit; do
+  page=${hit%%:*}
+  target=${hit#*:}
+  [[ -f "$src/$target" ]] || note "$page: links to a missing chapter: $target"
+done < <(grep -rnoE '\]\(([0-9a-z-]+\.md)\)' "$src" --include='*.md' | sed -E 's/:[0-9]+:\]\(/:/; s/\)$//')
 
 # Every line of a Rust snippet a chapter writes out by hand rather than
 # includes is a line of an example's source. A copied line is the one kind

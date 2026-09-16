@@ -1,6 +1,7 @@
 # An action of your own
 
 > Run it: `cargo run -p tutorial --bin step09_shove`
+>
 > Source: [`step09_shove.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step09_shove.rs)
 
 Everything so far used actions the engine ships.
@@ -8,8 +9,29 @@ This one it has never heard of: shove a rat back a cell, for half a turn.
 
 ## An action is a type
 
+<!-- include: ../../../examples/tutorial/src/bin/step09_shove.rs:action -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step09_shove.rs:action}}
+/// Shove whoever stands one cell away in this direction back another cell.
+///
+/// An action is a type. There is no list in the engine for it to be added
+/// to; registering it makes `Intent<Shove>` a message, and the sweep
+/// refuses any that no resolver claims. It is a `Choice` as well, so a
+/// hog's brain can decide it and the engine routes the decision to the
+/// same intent the player's key writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Shove(Direction);
+impl Action for Shove {}
+impl Choice for Shove {
+    fn name(&self) -> &'static str {
+        "shove"
+    }
+}
+
+/// A shove that landed, for the log to read.
+#[derive(Message, Debug, Clone, Copy)]
+struct Shoved {
+    target: Entity,
+}
 ```
 
 `Action` is an empty marker trait and `Intent<Shove>` is its own message type.
@@ -27,8 +49,54 @@ Forget the resolver and you get a warning naming the type, not a frozen game wit
 
 ## What a resolver owes
 
+<!-- include: ../../../examples/tutorial/src/bin/step09_shove.rs:resolver -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step09_shove.rs:resolver}}
+/// What the shove costs. A shove is quicker than a swing.
+const SHOVE_COST: u32 = BASE_ACTION_COST / 2;
+
+/// Everything the resolver moves.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Shoving<'w, 's> {
+    occupancy: ResMut<'w, Occupancy>,
+    map: Res<'w, WorldMap>,
+    holders: Query<'w, 's, &'static Position, With<MyTurn>>,
+    targets: Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>), Without<MyTurn>>,
+}
+
+/// Resolves a shove.
+///
+/// The shape every resolver has: claim the turn so nothing else spends it,
+/// do the thing, and say how it went. `done` charges what it cost; `failed`
+/// leaves the player holding the turn and charges anyone else, so a
+/// monster cannot try the same impossible shove forever.
+fn resolve_shoves(mut intents: MessageReader<Intent<Shove>>, mut resolution: Resolution, mut shoved: MessageWriter<Shoved>, mut world: Shoving) {
+    for intent in intents.read() {
+        if !resolution.claim(intent.actor) {
+            continue;
+        }
+        let Ok(from) = world.holders.get(intent.actor) else {
+            resolution.failed(intent.actor, SHOVE_COST);
+            continue;
+        };
+        let offset = intent.action.0.offset();
+        let behind = from.0 + offset + offset;
+        let room = world.map.is_walkable(behind) && !world.occupancy.is_occupied(behind);
+        let pushed = world.occupancy.first_at(from.0 + offset).filter(|_| room).and_then(|t| world.targets.get_mut(t).ok().map(|found| (t, found)));
+        let Some((target, (mut pos, viewshed))) = pushed else {
+            // Nobody there, or nowhere for them to go: nothing happens, and
+            // the turn is still the player's to spend on something else.
+            resolution.failed(intent.actor, SHOVE_COST);
+            continue;
+        };
+        world.occupancy.relocate(target, pos.0, behind);
+        pos.0 = behind;
+        if let Some(mut v) = viewshed {
+            v.dirty = true;
+        }
+        shoved.write(Shoved { target });
+        resolution.done(intent.actor, SHOVE_COST);
+    }
+}
 ```
 
 `Resolution` is the engine's side of every resolver, its own and yours.
@@ -47,8 +115,24 @@ Reporting through a `Shoved` message rather than logging from inside the resolve
 
 The hog shoves too, and it takes three lines more than the player did.
 
+<!-- include: ../../../examples/tutorial/src/bin/step09_shove.rs:tactic -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step09_shove.rs:tactic}}
+/// The hog's move: shove whoever stands beside it rather than bite. A
+/// tactic of Warren's own, in the brain beside the engine's, that decides
+/// Warren's own action.
+struct ShoveAdjacent;
+
+impl Tactic<Entity> for ShoveAdjacent {
+    fn name(&self) -> &'static str {
+        "shove_adjacent"
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+        let me = ctx.snapshot.me.pos;
+        let foe = ctx.snapshot.adjacent_enemies().next()?;
+        Direction::between(me, foe.pos).map(|d| Decision::own(Shove(d)))
+    }
+}
 ```
 
 A tactic is a type that reads the snapshot and answers with a `Decision`.
@@ -72,3 +156,5 @@ A game that decides a monster's whole turn itself claims it with `acting.claim_d
 - Charge a full turn instead of half. The clock is the balance knob.
 - Delete `resolve_shoves` and press the key. Read the warning.
 - Give the rat king `shoves: true` and stand beside it.
+
+Next: [panels](10-panels.md).

@@ -180,6 +180,7 @@ Pure functions over plain numbers, unit-tested without an `App`, and usable by a
 `view/`: `NearbyView`, `VitalsView`, `EquipView`, `InspectView`, the `Row` and `Facet` types, and one collector plugin each.
 `panel/`: a terminal presenter per view, each its own plugin taking a `Rect` and a title.
 `modal.rs`: `ModalId`, the `Modals` stack, `modal_is` and `no_modal` run conditions.
+`panel::wrap`: a screen presenter wraps where a strip clips, because on a strip a cut line is a cut line, while on a screen the reader opened in order to read, losing the end of a sentence is worse than spending a second row on it. Two presenters over one view is the case that proves the split: `LogPanel` and `ScrollbackPanel` draw the same `MessageLog` and neither knows the other exists.
 `log.rs` and `menu.rs` stay where they are and move onto tones.
 
 `ChromeLayout` goes.

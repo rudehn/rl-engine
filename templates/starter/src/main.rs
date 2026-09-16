@@ -38,6 +38,10 @@ const LOG_ROWS: i32 = 5;
 /// none of.
 const FLOOR: MapId = MapId(1);
 
+/// How many braziers light the floor, and how many goblins walk it.
+const BRAZIERS: usize = 5;
+const GOBLINS: usize = 10;
+
 /// The torch you carry: a flame to see by, and to be seen by.
 const TORCH: LightSource = LightSource::new(210, 7, Rgb::new(255, 180, 110)).flickering(70);
 
@@ -382,7 +386,7 @@ fn populate(
         let mut rng = seed.stream(b"starter.populate", ev.map.0 as u64);
         let mut taken = vec![ev.entry];
 
-        for _ in 0..5 {
+        for _ in 0..BRAZIERS {
             let Some(at) = open_cell(&map, bounds, ev.entry, 6, &taken, &mut rng) else {
                 break;
             };
@@ -395,7 +399,7 @@ fn populate(
                 Glyph::new('*', Color::srgb(1.0, 0.6, 0.25)).on_layer(1),
             ));
         }
-        for _ in 0..10 {
+        for _ in 0..GOBLINS {
             // Never close enough to strike on the first turn.
             let Some(at) = open_cell(&map, bounds, ev.entry, 10, &taken, &mut rng) else {
                 break;

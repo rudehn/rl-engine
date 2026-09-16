@@ -14,7 +14,7 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 - `docs/OVERVIEW.md` is the inventory of what the engine has; a slice that adds or removes a system updates it in the same commit.
 - `cargo fmt --all --check` must pass; `rustfmt.toml` pins the width, so do not hand-wrap.
 - `cargo clippy --workspace --all-targets -- -D warnings` must pass. Do not add crate-wide `#![allow(clippy::too_many_arguments)]`; a system with sixteen parameters is a system to split.
-- Tier 0 and 1 crates build on `wasm32-unknown-unknown`; `scripts/check-tiers.sh --wasm` checks it. No `std::time::Instant` in them.
+- Tier 0 and 1 crates build on `wasm32-unknown-unknown`, and so does `rl-save`, whose browser storage and unload bridge exist only there; `scripts/check-tiers.sh --wasm` checks all of them. No `std::time::Instant` in them.
 
 ## Rules that only review enforces
 

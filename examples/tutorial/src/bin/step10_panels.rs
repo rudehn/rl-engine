@@ -98,7 +98,6 @@ fn main() -> AppExit {
     let mut app = App::new();
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in its share of the screen, and the UI base.
-    // `CapturePlugin` inside it only takes this guide's screenshots.
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(screen.map))
         // Minds live in the combat plugin: deciding where to move and
         // deciding whom to hit are the same decision.
@@ -753,6 +752,17 @@ mod tests {
     }
     // ANCHOR_END: headless
 
+    /// The log reads in the order things happen: into the warren, onto the
+    /// first floor, and only then the keys.
+    #[test]
+    fn the_first_floor_is_named_before_the_keys_are_listed() {
+        let (app, _) = started(7);
+        let lines: Vec<&str> = app.world().resource::<MessageLog>().iter().map(|e| e.text.as_str()).collect();
+        let at = |needle: &str| lines.iter().position(|l| l.starts_with(needle)).unwrap_or_else(|| panic!("no {needle:?} in {lines:#?}"));
+        assert!(at("Seed 7.") < at("Floor 1:") && at("Floor 1:") < at("g gets"), "{lines:#?}");
+        assert_eq!(lines.iter().filter(|l| l.starts_with("g gets")).count(), 1, "and once: {lines:#?}");
+    }
+
     // ANCHOR: property
     /// The property that has to hold for every floor of every run: you can
     /// stand where you arrive, and there is somewhere to go from there.
@@ -826,6 +836,36 @@ mod tests {
         act(&mut app, player, Shove(dir));
         assert_eq!(app.world().resource::<Turns>().now(), before, "no time passed");
         assert!(app.world().get::<MyTurn>(player).is_some(), "the player still holds the turn");
+    }
+
+    /// A hog's brain decides the same shove the player's key writes, and
+    /// the engine resolves it the same way: the player goes back a cell.
+    #[test]
+    fn a_hog_beside_the_player_shoves_rather_than_bites() {
+        let (mut app, player) = started(7);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        // A line of three open cells through the player: the hog behind,
+        // the player, and where the player is shoved to.
+        let dir = {
+            let map = app.world().resource::<WorldMap>();
+            Direction::ALL
+                .into_iter()
+                .find(|d| map.is_walkable(at - d.offset()) && map.is_walkable(at + d.offset()))
+                .expect("the entry of a built floor has room around it")
+        };
+        let hog_at = at - dir.offset();
+        let hog = app.world().resource::<Bestiary>().defs.expect("warren hog");
+        app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            bestiary.spawn(&mut commands, hog, hog_at);
+            queue.apply(world);
+        });
+        app.update();
+        let hp = app.world().get::<Health>(player).unwrap().current;
+        act(&mut app, player, Wait);
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, at + dir.offset(), "the hog shoved the player a cell away");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, hp, "and did not bite");
     }
     // ANCHOR_END: shove_tests
 

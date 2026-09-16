@@ -1,12 +1,36 @@
 # Down the stairs
 
 > Run it: `cargo run -p tutorial --bin step07_floors`
+>
 > Source: [`step07_floors.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step07_floors.rs)
 
 ## A place is a map that is kept
 
+<!-- include: ../../../examples/tutorial/src/bin/step07_floors.rs:floors -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step07_floors.rs:floors}}
+/// How deep the warren goes.
+const FLOORS: u32 = 4;
+
+/// Map zero is the streamed surface, which the warren has none of, so its
+/// floors are maps one upward.
+fn map_of(floor: u32) -> MapId {
+    MapId(floor)
+}
+
+/// The floor a map id is.
+fn floor_of(map: MapId) -> u32 {
+    map.0
+}
+
+/// What a floor is called.
+fn name_of(floor: u32) -> &'static str {
+    match floor {
+        1 => "the Burrow",
+        2 => "the Middens",
+        3 => "the Bone Nest",
+        _ => "the King's Chamber",
+    }
+}
 ```
 
 Map zero is the streamed surface, which Warren does not have.
@@ -81,3 +105,5 @@ A victory condition is a component and an `if`, and the ending is one message.
 - Add a fifth floor. You should only touch the `match` and `FLOORS`.
 - Put a one-way `Transition` back to floor one on the bottom floor.
 - Go down, kill a rat, come back up, go down again. The rat stays dead.
+
+Next: [content in files](08-content-in-files.md).

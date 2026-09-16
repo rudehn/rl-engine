@@ -1,6 +1,7 @@
 # What the player knows
 
 > Run it: `cargo run -p tutorial --bin step03_sight`
+>
 > Source: [`step03_sight.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step03_sight.rs)
 
 ![Rooms and corridors, the lit room in warm brown, everything already walked through in cold blue, green root curtains in the doorways](images/03-sight.png)
@@ -54,8 +55,13 @@ Neither needs a system of yours, and neither is added for you: [chapter 10](10-p
 
 The one thing the strip cannot know is how much of the map is yours, so Warren tells it:
 
+<!-- include: ../../../examples/tutorial/src/bin/step03_sight.rs:status -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step03_sight.rs:status}}
+/// The one thing the vitals panel cannot know: how much of the map is
+/// ours. A note on the view, in the game's own words.
+fn note_explored(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, knowledge: Res<Knowledge>) {
+    vitals.facets.push(facets.facet("explored", format!("{} tiles explored", knowledge.explored_count())));
+}
 ```
 
 That is a facet: a note pushed onto the view in `ViewSet::Annotate`, in words the engine could not have written.
@@ -71,3 +77,5 @@ The log takes a tone rather than a colour, so the palette decides what bad news 
 - Register `TileProps::wall("glass")` without `opaque`, scatter it, look through a wall.
 - Drop `RevealsMap` and watch the world go dark one step behind you.
 - Print `line.count()` next to `visible.count()`, then turn lighting on later and watch them come apart.
+
+Next: [monsters](04-monsters.md).

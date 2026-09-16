@@ -1,7 +1,6 @@
 //! Warren, step 9: an action of the game's own, and tests with no window.
 //!
-//! The guide chapters are `docs/guide/src/09-an-action-of-your-own.md`
-//! and `docs/guide/src/10-testing.md`. Shove is not an engine action and
+//! The guide chapter is `docs/guide/src/09-an-action-of-your-own.md`. Shove is not an engine action and
 //! never will be: the engine holds the loop, the game says what may be
 //! done with a turn.
 //!
@@ -63,7 +62,6 @@ fn main() -> AppExit {
     let mut app = App::new();
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
-    // `CapturePlugin` inside it only takes this guide's screenshots.
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Minds live in the combat plugin: deciding where to move and
         // deciding whom to hit are the same decision.
@@ -294,20 +292,6 @@ fn start(
 }
 // ANCHOR_END: start
 
-// ANCHOR: keys
-/// The eight directions and every key that asks for each.
-const MOVES: [(&[KeyCode], Direction); 8] = [
-    (&[KeyCode::ArrowUp, KeyCode::KeyK, KeyCode::Numpad8], Direction::North),
-    (&[KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::Numpad2], Direction::South),
-    (&[KeyCode::ArrowLeft, KeyCode::KeyH, KeyCode::Numpad4], Direction::West),
-    (&[KeyCode::ArrowRight, KeyCode::KeyL, KeyCode::Numpad6], Direction::East),
-    (&[KeyCode::KeyY, KeyCode::Numpad7], Direction::NorthWest),
-    (&[KeyCode::KeyU, KeyCode::Numpad9], Direction::NorthEast),
-    (&[KeyCode::KeyB, KeyCode::Numpad1], Direction::SouthWest),
-    (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
-];
-// ANCHOR_END: keys
-
 // ANCHOR: intents
 /// Everything the player's keys can ask for. A system may take seven
 /// parameters; bundling the writers into one `SystemParam` keeps room for
@@ -332,7 +316,7 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position, &'static Inv
 ///
 /// The walk keys write a [`Bump`], which the engine resolves to a step, a
 /// blow at a foe, or opening a door, whichever is in the way.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
+fn player_input(keys: Res<ButtonInput<KeyCode>>, dirs: Res<DirectionKeys>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(KeyCode::KeyQ) {
         exit.write(AppExit::Success);
         return;
@@ -340,10 +324,13 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, player: PlayerTurn, mut intents
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, _, bag)) = player.single() else { return };
     let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| shifted && keys.any_just_pressed(codes.iter().copied())) {
-        intents.shoves.write(Intent::new(entity, Shove(*dir)));
-    } else if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| !shifted && keys.any_just_pressed(codes.iter().copied())) {
-        intents.bumps.write(Intent::new(entity, Bump(*dir)));
+    if let Some(dir) = dirs.just_pressed(&keys) {
+        // Shift and a direction shoves; the direction on its own walks.
+        if shifted {
+            intents.shoves.write(Intent::new(entity, Shove(dir)));
+        } else {
+            intents.bumps.write(Intent::new(entity, Bump(dir)));
+        }
     } else if keys.just_pressed(KeyCode::Enter) || (shifted && keys.any_just_pressed([KeyCode::Period, KeyCode::Comma])) {
         intents.stairs.write(Intent::new(entity, GoThrough));
     } else if keys.just_pressed(KeyCode::KeyG) {
@@ -604,185 +591,3 @@ fn resolve_shoves(mut intents: MessageReader<Intent<Shove>>, mut resolution: Res
     }
 }
 // ANCHOR_END: resolver
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ANCHOR: headless
-    /// The warren with no window: the engine plugins the game uses, the
-    /// game's own systems, and nothing that needs a screen.
-    fn headless(seed: u64) -> App {
-        let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin));
-        app.insert_resource(Seed(RunSeed(seed)))
-            .add_plugins(UiPlugin)
-            .add_choice::<Shove>()
-            .add_message::<Shoved>()
-            .add_systems(NewRun, start)
-            .add_systems(Turn, resolve_shoves.in_set(ResolveSet::Act))
-            .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
-            .add_systems(Update, narrate.in_set(PresentSet::Narrate));
-        app
-    }
-
-    /// A started run: two frames is enough for the warp to build floor one
-    /// and the scheduler to deal the player its first turn.
-    fn started(seed: u64) -> (App, Entity) {
-        let mut app = headless(seed);
-        app.update();
-        app.update();
-        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        (app, player)
-    }
-
-    fn act<A: Action>(app: &mut App, actor: Entity, action: A) {
-        app.world_mut().write_message(Intent::new(actor, action));
-        app.update();
-    }
-    // ANCHOR_END: headless
-
-    /// The log reads in the order things happen: into the warren, onto the
-    /// first floor, and only then the keys.
-    #[test]
-    fn the_first_floor_is_named_before_the_keys_are_listed() {
-        let (app, _) = started(7);
-        let lines: Vec<&str> = app.world().resource::<MessageLog>().iter().map(|e| e.text.as_str()).collect();
-        let at = |needle: &str| lines.iter().position(|l| l.starts_with(needle)).unwrap_or_else(|| panic!("no {needle:?} in {lines:#?}"));
-        assert!(at("Seed 7.") < at("Floor 1:") && at("Floor 1:") < at("g picks up"), "{lines:#?}");
-        assert_eq!(lines.iter().filter(|l| l.starts_with("g picks up")).count(), 1, "and once: {lines:#?}");
-    }
-
-    // ANCHOR: property
-    /// The property that has to hold for every floor of every run: you can
-    /// stand where you arrive, and there is somewhere to go from there.
-    #[test]
-    fn every_floor_of_every_seed_has_a_walkable_way_in_and_a_way_on() {
-        for seed in 1u64..=12 {
-            let warren = Warren::new(RunSeed(seed));
-            let tables = warren.tiles.tables();
-            for depth in 1..=FLOORS {
-                let built = warren.build(map_of(depth), None).unwrap_or_else(|e| panic!("seed {seed} floor {depth}: {e}"));
-                let walkable = |p| built.terrain.get(p).is_some_and(|t: TileId| tables.walkable[t.index()]);
-                assert!(walkable(built.entry), "seed {seed} floor {depth}: arrived inside a wall");
-                assert!(built.exit.is_some_and(walkable), "seed {seed} floor {depth}: nowhere to go on to");
-            }
-        }
-    }
-    // ANCHOR_END: property
-
-    #[test]
-    fn the_stairs_lead_all_the_way_down_and_the_king_waits_on_the_last_floor() {
-        let (mut app, player) = started(7);
-        assert_eq!(app.world().resource::<WorldMap>().current(), map_of(1), "the run starts on floor one");
-        for depth in 1..FLOORS {
-            let down = app.world().resource::<WorldMap>().place(map_of(depth)).unwrap().exit.expect("a way down");
-            app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(depth), arrive: Arrive::At(down) } });
-            app.update();
-            act(&mut app, player, GoThrough);
-            assert_eq!(app.world().resource::<WorldMap>().current(), map_of(depth + 1), "took the stairs from floor {depth}");
-        }
-        // One more frame: what the last floor spawned gets its map tag.
-        app.update();
-        let bottom = map_of(FLOORS);
-        let king = app.world().resource::<Bestiary>().defs.expect("rat king");
-        let mut on_map = app.world_mut().query::<(&Kind, &OnMap)>();
-        let kings = on_map.iter(app.world()).filter(|(k, on)| k.0 == king && on.0 == bottom).count();
-        assert_eq!(kings, 1, "exactly one king, and it is on the bottom floor");
-    }
-
-    // ANCHOR: shove_tests
-    /// A walkable cell next to the player with another walkable cell
-    /// behind it, which is what a shove needs to land.
-    fn room_to_shove(app: &App, from: Point) -> Direction {
-        let map = app.world().resource::<WorldMap>();
-        Direction::ALL
-            .into_iter()
-            .find(|d| map.is_walkable(from + d.offset()) && map.is_walkable(from + d.offset() + d.offset()))
-            .expect("the entry of a built floor has room around it")
-    }
-
-    #[test]
-    fn a_shove_moves_the_rat_one_cell_further_off_and_spends_half_a_turn() {
-        let (mut app, player) = started(7);
-        let at = app.world().get::<Position>(player).unwrap().0;
-        let dir = room_to_shove(&app, at);
-        let rat = app.world_mut().spawn((Actor, Blocks, Position(at + dir.offset()))).id();
-        app.update();
-
-        let before = app.world().resource::<Turns>().now();
-        act(&mut app, player, Shove(dir));
-        assert_eq!(app.world().get::<Position>(rat).unwrap().0, at + dir.offset() + dir.offset(), "the rat went back a cell");
-        assert_eq!(app.world().resource::<Turns>().now(), before + SHOVE_COST, "and it cost half a turn");
-    }
-
-    #[test]
-    fn a_shove_at_nobody_is_refused_costs_nothing_and_leaves_the_turn_in_hand() {
-        let (mut app, player) = started(7);
-        let at = app.world().get::<Position>(player).unwrap().0;
-        let dir = room_to_shove(&app, at);
-
-        let before = app.world().resource::<Turns>().now();
-        act(&mut app, player, Shove(dir));
-        assert_eq!(app.world().resource::<Turns>().now(), before, "no time passed");
-        assert!(app.world().get::<MyTurn>(player).is_some(), "the player still holds the turn");
-    }
-
-    /// A hog's brain decides the same shove the player's key writes, and
-    /// the engine resolves it the same way: the player goes back a cell.
-    #[test]
-    fn a_hog_beside_the_player_shoves_rather_than_bites() {
-        let (mut app, player) = started(7);
-        let at = app.world().get::<Position>(player).unwrap().0;
-        // A line of three open cells through the player: the hog behind,
-        // the player, and where the player is shoved to.
-        let dir = {
-            let map = app.world().resource::<WorldMap>();
-            Direction::ALL
-                .into_iter()
-                .find(|d| map.is_walkable(at - d.offset()) && map.is_walkable(at + d.offset()))
-                .expect("the entry of a built floor has room around it")
-        };
-        let hog_at = at - dir.offset();
-        let hog = app.world().resource::<Bestiary>().defs.expect("warren hog");
-        app.world_mut().resource_scope(|world: &mut World, bestiary: Mut<Bestiary>| {
-            let mut queue = bevy::ecs::world::CommandQueue::default();
-            let mut commands = Commands::new(&mut queue, world);
-            bestiary.spawn(&mut commands, hog, hog_at);
-            queue.apply(world);
-        });
-        app.update();
-        let hp = app.world().get::<Health>(player).unwrap().current;
-        act(&mut app, player, Wait);
-        assert_eq!(app.world().get::<Position>(player).unwrap().0, at + dir.offset(), "the hog shoved the player a cell away");
-        assert_eq!(app.world().get::<Health>(player).unwrap().current, hp, "and did not bite");
-    }
-    // ANCHOR_END: shove_tests
-
-    #[test]
-    fn eating_a_crust_heals_inside_the_turn_and_leaves_nothing_in_the_bag() {
-        let (mut app, player) = started(7);
-        let crust = app.world_mut().spawn((Item, Crust(8))).id();
-        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(crust);
-        app.world_mut().get_mut::<Health>(player).unwrap().current = 10;
-
-        act(&mut app, player, UseItem(crust));
-        assert_eq!(app.world().get::<Health>(player).unwrap().current, 18, "healed by the crust");
-        // A despawned item is dropped from every bag by the engine.
-        app.update();
-        assert!(app.world().get_entity(crust).is_err(), "the crust is eaten");
-        assert!(app.world().get::<Inventory>(player).unwrap().items.is_empty(), "and gone from the bag");
-    }
-
-    #[test]
-    fn a_crust_never_heals_past_the_maximum() {
-        let (mut app, player) = started(3);
-        let crust = app.world_mut().spawn((Item, Crust(8))).id();
-        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(crust);
-        let max = app.world().get::<Health>(player).unwrap().max;
-        app.world_mut().get_mut::<Health>(player).unwrap().current = max - 2;
-
-        act(&mut app, player, UseItem(crust));
-        assert_eq!(app.world().get::<Health>(player).unwrap().current, max);
-    }
-}

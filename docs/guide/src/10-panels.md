@@ -1,11 +1,12 @@
 # Panels
 
 > Run it: `cargo run -p tutorial --bin step10_panels`
+>
 > Source: [`step10_panels.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step10_panels.rs)
 
 ![Warren with a rail down the right: a Vitals section with a green health bar, crusts and the floor, then On the floor listing a crust of bread by its own % glyph](images/10-panels.png)
 
-Warren has had a status line and a log since chapter 3.
+Warren has had a status line and a log since [chapter 3](03-what-the-player-knows.md).
 This chapter gives it the rest: what is in sight, what is worn, and a cursor you can point at a rat to ask how the fight would go.
 
 None of it is a widget you fill in.
@@ -35,8 +36,35 @@ That gives you five places to stop, and you can stop at any of them:
 
 ## Cutting up the screen
 
+<!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:layout -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:layout}}
+/// The screen, cut up once, so the map and every panel agree on it.
+///
+/// `panel::split_*` take a rectangle and a size and hand back both
+/// halves, which is the whole of the engine's opinion about layout.
+struct Screen {
+    map: Rect,
+    log: Rect,
+    vitals: Rect,
+    nearby: Rect,
+    inspect: Rect,
+    scrollback: Rect,
+    controls: Rect,
+    hint: Rect,
+}
+
+impl Screen {
+    fn new() -> Self {
+        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        let (map, log) = panel::split_bottom(left, LOG_ROWS);
+        let (vitals, nearby) = panel::split_top(rail, 9);
+        // The last row of the rail says how to see the controls.
+        let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // Over the map, because a modal covers what it is about.
+        let inspect = Rect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
+        Self { map, log, vitals, nearby, inspect, scrollback: map.inflate(-2), controls: map.inflate(-2), hint }
+    }
+}
 ```
 
 `panel::split_right`, `split_bottom` and `split_top` take a rectangle and a size and hand back both halves.
@@ -45,8 +73,27 @@ There is no layout resource to fill in and no panel that decides where it goes: 
 
 ## Adding them
 
+<!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:panels -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:panels}}
+        // Five panels. Each holds its own rectangle, reads a view the engine
+        // keeps current, and draws itself: none of them needs a system here.
+        // Warren has no equipment slots, so it takes no `GearPanel`. Opt-in
+        // is per panel: you add the ones you have a game for.
+        .add_plugins((
+            VitalsPanel::new(screen.vitals).heading("Vitals").bars(10),
+            NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the floor"),
+            LogPanel::new(screen.log),
+            InspectPanel::new(screen.inspect),
+            // A second presenter over the log the strip already draws: `p`
+            // opens all of it, scrollable and filterable by tone.
+            ScrollbackPanel::new(screen.scrollback),
+            // Every key declared below and by the engine, on one screen, and
+            // the one hint that opens it in the rail's last row.
+            ControlsPanel::new(screen.controls).hint(screen.hint),
+        ))
+        // What the engine cannot know about a row. Named by set, never by
+        // ordering after a collector function.
+        .add_systems(Update, (note_bag_and_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate))
 ```
 
 Each panel is a plugin holding its own rectangle and its own headings, and each pulls its view plugin in behind it.
@@ -71,8 +118,28 @@ Leave it off and the collector skips the entity rather than drawing a blank row,
 
 **A `Facet` on the row.** A key, some words, and a tone, pushed in `ViewSet::Annotate`:
 
+<!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:annotate -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:annotate}}
+/// What a rat is up to, on the row the engine built for it.
+///
+/// `MonsterAIMode` is not a thing the engine has; `flee_at` is this
+/// game's rule. So the row gets a facet, in a tone this game declared,
+/// and the rail prints it without knowing what fleeing is.
+fn note_what_a_rat_is_doing(
+    mut nearby: ResMut<NearbyView>,
+    mut facets: ResMut<Facets>,
+    tones: Res<Tones>,
+    bestiary: Res<Bestiary>,
+    rats: Query<(&Kind, &Health)>,
+) {
+    let fleeing = tones.get("fleeing").expect("declared while building");
+    for row in nearby.actors.iter_mut() {
+        let Ok((kind, health)) = rats.get(row.entity) else { continue };
+        if health.current <= bestiary.defs.get(kind.0).flee_at {
+            row.facets.push(facets.facet("mood", "fleeing").toned(fleeing));
+        }
+    }
+}
 ```
 
 `flee_at` is Warren's rule and the engine has never heard of it.
@@ -81,8 +148,18 @@ The rail prints the facet without knowing what fleeing is.
 Name the set, never the collector function: the engine is free to split a collector in two, and your system keeps working.
 The vitals strip's `crusts 0` and `floor 1/4: the Burrow` arrive the same way:
 
+<!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:status -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:status}}
+/// What the engine cannot know: the bag, and which floor this is.
+///
+/// A facet is a note on a view: a key, some words, and a tone. The engine
+/// has no idea what a crust is, and this is how it never needs one.
+fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>, player: Query<&Inventory, With<Player>>) {
+    let Ok(bag) = player.single() else { return };
+    let depth = floor_of(map.current());
+    vitals.facets.push(facets.facet("crusts", format!("crusts {}", bag.items.len())));
+    vitals.facets.push(facets.facet("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
+}
 ```
 
 ## Tones, not colours
@@ -91,28 +168,31 @@ No widget in `rl-ui` takes a `Color`.
 They take a `ToneId`: a semantic role, interned, that the `Palette` turns into a colour.
 The engine ships nine roles (`text`, `muted`, `good`, `bad`, `notice`, `title`, `frame`, `surface`, `select`) and a game adds its own:
 
+<!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:tone -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:tone}}
+    // A role the engine never heard of, and the colour for it. Every
+    // widget that takes a tone honours it from here on.
+    app.add_tone("fleeing", Color::srgb(0.6, 0.8, 1.0));
 ```
 
 Warren's fleeing rats read in a pale blue nothing in the engine has an opinion about.
 `add_tone` declares the role and colours it in one call, and a tone declared any other way and never coloured is named by a warning at startup, rather than the rows quietly coming out in the text colour.
 
-A widget that took a `Color` would be a widget every game forked. That is the whole argument.
-
 ## One screen at a time
 
 The look cursor is a modal, and so is anything you add.
 
+<!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:gate -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:gate}}
+        // One gate for every screen there is and every screen added later:
+        // the stack is empty, or the world does not have the keys.
+        .add_systems(Update, player_input.in_set(EngineSet::Input).run_if(no_modal))
 ```
 
 `Modals` is a stack of interned ids. `no_modal` is true when it is empty, `modal_is(id)` when that one is on top.
 One gate on `player_input` covers the look cursor and every screen Warren might grow later, and the player cannot walk with a screen up.
 
-A stack rather than a "return to" slot, because a slot can be pushed twice and lose the first target.
-An action that spends a turn calls `close_all`: the turn loop assumes nothing is open.
+An action that spends a turn calls `close_all`, because the turn loop assumes nothing is open.
 
 With no screen up, `tab` steps down the rail and lights the row and its tile on the map, and `shift` with it steps back.
 That is the engine's `Focus`, the one thing picked out of what is in sight, and the look cursor opens on it and moves it as it goes.
@@ -122,8 +202,42 @@ Warren wrote none of it: `NearbyPanel` and `InspectPanel` share it through the s
 
 Warren declares its keys in one place and reads them by name.
 
+<!-- include: ../../../examples/tutorial/src/bin/step10_panels.rs:keys -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step10_panels.rs:keys}}
+/// Every key Warren answers to, by name.
+///
+/// The names are what `player_input` checks; the keys behind them are
+/// declared once in `declare_controls`, and the `?` screen lists that
+/// same declaration. A key the game stops reading leaves the screen with
+/// its declaration.
+#[derive(Resource, Clone, Copy)]
+struct Binds {
+    walk: ControlId,
+    shove: ControlId,
+    stairs: ControlId,
+    pick_up: ControlId,
+    eat: ControlId,
+    wait: ControlId,
+    quit: ControlId,
+}
+
+/// Declares the keys, under the headings the `?` screen groups them by.
+///
+/// The walk is every direction key the engine binds, arrows, `hjklyubn`
+/// and the numpad; the shove is the same keys with Shift held. A chord is
+/// matched exactly, so `L` never reads as a step east.
+fn declare_controls(app: &mut App) {
+    let binds = Binds {
+        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
+        shove: app.add_control("Move", "shove whoever is there", Keys::Directions { shift: true }),
+        stairs: app.add_control("Move", "take the stairs", [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)]),
+        pick_up: app.add_control("Act", "pick up what is here", KeyCode::KeyG),
+        eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
+        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
+        quit: app.add_control("Game", "quit", KeyCode::KeyQ),
+    };
+    app.insert_resource(binds);
+}
 ```
 
 `player_input` asks `keys.direction(binds.walk)` and `keys.just_pressed(binds.eat)`, never `KeyCode::KeyE`.
@@ -147,9 +261,7 @@ Nothing about the log changed to make that work.
 `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same `MessageLog`, and neither knows the other exists.
 The scrollback keeps its own cursor and filter in a `Scrollback` resource, because where you have scrolled to is not something the log should know.
 
-It wraps its lines rather than clipping them.
-On the strip a cut line is a cut line; on a screen you opened in order to read, losing the end of a sentence is worse than spending a second row on it.
-`panel::wrap` is the same function your own presenter would want.
+It wraps its lines rather than clipping them, with `panel::wrap`, which is the same function your own presenter would want.
 
 ## What the forecast is made of
 
@@ -157,7 +269,6 @@ Point the cursor at a rat and the panel says how the fight goes: how many turns 
 
 Those numbers are not the panel's arithmetic.
 `rl_rules::forecast` puts the average roll through the same mitigation pipeline a real blow goes through, your `DamageStages` included, so the forecast cannot drift from the fight.
-It is pure and lives in tier 1, which means it is tested without an `App` and a balance tool can call it too.
 
 ## Try it
 
@@ -168,3 +279,5 @@ It is pure and lives in tier 1, which means it is tested without an `App` and a 
 - Log fifty lines, open `p`, and hold `tab`: the filter offers only the tones Warren actually logs in.
 - Press `tab` twice with nothing open, then `x`: the look cursor opens on the second row, not the nearest rat.
 - Press `?`. Then move `CursorKeys::look` to another key in `main` and press `?` again: the screen followed, and nothing in Warren mentioned it.
+
+Next: [testing](11-testing.md).

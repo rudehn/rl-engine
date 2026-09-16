@@ -33,7 +33,6 @@ fn main() -> AppExit {
     let mut app = App::new();
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
-    // `CapturePlugin` inside it only takes this guide's screenshots.
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Minds live in the combat plugin: deciding where to move and
         // deciding whom to hit are the same decision.
@@ -169,20 +168,6 @@ fn start(
 }
 // ANCHOR_END: start
 
-// ANCHOR: keys
-/// The eight directions and every key that asks for each.
-const MOVES: [(&[KeyCode], Direction); 8] = [
-    (&[KeyCode::ArrowUp, KeyCode::KeyK, KeyCode::Numpad8], Direction::North),
-    (&[KeyCode::ArrowDown, KeyCode::KeyJ, KeyCode::Numpad2], Direction::South),
-    (&[KeyCode::ArrowLeft, KeyCode::KeyH, KeyCode::Numpad4], Direction::West),
-    (&[KeyCode::ArrowRight, KeyCode::KeyL, KeyCode::Numpad6], Direction::East),
-    (&[KeyCode::KeyY, KeyCode::Numpad7], Direction::NorthWest),
-    (&[KeyCode::KeyU, KeyCode::Numpad9], Direction::NorthEast),
-    (&[KeyCode::KeyB, KeyCode::Numpad1], Direction::SouthWest),
-    (&[KeyCode::KeyN, KeyCode::Numpad3], Direction::SouthEast),
-];
-// ANCHOR_END: keys
-
 // ANCHOR: input
 /// The player, but only while it is holding the turn.
 type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Player>, With<MyTurn>)>;
@@ -194,6 +179,7 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Playe
 /// blow at a foe, or opening a door, whichever is in the way.
 fn player_input(
     keys: Res<ButtonInput<KeyCode>>,
+    dirs: Res<DirectionKeys>,
     player: PlayerTurn,
     mut bumps: MessageWriter<Intent<Bump>>,
     mut waits: MessageWriter<Intent<Wait>>,
@@ -205,8 +191,8 @@ fn player_input(
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, _)) = player.single() else { return };
-    if let Some((_, dir)) = MOVES.iter().find(|(codes, _)| keys.any_just_pressed(codes.iter().copied())) {
-        bumps.write(Intent::new(entity, Bump(*dir)));
+    if let Some(dir) = dirs.just_pressed(&keys) {
+        bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
         waits.write(Intent::new(entity, Wait));
     }

@@ -1,12 +1,38 @@
 # Walking
 
 > Run it: `cargo run -p tutorial --bin step02_walking`
+>
 > Source: [`step02_walking.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step02_walking.rs)
 
 ## An intent, not a move
 
+<!-- include: ../../../examples/tutorial/src/bin/step02_walking.rs:input -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step02_walking.rs:input}}
+/// The player, but only while it is holding the turn.
+type PlayerTurn<'w, 's> = Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>;
+
+/// Keys to intents. Writing an intent is the whole of asking to act: the
+/// engine claims the turn, charges it, and refuses what cannot be done.
+fn player_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    dirs: Res<DirectionKeys>,
+    player: PlayerTurn,
+    mut steps: MessageWriter<Intent<Step>>,
+    mut waits: MessageWriter<Intent<Wait>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if keys.just_pressed(KeyCode::KeyQ) {
+        exit.write(AppExit::Success);
+        return;
+    }
+    // No turn in hand means it is somebody else's move; the key is dropped.
+    let Ok(entity) = player.single() else { return };
+    if let Some(dir) = dirs.just_pressed(&keys) {
+        steps.write(Intent::new(entity, Step(dir)));
+    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
+        waits.write(Intent::new(entity, Wait));
+    }
+}
 ```
 
 Input never moves anybody.
@@ -14,6 +40,9 @@ It writes an `Intent<Step>` and stops.
 The engine decides whether the actor may act, whether the move is legal, what it costs and what to do when it is not.
 
 `With<MyTurn>` makes the query empty unless the player is holding a turn, so a key pressed while rats are still moving is dropped.
+
+`DirectionKeys` is the engine's binding of the arrows, `hjklyubn` and the numpad to the eight directions, and `just_pressed` answers which one was struck.
+It is a resource, so a game that wants other keys replaces it and writes no match statement of its own.
 
 ## Where the system runs
 
@@ -61,3 +90,5 @@ A monster handed a free retry would spin forever, so a blocked monster is charge
 - Give the player `Speed(200)` and watch the turn counter climb half as fast.
 - Scatter a `move_cost(250)` tile and walk through it.
 - Delete the `With<MyTurn>` filter and hold a direction key. The resolver still claims the actor, so one turn is still one action.
+
+Next: [what the player knows](03-what-the-player-knows.md).

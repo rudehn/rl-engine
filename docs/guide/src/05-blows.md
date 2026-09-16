@@ -1,14 +1,43 @@
 # Blows
 
 > Run it: `cargo run -p tutorial --bin step05_combat`
+>
 > Source: [`step05_combat.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step05_combat.rs)
 
 ![Two rats in the lit room closing on the player, the log counting their bites in red, HP down to 20](images/05-blows.png)
 
 ## One key, three actions
 
+<!-- include: ../../../examples/tutorial/src/bin/step05_combat.rs:input -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step05_combat.rs:input}}
+/// The player, but only while it is holding the turn.
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Player>, With<MyTurn>)>;
+
+/// Keys to intents. Writing an intent is the whole of asking to act: the
+/// engine claims the turn, charges it, and refuses what cannot be done.
+///
+/// The walk keys write a [`Bump`], which the engine resolves to a step, a
+/// blow at a foe, or opening a door, whichever is in the way.
+fn player_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    dirs: Res<DirectionKeys>,
+    player: PlayerTurn,
+    mut bumps: MessageWriter<Intent<Bump>>,
+    mut waits: MessageWriter<Intent<Wait>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if keys.just_pressed(KeyCode::KeyQ) {
+        exit.write(AppExit::Success);
+        return;
+    }
+    // No turn in hand means it is somebody else's move; the key is dropped.
+    let Ok((entity, _)) = player.single() else { return };
+    if let Some(dir) = dirs.just_pressed(&keys) {
+        bumps.write(Intent::new(entity, Bump(dir)));
+    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
+        waits.write(Intent::new(entity, Wait));
+    }
+}
 ```
 
 The walk keys no longer write a `Step`.
@@ -54,8 +83,17 @@ The dead linger until the end of the frame, so anything that wanted to react to 
 Nothing in Warren turns those events into words.
 The engine does:
 
+<!-- include: ../../../examples/tutorial/src/bin/step05_combat.rs:narrator -->
 ```rust,no_run
-{{#include ../../../examples/tutorial/src/bin/step05_combat.rs:narrator}}
+        // The engine narrates blows, deaths and pickups into the log, naming
+        // things in their own colours. Warren changes one phrase: what a rat
+        // does to you is a bite.
+        .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
+        // Escape opens the menu. The run's end opens it by itself, under these
+        // words, offering a new run or the same seed again; the morgue writes
+        // the run down beside the executable.
+        .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
+        .insert_resource(Morgue::platform_default("warren", "Warren"))
 ```
 
 `NarratorPlugin` reads every event the engine raises, inside the turn, one pass at a time, so a frame in which three rats act reads in the order they acted.
@@ -92,3 +130,5 @@ A game adds sections of its own by pushing them when it reads `RunOver`.
 - Write a `DamageEvent` from a key press. The pipeline does not care where a hit came from.
 - Change `Phrase::YouKill` to something of your own and give it the `notice` tone.
 - Take the rats' `Name` off and watch the log say `something`.
+
+Next: [things to pick up](06-items.md).
