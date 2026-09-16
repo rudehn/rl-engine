@@ -1,0 +1,27 @@
+#![enable(implicit_some)]
+// Who keeps the counting house at night, floor by floor.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:       unique; the log calls it this
+//   glyph:      one character
+//   color:      (r, g, b) in 0..=1
+//   hp:         maximum health
+//   armor:      flat damage removed from each hit
+//   attack:     dice notation, "NdS+B" or a flat number
+//   kind:       the damage kind it deals, by the name the game registered: "cudgel" | "bite"
+//   wits:       "animal" runs when hurt and follows a trail; "sapient" also opens doors, and
+//               only a sapient watcher relights a lamp
+//   perception: how far it sees, in tiles: the radius of its own sight, read through
+//               the light the way the player's is
+//   dark_sight: tiles it makes out with no light at all
+//   speed:      percent, 100 normal
+//   notice:     how it notices a quiet player: (certain: tiles always noticed, chance_pct:
+//               0..=100 per turn beyond that, lit_bonus: tiles added to certain while the
+//               player stands in light, memory: turns it searches after losing sight)
+//   hears:      tiles within which a pebble's clatter, or a shout, reaches it
+//   spawn:      (first_floor, last_floor, weight, min_group, max_group)
+[
+    (name: "watchman", glyph: 'W', color: (0.85, 0.80, 0.60), hp: 12, armor: 1, attack: "1d4", kind: "cudgel", wits: "sapient", perception: 9, dark_sight: 2, speed: 100, notice: (certain: 2, chance_pct: 20, lit_bonus: 4, memory: 8), hears: 8, spawn: (1, 3, 5, 1, 1)),
+    (name: "hound",    glyph: 'h', color: (0.70, 0.55, 0.35), hp: 6,  armor: 0, attack: "1d3", kind: "bite",   wits: "animal",  perception: 7, dark_sight: 5, speed: 130, notice: (certain: 3, chance_pct: 35, lit_bonus: 2, memory: 5), hears: 10, spawn: (2, 3, 3, 1, 1)),
+    (name: "sergeant", glyph: 'S', color: (0.95, 0.85, 0.45), hp: 18, armor: 2, attack: "1d6", kind: "cudgel", wits: "sapient", perception: 10, dark_sight: 3, speed: 100, notice: (certain: 3, chance_pct: 30, lit_bonus: 5, memory: 10), hears: 10, spawn: (3, 3, 2, 1, 1)),
+]

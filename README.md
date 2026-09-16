@@ -30,13 +30,14 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 
 ## Quick start
 
-Clone the repository and run one of the two example games.
+Clone the repository and run one of the three example games.
 
 ```sh
 git clone https://github.com/rudehn/rl-engine
 cd rl-engine
 cargo run --release -p corsair -- --seed 7
 cargo run --release -p delve -- --seed 7
+cargo run --release -p heist -- --seed 7
 ```
 
 The first build compiles Bevy and takes a few minutes.
@@ -180,6 +181,26 @@ cargo run -p delve -- --seed 7 --floor 3    # start deeper
 ```
 
 Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for stairs, `1` to `5` to aim a knack, `a` to list them, `L` to smother or light the brand, `g` to pick up, `d` to set a torch or lamp down, `i` for the pack, `v` to show light, `x` to look, `tab` to pick out what is in sight, `c` for the character sheet, `p` for the log, Escape for the menu, `q` to quit, and `?` for all of them on one screen.
+
+### The Counting House, a heist
+
+`examples/heist` is three floors of a counting house after hours, and the engine's worked example of stealth and light.
+You are a thief with a shaded lantern and a handful of pebbles, up from the cellars through the counting floor to the strongroom, and out of a window onto the roofs.
+Whatever coin you carry out is the score; the watch carry cudgels and you carry a fist, so a fight is the thing that has gone wrong.
+
+The play is in the dark, and the dark is made of engine seams.
+Wall lamps are the only light: `s` snuffs the one beside you, which is where the watch cannot see you, and a watchman with hands walks over and lights it again.
+That last is a `Sense` the game pushes onto the snapshot, a tactic of the game's own that reads it, and a `Choice` the engine routes to the game's own action.
+`L` opens the lantern, which shows you the room and shows you to the room.
+`t` throws a pebble, and every watcher in earshot enters the sound in its `Aware` and walks to look, until the pebble is forgotten.
+A shut door stops sight and light, and a hound cannot open one.
+A watchman who spots you shouts, and everyone in earshot comes.
+
+```sh
+cargo run -p heist -- --seed 7
+```
+
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `t` to throw a pebble, `s` to snuff a lamp, `c` to shut a door, `L` to open or shade the lantern, `>` `<` or Enter for stairs and for the window out, `v` to show light, `i` for your pockets, `x` to look, `tab` to pick out what is in sight, `p` for the log, Escape for the menu, `q` to quit, and `?` for all of them on one screen.
 
 ### Abilities in any genre
 

@@ -211,6 +211,14 @@ It is where lighting, stealth and abilities meet. The brand burns `Fuel` and shi
 Fire and gas meet here: slicks of fat catch and burn to cinder, sinew curtains burn away, one bile pool in four reeks of a gas that burns and dazes, burning flesh smokes enough to hide in, and the fireball sets what it lands on alight.
 The rail shows vitals with the mana bar and which beasts in sight have noticed you.
 
+## The heist: the Counting House
+
+Three floors of a counting house after hours, and the worked example of stealth and light together: `examples/heist`.
+A thief with a shaded lantern climbs from the cellars to the strongroom and out of a window onto the roofs, and the coin carried out is the score, in the epitaph and in the morgue file.
+The dark is the mechanic. Wall lamps are the only light; `s` snuffs the one beside you and `L` opens or shades the lantern, so being seen is a thing the player chooses moment by moment.
+What the engine cannot know, the heist says in the engine's own seams: which lamps are out is a `Sense` pushed in `PerceiveSet::Annotate`, relighting one is a `Tactic` of the game's own returning `Decision::own`, and `add_choice` routes it to the game's own action; a thrown pebble is entered in every listener's `Aware` as a sound heard at a cell, which the engine's own search walks to; a watchman who notices the player passes that on to everyone in earshot.
+It is the test that stealth, light, the perceive stage and a game's own choices meet without any of them knowing about the others.
+
 ## The open world: Corsair
 
 Islands in daylight from the world graph, dark caves lit by the player's lantern and the smugglers' own, ports with huts, a bestiary, armory, affixes, statuses, quests and tile looks from RON, caves with a treasure vault, a pistol, a ledger, saving and continuing, and a balance report.

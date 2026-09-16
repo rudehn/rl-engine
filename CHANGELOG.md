@@ -4,6 +4,11 @@ A release is a tag, `v` and the workspace version.
 The starter template pins the release it was written against, and a game made from it moves to a newer one by changing that tag and reading here what moved.
 Pushing a tag publishes its release page from its section here, through `scripts/release-notes.sh`.
 
+## Unreleased
+
+- `examples/heist`, the Counting House: three floors of a night heist, and the worked example of stealth and light. Wall lamps as the only light, a shaded lantern, lamps the player snuffs and the watch relight, pebbles thrown to be heard, a shout that carries, and the coin carried out of the window as the score. Its watch relight lamps through a game `Sense`, a game `Tactic` and `add_choice`, and its pebbles through `Aware`, so nothing in the engine learns what a lamp or a pebble is.
+- Fixed: `cargo doc` with warnings denied failed on eight broken or redundant documentation links, which had been failing CI's doc step since before the 0.2.0 release; and a `Restart` with no seed called `RunSeed::fresh`, which is not compiled on wasm, so `rl-bevy` did not build for the browser. A restart there derives its seed from the run before it instead, so two runs in a session differ and a page opened on one seed plays the same sequence of runs.
+
 ## 0.2.0
 
 The minds opened, the run given a life, and the games given less to write: one release, 2026-09-16.

@@ -1,0 +1,21 @@
+// How the counting house's tiles look in full light. The lamps and the
+// player's shaded lantern are the only light; the renderer works out the
+// dark and what is remembered from these two colours.
+//
+// Every field (the ones marked "optional" may be left out):
+//   tile:    the tile's registered name, from `House::new`; every registered
+//            tile needs a line, and the load says which is missing
+//   glyph:   one character
+//   fg:      (r, g, b) in 0..=1, the glyph's colour
+//   bg:      optional; (r, g, b), the cell's fill; black when left out
+//   vary:    optional; (brightness, hue), how far each cell strays from the
+//            authored colour, 0..=1 each; none when left out
+//   shimmer: optional; brightness drifting over time, 0..=1
+[
+    (tile: "wall",      glyph: '#', fg: (0.62, 0.58, 0.52), bg: (0.24, 0.22, 0.20), vary: (0.14, 0.03)),
+    (tile: "floor",     glyph: '.', fg: (0.55, 0.50, 0.42), bg: (0.13, 0.12, 0.10), vary: (0.22, 0.04)),
+    (tile: "carpet",    glyph: '.', fg: (0.70, 0.30, 0.28), bg: (0.28, 0.10, 0.10), vary: (0.16, 0.05)),
+    (tile: "door",      glyph: '+', fg: (0.80, 0.60, 0.35), bg: (0.30, 0.20, 0.10), vary: (0.10, 0.03)),
+    (tile: "open door", glyph: '\'', fg: (0.80, 0.60, 0.35), bg: (0.13, 0.12, 0.10), vary: (0.10, 0.03)),
+    (tile: "window",    glyph: '=', fg: (0.55, 0.70, 0.90), bg: (0.10, 0.14, 0.22), vary: (0.10, 0.05), shimmer: 0.15),
+]

@@ -18,6 +18,7 @@ Opt in by inserting one resource:
 This is where the `Viewshed` split from [chapter 3](03-what-the-player-knows.md) starts to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only when a light reaches it.
 
 `delve` turns it on below the Maw: a brand that burns down and can be smothered, a torch to carry and set down, lamps that never move, and `v` to see the light as digits.
+`heist` is built on it: wall lamps are the only light, snuffing one is how you cross a room, and the watch light them again.
 
 ## Stealth
 
@@ -25,7 +26,7 @@ This is where the `Viewshed` split from [chapter 3](03-what-the-player-knows.md)
 `Notice` on an observer is a certain radius, a chance beyond it, a bonus while the subject stands in light, and a memory; `Stealth` on a subject narrows both.
 A monster that has not noticed you does not act on you, one that loses you searches where it last saw you, and `Watchers` answers who is watching whom for the panels.
 
-`delve` is built around it, and Corsair's caves use it.
+`delve` is built around it, Corsair's caves use it, and `heist` is the worked example: a thief the watch have to notice, a pebble that draws them to the wrong corner, and a shout that brings the rest.
 
 ## Abilities
 
@@ -86,6 +87,7 @@ cargo run -p corsair -- --balance
 |---|---|
 | `delve` | Five floors of a beached whale, no surface at all; lighting, stealth and five knacks; `floors.rs` is the whole map builder |
 | `corsair` | An open-world pirate roguelike with a pirate's abilities, built only on the public API |
+| `heist` | Three floors of a counting house in the dark; stealth and light end to end, with a score to carry out |
 
 ## Reading further
 

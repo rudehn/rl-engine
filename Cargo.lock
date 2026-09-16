@@ -3053,6 +3053,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "heist"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "rand 0.9.5",
+ "rl-engine",
+ "serde",
+]
+
+[[package]]
 name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

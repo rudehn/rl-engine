@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/corsair", "examples/delve", "examples/tutorial"]
+members = ["crates/*", "examples/corsair", "examples/delve", "examples/heist", "examples/tutorial"]
 # A template renders into a game of its own; scripts/check-template.sh builds it.
 exclude = ["templates"]
 
