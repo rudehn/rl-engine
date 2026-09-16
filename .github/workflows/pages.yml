@@ -21,6 +21,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      site: ${{ steps.site.outputs.on }}
     steps:
       - uses: actions/checkout@v5
       - name: mdbook
@@ -30,19 +32,31 @@ jobs:
           curl -sSfL "https://github.com/rust-lang/mdBook/releases/download/v$MDBOOK_VERSION/mdbook-v$MDBOOK_VERSION-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
       - name: build the guide
         run: mdbook build docs/guide
-      # The repository has no Pages site until something makes one, and
-      # the action's own failure is the only place that is said. This
-      # turns it on for the workflow rather than leaving it a setting
-      # somebody has to have clicked.
+      # Publishing needs a Pages site, and only a repository admin can
+      # make one: the workflow token is refused, enablement parameter or
+      # not. So say that plainly once, and let the rest of the job stand
+      # down instead of failing every push until somebody clicks it.
+      - name: is there a site to publish to
+        id: site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/pages" >/dev/null 2>&1; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::The guide built, but GitHub Pages is off for this repository, so there is nowhere to publish it. Settings > Pages > Source: GitHub Actions turns it on, and the next push puts the book up."
+          fi
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
+        if: steps.site.outputs.on == 'true'
       - uses: actions/upload-pages-artifact@v3
+        if: steps.site.outputs.on == 'true'
         with:
           path: docs/guide/book
 
   deploy:
     needs: build
+    if: needs.build.outputs.site == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
