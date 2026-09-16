@@ -235,7 +235,7 @@ mod tests {
             let w = app.world();
             assert!(w.get::<Afflicted>(player).unwrap().has(venom));
             assert_eq!(w.get::<StatBlock>(player).unwrap().value(armor_stat, &stats), 3, "hearty's modifier landed");
-            assert_eq!(w.get::<Health>(player).unwrap().hp, 30, "nothing ticks until a turn passes");
+            assert_eq!(w.get::<Health>(player).unwrap().current, 30, "nothing ticks until a turn passes");
         }
         // Each wait is a whole turn: venom deals 2 for three turns, hearty
         // lasts two.
@@ -244,7 +244,7 @@ mod tests {
             app.world_mut().write_message(Intent::new(player, Wait));
             app.update();
             assert_eq!(app.world().resource::<Turns>().turn_number(), turn);
-            assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30 - 2 * turn as i32, "turn {turn}");
+            assert_eq!(app.world().get::<Health>(player).unwrap().current, 30 - 2 * turn as i32, "turn {turn}");
         }
         let w = app.world();
         assert!(!w.get::<Afflicted>(player).unwrap().has(venom), "venom ran out");

@@ -226,7 +226,7 @@ impl EntityState {
         let e = world.entity(entity);
         let registries = world.get_resource::<Registries>();
         let at = e.get::<Position>().map(|p| (p.0, e.get::<OnMap>().map(|m| m.0).unwrap_or(MapId::SURFACE)));
-        let health = e.get::<Health>().map(|h| (h.hp, h.max));
+        let health = e.get::<Health>().map(|h| (h.current, h.max));
         let bag = e.get::<Inventory>().map(|b| b.items.iter().map(|i| remap.save_id(*i)).collect()).unwrap_or_default();
         let worn = e.get::<Equipped>().map(|w| {
             let mut items: Vec<Entity> = Vec::new();
@@ -270,7 +270,7 @@ impl EntityState {
             target.insert((Position(at), OnMap(map)));
         }
         if let Some((hp, max)) = self.health {
-            target.insert(Health { hp, max });
+            target.insert(Health { current: hp, max });
         }
         if !bag.is_empty() || self.worn.is_some() {
             target.insert(Inventory { items: bag });
@@ -650,12 +650,12 @@ mod tests {
                 Position(start),
                 Viewshed::new(6),
                 RevealsMap,
-                Health { hp: 17, max: 30 },
+                Health { current: 17, max: 30 },
                 Inventory { items: vec![ring, coins] },
                 Equipped(worn),
             ))
             .id();
-        let other = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health { hp: 5, max: 20 })).id();
+        let other = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health { current: 5, max: 20 })).id();
         app.world_mut().spawn((Position(start.offset(1, 1)), Transition { to: Destination::Place { map: MapId(4), arrive: Arrive::Entry } }));
         app.world_mut().resource_mut::<Stocked>().0 = vec![3, 8];
         play(&mut app);
@@ -679,7 +679,7 @@ mod tests {
         let me2 = w.query_filtered::<Entity, With<You>>().single(w).unwrap();
         let w = back.world();
         assert_eq!(w.get::<Position>(me2).map(|p| p.0), Some(start));
-        assert_eq!(w.get::<Health>(me2).map(|h| (h.hp, h.max)), Some((17, 30)));
+        assert_eq!(w.get::<Health>(me2).map(|h| (h.current, h.max)), Some((17, 30)));
         let bag = w.get::<Inventory>(me2).expect("a bag").items.clone();
         assert_eq!(bag.len(), 2);
         let (ring2, coins2) = (bag[0], bag[1]);
@@ -692,7 +692,7 @@ mod tests {
         assert_eq!(w.resource::<Turns>().now(), clock, "the clock came back with the engine's state");
         assert!(w.get::<MyTurn>(me2).is_some(), "and the player holds the turn again");
         let w = back.world_mut();
-        let people: Vec<(String, Point, i32)> = w.query::<(&Person, &Position, &Health)>().iter(w).map(|(p, at, h)| (p.0.clone(), at.0, h.hp)).collect();
+        let people: Vec<(String, Point, i32)> = w.query::<(&Person, &Position, &Health)>().iter(w).map(|(p, at, h)| (p.0.clone(), at.0, h.current)).collect();
         assert_eq!(people, vec![("Ada".into(), start.offset(0, 3), 5)]);
         let ground: Vec<(u32, Point)> = w.query_filtered::<(&Stack, &Position), With<Thing>>().iter(w).map(|(s, p)| (s.count, p.0)).collect();
         assert_eq!(ground, vec![(3, start.offset(2, 0))], "the dropped coins lie where they lay");

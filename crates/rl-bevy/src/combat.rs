@@ -31,19 +31,19 @@ use crate::status::StatBlock;
 use crate::turn::{Action, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
 
-/// Hit points.
+/// Hit points: what is left, and the most there can be.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Health {
-    /// Current.
-    pub hp: i32,
-    /// Maximum.
+    /// What is left.
+    pub current: i32,
+    /// The most.
     pub max: i32,
 }
 
 impl Health {
     /// Full health of `max`.
     pub const fn full(max: i32) -> Self {
-        Self { hp: max, max }
+        Self { current: max, max }
     }
 }
 
@@ -442,16 +442,16 @@ pub fn apply_damage(
 ) {
     for ev in events.read() {
         let Ok((mut health, pos, resist, is_player)) = targets.get_mut(ev.target) else { continue };
-        if health.hp <= 0 {
+        if health.current <= 0 {
             continue;
         }
         let defender = Defender { armor: loadout.armor(ev.target), blocked: false };
         let none = Resistances::new();
         let stage_refs: Vec<&dyn DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
         let amount = rl_rules::resolve(&ev.hit, &defender, resist.map(|r| &r.0).unwrap_or(&none), &registries.damage_kinds, &stage_refs);
-        health.hp = (health.hp - amount).min(health.max);
+        health.current = (health.current - amount).min(health.max);
         dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount });
-        if health.hp <= 0 {
+        if health.current <= 0 {
             deaths.write(DeathEvent { entity: ev.target, at: pos.0, credit: ev.hit.credit, was_player: is_player });
         }
     }
@@ -581,14 +581,14 @@ mod tests {
         app.update();
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        assert_eq!(app.world().get::<Health>(target).unwrap().hp, 20 - 3 - 2, "the shot and the extra strike both landed");
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 20 - 3 - 2, "the shot and the extra strike both landed");
         // A wall in between stops the next shot; the turn is still spent.
         app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, 0), TileId(1));
         app.update();
         let before = app.world().resource::<Turns>().now();
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        assert_eq!(app.world().get::<Health>(target).unwrap().hp, 15, "the wall took the shot");
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 15, "the wall took the shot");
         assert!(app.world().resource::<Turns>().now() > before);
         // Out of range is no shot either.
         app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, 0), TileId(0));
@@ -597,7 +597,7 @@ mod tests {
         app.update();
         app.world_mut().write_message(Intent::new(player, Attack(far)));
         app.update();
-        assert_eq!(app.world().get::<Health>(far).unwrap().hp, 20);
+        assert_eq!(app.world().get::<Health>(far).unwrap().current, 20);
     }
 
     /// What `who` fights with, as a panel or a resolver would ask.
@@ -668,13 +668,13 @@ mod tests {
 
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        assert_eq!(app.world().get::<Health>(target).unwrap().hp, 50 - (10 - 6), "ten less six armor");
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 50 - (10 - 6), "ten less six armor");
         assert_eq!(app.world().get::<Armor>(target).map(|a| a.0), Some(1), "and its own hide is still all it carries");
 
         app.world_mut().get_mut::<crate::items::Equipped>(target).unwrap().unequip(coat);
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        assert_eq!(app.world().get::<Health>(target).unwrap().hp, 46 - (10 - 4), "the coat's share left with the coat");
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 46 - (10 - 4), "the coat's share left with the coat");
     }
 
     /// A worn blade is swung in place of the fist, a worn pistol fired, and
@@ -747,7 +747,7 @@ mod tests {
         app.update();
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        assert_eq!(app.world().get::<Health>(target).unwrap().hp, 40 - (4 + 2) - (3 + 1 + 2));
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 40 - (4 + 2) - (3 + 1 + 2));
 
         app.world_mut().get_mut::<crate::items::Equipped>(player).unwrap().unequip(blade);
         let (_, blow, strikes) = loadout(&mut app, player);

@@ -323,7 +323,7 @@ mod tests {
         app.update();
         let (pos, hp, bag, turn) = {
             let w = app.world();
-            (w.get::<Position>(me).unwrap().0, w.get::<Health>(me).unwrap().hp, w.get::<Inventory>(me).unwrap().items.len(), w.resource::<Turns>().now())
+            (w.get::<Position>(me).unwrap().0, w.get::<Health>(me).unwrap().current, w.get::<Inventory>(me).unwrap().items.len(), w.resource::<Turns>().now())
         };
         let (monster_count, ground) = (monsters(&mut app), on_ground(&mut app));
         save_run(app.world_mut()).unwrap();
@@ -335,7 +335,7 @@ mod tests {
         let w = back.world();
         assert_eq!(w.resource::<WorldRes>().seed(), RunSeed(7), "the saved seed wins over the flag");
         assert_eq!(w.get::<Position>(me2).unwrap().0, pos);
-        assert_eq!(w.get::<Health>(me2).unwrap().hp, hp);
+        assert_eq!(w.get::<Health>(me2).unwrap().current, hp);
         assert_eq!(w.get::<Inventory>(me2).unwrap().items.len(), bag);
         assert_eq!(w.resource::<Turns>().now(), turn);
         assert!(w.get::<MyTurn>(me2).is_some(), "the player is waiting for input again");

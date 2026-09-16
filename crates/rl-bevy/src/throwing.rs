@@ -299,7 +299,7 @@ mod tests {
         }
 
         fn hp(&self, who: Entity) -> i32 {
-            self.app.world().get::<Health>(who).unwrap().hp
+            self.app.world().get::<Health>(who).unwrap().current
         }
 
         fn now(&self) -> u32 {

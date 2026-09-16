@@ -274,7 +274,7 @@ impl Aiming<'_, '_> {
         let aim = self.aim(pointing);
         list.into_iter().find(|s| {
             let Ok(health) = self.living.get(s.entity) else { return false };
-            aim.worth_aiming_at(self.bystanders.relation(user, s.entity), s.entity == user, health.hp < health.max)
+            aim.worth_aiming_at(self.bystanders.relation(user, s.entity), s.entity == user, health.current < health.max)
         })
     }
 }
@@ -452,7 +452,7 @@ impl Reach<'_, '_> {
         // choice as the empty label above.
         let glyph = glyph.copied().unwrap_or_else(|| Glyph::new(' ', Color::WHITE));
         let mut row = Row::new(entity, label, glyph).at(rl_core::geometry::chebyshev(from, at.0));
-        row.health = health.map(|h| (h.hp, h.max));
+        row.health = health.map(|h| (h.current, h.max));
         row.relation = self.bystanders.relation(user, entity);
         Some(row)
     }
@@ -853,7 +853,7 @@ mod tests {
             let player = stage.player;
             stage.app.world_mut().get_mut::<Grants>(player).expect("grants").0.push(salve);
             if roll(2) == 0 {
-                stage.app.world_mut().get_mut::<Health>(player).expect("health").hp = 12;
+                stage.app.world_mut().get_mut::<Health>(player).expect("health").current = 12;
             }
             let mut taken = vec![(0, 0)];
             for i in 0..6 {
@@ -869,7 +869,7 @@ mod tests {
                     stage.app.world_mut().entity_mut(who).insert(Faction(rl_rules::FactionId::from_raw(0)));
                 }
                 if roll(2) == 0 {
-                    stage.app.world_mut().get_mut::<Health>(who).expect("health").hp = 4;
+                    stage.app.world_mut().get_mut::<Health>(who).expect("health").current = 4;
                 }
             }
             stage.tick();

@@ -308,7 +308,7 @@ mod tests {
         let foe = rig.app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(20), Faction(rig.theirs))).id();
         rig.app.update();
         rig.bump(Direction::East);
-        assert_eq!(rig.app.world().get::<Health>(foe).unwrap().hp, 15, "a foe: a blow");
+        assert_eq!(rig.app.world().get::<Health>(foe).unwrap().current, 15, "a foe: a blow");
         assert_eq!((rig.at(), rig.now()), (start.offset(1, 0), 200), "and no step");
 
         let door = start.offset(1, 1);
@@ -326,7 +326,7 @@ mod tests {
         assert_eq!((rig.at(), rig.now()), (start.offset(1, 0), 300), "an ally: refused, for nothing");
         assert!(rig.app.world().get::<MyTurn>(rig.player).is_some(), "and the turn is kept");
         assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: friend }]);
-        assert_eq!(rig.app.world().get::<Health>(friend).unwrap().hp, 20);
+        assert_eq!(rig.app.world().get::<Health>(friend).unwrap().current, 20);
         let _ = rig.kind;
     }
 
@@ -371,7 +371,7 @@ mod tests {
         app.update();
         app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
         app.update();
-        assert_eq!(app.world().get::<Health>(other).unwrap().hp, 5);
+        assert_eq!(app.world().get::<Health>(other).unwrap().current, 5);
         assert_eq!(app.world().resource::<Turns>().now(), 0);
         assert!(app.world().get::<MyTurn>(player).is_some());
     }

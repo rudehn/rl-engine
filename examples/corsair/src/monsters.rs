@@ -341,7 +341,7 @@ mod tests {
         let throws = &app.world().resource::<Throws>().0;
         let [(by, knife)] = throws.as_slice() else { panic!("one throw: {throws:?}") };
         assert_eq!(*by, cutthroat);
-        assert!(app.world().get::<Health>(me).is_some_and(|h| h.hp < h.max), "the knife struck");
+        assert!(app.world().get::<Health>(me).is_some_and(|h| h.current < h.max), "the knife struck");
         assert_eq!(app.world().get::<Position>(*knife).map(|p| p.0), Some(at), "and lies at the player's feet");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -378,12 +378,12 @@ mod tests {
         });
         app.update();
 
-        let full = app.world().get::<Health>(me).expect("health").hp;
+        let full = app.world().get::<Health>(me).expect("health").current;
         for _ in 0..6 {
             app.world_mut().write_message(Intent::new(me, Wait));
             app.update();
         }
-        let hp = app.world().get::<Health>(me).map(|h| h.hp).unwrap_or(0);
+        let hp = app.world().get::<Health>(me).map(|h| h.current).unwrap_or(0);
         assert!(hp < full, "the cutthroat at the player's elbow attacked: {hp} of {full}");
         assert_eq!(app.world().resource::<VitalsView>().seen, Some(true), "a player being cut down has been seen");
         let _ = std::fs::remove_dir_all(&dir);

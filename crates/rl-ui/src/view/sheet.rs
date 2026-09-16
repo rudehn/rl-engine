@@ -195,7 +195,7 @@ pub fn collect_sheet(
     view.entity = Some(entity);
     view.label = name.map(|n| n.as_str().to_string()).unwrap_or_default();
     view.glyph = glyph.copied();
-    view.health = health.map(|h| (h.hp, h.max));
+    view.health = health.map(|h| (h.current, h.max));
     let total_armor = loadout.armor(entity);
     view.armor = (armor.is_some() || total_armor != 0).then_some(total_armor);
     view.speed = speed.map(|s| s.0);

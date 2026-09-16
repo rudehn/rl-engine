@@ -212,7 +212,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let mut row = Row::new(entity, name.as_str().to_string(), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();
     if let Some(((health, _, _), _)) = theirs {
-        row.health = health.map(|h| (h.hp, h.max));
+        row.health = health.map(|h| (h.current, h.max));
     }
     if let (Some(mine_f), Some((_, Some(theirs_f)))) = (my_faction, theirs) {
         row.relation = Some(duelists.rules.factions.relation(mine_f.0, theirs_f.0));
@@ -227,14 +227,14 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let my_strikes = duelists.loadout.blows(me);
     let their_strikes = duelists.loadout.blows(entity);
     let asker = Combatant {
-        health: my_health.hp,
+        health: my_health.current,
         armor: duelists.loadout.armor(me),
         speed: my_speed.map(|s| s.0).unwrap_or(100),
         resists: my_resists.map(|r| &r.0).unwrap_or(&none),
         strikes: &my_strikes,
     };
     let other = Combatant {
-        health: their_health.hp,
+        health: their_health.current,
         armor: duelists.loadout.armor(entity),
         speed: their_speed.map(|s| s.0).unwrap_or(100),
         resists: their_resists.map(|r| &r.0).unwrap_or(&none),

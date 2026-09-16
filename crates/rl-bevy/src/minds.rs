@@ -247,7 +247,7 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
     let key = (profile.map(|p| p.0).unwrap_or_default(), wits.has(Wits::OPENS_DOORS));
     let reach = perception.map(|p| p.0).unwrap_or(8);
 
-    let me = ActorView { id: thinker, pos: my_pos.0, hp: my_hp.hp, max_hp: my_hp.max, faction: my_faction.0 };
+    let me = ActorView { id: thinker, pos: my_pos.0, hp: my_hp.current, max_hp: my_hp.max, faction: my_faction.0 };
     let mut snapshot = Snapshot::alone(me);
     snapshot.wits = wits;
     let dark_sight = sight.dark.get(thinker).map(|d| d.0).unwrap_or(0);
@@ -263,7 +263,7 @@ pub fn decide_minds(mut intents: MindIntents, mut acting: ResMut<Acting>, mut wo
         if !perceivable(player_pos.0, player_sight, lighting, my_pos.0, dark_sight, pos.0) {
             continue;
         }
-        let view = ActorView { id: e, pos: pos.0, hp: hp.hp, max_hp: hp.max, faction: faction.0 };
+        let view = ActorView { id: e, pos: pos.0, hp: hp.current, max_hp: hp.max, faction: faction.0 };
         if rules.factions.is_hostile(my_faction.0, faction.0) {
             // A hider it has not noticed is not an enemy it can act on.
             if aware.is_some_and(|a| sight.hidden.contains(e) && !a.knows(e)) {
@@ -553,7 +553,7 @@ mod tests {
             app.update();
         }
         assert!(app.world().resource::<Shoves>().0 > 0, "the monster shoved");
-        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30, "and never struck, because shoving outranks it");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "and never struck, because shoving outranks it");
     }
 
     #[test]
@@ -597,7 +597,7 @@ mod tests {
                 app.world_mut().write_message(Intent::new(player, Wait));
             }
             app.update();
-            let hp = app.world().get::<Health>(player).unwrap().hp;
+            let hp = app.world().get::<Health>(player).unwrap().current;
             if hp < 30 {
                 hits = 30 - hp;
                 break;
@@ -685,11 +685,11 @@ mod tests {
     fn a_mind_that_works_doors_comes_through_a_gate_an_animal_cannot() {
         let (app, player, monster, gate, tiles) = behind_a_gate(Wits::SAPIENT);
         assert_eq!(app.world().resource::<WorldMap>().tile(gate), Some(tiles.expect("gate_open")), "it opened the gate");
-        assert!(app.world().get::<Health>(player).unwrap().hp < 30, "and came through to strike");
+        assert!(app.world().get::<Health>(player).unwrap().current < 30, "and came through to strike");
 
         let (app, player, monster_outside, gate, tiles) = behind_a_gate(Wits::ANIMAL);
         assert_eq!(app.world().resource::<WorldMap>().tile(gate), Some(tiles.expect("gate")), "the gate held");
-        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30, "and nothing reached the player");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "and nothing reached the player");
         let outside = app.world().get::<Position>(monster_outside).unwrap().0;
         let start = app.world().get::<Position>(player).unwrap().0;
         assert!(geometry::chebyshev(outside, start) > 3, "it waits outside the ring: {outside:?}");
@@ -749,12 +749,12 @@ mod tests {
     #[test]
     fn a_sapient_mind_fetches_a_knife_it_sees_and_throws_it_where_an_animal_walks_past() {
         let (app, player, knife) = with_a_knife_in_reach(Wits::SAPIENT);
-        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 26, "it took the knife up and threw it");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 26, "it took the knife up and threw it");
         let at_player = app.world().get::<Position>(player).unwrap().0;
         assert_eq!(app.world().get::<Position>(knife).map(|p| p.0), Some(at_player), "and the knife lies at the player's feet");
 
         let (app, player, knife) = with_a_knife_in_reach(Wits::ANIMAL);
-        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 30, "an animal has no use for a knife");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "an animal has no use for a knife");
         let start = app.world().get::<Position>(player).unwrap().0;
         assert_eq!(app.world().get::<Position>(knife).map(|p| p.0), Some(start.offset(5, 0)), "which lies where it lay");
     }

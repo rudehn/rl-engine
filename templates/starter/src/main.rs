@@ -515,7 +515,7 @@ mod tests {
         assert!(
             app.world()
                 .get::<Health>(goblin)
-                .is_some_and(|h| h.hp < h.max),
+                .is_some_and(|h| h.current < h.max),
             "the goblin took the blow"
         );
         assert_eq!(

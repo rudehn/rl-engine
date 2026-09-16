@@ -103,12 +103,12 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     if let Some(health) = health {
         // Tone by how close to death, so a panel needs no thresholds of
         // its own and every panel agrees on when it is bad.
-        let tone = match health.hp * 4 {
+        let tone = match health.current * 4 {
             n if n <= health.max => Tones::BAD,
             n if n <= health.max * 2 => Tones::NOTICE,
             _ => Tones::GOOD,
         };
-        view.bars.push(Bar::new("health", health.hp, health.max, tone));
+        view.bars.push(Bar::new("health", health.current, health.max, tone));
     }
     let Some(registries) = &me.registries else { return };
     for active in afflicted.into_iter().flat_map(|a| a.iter()) {
@@ -137,10 +137,10 @@ mod tests {
             assert_eq!(view.position, stage.at);
         }
         let player = stage.player;
-        stage.app.world_mut().get_mut::<Health>(player).unwrap().hp = 15;
+        stage.app.world_mut().get_mut::<Health>(player).unwrap().current = 15;
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().health().unwrap().tone, Tones::NOTICE, "half is worth noticing");
-        stage.app.world_mut().get_mut::<Health>(player).unwrap().hp = 5;
+        stage.app.world_mut().get_mut::<Health>(player).unwrap().current = 5;
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().health().unwrap().tone, Tones::BAD, "a sixth is bad news");
     }

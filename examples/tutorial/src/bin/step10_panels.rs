@@ -463,7 +463,7 @@ fn note_what_a_rat_is_doing(
     let fleeing = tones.get("fleeing").expect("declared while building");
     for row in nearby.actors.iter_mut() {
         let Ok((kind, health)) = rats.get(row.entity) else { continue };
-        if health.hp <= bestiary.defs.get(kind.0).flee_at {
+        if health.current <= bestiary.defs.get(kind.0).flee_at {
             row.facets.push(facets.facet("mood", "fleeing").toned(fleeing));
         }
     }
@@ -611,7 +611,7 @@ fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query
     for ev in used.read() {
         let ItemEvent::Used { actor, item } = *ev else { continue };
         let (Ok(crust), Ok(mut health)) = (crusts.get(item), eaters.get_mut(actor)) else { continue };
-        health.hp = (health.hp + crust.0).min(health.max);
+        health.current = (health.current + crust.0).min(health.max);
         commands.entity(item).despawn();
     }
 }
@@ -801,10 +801,10 @@ mod tests {
         let (mut app, player) = started(7);
         let crust = app.world_mut().spawn((Item, Crust(8))).id();
         app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(crust);
-        app.world_mut().get_mut::<Health>(player).unwrap().hp = 10;
+        app.world_mut().get_mut::<Health>(player).unwrap().current = 10;
 
         act(&mut app, player, UseItem(crust));
-        assert_eq!(app.world().get::<Health>(player).unwrap().hp, 18, "healed by the crust");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 18, "healed by the crust");
         // A despawned item is dropped from every bag by the engine.
         app.update();
         assert!(app.world().get_entity(crust).is_err(), "the crust is eaten");
@@ -817,9 +817,9 @@ mod tests {
         let crust = app.world_mut().spawn((Item, Crust(8))).id();
         app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(crust);
         let max = app.world().get::<Health>(player).unwrap().max;
-        app.world_mut().get_mut::<Health>(player).unwrap().hp = max - 2;
+        app.world_mut().get_mut::<Health>(player).unwrap().current = max - 2;
 
         act(&mut app, player, UseItem(crust));
-        assert_eq!(app.world().get::<Health>(player).unwrap().hp, max);
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, max);
     }
 }

@@ -123,7 +123,7 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
     for sighting in list {
         let Ok((name, glyph, health, faction)) = around.seen.get(sighting.entity) else { continue };
         let mut row = Row::new(sighting.entity, name.as_str().to_string(), *glyph).at(sighting.distance);
-        row.health = health.map(|h| (h.hp, h.max));
+        row.health = health.map(|h| (h.current, h.max));
         row.relation = match (mine, faction) {
             (Some(mine), Some(theirs)) => Some(around.rules.factions.relation(mine.0, theirs.0)),
             _ => None,

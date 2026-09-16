@@ -525,7 +525,7 @@ mod tests {
             let bag = w.get::<Inventory>(me).expect("a bag");
             bag.items.iter().copied().find(|i| w.get::<ItemKind>(*i).is_some_and(|k| k.0 == rum_kind)).expect("a bottle of rum")
         };
-        app.world_mut().get_mut::<Health>(me).expect("health").hp = 1;
+        app.world_mut().get_mut::<Health>(me).expect("health").current = 1;
         let bottles = app.world().get::<Stack>(rum).map(|s| s.count).expect("the bottles stack");
 
         // A cutthroat at the player's elbow, due the moment the player's
@@ -544,7 +544,7 @@ mod tests {
         app.update();
 
         let died = app.world_mut().resource_mut::<Messages<DeathEvent>>().drain().any(|d| d.was_player);
-        let hp = app.world().get::<Health>(me).map(|h| h.hp);
+        let hp = app.world().get::<Health>(me).map(|h| h.current);
         assert!(!died, "the drink landed after the blow: {hp:?}");
         assert!(hp.is_some_and(|hp| hp > 1), "the drink healed: {hp:?}");
         assert_eq!(app.world().get::<Stack>(rum).map(|s| s.count), Some(bottles - 1), "and cost a bottle");

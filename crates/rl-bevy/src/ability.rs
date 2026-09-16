@@ -833,7 +833,7 @@ fn gate(user: Entity, id: AbilityId, def: &AbilityDef, source: Option<Entity>, s
         charges: source.map(|e| charges_of(e, state)),
         // No health component means nothing to spend it from, and a cost
         // in health should refuse rather than silently succeed.
-        health: health.map(|h| h.hp).unwrap_or(0),
+        health: health.map(|h| h.current).unwrap_or(0),
         items: &items,
     };
     blocked(def, &gates, &purse, now, cooldowns.map(|c| c.ready_at(id)).unwrap_or(0))
@@ -900,7 +900,7 @@ fn pay(user: Entity, def: &AbilityDef, source: Option<Entity>, state: &mut UserS
             }
             Cost::Health { amount } => {
                 if let Ok((_, _, _, Some(mut health))) = state.users.get_mut(user) {
-                    health.hp -= amount;
+                    health.current -= amount;
                 }
             }
             Cost::Charge { amount } => {
@@ -1323,7 +1323,7 @@ mod tests {
     }
 
     fn hp(app: &App, e: Entity) -> i32 {
-        app.world().get::<Health>(e).expect("health").hp
+        app.world().get::<Health>(e).expect("health").current
     }
 
     fn cues(app: &mut App) -> Vec<Cue> {
@@ -1566,7 +1566,7 @@ mod tests {
         let mend = ability(&app, "mend");
         let me = caster(&mut app, start, 20, &[mend]);
         settle(&mut app);
-        app.world_mut().get_mut::<Health>(me).expect("health").hp = 22;
+        app.world_mut().get_mut::<Health>(me).expect("health").current = 22;
 
         app.world_mut().write_message(Intent::new(me, Use { ability: mend, aim: start }));
         app.update();
@@ -1665,7 +1665,7 @@ mod tests {
         let potions = app.world_mut().spawn((Item, Grants(vec![quaff]), Stack { key: 1, count: 2 })).id();
         let wand = app.world_mut().spawn((Item, Grants(vec![quaff]), Charges::full(1))).id();
         app.world_mut().get_mut::<Inventory>(me).unwrap().items = vec![potions, wand];
-        app.world_mut().get_mut::<Health>(me).unwrap().hp = 10;
+        app.world_mut().get_mut::<Health>(me).unwrap().current = 10;
         settle(&mut app);
         assert!(app.world().get::<Known>(me).unwrap().has(quaff), "carried, not worn, and known");
         assert_eq!(app.world().get::<Known>(me).unwrap().source_of(quaff), Some(potions), "spent from the first thing in the bag that lends it");

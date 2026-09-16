@@ -408,7 +408,7 @@ fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query
     for ev in used.read() {
         let ItemEvent::Used { actor, item } = *ev else { continue };
         let (Ok(crust), Ok(mut health)) = (crusts.get(item), eaters.get_mut(actor)) else { continue };
-        health.hp = (health.hp + crust.0).min(health.max);
+        health.current = (health.current + crust.0).min(health.max);
         commands.entity(item).despawn();
     }
 }

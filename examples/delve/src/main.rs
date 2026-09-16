@@ -868,7 +868,7 @@ mod tests {
         let at = app.world().get::<Position>(crab).unwrap().0;
 
         use_knack(&mut app, player, "drain", at);
-        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < 9), "fire past a crab's armor always lands");
+        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.current < 9), "fire past a crab's armor always lands");
         assert!(app.world().get::<Pools>(player).unwrap().get(mana) > 10, "and the mana came back");
     }
 
@@ -932,7 +932,7 @@ mod tests {
         use rl_engine::rl_bevy::testing::press;
         let (mut app, player) = settled(7);
         let crab = beside(&mut app, player, "stomach crab");
-        let hp = app.world().get::<Health>(crab).unwrap().hp;
+        let hp = app.world().get::<Health>(crab).unwrap().current;
         let mana = app.world().get::<Pools>(player).unwrap().get(app.world().resource::<Registries>().stats.expect("mana"));
 
         press(&mut app, KeyCode::Digit1);
@@ -942,7 +942,7 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         let events: Vec<AbilityEvent> = app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().collect();
         assert!(matches!(events.as_slice(), [AbilityEvent::Used { .. }]), "the fireball was used: {events:?}");
-        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < hp), "and the crab burned");
+        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.current < hp), "and the crab burned");
         let cues: Vec<Cue> = app.world_mut().resource_mut::<Messages<Cued>>().drain().filter(|c| c.actor == player).map(|c| c.cue).collect();
         assert!(matches!(cues.as_slice(), [Cue::Flight { .. }, Cue::Burst { .. }]), "its flight and its burst were cued for the map: {cues:?}");
         assert!(app.world().get::<Pools>(player).unwrap().get(app.world().resource::<Registries>().stats.expect("mana")) < mana, "and it cost mana");
@@ -959,7 +959,7 @@ mod tests {
         use rl_engine::rl_bevy::testing::press;
         let (mut app, player) = settled(7);
         let crab = beside(&mut app, player, "stomach crab");
-        let hp = app.world().get::<Health>(crab).unwrap().hp;
+        let hp = app.world().get::<Health>(crab).unwrap().current;
 
         press(&mut app, KeyCode::KeyA);
         let modals = app.world().resource::<Modals>();
@@ -976,7 +976,7 @@ mod tests {
         let clock = app.world().resource::<Turns>().now();
         press(&mut app, KeyCode::Enter);
         assert!(!app.world().resource::<Modals>().any_open(), "cast and closed");
-        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.hp < hp), "the drain landed");
+        assert!(app.world().get::<Health>(crab).is_none_or(|h| h.current < hp), "the drain landed");
         let turns = app.world().resource::<Turns>().now() - clock;
         assert_eq!(turns, 100, "one turn spent, by the knack alone: the Enter was not also the stairs");
     }

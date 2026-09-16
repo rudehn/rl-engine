@@ -437,7 +437,7 @@ mod tests {
         })
         .screen(44, 14);
         let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
-        stage.app.world_mut().get_mut::<Health>(player).unwrap().hp = 1;
+        stage.app.world_mut().get_mut::<Health>(player).unwrap().current = 1;
         let ogre = stage
             .app
             .world_mut()
