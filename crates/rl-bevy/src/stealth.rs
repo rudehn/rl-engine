@@ -205,6 +205,8 @@ type Observer =
     (Entity, &'static Position, &'static Notice, &'static mut Aware, Option<&'static Perception>, Option<&'static DarkSight>, Option<&'static Faction>);
 /// Anything that might be hiding from it.
 type Subject = (Entity, &'static Position, &'static Stealth, Option<&'static Faction>, Option<&'static OnMap>);
+/// One subject, as the query hands it back.
+type Hiding<'a> = (Entity, &'a Position, &'a Stealth, Option<&'a Faction>, Option<&'a OnMap>);
 
 /// Everything noticing reads.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -235,7 +237,12 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     let reach = perception.map(|p| p.0).unwrap_or(8);
     let dark_sight = dark.map(|d| d.0).unwrap_or(0);
     let mut seen = Vec::new();
-    for (subject, at, stealth, theirs, on) in &watch.subjects {
+    // In spawn order rather than the order the query walks the archetypes
+    // in, since each subject in view costs a roll and which subject gets
+    // which roll must not depend on how the world happens to be laid out.
+    let mut subjects: Vec<Hiding<'_>> = watch.subjects.iter().collect();
+    subjects.sort_by_key(|(e, ..)| (e.index(), *e));
+    for (subject, at, stealth, theirs, on) in subjects {
         if subject == observer {
             continue;
         }

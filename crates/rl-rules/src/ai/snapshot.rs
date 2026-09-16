@@ -79,6 +79,20 @@ pub struct Snapshot<A: Copy> {
     pub items: Vec<ItemView<A>>,
 }
 
+impl<A: Copy + Ord> Snapshot<A> {
+    /// Sorts enemies, allies and items nearest first, ties by position and
+    /// then by identity, so two runs agree on what is "nearest" whatever
+    /// order they were seen in: a pile of things on one cell is the normal
+    /// case for items, and the first of them is what a scavenger takes.
+    pub fn sort(&mut self) {
+        let me = self.me.pos;
+        let key = |v: &ActorView<A>| (geometry::chebyshev(me, v.pos), v.pos, v.id);
+        self.enemies.sort_by_key(key);
+        self.allies.sort_by_key(key);
+        self.items.sort_by_key(|i| (geometry::chebyshev(me, i.pos), i.pos, i.id));
+    }
+}
+
 impl<A: Copy> Snapshot<A> {
     /// A snapshot with nothing in sight, of a mind with the default wits.
     pub fn alone(me: ActorView<A>) -> Self {
@@ -93,16 +107,6 @@ impl<A: Copy> Snapshot<A> {
             missiles: Vec::new(),
             items: Vec::new(),
         }
-    }
-
-    /// Sorts enemies, allies and items nearest first, ties by position, so
-    /// two runs agree on what is "nearest".
-    pub fn sort(&mut self) {
-        let me = self.me.pos;
-        let key = |v: &ActorView<A>| (geometry::chebyshev(me, v.pos), v.pos);
-        self.enemies.sort_by_key(key);
-        self.allies.sort_by_key(key);
-        self.items.sort_by_key(|i| (geometry::chebyshev(me, i.pos), i.pos));
     }
 
     /// The nearest visible enemy.

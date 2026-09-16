@@ -121,6 +121,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - Save exports for the scheduler, the world's edits and places, and knowledge.
 - New actors are admitted to the queue with the player first and the rest in spawn order, so the first turn of a run never depends on the order a query happens to walk the archetypes in.
 - A headless app for tests, and `testing`, what goes into one: `surface` stands a `TestWorld` up and hands back open ground to start on, `two_sides` inserts combat rules for two sides at war, and `KeyScriptPlugin` with `press` plays keys the way a keyboard does. One copy for the engine's crates and a game's tests alike, where there had been nine copies of the world and three of the key player.
+- A fingerprint tripwire, `tests/fingerprint.rs`: a seeded run of minds, combat, stealth and items hashed to one number, so a change that moves a roll, a decision or an order fails a test rather than drifting a replay. Re-baselined on purpose, with a changelog line, when a change means to move it.
 
 ### rl-render
 

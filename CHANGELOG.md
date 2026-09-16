@@ -63,6 +63,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - `TileAppearance::load`: tile looks from RON against the tile registry, every unknown, doubled or missing tile reported at once. The tutorial from chapter 8, Corsair and the delve read theirs from `assets/tiles.ron`.
 - The save seam: `Saveable` and `SaveableState`, `AddSaveable::save_kind` and `save_state`, `RunSave` with `EntityState` and `KindSave`, `SavePlugin`, `SaveSlot`, `save_run`, `load_run` and `forget_save` in `rl-save`; `Quests` implements `SaveableState`. Corsair's save module is four kinds and four resources.
 - `Health` is `current` and `max`; the field was `hp`.
+- Noticing rolls for its subjects in spawn order, and `Snapshot::sort` breaks ties on identity, so neither depends on the order a query walks the archetypes in. `Snapshot::sort` needs `A: Ord`.
+- `crates/rl-bevy/tests/fingerprint.rs`: a seeded run of minds, combat and stealth, hashed, as the tripwire for the determinism promise.
 - Fixed: the first turn of a run could go to a monster spawned after the player, since new actors were queued in the order a query walked the archetypes. New actors are admitted with the player first and the rest in spawn order.
 
 ## 0.1.0
