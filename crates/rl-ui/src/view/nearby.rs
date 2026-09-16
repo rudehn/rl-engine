@@ -82,7 +82,7 @@ pub struct NearbyViewPlugin;
 impl Plugin for NearbyViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NearbyView>().init_resource::<Focus>().init_resource::<crate::CursorKeys>();
-        app.needs::<CombatRules>("NearbyViewPlugin", "`CombatRules { factions }`, for the relation each row carries")
+        app.needs::<CombatRules>("NearbyViewPlugin", "`CombatRules::new(&sides)`, for the relation each row carries")
             // Before either cursor reads the same keys, so the key that puts
             // a cursor away is not read again as letting go of what it left
             // picked out.

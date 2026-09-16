@@ -31,12 +31,10 @@ pub fn headless(seed: RunSeed, resume: bool, dir: &std::path::Path) -> App {
         .insert_resource(Saves::new(FileBackend::new(dir)))
         .add_plugins((UiPlugin, UnloadPlugin))
         .add_systems(Last, crate::save::refresh_stash)
-        .init_resource::<crate::inventory::InventoryScreen>()
         .init_resource::<crate::places::Entrances>()
         .init_resource::<crate::quests::LedgerScreen>()
         .add_systems(Startup, crate::start_world)
-        .add_systems(Update, (crate::monsters::spawn_on_load, crate::items::scatter_on_load, crate::places::mark_entrances).in_set(EngineSet::Stream))
-        .add_systems(Turn, crate::items::refresh_gear.in_set(TurnSet::React));
+        .add_systems(Update, (crate::monsters::spawn_on_load, crate::items::scatter_on_load, crate::places::mark_entrances).in_set(EngineSet::Stream));
     crate::input::declare_controls(&mut app);
     app
 }

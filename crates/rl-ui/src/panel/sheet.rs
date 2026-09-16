@@ -271,11 +271,11 @@ mod tests {
         let (player, kind) = (stage.player, stage.kind);
         let might = stage.app.world().resource::<Registries>().stats.expect("might");
         let mut stats = rl_rules::Stats::new();
-        stats.add(Modifier::new(might, Op::Add(2), 77));
+        stats.add(Modifier::new(might, Op::Add(2), rl_rules::Source::Game(77)));
         let mut resists = rl_rules::Resistances::new();
         resists.set(kind, 25);
         stage.app.world_mut().entity_mut(player).insert((StatBlock(stats), Resists(resists), Afflicted::default()));
-        stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(77, "a ring")).in_set(crate::ViewSet::Annotate));
+        stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(rl_rules::Source::Game(77), "a ring")).in_set(crate::ViewSet::Annotate));
         stage.tick();
         stage
     }

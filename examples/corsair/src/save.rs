@@ -15,7 +15,7 @@ use rl_engine::rl_core::Point;
 use rl_engine::rl_rules::Tracker;
 use rl_engine::rl_rules::{Enchanted, Equipment};
 use rl_engine::rl_save::{EngineSave, EntityRemap, SaveBackend, SaveError, SaveId, Saves, Stash, decode, encode};
-use rl_engine::rl_ui::{AbilityKeys, Bindings, Controls, MessageLog, ScrollbackKeys, SheetKeys, Tones};
+use rl_engine::rl_ui::{AbilityKeys, Bindings, Controls, InventoryKeys, MessageLog, ScrollbackKeys, SheetKeys, Tones};
 use serde::{Deserialize, Serialize};
 
 use crate::input::Binds;
@@ -319,7 +319,6 @@ pub fn restore_run(world: &mut World, save: &RunSave) {
                 unarmed,
                 Inventory { items: bag },
                 Equipped(worn),
-                Strikes::default(),
                 rl_engine::rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
             ),
             // What a fresh player has and a save does not record: what it
@@ -361,6 +360,7 @@ pub fn save_keys(world: &mut World) {
             log: world.get_resource::<ScrollbackKeys>(),
             sheet: world.get_resource::<SheetKeys>(),
             abilities: world.get_resource::<AbilityKeys>(),
+            inventory: world.get_resource::<InventoryKeys>(),
         };
         (controls.which(binds.save, keys, &bindings).is_some(), controls.which(binds.quit, keys, &bindings).is_some())
     };

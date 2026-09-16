@@ -21,6 +21,7 @@ pub mod ability;
 pub mod controls;
 pub mod gear;
 pub mod inspect;
+pub mod inventory;
 pub mod log;
 pub mod nearby;
 pub mod scrollback;
@@ -32,6 +33,7 @@ pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability
 pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
+pub use inventory::{INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, inventory_modal};
 pub use log::LogPanel;
 pub use nearby::NearbyPanel;
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
@@ -74,7 +76,9 @@ pub fn frame(terminal: &mut Terminal, rect: Rect, title: &str, hints: &str, pale
         terminal.print_on(x0 + 2, y0, &format!(" {title} "), palette.get(Tones::TITLE), palette.get(Tones::SURFACE));
     }
     if !hints.is_empty() {
-        let text = format!(" {hints} ");
+        // Clipped to the border, since a hint that ran past the corner
+        // would write over whatever is drawn beside the frame.
+        let text = clip(&format!(" {hints} "), (rect.width - 2).max(0) as usize);
         let x = x1 - 1 - text.chars().count() as i32;
         terminal.print_on(x.max(x0 + 1), y1, &text, palette.get(Tones::MUTED), palette.get(Tones::SURFACE));
     }

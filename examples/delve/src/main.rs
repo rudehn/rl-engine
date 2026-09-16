@@ -61,6 +61,9 @@ fn main() -> AppExit {
             TargetPanel::new(screen.target).hints("[enter] use  [tab] next  [esc] back"),
             // The list of knacks, walked, described and aimed by the engine.
             AbilityPanel::new(screen.knacks).title("Knacks").called("knacks"),
+            // The pack, on `i`: the engine lists what is carried and puts it
+            // on, drops it or throws it from there.
+            InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but soot."),
             // Every key declared in `declare_controls` and by the engine's
             // own screens, on one screen, with the hint that opens it in
             // the rail's last row.
@@ -95,6 +98,7 @@ struct Screen {
     scrollback: Rect,
     target: Rect,
     knacks: Rect,
+    pack: Rect,
     controls: Rect,
     sheet: Rect,
     hint: Rect,
@@ -118,6 +122,8 @@ impl Screen {
             // Five rows of knacks, a rule, and a description with three
             // effects under it, without cutting any short.
             knacks: Rect::new(map.x + map.width / 2 - 21, map.y + 3, 42, 22),
+            // What the delver carries: a shield, a flame or two.
+            pack: Rect::new(map.x + map.width / 2 - 24, map.y + 3, 48, 20),
             controls: map.inflate(-2),
             sheet: map.inflate(-2),
             hint,

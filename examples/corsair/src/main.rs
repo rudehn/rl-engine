@@ -15,7 +15,6 @@
 mod abilities;
 mod content;
 mod input;
-mod inventory;
 mod items;
 mod monsters;
 mod places;
@@ -34,8 +33,8 @@ use rl_engine::rl_overworld::{OverworldLayout, OverworldPlugin, PortalRequest};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
-    AbilityPanel, AddModal, Chord, ControlsPanel, Facets, GearPanel, InspectPanel, LogPanel, MessageLog, Modals, NearbyPanel, NearbyView, ScrollbackPanel,
-    SheetKeys, SheetPanel, SheetView, TargetPanel, Tones, ViewSet, VitalsPanel, panel,
+    AbilityPanel, AddModal, Chord, ControlsPanel, Facets, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryPanel, LogPanel, MessageLog, Modals, NearbyPanel,
+    NearbyView, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, Tones, ViewSet, VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -66,6 +65,7 @@ struct Screen {
     scrollback: Rect,
     target: Rect,
     abilities: Rect,
+    chest: Rect,
     controls: Rect,
     sheet: Rect,
     hint: Rect,
@@ -88,7 +88,10 @@ impl Screen {
         let target = Rect::new(map.x, map.bottom() - 1, map.width, 1);
         // Four rows, a rule, and a described ability with its effects.
         let abilities = Rect::new(map.x + map.width / 2 - 21, map.y + 3, 42, 20);
-        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, controls, sheet, hint }
+        // Room for the bag's rows, a rule, and what the row picked out is
+        // worth, centred over the map.
+        let chest = Rect::new(map.x + map.width / 2 - 28, map.y + 2, 56, 24);
+        Self { map, log, vitals, gear, nearby, inspect, scrollback, target, abilities, chest, controls, sheet, hint }
     }
 }
 
@@ -151,6 +154,9 @@ fn main() -> AppExit {
             // of what can be called on with the reasons any cannot.
             TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
             AbilityPanel::new(screen.abilities).title("What you can call on").called("abilities"),
+            // The sea chest: the bag, run by the engine end to end. `i` opens
+            // it, and what a swig of rum does is a facet Corsair pushes.
+            InventoryPanel::new(screen.chest).title("Sea chest").called("sea chest").empty("Nothing but lint."),
             // Every key `input::declare_controls` and the engine's screens
             // declare, on one screen, with the hint that opens it in the
             // rail's last row.
@@ -164,13 +170,12 @@ fn main() -> AppExit {
         .insert_resource(StartOptions { regions, resume })
         .insert_resource(Saves::platform_default("corsair"))
         .insert_resource(OverworldLayout { viewport: screen.map })
-        .init_resource::<inventory::InventoryScreen>()
         .init_resource::<places::Entrances>()
         .init_resource::<quests::LedgerScreen>()
         .add_systems(Startup, start_world)
         .add_systems(
             Update,
-            (quests::ledger_keys, inventory::inventory_keys, abilities::ability_keys, input::player_input, input::fire, input::hurl, input::equip_underfoot)
+            (quests::ledger_keys, abilities::ability_keys, input::player_input, input::fire, input::hurl, input::equip_underfoot)
                 .chain()
                 .in_set(EngineSet::Input),
         )
@@ -185,10 +190,7 @@ fn main() -> AppExit {
         // fills on first arrival, what the dead leave, what a drink does,
         // what gear is worth, what a bite leaves behind. Inside the pass, so
         // a drink heals before the next blow lands.
-        .add_systems(
-            Turn,
-            (places::populate_places, items::drop_loot, items::use_items, items::refresh_gear, statuses::inflict_on_hit).chain().in_set(TurnSet::React),
-        )
+        .add_systems(Turn, (places::populate_places, items::drop_loot, items::use_items, statuses::inflict_on_hit).chain().in_set(TurnSet::React))
         // Once a frame, in words: everything the chrome is about to draw.
         .add_systems(
             Update,
@@ -211,12 +213,12 @@ fn main() -> AppExit {
         // What the engine cannot know about a row: what an enemy is holding,
         // and what is underfoot. Named by set, not by ordering after a
         // collector.
-        .add_systems(Update, (note_what_they_wield, note_where_you_are, note_what_moved_a_stat).in_set(ViewSet::Annotate))
-        .add_systems(Update, (inventory::draw_inventory, quests::draw_ledger).chain().in_set(PresentSet::Overlay));
+        .add_systems(Update, (note_what_they_wield, note_where_you_are, items::note_what_a_drink_does).in_set(ViewSet::Annotate))
+        .add_systems(Update, quests::draw_ledger.in_set(PresentSet::Overlay));
     app.add_plugins(StealthPlugin);
     // Corsair's own screens, declared while building so the lookups in
     // `inventory` and `quests` find them, and every key, once.
-    app.add_modal(inventory::MODAL).add_modal(quests::MODAL);
+    app.add_modal(quests::MODAL);
     input::declare_controls(&mut app);
     app.run()
 }
@@ -318,7 +320,7 @@ fn start_world(world: &mut World) {
         }
     }
     let open = match std::env::var("CORSAIR_OPEN").as_deref() {
-        Ok("inventory") => Some(inventory::MODAL),
+        Ok("inventory") => Some(INVENTORY_MODAL),
         Ok("ledger") => Some(quests::MODAL),
         _ => None,
     };
@@ -366,7 +368,6 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
             // Quiet enough that a smuggler in the dark has to be close,
             // or catch you in your own lantern light, to be sure of you.
             Stealth(rl_engine::rl_rules::ai::awareness::StealthStats { quiet: 1, subtlety: 10 }),
-            Strikes::default(),
             Glyph::new('@', Color::WHITE).on_layer(10),
         ),
         grants,
@@ -404,20 +405,6 @@ fn note_discoveries(knowledge: Res<Knowledge>, world: Res<WorldRes>, turns: Res<
             log.push(format!("You discover {kind}."), Tones::GOOD, turns.turn_number());
         }
         seen.0 = count;
-    }
-}
-
-/// What moved each stat on the sheet: the gear refresh tags a modifier with
-/// the item's entity bits, and only Corsair knows that, so it names them.
-/// A status's modifiers the engine already names.
-fn note_what_moved_a_stat(mut sheet: ResMut<SheetView>, armory: Res<Armory>, kinds: Query<&ItemKind>) {
-    let sources: Vec<u64> = sheet.stats.iter().flat_map(|s| s.changes.iter()).filter(|c| c.from.is_empty()).map(|c| c.source).collect();
-    for source in sources {
-        if let Some(item) = Entity::try_from_bits(source)
-            && let Ok(kind) = kinds.get(item)
-        {
-            sheet.name_source(source, armory.defs.get(kind.0).name.clone());
-        }
     }
 }
 

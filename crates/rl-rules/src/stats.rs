@@ -63,6 +63,42 @@ pub enum Op {
     AtMost(i32),
 }
 
+/// What put a modifier on a stat, so it can be taken off when that goes.
+///
+/// A tagged value rather than an opaque number, because two systems fold
+/// modifiers into one [`Stats`] without knowing about each other: statuses
+/// tag theirs and remove them one instance at a time, the gear fold
+/// strips every item's and puts the worn ones back, and neither may touch
+/// the other's. A game's own sources sit under [`Source::Game`] with a
+/// number of the game's choosing, and nothing in the engine removes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Source {
+    /// A status, by id and which instance of it when it stacks.
+    Status {
+        /// Which status.
+        status: crate::status::StatusId,
+        /// Which application, for a status that stacks.
+        instance: u16,
+    },
+    /// A worn item, by whatever handle the layer folding gear uses: the
+    /// Bevy layer writes the entity's bits.
+    Item(u64),
+    /// Something of the game's own: a trait, a blessing, a curse.
+    Game(u64),
+}
+
+impl Source {
+    /// Whether a status put this on.
+    pub const fn is_status(self) -> bool {
+        matches!(self, Source::Status { .. })
+    }
+
+    /// Whether a worn item put this on.
+    pub const fn is_item(self) -> bool {
+        matches!(self, Source::Item(_))
+    }
+}
+
 /// One change to one stat, tagged with where it came from so it can be
 /// removed when the source goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,13 +107,13 @@ pub struct Modifier {
     pub stat: StatId,
     /// What it does.
     pub op: Op,
-    /// Who applied it: an item, a status, a trait. Opaque to the engine.
-    pub source: u64,
+    /// What applied it.
+    pub source: Source,
 }
 
 impl Modifier {
     /// A modifier from `source`.
-    pub const fn new(stat: StatId, op: Op, source: u64) -> Self {
+    pub const fn new(stat: StatId, op: Op, source: Source) -> Self {
         Self { stat, op, source }
     }
 }
@@ -115,14 +151,14 @@ impl Stats {
     }
 
     /// Removes every modifier from `source`. Returns how many went.
-    pub fn remove_source(&mut self, source: u64) -> usize {
+    pub fn remove_source(&mut self, source: Source) -> usize {
         let before = self.modifiers.len();
         self.modifiers.retain(|m| m.source != source);
         before - self.modifiers.len()
     }
 
     /// Removes every modifier whose source fails `keep`. Returns how many went.
-    pub fn retain_sources(&mut self, keep: impl Fn(u64) -> bool) -> usize {
+    pub fn retain_sources(&mut self, keep: impl Fn(Source) -> bool) -> usize {
         let before = self.modifiers.len();
         self.modifiers.retain(|m| keep(m.source));
         before - self.modifiers.len()
@@ -180,14 +216,28 @@ mod tests {
         let hp = d.expect("hp");
         let mut s = Stats::new();
         assert_eq!(s.value(hp, &d), 10);
-        s.add(Modifier::new(hp, Op::Add(5), 1));
-        s.add(Modifier::new(hp, Op::MulPct(200), 2));
-        s.add(Modifier::new(hp, Op::Add(-3), 3));
+        s.add(Modifier::new(hp, Op::Add(5), Source::Game(1)));
+        s.add(Modifier::new(hp, Op::MulPct(200), Source::Game(2)));
+        s.add(Modifier::new(hp, Op::Add(-3), Source::Game(3)));
         assert_eq!(s.value(hp, &d), 24, "(10 + 5 - 3) * 2");
-        s.add(Modifier::new(hp, Op::AtMost(20), 4));
+        s.add(Modifier::new(hp, Op::AtMost(20), Source::Game(4)));
         assert_eq!(s.value(hp, &d), 20);
-        assert_eq!(s.remove_source(2), 1);
+        assert_eq!(s.remove_source(Source::Game(2)), 1);
         assert_eq!(s.value(hp, &d), 12);
+    }
+
+    /// The gear fold strips every item's modifier and leaves the rest, so
+    /// the sources have to be told apart by kind and not by number.
+    #[test]
+    fn sources_are_kept_or_dropped_by_kind() {
+        let d = defs();
+        let hp = d.expect("hp");
+        let mut s = Stats::new();
+        s.add(Modifier::new(hp, Op::Add(1), Source::Item(7)));
+        s.add(Modifier::new(hp, Op::Add(2), Source::Status { status: crate::status::StatusId::from_raw(0), instance: 0 }));
+        s.add(Modifier::new(hp, Op::Add(4), Source::Game(7)));
+        assert_eq!(s.retain_sources(|source| !source.is_item()), 1, "one item's modifier went");
+        assert_eq!(s.value(hp, &d), 16, "the status's and the game's stayed, though one shares the item's number");
     }
 
     #[test]
@@ -196,9 +246,9 @@ mod tests {
         let armor = d.expect("armor");
         let mut s = Stats::new();
         s.set_base(armor, 50);
-        s.add(Modifier::new(armor, Op::Add(70), 9));
+        s.add(Modifier::new(armor, Op::Add(70), Source::Game(9)));
         assert_eq!(s.value(armor, &d), 90, "capped by the definition");
-        s.add(Modifier::new(armor, Op::Add(-500), 10));
+        s.add(Modifier::new(armor, Op::Add(-500), Source::Game(10)));
         assert_eq!(s.value(armor, &d), 0);
         assert_eq!(s.base(d.expect("speed"), &d), 100);
     }

@@ -1,9 +1,12 @@
 //! Items: definitions from RON, what lies about, what the dead drop, what
 //! rum does, and what wearing a jerkin is worth.
 //!
-//! The engine moves items between ground, bag and slots and charges the
-//! turns. Everything that gives an item meaning is here: the slot names,
-//! the stat it modifies, the effect of using it, the words in the log.
+//! The engine moves items between ground, bag and slots, charges the turns,
+//! and reads what an item does off the item itself: a spawned cutlass
+//! carries the `MeleeAttack` it is swung with, a jerkin its `Armor`, and an
+//! affix what it `Bestows` on a stat, each with the rolled enchant already
+//! in it. Everything that gives an item meaning is here: the slot names,
+//! the numbers, the effect of using it, the words in the log.
 
 use std::collections::BTreeSet;
 
@@ -14,9 +17,9 @@ use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::damage::DamageKind;
 use rl_engine::rl_rules::damage::DamageKindId;
-use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, Modifier, NameRef, Op, SlotDef, SlotId, StatId, TagDef, TagId, affix, roll_affixes};
+use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, NameRef, SlotDef, SlotId, StatId, TagDef, TagId, affix, roll_affixes};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
-use rl_engine::rl_ui::{MessageLog, Tones};
+use rl_engine::rl_ui::{Facets, InventoryView, MessageLog, Tones};
 use serde::Deserialize;
 
 use crate::content::PORT;
@@ -93,7 +96,6 @@ pub struct Armory {
     pub defs: Registry<ItemDef>,
     pub affixes: Registry<AffixDef>,
     pub armor_stat: StatId,
-    pub attack_stat: StatId,
     pub weapon_tag: TagId,
     pub armor_tag: TagId,
     pub main_hand: SlotId,
@@ -150,7 +152,6 @@ impl Armory {
         }
         Self {
             armor_stat: registries.stats.expect("armor"),
-            attack_stat: registries.stats.expect("attack"),
             weapon_tag: registries.tags.expect("weapon"),
             armor_tag: registries.tags.expect("armor"),
             main_hand: registries.slots.expect("main hand"),
@@ -235,6 +236,11 @@ impl Armory {
     }
 
     /// Spawns one `id` with a rolled enchantment.
+    ///
+    /// What the item does when worn goes on the item, enchant folded in:
+    /// the engine's `Loadout` reads a worn blade's blow and a worn coat's
+    /// armor straight off them, and folds what the affixes bestow into the
+    /// wearer's stats. Nothing here is copied onto a wearer.
     pub fn spawn_with(&self, commands: &mut Commands, id: Id<ItemDef>, count: u32, at: Option<Point>, enchant: Enchanted) -> Entity {
         let d = self.defs.get(id);
         // The label carries the rolled name, so a panel shows "fine
@@ -247,6 +253,24 @@ impl Armory {
             e.insert(Tagged(tags.to_vec()));
         }
         if let Some(shape) = self.shape(id) {
+            let rule = self.rule(id);
+            if d.armor != 0 {
+                e.insert(Armor(d.armor));
+            }
+            if let (Some(dice), Some(kind)) = (d.attack, &d.kind) {
+                e.insert(MeleeAttack { kind: kind.id(), dice: enchant.strike(dice, &rule) });
+            }
+            if let Some((range, dice, kind)) = &d.ranged {
+                e.insert(RangedAttack { kind: kind.id(), dice: enchant.strike(*dice, &rule), range: *range });
+            }
+            let extra = enchant.strikes(&self.affixes);
+            if !extra.is_empty() {
+                e.insert(Strikes(extra));
+            }
+            let bestows = enchant.grants(&self.affixes, &rule);
+            if !bestows.is_empty() {
+                e.insert(Bestows(bestows));
+            }
             e.insert((Wearable(shape.clone()), GearScore(self.gear_score(id, &enchant)), Enchant(enchant)));
         }
         if let Some((range, dice, kind)) = &d.thrown {
@@ -359,78 +383,8 @@ pub fn use_items(mut commands: Commands, mut events: MessageReader<ItemEvent>, m
     }
 }
 
-/// A wearer as the gear refresh sees it.
-type WearerData = (
-    Entity,
-    &'static Equipped,
-    &'static mut StatBlock,
-    &'static mut Armor,
-    &'static mut MeleeAttack,
-    &'static mut Strikes,
-    Option<&'static crate::monsters::Innate>,
-);
-
-/// Rebuilds a wearer's stats, armor, attack, extra strikes and shot from
-/// what it wears: the items' own numbers, their affixes and their levels,
-/// on top of a monster's own claws and hide, or a bare fist.
-pub fn refresh_gear(
-    mut commands: Commands,
-    armory: Res<Armory>,
-    registries: Res<Registries>,
-    mut wearers: Query<WearerData, Changed<Equipped>>,
-    items: Query<(&ItemKind, Option<&Enchant>)>,
-) {
-    let main_hand = armory.main_hand;
-    for (wearer, worn, mut sheet, mut armor, mut attack, mut strikes, innate) in &mut wearers {
-        // Gear is rebuilt from scratch; what statuses put there stays.
-        let mut stats = std::mem::take(&mut sheet.0);
-        stats.retain_sources(rl_engine::rl_rules::is_status_source);
-        let mut shot = None;
-        for (_, item) in worn.worn() {
-            let Ok((kind, enchant)) = items.get(item) else { continue };
-            let d = armory.defs.get(kind.0);
-            if d.armor != 0 {
-                stats.add(Modifier::new(armory.armor_stat, Op::Add(d.armor), item.to_bits()));
-            }
-            if let Some(e) = enchant {
-                for m in e.0.modifiers(&armory.affixes, &armory.rule(kind.0), item.to_bits()) {
-                    stats.add(m);
-                }
-            }
-            if let Some((range, dice, shot_kind)) = &d.ranged {
-                let dice = enchant.map(|e| e.0.strike(*dice, &armory.rule(kind.0))).unwrap_or(*dice);
-                shot = Some(RangedAttack { kind: shot_kind.id(), dice, range: *range });
-            }
-        }
-        armor.0 = innate.map_or(0, |i| i.armor) + stats.value(armory.armor_stat, &registries.stats);
-        let bonus = stats.value(armory.attack_stat, &registries.stats);
-        let wielded = worn.in_slot(main_hand).and_then(|e| items.get(e).ok());
-        (*attack, strikes.0) = match wielded {
-            Some((kind, enchant)) if armory.defs.get(kind.0).attack.is_some() => {
-                let d = armory.defs.get(kind.0);
-                let base = d.attack.expect("checked");
-                let dice = enchant.map(|e| e.0.strike(base, &armory.rule(kind.0))).unwrap_or(base);
-                let extra = enchant.map(|e| e.0.strikes(&armory.affixes)).unwrap_or_default();
-                (MeleeAttack { kind: d.kind.expect("checked").id(), dice: DiceRoll { bonus: dice.bonus + bonus, ..dice } }, extra)
-            }
-            _ => {
-                let bare = innate.map_or_else(|| unarmed(&armory), |i| i.attack);
-                (MeleeAttack { dice: DiceRoll { bonus: bare.dice.bonus + bonus, ..bare.dice }, ..bare }, Vec::new())
-            }
-        };
-        match shot {
-            Some(s) => {
-                commands.entity(wearer).insert(s);
-            }
-            None => {
-                commands.entity(wearer).remove::<RangedAttack>();
-            }
-        }
-        sheet.0 = stats;
-    }
-}
-
-/// A bare-knuckle strike.
+/// A bare-knuckle strike: what the player fights with when nothing worn
+/// carries a blow of its own.
 pub fn unarmed(armory: &Armory) -> MeleeAttack {
     MeleeAttack { kind: armory.fist, dice: DiceRoll::new(1, 3) }
 }
@@ -500,6 +454,19 @@ pub fn narrate_items(
     }
 }
 
+/// What a swig does, which the engine cannot know from a bottle's
+/// components: one facet per usable item in the sea chest, pushed in
+/// [`ViewSet::Annotate`](rl_engine::rl_ui::ViewSet).
+pub fn note_what_a_drink_does(mut bag: ResMut<InventoryView>, mut facets: ResMut<Facets>, armory: Res<Armory>, kinds: Query<&ItemKind>) {
+    for row in bag.rows.iter_mut() {
+        let Ok(kind) = kinds.get(row.entity) else { continue };
+        let d = armory.defs.get(kind.0);
+        if d.usable() {
+            row.facets.push(facets.facet("drink", format!("restores {} health when drunk", d.heal)).toned(Tones::GOOD));
+        }
+    }
+}
+
 /// An item on the ground as the status line sees it.
 pub type GroundData = (&'static Position, &'static ItemKind, Option<&'static Stack>, Option<&'static Enchant>);
 
@@ -556,9 +523,17 @@ mod tests {
         assert!(range >= 2);
     }
 
+    /// What `who` fights with, as the engine sums it at the moment of a blow.
+    fn loadout_of(app: &mut App, who: Entity) -> (i32, Option<DiceRoll>, Vec<(DamageKindId, DiceRoll)>) {
+        let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let loadout = state.get(app.world()).expect("the loadout's inputs are all optional");
+        (loadout.armor(who), loadout.melee(who).map(|m| m.dice), loadout.strikes(who))
+    }
+
     /// A marine that puts on a buckler keeps its own pistol-whip and hide,
     /// and wears the buckler's armor on top of them, rather than dropping to
-    /// a bare fist the moment it wears anything.
+    /// a bare fist the moment it wears anything. Nothing on the marine
+    /// changes when it dresses: the engine reads the buckler.
     #[test]
     fn a_monster_wears_gear_on_top_of_what_its_kind_fights_with() {
         let dir = std::env::temp_dir().join(format!("corsair-marine-{}", std::process::id()));
@@ -581,15 +556,70 @@ mod tests {
         });
         app.update();
         let def = app.world().resource::<crate::monsters::Bestiary>().defs.get(kind).clone();
-        assert_eq!(app.world().get::<Armor>(marine).map(|a| a.0), Some(def.armor), "its own hide before it wears anything");
+        assert_eq!(loadout_of(&mut app, marine).0, def.armor, "its own hide before it wears anything");
 
         let shape = app.world().resource::<Armory>().shape(app.world().resource::<Armory>().defs.expect("buckler")).unwrap().clone();
         app.world_mut().get_mut::<Inventory>(marine).unwrap().items.push(buckler);
         app.world_mut().get_mut::<Equipped>(marine).unwrap().equip(buckler, &shape).unwrap();
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
-        assert_eq!(app.world().get::<Armor>(marine).map(|a| a.0), Some(def.armor + 1), "the buckler's armor on top");
-        assert_eq!(app.world().get::<MeleeAttack>(marine).map(|m| m.dice), Some(def.attack), "and its own blow, not a fist");
+        let (armor, blow, _) = loadout_of(&mut app, marine);
+        assert_eq!(armor, def.armor + 1, "the buckler's armor on top");
+        assert_eq!(blow, Some(def.attack), "and its own blow, not a fist");
+        assert_eq!(app.world().get::<Armor>(marine).map(|a| a.0), Some(def.armor), "with nothing copied onto the marine");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A Sharp cutlass of flame is a blade whose blow the engine swings, a
+    /// fire strike it adds, and an attack bonus it folds into the wielder's
+    /// stats and back into the blow. Taken off, all three go with it.
+    #[test]
+    fn an_enchanted_blade_is_swung_and_its_affixes_folded_only_while_it_is_worn() {
+        let dir = std::env::temp_dir().join(format!("corsair-blade-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        app.update();
+        app.update();
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let (fist, main_hand) = {
+            let armory = app.world().resource::<Armory>();
+            (unarmed(armory).dice, armory.main_hand)
+        };
+        let (blade, base) = app.world_mut().resource_scope(|world: &mut World, armory: Mut<Armory>| {
+            let cutlass = armory.defs.expect("cutlass");
+            let enchant = Enchanted { level: 2, affixes: vec![armory.affixes.expect("Sharp"), armory.affixes.expect("flame")] };
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            let blade = armory.spawn_with(&mut commands, cutlass, 1, None, enchant);
+            queue.apply(world);
+            (blade, armory.defs.get(cutlass).attack.expect("a cutlass strikes"))
+        });
+        // Put the starting cutlass away and wield the enchanted one.
+        let worn_before: Vec<Entity> = app.world().get::<Equipped>(me).unwrap().worn().map(|(_, e)| e).collect();
+        for item in worn_before {
+            app.world_mut().get_mut::<Equipped>(me).unwrap().unequip(item);
+        }
+        app.world_mut().get_mut::<Inventory>(me).unwrap().items.push(blade);
+        app.world_mut().get_mut::<Equipped>(me).unwrap().equip(blade, &EquipShape::in_slot(main_hand)).unwrap();
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+
+        let (_, blow, strikes) = loadout_of(&mut app, me);
+        // 1d6, +2 for two levels on a weapon, and Sharp's attack bonus: +1
+        // at level zero and one more every two levels.
+        assert_eq!(blow, Some(DiceRoll { bonus: base.bonus + 2 + 2, ..base }), "the blade's roll, its level, and the bonus Sharp bestows");
+        assert_eq!(strikes.len(), 1, "flame's strike: {strikes:?}");
+        let stats = app.world().resource::<Registries>().stats.clone();
+        let attack_stat = stats.expect("attack");
+        assert_eq!(app.world().get::<StatBlock>(me).unwrap().0.value(attack_stat, &stats), 2, "Sharp is folded into the stat");
+
+        app.world_mut().get_mut::<Equipped>(me).unwrap().unequip(blade);
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        let (_, blow, strikes) = loadout_of(&mut app, me);
+        assert_eq!(blow, Some(fist), "bare fists again");
+        assert!(strikes.is_empty());
+        assert_eq!(app.world().get::<StatBlock>(me).unwrap().0.value(attack_stat, &stats), 0, "and the bonus left with the blade");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -465,7 +465,7 @@ mod tests {
         let missing = app.world().resource::<Requirements>().missing(app.world());
         assert_eq!(missing.len(), 4, "the map, the rules, the registries and the seed: {missing:#?}");
         assert!(missing.iter().any(|m| m.starts_with("CorePlugin needs") && m.contains("WorldMap::new")), "{missing:#?}");
-        assert!(missing.iter().any(|m| m.starts_with("CombatPlugin needs") && m.contains("CombatRules { factions }")), "{missing:#?}");
+        assert!(missing.iter().any(|m| m.starts_with("CombatPlugin needs") && m.contains("CombatRules::new")), "{missing:#?}");
         assert!(missing.iter().any(|m| m.starts_with("CombatPlugin needs") && m.contains("Seed(RunSeed(n))")), "{missing:#?}");
         assert!(missing.iter().any(|m| m.starts_with("CombatPlugin needs") && m.contains("`Registries`")), "{missing:#?}");
 

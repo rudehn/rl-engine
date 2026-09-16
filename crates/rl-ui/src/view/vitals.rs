@@ -23,7 +23,9 @@ pub struct VitalsView {
     /// Health first; a game's annotate system pushes whatever else it
     /// tracks after it.
     pub bars: Vec<Bar>,
-    /// Armor, if the player has any.
+    /// Armor, its own and its gear's together, if the player has any at
+    /// all: `None` for one with no [`Armor`] and nothing worn that adds
+    /// any, so a game without the idea draws no number for it.
     pub armor: Option<i32>,
     /// One per active status that has a badge glyph, in the order they
     /// were applied.
@@ -76,6 +78,7 @@ pub struct Me<'w, 's> {
     registries: Option<Res<'w, Registries>>,
     facets: ResMut<'w, crate::facet::Facets>,
     watchers: Watchers<'w, 's>,
+    loadout: Loadout<'w, 's>,
     player: Query<'w, 's, Vitals, With<Player>>,
 }
 
@@ -92,7 +95,10 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.label = name.map(|n| n.as_str().to_string()).unwrap_or_default();
     view.position = pos.0;
     view.turn = me.turns.turn_number();
-    view.armor = armor.map(|a| a.0);
+    // What a blow meets, gear included; shown whenever the player has the
+    // idea of armor at all, even at zero.
+    let total = me.loadout.armor(entity);
+    view.armor = (armor.is_some() || total != 0).then_some(total);
     view.seen = (hides && me.watchers.running()).then(|| me.watchers.watched(entity));
     if let Some(health) = health {
         // Tone by how close to death, so a panel needs no thresholds of

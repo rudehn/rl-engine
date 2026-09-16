@@ -6,8 +6,9 @@
 //! adds to the wearer's stats, and what extra dice it adds to a strike,
 //! each as a base plus a term that grows with the level. An enchant rule
 //! says what one level buys on the item itself. Everything folds down to
-//! the vocabulary the rest of the rules already speak: [`Modifier`]s on
-//! registered stats and dice of a registered damage kind. The names, the
+//! the vocabulary the rest of the rules already speak: changes to
+//! registered stats, which the layer that folds gear turns into
+//! [`Modifier`]s, and dice of a registered damage kind. The names, the
 //! tags, the stats and the kinds are the game's; the shape is here.
 
 use crate::content::{ContentError, Named, Registry};
@@ -17,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::damage::DamageKindId;
 use crate::names::Names;
-use crate::stats::{Modifier, Op, StatId};
+use crate::stats::{Op, StatId};
 
 /// A registered item tag: "weapon", "blade", "armor", "hat". An affix's
 /// eligibility is a list of these.
@@ -264,20 +265,23 @@ impl Enchanted {
         Self::default()
     }
 
-    /// Every stat modifier this instance grants its wearer, tagged with
-    /// `source`, from its affixes and from `rule` at its level.
-    pub fn modifiers(&self, defs: &Registry<AffixDef>, rule: &EnhanceRule, source: u64) -> Vec<Modifier> {
+    /// Every stat change this instance grants its wearer, from its affixes
+    /// and from `rule` at its level: what an item bestows while worn.
+    ///
+    /// Untagged, because the item does not know what will fold it: the
+    /// layer that puts these on a wearer's stats tags each with the item.
+    pub fn grants(&self, defs: &Registry<AffixDef>, rule: &EnhanceRule) -> Vec<(StatId, Op)> {
         let mut out = Vec::new();
         for a in &self.affixes {
             for s in &defs.get(*a).grants {
                 let n = s.at(self.level);
                 if n != 0 {
-                    out.push(Modifier::new(s.stat, Op::Add(n), source));
+                    out.push((s.stat, Op::Add(n)));
                 }
             }
         }
         for (stat, n) in rule.bonuses_at(self.level) {
-            out.push(Modifier::new(stat, Op::Add(n), source));
+            out.push((stat, Op::Add(n)));
         }
         out
     }
@@ -400,11 +404,9 @@ mod tests {
         let (armor, attack) = (stats.expect("armor"), stats.expect("attack"));
         let rule = EnhanceRule { per_level: vec![(attack, 1)], per_k_levels: vec![(2, armor, 1)], damage_per_level: 1 };
         let item = Enchanted { level: 3, affixes: vec![affixes.expect("Sharp"), affixes.expect("flame")] };
-        let mods = item.modifiers(&affixes, &rule, 42);
         let mut s = Stats::new();
-        for m in mods {
-            assert_eq!(m.source, 42);
-            s.add(m);
+        for (stat, op) in item.grants(&affixes, &rule) {
+            s.add(crate::stats::Modifier::new(stat, op, crate::stats::Source::Item(42)));
         }
         assert_eq!(s.value(attack, &stats), 2 + 3, "Sharp +2 at level 3, plus one per level");
         assert_eq!(s.value(armor, &stats), 1, "one per two levels");

@@ -20,22 +20,17 @@ pub struct Binds {
     pub fire: ControlId,
     pub throw: ControlId,
     pub put_on: ControlId,
-    pub chest: ControlId,
     pub ledger: ControlId,
     pub call_on: ControlId,
     pub menu_up: ControlId,
     pub menu_down: ControlId,
-    pub chest_equip: ControlId,
-    pub chest_drop: ControlId,
-    pub chest_use: ControlId,
-    pub chest_throw: ControlId,
     pub save: ControlId,
     pub quit: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
 /// The engine's own screens declare theirs alongside: the cursors', the
-/// log's, the map's, and `?` itself.
+/// log's, the sea chest's, the map's, and `?` itself.
 pub fn declare_controls(app: &mut App) {
     let binds = Binds {
         walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
@@ -51,14 +46,9 @@ pub fn declare_controls(app: &mut App) {
         fire: app.add_control("Act", "fire the pistol", KeyCode::KeyF),
         throw: app.add_control("Act", "throw a knife", KeyCode::KeyR),
         call_on: app.add_control("Abilities", "call on one", [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4]),
-        chest: app.add_control("Screens", "open the sea chest", KeyCode::KeyI),
         ledger: app.add_control("Screens", "open the ledger", KeyCode::KeyT),
-        menu_up: app.add_control("Screens", "up a row", [KeyCode::ArrowUp, KeyCode::KeyK]),
-        menu_down: app.add_control("Screens", "down a row", [KeyCode::ArrowDown, KeyCode::KeyJ]),
-        chest_equip: app.add_control("Sea chest", "wear it, or take it off", KeyCode::KeyE),
-        chest_drop: app.add_control("Sea chest", "drop it", KeyCode::KeyD),
-        chest_use: app.add_control("Sea chest", "use it", [KeyCode::KeyU, KeyCode::Enter]),
-        chest_throw: app.add_control("Sea chest", "throw it", KeyCode::KeyT),
+        menu_up: app.add_control("Ledger", "up a row", [KeyCode::ArrowUp, KeyCode::KeyK]),
+        menu_down: app.add_control("Ledger", "down a row", [KeyCode::ArrowDown, KeyCode::KeyJ]),
         save: app.add_control("Game", "write the run to the log book", Chord::shift(KeyCode::KeyS)),
         quit: app.add_control("Game", "save and quit", KeyCode::KeyQ),
     };

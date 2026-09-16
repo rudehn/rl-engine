@@ -9,16 +9,26 @@
 //! engine reports [`ItemEvent::Used`] and the game reads it, applies the
 //! effect, and despawns the item if it was consumed.
 //!
+//! What wearing an item does is the item's to say and the engine's to
+//! apply. Its combat components are read straight off it by
+//! [`Loadout`](crate::combat::Loadout) whenever a blow is struck or met,
+//! and what it [`Bestows`] on the registered stats is folded into the
+//! wearer's [`StatBlock`] by [`fold_gear`] the moment its slots change.
+//! Nothing is copied onto the wearer and nothing has to be remembered
+//! when it comes off.
+//!
 //! Throwing one is [`throwing`](crate::throwing), which needs combat as well.
 
 use bevy::prelude::*;
 use rl_core::Point;
 use rl_core::turn::BASE_ACTION_COST;
-use rl_rules::{EquipShape, Equipment};
+use rl_rules::stats::{Modifier, Op, Source};
+use rl_rules::{EquipShape, Equipment, StatId};
 
 use crate::combat::DeathEvent;
-use crate::components::{MyTurn, Position};
+use crate::components::{Actor, MyTurn, Position};
 use crate::places::{MapId, OnMap};
+use crate::status::StatBlock;
 use crate::turn::{Action, Intent, Resolution};
 use crate::world::WorldMap;
 
@@ -65,9 +75,24 @@ pub struct Wearable(pub EquipShape);
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct GearScore(pub i32);
 
-/// An item's enchant level and affixes, for the game's stat folding.
+/// An item's enchant level and affixes: what it is called and what a
+/// game writes its combat components and [`Bestows`] from when it spawns
+/// it.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Enchant(pub rl_rules::Enchanted);
+
+/// What an item does to its wearer's registered stats while it is worn.
+///
+/// An affix that sharpens the hand or a coat that hardens the skin is a
+/// change to a stat, and this is where the item says so. The game writes
+/// it when the item is spawned, enchant already applied, since an enchant
+/// is rolled per instance; [`fold_gear`] puts every worn item's onto the
+/// wearer's [`StatBlock`] tagged with the item, and takes them off again
+/// with it. An item whose worth is a blow or armor carries a
+/// [`MeleeAttack`](crate::combat::MeleeAttack) or an
+/// [`Armor`](crate::combat::Armor) instead, which need no stat at all.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct Bestows(pub Vec<(StatId, Op)>);
 
 /// What an item counts as.
 ///
@@ -369,6 +394,31 @@ pub fn resolve_items(mut commands: Commands, mut intents: ItemIntents, mut resol
     }
 }
 
+/// Folds what every worn item [`Bestows`] into its wearer's stats.
+///
+/// Rebuilt rather than edited, the way [`Known`](crate::ability::Known)
+/// is: every modifier tagged [`Source::Item`] is dropped and each worn
+/// item's put back, in slot order, so an item taken off takes its changes
+/// with it and nothing has to remember that it did. A status's modifiers
+/// carry their own tag and are left where they are.
+///
+/// Runs whenever [`Equipped`] changed, which is also the first pass after
+/// a wearer is spawned with its slots filled: a run restored from a save
+/// rebuilds its gear modifiers for nothing, and a save never has to write
+/// them down. A game that changes what a worn item bestows touches the
+/// wearer's `Equipped` to have it folded again.
+pub fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<Equipped>>, items: Query<&Bestows, With<Item>>) {
+    for (worn, mut stats) in &mut wearers {
+        stats.0.retain_sources(|source| !source.is_item());
+        for (_, item) in worn.0.worn() {
+            let Ok(bestows) = items.get(item) else { continue };
+            for (stat, op) in &bestows.0 {
+                stats.0.add(Modifier::new(*stat, *op, Source::Item(item.to_bits())));
+            }
+        }
+    }
+}
+
 /// Drops despawned items from every bag and every slot.
 pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: Query<(&mut Inventory, Option<&mut Equipped>)>) {
     let gone: Vec<Entity> = removed.read().collect();
@@ -415,14 +465,22 @@ pub fn drop_what_the_dead_carried(
     }
 }
 
-/// Items: on the ground, in a bag, in a slot, and the six actions that
-/// move them between the three.
+/// Items: on the ground, in a bag, in a slot, the six actions that move
+/// them between the three, and the fold of what worn items bestow.
+///
+/// Every [`Actor`] is given an empty [`StatBlock`] as it is spawned, the
+/// way [`StatusPlugin`](crate::status::StatusPlugin) gives one, so a
+/// wearer in a game with gear stats and no statuses still has somewhere
+/// for them to land.
 pub struct ItemsPlugin;
 
 impl Plugin for ItemsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{CleanupSet, ResolveSet, Turn};
+        use crate::plugin::{CleanupSet, ResolveSet, Turn, TurnSet};
         use crate::turn::AddAction;
+        // `try`, because the status plugin registers the same requirement
+        // and the order a game lists its plugins in must not matter.
+        let _ = app.try_register_required_components::<Actor, StatBlock>();
         app.add_message::<ItemEvent>()
             // Read to let the dead drop what they carried. A game without
             // combat has no deaths, and the reader reads nothing.
@@ -434,6 +492,9 @@ impl Plugin for ItemsPlugin {
             .add_action::<Unequip>()
             .add_action::<UseItem>()
             .add_systems(Turn, resolve_items.in_set(ResolveSet::Act))
+            // In the pass the slots changed in, so gear counts from the
+            // moment it is worn.
+            .add_systems(Turn, fold_gear.in_set(TurnSet::React))
             .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
     }
@@ -574,5 +635,85 @@ mod tests {
         r.app.update();
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().items.is_empty());
         assert!(r.app.world().get::<Equipped>(r.player).unwrap().is_free(r.main));
+    }
+
+    /// What a ring bestows is on the wearer's stats while it is worn and
+    /// gone when it is not; a status's modifier on the same stat is left
+    /// alone by both; and a wearer spawned already dressed, the way a
+    /// restored run spawns one, has its gear folded on the first pass with
+    /// nothing written down for it.
+    #[test]
+    fn what_worn_gear_bestows_is_folded_while_worn_and_a_status_is_left_alone() {
+        use rl_rules::stats::Op;
+        use rl_rules::{StatDef, StatusDef};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::status::StatusPlugin, ItemsPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let stats = Registry::from_defs(vec![StatDef::new("might", 10)]).unwrap();
+        let might = stats.expect("might");
+        let statuses = Registry::from_defs(vec![StatusDef::new("weak").modifies(might, Op::Add(-3))]).unwrap();
+        let weak = statuses.expect("weak");
+        {
+            let mut registries = app.world_mut().resource_mut::<crate::registries::Registries>();
+            registries.stats = stats.clone();
+            registries.statuses = statuses;
+        }
+        let finger = rl_rules::SlotId::from_raw(0);
+        let ring = app.world_mut().spawn((Item, Position(start), Wearable(EquipShape::in_slot(finger)), Bestows(vec![(might, Op::Add(5))]))).id();
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(6),
+                RevealsMap,
+                crate::combat::Health::full(30),
+                crate::combat::Faction(sides.ours),
+                Inventory::default(),
+                Equipped(Equipment::with_slot_count(1)),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let might_of = |app: &App, who: Entity| app.world().get::<StatBlock>(who).map(|s| s.0.value(might, &stats));
+        assert_eq!(might_of(&app, player), Some(10), "the plugin gave the player stats, and nothing is on them yet");
+
+        app.world_mut().write_message(Intent::new(player, PickUp));
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Equip(ring)));
+        app.update();
+        assert_eq!(might_of(&app, player), Some(15), "the ring's five, folded the pass it went on");
+        app.world_mut().write_message(crate::status::Afflict { target: player, status: weak, turns: 9, by: None });
+        app.update();
+        assert_eq!(might_of(&app, player), Some(12), "and the status's three off");
+
+        app.world_mut().write_message(Intent::new(player, Unequip(ring)));
+        app.update();
+        assert_eq!(might_of(&app, player), Some(7), "the ring's went with the ring, the status's stayed");
+        let sources: Vec<Source> = app.world().get::<StatBlock>(player).unwrap().0.modifiers().iter().map(|m| m.source).collect();
+        assert_eq!(sources, vec![Source::Status { status: weak, instance: 0 }]);
+
+        // Dressed as it is spawned: what a save restores.
+        let band = app.world_mut().spawn((Item, Bestows(vec![(might, Op::Add(2))]))).id();
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(band, &EquipShape::in_slot(finger)).unwrap();
+        let restored = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(2, 0)),
+                crate::combat::Health::full(10),
+                crate::combat::Faction(sides.theirs),
+                Inventory { items: vec![band] },
+                Equipped(worn),
+            ))
+            .id();
+        app.update();
+        assert_eq!(might_of(&app, restored), Some(12), "folded on the first pass, from the slots alone");
     }
 }

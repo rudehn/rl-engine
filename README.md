@@ -179,7 +179,7 @@ cargo run -p delve -- --seed 7
 cargo run -p delve -- --seed 7 --floor 3    # start deeper
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for stairs, `1` to `5` to aim a knack, `a` to list them, `L` to smother or light the brand, `g` to pick up, `d` to set a torch or lamp down, `v` to show light, `x` to look, `tab` to pick out what is in sight, `c` for the character sheet, `p` for the log, `q` to quit, and `?` for all of them on one screen.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for stairs, `1` to `5` to aim a knack, `a` to list them, `L` to smother or light the brand, `g` to pick up, `d` to set a torch or lamp down, `i` for the pack, `v` to show light, `x` to look, `tab` to pick out what is in sight, `c` for the character sheet, `p` for the log, `q` to quit, and `?` for all of them on one screen.
 
 ### Abilities in any genre
 

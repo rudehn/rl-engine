@@ -110,14 +110,16 @@ pub use log::{LogEntry, MessageLog};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use panel::{
-    AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel,
-    SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, sheet_modal,
+    AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel,
+    NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, inventory_modal,
+    sheet_modal,
 };
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones};
 pub use view::{
-    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
-    NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin,
+    InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
+    VitalsViewPlugin, target_modal,
 };
 
 use bevy::prelude::*;
@@ -202,13 +204,15 @@ pub mod prelude {
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
     pub use crate::panel::{
-        AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, InspectPanel, LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel,
-        SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, sheet_modal,
+        AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel,
+        LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal,
+        inventory_modal, sheet_modal,
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones};
     pub use crate::view::{
-        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, NearbyView,
-        NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView,
+        InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
+        VitalsViewPlugin, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};
 }

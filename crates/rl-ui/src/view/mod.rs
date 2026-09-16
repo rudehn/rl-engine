@@ -17,6 +17,7 @@
 pub mod ability;
 pub mod gear;
 pub mod inspect;
+pub mod inventory;
 pub mod nearby;
 pub mod sheet;
 pub mod target;
@@ -25,6 +26,7 @@ pub mod vitals;
 pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
 pub use gear::{GearSlot, GearView, GearViewPlugin};
 pub use inspect::{InspectView, InspectViewPlugin};
+pub use inventory::{InventoryView, InventoryViewPlugin, ItemRow};
 pub use nearby::{NearbyView, NearbyViewPlugin};
 pub use sheet::{Change, ResistLine, SheetView, SheetViewPlugin, StatLine, StatusLine, Strike, WornLine};
 pub use target::{AimAt, AimFire, AimThrow, TargetView, TargetViewPlugin, target_modal};

@@ -19,7 +19,6 @@ use rl_bevy::prelude::*;
 use rl_core::{Point, geometry};
 use rl_render::Glyph;
 use rl_rules::Relation;
-use rl_rules::damage::DamageKindId;
 use rl_rules::forecast::{Combatant, Duel, duel};
 
 use crate::cursor::{CursorInput, CursorKeys, Steer};
@@ -73,7 +72,7 @@ impl Plugin for InspectViewPlugin {
         // than panicking when added before `UiPlugin`.
         app.add_modal(INSPECT_MODAL);
         app.needs::<Registries>("InspectViewPlugin", "`Registries`, with the damage kinds the forecast resolves through")
-            .needs::<CombatRules>("InspectViewPlugin", "`CombatRules { factions }`, for how the subject stands to the player")
+            .needs::<CombatRules>("InspectViewPlugin", "`CombatRules::new(&sides)`, for how the subject stands to the player")
             .add_systems(Update, move_cursor.in_set(EngineSet::Input))
             .add_systems(Update, collect_inspect.in_set(crate::ViewSet::Collect));
     }
@@ -163,23 +162,22 @@ pub struct Duelists<'w, 's> {
     focus: Res<'w, Focus>,
     fire: Option<Res<'w, Fire>>,
     gases: Option<Res<'w, Gases>>,
-    player: Query<'w, 's, (&'static Position, Fighter, Option<&'static Faction>), With<Player>>,
+    player: Query<'w, 's, (Entity, &'static Position, Fighter, Option<&'static Faction>), With<Player>>,
     subjects: Query<'w, 's, Subject, NotYou>,
     fighters: Query<'w, 's, (Fighter, Option<&'static Faction>)>,
+    /// What each side strikes with and meets a blow in, gear included:
+    /// the same answer the resolver acts on.
+    loadout: Loadout<'w, 's>,
 }
 
-/// What a side of a duel is made of.
-type Fighter =
-    (Option<&'static Health>, Option<&'static Armor>, Option<&'static Speed>, Option<&'static Resists>, Option<&'static MeleeAttack>, Option<&'static Strikes>);
-
-/// Every roll one blow lands, the main one first.
-fn strikes_of(melee: Option<&MeleeAttack>, extra: Option<&Strikes>) -> Vec<(DamageKindId, rl_core::DiceRoll)> {
-    let mut all: Vec<(DamageKindId, rl_core::DiceRoll)> = melee.map(|m| (m.kind, m.dice)).into_iter().collect();
-    all.extend(extra.map(|s| s.0.iter().copied()).into_iter().flatten());
-    all
-}
+/// What a side of a duel is made of, apart from what its [`Loadout`] says.
+type Fighter = (Option<&'static Health>, Option<&'static Speed>, Option<&'static Resists>);
 
 /// Fills [`InspectView`] from whatever the cursor is over.
+///
+/// The forecast's armor and blows come from each side's [`Loadout`], so a
+/// jerkin the subject wears and a blade the player wields count in the
+/// panel exactly as they will in the fight.
 pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
@@ -190,7 +188,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
         return;
     }
-    let Ok((origin, mine, my_faction)) = duelists.player.single() else { return };
+    let Ok((me, origin, mine, my_faction)) = duelists.player.single() else { return };
     let here = duelists.map.current();
     // The ground first, since it is there whether or not anything stands
     // on it: what a burnt cell is now, and what hangs in the air over it.
@@ -213,7 +211,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let Some((entity, pos, name, glyph, _)) = under else { return };
     let mut row = Row::new(entity, name.as_str().to_string(), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();
-    if let Some(((health, _, _, _, _, _), _)) = theirs {
+    if let Some(((health, _, _), _)) = theirs {
         row.health = health.map(|h| (h.hp, h.max));
     }
     if let (Some(mine_f), Some((_, Some(theirs_f)))) = (my_faction, theirs) {
@@ -223,21 +221,21 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
 
     let Some((subject, _)) = theirs else { return };
     let none = rl_rules::Resistances::new();
-    let (my_health, my_armor, my_speed, my_resists, my_melee, my_extra) = mine;
-    let (their_health, their_armor, their_speed, their_resists, their_melee, their_extra) = subject;
+    let (my_health, my_speed, my_resists) = mine;
+    let (their_health, their_speed, their_resists) = subject;
     let (Some(my_health), Some(their_health)) = (my_health, their_health) else { return };
-    let my_strikes = strikes_of(my_melee, my_extra);
-    let their_strikes = strikes_of(their_melee, their_extra);
+    let my_strikes = duelists.loadout.blows(me);
+    let their_strikes = duelists.loadout.blows(entity);
     let asker = Combatant {
         health: my_health.hp,
-        armor: my_armor.map(|a| a.0).unwrap_or(0),
+        armor: duelists.loadout.armor(me),
         speed: my_speed.map(|s| s.0).unwrap_or(100),
         resists: my_resists.map(|r| &r.0).unwrap_or(&none),
         strikes: &my_strikes,
     };
     let other = Combatant {
         health: their_health.hp,
-        armor: their_armor.map(|a| a.0).unwrap_or(0),
+        armor: duelists.loadout.armor(entity),
         speed: their_speed.map(|s| s.0).unwrap_or(100),
         resists: their_resists.map(|r| &r.0).unwrap_or(&none),
         strikes: &their_strikes,

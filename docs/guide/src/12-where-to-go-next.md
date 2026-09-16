@@ -39,6 +39,7 @@ A key writes `AimAt`; the engine opens the cursor, previews what it would cover,
 
 `StatusPlugin` ticks afflictions by the turn through the damage pipeline, with stacking rules and cures from a registry.
 `rl-rules` also has a stat block with a modifier accumulator, an equipment slot graph with displacement, and an affix model: prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
+What wearing an item does goes on the item: a worn blade carries the `MeleeAttack` it is swung with, a coat its `Armor`, and an affix what it `Bestows` on a stat; `Loadout` sums them at the blow and `fold_gear` keeps the stats current, so nothing is copied onto the wearer.
 
 `corsair` uses all of it.
 

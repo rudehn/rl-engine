@@ -149,8 +149,10 @@ impl Plugin for StatusPlugin {
         use crate::plugin::{Needs, ResolveSet, Turn};
         // Before anything spawns, which is when Bevy allows it; an actor
         // spawned before this plugin was added is a setup Bevy refuses.
+        // `try` for the stats, which the items plugin requires as well so
+        // gear has somewhere to land, whichever of the two is added first.
         app.register_required_components::<Actor, Afflicted>();
-        app.register_required_components::<Actor, StatBlock>();
+        let _ = app.try_register_required_components::<Actor, StatBlock>();
         app.add_message::<Afflict>()
             .add_message::<Cure>()
             .add_message::<StatusEvent>()

@@ -31,9 +31,9 @@
 //! The engine's own keys are in the registry too, declared by the plugins
 //! that read them, but their keys are never copied in: [`Keys::Engine`]
 //! names the binding and the key is read from [`DirectionKeys`],
-//! [`CursorKeys`], [`ScrollbackKeys`] or [`ControlsKeys`] every time it is
-//! listed, so a game that rebinds a cursor key sees the new key on the
-//! screen without telling anyone.
+//! [`CursorKeys`], [`ScrollbackKeys`], [`InventoryKeys`] or [`ControlsKeys`]
+//! every time it is listed, so a game that rebinds a cursor key sees the new
+//! key on the screen without telling anyone.
 //!
 //! A [`Chord`] is a key with Shift held or not, and is matched exactly: `l`
 //! is not pressed while Shift is down. So `L` and `l` can mean different
@@ -45,6 +45,7 @@ use rl_core::Direction;
 use crate::cursor::{CursorKeys, shifted};
 use crate::keys::DirectionKeys;
 use crate::panel::ability::AbilityKeys;
+use crate::panel::inventory::InventoryKeys;
 use crate::panel::scrollback::ScrollbackKeys;
 use crate::panel::sheet::SheetKeys;
 
@@ -235,6 +236,17 @@ pub enum EngineKey {
     OpenSheet,
     /// Opening the ability menu, from [`AbilityKeys::toggle`].
     ListAbilities,
+    /// Opening the bag, from [`InventoryKeys::toggle`].
+    OpenInventory,
+    /// Putting the carried item picked out on, or taking it off, from
+    /// [`InventoryKeys::wear`].
+    Wear,
+    /// Dropping it, from [`InventoryKeys::drop`].
+    Drop,
+    /// Using it, from [`InventoryKeys::use_it`] and the cursors' confirm.
+    UseCarried,
+    /// Throwing it, from [`InventoryKeys::throw`].
+    ThrowCarried,
 }
 
 /// What asks for a control.
@@ -342,6 +354,8 @@ pub struct Bindings<'a> {
     pub sheet: Option<&'a SheetKeys>,
     /// The ability menu's, when there is one.
     pub abilities: Option<&'a AbilityKeys>,
+    /// The bag's, when there is one.
+    pub inventory: Option<&'a InventoryKeys>,
 }
 
 impl Bindings<'_> {
@@ -368,6 +382,11 @@ impl Bindings<'_> {
             EngineKey::ShowControls => vec![self.help.toggle],
             EngineKey::OpenSheet => self.sheet.map(|sheet| vec![sheet.toggle]).unwrap_or_default(),
             EngineKey::ListAbilities => self.abilities.map(|menu| vec![menu.toggle]).unwrap_or_default(),
+            EngineKey::OpenInventory => self.inventory.map(|bag| vec![bag.toggle]).unwrap_or_default(),
+            EngineKey::Wear => self.inventory.map(|bag| vec![bag.wear]).unwrap_or_default(),
+            EngineKey::Drop => self.inventory.map(|bag| vec![bag.drop]).unwrap_or_default(),
+            EngineKey::UseCarried => self.inventory.map(|bag| vec![bag.use_it, cursor.confirm.into(), cursor.also_confirm.into()]).unwrap_or_default(),
+            EngineKey::ThrowCarried => self.inventory.map(|bag| vec![bag.throw]).unwrap_or_default(),
         }
     }
 
@@ -553,6 +572,7 @@ pub struct ControlInput<'w> {
     log: Option<Res<'w, ScrollbackKeys>>,
     sheet: Option<Res<'w, SheetKeys>>,
     abilities: Option<Res<'w, AbilityKeys>>,
+    inventory: Option<Res<'w, InventoryKeys>>,
     repeats: Res<'w, Repeats>,
 }
 
@@ -566,6 +586,7 @@ impl ControlInput<'_> {
             log: self.log.as_deref(),
             sheet: self.sheet.as_deref(),
             abilities: self.abilities.as_deref(),
+            inventory: self.inventory.as_deref(),
         }
     }
 
@@ -741,7 +762,7 @@ mod tests {
     /// Default bindings, borrowed for one assertion.
     fn with_defaults<R>(log: bool, f: impl FnOnce(&Bindings) -> R) -> R {
         let (directions, cursor, help, scrollback) = (DirectionKeys::default(), CursorKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
-        f(&Bindings { directions: &directions, cursor: &cursor, help: &help, log: log.then_some(&scrollback), sheet: None, abilities: None })
+        f(&Bindings { directions: &directions, cursor: &cursor, help: &help, log: log.then_some(&scrollback), sheet: None, abilities: None, inventory: None })
     }
 
     #[test]
@@ -796,7 +817,7 @@ mod tests {
         });
         let wasd = DirectionKeys::none().bind(KeyCode::KeyW, Direction::North).bind(KeyCode::KeyS, Direction::South).bind(KeyCode::Space, Direction::East);
         let (cursor, help) = (CursorKeys::default(), ControlsKeys::default());
-        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None };
+        let bindings = Bindings { directions: &wasd, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None };
         assert_eq!(controls.label(walk, &bindings), "sw space", "letters outside the custom sort after it, and any other key on its own");
     }
 
@@ -809,7 +830,7 @@ mod tests {
         let log = controls.add("Log", "open the log", EngineKey::OpenLog);
         let (directions, help, scrollback) = (DirectionKeys::default(), ControlsKeys::default(), ScrollbackKeys::default());
         let cursor = CursorKeys { next: KeyCode::KeyN, ..CursorKeys::default() };
-        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None };
+        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None };
         assert_eq!(controls.label(next, &bindings), "n", "rebound, and listed as rebound");
         assert_eq!(controls.label(log, &bindings), "", "no scrollback, nothing to list");
         assert_eq!(controls.label(log, &Bindings { log: Some(&scrollback), ..bindings }), "p");

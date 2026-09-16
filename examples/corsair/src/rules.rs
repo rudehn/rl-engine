@@ -65,12 +65,15 @@ pub fn load(seed: RunSeed, home: Point, effects: &EffectKinds) -> Loaded {
     let abilities = crate::abilities::load(&registries.names(), effects);
     let bestiary = Bestiary::load(seed, home, &registries.names().with("item", &armory.defs).with("ability", abilities.defs()), registries.slots.len());
     let (quests, facts) = crate::quests::load(&bestiary, &armory, &registries);
-    let combat = relations(&registries.factions);
+    let combat = relations(&registries);
     Loaded { registries, combat, armory, abilities, bestiary, quests, facts }
 }
 
-/// Who is at war with whom.
-fn relations(sides: &Registry<FactionDef>) -> CombatRules {
+/// Who is at war with whom, and which stats a blow reads: "armor" is what
+/// a status like hearty and an affix like Stout harden, "attack" what Sharp
+/// adds to a swing.
+fn relations(registries: &Registries) -> CombatRules {
+    let sides = &registries.factions;
     let (player, beasts, cutthroats, navy) = (sides.expect("player"), sides.expect("beasts"), sides.expect("cutthroats"), sides.expect("navy"));
     CombatRules::new(sides)
         .hostile(player, beasts)
@@ -80,6 +83,8 @@ fn relations(sides: &Registry<FactionDef>) -> CombatRules {
         .hostile(beasts, navy)
         // The navy hunts pirates; pirates would rather not meet the navy.
         .hunts(navy, cutthroats)
+        .armor_stat(registries.stats.expect("armor"))
+        .attack_stat(registries.stats.expect("attack"))
 }
 
 /// The engine's effects and Corsair's own, for loading outside the app: the

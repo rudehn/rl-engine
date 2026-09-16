@@ -58,17 +58,6 @@ pub struct MonsterDef {
     pub kit: Vec<(NameRef<crate::items::ItemDef>, u32)>,
 }
 
-/// What a monster fights with before it puts anything on: the blow and hide
-/// its kind was written with, which the gear it finds adds to rather than
-/// replaces.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct Innate {
-    /// Its own blow.
-    pub attack: MeleeAttack,
-    /// Its own armor.
-    pub armor: i32,
-}
-
 impl Named for MonsterDef {
     fn name(&self) -> &str {
         &self.name
@@ -204,11 +193,11 @@ impl Bestiary {
             let coin = min + (rl_engine::rl_core::seed::position_hash(self.seed.0, p.x, p.y) % span) as u32;
             commands.entity(e).insert(crate::abilities::Purse(coin));
         }
-        // Hands: a bag to carry what it picks up, slots for what it puts on,
-        // and its own blow and hide for the gear to add to.
+        // Hands: a bag to carry what it picks up and slots for what it puts
+        // on. Its own blow and hide above stay what they are; the engine
+        // reads worn gear on top of them.
         if m.wits.has(Wits::PICKS_UP) || m.wits.has(Wits::EQUIPS) {
-            let innate = Innate { attack: MeleeAttack { kind: m.kind.id(), dice: m.attack }, armor: m.armor };
-            commands.entity(e).insert((Inventory::default(), Equipped(Equipment::with_slot_count(self.slots)), Strikes::default(), innate));
+            commands.entity(e).insert((Inventory::default(), Equipped(Equipment::with_slot_count(self.slots))));
         }
         e
     }

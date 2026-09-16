@@ -66,8 +66,8 @@ pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
 pub use gas::{Breath, GasDef, GasId};
 pub use names::{NameRef, Names};
-pub use stats::{Modifier, Op, StatDef, StatId, Stats};
-pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
+pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
+pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -89,6 +89,6 @@ pub mod prelude {
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
     pub use crate::gas::{Breath, GasDef, GasId};
     pub use crate::names::{NameRef, Names};
-    pub use crate::stats::{Modifier, Op, StatDef, StatId, Stats};
-    pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, is_status_source};
+    pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
+    pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 }

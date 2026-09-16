@@ -8,19 +8,20 @@
 //! do; and what it wears, slot by slot. All of it is engine state already,
 //! which is what makes it a view rather than a game's screen.
 //!
-//! What the engine cannot name is a modifier's source. A status's it can,
-//! since statuses tag their own; an item's is whatever the game used as a
-//! tag, so a game names those in [`ViewSet::Annotate`](crate::ViewSet)
-//! through [`SheetView::name_source`], and a source nobody named is shown
-//! by its effect alone.
+//! What the engine can name of a modifier's source, it does: a status's
+//! carries the status, and a worn item's carries the item, which the sheet
+//! names by its [`Name`]. A source of the game's own is the game's to name,
+//! in [`ViewSet::Annotate`](crate::ViewSet) through
+//! [`SheetView::name_source`], and one nobody named is shown by its effect
+//! alone.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::DiceRoll;
 use rl_render::Glyph;
 use rl_rules::damage::DamageKindId;
-use rl_rules::stats::Op;
-use rl_rules::{SlotId, StatId, StatusId, is_status_source};
+use rl_rules::stats::{Op, Source};
+use rl_rules::{SlotId, StatId, StatusId};
 
 use crate::facet::Facet;
 
@@ -29,10 +30,10 @@ use crate::facet::Facet;
 pub struct Change {
     /// What it does.
     pub op: Op,
-    /// The tag it was applied under: a status's, an item's, a trait's.
-    pub source: u64,
-    /// What applied it, when known: the status's name, or what the game
-    /// named the source. Empty when nobody named it.
+    /// What applied it: a status, a worn item, or something of the game's.
+    pub source: Source,
+    /// What applied it, in words, when known: the status's name, the worn
+    /// item's, or what the game named the source. Empty when nobody did.
     pub from: String,
 }
 
@@ -131,9 +132,8 @@ pub struct SheetView {
 
 impl SheetView {
     /// Names every change tagged `source` as coming `from` something:
-    /// what a game's annotate system calls for each item it tagged
-    /// modifiers with.
-    pub fn name_source(&mut self, source: u64, from: impl Into<String>) {
+    /// what a game's annotate system calls for each source of its own.
+    pub fn name_source(&mut self, source: Source, from: impl Into<String>) {
         let from = from.into();
         for change in self.stats.iter_mut().flat_map(|s| s.changes.iter_mut()).filter(|c| c.source == source) {
             change.from = from.clone();
@@ -176,18 +176,28 @@ type Made = (
     Option<&'static StatBlock>,
     Option<&'static Resists>,
 );
-/// What the player fights with and carries.
-type Armed = (Option<&'static MeleeAttack>, Option<&'static Strikes>, Option<&'static RangedAttack>, Option<&'static Afflicted>, Option<&'static Equipped>);
+/// What the player carries and suffers.
+type Armed = (Option<&'static Afflicted>, Option<&'static Equipped>);
 
 /// Fills [`SheetView`] from the player.
-pub fn collect_sheet(mut view: ResMut<SheetView>, registries: Res<Registries>, player: Query<(Made, Armed), With<Player>>, names: Query<&Name>) {
+///
+/// Armor and the strikes come from the player's [`Loadout`], so the sheet
+/// shows what a worn blade adds without the game copying it anywhere.
+pub fn collect_sheet(
+    mut view: ResMut<SheetView>,
+    registries: Res<Registries>,
+    loadout: Loadout,
+    player: Query<(Made, Armed), With<Player>>,
+    names: Query<&Name>,
+) {
     *view = SheetView::default();
-    let Ok(((entity, name, glyph, health, armor, speed, stats, resists), (melee, extra, ranged, afflicted, worn))) = player.single() else { return };
+    let Ok(((entity, name, glyph, health, armor, speed, stats, resists), (afflicted, worn))) = player.single() else { return };
     view.entity = Some(entity);
     view.label = name.map(|n| n.as_str().to_string()).unwrap_or_default();
     view.glyph = glyph.copied();
     view.health = health.map(|h| (h.hp, h.max));
-    view.armor = armor.map(|a| a.0);
+    let total_armor = loadout.armor(entity);
+    view.armor = (armor.is_some() || total_armor != 0).then_some(total_armor);
     view.speed = speed.map(|s| s.0);
 
     if let Some(stats) = stats {
@@ -196,7 +206,7 @@ pub fn collect_sheet(mut view: ResMut<SheetView>, registries: Res<Registries>, p
                 .modifiers()
                 .iter()
                 .filter(|m| m.stat == stat)
-                .map(|m| Change { op: m.op, source: m.source, from: status_named(m.source, afflicted, &registries) })
+                .map(|m| Change { op: m.op, source: m.source, from: source_named(m.source, afflicted, &registries, &names) })
                 .collect();
             view.stats.push(StatLine {
                 stat,
@@ -216,13 +226,10 @@ pub fn collect_sheet(mut view: ResMut<SheetView>, registries: Res<Registries>, p
         }
     }
     let kind_name = |kind: DamageKindId| registries.damage_kinds.name(kind).to_string();
-    if let Some(melee) = melee {
-        view.strikes.push(Strike { kind: kind_name(melee.kind), dice: melee.dice, range: None });
+    for (kind, dice) in loadout.blows(entity) {
+        view.strikes.push(Strike { kind: kind_name(kind), dice, range: None });
     }
-    for (kind, dice) in extra.map(|s| s.0.as_slice()).unwrap_or(&[]) {
-        view.strikes.push(Strike { kind: kind_name(*kind), dice: *dice, range: None });
-    }
-    if let Some(ranged) = ranged {
+    if let Some(ranged) = loadout.ranged(entity) {
         view.strikes.push(Strike { kind: kind_name(ranged.kind), dice: ranged.dice, range: Some(ranged.range) });
     }
     if let Some(afflicted) = afflicted {
@@ -245,17 +252,14 @@ pub fn collect_sheet(mut view: ResMut<SheetView>, registries: Res<Registries>, p
     }
 }
 
-/// The name of the status a modifier tagged `source` belongs to, or
-/// nothing: a status's tag carries its id, and every other tag is the
-/// game's to name.
-fn status_named(source: u64, afflicted: Option<&Afflicted>, registries: &Registries) -> String {
-    if !is_status_source(source) {
-        return String::new();
-    }
-    let id = StatusId::from_raw(((source >> 16) & 0xFFFF) as u32);
-    match afflicted.is_some_and(|a| a.has(id)) {
-        true => registries.statuses.name(id).to_string(),
-        false => String::new(),
+/// What the engine can say applied a modifier: the status's registered
+/// name while it is still on, the worn item's [`Name`], and nothing for a
+/// source of the game's own, which the game names.
+fn source_named(source: Source, afflicted: Option<&Afflicted>, registries: &Registries, names: &Query<&Name>) -> String {
+    match source {
+        Source::Status { status, .. } if afflicted.is_some_and(|a| a.has(status)) => registries.statuses.name(status).to_string(),
+        Source::Item(bits) => Entity::try_from_bits(bits).and_then(|item| names.get(item).ok()).map(|n| n.as_str().to_string()).unwrap_or_default(),
+        Source::Status { .. } | Source::Game(_) => String::new(),
     }
 }
 
@@ -279,7 +283,7 @@ mod tests {
         let (player, kind) = (stage.player, stage.kind);
         let might = stage.app.world().resource::<Registries>().stats.expect("might");
         let mut stats = rl_rules::Stats::new();
-        stats.add(Modifier::new(might, Op::Add(2), 77));
+        stats.add(Modifier::new(might, Op::Add(2), Source::Game(77)));
         let mut resists = rl_rules::Resistances::new();
         resists.set(kind, 25);
         stage.app.world_mut().entity_mut(player).insert((
@@ -319,7 +323,7 @@ mod tests {
         let player = stage.player;
         let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
         stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None });
-        stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(77, "a ring")).in_set(crate::ViewSet::Annotate));
+        stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(Source::Game(77), "a ring")).in_set(crate::ViewSet::Annotate));
         stage.tick();
         stage.tick();
         let view = stage.app.world().resource::<SheetView>();
@@ -335,18 +339,34 @@ mod tests {
         assert_eq!(status.ticks, Some(("kinetic".to_string(), 1)));
     }
 
+    /// A worn blade is the blow the sheet lists, its armor is in the total,
+    /// and what it bestows is a change the sheet names after the blade,
+    /// with nothing copied onto the player and no annotate system naming
+    /// anything.
     #[test]
-    fn worn_slots_are_listed_in_registration_order_filled_or_not() {
-        let (mut stage, _) = stage();
-        let player = stage.player;
+    fn worn_slots_are_listed_in_registration_order_and_worn_gear_counts_by_name() {
+        let (mut stage, might) = stage();
+        let (player, kind) = (stage.player, stage.kind);
         let hand = stage.app.world().resource::<Registries>().slots.expect("hand");
-        let blade = stage.app.world_mut().spawn((Item, Name::new("a blade"))).id();
+        let blade = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("a blade"), Armor(2), MeleeAttack { kind, dice: DiceRoll::new(2, 6) }, Bestows(vec![(might, Op::Add(5))])))
+            .id();
         let mut worn = Equipped(rl_rules::Equipment::with_slot_count(2));
         worn.equip(blade, &rl_rules::EquipShape::in_slot(hand)).expect("the slot exists");
         stage.app.world_mut().entity_mut(player).insert(worn);
+        // One pass of the turn loop folds the gear; the frame after draws it.
+        stage.app.world_mut().write_message(Intent::new(player, Wait));
+        stage.tick();
         stage.tick();
         let view = stage.app.world().resource::<SheetView>();
         let lines: Vec<(&str, Option<&str>)> = view.worn.iter().map(|w| (w.name.as_str(), w.item.as_deref())).collect();
         assert_eq!(lines, vec![("hand", Some("a blade")), ("head", None)]);
+        assert_eq!(view.armor, Some(2), "the blade's armor, on a player with none of its own");
+        assert_eq!(view.strikes[0].dice, DiceRoll::new(2, 6), "the blade is the blow, not the fist");
+        let line = view.stat("might").expect("registered");
+        assert_eq!(line.value, 10 + 2 + 5);
+        assert_eq!(line.changes.last().map(|c| c.from.as_str()), Some("a blade"), "{:?}", line.changes);
     }
 }
