@@ -49,6 +49,8 @@ Warren's shove is player-only, so it is written in `EngineSet::Input`.
 For monsters, decide in `TurnSet::Decide`: `DecideSet::Minds` is where the engine's brains run, and `DecideSet::Game` is after them.
 Claim with `acting.claim_decision` before writing the intent, so nothing chooses twice.
 
+A tactic of your own sits in the brain beside the engine's, and what it needs to know that the engine does not, a scent or a post, you push onto the snapshot in `PerceiveSet::Annotate` with `add_sense` and read back in the tactic with `sense::<T>()`.
+
 ## Try it
 
 - Make a shove fail against a heavier monster with `resolution.failed`.

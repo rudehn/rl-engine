@@ -9,7 +9,7 @@
 //! - [`awareness`]: [`NoticeStats`], [`StealthStats`], [`notices`] and [`Awareness`]: who has noticed whom.
 //! - [`brain`]: [`Brain`], [`Tactic`], [`TacticCtx`] and [`Decision`].
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
-//! - [`snapshot`]: [`Snapshot`], [`ActorView`], and what it carries and sees lying about, [`Missile`] and [`ItemView`].
+//! - [`snapshot`]: [`Snapshot`], [`ActorView`], what it carries and sees lying about, [`Missile`] and [`ItemView`], and a game's own [`Sense`].
 //! - [`tactics`]: the tactics every roguelike needs.
 //! - [`wits`]: [`Wits`], what a mind is able to do whatever its brain would
 //!   like, as capabilities with mindless, animal and sapient presets.
@@ -27,5 +27,5 @@ pub mod wits;
 pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Decision, Tactic, TacticCtx};
 pub use profile::MovementProfile;
-pub use snapshot::{ActorView, ItemView, Missile, Snapshot};
+pub use snapshot::{ActorView, ItemView, Missile, Sense, Snapshot};
 pub use wits::Wits;

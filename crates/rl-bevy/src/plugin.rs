@@ -173,6 +173,7 @@ impl Plugin for CorePlugin {
             .init_resource::<WorldSettings>()
             .init_resource::<Knowledge>()
             .init_resource::<crate::minds::FlowFields>()
+            .init_resource::<crate::minds::Thinking>()
             .init_resource::<TurnHold>()
             .add_message::<crate::cue::Cued>()
             .add_message::<ActionDone>()
@@ -201,7 +202,9 @@ impl Plugin for CorePlugin {
             .configure_sets(Update, EngineSet::Present.run_if(crate::state::world_is_shown))
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
-            .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
+            .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
+            .configure_sets(Turn, DecideSet::Perceive.run_if(crate::minds::a_mind_holds_the_turn))
+            .configure_sets(Turn, (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate).chain().in_set(DecideSet::Perceive))
             .configure_sets(
                 Turn,
                 (ResolveSet::Redirect, ResolveSet::Travel, ResolveSet::Act, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage)
@@ -334,10 +337,36 @@ pub enum DecideSet {
     /// anything chooses: the abilities it can use, when the game added
     /// [`AbilitiesPlugin`](crate::ability::AbilitiesPlugin).
     Offer,
+    /// What the mind about to decide knows, filled into
+    /// [`Thinking`](crate::minds::Thinking) by every plugin that knows
+    /// something a mind should, in [`PerceiveSet`] order. Runs only while a
+    /// mind holds the turn.
+    Perceive,
     /// The engine's minds, deciding for everyone but the player.
     Minds,
     /// The game's answer to whatever its own tactics chose.
     Game,
+}
+
+/// The stages of [`DecideSet::Perceive`], in order.
+///
+/// Phases rather than one set, because the contributors are not
+/// independent: stealth takes hiders out of the enemies combat put in, and
+/// what is annotated is annotated onto what survived. Two contributors in
+/// one phase never write the same list, and the snapshot is sorted once
+/// after all of them, so the order the executor ran a phase in cannot
+/// reach a tactic.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PerceiveSet {
+    /// The snapshot opened for the mind holding the turn.
+    Begin,
+    /// Who is seen, sorted into sides.
+    Roster,
+    /// What the mind cannot act on taken out again.
+    Filter,
+    /// Everything else a mind may know: what it carries and sees lying
+    /// about, what it may use, where not to step, and a game's own senses.
+    Annotate,
 }
 
 /// The stages of [`TurnSet::Resolve`], in order.

@@ -1020,6 +1020,17 @@ pub fn offer_abilities(mut offered: ResMut<Offered>, abilities: Res<Abilities>, 
     }
 }
 
+/// Tells the mind holding the turn what it may use: what the gate offered
+/// it, in [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate),
+/// so a tactic is never offered an ability the resolver would refuse.
+pub fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered: Res<Offered>) {
+    let Some(thinker) = thinking.actor() else { return };
+    let usable = offered.usable_by(thinker).to_vec();
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.usable = usable;
+    }
+}
+
 /// An actor as [`refresh_known`] reads it: what it knows, what it is
 /// granted of itself, and what it wears and carries.
 type Learner = (&'static mut Known, Option<&'static Grants>, Option<&'static Equipped>, Option<&'static Inventory>);
@@ -1117,6 +1128,7 @@ impl Plugin for AbilitiesPlugin {
             .add_stream::<AbilityRng>("AbilitiesPlugin")
             .needs::<Registries>("AbilitiesPlugin", "`Registries`, with the stats an ability's costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
+            .add_systems(Turn, perceive_abilities.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, redirect_item_uses.in_set(ResolveSet::Redirect))
             // What has landed, then what is cast this pass.
             .add_systems(Turn, (land_abilities, resolve_abilities).chain().in_set(ResolveSet::Act))

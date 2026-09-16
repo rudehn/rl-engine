@@ -129,6 +129,9 @@ impl<A: Copy> Tactic<A> for SearchLastKnown {
 }
 
 /// Drift: some chance of a random step, otherwise wait.
+///
+/// Never straight back where it came from while any other cell is open,
+/// so a wanderer wanders rather than dithers between two cells.
 #[derive(Debug, Clone, Copy)]
 pub struct Wander {
     /// Chance per turn of moving, in percent.
@@ -144,14 +147,21 @@ impl<A: Copy> Tactic<A> for Wander {
             return Some(Decision::Wait);
         }
         let me = ctx.snapshot.me.pos;
+        let back = ctx.snapshot.came_from;
         let start = ctx.rng.random_range(0..8);
+        let mut only_back = None;
         for i in 0..8 {
             let step: Point = me + Direction::from_index((start + i) % 8).offset();
-            if (ctx.can_step)(step) {
-                return Some(Decision::Step(step));
+            if !(ctx.can_step)(step) {
+                continue;
             }
+            if Some(step) == back {
+                only_back = Some(step);
+                continue;
+            }
+            return Some(Decision::Step(step));
         }
-        Some(Decision::Wait)
+        Some(only_back.map_or(Decision::Wait, Decision::Step))
     }
 }
 
@@ -470,7 +480,8 @@ mod tests {
         lost.last_known = Some(Point::new(9, 5));
         assert_eq!(decide(&lost), (Decision::Step(Point::new(6, 5)), Some("search_last_known")));
 
-        let mut seen = lost.clone();
+        let mut seen = Snapshot::alone(view(1, 5, 5, 10));
+        seen.last_known = Some(Point::new(9, 5));
         seen.enemies.push(view(2, 5, 8, 10));
         assert_eq!(decide(&seen).1, Some("hunt"), "something in sight is hunted, not searched for");
 
@@ -661,7 +672,7 @@ mod tests {
         // A burst on the ground takes no sides: put an ally in the huddle
         // and the loner becomes the better shot. A foe-aimed burst passes
         // the ally by, which the next test pins.
-        let mut mixed = many.clone();
+        let mut mixed = Snapshot::alone(view(1, 0, 5, 10));
         mixed.usable = vec![usable(0, Aim::Ground, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
         mixed.allies = vec![view(9, 6, 6, 10)];
         mixed.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10)];
@@ -709,8 +720,8 @@ mod tests {
         assert_eq!(UseAbility::default().evaluate(&mut ctx), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(0, 5) }));
 
         // Whole again, there is nothing to mend.
-        let mut whole = hurt.clone();
-        whole.me = view(1, 0, 5, 10);
+        let mut whole = Snapshot::alone(view(1, 0, 5, 10));
+        whole.usable = vec![usable(0, Aim::Ally, rl_grid::TargetMode::Adjacent)];
         let mut ctx =
             TacticCtx { snapshot: &whole, approach: None, escape: None, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);

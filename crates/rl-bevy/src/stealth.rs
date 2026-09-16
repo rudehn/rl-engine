@@ -27,7 +27,7 @@ use rl_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
 use crate::combat::{CombatRng, CombatRules, DamageDealt, Dead, Faction};
 use crate::components::{MyTurn, Player, Position, Viewshed};
 use crate::lighting::{DarkSight, Lighting};
-use crate::minds::{Mind, Perception, perceivable};
+use crate::minds::{Mind, Perception, Thinking, perceivable};
 use crate::places::{MapId, OnMap};
 use crate::world::WorldMap;
 
@@ -192,12 +192,39 @@ pub struct StealthPlugin;
 impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, Turn, TurnSet};
-        app.add_message::<Noticed>().add_systems(Turn, update_awareness.in_set(DecideSet::Notice)).add_systems(Turn, wake_on_damage.in_set(TurnSet::React));
+        app.add_message::<Noticed>()
+            .add_systems(Turn, update_awareness.in_set(DecideSet::Notice))
+            .add_systems(Turn, filter_unnoticed.in_set(crate::plugin::PerceiveSet::Filter))
+            .add_systems(Turn, wake_on_damage.in_set(TurnSet::React));
     }
 
     fn finish(&self, app: &mut App) {
         crate::plugin::depends_on::<crate::minds::MindsPlugin>(app, "StealthPlugin");
     }
+}
+
+/// Takes the hiders the mind holding the turn has not noticed out of its
+/// enemies, and points its search at the freshest trail it is on.
+///
+/// Stealth's contribution to a mind's knowledge, in
+/// [`PerceiveSet::Filter`](crate::plugin::PerceiveSet::Filter), after
+/// combat put everyone it could see in. A mind that keeps no [`Aware`] sees
+/// on sight and is left alone. One that keeps track and has not seen the
+/// player may not descend the shared fields, which point at the player.
+pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hidden: Query<(), With<Stealth>>, player: Query<Entity, With<Player>>) {
+    let Some(thinker) = thinking.actor() else { return };
+    let Ok(aware) = aware.get(thinker) else { return };
+    let Some(snapshot) = thinking.snapshot_mut() else { return };
+    snapshot.enemies.retain(|e| !hidden.contains(e.id) || aware.knows(e.id));
+    snapshot.last_known = aware
+        .0
+        .iter()
+        .filter(|(subject, _)| !snapshot.enemies.iter().any(|e| e.id == **subject))
+        .filter_map(|(_, state)| Some((state.stale_turns()?, state.last_known()?)))
+        .min_by_key(|(stale, at)| (*stale, *at))
+        .map(|(_, at)| at);
+    let player_seen = player.single().is_ok_and(|p| snapshot.enemies.iter().any(|e| e.id == p));
+    thinking.allow_fields(player_seen);
 }
 
 /// The observer holding the turn.

@@ -369,6 +369,17 @@ fn check_fire_rules(rules: Option<Res<FireRules>>, statuses: Option<Res<Messages
     );
 }
 
+/// Marks every burning cell as somewhere the mind holding the turn will
+/// not step, in [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate).
+pub fn perceive_fire(mut thinking: ResMut<crate::minds::Thinking>, fire: Res<Fire>) {
+    if thinking.actor().is_none() {
+        return;
+    }
+    for p in fire.burning() {
+        thinking.mark_hazard(p);
+    }
+}
+
 /// Fire: [`Fire`], set alight by [`Kindle`] and by what is [`Burning`],
 /// spread through burning tiles, [`Flammable`] things and burning gas every
 /// whole turn, glowing and smoking as [`FireRules`] says.
@@ -393,6 +404,7 @@ impl Plugin for FirePlugin {
             .needs::<Seed>("FirePlugin", "`Seed(RunSeed(n))`, which the flames roll from")
             .add_effect::<crate::effects::Ignite>()
             .add_systems(Turn, keep_alight.in_set(crate::plugin::TurnSet::Schedule))
+            .add_systems(Turn, perceive_fire.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, (kindle, step_fire).chain().in_set(FieldSet::Fire))
             .add_systems(OnEnter(crate::state::EngineState::Playing), check_fire_rules);
     }

@@ -1,5 +1,8 @@
 //! What an actor knows this turn.
 
+use std::any::Any;
+use std::fmt::Debug;
+
 use crate::FactionId;
 use crate::ability::Usable;
 use crate::ai::Wits;
@@ -51,8 +54,28 @@ pub struct ItemView<A: Copy> {
     pub gain: Option<i32>,
 }
 
+/// Something a game knows about the world that the engine has no word
+/// for, pushed onto a [`Snapshot`] for the game's own tactic to read.
+///
+/// A scent, a post to return to, an alarm that was raised: any type at
+/// all, found again by that type, so two games' senses cannot collide and
+/// nothing is numbered. `Debug` so the trace of a decision can print it.
+pub trait Sense: Debug + Send + Sync {
+    /// Itself, for the downcast.
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any + Debug + Send + Sync> Sense for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// The world from one actor's point of view, built once per turn.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Not `Clone` or `PartialEq`: a game's senses are boxed by type, and
+/// nothing copies or compares a snapshot once it is built.
+#[derive(Debug)]
 pub struct Snapshot<A: Copy> {
     /// The actor deciding.
     pub me: ActorView<A>,
@@ -60,7 +83,8 @@ pub struct Snapshot<A: Copy> {
     pub enemies: Vec<ActorView<A>>,
     /// Friendly actors it can see, nearest first.
     pub allies: Vec<ActorView<A>>,
-    /// The cell it came from last turn, if it moved.
+    /// The cell it stepped from on its last turn, if it stepped, so a
+    /// wanderer does not step straight back.
     pub came_from: Option<Point>,
     /// The abilities it could use this turn, already narrowed to what it
     /// can afford. Empty for an actor with none, which is most of them.
@@ -77,6 +101,8 @@ pub struct Snapshot<A: Copy> {
     pub missiles: Vec<Missile<A>>,
     /// What lies where it can see, nearest first.
     pub items: Vec<ItemView<A>>,
+    /// What the game knows that the engine does not, by type.
+    pub senses: Vec<Box<dyn Sense>>,
 }
 
 impl<A: Copy + Ord> Snapshot<A> {
@@ -106,7 +132,23 @@ impl<A: Copy> Snapshot<A> {
             wits: Wits::default(),
             missiles: Vec::new(),
             items: Vec::new(),
+            senses: Vec::new(),
         }
+    }
+
+    /// Adds something the game knows. One per type: a second of the same
+    /// type replaces the first, so a contributor that runs twice says one
+    /// thing.
+    pub fn add_sense<S: Sense + 'static>(&mut self, sense: S) {
+        // Through the box: a `Box<dyn Sense>` is itself a `Sense`, and asked
+        // directly it would answer with its own type.
+        self.senses.retain(|s| !(**s).as_any().is::<S>());
+        self.senses.push(Box::new(sense));
+    }
+
+    /// What the game knows of type `S`, if it said.
+    pub fn sense<S: 'static>(&self) -> Option<&S> {
+        self.senses.iter().find_map(|s| (**s).as_any().downcast_ref::<S>())
     }
 
     /// The nearest visible enemy.

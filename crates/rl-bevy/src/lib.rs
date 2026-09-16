@@ -66,12 +66,13 @@ pub use items::{
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-pub use minds::{FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile};
+pub use minds::{CameFrom, FlowFields, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Sight, Thinking, a_mind_holds_the_turn};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
 pub use plugin::{
-    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PresentSet, Requirements, ResolveSet, Turn, TurnSet, clear_run, depends_on,
+    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PerceiveSet, PresentSet, Requirements, ResolveSet, Turn, TurnSet, clear_run,
+    depends_on,
 };
 pub use registries::Registries;
 pub use replay::{Pressed, Recording};
@@ -114,11 +115,13 @@ pub mod prelude {
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
-    pub use crate::minds::{Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile};
+    pub use crate::minds::{Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Thinking};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
-    pub use crate::plugin::{CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PresentSet, ResolveSet, Turn, TurnSet, depends_on};
+    pub use crate::plugin::{
+        CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PerceiveSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on,
+    };
     pub use crate::registries::Registries;
     pub use crate::seed::{AddStream, Seed};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};

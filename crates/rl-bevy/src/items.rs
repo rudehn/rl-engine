@@ -29,8 +29,10 @@ use rl_rules::{EquipShape, Equipment, StatId};
 
 use crate::combat::DeathEvent;
 use crate::components::{Actor, MyTurn, Position};
+use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::status::StatBlock;
+use crate::throwing::Throwable;
 use crate::turn::{Action, Intent, Resolution};
 use crate::world::WorldMap;
 
@@ -480,6 +482,64 @@ pub fn drop_what_the_dead_carried(
     }
 }
 
+/// An item lying about, as a mind weighs it.
+type Lying = (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Throwable>, Option<&'static Wearable>, Option<&'static GearScore>);
+
+/// What a mind carries and wears, and what it might see lying about.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Belongings<'w, 's> {
+    bags: Query<'w, 's, (Option<&'static Inventory>, Option<&'static Equipped>)>,
+    missiles: Query<'w, 's, &'static Throwable>,
+    scores: Query<'w, 's, &'static GearScore>,
+    lying: Query<'w, 's, Lying, With<Item>>,
+}
+
+impl Belongings<'_, '_> {
+    /// What `thinker` carries that it could throw.
+    fn missiles(&self, thinker: Entity) -> Vec<rl_rules::Missile<Entity>> {
+        let Ok((Some(bag), _)) = self.bags.get(thinker) else { return Vec::new() };
+        bag.items.iter().filter_map(|item| self.missiles.get(*item).ok().map(|t| rl_rules::Missile { item: *item, range: t.range })).collect()
+    }
+
+    /// How much better `thinker` would be for wearing `item` in `shape`,
+    /// scored `score`, than for what it would displace; `None` when it wears
+    /// nothing or the item is not scored.
+    fn gain(&self, thinker: Entity, item: Entity, shape: &Wearable, score: &GearScore) -> Option<i32> {
+        let Ok((_, Some(worn))) = self.bags.get(thinker) else { return None };
+        // Tried on a copy: what the real equip would displace, and nothing moved.
+        let displaced = worn.0.clone().equip(item, &shape.0).ok()?;
+        Some(score.0 - displaced.iter().map(|d| self.scores.get(*d).map_or(0, |s| s.0)).sum::<i32>())
+    }
+}
+
+/// Tells the mind holding the turn what it carries to throw and what
+/// lies in sight worth having.
+///
+/// Items' contribution to a mind's knowledge, in
+/// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate). Only a
+/// mind with the wits to pick up or put on is told what lies about; what
+/// it stands on it can feel, and anything else it has to see.
+pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongings: Belongings) {
+    let Some(thinker) = thinking.actor() else { return };
+    let missiles = belongings.missiles(thinker);
+    let wits = thinking.snapshot().map(|s| s.wits).unwrap_or_default();
+    let mut items = Vec::new();
+    if wits.has(rl_rules::Wits::PICKS_UP) || wits.has(rl_rules::Wits::EQUIPS) {
+        for (item, pos, on, throwable, wearable, score) in belongings.lying.iter() {
+            let underfoot = pos.0 == thinking.at() && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == sight.current_map();
+            if !underfoot && !sight.perceives(&thinking, pos.0, on) {
+                continue;
+            }
+            let gain = wearable.zip(score).and_then(|(shape, score)| belongings.gain(thinker, item, shape, score));
+            items.push(rl_rules::ItemView { id: item, pos: pos.0, throw_range: throwable.map(|t| t.range), gain });
+        }
+    }
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.missiles = missiles;
+        snapshot.items.extend(items);
+    }
+}
+
 /// Items: on the ground, in a bag, in a slot, the six actions that move
 /// them between the three, and the fold of what worn items bestow.
 ///
@@ -506,6 +566,7 @@ impl Plugin for ItemsPlugin {
             .add_action::<EquipFromGround>()
             .add_action::<Unequip>()
             .add_action::<UseItem>()
+            .add_systems(Turn, perceive_belongings.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, resolve_items.in_set(ResolveSet::Act))
             // In the pass the slots changed in, so gear counts from the
             // moment it is worn.
