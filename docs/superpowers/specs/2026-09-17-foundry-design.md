@@ -11,7 +11,7 @@ Status: design agreed, not yet planned.
 It exists for three reasons, in order.
 
 1. It is the example that exercises the engine's combat depth: three damage kinds with a real counter-triangle, eighteen weapons across melee and ranged, four armor slots, and a loot curve over ten floors.
-2. It drives three small engine additions that the engine's own documents already say are missing, listed in section 10.
+2. It drives two small engine additions that the engine's own documents already say are missing, listed in section 10.
 3. It is a science-fiction example beside a pirate one and two dungeons, which is the evidence that the engine carries no genre.
 
 It is expected to move to its own repository once it is playable.
@@ -176,7 +176,7 @@ Twenty pieces, each granting flat armor, per-kind resistance and tags the affix 
 Armor values run 1 to 3 flat, with resistances as the interesting axis: the ablative vest resists kinetic, the phase II plate resists energy, the insulated vest resists ion, and the welding mask resists fire.
 
 The head slot carries the design's payoff.
-The **rangefinder helmet** grants the player the same `dark_sight` radius the radar droids have, which turns an enemy mechanic into a loot goal and makes a run that finds it play differently.
+The **rangefinder helmet** grants the player a `DarkSight` radius, the same component the radar droids carry, which turns an enemy mechanic into a loot goal and makes a run that finds it play differently.
 
 ## 8. The roster
 
@@ -203,7 +203,7 @@ Critters are near-immune to ion, which is where an ion-only build learns it need
 Radar droids ignore darkness inside their radius, which breaks a stealth build at the moment it has grown comfortable.
 Two counters, both in the engine's existing vocabulary.
 
-- An ion hit applies **sensors down**, a status that zeroes `dark_sight` for a few turns.
+- An ion hit applies **sensors down**, a status that strips `DarkSight` for a few turns.
   This is ion's fourth job and the reason its raw damage is low.
 - The rangefinder helmet gives the player radar 6, so the dark becomes fightable rather than avoidable.
 
@@ -277,15 +277,23 @@ Sealed armories with a guaranteed piece behind a locked door, coolant leaks whos
 
 ## 10. Engine changes
 
-Three, each small, each independently useful, and each landing as its own commit with its own tests before the game depends on it.
+Two, each small, each independently useful, and each landing as its own commit with its own tests before the game depends on it.
 
-### 10.1 `NoticeStats.dark_sight`
+### 10.1 Radar needs no engine change
 
-An optional radius inside which the light gate does not apply to that observer.
-Today `notices` takes a single `lit` boolean and `NoticeStats::lit_bonus` only helps when a target is lit, so there is no way to express an observer that ignores darkness.
+An earlier draft of this design called for a `NoticeStats.dark_sight` field.
+Reading the code showed the capability is already there, so the change was dropped.
 
-This is part of the deferred lighting phase E.
-Tests: over a seed range, an observer with `dark_sight: Some(n)` notices an unlit target within `n` and does not beyond it; an observer without it is unchanged on every existing fixture.
+- `DarkSight(pub i32)` is a component in `crates/rl-bevy/src/lighting.rs:66`.
+- `fov::cast` gates every viewer's viewshed through `lighting::gate`, which lets a viewer see an unlit tile within its dark sight, and `update_viewsheds` runs that for every actor with a `Viewshed`, not only the player.
+- `stealth::update_awareness` decides `in_view` with `sight.can_see(...)`, which is that gated viewshed.
+
+So a droid carrying `DarkSight(5)` already sees and notices an unlit target within five tiles.
+Radar is content: a `DarkSight` component on the droids that should have it.
+
+One nuance is left alone deliberately.
+The `lit` flag that `notices` receives is computed from the lighting alone, so an observer seeing a target through dark sight rather than through light gets no `lit_bonus`.
+That is the right reading: dark sight shows a shape, and light shows detail.
 
 ### 10.2 Attack cost on `MeleeAttack` and `RangedAttack`
 
@@ -310,7 +318,7 @@ On top of that, each completed reactor objective offers three field upgrades, of
 | Objective | Offered |
 |---|---|
 | Reactor 1, deck 4 | Combat stims, a healing ability; targeting uplink, +1 range on ranged weapons; reinforced servos, +10% speed |
-| Reactor 2, deck 7 | Heat sinks, +8 vent on every heat weapon; slug press, ammunition recovered on a kill; sensor spike, `dark_sight` 4 |
+| Reactor 2, deck 7 | Heat sinks, +8 vent on every heat weapon; slug press, ammunition recovered on a kill; sensor spike, `DarkSight(4)` |
 | Reactor 3, deck 10 | Dual processors, a second strike when dual wielding; overcharge, an ability doubling the next shot and filling its heat; deflector plate, +2 armor |
 
 Nine upgrades, three kept per run, which is the run-to-run variety that pure loot does not give.
@@ -339,7 +347,7 @@ Playable end to end, and the thing to build first.
 - Line droids with their first two spawn entries, probe droids, heavy droids, coolant rats.
 - Reactor one, its objective, and the first field-upgrade pick.
 - Ground loot by band and drops on death.
-- All three engine changes, each with its own tests.
+- Both engine changes, each with its own tests.
 
 What is deliberately absent from the slice: decks 4-10, the other twelve weapons, the other fourteen armor pieces, hunters, mini-bosses, the overseer, composed encounters, and the second and third upgrade picks.
 
@@ -359,7 +367,7 @@ The engine's rules apply, and the game is held to them.
 | An escape leg back up the ten decks | Backtracking without travel or auto-explore is a slog; both are deferred engine work |
 | XP and character levels | The engine has no progression module; loot and field upgrades carry the curve instead |
 | A pursuit clock spawning enemies behind the player | A system the engine does not have, and not needed by this mission |
-| A senses model with jammers and coolant suits | `dark_sight` is the smallest thing that serves radar; a full senses model is its own milestone |
+| A senses model with jammers and coolant suits | `DarkSight` already serves radar; a full senses model is its own milestone |
 | Shipping Star Wars names | Section 2.1 |
 | Vehicles, space, or anything above deck 1 | The foundry is the game |
 
