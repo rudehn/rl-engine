@@ -7,7 +7,7 @@
 ![Warren with a rail down the right: a Vitals section with a green health bar, crusts and the floor, then On the floor listing a crust of bread by its own % glyph](images/10-panels.png)
 
 Warren has had a status line and a log since [chapter 3](03-what-the-player-knows.md).
-This chapter gives it the rest: what is in sight, what is worn, and a cursor you can point at a rat to ask how the fight would go.
+Now it gets what is in sight, what is worn, and a cursor you can point at a rat to ask how the fight would go.
 
 None of it is a widget you fill in.
 Every panel reads a resource the engine rebuilds each frame, and the interesting question is which half of that you keep.
@@ -105,7 +105,6 @@ The panels land in `Chrome`; the look cursor lands in `Overlay`, over the map it
 ## What the engine cannot know
 
 The engine has no bestiary, no item table and no idea what a crust is.
-Two things bridge that, and Warren uses both.
 
 **A `Name` on the entity**, and that is all it takes:
 

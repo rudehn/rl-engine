@@ -1,9 +1,5 @@
 # Getting set up
 
-There are two ways in, and they answer different questions.
-Generate a game from the template to start one of your own.
-Clone the repository to follow the chapters after this, where every step is already written and you can run a chapter's result before you write it.
-
 ## Start a game of your own
 
 ```sh
@@ -28,7 +24,6 @@ cd rl-engine
 cargo run -p tutorial --bin step01_a_map
 ```
 
-Each chapter names the binary it builds, and they run in the same way.
 The first build compiles Bevy and takes a few minutes.
 
 ## Add it to a project you already have
@@ -51,13 +46,6 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 ```
 
-`Rect` is deliberately left out of the engine prelude, because Bevy has one of its own.
-Import the grid one by name where you need it:
-
-```rust
-use rl_engine::rl_core::Rect;
-```
-
 ## If the build fails
 
 On Linux, Bevy needs a few system packages that a Rust toolchain does not bring.
@@ -66,9 +54,5 @@ On Debian and Ubuntu:
 ```sh
 sudo apt install pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 ```
-
-Fedora wants `alsa-lib-devel systemd-devel wayland-devel libxkbcommon-devel`, and Arch wants `alsa-lib systemd-libs wayland libxkbcommon`.
-macOS and Windows need nothing beyond the toolchain.
-If the build succeeds and the window is black, the game is drawing before the first floor exists; run it again with `RUST_LOG=warn` and read what the engine reports missing.
 
 Next: [a map on screen](01-a-map-on-screen.md).

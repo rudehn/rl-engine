@@ -38,7 +38,6 @@ Everything else is a plugin you name, starting in [chapter 4](04-monsters.md), a
 The group is Bevy's own kind, so any part of it can be swapped or switched off.
 Leave out the `WorldMap` and play refuses to begin, listing everything missing at once with how to make each.
 
-Two lines beside it carry the rest of a run.
 `Seed` is where all randomness comes from: every stream the engine draws on is derived from it, so the same number always builds the same warren, and [chapter 7](07-down-the-stairs.md) takes it off the command line.
 `NewRun` is the schedule that starts a run, and the engine runs it again on a restart with the old run torn down first, so a game's setup goes there instead of in Bevy's `Startup`.
 
@@ -79,8 +78,6 @@ There is no `Tile::Wall` to extend, so lava, glass or a tile only ghosts can cro
 `TileAppearance` holds what each id looks like in full light.
 Both colours are authored because light multiplies them channel by channel and memory fades them.
 `Vary` jitters each cell's colour by a hash of its position, so the floor is not graph paper.
-Three tiles are fine to write out like this.
-When the warren gains its bestiary in [chapter 8](08-content-in-files.md), the looks move into a file beside it, and `TileAppearance::load` reads them.
 
 ## The floor is a chain of passes
 

@@ -1,7 +1,6 @@
 # Where to go next
 
 Warren is a complete roguelike in about 450 lines and uses maybe a third of the engine.
-Here is the rest, as what to add, what you supply and what you get back.
 
 ## Lighting
 

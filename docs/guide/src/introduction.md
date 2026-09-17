@@ -32,8 +32,6 @@ Warren draws with a glyph terminal the engine ships.
 Each chapter takes the previous step and adds one thing.
 Code in the text is pulled from the step's source, and the full file is linked at the top of every chapter.
 
-There are three ways to use this guide.
-
 Read it through and build Warren as you go.
 Or go to [getting set up](00-getting-set-up.md), generate a game of your own from the template, and use the chapters as the reference for whatever you add next.
 Or read the finished game first: [step 10](10-panels.md) is all of Warren in one file.
