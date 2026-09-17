@@ -18,7 +18,10 @@ use std::sync::Arc;
 use bevy::prelude::Resource;
 use rl_core::RunSeed;
 
-use crate::backend::{FileBackend, SaveBackend, SaveError};
+// A browser has no filesystem, so the file backend is not named there.
+#[cfg(not(target_arch = "wasm32"))]
+use crate::backend::FileBackend;
+use crate::backend::{SaveBackend, SaveError};
 
 /// What is written about a run.
 ///

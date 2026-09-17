@@ -16,6 +16,7 @@
 use bevy::color::Mix;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
+use rl_core::Grid2D;
 use rl_core::{Point, Rect};
 use rl_grid::{Light, TileId};
 use rl_rules::GasId;
@@ -192,6 +193,19 @@ impl MapView {
         self.origin = Point::new(p.x - self.viewport.width / 2, p.y - self.viewport.height / 2);
     }
 
+    /// Pulls the view back inside `bounds`, so it never shows void past
+    /// the edge of the map.
+    ///
+    /// Centring alone is not enough on a map close to the size of the
+    /// viewport: standing near an edge puts the map's rim mid-screen and
+    /// spends the rest on nothing. A map smaller than the viewport is
+    /// centred in it instead, since there is nothing to scroll.
+    pub fn clamp_to(&mut self, bounds: Rect) {
+        let slack = Point::new(bounds.width - self.viewport.width, bounds.height - self.viewport.height);
+        self.origin.x = if slack.x <= 0 { bounds.x + slack.x / 2 } else { self.origin.x.clamp(bounds.x, bounds.x + slack.x) };
+        self.origin.y = if slack.y <= 0 { bounds.y + slack.y / 2 } else { self.origin.y.clamp(bounds.y, bounds.y + slack.y) };
+    }
+
     /// The terminal cell a world tile is drawn at, if inside the viewport.
     pub fn to_screen(&self, p: Point) -> Option<Point> {
         let s = p - self.origin + self.viewport.origin();
@@ -233,10 +247,12 @@ impl Plugin for MapViewPlugin {
     }
 }
 
-/// Keeps the view centred on the player.
-pub fn follow_player(mut view: ResMut<MapView>, player: Query<&Position, With<Player>>) {
-    if let Ok(pos) = player.single() {
-        view.center_on(pos.0);
+/// Keeps the view centred on the player, and inside the map.
+pub fn follow_player(mut view: ResMut<MapView>, map: Res<WorldMap>, player: Query<&Position, With<Player>>) {
+    let Ok(pos) = player.single() else { return };
+    view.center_on(pos.0);
+    if let Some(place) = map.place(map.current()) {
+        view.clamp_to(place.terrain.bounds());
     }
 }
 
@@ -367,5 +383,36 @@ mod tests {
         let b = look.seen(TileId(4), Point::new(2, 1), 0.0);
         assert_ne!(a.bg, b.bg, "each cell its own shade");
         assert_eq!(look.seen(TileId(3), Point::new(1, 1), 0.0), look.seen(TileId(3), Point::new(2, 1), 0.0));
+    }
+}
+
+#[cfg(test)]
+mod view_tests {
+    use super::*;
+
+    /// A map barely larger than the viewport still fills it: standing at
+    /// the rim pulls the view back rather than showing what is not there.
+    #[test]
+    fn the_view_never_runs_off_the_edge_of_the_map() {
+        let mut v = MapView::new(Rect::new(0, 0, 80, 40));
+        let map = Rect::new(0, 0, 84, 42);
+        v.center_on(Point::new(77, 11));
+        v.clamp_to(map);
+        // Centring wants (37, -9); the map allows 4 of slack across and 2
+        // down, so x comes back to the far edge and y up to the near one.
+        assert_eq!(v.origin, Point::new(4, 0), "pulled back inside the map on both axes");
+        v.center_on(Point::new(2, 2));
+        v.clamp_to(map);
+        assert_eq!(v.origin, Point::new(0, 0), "and to its near corner");
+    }
+
+    /// A map smaller than the viewport has nothing to scroll, so it sits
+    /// in the middle instead of in a corner.
+    #[test]
+    fn a_map_smaller_than_the_view_is_centred_in_it() {
+        let mut v = MapView::new(Rect::new(0, 0, 80, 40));
+        v.center_on(Point::new(5, 5));
+        v.clamp_to(Rect::new(0, 0, 60, 20));
+        assert_eq!(v.origin, Point::new(-10, -10), "half the difference on each side");
     }
 }

@@ -74,7 +74,7 @@ const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).f
 /// The player and whether its lantern is open, while it holds the turn.
 type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
-/// `l` opens the lantern or shades it, and spends the turn either way.
+/// `t` opens the lantern or shades it, and spends the turn either way.
 ///
 /// The light is a component on the player, so shading it is removing one.
 /// Nothing else changes: sight is still sight, and the explored map still
@@ -87,7 +87,7 @@ fn tend_lantern(
     mut log: ResMut<MessageLog>,
     turns: Res<Turns>,
 ) {
-    if !keys.just_pressed(KeyCode::KeyL) {
+    if !keys.just_pressed(KeyCode::KeyT) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };

@@ -6,7 +6,7 @@
 //!
 //! `cargo run -p tutorial --bin step03_blows`
 //!
-//! Keys: arrows, `hjklyubn` or the numpad to walk or strike, `l` for the
+//! Keys: arrows, `hjklyubn` or the numpad to walk or strike, `t` for the
 //! lantern, `.` to wait, `q` to quit.
 
 use bevy::prelude::*;
@@ -41,7 +41,7 @@ fn main() -> AppExit {
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[l]antern  [.]wait  [q]uit"))
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat
@@ -168,6 +168,7 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Playe
 fn player_input(
     keys: Res<ButtonInput<KeyCode>>,
     dirs: Res<DirectionKeys>,
+    repeats: Res<Repeats>,
     player: PlayerTurn,
     mut bumps: MessageWriter<Intent<Bump>>,
     mut waits: MessageWriter<Intent<Wait>>,
@@ -179,7 +180,9 @@ fn player_input(
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, _)) = player.single() else { return };
-    if let Some(dir) = dirs.just_pressed(&keys) {
+    // A press walks, and a key held down keeps walking: `Repeats` is the
+    // engine's hold, already advanced before input is read.
+    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
         bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
         waits.write(Intent::new(entity, Wait));
@@ -202,7 +205,7 @@ const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).f
 /// The player and whether its lantern is open, while it holds the turn.
 type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
-/// `l` opens the lantern or shades it, and spends the turn either way.
+/// `t` opens the lantern or shades it, and spends the turn either way.
 ///
 /// The light is a component on the player, so shading it is removing one.
 /// Nothing else changes: sight is still sight, and the explored map still
@@ -215,7 +218,7 @@ fn tend_lantern(
     mut log: ResMut<MessageLog>,
     turns: Res<Turns>,
 ) {
-    if !keys.just_pressed(KeyCode::KeyL) {
+    if !keys.just_pressed(KeyCode::KeyT) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };

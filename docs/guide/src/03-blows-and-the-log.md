@@ -28,7 +28,7 @@ fn main() -> AppExit {
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[l]antern  [.]wait  [q]uit"))
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat

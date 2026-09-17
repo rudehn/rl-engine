@@ -103,7 +103,10 @@ impl RoguelikePlugins {
 impl PluginGroup for RoguelikePlugins {
     fn build(self) -> PluginGroupBuilder {
         let (width, height) = ((self.cols as f32 * self.cell.x) as u32, (self.rows as f32 * self.cell.y) as u32);
-        let window = Window { title: self.title, resolution: WindowResolution::new(width, height), ..default() };
+        // On the web the canvas is a fixed size unless it is told to follow
+        // its parent, which leaves it overflowing whatever it is embedded in.
+        // The field does nothing off the web.
+        let window = Window { title: self.title, resolution: WindowResolution::new(width, height), fit_canvas_to_parent: true, ..default() };
         let map = self.map.unwrap_or(rl_core::Rect::new(0, 0, self.cols, self.rows));
         PluginGroupBuilder::start::<Self>()
             .add_group(

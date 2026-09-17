@@ -1123,6 +1123,15 @@ impl Plugin for AbilitiesPlugin {
             .init_resource::<Offered>()
             .init_resource::<Airborne>()
             .add_message::<AbilityEvent>()
+            // `EffectWorld` writes these, so they are this plugin's to
+            // register: a writer for a message nobody registered fails the
+            // system at startup, and a game with abilities should not have
+            // to add the status or combat plugins to find that out. Fire,
+            // gas and items already register shared messages the same way,
+            // and registering one twice is harmless.
+            .add_message::<crate::status::Afflict>()
+            .add_message::<crate::status::Cure>()
+            .add_message::<crate::combat::DamageEvent>()
             .add_action::<Use>()
             .needs::<Abilities>("AbilitiesPlugin", "`Abilities::load(ron, &EffectKinds, &names)`, the game's abilities with their effects built")
             .add_stream::<AbilityRng>("AbilitiesPlugin")

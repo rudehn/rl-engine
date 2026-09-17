@@ -8,7 +8,7 @@
 //! `cargo run -p tutorial --bin step04_things`
 //!
 //! Keys: arrows to walk or strike, `g` get, `e` eat, `r` throw a rock,
-//! `l` lantern, `.` wait, `q` quit.
+//! `t` lantern, `.` wait, `q` quit.
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -39,12 +39,12 @@ fn main() -> AppExit {
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
         // Without this the world is lit everywhere and sight is geometry
         // alone. With it, `visible` shrinks to what a light reaches.
-        .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin))
+        .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin, TargetViewPlugin))
         .insert_resource(Lighting::dark())
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[g]et [e]at [r]ock [l]antern [.]wait [q]uit"))
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[g]et [e]at [r]ock [t]orch [.]wait [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat
@@ -183,14 +183,23 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Play
 /// blow at a foe, or opening a door, whichever is in the way. `r` writes no
 /// intent at all: it opens the engine's aiming cursor, and the throw is
 /// written when the cursor is committed.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, dirs: Res<DirectionKeys>, player: PlayerTurn, carried: Carried, mut intents: PlayerIntents) {
+fn player_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    dirs: Res<DirectionKeys>,
+    repeats: Res<Repeats>,
+    player: PlayerTurn,
+    carried: Carried,
+    mut intents: PlayerIntents,
+) {
     if keys.just_pressed(KeyCode::KeyQ) {
         intents.exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, bag)) = player.single() else { return };
-    if let Some(dir) = dirs.just_pressed(&keys) {
+    // A press walks, and a key held down keeps walking: `Repeats` is the
+    // engine's hold, already advanced before input is read.
+    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
         intents.bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(KeyCode::KeyG) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
@@ -223,7 +232,7 @@ const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).f
 /// The player and whether its lantern is open, while it holds the turn.
 type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
-/// `l` opens the lantern or shades it, and spends the turn either way.
+/// `t` opens the lantern or shades it, and spends the turn either way.
 ///
 /// The light is a component on the player, so shading it is removing one.
 /// Nothing else changes: sight is still sight, and the explored map still
@@ -236,7 +245,7 @@ fn tend_lantern(
     mut log: ResMut<MessageLog>,
     turns: Res<Turns>,
 ) {
-    if !keys.just_pressed(KeyCode::KeyL) {
+    if !keys.just_pressed(KeyCode::KeyT) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };

@@ -53,14 +53,23 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Play
 /// blow at a foe, or opening a door, whichever is in the way. `r` writes no
 /// intent at all: it opens the engine's aiming cursor, and the throw is
 /// written when the cursor is committed.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, dirs: Res<DirectionKeys>, player: PlayerTurn, carried: Carried, mut intents: PlayerIntents) {
+fn player_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    dirs: Res<DirectionKeys>,
+    repeats: Res<Repeats>,
+    player: PlayerTurn,
+    carried: Carried,
+    mut intents: PlayerIntents,
+) {
     if keys.just_pressed(KeyCode::KeyQ) {
         intents.exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, bag)) = player.single() else { return };
-    if let Some(dir) = dirs.just_pressed(&keys) {
+    // A press walks, and a key held down keeps walking: `Repeats` is the
+    // engine's hold, already advanced before input is read.
+    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
         intents.bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(KeyCode::KeyG) {
         intents.pick_ups.write(Intent::new(entity, PickUp));

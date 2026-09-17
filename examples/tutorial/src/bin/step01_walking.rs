@@ -101,6 +101,7 @@ type PlayerTurn<'w, 's> = Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>;
 fn player_input(
     keys: Res<ButtonInput<KeyCode>>,
     dirs: Res<DirectionKeys>,
+    repeats: Res<Repeats>,
     player: PlayerTurn,
     mut steps: MessageWriter<Intent<Step>>,
     mut waits: MessageWriter<Intent<Wait>>,
@@ -112,7 +113,9 @@ fn player_input(
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok(entity) = player.single() else { return };
-    if let Some(dir) = dirs.just_pressed(&keys) {
+    // A press walks, and a key held down keeps walking: `Repeats` is the
+    // engine's hold, already advanced before input is read.
+    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
         steps.write(Intent::new(entity, Step(dir)));
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
         waits.write(Intent::new(entity, Wait));
