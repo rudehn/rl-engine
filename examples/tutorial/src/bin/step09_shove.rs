@@ -1,6 +1,6 @@
 //! Warren, step 9: an action of the game's own, and tests with no window.
 //!
-//! The guide chapter is `docs/guide/src/09-an-action-of-your-own.md`. Shove is not an engine action and
+//! The guide chapter is `docs/guide/src/08-an-action-of-your-own.md`. Shove is not an engine action and
 //! never will be: the engine holds the loop, the game says what may be
 //! done with a turn.
 //!

@@ -173,7 +173,7 @@ Weight zero keeps an entry out of the table, which is how the king lives in the 
 
 ## The tiles too
 
-The largest block of Rust in [chapter 1](01-a-map-on-screen.md) was three lines of colour literals.
+The largest block of Rust in [chapter 1](01-a-map-and-walking.md) was three lines of colour literals.
 Colour is content as well, so it goes in a file of the same shape:
 
 <!-- include: ../../../examples/tutorial/assets/tiles.ron -->
@@ -219,4 +219,4 @@ What a tile *is* stays in `Warren::new`, because the engine reads that; what it 
 - Break the file on purpose, by duplicating a name, writing `"1z6"`, or giving a rat a `kind` nobody registered, and read the error.
 - Recolour the roots in `tiles.ron`, then delete the line and read what the load says.
 
-Next: [an action of your own](09-an-action-of-your-own.md).
+Next: [an action of your own](08-an-action-of-your-own.md).

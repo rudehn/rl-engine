@@ -21,15 +21,38 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
     outputs:
       site: ${{ steps.site.outputs.on }}
     steps:
       - uses: actions/checkout@v5
+      - name: room to build in
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - name: mdbook
         env:
           MDBOOK_VERSION: "0.5.4"
         run: |
           curl -sSfL "https://github.com/rust-lang/mdBook/releases/download/v$MDBOOK_VERSION/mdbook-v$MDBOOK_VERSION-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
+      # The playable demos: each tutorial step built to wasm and dropped
+      # into the book, which mdBook then copies as static files. This is
+      # the slow half of the job, and it is why the book is worth
+      # publishing at all.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: bevy system dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libx11-dev libfontconfig1-dev
+      - name: trunk
+        env:
+          TRUNK_VERSION: "0.21.14"
+        run: |
+          curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/v$TRUNK_VERSION/trunk-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
+      - name: the playable demos
+        run: scripts/build-demos.sh
       - name: build the guide
         run: mdbook build docs/guide
       # Publishing needs a Pages site, and only a repository admin can

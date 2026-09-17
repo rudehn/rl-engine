@@ -128,4 +128,4 @@ impl Bar {
 /// An entity without both is skipped rather than drawn as a blank, because
 /// a nameless row is a spawn that forgot its [`Name`] and a silent blank
 /// row is the hardest kind of that to notice.
-pub type Named<'a> = (&'a Label, &'a Glyph);
+pub type Named<'a> = (&'a Name, &'a Glyph);

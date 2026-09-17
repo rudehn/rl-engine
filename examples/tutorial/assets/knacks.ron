@@ -1,0 +1,33 @@
+// The one knack the warren gives you.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:        unique; what the game looks it up by
+//   description: optional; what it is, in a sentence, for the knack list
+//   look:        optional; (glyph:, color: (r:, g:, b:)), what flies and bursts
+//   aim:         Foe (default) | Ally | SelfOnly | Ground | Anyone
+//   mode:        Own | Adjacent | Bolt(range:) | Ball(range:, radius:) |
+//                Beam(range:) | Cone(length:)
+//   costs:       optional; this one costs no pool, only the wait
+//   cooldown:    optional; hundredths of a step before it may be used again
+//   effects:     each (kind:, chance:, args:); "Harm" takes a damage kind
+//                this game registered and a dice roll
+#![enable(implicit_some)]
+[
+    (
+        name: "screech",
+        description: "A shriek that goes through a rat like a nail. It carries, and it hurts.",
+        look: (glyph: '*', color: (r: 220, g: 220, b: 255)),
+        aim: Foe,
+        mode: Ball(range: 6, radius: 1),
+        cooldown: 300,
+        effects: [(kind: "Harm", args: (kind: "din", roll: "1d6"))],
+    ),
+    (
+        name: "gnaw",
+        description: "Eat the crust you are carrying. A ratling knows to do this; a rat does not.",
+        aim: SelfOnly,
+        mode: Own,
+        costs: [Item("bread", 1)],
+        effects: [(kind: "Mend", args: (kind: "care", roll: "1d6"))],
+    ),
+]

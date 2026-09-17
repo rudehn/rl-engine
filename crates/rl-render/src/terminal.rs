@@ -52,7 +52,10 @@ impl Cell {
 ///
 /// Glyphs come from the system's generic monospace family, which needs
 /// Bevy's `system_font_discovery` feature; the workspace enables it. With
-/// it off, every cell draws its background and no glyph.
+/// it off, every cell draws its background and no glyph. A browser has no
+/// font database to search, so on wasm the glyphs come from the font Bevy
+/// embeds under `default_font`, which covers printable ASCII and nothing
+/// else: a game drawing box art or block shades picks its own font there.
 pub struct TerminalPlugin {
     /// Width in cells.
     pub width: i32,
@@ -192,7 +195,12 @@ fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<Termina
             ..OrthographicProjection::default_2d()
         }),
     ));
-    let text_font = TextFont { font: FontSource::Monospace, font_size: FontSize::Px(font.size), font_smoothing: FontSmoothing::AntiAliased, ..default() };
+    // No system font database in a browser: take the embedded font.
+    #[cfg(target_arch = "wasm32")]
+    let family = FontSource::default();
+    #[cfg(not(target_arch = "wasm32"))]
+    let family = FontSource::Monospace;
+    let text_font = TextFont { font: family, font_size: FontSize::Px(font.size), font_smoothing: FontSmoothing::AntiAliased, ..default() };
     let count = (terminal.width() * terminal.height()) as usize;
     entities.background = Vec::with_capacity(count);
     entities.glyph = Vec::with_capacity(count);

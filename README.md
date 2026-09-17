@@ -28,34 +28,39 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
 - **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
 
-## Quick start
+## Getting started
 
-Clone the repository and run one of the three example games.
-
-```sh
-git clone https://github.com/rudehn/rl-engine
-cd rl-engine
-cargo run --release -p corsair -- --seed 7
-cargo run --release -p delve -- --seed 7
-cargo run --release -p heist -- --seed 7
-```
-
-The first build compiles Bevy and takes a few minutes.
-
-The guide builds a small roguelike one step at a time and is the place to start: read it in [`docs/guide/src`](docs/guide/src), or run `mdbook serve docs/guide` for the version with a sidebar and search.
-
-## Use it in your game
-
-The quickest start is the template: one file that runs on the first build, with a generated floor, a player and goblins, combat, sight, light and stealth, and tests.
+The quickest start is the template: one file that runs on the first build.
 
 ```sh
 cargo install cargo-generate
 cargo generate --git https://github.com/rudehn/rl-engine --tag v0.2.0 templates/starter --name my-game
+cd my-game
+cargo run
 ```
 
-The `--tag` matters: without it the template comes from `main`, which may already use what the release it pins does not have yet.
+It plays from the first build. The one file holds a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and three tests that play it without a window.
+The guide below builds the same thing a step at a time.
 
-To add the engine to a project of your own instead: rl-engine is not on crates.io yet, so depend on it from git.
+The template pins the engine to the release named by `--tag`, and takes the template from that release too.
+Leave the tag off and the template comes from `main`, which may use something no release has yet.
+CI generates and builds the template on every change to the engine, so it does not rot.
+
+## Follow the guide
+
+The guide builds a small roguelike called Warren, six steps that each add one thing, and every step is playable in the browser without installing anything.
+
+```sh
+git clone https://github.com/rudehn/rl-engine
+cd rl-engine
+cargo run -p tutorial --bin step01_walking
+```
+
+Read it at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/), or in [`docs/guide/src`](docs/guide/src), or run `mdbook serve docs/guide` for a local copy with search.
+
+## Add it to a project you already have
+
+rl-engine is not on crates.io yet, so depend on it from git.
 The `rl-engine` crate is the facade that re-exports every other crate, and `rl_engine::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.
 
 ```toml
@@ -78,7 +83,7 @@ App::new()
 ```
 
 That compiles and opens a window, and then play refuses to begin until the game supplies a map, tile looks and a player, which the engine says at startup by listing everything missing at once.
-The template above is the smallest version that actually plays, and [chapter 1 of the guide](docs/guide/src/01-a-map-on-screen.md) writes it out line by line.
+The template is the smallest version that actually plays, and [the guide's first chapter](docs/guide/src/01-a-map-and-walking.md) writes it out line by line.
 
 A tool or a server that needs no window can depend on a single tier-1 crate, such as `rl-grid` for field of view and pathfinding, and never compile Bevy.
 
@@ -120,9 +125,17 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The guide below builds a game one step at a time, and is the place to start.
-The three example games are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
+The three example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
 `examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
+
+## If the build fails
+
+On Linux, Bevy needs a few system packages that a Rust toolchain does not bring.
+On Debian and Ubuntu:
+
+```sh
+sudo apt install pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+```
 
 ## Crates
 

@@ -157,4 +157,4 @@ A game that decides a monster's whole turn itself claims it with `acting.claim_d
 - Delete `resolve_shoves` and press the key. Read the warning.
 - Give the rat king `shoves: true` and stand beside it.
 
-Next: [panels](10-panels.md).
+Next: [panels](09-where-to-go-next.md).

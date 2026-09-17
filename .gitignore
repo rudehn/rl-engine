@@ -4,3 +4,10 @@
 
 # The guide, built by mdbook.
 docs/guide/book/
+
+# Wasm bundles built by trunk for the guide's playable demos.
+dist/
+
+# The playable demos, built by scripts/build-demos.sh and by CI before the
+# book is built. Six Bevy wasm bundles, tens of megabytes each.
+docs/guide/src/demos/

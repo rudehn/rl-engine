@@ -82,6 +82,8 @@ impl Plugin for ReplayPlugin {
 /// The run so far, and where it is written.
 #[derive(Resource, Debug)]
 pub struct Recorder {
+    // Written only where there is a filesystem to write to.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     path: PathBuf,
     recording: Recording,
 }
@@ -121,9 +123,14 @@ pub fn record(frame: Frame, mut recorder: ResMut<Recorder>) {
     }
     recorder.recording.seed = frame.seed.as_deref().map(|s| s.0.0).unwrap_or(0);
     recorder.recording.keys.push(Pressed { clock: frame.turns.now(), keys, shift });
-    let path = recorder.path.clone();
-    if let Err(e) = recorder.recording.save(&path) {
-        error!("{RECORD_VAR}: {e}");
+    // A browser has no filesystem to write the recording to, and
+    // `Recording::save` is not compiled there.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let path = recorder.path.clone();
+        if let Err(e) = recorder.recording.save(&path) {
+            error!("{RECORD_VAR}: {e}");
+        }
     }
 }
 

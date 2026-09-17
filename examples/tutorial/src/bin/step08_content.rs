@@ -1,6 +1,6 @@
 //! Warren, step 8: the bestiary moves out of Rust and into a file.
 //!
-//! The guide chapter is `docs/guide/src/08-content-in-files.md`. A
+//! The guide chapter is `docs/guide/src/07-content-in-files.md`. A
 //! [`Registry`] validates the file at load and hands out a dense
 //! [`Id`] per entry; a [`BandedTable`] says which of them belong at which
 //! depth, and in what numbers.

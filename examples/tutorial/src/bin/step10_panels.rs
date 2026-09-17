@@ -1,6 +1,6 @@
 //! Warren, step 10: the panels, and a rail down the side.
 //!
-//! The guide chapter is `docs/guide/src/10-panels.md`. Everything in the
+//! The guide chapter is `docs/guide/src/09-where-to-go-next.md`. Everything in the
 //! rail comes from a view the engine keeps current: what is in sight with
 //! its health, what is worn, and the look cursor's reading of a rat. What
 //! the engine cannot know reaches a panel two ways, and both are here: a

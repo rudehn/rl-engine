@@ -53,5 +53,5 @@ scripts/check-guide.sh     the guide's includes, images and contents
 
 `docs/design/ui.md` is the design and `crates/rl-ui/src/lib.rs` is the how-to; read the crate docs before adding a panel.
 The short version: `UiPlugin` is the base, each panel is its own plugin taking a `Rect`, and a presenter adds its view plugin behind it.
-`docs/guide/src/10-panels.md` is the same thing aimed at a game author, and `examples/tutorial/src/bin/step10_panels.rs` is the worked example the chapter quotes.
+`docs/guide/src/09-where-to-go-next.md` is the same thing aimed at a game author, and `examples/tutorial/src/bin/step10_panels.rs` is the worked example the chapter quotes.
 Corsair is the full set: vitals, gear, nearby with a game facet for what an enemy wields, log, inspect, and two screens on the modal stack.

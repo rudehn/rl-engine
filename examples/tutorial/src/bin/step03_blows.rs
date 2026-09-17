@@ -1,14 +1,13 @@
-//! Warren, step 6: something to pick up, and something to do with it.
+//! Warren, step 3: blows, and the log that tells you about them.
 //!
-//! The guide chapter is `docs/guide/src/06-items.md`. The engine moves
-//! items between the ground, a bag and a slot; what using one *means* is
-//! the game's, answered in [`TurnSet::React`].
+//! The guide chapter is `docs/guide/src/03-blows-and-the-log.md`. Walking
+//! into a rat strikes it, the engine puts every blow down one damage
+//! pipeline, and the narrator says what happened in the log.
 //!
-//! `cargo run -p tutorial --bin step06_items`
+//! `cargo run -p tutorial --bin step03_blows`
 //!
-//! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
-
-use std::sync::Arc;
+//! Keys: arrows, `hjklyubn` or the numpad to walk or strike, `l` for the
+//! lantern, `.` to wait, `q` to quit.
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -17,6 +16,7 @@ use rl_engine::rl_core::Rect;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
+use std::sync::Arc;
 
 /// The terminal, in cells.
 const COLS: i32 = 80;
@@ -34,32 +34,29 @@ fn main() -> AppExit {
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-        // Minds live in the combat plugin: deciding where to move and
-        // deciding whom to hit are the same decision.
-        .add_plugins((CombatPlugin, MindsPlugin, ItemsPlugin))
+        // Without this the world is lit everywhere and sight is geometry
+        // alone. With it, `visible` shrinks to what a light reaches.
+        .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin))
+        .insert_resource(Lighting::dark())
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[g]et [e]at [.]wait [q]uit"))
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[l]antern  [.]wait  [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
-        .add_systems(Update, note_bag.in_set(ViewSet::Annotate))
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat
         // does to you is a bite.
         .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
-        // Escape opens the menu. The run's end opens it by itself, under these
-        // words, offering a new run or the same seed again; the morgue writes
-        // the run down beside the executable.
+        // Escape opens the menu, and the run's end opens it by itself.
         .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
         .insert_resource(Morgue::platform_default("warren", "Warren"))
         .add_systems(NewRun, start)
+        // A floor fills the first time it is entered, inside the turn.
+        .add_systems(Turn, populate.in_set(TurnSet::React))
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.
-        .add_systems(Update, player_input.in_set(EngineSet::Input))
-        // Both inside the turn: a floor fills the first time it is entered,
-        // and a crust eaten heals before the next rat gets its bite in.
-        .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
-        .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+        .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
+        .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
     app.run()
 }
 // ANCHOR_END: main
@@ -112,22 +109,6 @@ impl PlaceRules for Warren {
 }
 // ANCHOR_END: rules
 
-// ANCHOR: crust
-/// A crust of bread: the one item the warren has, and how much it heals.
-#[derive(Component, Clone, Copy)]
-struct Crust(i32);
-// ANCHOR_END: crust
-
-// ANCHOR: creatures
-/// What every rat in the warren shares: one brain, one faction, one bite.
-#[derive(Resource)]
-struct Rats {
-    mind: Arc<Brain<Entity>>,
-    bite: rl_engine::rl_rules::damage::DamageKindId,
-    faction: FactionId,
-}
-// ANCHOR_END: creatures
-
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
 fn start(
@@ -164,69 +145,100 @@ fn start(
     let player = commands
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO)),
-            (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
+            (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
-            (Inventory::default(),),
         ))
         .id();
     warps.write(WarpRequest::into_place(player, WARREN));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("Something is scratching in the dark. g picks up, e eats.", Tones::MUTED, 0);
+    log.push("Something is scratching in the dark.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
 
-// ANCHOR: intents
-/// Everything the player's keys can ask for. A system may take seven
-/// parameters; bundling the writers into one `SystemParam` keeps room for
-/// as many actions as the game grows.
-#[derive(bevy::ecs::system::SystemParam)]
-struct PlayerIntents<'w> {
-    bumps: MessageWriter<'w, Intent<Bump>>,
-    waits: MessageWriter<'w, Intent<Wait>>,
-    pick_ups: MessageWriter<'w, Intent<PickUp>>,
-    uses: MessageWriter<'w, Intent<UseItem>>,
-}
-// ANCHOR_END: intents
-
 // ANCHOR: input
 /// The player, but only while it is holding the turn.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position, &'static Inventory), (With<Player>, With<MyTurn>)>;
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Player>, With<MyTurn>)>;
 
 /// Keys to intents. Writing an intent is the whole of asking to act: the
 /// engine claims the turn, charges it, and refuses what cannot be done.
 ///
 /// The walk keys write a [`Bump`], which the engine resolves to a step, a
 /// blow at a foe, or opening a door, whichever is in the way.
-fn player_input(keys: Res<ButtonInput<KeyCode>>, dirs: Res<DirectionKeys>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
+fn player_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    dirs: Res<DirectionKeys>,
+    player: PlayerTurn,
+    mut bumps: MessageWriter<Intent<Bump>>,
+    mut waits: MessageWriter<Intent<Wait>>,
+    mut exit: MessageWriter<AppExit>,
+) {
     if keys.just_pressed(KeyCode::KeyQ) {
         exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
-    let Ok((entity, _, bag)) = player.single() else { return };
+    let Ok((entity, _)) = player.single() else { return };
     if let Some(dir) = dirs.just_pressed(&keys) {
-        intents.bumps.write(Intent::new(entity, Bump(dir)));
-    } else if keys.just_pressed(KeyCode::KeyG) {
-        intents.pick_ups.write(Intent::new(entity, PickUp));
-    } else if keys.just_pressed(KeyCode::KeyE) {
-        // Eating is a use; the engine spends the turn and reports it back.
-        if let Some(crust) = bag.items.first().copied() {
-            intents.uses.write(Intent::new(entity, UseItem(crust)));
-        }
+        bumps.write(Intent::new(entity, Bump(dir)));
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        intents.waits.write(Intent::new(entity, Wait));
+        waits.write(Intent::new(entity, Wait));
     }
 }
 // ANCHOR_END: input
 
 // ANCHOR: status
-/// What the engine cannot know: how many crusts are in the bag.
-fn note_bag(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, player: Query<&Inventory, With<Player>>) {
-    let Ok(bag) = player.single() else { return };
-    vitals.facets.push(facets.facet("crusts", format!("crusts {}", bag.items.len())));
+/// The one thing the vitals panel cannot know: how much of the map is
+/// ours. A note on the view, in the game's own words.
+fn note_explored(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, knowledge: Res<Knowledge>) {
+    vitals.facets.push(facets.facet("explored", format!("{} tiles explored", knowledge.explored_count())));
 }
 // ANCHOR_END: status
+
+// ANCHOR: lantern
+/// What the lantern sheds when it is open: a warm, slightly restless pool.
+const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).flickering(30);
+
+/// The player and whether its lantern is open, while it holds the turn.
+type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
+
+/// `l` opens the lantern or shades it, and spends the turn either way.
+///
+/// The light is a component on the player, so shading it is removing one.
+/// Nothing else changes: sight is still sight, and the explored map still
+/// remembers what the light once reached.
+fn tend_lantern(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    player: Lantern,
+    mut waits: MessageWriter<Intent<Wait>>,
+    mut log: ResMut<MessageLog>,
+    turns: Res<Turns>,
+) {
+    if !keys.just_pressed(KeyCode::KeyL) {
+        return;
+    }
+    let Ok((entity, lit)) = player.single() else { return };
+    if lit {
+        commands.entity(entity).remove::<LightSource>();
+        log.muted("You shade the lantern. The warren closes to arm's length.", turns.turn_number());
+    } else {
+        commands.entity(entity).insert(LANTERN);
+        log.notice("You open the lantern. The dirt comes up warm around you.", turns.turn_number());
+    }
+    waits.write(Intent::new(entity, Wait));
+}
+// ANCHOR_END: lantern
+
+// ANCHOR: creatures
+/// What every rat in the warren shares: one brain, one faction, one bite.
+#[derive(Resource)]
+struct Rats {
+    mind: Arc<Brain<Entity>>,
+    bite: rl_engine::rl_rules::damage::DamageKindId,
+    faction: FactionId,
+}
+// ANCHOR_END: creatures
 
 // ANCHOR: populate
 /// Fills the floor the one time it is built. `PlaceEntered::first` is
@@ -241,16 +253,6 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         // A stream of its own, keyed by name: adding another spawner later
         // cannot shift the numbers this one draws.
         let mut rng = seed.stream(b"warren.rats", ev.map.0 as u64);
-        // Crusts, dropped by whatever came down here before you.
-        let mut crusts = 0;
-        while crusts < 6 {
-            let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            if !map.is_walkable(p) {
-                continue;
-            }
-            commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
-            crusts += 1;
-        }
         let mut placed = 0;
         while placed < 16 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
@@ -260,7 +262,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             }
             commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
-                (Health::full(6), Armor(0), Perception(7), Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5)),
+                (Health::full(6), Armor(0), Perception(7), DarkSight(9), Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5)),
                 (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3) }, Name::new("rat")),
             ));
             placed += 1;
@@ -268,32 +270,3 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
     }
 }
 // ANCHOR_END: populate
-
-// ANCHOR: narrate
-/// What only Warren can put into words. Blows, deaths and pickups are the
-/// engine's narrator's; what eating a crust means is this game's.
-fn narrate(mut items: MessageReader<ItemEvent>, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
-    for ev in items.read() {
-        if let ItemEvent::Used { .. } = *ev {
-            log.push("You eat the crust. It helps.", Tones::GOOD, turns.turn_number());
-        }
-    }
-}
-// ANCHOR_END: narrate
-
-// ANCHOR: eat
-/// What eating a crust means. The engine has already spent the turn and
-/// taken the item out of the bag; this is the part only the game knows.
-///
-/// It runs in [`TurnSet::React`], inside the turn, so the healing lands
-/// before the next rat is dealt its move. In the drawing phase it would
-/// land a blow too late.
-fn eat(mut commands: Commands, mut used: MessageReader<ItemEvent>, crusts: Query<&Crust>, mut eaters: Query<&mut Health>) {
-    for ev in used.read() {
-        let ItemEvent::Used { actor, item } = *ev else { continue };
-        let (Ok(crust), Ok(mut health)) = (crusts.get(item), eaters.get_mut(actor)) else { continue };
-        health.current = (health.current + crust.0).min(health.max);
-        commands.entity(item).despawn();
-    }
-}
-// ANCHOR_END: eat

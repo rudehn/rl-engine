@@ -6,7 +6,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 
 - **Add** one resource: `commands.insert_resource(Lighting::dark());`
 - **You supply** a `LightSource` on a prop, an actor or an item, `Fuel` if it burns down, and `DarkSight` on whoever sees without one.
-- **You get** the `Viewshed` split from [chapter 3](03-what-the-player-knows.md) starting to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only where a light reaches it.
+- **You get** the `Viewshed` split from [chapter 2](02-sight-and-light.md) starting to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only where a light reaches it.
   `Fuel` reports `LightEvent::BurntOut`.
 - **Worked examples** `heist`, where wall lamps are the only light, snuffing one is how you cross a room, and the watch light them again.
   `delve` below the Maw: a brand that can be smothered, a torch to set down, and `v` to see the light as digits.
@@ -45,7 +45,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **Add** `FactsPlugin`.
 - **You supply** facts with a kind, a subject, an object and an amount, and objectives over them.
 - **You get** `Quests` with prerequisite chains and a victory flag, and `Counters`, a ledger of named tallies.
-  It is the grown-up version of [chapter 7](07-down-the-stairs.md)'s `if the king died`.
+  It is the grown-up version of [chapter 6](06-two-floors.md)'s `if the king died`.
 
 ## Saving
 
@@ -82,11 +82,52 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 
 ## Balance
 
-`rl-rules::balance` scores threat and prints a band report over the `BandedTable` from [chapter 8](08-content-in-files.md).
+`rl-rules::balance` scores threat and prints a band report over the `BandedTable` from [chapter 7](07-content-in-files.md).
 
 ```sh
 cargo run -p corsair -- --balance
 ```
+
+## Panels, past the two you have
+
+Warren uses a status strip and a log, added in [chapter 3](03-blows-and-the-log.md) when there was something to put in them.
+The engine has four more views and the machinery behind all of them.
+
+A panel is split in three, and the split is why any of it belongs in an engine.
+The **view** is a resource of plain data, rows and bars and numbers, with no colour and no string the game did not supply.
+The **collector** refills it in `ViewSet::Collect`.
+The **presenter** draws one, in a `PresentSet` layer, taking its rectangle in its constructor.
+"Every actor in the viewshed, nearest first, with a health fraction and a relation" is the same sentence in every roguelike; a gold-ruled rail with small-caps headings is one game's taste.
+
+That gives five places to stop, and you can stop at any of them: add the panel and be done, change the `Palette` and restyle everything at once, push a `Facet` for what the engine cannot know, keep the view and draw it yourself, or add neither.
+
+- **What the engine cannot know** is a `Facet`: a key, some words and a tone, pushed onto a row in `ViewSet::Annotate`. Warren already does this for the crusts in your bag and the floor you are on.
+- **Colours** are never passed to a widget. Every widget takes a `ToneId`, a semantic role the `Palette` turns into a colour, and `add_tone` declares a role and colours it in one call.
+- **Screens** are a stack of interned ids in `Modals`, with `no_modal` and `modal_is` as run conditions, so one gate on your input covers every screen you ever add.
+- **Keys** can be declared once in a `Controls` registry and read back by name, which is what lets `ControlsPanel` show exactly the keys the game reads.
+- **Two presenters over one view**: `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same log, and neither knows the other exists.
+- **The forecast** in the look cursor is not the panel's arithmetic. `rl_rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
+
+`examples/tutorial/src/bin/step10_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and `docs/design/ui.md` is why it is shaped that way.
+
+## Testing without a window
+
+The engine ships the test kit it uses itself, in `rl_engine::rl_bevy::testing`, and a game's tests use the same copy.
+
+A headless app is `MinimalPlugins`, states and `CorePlugin`, plus the engine plugins your game uses and your own systems, exactly as `main` does minus the three that draw.
+Two `update` calls start a run and deal the player its first turn; after that it is one per action.
+Writing an intent is how the game plays itself, and a suite like Warren's runs in about forty milliseconds.
+
+- `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system instead of writing intents by hand.
+- `surface(&mut app)` stands an open test world up for a test that needs a map and not the game's own.
+- `two_sides(&mut app)` inserts combat rules for two sides at war.
+
+Where a property exists, assert it over a range of seeds: that every generated floor has somewhere to stand and somewhere to go is forty-eight floors of evidence that costs milliseconds, because generation is tier 1 and never builds an `App`.
+Where no property exists, use a fingerprint test and say so in its name, so a change reads as a change rather than a failure.
+Test the refusal as well as the action: a wrong refusal crashes nothing, it silently eats a turn or freezes the loop.
+
+The test module of `step10_panels.rs` is the worked example.
+
 
 ## The crates
 
@@ -98,7 +139,7 @@ cargo run -p corsair -- --balance
 | 3 | `rl-engine` | facade |
 
 Map generation, field of view, pathfinding, the damage pipeline and the AI brains are tier 1.
-They run headless, test in milliseconds and build for WebAssembly, so the tests in [chapter 11](11-testing.md) cost milliseconds, and CI enforces the boundary.
+They run headless, test in milliseconds and build for WebAssembly, so the tests in [chapter 9](09-where-to-go-next.md) cost milliseconds, and CI enforces the boundary.
 A tool that needs only one of them can depend on that crate alone and never compile Bevy.
 
 ## The examples

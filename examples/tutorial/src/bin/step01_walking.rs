@@ -1,10 +1,10 @@
-//! Warren, step 2: walking, and the turn loop that walking runs.
+//! Warren, step 1: a floor on the screen, and walking on it.
 //!
-//! The guide chapter is `docs/guide/src/02-walking.md`. The keys become
-//! [`Intent`]s; the engine decides whether they can be spent and what
-//! they cost.
+//! The guide chapter is `docs/guide/src/01-a-map-and-walking.md`. A map
+//! generation chain digs the floor, the engine keeps it, and the keys
+//! become [`Intent`]s the engine decides the cost of.
 //!
-//! `cargo run -p tutorial --bin step02_walking`
+//! `cargo run -p tutorial --bin step01_walking`
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
 

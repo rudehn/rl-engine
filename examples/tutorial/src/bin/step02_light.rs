@@ -1,21 +1,17 @@
-//! Warren, step 4: rats, and the minds that move them.
+//! Warren, step 2: what you can see, and a lantern to see it by.
 //!
-//! The guide chapter is `docs/guide/src/04-monsters.md`. A rat is an
-//! actor with a [`Mind`]: a priority list of tactics the engine asks in
-//! order every time the rat is dealt a turn. They cannot bite yet.
+//! The guide chapter is `docs/guide/src/02-sight-and-light.md`. Sight is
+//! per actor and the floor is dark, so what you know of the warren is
+//! what your lantern has reached.
 //!
-//! `cargo run -p tutorial --bin step04_monsters`
+//! `cargo run -p tutorial --bin step02_light`
 //!
-//! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
-
-use std::sync::Arc;
+//! Keys: arrows, `hjklyubn` or the numpad to walk, `l` to open or shade
+//! the lantern, `.` to wait, `q` to quit.
 
 use bevy::prelude::*;
-use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ai::tactics::{Hunt, Wander};
-use rl_engine::rl_rules::faction::FactionDef;
 
 /// The terminal, in cells.
 const COLS: i32 = 80;
@@ -33,20 +29,19 @@ fn main() -> AppExit {
     // What every game adds: the window and the glyph terminal, the turn
     // loop, sight, the map in everything but the status row and the log, and the UI base.
     app.add_plugins(RoguelikePlugins::new("Warren", COLS, ROWS).map(Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS)))
-        // Minds live in the combat plugin: deciding where to move and
-        // deciding whom to hit are the same decision.
-        .add_plugins((CombatPlugin, MindsPlugin))
+        // Without this the world is lit everywhere and sight is geometry
+        // alone. With it, `visible` shrinks to what a light reaches.
+        .add_plugins(LightingPlugin)
+        .insert_resource(Lighting::dark())
         .insert_resource(Seed(RunSeed(7)))
         // Two panels: the vitals strip on the top row, the log along the
         // bottom. Each draws itself; neither needs a system of yours.
-        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[.] wait  [q]uit"))
+        .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[l]antern  [.]wait  [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.
-        .add_systems(Update, player_input.in_set(EngineSet::Input))
-        // A floor fills the first time it is entered, inside the turn.
-        .add_systems(Turn, populate.in_set(TurnSet::React))
+        .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
         .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
     app.run()
 }
@@ -100,15 +95,6 @@ impl PlaceRules for Warren {
 }
 // ANCHOR_END: rules
 
-// ANCHOR: creatures
-/// What every rat in the warren shares: one brain and one faction.
-#[derive(Resource)]
-struct Rats {
-    mind: Arc<Brain<Entity>>,
-    faction: FactionId,
-}
-// ANCHOR_END: creatures
-
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
 fn start(
@@ -119,30 +105,16 @@ fn start(
     mut next: ResMut<NextState<EngineState>>,
 ) {
     let warren = Warren::new(seed.0);
-
-    // The two registries combat reads: what damage can be, and who hates
-    // whom. Both are the game's content, named nowhere in the engine.
-    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
-    let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
-    let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
-    commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
-    commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
-    commands.insert_resource(Rats {
-        // Asked in order: chase what you can see, otherwise mill about.
-        mind: Arc::new(Brain::new().then(Hunt).then(Wander { chance_pct: 40 })),
-        faction: vermin,
-    });
-
     commands.insert_resource(warren.appearance());
     commands.insert_resource(WorldMap::new(warren.tiles.tables()));
     commands.insert_resource(PlaceRulesRes(Box::new(warren)));
 
     let player = commands
-        .spawn(((Actor, Player, Blocks, Position(Point::ZERO)), (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10))))
+        .spawn(((Actor, Player, Blocks, Position(Point::ZERO)), (Viewshed::new(9), RevealsMap, LANTERN, Glyph::new('@', Color::WHITE).on_layer(10))))
         .id();
     warps.write(WarpRequest::into_place(player, WARREN));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("Something is scratching in the dark.", Tones::MUTED, 0);
+    log.push("Walk with the arrows, hjklyubn or the numpad. l tends the lantern, . waits, q quits.", Tones::MUTED, 0);
     next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
@@ -183,32 +155,37 @@ fn note_explored(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, kno
 }
 // ANCHOR_END: status
 
-// ANCHOR: populate
-/// Fills the floor the one time it is built. `PlaceEntered::first` is
-/// true only on that arrival, so coming back does not restock it.
-fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
-    for ev in entered.read() {
-        if !ev.first {
-            continue;
-        }
-        let Some(place) = map.place(ev.map) else { continue };
-        let bounds = place.terrain.bounds();
-        // A stream of its own, keyed by name: adding another spawner later
-        // cannot shift the numbers this one draws.
-        let mut rng = seed.stream(b"warren.rats", ev.map.0 as u64);
-        let mut placed = 0;
-        while placed < 16 {
-            let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            // Not on top of the player, and not close enough to be unfair.
-            if !map.is_walkable(p) || geometry::chebyshev(p, ev.entry) < 8 {
-                continue;
-            }
-            commands.spawn((
-                (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
-                (Health::full(6), Perception(7), Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5)),
-            ));
-            placed += 1;
-        }
+// ANCHOR: lantern
+/// What the lantern sheds when it is open: a warm, slightly restless pool.
+const LANTERN: LightSource = LightSource::new(150, 7, Rgb::new(255, 210, 140)).flickering(30);
+
+/// The player and whether its lantern is open, while it holds the turn.
+type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
+
+/// `l` opens the lantern or shades it, and spends the turn either way.
+///
+/// The light is a component on the player, so shading it is removing one.
+/// Nothing else changes: sight is still sight, and the explored map still
+/// remembers what the light once reached.
+fn tend_lantern(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    player: Lantern,
+    mut waits: MessageWriter<Intent<Wait>>,
+    mut log: ResMut<MessageLog>,
+    turns: Res<Turns>,
+) {
+    if !keys.just_pressed(KeyCode::KeyL) {
+        return;
     }
+    let Ok((entity, lit)) = player.single() else { return };
+    if lit {
+        commands.entity(entity).remove::<LightSource>();
+        log.muted("You shade the lantern. The warren closes to arm's length.", turns.turn_number());
+    } else {
+        commands.entity(entity).insert(LANTERN);
+        log.notice("You open the lantern. The dirt comes up warm around you.", turns.turn_number());
+    }
+    waits.write(Intent::new(entity, Wait));
 }
-// ANCHOR_END: populate
+// ANCHOR_END: lantern

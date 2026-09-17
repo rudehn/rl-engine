@@ -1,18 +1,13 @@
 # Summary
 
 [Introduction](introduction.md)
-[Getting set up](00-getting-set-up.md)
 
-- [A map on screen](01-a-map-on-screen.md)
-- [Walking](02-walking.md)
-- [What the player knows](03-what-the-player-knows.md)
-- [Monsters](04-monsters.md)
-- [Blows](05-blows.md)
-- [Things to pick up](06-items.md)
-- [Down the stairs](07-down-the-stairs.md)
-- [Content in files](08-content-in-files.md)
-- [An action of your own](09-an-action-of-your-own.md)
-- [Panels](10-panels.md)
-- [Testing without a window](11-testing.md)
-
-[Where to go next](12-where-to-go-next.md)
+- [A map, and walking on it](01-a-map-and-walking.md)
+- [What you can see, and the dark](02-sight-and-light.md)
+- [Blows, and the log that tells you](03-blows-and-the-log.md)
+- [Things to carry, throw and eat](04-things-and-minds.md)
+- [A knack of your own](05-a-knack.md)
+- [Two floors, and a way out](06-two-floors.md)
+- [Content in files](07-content-in-files.md)
+- [An action of your own](08-an-action-of-your-own.md)
+- [Where to go next](09-where-to-go-next.md)

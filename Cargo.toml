@@ -34,7 +34,31 @@ ron = "0.10"
 noise = "0.9"
 # `system_font_discovery` lets the terminal ask for a generic monospace family
 # instead of shipping a font asset; Bevy's built-in font lacks box-drawing glyphs.
-bevy = { version = "0.19", features = ["system_font_discovery", "serialize"] }
+# Named rather than defaulted: the defaults carry 3D, glTF, audio, animation,
+# gizmos, scenes, picking and Bevy's own UI, none of which a glyph terminal
+# draws with, and all of which a browser would download. `default_font` is
+# the embedded ASCII face a browser falls back to, since there is no system
+# font database there for `system_font_discovery` to search.
+bevy = { version = "0.19", default-features = false, features = [
+    "bevy_core_pipeline",
+    "bevy_sprite_render",
+    "bevy_text",
+    "bevy_window",
+    "bevy_winit",
+    "bevy_state",
+    "bevy_log",
+    "bevy_color",
+    "default_font",
+    "system_font_discovery",
+    "serialize",
+    "multi_threaded",
+    "png",
+    "webgl2",
+    "x11",
+    "wayland",
+    "std",
+    "async_executor",
+] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # Worldgen and pathfinding are math-heavy; an unoptimised debug run takes

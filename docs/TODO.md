@@ -56,7 +56,7 @@ The five items that opened this section were built in the six stages of `docs/de
 ## 5. Documentation
 
 - **Guide chapters for the second half.**
-  Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/12-where-to-go-next.md`, and the alternative is the 1,280-line `examples/delve/src/main.rs`.
+  Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is the 1,280-line `examples/delve/src/main.rs`.
   Four chapters in the guide's style: lights out, being noticed, an ability in RON, saving the run.
 - **A plugin table in the overview.**
   The rl-bevy section of `docs/OVERVIEW.md` is bullets of a hundred to two hundred words each.
