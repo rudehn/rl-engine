@@ -71,6 +71,23 @@ The five items that opened this section were built in the six stages of `docs/de
   One `start_in_place(player, map)` command could take the last two, and the tutorial's chapter 1 shrinks with it.
 - **Split the delve's `main.rs`** into input, narration and content modules the way Corsair is, so the second worked example reads at the same grain as the first.
 
+## 6. Publish it
+
+- **The name is taken.**
+  `rl-core` is a token-bucket rate limiter on crates.io at 1.22.0, so the foundation crate cannot keep its name, and the `rl-` family cannot keep its prefix without one odd crate out.
+  Checked as whole families, with the base name and `-core` and `-grid` all free: `roguelike`, `dungeoneer`, `torchlit`, `runedeep`, `vaults`, `morgue`; taken: `rogue`, `delver`, `warren`, `gloom`, `crawl`.
+  The shape to copy is bracket-lib's, where one word is both the facade crate and the prefix for the parts.
+  Renaming reaches 297 references across 153 files and the public path `rl_engine::rl_core::Rect` that the guide teaches, so it is a decision to make before the first release rather than after it.
+  Reserve the rest of the family the same day; nothing stops someone taking `rl-grid` tomorrow.
+- **What blocks `cargo publish` is version requirements, not metadata.**
+  Every publishable crate already carries a licence, description, repository, homepage, five keywords, categories and an MSRV, the examples and the tutorial are `publish = false`, and both licence files sit at the root.
+  What stops a publish is 51 path dependencies with no version requirement, and they all flow through one `[workspace.dependencies]` table, so it is eleven lines.
+  Ten of the eleven crates have no readme, so their crates.io pages would render empty, and `rl-engine`'s `readme = "../../README.md"` points outside its own package, which `cargo package` refuses.
+  Publish in tier order, waiting for the index between each, and dry-run every crate first; `cargo-release` or `release-plz` does the ordering and is worth adopting before the first release rather than after.
+- **Nothing should go out while the API moves this fast.**
+  77 commits touched crate sources in the 30 days to 2026-09-17, changing about 2,100 lines of public declarations, and there is no `CHANGELOG.md`.
+  Publish the five Bevy-free crates first, since their APIs are the most settled and the most reusable on their own, and keep the Bevy layer on a git dependency until it stops moving.
+
 ## Tracked elsewhere
 
 - The plan's "Next" line: nights on Corsair's surface, scripted encounters, Bevy UI presenters over the panel views, and the living-world-rogue conversion.
