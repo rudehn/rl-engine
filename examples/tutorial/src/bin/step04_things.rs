@@ -162,7 +162,7 @@ fn start(
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
+            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }, Inventory::default()),
         ))
         .id();
     warps.write(WarpRequest::into_place(player, WARREN));
@@ -174,7 +174,7 @@ fn start(
 
 // ANCHOR: input
 /// The player, but only while it is holding the turn, and what it carries.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Player>, With<MyTurn>)>;
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Option<&'static Inventory>), (With<Player>, With<MyTurn>)>;
 
 /// Keys to intents. Writing an intent is the whole of asking to act: the
 /// engine claims the turn, charges it, and refuses what cannot be done.
@@ -204,11 +204,11 @@ fn player_input(
     } else if keys.just_pressed(KeyCode::KeyG) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
     } else if keys.just_pressed(KeyCode::KeyE) {
-        if let Some(crust) = bag.items.iter().copied().find(|i| carried.crusts.contains(*i)) {
+        if let Some(crust) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.crusts.contains(*i)) {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
     } else if keys.just_pressed(KeyCode::KeyR) {
-        if let Some(rock) = bag.items.iter().copied().find(|i| carried.rocks.contains(*i)) {
+        if let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i)) {
             intents.aims.write(AimThrow { user: entity, item: rock });
         }
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
@@ -415,3 +415,62 @@ fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
     }
 }
 // ANCHOR_END: litter
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The warren with no window, wired as `main` wires it.
+    fn started(seed: u64) -> (App, Entity) {
+        let mut app = rl_engine::rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin));
+        app.add_plugins(UiPlugin).add_plugins(TargetViewPlugin).add_plugins(rl_engine::rl_bevy::testing::KeyScriptPlugin);
+        app.insert_resource(Lighting::dark())
+            .insert_resource(Seed(RunSeed(seed)))
+            .add_systems(NewRun, start)
+            .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
+            // Exactly as `main` wires input, or the test cannot see the bug.
+            .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input));
+        app.update();
+        app.update();
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        (app, player)
+    }
+
+    /// A key is only read while the player holds the turn, so if the run
+    /// starts with nothing dealt, every key is dropped and the game looks
+    /// frozen while it still draws.
+    #[test]
+    fn the_player_is_dealt_a_turn_and_no_screen_is_in_the_way() {
+        let (app, player) = started(7);
+        let modals = app.world().resource::<Modals>();
+        assert!(!modals.any_open(), "a screen is open over the world: {modals:?}");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "the player was never dealt a turn");
+        // `PlayerTurn` reads the bag, so a player with no bag matches nothing
+        // and every key is dropped on the first line of `player_input`.
+        assert!(app.world().get::<Inventory>(player).is_some(), "the player has no Inventory, so the input query cannot match it");
+    }
+
+    /// A key pressed through the real input path spends a turn. Tried in
+    /// every direction, so a wall beside the start cannot pass for a
+    /// dropped key.
+    #[test]
+    fn a_pressed_direction_key_is_read_and_spends_a_turn() {
+        let (mut app, player) = started(7);
+        let arrows = [KeyCode::ArrowRight, KeyCode::ArrowLeft, KeyCode::ArrowUp, KeyCode::ArrowDown];
+        let mut moved = false;
+        for key in arrows {
+            let before = (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now());
+            rl_engine::rl_bevy::testing::press(&mut app, key);
+            for _ in 0..3 {
+                app.update();
+            }
+            let after = (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now());
+            if after != before {
+                moved = true;
+                break;
+            }
+        }
+        assert!(moved, "no direction key moved the player or spent a turn: input never reached the game");
+    }
+}

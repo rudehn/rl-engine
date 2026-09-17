@@ -182,7 +182,7 @@ fn start(
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Grants(vec![screech]), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
+            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }, Inventory::default()),
         ))
         .id();
     warps.write(WarpRequest::into_place(player, WARREN));
@@ -194,7 +194,7 @@ fn start(
 
 // ANCHOR: input
 /// The player, but only while it is holding the turn, and what it carries.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Player>, With<MyTurn>)>;
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Option<&'static Inventory>), (With<Player>, With<MyTurn>)>;
 
 /// Keys to intents. Writing an intent is the whole of asking to act: the
 /// engine claims the turn, charges it, and refuses what cannot be done.
@@ -225,7 +225,7 @@ fn player_input(
     } else if keys.just_pressed(KeyCode::KeyG) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
     } else if keys.just_pressed(KeyCode::KeyE) {
-        if let Some(crust) = bag.items.iter().copied().find(|i| carried.crusts.contains(*i)) {
+        if let Some(crust) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.crusts.contains(*i)) {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
     } else if keys.just_pressed(KeyCode::KeyA) {
@@ -233,7 +233,7 @@ fn player_input(
         // the burst would cover, and the spending of the turn are engine.
         intents.aim_ability.write(AimAt { user: entity, ability: knacks.screech });
     } else if keys.just_pressed(KeyCode::KeyR) {
-        if let Some(rock) = bag.items.iter().copied().find(|i| carried.rocks.contains(*i)) {
+        if let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i)) {
             intents.aims.write(AimThrow { user: entity, item: rock });
         }
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
@@ -469,3 +469,47 @@ struct Knacks {
     screech: AbilityId,
 }
 // ANCHOR_END: knack
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The warren with no window, wired as `main` wires it, input included.
+    fn started(seed: u64) -> (App, Entity) {
+        let mut app = rl_engine::rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin, AbilitiesPlugin));
+        app.add_plugins(UiPlugin).add_plugins(TargetViewPlugin).add_plugins(rl_engine::rl_bevy::testing::KeyScriptPlugin);
+        app.add_engine_effects();
+        app.insert_resource(Lighting::dark())
+            .insert_resource(Seed(RunSeed(seed)))
+            .add_systems(NewRun, start)
+            .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
+            .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input));
+        app.update();
+        app.update();
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        (app, player)
+    }
+
+    /// A key pressed through the real input path spends a turn. Tried in
+    /// every direction, so a wall beside the start cannot pass for a
+    /// dropped key.
+    #[test]
+    fn a_pressed_direction_key_is_read_and_spends_a_turn() {
+        let (mut app, player) = started(7);
+        assert!(app.world().get::<Inventory>(player).is_some(), "the player carries a bag");
+        let mut moved = false;
+        for key in [KeyCode::ArrowRight, KeyCode::ArrowLeft, KeyCode::ArrowUp, KeyCode::ArrowDown] {
+            let before = (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now());
+            rl_engine::rl_bevy::testing::press(&mut app, key);
+            for _ in 0..3 {
+                app.update();
+            }
+            if (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now()) != before {
+                moved = true;
+                break;
+            }
+        }
+        assert!(moved, "no direction key moved the player or spent a turn: input never reached the game");
+    }
+}

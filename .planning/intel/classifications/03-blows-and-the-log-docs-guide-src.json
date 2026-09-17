@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/guide/src/03-blows-and-the-log.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Blows, and the log that tells you",
+  "summary": "Tutorial chapter three: adding combat, minds, lighting, vitals and log panels, damage stages, factions, brain priority lists, bump actions, the narrator and run ending.",
+  "scope": ["CombatPlugin", "MindsPlugin", "LightingPlugin", "VitalsPanel", "LogPanel", "NarratorPlugin", "Phrasebook", "GameMenuPanel", "Morgue", "DamageStages", "CombatRules", "Registries", "Brain", "Bump", "ResolveSet::Redirect", "step03_blows tutorial example"],
+  "cross_refs": ["https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step03_blows.rs", "../../../examples/tutorial/src/bin/step03_blows.rs", "01-a-map-and-walking.md", "04-things-and-minds.md", "images/05-blows.png"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Filename uses a sibling-consistent path-suffix slug instead of a SHA-256 prefix because no hashing tool was available."
+}

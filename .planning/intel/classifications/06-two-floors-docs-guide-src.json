@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/guide/src/06-two-floors.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Two floors, and a way out",
+  "summary": "Tutorial chapter six: persistent places per MapId, per-floor generation via PlaceRules, stairs as Transition entities, per-floor seeded spawning, and a WayOut victory condition.",
+  "scope": ["PlaceRules", "PlaceBuild", "MapId", "WorldMap", "PlaceEntered", "Transition", "Destination::Place", "GoThrough", "RunOver", "RunSeed", "Seed::stream", "Chain", "dungeon::Rooms", "passes::CellularCave", "passes::KeepLargestRegion", "dungeon::FarthestExit", "Wits", "step06_descent tutorial example"],
+  "cross_refs": ["https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step06_descent.rs", "../../../examples/tutorial/src/bin/step06_descent.rs", "09-where-to-go-next.md", "07-content-in-files.md", "images/10-panels.png"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Filename uses a sibling-consistent path-suffix slug instead of a SHA-256 prefix because no hashing tool was available."
+}

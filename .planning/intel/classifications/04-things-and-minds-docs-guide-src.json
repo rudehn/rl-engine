@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/guide/src/04-things-and-minds.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Things to carry, throw and eat",
+  "summary": "Tutorial chapter showing items as components, Throwable and the aiming cursor, game-defined item use in TurnSet::React, and monster Intelligence/Wits gating AI tactics.",
+  "scope": ["Item", "Throwable", "Inventory", "UseItem", "ItemEvent", "AimThrow", "targeting cursor", "Bump intent", "TurnSet::React", "Intelligence", "Wits", "Mind", "ThrowAtRange", "Scavenge", "Seed::stream", "step04_things tutorial"],
+  "cross_refs": ["examples/tutorial/src/bin/step04_things.rs", "05-a-knack.md", "images/05-blows.png"],
+  "locked": false,
+  "precedence": null,
+  "notes": "No shell available to compute the SHA-256 suffix; the filename uses a path-derived suffix (docs-guide-src) instead, matching sibling classifications. mdBook tutorial chapter, prose plus quoted example code, no decisions or requirements."
+}

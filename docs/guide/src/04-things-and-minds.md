@@ -44,7 +44,7 @@ A throw is both an item and a blow, so it is its own plugin: the rock leaves the
 <!-- include: ../../../examples/tutorial/src/bin/step04_things.rs:input -->
 ```rust,no_run
 /// The player, but only while it is holding the turn, and what it carries.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Player>, With<MyTurn>)>;
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Option<&'static Inventory>), (With<Player>, With<MyTurn>)>;
 
 /// Keys to intents. Writing an intent is the whole of asking to act: the
 /// engine claims the turn, charges it, and refuses what cannot be done.
@@ -74,11 +74,11 @@ fn player_input(
     } else if keys.just_pressed(KeyCode::KeyG) {
         intents.pick_ups.write(Intent::new(entity, PickUp));
     } else if keys.just_pressed(KeyCode::KeyE) {
-        if let Some(crust) = bag.items.iter().copied().find(|i| carried.crusts.contains(*i)) {
+        if let Some(crust) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.crusts.contains(*i)) {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
     } else if keys.just_pressed(KeyCode::KeyR) {
-        if let Some(rock) = bag.items.iter().copied().find(|i| carried.rocks.contains(*i)) {
+        if let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i)) {
             intents.aims.write(AimThrow { user: entity, item: rock });
         }
     } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {

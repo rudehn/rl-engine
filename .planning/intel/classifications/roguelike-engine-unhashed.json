@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/reviews/roguelike_engine.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Code review: `roguelike_engine` (~15.7k LOC, Bevy 0.17)",
+  "summary": "Code review of the previous roguelike_engine crate, inventorying subsystems with extract/redesign/drop verdicts and diagnosing why the game reimplemented it instead of depending on it.",
+  "scope": ["roguelike_engine", "fantasy-rogue", "builder framework", "BrogueLike generator", "choke-point analysis", "grid algorithms", "lake builder", "turn scheduling", "GOAP planner", "squad coordination", "tile types", "map resource", "status effects", "combat", "map mutation", "lighting", "abilities", "AI decisions", "save framework", "geometry", "FOV", "pathfinding", "tile promotion", "stealth awareness", "factions", "noise map", "benchmarks", "determinism"],
+  "cross_refs": ["README.md", "fantasy-rogue/src/core/turns.rs", "bevy_rpg's docs/superpowers/specs/..."],
+  "locked": false,
+  "precedence": null,
+  "notes": "Code review of a prior engine, cited by docs/PLAN.md as evidence. Contains per-subsystem verdicts (EXTRACT-AS-IS / WITH-REDESIGN / GAME-SIDE / DROP) that read like recommendations, but they are not accepted decisions or requirements; the locked decisions live in docs/PLAN.md. No frontmatter or filename convention, so confidence is medium. Output filename uses the 'unhashed' suffix matching sibling classifiers because no tool to compute SHA-256 was available."
+}

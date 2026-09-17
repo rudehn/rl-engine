@@ -1,0 +1,34 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/guide/src/07-content-in-files.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Content in files",
+  "summary": "Tutorial chapter moving the bestiary and tile appearance into RON files, loaded into registries with names resolved to typed ids and depth-banded spawn tables.",
+  "scope": [
+    "RON content files",
+    "Registry",
+    "Named",
+    "NameRef",
+    "Id",
+    "Registries",
+    "DiceRoll",
+    "BandedTable",
+    "BandedEntry",
+    "Brain",
+    "TileAppearance",
+    "rl-rules balance report",
+    "examples/tutorial step08_content"
+  ],
+  "cross_refs": [
+    "https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step08_content.rs",
+    "../../../examples/tutorial/assets/rats.ron",
+    "../../../examples/tutorial/src/bin/step08_content.rs",
+    "../../../examples/tutorial/assets/tiles.ron",
+    "01-a-map-and-walking.md",
+    "08-an-action-of-your-own.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

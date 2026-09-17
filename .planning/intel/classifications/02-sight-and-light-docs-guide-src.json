@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/guide/src/02-sight-and-light.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "What you can see, and the dark",
+  "summary": "Tutorial chapter two: separate walkable and opaque tile flags, Viewshed line and visible grids, Knowledge explored map, Memory rendering, and a toggleable LightSource lantern with LightingPlugin.",
+  "scope": ["tutorial guide", "Warren example game", "TileRegistry", "TileProps", "TileAppearance", "OpacitySource", "field of view", "Viewshed", "Knowledge", "RevealsMap", "Memory", "Lighting", "LightingPlugin", "LightSource", "Fuel", "MessageLog", "step02_light example"],
+  "cross_refs": ["https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step02_light.rs", "../../../examples/tutorial/src/bin/step02_light.rs", "images/03-sight.png", "03-blows-and-the-log.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Output filename uses a path-derived suffix instead of a SHA-256 prefix because no hashing tool was available, matching sibling classifier outputs. mdBook tutorial chapter in docs/guide/src; describes engine behavior as explanatory prose with quoted example code, not decisions, requirements or contracts."
+}

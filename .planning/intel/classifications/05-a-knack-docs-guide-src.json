@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/guide/src/05-a-knack.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "A knack of your own",
+  "summary": "Tutorial chapter showing how a game defines abilities in RON data, loads them with Abilities::load, grants them, aims them with AimAt, and lets monster AI use them.",
+  "scope": ["abilities", "knacks.ron", "Abilities::load", "Grants", "Known", "AimAt", "targeting footprint", "add_effect", "add_engine_effects", "UseAbility", "item costs", "Tagged", "step05_knack example"],
+  "cross_refs": ["04-things-and-minds.md", "06-two-floors.md", "../../../examples/tutorial/assets/knacks.ron", "../../../examples/tutorial/src/bin/step05_knack.rs", "https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step05_knack.rs", "images/10-panels.png"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Output filename uses the sibling convention (slug plus path suffix) because no shell is available here to compute the SHA-256 path hash."
+}

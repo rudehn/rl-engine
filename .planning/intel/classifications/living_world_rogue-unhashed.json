@@ -1,0 +1,39 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/reviews/living_world_rogue.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Engine-extraction review: living-world-rogue",
+  "summary": "Code review of the living-world-rogue repo judging which subsystems to extract into the new engine, covering coupling, extension points, performance, quality and ranked recommendations.",
+  "scope": [
+    "lwr-world crate",
+    "lwr Bevy crate",
+    "Rng and stage_seed seed derivation",
+    "Grid",
+    "Fbm noise and SampleSpace",
+    "Direction and DirectionSet",
+    "Chain/Pass/Phase generation pipeline",
+    "LocalMap reachability",
+    "road routing and road network",
+    "site placement",
+    "Surroundings change-of-scale seam",
+    "cellular-automaton terrain passes",
+    "elevation and climate",
+    "Biome and LocalTile content enums",
+    "TerminalPlugin and Renderable",
+    "TurnQueue and TurnSet scheduler",
+    "View camera",
+    "Scale/Travel overworld-local transition",
+    "ScreenshotPlugin",
+    "determinism and fingerprint tests",
+    "crate purity boundary"
+  ],
+  "cross_refs": [
+    "CLAUDE.md",
+    "/Users/nathanrude/Development/living-world-rogue",
+    "/Users/nathanrude/Development/roguelike_engine/src/map/builders/mod.rs"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Evidence document: a review of a predecessor codebase with per-subsystem verdicts (EXTRACT-AS-IS / EXTRACT-WITH-REDESIGN / GAME-SIDE / DROP) and a ranked recommendations section (F). It is not an ADR (no status or decision record; the decisions it informs are locked in docs/PLAN.md), not a PRD (no user stories or acceptance criteria), not a SPEC (tables are inventories and benchmarks, not contracts). Synthesizer should treat recommendations as context/rationale cited by PLAN.md, not as requirements. Filename uses 'unhashed' because no hashing tool was available to compute the SHA-256 path hash, matching sibling outputs."
+}

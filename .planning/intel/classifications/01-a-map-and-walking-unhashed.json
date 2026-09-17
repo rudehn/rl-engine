@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/guide/src/01-a-map-and-walking.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "A map, and walking on it",
+  "summary": "Tutorial chapter one of the mdBook guide: generate a floor with a pass chain, register tiles as ids, spawn a player, and walk via intents through the turn loop.",
+  "scope": ["RoguelikePlugins", "Seed", "NewRun schedule", "TileRegistry", "TileAppearance", "PlaceRules", "Chain", "dungeon::Rooms", "dungeon::RandomStart", "PlaceBuild", "WorldMap", "WarpRequest", "Intent<Step>", "DirectionKeys", "Repeats", "turn loop stages", "Speed", "BASE_ACTION_COST", "Viewshed"],
+  "cross_refs": ["03-blows-and-the-log.md", "02-sight-and-light.md", "../../../examples/tutorial/src/bin/step01_walking.rs", "https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step01_walking.rs", "images/01-a-map.png"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Classified from content only: no frontmatter and no ADR/PRD/SPEC filename convention; path docs/guide/src is an mdBook tutorial. Prose walkthrough quoting example code, with a descriptive turn-loop stage table that restates engine behavior rather than defining a contract. Filename uses 'unhashed' suffix like sibling outputs because no hashing tool was available to compute SHA-256 of the source path."
+}

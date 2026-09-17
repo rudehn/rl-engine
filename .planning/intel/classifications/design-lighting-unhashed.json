@@ -1,0 +1,41 @@
+{
+  "source_path": "/Users/nathanrude/Development/rl-engine/docs/design/lighting.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Lighting",
+  "summary": "Technical design for opt-in, integer, theme-agnostic lighting: light field model, crate placement, viewshed gate, rendering, save and determinism rules, phases, tests and risks.",
+  "scope": [
+    "rl-grid light.rs",
+    "LightField",
+    "Light",
+    "Emitter",
+    "Rgb",
+    "falloff",
+    "screen blend",
+    "rl-bevy lighting.rs",
+    "LightSource",
+    "DarkSight",
+    "Fuel",
+    "LightEvent",
+    "Lighting resource",
+    "EngineSet::Light",
+    "opacity epoch",
+    "WorldMap::set_tile",
+    "Viewshed gate",
+    "Knowledge::mark",
+    "rl-render draw_map",
+    "heat-map overlay",
+    "examples/lamplight",
+    "delve example",
+    "Corsair example",
+    "crates/rl-grid/benches/grid.rs"
+  ],
+  "cross_refs": [
+    "crates/rl-grid/benches/grid.rs",
+    "examples/lamplight"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Design doc under docs/design/ (no filename convention). Competing signals: SPEC (data model structs, crate/component/system contracts, determinism and cost constraints, test list) vs ADR (explicit 'three decisions that shape everything else') vs DOC (prose rationale). Resolved to SPEC: it is a multi-decision technical design, not a single Context/Decision/Consequences record. Status line is mixed - phases A to C built 2026-09-11, phases D to F proposed - so the built parts (gate in update_viewsheds only, separate brightness and colour channels, opt-in via Lighting resource, integer falloff, sorted emitters for determinism) are effectively in force, while D to F are not locked. Filename uses 'unhashed' suffix because no shell was available to compute the SHA-256 of the source path; parent directory prefix added to avoid collisions."
+}
