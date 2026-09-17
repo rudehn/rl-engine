@@ -3,61 +3,9 @@
 **Defined:** 2026-09-17
 **Core Value:** A game gets a mechanic by adding a plugin, and the engine owns that mechanic's loop, so no game rewrites it on top of engine data structures.
 
-## Roadmap requirements (stealth and lighting)
-
-Each requirement cites the document section it comes from.
-Stealth reads `docs/design/stealth.md` section 12b and `docs/PLAN.md` progress 2026-09-16 as the effective contract over earlier sections (`.planning/intel/constraints.md` CON-stealth-*).
-Every requirement was checked against `crates/` on 2026-09-17 and is unbuilt.
-
-### Sneak attacks
-
-Source: `docs/design/stealth.md` phase E (section 10) and section 9; `docs/PLAN.md` progress 2026-09-12 ("Deferred: sneak attack damage (phase E)").
-
-- [ ] **SNEAK-01**: `rl_rules::damage::Defender` gains `unaware`, true when the defender keeps an `Aware` and had not noticed the attacker when the blow landed, and false when stealth is not running, the defender keeps no `Aware`, or the hit has no attacker.
-  It is the one breaking change to a tier-1 type in the stealth design, recorded as breaking in `CHANGELOG.md`.
-- [ ] **SNEAK-02**: Every path that puts a hit with an attacker down the damage pipeline fills `unaware` by the same rule, read before `wake_on_damage` wakes the defender: melee, ranged, a thrown strike, and an ability's `Harm`.
-- [ ] **SNEAK-03**: The engine ships no multiplier; the combat docs show a game-written sneak-attack `DamageStage` as a runnable doc-test, and `examples/heist` uses one.
-
-### Two-way stealth
-
-Source: `docs/design/stealth.md` section 9 ("Two-way stealth: monsters hiding from the player ... a render change and a separate slice"); `docs/PLAN.md` progress 2026-09-12 ("Deferred: ... two-way stealth").
-
-- [ ] **SEEN-01**: A player carrying `Notice` keeps an `Aware` of actors carrying `Stealth`, updated on the player's own turn by the same `notices` roll, lit bonus and memory a monster uses, rolled from `StealthRng`.
-- [ ] **SEEN-02**: An actor the player has not noticed is not drawn on the map view and does not appear in any player-facing list: the nearby rail, the `InSight` and `Focus` cycle, the targeting cursor, and the inspect panel.
-- [ ] **SEEN-03**: A hidden actor that strikes the player, or that the player bumps into, is noticed by the player at once.
-- [ ] **SEEN-04**: A player without `Notice` sees every actor its viewshed reaches exactly as today, and every existing test passes unchanged.
-
-### Noise
-
-Source: `docs/design/stealth.md` section 9 ("Noise. A second sense with its own propagation ... should not be smuggled in as a third knob on `Notice`") and section 1 ("distraction"); `docs/design/minds.md` "what waits" (noise, with `TileField<T>` named as the substrate); `docs/PLAN.md` section 3.7 (sound propagation with decay as a Dijkstra map) and section 3.9 (`TileField<T>` for sound); `docs/TODO.md` section 2 (noise part of "Tactics that are missing").
-
-- [ ] **NOISE-01**: A game emits a sound at a cell with a loudness, and the engine propagates it through the map, with walls and closed doors stopping or dampening it by a rule written into the design doc, in integers, deterministically and independent of ECS order.
-- [ ] **NOISE-02**: An actor carrying the engine's hearing component that the sound reaches becomes alert to the sound's cell and searches it through `SearchLastKnown`, and the engine writes one message per listener per sound for the game to narrate.
-- [ ] **NOISE-03**: A sound with no entity behind it, such as a thing landing, sends listeners to its cell without the game spawning a stand-in entity.
-- [ ] **NOISE-04**: Noise is its own opt-in plugin that declares its needs; it adds no field to `Notice` or `NoticeStats`, and without the plugin nothing changes.
-- [ ] **NOISE-05**: `examples/heist`'s pebbles and shouts run on the engine sense, and its own earshot loop (`Hears`, `alert_listeners`, the pebble's stand-in `Stealth`) is gone.
-
-### Light in the minds
-
-Source: `docs/design/lighting.md` phase E (section 7) and section 1 ("Light-averse and dark-sighted creatures"); `docs/OVERVIEW.md` "Not built yet" ("Lit detection ranges, a light-averse tactic, ...").
-
-- [ ] **LIT-01**: Lit detection ranges are defined and written into `docs/design/lighting.md` phase E before code, stating what they add over `NoticeStats::lit_bonus` (which widens only the certain radius) and the light gate (which caps sight at `Perception`), and then built: an observer detects a lit subject at a distance where the same subject unlit is not detected, for minds and for a player carrying `Notice`.
-  If the owner decides in discussion that `lit_bonus` and the gate already are this mechanic, the requirement is met by closing the OVERVIEW item with a PLAN progress entry that says so.
-- [ ] **LIT-02**: A light-averse tactic in `rl-rules::ai::tactics` keeps a mind off tiles lit at or above an authored threshold, so a dropped light holds it back, with the light reaching the mind through the snapshot rather than a component query.
-
-### Shadow layer
-
-Source: `docs/design/lighting.md` phase F (section 7, "a shadow layer for negative emitters") and section 1 ("A negative emitter subtracts intensity, which is why a shadow layer is reserved now and not retrofitted").
-The rest of phase F, burning tiles that glow, is built through `Lighting::set_glow` (PLAN progress 2026-09-15) and is not re-planned.
-
-- [ ] **SHADE-01**: A negative source on a prop, an actor or an item subtracts intensity in its own layer, cast through the same shadowcast, integer, order-independent, allocation-free per cast, and never persisted; a carried one sheds from its carrier and `Fuel` ends it with `LightEvent::BurntOut`.
-- [ ] **SHADE-02**: Everything that reads light reads the shadowed field: the viewshed gate, stealth's `lit`, lit detection and the light-averse tactic.
-- [ ] **SHADE-03**: The map view draws a shadowed tile darker and the light overlay shows the reduced intensity.
-- [ ] **SHADE-04**: The lighting bench gains a case with negative sources beside `light/20_sources_radius_8`, and with no negative sources the composed field is byte-identical to today's.
-
 ## Rules every phase satisfies
 
-These are not requirements of one phase; they are the definition of done for all of them, from `CLAUDE.md` and `docs/PLAN.md` sections 3.13 and 6.
+The roadmap has no phases right now; these stay as the definition of done for whatever is planned next, from `CLAUDE.md` and `docs/PLAN.md` sections 3.13 and 6.
 
 - `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass, with no crate-wide allow added.
 - `cargo test --workspace` passes, doc-tests included, none fenced `ignore`; `#![deny(missing_docs)]` holds.
@@ -77,6 +25,62 @@ These are not requirements of one phase; they are the definition of done for all
 Recorded so nothing is lost.
 Each entry names its source; where a captured todo in `.planning/todos/pending/` covers an item, the entry points at the todo file instead of restating it.
 Moving an entry into the roadmap is a roadmap update.
+
+### L0. Stealth and lighting, deferred 2026-09-17
+
+These 18 requirements were the roadmap's five phases until the user deferred the whole roadmap on 2026-09-17.
+They are kept in full, with their sources and their checks against `crates/`, so restoring them is a roadmap update rather than a rewrite.
+The phase shapes they had are in this commit's parent, `324d903`.
+
+Each requirement cites the document section it comes from.
+Stealth reads `docs/design/stealth.md` section 12b and `docs/PLAN.md` progress 2026-09-16 as the effective contract over earlier sections (`.planning/intel/constraints.md` CON-stealth-*).
+Every requirement was checked against `crates/` on 2026-09-17 and is unbuilt.
+
+#### Sneak attacks
+
+Source: `docs/design/stealth.md` phase E (section 10) and section 9; `docs/PLAN.md` progress 2026-09-12 ("Deferred: sneak attack damage (phase E)").
+
+- [ ] **SNEAK-01**: `rl_rules::damage::Defender` gains `unaware`, true when the defender keeps an `Aware` and had not noticed the attacker when the blow landed, and false when stealth is not running, the defender keeps no `Aware`, or the hit has no attacker.
+  It is the one breaking change to a tier-1 type in the stealth design, recorded as breaking in `CHANGELOG.md`.
+- [ ] **SNEAK-02**: Every path that puts a hit with an attacker down the damage pipeline fills `unaware` by the same rule, read before `wake_on_damage` wakes the defender: melee, ranged, a thrown strike, and an ability's `Harm`.
+- [ ] **SNEAK-03**: The engine ships no multiplier; the combat docs show a game-written sneak-attack `DamageStage` as a runnable doc-test, and `examples/heist` uses one.
+
+#### Two-way stealth
+
+Source: `docs/design/stealth.md` section 9 ("Two-way stealth: monsters hiding from the player ... a render change and a separate slice"); `docs/PLAN.md` progress 2026-09-12 ("Deferred: ... two-way stealth").
+
+- [ ] **SEEN-01**: A player carrying `Notice` keeps an `Aware` of actors carrying `Stealth`, updated on the player's own turn by the same `notices` roll, lit bonus and memory a monster uses, rolled from `StealthRng`.
+- [ ] **SEEN-02**: An actor the player has not noticed is not drawn on the map view and does not appear in any player-facing list: the nearby rail, the `InSight` and `Focus` cycle, the targeting cursor, and the inspect panel.
+- [ ] **SEEN-03**: A hidden actor that strikes the player, or that the player bumps into, is noticed by the player at once.
+- [ ] **SEEN-04**: A player without `Notice` sees every actor its viewshed reaches exactly as today, and every existing test passes unchanged.
+
+#### Noise
+
+Source: `docs/design/stealth.md` section 9 ("Noise. A second sense with its own propagation ... should not be smuggled in as a third knob on `Notice`") and section 1 ("distraction"); `docs/design/minds.md` "what waits" (noise, with `TileField<T>` named as the substrate); `docs/PLAN.md` section 3.7 (sound propagation with decay as a Dijkstra map) and section 3.9 (`TileField<T>` for sound); `docs/TODO.md` section 2 (noise part of "Tactics that are missing").
+
+- [ ] **NOISE-01**: A game emits a sound at a cell with a loudness, and the engine propagates it through the map, with walls and closed doors stopping or dampening it by a rule written into the design doc, in integers, deterministically and independent of ECS order.
+- [ ] **NOISE-02**: An actor carrying the engine's hearing component that the sound reaches becomes alert to the sound's cell and searches it through `SearchLastKnown`, and the engine writes one message per listener per sound for the game to narrate.
+- [ ] **NOISE-03**: A sound with no entity behind it, such as a thing landing, sends listeners to its cell without the game spawning a stand-in entity.
+- [ ] **NOISE-04**: Noise is its own opt-in plugin that declares its needs; it adds no field to `Notice` or `NoticeStats`, and without the plugin nothing changes.
+- [ ] **NOISE-05**: `examples/heist`'s pebbles and shouts run on the engine sense, and its own earshot loop (`Hears`, `alert_listeners`, the pebble's stand-in `Stealth`) is gone.
+
+#### Light in the minds
+
+Source: `docs/design/lighting.md` phase E (section 7) and section 1 ("Light-averse and dark-sighted creatures"); `docs/OVERVIEW.md` "Not built yet" ("Lit detection ranges, a light-averse tactic, ...").
+
+- [ ] **LIT-01**: Lit detection ranges are defined and written into `docs/design/lighting.md` phase E before code, stating what they add over `NoticeStats::lit_bonus` (which widens only the certain radius) and the light gate (which caps sight at `Perception`), and then built: an observer detects a lit subject at a distance where the same subject unlit is not detected, for minds and for a player carrying `Notice`.
+  If the owner decides in discussion that `lit_bonus` and the gate already are this mechanic, the requirement is met by closing the OVERVIEW item with a PLAN progress entry that says so.
+- [ ] **LIT-02**: A light-averse tactic in `rl-rules::ai::tactics` keeps a mind off tiles lit at or above an authored threshold, so a dropped light holds it back, with the light reaching the mind through the snapshot rather than a component query.
+
+#### Shadow layer
+
+Source: `docs/design/lighting.md` phase F (section 7, "a shadow layer for negative emitters") and section 1 ("A negative emitter subtracts intensity, which is why a shadow layer is reserved now and not retrofitted").
+The rest of phase F, burning tiles that glow, is built through `Lighting::set_glow` (PLAN progress 2026-09-15) and is not re-planned.
+
+- [ ] **SHADE-01**: A negative source on a prop, an actor or an item subtracts intensity in its own layer, cast through the same shadowcast, integer, order-independent, allocation-free per cast, and never persisted; a carried one sheds from its carrier and `Fuel` ends it with `LightEvent::BurntOut`.
+- [ ] **SHADE-02**: Everything that reads light reads the shadowed field: the viewshed gate, stealth's `lit`, lit detection and the light-averse tactic.
+- [ ] **SHADE-03**: The map view draws a shadowed tile darker and the light overlay shows the reduced intensity.
+- [ ] **SHADE-04**: The lighting bench gains a case with negative sources beside `light/20_sources_radius_8`, and with no negative sources the composed field is byte-identical to today's.
 
 ### L1. Abilities and encounters
 
@@ -209,30 +213,32 @@ Excluded by locked decisions or the design docs, not deferred.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SNEAK-01 | Phase 1 | Pending |
-| SNEAK-02 | Phase 1 | Pending |
-| SNEAK-03 | Phase 1 | Pending |
-| SEEN-01 | Phase 2 | Pending |
-| SEEN-02 | Phase 2 | Pending |
-| SEEN-03 | Phase 2 | Pending |
-| SEEN-04 | Phase 2 | Pending |
-| NOISE-01 | Phase 3 | Pending |
-| NOISE-02 | Phase 3 | Pending |
-| NOISE-03 | Phase 3 | Pending |
-| NOISE-04 | Phase 3 | Pending |
-| NOISE-05 | Phase 3 | Pending |
-| LIT-01 | Phase 4 | Pending |
-| LIT-02 | Phase 4 | Pending |
-| SHADE-01 | Phase 5 | Pending |
-| SHADE-02 | Phase 5 | Pending |
-| SHADE-03 | Phase 5 | Pending |
-| SHADE-04 | Phase 5 | Pending |
+| SNEAK-01 | - | Deferred (L0) |
+| SNEAK-02 | - | Deferred (L0) |
+| SNEAK-03 | - | Deferred (L0) |
+| SEEN-01 | - | Deferred (L0) |
+| SEEN-02 | - | Deferred (L0) |
+| SEEN-03 | - | Deferred (L0) |
+| SEEN-04 | - | Deferred (L0) |
+| NOISE-01 | - | Deferred (L0) |
+| NOISE-02 | - | Deferred (L0) |
+| NOISE-03 | - | Deferred (L0) |
+| NOISE-04 | - | Deferred (L0) |
+| NOISE-05 | - | Deferred (L0) |
+| LIT-01 | - | Deferred (L0) |
+| LIT-02 | - | Deferred (L0) |
+| SHADE-01 | - | Deferred (L0) |
+| SHADE-02 | - | Deferred (L0) |
+| SHADE-03 | - | Deferred (L0) |
+| SHADE-04 | - | Deferred (L0) |
 
 **Coverage:**
-- Roadmap requirements: 18 total
-- Mapped to phases: 18
+- Roadmap requirements: 0 total
+- Mapped to phases: 0
 - Unmapped: 0
+
+The 18 stealth and lighting requirements above are deferred under "Later" group L0, not mapped to a phase.
 
 ---
 *Requirements defined: 2026-09-17*
-*Last updated: 2026-09-17 after roadmap creation*
+*Last updated: 2026-09-17, after the roadmap was emptied at the user's request*

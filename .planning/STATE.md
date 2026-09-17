@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** A game gets a mechanic by adding a plugin, and the engine owns that mechanic's loop, so no game rewrites it.
-**Current focus:** Phase 1 - Sneak attacks
+**Current focus:** None - the roadmap is empty
 
 ## Current Position
 
-Phase: 1 of 5 (Sneak attacks)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-09-17 - Roadmap created from the docs ingest, scoped to stealth and lighting
+Phase: none (the roadmap has no phases)
+Plan: none
+Status: Idle - nothing planned, nothing in flight
+Last activity: 2026-09-17 - The user deferred the whole stealth and lighting roadmap before planning; the 18 requirements moved to REQUIREMENTS.md "Later", group L0
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -42,7 +42,7 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions; the repo's `docs/PLAN.md` progress log stays the primary record.
 Recent decisions affecting current work:
 
-- Roadmap: scoped to stealth and lighting only (user, 2026-09-17); everything else is in REQUIREMENTS.md "Later / not in this roadmap".
+- Roadmap: emptied (user, 2026-09-17). Stealth and lighting were scoped in and then deferred the same day, before any planning; group L0 in REQUIREMENTS.md holds them, and commit 324d903 holds the phase shapes.
 - Roadmap: stealth before lighting, ordered by dependency (sneak attacks, then the player notices, then noise; lit detection and light-averse, then the shadow layer).
 - Roadmap: noise is pulled out of `docs/TODO.md` section 2; the rest of that item stays Later.
 - Roadmap: sconces as prefab marks and the ranged penalty in the dark are not in (no engine machinery needed, and gated on accuracy, respectively).
@@ -50,7 +50,7 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 11 pending, in `.planning/todos/pending/`.
-Related to this roadmap: `2026-09-17-split-heist-main-and-test-its-stealth.md` (Phases 1 to 5 all touch `examples/heist`, which has no test of its stealth-and-light mechanic today).
+With no roadmap running, these are the available work. `2026-09-17-make-movement-profiles-change-pathing-costs.md` and `2026-09-17-take-color-out-of-log-spans.md` are the two the review rated highest.
 
 ### Blockers/Concerns
 
@@ -69,5 +69,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-09-17
-Stopped at: ROADMAP.md, REQUIREMENTS.md, PROJECT.md and STATE.md written; nothing committed
+Stopped at: GSD set up and the roadmap emptied at the user's request; 11 todos pending
 Resume file: None

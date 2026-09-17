@@ -7,8 +7,9 @@ Tier 0 and 1 crates (`rl-core`, `rl-grid`, `rl-mapgen`, `rl-world`, `rl-rules`) 
 Its consumers live in the workspace: `examples/corsair` (open world), `examples/delve` (dungeon), `examples/heist` (stealth and light), `examples/tutorial` (the guide's Warren), and `templates/starter`.
 It targets native desktop and the wasm32 browser.
 
-This planning set covers one slice of remaining work: the unbuilt parts of stealth and lighting.
-Everything else outstanding is recorded, with its source, in `.planning/REQUIREMENTS.md` under "Later / not in this roadmap".
+This planning set has no work scoped in yet.
+It was created around the unbuilt parts of stealth and lighting, which the user deferred on 2026-09-17 before planning began.
+Everything outstanding, those 18 requirements included, is recorded with its source in `.planning/REQUIREMENTS.md` under "Later / not in this roadmap".
 
 ## Core Value
 
@@ -53,7 +54,7 @@ Detailed, checkable requirements are in `.planning/REQUIREMENTS.md`.
 
 ### Out of Scope
 
-- Everything outside stealth and lighting - the user scoped this roadmap to those two subsystems on 2026-09-17; the rest is recorded in `.planning/REQUIREMENTS.md` "Later / not in this roadmap" so nothing is lost.
+- Everything, for now - the user scoped the roadmap to stealth and lighting on 2026-09-17 and then deferred those as well, so nothing is in scope until a group moves out of `.planning/REQUIREMENTS.md` "Later / not in this roadmap".
 - An engine sneak-attack multiplier - balance is the game's (stealth.md phase E).
 - Squad alerting or shout propagation rules - the `Noticed` message is the seam and propagation is content (stealth.md sections 6 and 9).
 - A day and night cycle in the engine - ambient is data the game writes (lighting.md section 0, CON-light-opt-in).
@@ -173,7 +174,7 @@ Falloff and blending are integer, emitters are sorted before casting so the fiel
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Roadmap scoped to stealth and lighting only (2026-09-17) | The user chose these two subsystems; everything else is recorded as Later with its source | - Pending |
+| Roadmap scoped to stealth and lighting only, then emptied (2026-09-17) | The user chose those two subsystems, then deferred them before planning; all 18 requirements sit in REQUIREMENTS.md group L0 | - Deferred |
 | Noise is pulled from `docs/TODO.md` section 2 into this roadmap; pack, leader, keep-at-range, patrol, scent and the `UseAbility` weights stay Later | stealth.md section 9 places noise in stealth; the rest of that TODO item is minds work | - Pending |
 | Lit detection ranges and the light-averse tactic are in; the ranged penalty in the dark and sconces as prefab marks are out | lighting.md phase E places all four in lighting, but the penalty is gated on accuracy and sconces need no engine machinery | - Pending |
 | Burning-tile glow is not re-planned | Built 2026-09-15 through `Lighting::set_glow` in the dynamic layer | ✓ Good |
