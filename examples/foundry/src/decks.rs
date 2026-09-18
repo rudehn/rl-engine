@@ -139,13 +139,11 @@ impl Foundry {
         // One stream per deck, so building deck 2 first does not change deck 1.
         let seed = RunSeed(self.seed.0 ^ (deck as u64) << 32);
         let mut chain = Chain::new()
-            // Every room is at least two cells wider and taller than the
-            // largest piece stamped into one, five: `Placement::AnyRoom`
-            // centres a piece in its room, so a ring of the room's own
-            // floor always runs around it, and whichever way the piece's
-            // opening faces it opens onto that ring rather than onto the
-            // room's wall. Rooms of five let a piece fill its room edge to
-            // edge and cut its own opening off.
+            // Every room is at least seven cells, two more than the
+            // largest piece: `Placement::AnyRoom` takes only a room that
+            // leaves a cell of floor all round the piece, so with rooms
+            // of five the reactor, stamped last, found no room left on
+            // some seeds and the deck failed to build.
             .then(Rooms { floor: self.deck, min_size: 7, max_size: 12, ..Default::default() })
             .then(Doors { door: self.hatch })
             .then(StampOneOf { name: "armory", choices: self.armories()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored })
