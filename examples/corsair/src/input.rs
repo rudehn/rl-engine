@@ -76,11 +76,11 @@ pub struct Aim<'w, 's> {
     modals: Res<'w, Modals>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
-    player: Query<'w, 's, Gunner, (With<Player>, With<MyTurn>)>,
+    player: Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>,
+    /// Whether the player has a shot: a pistol's is on the pistol, so this
+    /// reads what is worn the way the resolver fires it.
+    loadout: Loadout<'w, 's>,
 }
-
-/// The player, and whether it has anything to shoot with.
-type Gunner = (Entity, Has<RangedAttack>);
 
 /// `f`: fire through the targeting cursor, which opens on the nearest foe,
 /// cycles the rest with Tab, previews the line of fire, and shoots on
@@ -89,8 +89,8 @@ pub fn fire(mut aim: Aim, mut aims: MessageWriter<AimFire>) {
     if aim.modals.any_open() || !aim.keys.just_pressed(aim.binds.fire) {
         return;
     }
-    let Ok((me, armed)) = aim.player.single() else { return };
-    if armed {
+    let Ok(me) = aim.player.single() else { return };
+    if aim.loadout.ranged(me).is_some() {
         aims.write(AimFire { user: me });
     } else {
         aim.log.push("You have nothing to shoot with.", Tones::MUTED, aim.turns.turn_number());
@@ -234,6 +234,42 @@ mod tests {
         press(&mut app, KeyCode::KeyC);
         assert_eq!(app.world().resource::<WorldMap>().tile(door), Some(shut), "`c` shut it");
         assert!(said(&app, "You close the door."));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pistol's shot is on the pistol, not the captain, so `f` has to
+    /// read what is worn the way the resolver fires it: with a pistol in
+    /// hand it asks the cursor to aim, and bare-handed it says there is
+    /// nothing to shoot with.
+    #[test]
+    fn f_with_a_worn_pistol_asks_the_cursor_to_aim_and_with_none_says_so() {
+        let dir = std::env::temp_dir().join(format!("corsair-fire-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        app.add_plugins(KeyScriptPlugin).add_message::<AimFire>().add_systems(Update, fire.in_set(EngineSet::Input));
+        app.update();
+        app.update();
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let aimed = |app: &mut App| app.world_mut().resource_mut::<Messages<AimFire>>().drain().map(|a| a.user).collect::<Vec<_>>();
+
+        press(&mut app, KeyCode::KeyF);
+        assert!(aimed(&mut app).is_empty(), "a cutlass is not a gun");
+        assert!(app.world().resource::<MessageLog>().iter().any(|e| e.text == "You have nothing to shoot with."));
+
+        let pistol = app.world_mut().resource_scope(|world: &mut World, armory: Mut<crate::items::Armory>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            let pistol = armory.spawn(&mut commands, armory.defs.expect("pistol"), 1, None);
+            queue.apply(world);
+            pistol
+        });
+        app.world_mut().get_mut::<Inventory>(me).unwrap().items.push(pistol);
+        app.world_mut().write_message(Intent::new(me, Equip(pistol)));
+        app.update();
+        app.update();
+        assert!(app.world().get::<Equipped>(me).unwrap().0.worn().any(|(_, item)| item == pistol), "the pistol is in hand");
+        press(&mut app, KeyCode::KeyF);
+        assert_eq!(aimed(&mut app), vec![me], "and f asks the cursor to aim it");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
