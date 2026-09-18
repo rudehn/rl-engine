@@ -2,9 +2,11 @@
 //!
 //! Drawn in [`PresentSet::Overlay`], over the map, because the cursor is a
 //! modal and a modal covers what it is about. The cursor is drawn as
-//! four pointers on the cells around the one it sits on, pulsing, so the
-//! cell itself shows what is there, and the panel and the cursor never
-//! disagree about what is being described.
+//! four ticks on the cells around the one it sits on, a dash either side
+//! and a bar above and below, pulsing, so the cell itself shows what is
+//! there, and the panel and the cursor never disagree about what is being
+//! described. The ticks are ASCII because a browser build draws with
+//! Bevy's built-in font alone, which has no arrows worth the name.
 
 use bevy::color::Mix;
 use bevy::prelude::*;
@@ -31,8 +33,9 @@ pub struct InspectLayout {
     pub hints: String,
     /// What is shown when the cursor is over nothing.
     pub empty: String,
-    /// The pointers drawn on the cells left of, right of, above and below
-    /// the cursor, each pointing at it.
+    /// The ticks drawn on the cells left of, right of, above and below the
+    /// cursor, framing it: a dash either side and a bar above and below
+    /// by default.
     pub pointers: [char; 4],
 }
 
@@ -49,7 +52,7 @@ impl InspectPanel {
             title: "Looking at".into(),
             hints: "move \u{2022} tab next \u{2022} esc close".into(),
             empty: "Nothing here.".into(),
-            pointers: ['>', '<', 'v', '^'],
+            pointers: ['-', '-', '|', '|'],
         })
     }
 
@@ -118,7 +121,7 @@ pub fn draw_inspect(
     if !modals.is_open(inspect_modal(&modals)) {
         return;
     }
-    // Four pointers on the neighbours, pulsing between the select tone
+    // Four ticks on the neighbours, pulsing between the select tone
     // and the title tone, and the cell itself left as the map drew it:
     // a cursor that covered the cell would hide what it points at.
     if let Some(map_view) = map_view {
@@ -221,20 +224,20 @@ mod tests {
         stage.app.world().resource::<Terminal>().get(screen.x, screen.y).map(|c| c.glyph)
     }
 
-    /// The cell looked at keeps its own glyph; the four around it point
-    /// at it, on the pulse the clock says.
+    /// The cell looked at keeps its own glyph; the four around it frame
+    /// it in plain ASCII, on the pulse the clock says.
     #[test]
-    fn the_cursor_is_four_pointers_around_the_cell_and_the_cell_keeps_its_glyph() {
+    fn the_cursor_is_four_ascii_ticks_around_the_cell_and_the_cell_keeps_its_glyph() {
         let mut stage = staged();
         stage.actor("crab", 'c', 2, 0);
         stage.tick();
         stage.press(CursorKeys::default().look);
         let at = stage.at.offset(2, 0);
         assert_eq!(glyph_at(&stage, at), Some('c'), "still the crab");
-        assert_eq!(glyph_at(&stage, at.offset(-1, 0)), Some('>'));
-        assert_eq!(glyph_at(&stage, at.offset(1, 0)), Some('<'));
-        assert_eq!(glyph_at(&stage, at.offset(0, -1)), Some('v'));
-        assert_eq!(glyph_at(&stage, at.offset(0, 1)), Some('^'));
+        assert_eq!(glyph_at(&stage, at.offset(-1, 0)), Some('-'), "a dash to the left");
+        assert_eq!(glyph_at(&stage, at.offset(1, 0)), Some('-'), "and to the right");
+        assert_eq!(glyph_at(&stage, at.offset(0, -1)), Some('|'), "a bar above");
+        assert_eq!(glyph_at(&stage, at.offset(0, 1)), Some('|'), "and below");
         let t = stage.app.world().resource::<Time>().elapsed_secs();
         let palette = stage.app.world().resource::<Palette>();
         let expected = palette.get(Tones::SELECT).mix(&palette.get(Tones::TITLE), pointer_pulse(t));
