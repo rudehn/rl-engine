@@ -23,11 +23,11 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, SearchLastKnown, Shadow, ShootAtRange, Wander};
+use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, MeleeAdjacent, SearchLastKnown, Shadow, ShootAtRange, Wander};
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
-pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, Hover, NOISE, PULSE, shout_alarm, sound_alarm};
+pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, shout_alarm, sound_alarm};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub use spawns::populate_deck;
 

@@ -189,16 +189,31 @@ impl<A: Copy> Tactic<A> for Follow {
 ///
 /// The enemy-facing twin of [`Follow`]. Fires when the nearest enemy is
 /// further than `keep_within`, and steps down a field toward every enemy
-/// in sight; or when one is nearer than `no_closer_than`, and steps down a
-/// field away from them. In between it returns `None` and the next tactic
-/// has the turn: a shot for a skirmisher, a wait for a spotter. Above
-/// anything that closes in, such as [`Hunt`], which would spend the turn
-/// undoing the distance this keeps.
+/// in sight; or when one is nearer than `no_closer_than`, and steps away
+/// from them. In between it returns `None` and the next tactic has the
+/// turn: a shot for a skirmisher, [`Hover`] for a spotter. Above anything
+/// that closes in, such as [`Hunt`], which would spend the turn undoing the
+/// distance this keeps.
+///
+/// With nobody in sight it keeps the same distance from where an enemy was
+/// last seen, for a mind with [`Wits::SEARCHES`]: backing round a corner
+/// loses sight of the enemy, and without this a [`SearchLastKnown`] below
+/// it would walk straight back to the spot it just backed away from. It
+/// closes only to `keep_within` of the spot, so it looks round the corner
+/// rather than stepping up to it.
 ///
 /// A step never lengthens the gap to the nearest enemy while closing it,
 /// nor shortens it while backing out: a field that leads round a pillar by
 /// way of the enemy is the way to it, not the way to keep it at a distance,
-/// so a step the field offers that does either is passed over.
+/// so a step the field offers that does either is passed over. Backing out
+/// of sight of an enemy it can see is a last resort: a step away that keeps
+/// a clear line to it comes first.
+///
+/// Cornered, with every step away taken or walled, it has nowhere to back
+/// off to and returns `None`; the next tactic decides, and a [`Hover`]
+/// beneath it stands its ground at whatever gap it has until the enemy
+/// moves. That is the tactic's limit: getting past an enemy that stands in
+/// the only way out is a fight, and a shadow does not start one.
 #[derive(Debug, Clone, Copy)]
 pub struct Shadow {
     /// How far it lets the nearest enemy get before it closes.
@@ -220,12 +235,18 @@ impl<A: Copy> Tactic<A> for Shadow {
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let me = ctx.snapshot.me.pos;
-        let nearest = ctx.snapshot.nearest_enemy()?.pos;
+        let (nearest, marks, in_sight) = match ctx.snapshot.nearest_enemy() {
+            Some(enemy) => (enemy.pos, ctx.snapshot.enemies.iter().map(|e| e.pos).collect::<Vec<_>>(), true),
+            None if ctx.snapshot.wits.has(Wits::SEARCHES) => {
+                let spot = ctx.snapshot.last_known?;
+                (spot, vec![spot], false)
+            }
+            None => return None,
+        };
         let gap = geometry::chebyshev(me, nearest);
-        let foes: Vec<Point> = ctx.snapshot.enemies.iter().map(|e| e.pos).collect();
         if gap > self.keep_within {
             let closing = |p: Point| geometry::chebyshev(p, nearest) <= gap;
-            if let Some(step) = ctx.fields.descents_toward(&foes, me).into_iter().find(|p| (ctx.can_step)(*p) && closing(*p)) {
+            if let Some(step) = ctx.fields.descents_toward(&marks, me).into_iter().find(|p| (ctx.can_step)(*p) && closing(*p)) {
                 return Some(Decision::Step(step));
             }
             let toward = Direction::between(me, nearest)?;
@@ -237,20 +258,57 @@ impl<A: Copy> Tactic<A> for Shadow {
             }
             return None;
         }
-        if gap < self.no_closer_than {
-            let backing = |p: Point| geometry::chebyshev(p, nearest) >= gap;
-            if let Some(step) = ctx.fields.descents_away(&foes, me).into_iter().find(|p| (ctx.can_step)(*p) && backing(*p)) {
+        if gap >= self.no_closer_than {
+            return None;
+        }
+        // Steps that widen the gap before steps that only hold it, the
+        // field's way first within each, then every direction straightest
+        // first; and within each, one that keeps the enemy in a clear line
+        // before one that does not.
+        let field = ctx.fields.descents_away(&marks, me);
+        let straight = Direction::between(nearest, me)?;
+        let (cw, ccw) = (straight.rotate_cw(), straight.rotate_ccw());
+        let turns = [straight, cw, ccw, cw.rotate_cw(), ccw.rotate_ccw(), cw.rotate_cw().rotate_cw(), ccw.rotate_ccw().rotate_ccw()];
+        let direct = turns.iter().map(|d| me + d.offset()).filter(|p| !squeezes(ctx.can_step, me, *p));
+        let open: Vec<Point> = field.into_iter().chain(direct).filter(|p| (ctx.can_step)(*p)).collect();
+        let widening = open.iter().copied().filter(|p| geometry::chebyshev(*p, nearest) > gap);
+        let holding = open.iter().copied().filter(|p| geometry::chebyshev(*p, nearest) == gap);
+        let clear = |p: Point| in_sight && clear_shot(p, nearest, geometry::chebyshev(p, nearest), ctx.bounds, |c| c != p && c != me && (ctx.blocks_shot)(c));
+        for tier in [widening.collect::<Vec<_>>(), holding.collect::<Vec<_>>()] {
+            if let Some(step) = tier.iter().copied().find(|p| clear(*p)).or(tier.first().copied()) {
                 return Some(Decision::Step(step));
-            }
-            let away = Direction::between(nearest, me)?;
-            for d in [away, away.rotate_cw(), away.rotate_ccw()] {
-                let step = me + d.offset();
-                if (ctx.can_step)(step) && geometry::chebyshev(step, nearest) > gap {
-                    return Some(Decision::Step(step));
-                }
             }
         }
         None
+    }
+}
+
+/// Whether stepping from `from` to the cell `to` beside it cuts a corner
+/// between two cells the actor cannot step on, which the move resolver
+/// refuses.
+fn squeezes(can_step: &dyn Fn(Point) -> bool, from: Point, to: Point) -> bool {
+    let (dx, dy) = (to.x - from.x, to.y - from.y);
+    dx != 0 && dy != 0 && !(can_step(from.offset(dx, 0)) && can_step(from.offset(0, dy)))
+}
+
+/// Hold still while there is something to keep an eye on: an enemy in
+/// sight, or where one was last seen for a mind with [`Wits::SEARCHES`].
+///
+/// What a spotter does in the band [`Shadow`] leaves to the next tactic:
+/// below it and above anything that closes in or drifts, so the turns at
+/// the distance it keeps are spent watching, not hunting the gap shut or
+/// wandering out of it. With nothing to watch it passes, and whatever is
+/// below it, a search or a wander, has the turn.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Hover;
+
+impl<A: Copy> Tactic<A> for Hover {
+    fn name(&self) -> &'static str {
+        "hover"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let remembers = ctx.snapshot.wits.has(Wits::SEARCHES) && ctx.snapshot.last_known.is_some();
+        (!ctx.snapshot.enemies.is_empty() || remembers).then_some(Decision::Wait)
     }
 }
 
@@ -1110,18 +1168,59 @@ mod tests {
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
     }
 
-    /// Shadow's answer for a snapshot of one actor at `me` and one enemy at
-    /// `foe` on open floor, with `blocked` cells nobody can step on.
-    fn shadow(tactic: Shadow, me: Point, foe: Point, blocked: &[Point]) -> Option<Decision<u32>> {
+    /// Shadow's answer for one actor at `me` and one enemy at `foe` on open
+    /// floor, in sight or only remembered there, with `blocked` cells
+    /// nobody can step on or shoot through.
+    fn shadow_of(tactic: Shadow, me: Point, foe: Point, blocked: &[Point], in_sight: bool) -> Option<Decision<u32>> {
         let (t, r) = open();
         let view_t = t.view(&r);
         let can_step = |p: Point| !blocked.contains(&p) && p != foe && view_t.is_walkable(p);
+        let blocks_shot = |p: Point| blocked.contains(&p) || p == foe;
         let mut rng = StdRng::seed_from_u64(1);
         let mut fields = Given::over(&view_t);
         let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
-        s.enemies.push(view(2, foe.x, foe.y, 10));
-        let mut ctx = TacticCtx { snapshot: &s, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        if in_sight {
+            s.enemies.push(view(2, foe.x, foe.y, 10));
+        } else {
+            s.last_known = Some(foe);
+        }
+        let mut ctx = TacticCtx { snapshot: &s, fields: &mut fields, can_step: &can_step, blocks_shot: &blocks_shot, bounds: arena(), rng: &mut rng };
         tactic.evaluate(&mut ctx)
+    }
+
+    fn shadow(tactic: Shadow, me: Point, foe: Point, blocked: &[Point]) -> Option<Decision<u32>> {
+        shadow_of(tactic, me, foe, blocked, true)
+    }
+
+    /// Whether a shot from `from` reaches `to` past `blocked`.
+    fn in_line(from: Point, to: Point, blocked: &[Point]) -> bool {
+        clear_shot(from, to, geometry::chebyshev(from, to), arena(), |p| p != from && (blocked.contains(&p) || p == to))
+    }
+
+    /// Out of sight, a shadow keeps its distance from where the enemy was
+    /// last seen as it would from the enemy, rather than leaving the next
+    /// tactic to walk it back in; a mind without the wits to follow a
+    /// trail has nothing to keep its distance from.
+    #[test]
+    fn a_shadow_that_has_lost_sight_keeps_its_distance_from_where_the_enemy_was_last_seen() {
+        let keep = Shadow { keep_within: 5, no_closer_than: 3 };
+        let seen = Point::new(2, 5);
+        let gap = |d: Option<Decision<u32>>| match d {
+            Some(Decision::Step(p)) => geometry::chebyshev(p, seen),
+            other => panic!("expected a step, got {other:?}"),
+        };
+        assert_eq!(gap(shadow_of(keep, Point::new(9, 5), seen, &[], false)), 6, "seven off the place, it closes a step");
+        assert_eq!(gap(shadow_of(keep, Point::new(3, 5), seen, &[], false)), 2, "one off the place, it backs away");
+        assert_eq!(shadow_of(keep, Point::new(6, 5), seen, &[], false), None, "four off is inside the band");
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut s = Snapshot::alone(view(1, 3, 5, 10));
+        s.last_known = Some(seen);
+        s.wits = Wits::MINDLESS;
+        let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        assert_eq!(keep.evaluate(&mut ctx), None, "a mindless thing does not remember where");
     }
 
     /// A spotter closes on an enemy too far off, backs away from one too
@@ -1147,10 +1246,12 @@ mod tests {
         assert_eq!(keep.evaluate(&mut ctx), None, "with no enemy in sight there is nobody to shadow");
     }
 
-    /// Over a spread of places and cells taken, a shadow's step never
-    /// brings it nearer an enemy already inside `no_closer_than`, never
-    /// takes it further from one already past `keep_within`, and is always
-    /// taken when a step that helps is there to take.
+    /// Over a spread of places and cells taken, and with the enemy in
+    /// sight or only remembered, a shadow's step never brings it nearer an
+    /// enemy already inside `no_closer_than`, never takes it further from
+    /// one already past `keep_within`, is always taken when a step that
+    /// helps is there to take, and backs off within sight of an enemy it
+    /// can see whenever a step away allows it.
     #[test]
     fn a_shadow_step_never_shortens_a_gap_it_is_backing_out_of_nor_lengthens_one_it_is_closing_over_a_range_of_seeds() {
         let tactic = Shadow { keep_within: 5, no_closer_than: 3 };
@@ -1167,7 +1268,8 @@ mod tests {
             let view_t = t.view(&r);
             let free = |p: Point| !blocked.contains(&p) && p != foe && view_t.is_walkable(p);
             let gap = geometry::chebyshev(me, foe);
-            let decided = shadow(tactic, me, foe, &blocked);
+            let in_sight = seed % 2 == 0;
+            let decided = shadow_of(tactic, me, foe, &blocked, in_sight);
             let after = match decided {
                 Some(Decision::Step(p)) => {
                     assert!(free(p) && geometry::chebyshev(me, p) == 1, "seed {seed}: {me:?} stepped to {p:?}, which is no step");
@@ -1188,9 +1290,41 @@ mod tests {
                 }
                 let helps = around(me).any(|p| free(p) && geometry::chebyshev(p, foe) > gap);
                 assert!(!helps || after.is_some(), "seed {seed}: {gap} off with a step away to take at {me:?}, it passed");
+                let watching = around(me).any(|p| free(p) && geometry::chebyshev(p, foe) > gap && in_line(p, foe, &blocked));
+                if let (true, true, Some(Decision::Step(p))) = (in_sight, watching, decided) {
+                    assert!(in_line(p, foe, &blocked), "seed {seed}: it backed out of sight to {p:?} with a step in sight to take");
+                }
             } else {
                 assert_eq!(decided, None, "seed {seed}: {gap} off is inside the band");
             }
         }
+    }
+
+    /// A hover waits while there is something to keep an eye on, an enemy
+    /// in sight or where one was last seen, and otherwise lets the next
+    /// tactic have the turn.
+    #[test]
+    fn a_hover_waits_while_it_has_something_to_watch_and_passes_when_it_has_nothing() {
+        let mut rng = StdRng::seed_from_u64(1);
+        let can_step = |_: Point| true;
+        let mut decide = |s: &Snapshot<u32>| {
+            Hover.evaluate(&mut TacticCtx {
+                snapshot: s,
+                fields: &mut NoFields,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                bounds: arena(),
+                rng: &mut rng,
+            })
+        };
+        let mut watching = Snapshot::alone(view(1, 5, 5, 10));
+        watching.enemies.push(view(2, 9, 5, 10));
+        assert_eq!(decide(&watching), Some(Decision::Wait), "an enemy in sight");
+        let mut remembering = Snapshot::alone(view(1, 5, 5, 10));
+        remembering.last_known = Some(Point::new(9, 5));
+        assert_eq!(decide(&remembering), Some(Decision::Wait), "where one was last seen");
+        remembering.wits = Wits::MINDLESS;
+        assert_eq!(decide(&remembering), None, "a mindless thing does not remember where");
+        assert_eq!(decide(&Snapshot::alone(view(1, 5, 5, 10))), None, "nothing to watch");
     }
 }

@@ -23,7 +23,6 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ability::Look;
-use rl_engine::rl_rules::{Decision, Tactic, TacticCtx};
 
 /// The name the alarm's sound is declared under, with
 /// [`AddSound::add_sound`](rl_engine::rl_bevy::AddSound) in
@@ -92,24 +91,6 @@ pub fn shout_alarm(
         }
         noise.write(MakeNoise { at: at.0, loudness: ALARM_LOUDNESS, sound: alarm, maker: Some(ev.actor) });
         cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE) } });
-    }
-}
-
-/// Hang where it is while an enemy is in sight: what a probe does once
-/// the engine's `Shadow` has it at the distance it keeps.
-///
-/// Below `Shadow` and above anything that closes in or drifts, so the
-/// band `Shadow` leaves to the next tactic is spent watching, not hunting
-/// the gap shut or wandering out of it.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Hover;
-
-impl<A: Copy> Tactic<A> for Hover {
-    fn name(&self) -> &'static str {
-        "hover"
-    }
-    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
-        (!ctx.snapshot.enemies.is_empty()).then_some(Decision::Wait)
     }
 }
 
@@ -229,6 +210,38 @@ mod tests {
             crate::testing::pass_turns(&mut app, 6);
             let gap = rl_engine::rl_core::geometry::chebyshev(at(&app, probe), at(&app, me));
             assert!((3..=5).contains(&gap), "{why}, it came to rest {gap} off");
+        }
+    }
+
+    /// The player's gap to the probe after each of `turns` waits, with
+    /// every other mind on the deck gone, so nothing but the probe moves.
+    fn gaps_while_the_player_waits(seed: u64, start: i32, turns: usize) -> Vec<i32> {
+        let mut app = crate::testing::headless(RunSeed(seed));
+        let (probe, me) = crate::testing::droid_facing_player(&mut app, "probe droid", start);
+        let others: Vec<Entity> = app.world_mut().query_filtered::<Entity, With<Mind>>().iter(app.world()).filter(|e| *e != probe).collect();
+        for e in others {
+            app.world_mut().despawn(e);
+        }
+        crate::testing::alert(&mut app, probe, me);
+        (0..turns)
+            .map(|_| {
+                crate::testing::pass_turns(&mut app, 1);
+                rl_engine::rl_core::geometry::chebyshev(at(&app, probe), at(&app, me))
+            })
+            .collect()
+    }
+
+    /// A probe that spots a player who then stands still backs off and
+    /// stays off: within three turns it is three away, and it is never
+    /// nearer again, even where backing off takes it round a corner out of sight,
+    /// since it keeps its distance from where it last saw the player too.
+    #[test]
+    fn a_probe_beside_an_idle_player_backs_off_and_never_comes_nearer_than_three_again_over_a_range_of_seeds() {
+        for seed in [2, 1, 3, 4, 5, 6] {
+            let gaps = gaps_while_the_player_waits(seed, 1, 20);
+            let off = gaps.iter().position(|g| *g >= 3).unwrap_or_else(|| panic!("seed {seed}: never backed off, gaps per turn {gaps:?}"));
+            assert!(off <= 3, "seed {seed}: backed off only by turn {off}, gaps per turn {gaps:?}");
+            assert!(gaps[off..].iter().all(|g| *g >= 3), "seed {seed}: came back in, gaps per turn {gaps:?}");
         }
     }
 
