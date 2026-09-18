@@ -6,6 +6,19 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl-rules` gains `Shadow { keep_within, no_closer_than }`, the enemy-facing twin of `Follow`: it closes on the nearest enemy past `keep_within`, backs off inside `no_closer_than`, and leaves the band between to the next tactic, never lengthening the gap while closing nor shortening it while backing off.
+- A game's own log line said inside a turn is a `Tell`, a template with the phrasebook's placeholders, a tone, and whom it names, and the narrator speaks it after the pass's events, so it reads below what it answers.
+  A line pushed straight to `MessageLog` from inside a pass jumped ahead of every row the frame had yet to speak; a line from outside the turns still goes to the log directly.
+  `Said::phrase` is now `Said::words`, a `Words::Phrase(Phrase)` or a game's `Words::Own { text, tone }`, with `Said::phrase()` answering the phrase when there is one.
+- `TurnSet::Record`, a phase after `TurnSet::Listen` and before `TurnSet::Cleanup`, where what a pass did is read for the record; the narrator's collector moved there from `TurnSet::React`, where it raced a game's own reactions.
+- Fixed: a mind that noticed the player and struck in the same turn was narrated striking first; a notice by the actor holding the turn is now read before what it then did.
+- Fixed: `Phrasebook::default` listed three phrases twice.
+- The look cursor is four ASCII ticks, `-` either side and `|` above and below, in place of `> < v ^`, which a browser build's font drew badly.
+- Foundry's probe droid is an alarm and not a gunner: it carries no attack, keeps a spotted commando three to five tiles off with `Shadow` and Foundry's own `Hover`, and shouts the alarm with a red pulse on every turn it takes knowing where the commando is; the log says it sounds an alarm once, when it first notices, and the once-per-deck "an alarm sounds" line is gone.
+  `monsters.ron` gains `shadow`, and `melee` became optional.
+- Foundry's droids have the wits to open doors, and its rats do not.
+- Foundry says every line inside a turn through `Tell`, so its alarm, heat, ammunition, lift, lamp and charge lines read in the order things happened.
+  The fingerprint tripwire did not move: its seed-7 run meets no probe that notices the commando and no door.
 - `examples/heist`, the Counting House: three floors of a night heist, and the worked example of stealth and light. Wall lamps as the only light, a shaded lantern, lamps the player snuffs and the watch relight, pebbles thrown to be heard, a shout that carries, and the coin carried out of the window as the score. Its watch relight lamps through a game `Sense`, a game `Tactic` and `add_choice`, and its pebbles through `Aware`, so nothing in the engine learns what a lamp or a pebble is.
 - `examples/foundry`, Foundry's first slice: a commando fighting down three decks of a droid foundry.
   Six weapons and six pieces of armor from RON, blasters that heat and lock, a slug pistol that runs dry, line droids that shoot, probes whose radar raises the alarm and an ion hit jams, heavies and coolant rats, loot on the decks and in the wreckage, a shoulder lamp for the dark decks, and a reactor charge on deck three that ends in a choice of one upgrade from three.

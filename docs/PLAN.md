@@ -300,6 +300,14 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Droids hear from `hearing` in `monsters.ron` and coolant rats do not; a shot or a blow carries ten steps, and steps, doors and landings make none.
   The droids were `mindless`, which never follows a trail, so the alarm would have sent nobody anywhere: they are `["mindless", "searches"]` now, which also has them look where they last saw the commando.
   Nate, 2026-09-18: "update the alarm droid in the foundry example to use the new noise system", with the alarm filling the deck and gunfire heard; and on an answered alarm no longer being a commando caught: "That's good".
+- 2026-09-18: the probe as an alarm unit, the log in order, and the look cursor.
+  Played, a probe noticed the commando and shot it at once, the log put "Deck 1: an alarm sounds." above "The probe droid notices you.", and the cursor's `> < v ^` looked wrong.
+  The probe now carries no attack: `rl-rules` gains `Shadow`, the enemy-facing twin of `Follow`, which keeps it three to five tiles off, and Foundry's own `Hover` holds it there; it shouts the alarm with a red pulse on every turn it takes knowing where the commando is, and the log says it sounds an alarm once, when it first notices.
+  The log order was the engine's: a game's line pushed to `MessageLog` inside a pass jumped ahead of the narrator's rows for the same frame.
+  A game's line is now a `Tell`, collected in `TurnSet::Record`, a new phase after every reaction, and spoken after what it answers; Foundry moved every line said inside a turn onto it.
+  Found writing the test: a mind that noticed the player and struck in one turn was logged striking first, since the narrator read notices after blows; a notice by the actor holding the turn is now read first.
+  Droids have `opens_doors`; Foundry's hatches are always-open floor, so nothing in the game needs the wit yet.
+  The look cursor is `- - | |`, ASCII for a browser build's font.
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.

@@ -199,6 +199,7 @@ One thing changes for the better: sound no longer goes through the counting hous
 The whale's beasts get `hearing` in `beasts.ron`, and a fight in the gullet draws what is near.
 
 **Foundry's alarm is a noise too** (2026-09-18): a probe that notices the commando sounds a klaxon loud enough to fill a deck, droids come to where it sounded, and a shot carries ten steps.
+The probe then became an alarm and nothing else: it shouts on every turn it takes knowing where the commando is, so the deck keeps homing in while it hangs three to five tiles off.
 
 **Corsair and the tutorial are left alone**, and their passing tests are the check that the plugin is opt-in.
 
