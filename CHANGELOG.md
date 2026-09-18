@@ -7,6 +7,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 ## Unreleased
 
 - `rl-rules` gains `Shadow { keep_within, no_closer_than }`, the enemy-facing twin of `Follow`: it closes on the nearest enemy past `keep_within`, backs off inside `no_closer_than`, and leaves the band between to the next tactic, never lengthening the gap while closing nor shortening it while backing off.
+  With nobody in sight it keeps the same distance from where an enemy was last seen, for a mind that searches, and backing off prefers a step that keeps a clear line to the enemy and never cuts a corner the move resolver refuses.
+  `Hover` beside it holds still while there is an enemy in sight or a place one was last seen, which is what a spotter does in the band `Shadow` leaves.
 - A game's own log line said inside a turn is a `Tell`, a template with the phrasebook's placeholders, a tone, and whom it names, and the narrator speaks it after the pass's events, so it reads below what it answers.
   A line pushed straight to `MessageLog` from inside a pass jumped ahead of every row the frame had yet to speak; a line from outside the turns still goes to the log directly.
   `Said::phrase` is now `Said::words`, a `Words::Phrase(Phrase)` or a game's `Words::Own { text, tone }`, with `Said::phrase()` answering the phrase when there is one.
@@ -14,7 +16,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Fixed: a mind that noticed the player and struck in the same turn was narrated striking first; a notice by the actor holding the turn is now read before what it then did.
 - Fixed: `Phrasebook::default` listed three phrases twice.
 - The look cursor is four ASCII ticks, `-` either side and `|` above and below, in place of `> < v ^`, which a browser build's font drew badly.
-- Foundry's probe droid is an alarm and not a gunner: it carries no attack, keeps a spotted commando three to five tiles off with `Shadow` and Foundry's own `Hover`, and shouts the alarm with a red pulse on every turn it takes knowing where the commando is; the log says it sounds an alarm once, when it first notices, and the once-per-deck "an alarm sounds" line is gone.
+- Foundry's probe droid is an alarm and not a gunner: it carries no attack, keeps a spotted commando three to five tiles off with `Shadow` and `Hover`, and shouts the alarm on every turn it takes knowing where the commando is, with a red pulse when the commando can see it; the log says it sounds an alarm once, when it first notices, and the once-per-deck "an alarm sounds" line is gone.
   `monsters.ron` gains `shadow`, and `melee` became optional.
 - Foundry's droids have the wits to open doors, and its rats do not.
 - Foundry says every line inside a turn through `Tell`, so its alarm, heat, ammunition, lift, lamp and charge lines read in the order things happened.
