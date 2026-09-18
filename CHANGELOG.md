@@ -13,6 +13,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
   `Loadout::melee_with` and `Loadout::ranged_with` answer the same question for a caller.
 - Prefabs turn and mirror, marks included: `Prefab::rotated` and `Prefab::flipped` carry marks with the tiles, and `Orient` (`Fixed`, `Turned`, `TurnedOrMirrored`) on `StampPrefab` draws a facing from the stream, with `Fixed` drawing nothing so a map that never asked for a facing is unchanged.
   `StampOneOf` stamps one of several candidates chosen by weight, and fails the chain loudly if nothing carries weight.
+- `ShootAtRange` fires what a mind wields down a clear line at an enemy two or more tiles off, leaving anything at its elbow to `MeleeAdjacent`. `Snapshot` gains `reach`, how far the actor's own shot carries, filled from `Loadout::ranged` for every mind that has one.
 - Fixed: `cargo doc` with warnings denied failed on eight broken or redundant documentation links, which had been failing CI's doc step since before the 0.2.0 release; and a `Restart` with no seed called `RunSeed::fresh`, which is not compiled on wasm, so `rl-bevy` did not build for the browser. A restart there derives its seed from the run before it instead, so two runs in a session differ and a page opened on one seed plays the same sequence of runs.
 
 ## 0.2.0

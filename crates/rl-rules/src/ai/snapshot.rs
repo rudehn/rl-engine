@@ -132,6 +132,10 @@ pub struct Snapshot<A: Copy> {
     /// What it carries that it could throw. Empty for an actor with no bag,
     /// which is most of them.
     pub missiles: Vec<Missile<A>>,
+    /// How far the actor's own shot carries, if it has one. Read from
+    /// whatever it wields, so a mind that picks up a rifle can shoot
+    /// without its brain changing.
+    pub reach: Option<i32>,
     /// What lies where it can see, nearest first.
     pub items: Vec<ItemView<A>>,
     /// What the game knows that the engine does not, by type.
@@ -166,6 +170,7 @@ impl<A: Copy> Snapshot<A> {
             last_known: None,
             wits: Wits::default(),
             missiles: Vec::new(),
+            reach: None,
             items: Vec::new(),
             senses: Vec::new(),
         }

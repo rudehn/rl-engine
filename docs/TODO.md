@@ -20,6 +20,7 @@ The five items that opened this section were built in the six stages of `docs/de
 
 - **Tactics that are missing, and weights that are fixed.**
   No pack or leader behaviour, no keep-at-range for a shooter, no patrol or idle routine, no noise or scent, though `DijkstraMap` is the right tool for the last two.
+  A mind now shoots what it wields when there is a clear shot to take, with `ShootAtRange`; holding a distance from what it shoots, rather than closing in once it has one, is what remains.
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
 
 ## 3. Make what exists real

@@ -420,6 +420,56 @@ impl<A: Copy> Tactic<A> for ThrowAtRange {
     }
 }
 
+/// Shoot the nearest enemy in reach down a clear line, when that enemy is
+/// not already at its elbow.
+///
+/// For any mind whose snapshot has a [`Snapshot::reach`]: firing what it
+/// holds takes no wits, so a mindless sentry shoots as readily as a
+/// sapient one. It leaves an adjacent enemy to [`MeleeAdjacent`], which
+/// belongs above it. It shoots when there is a shot and does not back off
+/// to keep one; holding a distance is a separate tactic. The line is judged
+/// by `blocks_shot`, the predicate a shot flies by, so a mind never fires
+/// into a wall it thought was clear.
+///
+/// `enemies` is nearest-first the way [`ThrowAtRange`] relies on
+/// ([`Snapshot::sort`]), so the first in reach down a clear line is the
+/// nearest one, not merely the first found.
+#[derive(Debug, Clone, Copy)]
+pub struct ShootAtRange {
+    /// Percentage chance of shooting on a turn there is a shot to take.
+    /// Below a hundred so a shooter sometimes closes in instead.
+    pub chance_pct: u32,
+}
+
+impl Default for ShootAtRange {
+    fn default() -> Self {
+        Self { chance_pct: 100 }
+    }
+}
+
+impl<A: Copy> Tactic<A> for ShootAtRange {
+    fn name(&self) -> &'static str {
+        "shoot_at_range"
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let s = ctx.snapshot;
+        let reach = s.reach?;
+        if s.enemies.is_empty() {
+            return None;
+        }
+        if self.chance_pct < 100 && !ctx.rng.random_ratio(self.chance_pct.min(100), 100) {
+            return None;
+        }
+        let me = s.me.pos;
+        s.enemies
+            .iter()
+            .filter(|e| (2..=reach).contains(&geometry::chebyshev(me, e.pos)))
+            .find(|e| clear_shot(me, e.pos, reach, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p)))
+            .map(|e| Decision::Attack(e.id))
+    }
+}
+
 /// Fetch what is worth having from where it lies: gear better than what it
 /// wears, or something to throw while it carries nothing to throw.
 ///
@@ -876,6 +926,43 @@ mod tests {
         s.enemies = vec![view(2, 4, 5, 10)];
         s.wits = Wits::ANIMAL;
         assert_eq!(decide(&s, &nothing_blocks, &mut rng), None, "and never without the wits to throw");
+    }
+
+    /// A snapshot of a shooter alone at the origin with `reach`, facing one
+    /// enemy at `enemy_at`.
+    fn shooter_snapshot(reach: Option<i32>, enemy_at: Point) -> Snapshot<u32> {
+        let mut s = Snapshot::alone(view(1, 0, 0, 10));
+        s.reach = reach;
+        s.enemies = vec![view(2, enemy_at.x, enemy_at.y, 10)];
+        s
+    }
+
+    /// Evaluates `tactic` against `s`, with `blocks_shot` as the line of
+    /// fire's predicate and room enough that no shape clips the arena.
+    fn decide(tactic: &ShootAtRange, s: &Snapshot<u32>, blocks_shot: impl Fn(Point) -> bool) -> Option<Decision<u32>> {
+        let can_step = |_: Point| true;
+        let mut rng = StdRng::seed_from_u64(1);
+        tactic.evaluate(&mut TacticCtx { snapshot: s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &blocks_shot, bounds: arena(), rng: &mut rng })
+    }
+
+    #[test]
+    fn a_shooter_fires_down_a_clear_line_at_an_enemy_in_reach() {
+        let s = shooter_snapshot(Some(5), Point::new(4, 0));
+        let d = decide(&ShootAtRange::default(), &s, |_| false);
+        assert!(matches!(d, Some(Decision::Attack(_))), "an enemy four off, reach five, clear: shoot");
+    }
+
+    #[test]
+    fn a_shooter_holds_fire_when_the_line_is_blocked_the_enemy_is_out_of_reach_or_at_its_elbow() {
+        // Each is its own reason to decline, and each must decline on its own.
+        let blocked = decide(&ShootAtRange::default(), &shooter_snapshot(Some(5), Point::new(4, 0)), |p| p == Point::new(2, 0));
+        let far = decide(&ShootAtRange::default(), &shooter_snapshot(Some(5), Point::new(7, 0)), |_| false);
+        let close = decide(&ShootAtRange::default(), &shooter_snapshot(Some(5), Point::new(1, 0)), |_| false);
+        let unarmed = decide(&ShootAtRange::default(), &shooter_snapshot(None, Point::new(4, 0)), |_| false);
+        assert!(blocked.is_none(), "a wall in the way");
+        assert!(far.is_none(), "seven off with a reach of five");
+        assert!(close.is_none(), "adjacent is MeleeAdjacent's");
+        assert!(unarmed.is_none(), "nothing to shoot with");
     }
 
     /// A scavenger walks round a wall to gear better than what it wears,
