@@ -119,7 +119,11 @@ impl PlaceRules for Caves {
             )
             .map_err(|e| BuildError::new("caves", e))?;
             Chain::new()
-                .then(Rooms { floor: cave, attempts: 40, min_size: 4, max_size: 9, min_rooms: 4 })
+                // Rooms of seven to eleven, so some room holds the 7x5
+                // vault with the cell of floor all round it `AnyRoom`
+                // requires; `every_level_has_a_way_in_and_the_vault_has_treasure`
+                // holds it to that over sixty seeds.
+                .then(Rooms { floor: cave, attempts: 40, min_size: 7, max_size: 11, min_rooms: 4 })
                 .then(Doors { door })
                 .then(StampPrefab { name: "vault", prefab: vault, at: Placement::AnyRoom, orient: Orient::Fixed })
                 .then(RandomStart)
@@ -249,7 +253,7 @@ mod tests {
 
     #[test]
     fn every_level_has_a_way_in_and_the_vault_has_treasure() {
-        for seed in [3u64, 11, 42] {
+        for seed in 0u64..60 {
             let content = Content::new();
             let mut config = WorldConfig::regions(24, 24);
             config.elevation.land_fraction = 0.22;
