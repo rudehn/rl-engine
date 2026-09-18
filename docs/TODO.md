@@ -20,10 +20,21 @@ The five items that opened this section were built in the six stages of `docs/de
 
 - **Tactics that are missing, and weights that are fixed.**
   No pack or leader behaviour, no keep-at-range for a shooter, no patrol or idle routine, and no scent, though `DijkstraMap` is the right tool for it; noise is built, in `docs/design/noise.md`.
-  A mind now shoots what it wields when there is a clear shot to take, with `ShootAtRange`; holding a distance from what it shoots, rather than closing in once it has one, is what remains.
+  A mind now shoots what it wields when there is a clear shot to take, with `ShootAtRange`, and holds a distance with `Shadow` above it; no game fields a skirmisher yet.
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
 
 ## 3. Make what exists real
+
+- **Every game's log lines said inside a turn go through `Tell`.**
+  Corsair, the tutorial, Delve and Heist still push lines straight to `MessageLog` from systems in `TurnSet::React` (the tutorial's "You eat the crust. It helps.", Corsair's portal and discovery lines, the heist's), against the narrator's module doc, so a line can land above the event it answers.
+  Each should write a `Tell` instead, and the guide chapters that quote the tutorial move with it; Foundry did this on 2026-09-18.
+- **A held key does not skip a cue.**
+  `skip_on_key` in `crates/rl-render/src/particles.rs` skips only on a key just pressed, and a key held to repeat is read by `Repeats`, not `just_pressed`, so walking with a key held waits out every cue in sight.
+  Measured on 2026-09-18 in Foundry: two seconds holding a direction key walked 15 steps on an empty lane and 4 beside a probe that pulses on each of its turns, with the turns held for 143 of the frames.
+  A repeat that fires while the turns are held should skip the way a press does.
+- **Straight-line fallbacks can cut a corner the move resolver refuses.**
+  `Hunt`, `SearchLastKnown`, `Follow`, `FleeWhenHurt`, `GiveWay` and `Wander` try diagonal steps checked only by `can_step`, and `corner_ok` in `crates/rl-bevy/src/turn.rs` refuses a diagonal between two unwalkable cells, so a mind can spend turn after turn on a step that never happens.
+  `Shadow` checks it with `squeezes`; the others should too, with the fingerprints that move re-baselined.
 
 - **Movement profiles that change costs.**
   `FlowFields::ensure` keys the cache by `MovementProfile` but builds every map with `PathRules::default()`, so a swimmer and a walker see the same map and the sailing profile the plan's river section promised is not wired.
