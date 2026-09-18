@@ -14,6 +14,16 @@ Pushing a tag publishes its release page from its section here, through `scripts
   The fingerprint tripwire now plays that starting blaster rather than one handed to it by a test helper, and was re-baselined from 10829036418565687338 to 16098196171125892784 for it.
 - `MeleeAttack` and `RangedAttack` gain `cost`, hundredths of a step, so a weapon can be fast or slow; `resolve_attacks` charges it for both melee and ranged attacks, and a shot that finds nothing in reach still costs an ordinary turn rather than a free one.
   Both structs gain a field, but `cost: None` charges exactly what a blow charged before, so nothing built against the old shape changes behaviour.
+- `MeleeAttack::new(kind, dice)` and `RangedAttack::new(kind, dice, range)` build an attack with every optional field unset, and `costing` and `looking` set the one they name.
+  Every struct literal in the engine, the examples, the tutorial and the starter moved to them, so a game that wrote `MeleeAttack { kind, dice, cost: None }` writes `MeleeAttack::new(kind, dice)`, and a field added later never touches it again.
+  A game that passes an `Option` straight through keeps the field and takes the rest from `new`, as in `RangedAttack { cost: def.cost, ..RangedAttack::new(kind, dice, range) }`.
+- An attack carries its own animation, the way an ability does: `MeleeAttack` and `RangedAttack` gain `look`, an `Option<Look>`, and `DamageKind` is untouched.
+  A shot with a look is cued as a `Cue::Flight` from the shooter to the target, and while something watches, its hits wait in `AirborneShots` until `land_shots` lands them on the first pass after the flight has been seen, the way a thrown knife does; a target killed or gone by then takes nothing.
+  `Struck` is still written as the shot is fired, so heat and ammunition answer the trigger, not the impact.
+  A blow with a look bursts on its target and still hurts at once.
+  An attack with no look is cued as nothing and lands as it is made, so a game is unchanged until it gives one, and a headless run, with nothing watching, lands every shot as it is fired whatever its look.
+  A key pressed while a shot flies at the player skips it through `ParticlesPlugin`'s skip path, lands it, and hands the player its turn with the hit already taken.
+- Foundry's guns and shooting droids name what their shots fly as in `items.ron` and `monsters.ron`: a red bolt for the blasters and the droids, a blue charge for the ion pistol, a pale slug for the slug pistol.
 - `Struck` names the worn item each attack came from.
   `Loadout::melee_with` and `Loadout::ranged_with` answer the same question for a caller.
 - Prefabs turn and mirror, marks included: `Prefab::rotated` and `Prefab::flipped` carry marks with the tiles, and `Orient` (`Fixed`, `Turned`, `TurnedOrMirrored`) on `StampPrefab` draws a facing from the stream, with `Fixed` drawing nothing so a map that never asked for a facing is unchanged.
