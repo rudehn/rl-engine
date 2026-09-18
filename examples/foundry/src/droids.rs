@@ -1,7 +1,8 @@
 //! What walks the decks: line droids, probe droids, heavy droids and
-//! coolant rats, loaded from `monsters.ron` and spawned with a brain that
-//! shoots what it holds a weapon for, once it is in reach, before ever
-//! closing to a punch.
+//! coolant rats, loaded from `monsters.ron`. A kind that names a shot is
+//! built with its own `RangedAttack`, rather than handed a weapon to
+//! hold, and spawned with a brain that fires it at anything in reach
+//! before ever closing to a punch.
 //!
 //! `alarm` holds a probe's radar reporting to the rest of the deck.
 //! `sensors` holds what an ion hit does to that same radar, and owns
@@ -64,7 +65,8 @@ pub struct MonsterDef {
     /// The range, roll and damage kind a shot deals; present, it shoots.
     #[serde(default)]
     pub ranged: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
-    /// Percent of a normal step's time one of its own takes; 100 is normal.
+    /// Its `Speed`, a percentage of normal: 100 is normal, 200 twice as
+    /// fast, and 50 half as fast.
     pub speed: u32,
     /// Percent health at or below which it runs; zero never flees.
     pub flee_at: i32,
@@ -123,14 +125,14 @@ impl Roster {
     }
 
     /// As [`load`](Self::load), but from `ron` rather than the compiled-in
-    /// roster: `pub(crate)` for a test's own tiny roster, such as one
-    /// monster with a guaranteed drop `load` alone could never build.
-    /// Builds the spawn table and gives every kind a brain built from what
-    /// it names: a shot in reach before a melee kind will ever reach for
-    /// it does not apply, since [`MeleeAdjacent`] only ever fires on an
-    /// adjacent enemy and so never competes with [`ShootAtRange`] for the
-    /// same one; a mind that flees does so only if it names `flee_at`
-    /// above zero.
+    /// roster, so a test can load a tiny roster of its own, such as one
+    /// monster with a guaranteed drop.
+    ///
+    /// Builds the spawn table, and gives every kind a brain from what it
+    /// names. [`MeleeAdjacent`] comes first, then [`ShootAtRange`] for a
+    /// kind with a shot: the one fires only on an adjacent enemy and the
+    /// other only on one two or more tiles off, so they never compete for
+    /// the same target. A kind flees only if it names `flee_at` above zero.
     pub(crate) fn from_ron(ron: &str, registries: &Registries) -> Self {
         let defs: Registry<MonsterDef> = registries.names().load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
         let mut table = BandedTable::default();

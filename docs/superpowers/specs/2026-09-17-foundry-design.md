@@ -395,7 +395,10 @@ The engine's rules apply, and the game is held to them.
 ## 16. Open questions
 
 None blocking.
-Two worth deciding during planning.
+Two worth deciding during planning, and one decided in the first slice that a later plan needs to know.
 
 1. Whether the ray shield is a status on the shield droid or a component the game owns, which decides how "ion drops the shield" is expressed.
 2. Whether composed encounters land in the slice or after it, since the slice's decks 1-3 use only the gunline.
+3. Decided in the first slice: droids fire their own `RangedAttack`, built in from `monsters.ron`, so they never run hot.
+   Heat lives on a weapon item and is paid only by whoever wields one.
+   An enemy that should run hot must wield a weapon item instead, such as the later dual-blaster hunter.

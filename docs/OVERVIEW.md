@@ -48,6 +48,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Prefab stamping from ASCII with a legend and marks, placed at a point, centred, or in a room, in any of eight facings, and one stamp may choose among weighted candidates.
   A turned piece takes its marks with it.
   A room-placed stamp never lands where an earlier stamp in the same chain already is.
+  A room-placed piece needs a room with floor on every side of it, a cell wider than the piece all round, so its walls never sit on the room's own edge or over a doorway.
 
 ### rl-world
 
@@ -241,8 +242,8 @@ It is built only on the public API, so it is the test that the seams are right.
 
 A commando fights down three decks of a droid foundry, and the worked example of combat depth: `examples/foundry`.
 Blasters run hot and lock until they cool, a slug pistol spends slugs and runs dry, and both are the game's own components that the engine's `Loadout` simply stops finding while a weapon is stowed; the heat, and the slugs left, show as facets on the gear row.
-Line droids shoot what they hold, a probe's radar is a `DarkSight` that an ion hit jams, and a probe that notices the commando wakes the deck.
-The decks below the first are dark, and the commando's shoulder lamp is the stealth trade: `L` switches it off, and then a droid without radar has to be touching you to know you are there.
+Line droids fire their own `RangedAttack`, built in rather than held, so `ShootAtRange` fires it and no weapon ever runs hot in a droid's hands; a probe's radar is a `DarkSight` that an ion hit jams, and a probe that notices the commando wakes the deck.
+The decks below the first are dark, and the commando's shoulder lamp is the stealth trade: `L` switches it off, and then, away from the stores' wall lamps, a droid without radar has to be beside you to see you.
 A charge set on the reactor console on deck three is a fact the quest tracker counts, and the pick of one upgrade from three ends the run.
 It is a library with a thin binary, so every system is in one `FoundryPlugin` that the window and the headless tests both add, and `tests/fingerprint.rs` pins a scripted run.
 

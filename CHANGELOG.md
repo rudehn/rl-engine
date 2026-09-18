@@ -7,8 +7,11 @@ Pushing a tag publishes its release page from its section here, through `scripts
 ## Unreleased
 
 - `examples/heist`, the Counting House: three floors of a night heist, and the worked example of stealth and light. Wall lamps as the only light, a shaded lantern, lamps the player snuffs and the watch relight, pebbles thrown to be heard, a shout that carries, and the coin carried out of the window as the score. Its watch relight lamps through a game `Sense`, a game `Tactic` and `add_choice`, and its pebbles through `Aware`, so nothing in the engine learns what a lamp or a pebble is.
-- `examples/foundry`, Foundry's first slice: a commando fighting down three decks of a droid foundry. Six weapons and six pieces of armor from RON, blasters that heat and lock, a slug pistol that runs dry, line droids that shoot, probes whose radar raises the alarm and an ion hit jams, heavies and coolant rats, loot on the decks and in the wreckage, a shoulder lamp for the dark decks, and a reactor charge on deck three that ends in a choice of one upgrade from three. A library with a thin binary, so its tests play the game the window does; `tests/fingerprint.rs` is a fingerprint tripwire over a scripted two-hundred-turn run on seed 7, and a change that moves it re-baselines it with a line here.
-- Foundry's commando starts with a hand blaster in hand, since deck one's droids shoot from five tiles and nothing promised a gun there. The fingerprint tripwire now plays that starting blaster rather than one handed to it by a test helper, and was re-baselined from 10829036418565687338 to 16098196171125892784 for it.
+- `examples/foundry`, Foundry's first slice: a commando fighting down three decks of a droid foundry.
+  Six weapons and six pieces of armor from RON, blasters that heat and lock, a slug pistol that runs dry, line droids that shoot, probes whose radar raises the alarm and an ion hit jams, heavies and coolant rats, loot on the decks and in the wreckage, a shoulder lamp for the dark decks, and a reactor charge on deck three that ends in a choice of one upgrade from three.
+  A library with a thin binary, so its tests play the game the window does; `tests/fingerprint.rs` is a fingerprint tripwire over a scripted two-hundred-turn run on seed 7, and a change that moves it re-baselines it with a line here.
+- Foundry's commando starts with a hand blaster in hand, since deck one's droids shoot from five tiles and nothing promised a gun there.
+  The fingerprint tripwire now plays that starting blaster rather than one handed to it by a test helper, and was re-baselined from 10829036418565687338 to 16098196171125892784 for it.
 - `MeleeAttack` and `RangedAttack` gain `cost`, hundredths of a step, so a weapon can be fast or slow; `resolve_attacks` charges it for both melee and ranged attacks, and a shot that finds nothing in reach still costs an ordinary turn rather than a free one.
   Both structs gain a field, but `cost: None` charges exactly what a blow charged before, so nothing built against the old shape changes behaviour.
 - `Struck` names the worn item each attack came from.
@@ -20,9 +23,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Fixed: `cargo doc` with warnings denied failed on eight broken or redundant documentation links, which had been failing CI's doc step since before the 0.2.0 release; and a `Restart` with no seed called `RunSeed::fresh`, which is not compiled on wasm, so `rl-bevy` did not build for the browser. A restart there derives its seed from the run before it instead, so two runs in a session differ and a page opened on one seed plays the same sequence of runs.
 - Fixed: the targeting cursor would not open for a shot whose gun was worn rather than the shooter's own, and its preview read the shooter's own `RangedAttack` alone.
   `AimFire` and the shot preview now read `Loadout::ranged` and `Loadout::melee`, the same shot the resolver fires, so a gun in hand opens the cursor and previews its own reach.
-- Fixed: a killing blow that carried the player's health below zero showed a negative count on the vitals bar, on the very screen the run ends on. The bar reads empty instead.
-- Fixed: `GearPanel` drew every facet in the text tone, whatever tone the game gave it, and clipped a long row from the end, so the facet was the first thing lost. Facets now keep their tone, and the item's name gives way before them.
-- Fixed: `GameMenuPanel` filled its whole rectangle, so one sized for the ending's words left the pause menu trailing empty rows. The rectangle is now the most the menu may take, and its frame closes under its last row.
+- Fixed: a killing blow that carried the player's health below zero showed a negative count on the vitals bar, on the very screen the run ends on.
+  The bar reads empty instead.
+- Fixed: `GearPanel` drew every facet in the text tone, whatever tone the game gave it, and clipped a long row from the end, so the facet was the first thing lost.
+  Facets now keep their tone, and the item's name gives way before them.
+- Fixed: `GameMenuPanel` filled its whole rectangle, so one sized for the ending's words left the pause menu trailing empty rows.
+  The rectangle is now the most the menu may take, and its frame closes under its last row.
 - Fixed: `Placement::AnyRoom` and `Placement::InRoom` took a room exactly the size of the piece, which laid the piece's walls on the room's own edge, over its doorways, and could leave the piece's opening facing the room's wall with no way in.
   Both now require the room to exceed the piece by a cell on every side, so a piece always has floor all round it; a chain whose rooms are all too small fails loudly as before.
   Corsair's bottom cave level draws rooms of nine to eleven instead of four to nine, so every room holds its 7x5 vault with the ring; that level's map moves on every seed.

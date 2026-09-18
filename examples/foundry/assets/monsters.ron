@@ -13,7 +13,7 @@
 //   dark_sight: optional; tiles it sees without light: radar, for the droids that have it
 //   melee:      (roll, kind)
 //   ranged:     optional; (range, roll, kind); a droid with one shoots
-//   speed:      percent, 100 normal
+//   speed:      percent of normal, 100 normal, 200 twice as fast
 //   flee_at:    percent health at or below which it runs; 0 never flees
 //   alarm:      optional; true when noticing an enemy wakes every droid on the deck
 //   spawn:      one or more (min deck, max deck, weight, min group, max group);

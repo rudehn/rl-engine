@@ -108,6 +108,10 @@ type CanSeeInTheDark = Or<(With<NativeDarkSight>, With<Equipped>, With<Jammed>)>
 /// all three as they now stand. Idempotent: an actor already reading right
 /// is left untouched.
 ///
+/// Its query takes every actor with `Equipped`, so an actor given
+/// `DarkSight` directly, with no [`NativeDarkSight`], would have it
+/// managed here, or stripped.
+///
 /// Chained after [`jam_sensors`] and [`unjam_sensors`] in
 /// [`FoundryPlugin`](crate::plugin::FoundryPlugin): the engine's own
 /// scheduler can write a `TurnEnd` and deal the very next turn's

@@ -49,6 +49,12 @@ The five items that opened this section were built in the six stages of `docs/de
   Asked for three rooms sized 8 to 10 on a 40x30 map, it fails roughly one seed in sixty inside its default thirty attempts.
   Whether that is a tuning problem, a default `attempts` too low for the room sizes it is asked to fit, or a limit the pass should just document is not yet decided.
   Either way, a test that stamps rooms on a small map has to know this failure rate exists rather than treat every seed as good.
+- **Corsair's tests play a different game from its binary.**
+  Corsair's binary runs `honour_portals`, `populate_places`, `drop_loot` and `inflict_on_hit`, and its test harness adds none of the four, so no Corsair test exercises them.
+  One plugin that both the binary and the harness add, as Foundry's `FoundryPlugin` is, would close the gap for good.
+- **Corsair, Delve and Heist have no map fingerprint tests.**
+  A change to their maps goes unnoticed: the Foundry branch changed Corsair's cave maps and Delve's heart floor, and nothing in either game noticed.
+  A fingerprint tripwire per game over a few seeds' maps, labelled as such, would make the next such change a deliberate re-baseline.
 
 ## 4. Simplify
 
