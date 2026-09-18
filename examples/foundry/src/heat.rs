@@ -16,7 +16,7 @@
 //! naming the item an attack came from, and a whole [`TurnEnd`].
 
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{MeleeAttack, RangedAttack, Struck, TurnEnd, Turns};
+use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Struck, TurnEnd, Turns};
 use rl_engine::rl_ui::{Facets, GearView, MessageLog, Tones};
 
 /// How hot a weapon may run before it locks.
@@ -100,15 +100,15 @@ pub enum Stowed {
 /// Reacts to every [`Struck`] whose weapon runs hot: records the shot on
 /// its [`Heat`], and when that shot locks it, takes its attack off and
 /// stows it, so the loadout finds nothing to fire from that hand until it
-/// cools.
+/// cools. Says so in the log only when the player fired it: a droid's
+/// weapon locking is something the player sees in the droid falling
+/// silent, not a line to read.
 pub fn heat_on_struck(
     mut commands: Commands,
     mut struck: MessageReader<Struck>,
     mut heats: Query<&mut Heat>,
     weapons: Query<(Option<&MeleeAttack>, Option<&RangedAttack>)>,
-    names: Query<&Name>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
+    mut said: Said,
 ) {
     for ev in struck.read() {
         let Some(item) = ev.with else { continue };
@@ -124,21 +124,19 @@ pub fn heat_on_struck(
                 e.remove::<RangedAttack>().insert(Stowed::Ranged(*attack));
             }
         }
-        let name = names.get(item).map(Name::as_str).unwrap_or("it");
-        log.bad(format!("{name} overheats and locks."), turns.turn_number());
+        if said.player.contains(ev.attacker) {
+            let now = said.turns.turn_number();
+            let line = format!("Your {} overheats and locks.", said.name(item));
+            said.log.bad(line, now);
+        }
     }
 }
 
 /// Reacts to every whole [`TurnEnd`]: vents every [`Heat`], and for one
 /// that unlocks, takes its [`Stowed`] attack back off the shelf and gives
-/// it back to the item.
-pub fn vent_heat(
-    mut commands: Commands,
-    mut ends: MessageReader<TurnEnd>,
-    mut heats: Query<(Entity, &mut Heat, Option<&Stowed>)>,
-    names: Query<&Name>,
-    mut log: ResMut<MessageLog>,
-) {
+/// it back to the item. As with locking, only the player's own weapon
+/// says so in the log.
+pub fn vent_heat(mut commands: Commands, mut ends: MessageReader<TurnEnd>, mut heats: Query<(Entity, &mut Heat, Option<&Stowed>)>, mut said: Said) {
     for ev in ends.read() {
         for (entity, mut heat, stowed) in &mut heats {
             if !heat.turn_end() {
@@ -153,9 +151,29 @@ pub fn vent_heat(
                 }
                 None => {}
             }
-            let name = names.get(entity).map(Name::as_str).unwrap_or("it");
-            log.notice(format!("{name} cools and unlocks."), ev.turn);
+            if said.worn.iter().any(|e| e.0.worn().any(|(_, item)| item == entity)) {
+                let line = format!("Your {} cools and unlocks.", said.name(entity));
+                said.log.notice(line, ev.turn);
+            }
         }
+    }
+}
+
+/// What the heat systems need to say something in the log about the
+/// player's own weapon, and nobody else's.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Said<'w, 's> {
+    player: Query<'w, 's, (), With<Player>>,
+    worn: Query<'w, 's, &'static Equipped, With<Player>>,
+    names: Query<'w, 's, &'static Name>,
+    turns: Res<'w, Turns>,
+    log: ResMut<'w, MessageLog>,
+}
+
+impl Said<'_, '_> {
+    /// What `item` is called, for a log line.
+    fn name(&self, item: Entity) -> &str {
+        self.names.get(item).map(Name::as_str).unwrap_or("weapon")
     }
 }
 
@@ -165,10 +183,9 @@ pub fn vent_heat(
 /// [`Tones::BAD`] from 70 percent up so a climbing gauge reads as trouble
 /// before it seizes.
 ///
-/// `GearView` is `None` until a game adds `GearViewPlugin`; this slice's
-/// binary does not yet, so absence here means no gear panel exists to
-/// annotate, not that anything is wrong. Registered unconditionally so the
-/// day the panel is added, the facet is already correct.
+/// `GearView` is `None` until a game adds `GearViewPlugin`, which the
+/// binary's `GearPanel` does and a headless test need not: absence here
+/// means no gear panel exists to annotate, not that anything is wrong.
 pub fn note_heat(view: Option<ResMut<GearView>>, mut facets: ResMut<Facets>, heats: Query<&Heat>) {
     let Some(mut view) = view else { return };
     for row in view.rows_mut() {

@@ -14,7 +14,7 @@
 //! worn item exactly as it does for a locked weapon.
 
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{Inventory, RangedAttack, Stack, Struck, Tagged, Turns};
+use rl_engine::rl_bevy::{Equipped, Inventory, Player, RangedAttack, Stack, Struck, Tagged, Turns};
 use rl_engine::rl_rules::TagId;
 use rl_engine::rl_ui::MessageLog;
 
@@ -65,6 +65,7 @@ pub struct AmmoWorld<'w, 's> {
     tagged: Query<'w, 's, &'static Tagged>,
     stacks: Query<'w, 's, &'static mut Stack>,
     names: Query<'w, 's, &'static Name>,
+    player: Query<'w, 's, &'static Equipped, With<Player>>,
 }
 
 /// The item in `inv` carrying `tag` in a [`Stack`] with something left in
@@ -120,21 +121,30 @@ pub fn spend_ammo(mut commands: Commands, mut struck: MessageReader<Struck>, mut
 /// loaded pistol behind because nothing had reacted to `Dropped` either.
 /// Deriving the state from the bag directly has no such gap: whatever
 /// changed it, the very next pass reads the bag as it now stands.
+///
+/// Only a weapon the player wears says so in the log: a pistol at the
+/// bottom of the pack, or in a droid's hand, going dry is nothing the
+/// player can act on, and reads as noise between the lines that matter.
 pub fn sync_ammo(mut commands: Commands, world: AmmoWorld, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
     for inv in world.inventories.iter() {
         for &item in &inv.items {
             let Ok(ammo) = world.ammos.get(item) else { continue };
             let has_ammo = stack_of(inv, ammo.tag, &world.tagged, &world.stacks).is_some();
             let is_dry = world.dry.get(item).is_ok();
-            let name = || world.names.get(item).map(Name::as_str).unwrap_or("it");
+            let name = || world.names.get(item).map(Name::as_str).unwrap_or("weapon");
+            let yours = world.player.iter().any(|e| e.0.worn().any(|(_, worn)| worn == item));
             if !has_ammo && !is_dry {
                 let Ok(attack) = world.rangeds.get(item) else { continue };
                 commands.entity(item).remove::<RangedAttack>().insert(Stowed::Ranged(*attack)).insert(Dry);
-                log.bad(format!("{} runs dry.", name()), turns.turn_number());
+                if yours {
+                    log.bad(format!("Your {} runs dry.", name()), turns.turn_number());
+                }
             } else if has_ammo && is_dry {
                 let Ok(Stowed::Ranged(attack)) = world.stowed.get(item) else { continue };
                 commands.entity(item).remove::<Stowed>().remove::<Dry>().insert(*attack);
-                log.notice(format!("{} is loaded again.", name()), turns.turn_number());
+                if yours {
+                    log.notice(format!("Your {} is loaded again.", name()), turns.turn_number());
+                }
             }
         }
     }
