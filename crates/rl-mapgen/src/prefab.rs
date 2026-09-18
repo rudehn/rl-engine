@@ -1,10 +1,24 @@
 //! Hand-drawn pieces stamped into a generated map.
 //!
 //! A [`Prefab`] is rows of characters and a legend from character to tile.
-//! A character the legend does not know is transparent: the generated
-//! map shows through, so a prefab can be an irregular shape. The stamp
-//! pass emits where it landed as a [`Stamped`] so later passes can keep
-//! out of it or spawn into it.
+//! A character the legend does not know is transparent: the generated map
+//! shows through, so a prefab can be an irregular shape. [`Prefab::rotated`]
+//! and [`Prefab::flipped`] carry a piece's marks with its tiles, since a
+//! mark is a position in the piece, not on the map, and a vault's chest
+//! stays in its alcove however the vault is laid down.
+//!
+//! [`StampPrefab`] stamps one piece at a [`Placement`], and [`Orient`]
+//! says how it may be turned first: fixed, one of the four quarter-turns,
+//! or one of all eight facings with mirroring. Authored per stamp rather
+//! than per prefab, since the same vault may be free to turn in a cave and
+//! fixed against a corridor that has to meet its door. [`StampOneOf`] is the
+//! same pass with a weighted choice of pieces in front of it, for a chain
+//! that wants variety without one entry per piece; a piece with no weight
+//! stays in the list without ever being drawn, and nothing carrying weight
+//! fails the chain rather than generating a map its game does not expect.
+//!
+//! Either pass emits where it landed as a [`Stamped`], in map coordinates,
+//! so later passes can keep out of it or spawn into it.
 
 use rand::Rng;
 use rl_core::{Grid, Grid2D, Point, Rect};
@@ -266,26 +280,43 @@ impl<C: BuildContext> Pass<C> for StampOneOf {
         Phase::Structures
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        let total: u32 = self.choices.iter().map(|(_, w)| w).sum();
+        let mut total: u32 = 0;
+        for (_, w) in &self.choices {
+            total = total.checked_add(*w).ok_or_else(|| BuildError::new(self.name, "the choices' weights overflow a u32".to_string()))?;
+        }
         if total == 0 {
             return Err(BuildError::new(self.name, "no candidate carries weight".to_string()));
         }
-        let mut roll = ctx.rng().random_range(0..total);
-        let chosen = self
-            .choices
-            .iter()
-            .find(|(_, w)| {
-                if roll < *w {
-                    true
-                } else {
-                    roll -= w;
-                    false
-                }
-            })
-            .map(|(p, _)| p.clone())
-            .expect("the roll is below the total, so some candidate holds it");
+        let roll = ctx.rng().random_range(0..total);
+        let weights: Vec<u32> = self.choices.iter().map(|(_, w)| *w).collect();
+        let chosen = self.choices[pick_weighted(&weights, roll)].0.clone();
         StampPrefab { name: self.name, prefab: chosen, at: self.at, orient: self.orient }.apply(ctx)
     }
+}
+
+/// The index into `weights` that `roll` falls under, when the weights are
+/// laid end to end starting at zero: `roll` below the first is index zero,
+/// past it and below the sum of the first two is index one, and so on. A
+/// weight of zero is a span nothing falls in, which is how a zero-weighted
+/// candidate is never chosen.
+///
+/// # Panics
+/// Panics if `roll` is not below the sum of `weights`; every caller draws
+/// it from `0..total` first, so that sum is always the bound `roll` was
+/// drawn under.
+fn pick_weighted(weights: &[u32], roll: u32) -> usize {
+    let mut roll = roll;
+    weights
+        .iter()
+        .position(|&w| {
+            if roll < w {
+                true
+            } else {
+                roll -= w;
+                false
+            }
+        })
+        .expect("the roll is below the total, so some candidate holds it")
 }
 
 #[cfg(test)]
@@ -536,5 +567,40 @@ mod tests {
         // Loudly, at generation time: a silent skip would leave a map missing
         // the thing the chain said it must have.
         assert!(format!("{err:?}").contains("vault"));
+    }
+
+    #[test]
+    fn weights_that_would_overflow_a_u32_sum_fail_the_chain_instead_of_wrapping() {
+        let tiles = TileRegistry::standard();
+        let wall = tiles.expect("wall");
+        let mut c = BaseContext::blank(20, 20, tiles, wall);
+        let piece = Prefab::parse(&["#"], |ch| match ch {
+            '#' => Some(wall),
+            _ => None,
+        })
+        .unwrap();
+        let err = Chain::new()
+            .then(StampOneOf { name: "vault", choices: vec![(piece.clone(), u32::MAX), (piece, u32::MAX)], at: Placement::Center, orient: Orient::Fixed })
+            .run(&mut c, RunSeed(1))
+            .unwrap_err();
+        // Named and caught rather than wrapped: a wrapped total could land a
+        // roll on the wrong candidate, or on none, silently.
+        assert!(format!("{err:?}").contains("vault"));
+    }
+
+    #[test]
+    fn a_roll_picks_the_candidate_whose_running_weight_it_falls_under_and_never_a_zero_weighted_one() {
+        // Weights [3, 1, 0] laid end to end: rolls 0..3 are the first
+        // candidate's span, roll 3 is the second's only slot, and the third
+        // carries no weight, so no roll in the total's range of 0..4 can
+        // ever land on it.
+        let weights = [3u32, 1, 0];
+        for roll in 0..3 {
+            assert_eq!(pick_weighted(&weights, roll), 0, "roll {roll} is under the first weight of 3");
+        }
+        assert_eq!(pick_weighted(&weights, 3), 1, "roll 3 is the one slot the second weight of 1 covers");
+        for roll in 0..4 {
+            assert_ne!(pick_weighted(&weights, roll), 2, "a zero weight is never the candidate a roll lands on");
+        }
     }
 }
