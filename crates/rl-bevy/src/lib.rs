@@ -76,8 +76,8 @@ pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
 pub use plugin::{
-    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PerceiveSet, PresentSet, Requirements, ResolveSet, Turn, TurnSet, clear_run,
-    depends_on,
+    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Requirements, ResolveSet, Turn, TurnSet,
+    clear_run, depends_on,
 };
 pub use registries::Registries;
 pub use replay::{Pressed, Recording};
@@ -126,7 +126,7 @@ pub mod prelude {
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
     pub use crate::plugin::{
-        CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, Needs, NewRun, PerceiveSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on,
+        CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on,
     };
     pub use crate::registries::Registries;
     pub use crate::seed::{AddStream, Seed};

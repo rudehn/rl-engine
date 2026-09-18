@@ -224,6 +224,7 @@ impl Plugin for CorePlugin {
                     .in_set(TurnSet::Resolve),
             )
             .configure_sets(Turn, (FieldSet::Fire, FieldSet::Gas).chain().in_set(ResolveSet::Fields))
+            .configure_sets(Turn, (LandSet::Ability, LandSet::Throw, LandSet::Shot).chain().in_set(ResolveSet::Act))
             .configure_sets(Turn, (CleanupSet::Remove, CleanupSet::Requeue).chain().in_set(TurnSet::Cleanup))
             .add_action::<turn::Step>()
             .add_action::<turn::Wait>()
@@ -449,6 +450,26 @@ pub enum FieldSet {
     Fire,
     /// Gas spreads, fades and is breathed.
     Gas,
+}
+
+/// The landings in [`ResolveSet::Act`], in order: what was put in the air
+/// on an earlier pass and comes down on this one.
+///
+/// A fixed order because each writes damage, and the first hit to take a
+/// target to nothing is the one credited with the kill: two things landing
+/// on one pass would otherwise settle who killed what by however the
+/// scheduler happened to run them. Abilities, then throws, then shots, the
+/// order the engine gained them in; nothing about the rules prefers one.
+/// Every landing runs before its own resolver, so what lands is settled
+/// before anything new is launched.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LandSet {
+    /// An ability's projectile.
+    Ability,
+    /// A thrown item.
+    Throw,
+    /// A shot.
+    Shot,
 }
 
 /// The stages of [`TurnSet::Cleanup`], in order.

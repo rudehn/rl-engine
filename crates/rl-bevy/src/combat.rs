@@ -90,9 +90,10 @@ pub struct MeleeAttack {
     /// that does not care about weapon speed writes nothing and every
     /// blow costs a turn.
     pub cost: Option<u32>,
-    /// What a blow looks like as it lands: a burst on whoever it struck.
-    /// `None` shows nothing, which is how a plain blow reads: the log says
-    /// it, and the target's health bar moves.
+    /// The colour a blow bursts in on whoever it struck. Only the colour:
+    /// a burst's cells show the drawer's own burst glyphs, so the look's
+    /// glyph is not drawn. `None` shows nothing, which is how a plain blow
+    /// reads: the log says it, and the target's health bar moves.
     pub look: Option<Look>,
 }
 
@@ -112,7 +113,7 @@ impl MeleeAttack {
         self
     }
 
-    /// A blow bursts on its target in `look`.
+    /// A blow bursts on its target in `look`'s colour.
     pub const fn looking(mut self, look: Look) -> Self {
         self.look = Some(look);
         self
@@ -471,7 +472,7 @@ pub struct Arena<'w, 's> {
 
 /// What an attack is seen as, and the shots in the air while it is.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Sight<'w> {
+pub struct Shown<'w> {
     cues: MessageWriter<'w, Cued>,
     hold: ResMut<'w, TurnHold>,
     airborne: ResMut<'w, AirborneShots>,
@@ -529,10 +530,10 @@ pub fn resolve_attacks(
     mut resolution: Resolution,
     mut rng: ResMut<CombatRng>,
     mut arena: Arena,
-    sight: Sight,
+    shown: Shown,
 ) {
     let Arena { map, occupancy, attackers, targets, loadout, struck } = &mut arena;
-    let Sight { mut cues, mut hold, mut airborne } = sight;
+    let Shown { mut cues, mut hold, mut airborne } = shown;
     for intent in intents.read() {
         let (actor, target) = (intent.actor, intent.action.0);
         let Ok(pos) = attackers.get(actor) else { continue };
@@ -748,7 +749,7 @@ impl Plugin for CombatPlugin {
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
-            .add_systems(Turn, (land_shots, resolve_attacks).chain().in_set(ResolveSet::Act))
+            .add_systems(Turn, (land_shots.in_set(crate::plugin::LandSet::Shot), resolve_attacks).chain().in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
             .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))
             .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))
@@ -961,6 +962,50 @@ mod tests {
         assert!(app.world().resource::<Seen>().dealt.is_empty(), "gone, it takes nothing");
         assert!(!app.world().resource::<TurnHold>().in_flight());
         assert!(app.world().get::<MyTurn>(player).is_some(), "and the turn comes round");
+    }
+
+    /// A shooter that dies and is gone before its shot arrives still hits:
+    /// the shot left the barrel, and the hit it carries names a shooter
+    /// nothing may assume is still in the world.
+    #[test]
+    fn a_shot_still_lands_when_its_shooter_is_dead_and_gone_before_it_arrives() {
+        use rl_rules::ai::{Brain, tactics::ShootAtRange};
+        let (mut app, start, kind) = arena();
+        app.add_plugins(crate::minds::MindsPlugin);
+        app.init_resource::<Seen>().add_systems(PostUpdate, see);
+        let me = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(FactionId::from_raw(0)))).id();
+        let shooter = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(4, 0)),
+                Health::full(10),
+                Faction(FactionId::from_raw(1)),
+                crate::minds::Perception(8),
+                RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK),
+                crate::minds::Mind(std::sync::Arc::new(Brain::new().then(ShootAtRange::default()))),
+            ))
+            .id();
+        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(me, crate::turn::Wait));
+        app.update();
+        assert!(app.world().resource::<TurnHold>().in_flight(), "it fired");
+        assert_eq!(hp(&app, me), 30);
+
+        app.world_mut().resource_mut::<Turns>().remove(shooter);
+        app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), shooter);
+        app.world_mut().despawn(shooter);
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        assert_eq!(hp(&app, me), 27, "the shot arrived all the same");
+        let credit: Vec<Option<Entity>> = app.world().resource::<Seen>().dealt.iter().map(|d| d.hit.credit).collect();
+        assert_eq!(credit, vec![Some(shooter)], "credited to a shooter who is no longer anywhere");
+        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(app.world().get::<MyTurn>(me).is_some(), "and the turn comes round");
     }
 
     /// A blow that names a look bursts on whoever it struck, and hurts at

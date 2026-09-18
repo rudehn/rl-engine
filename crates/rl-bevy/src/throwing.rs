@@ -231,7 +231,9 @@ impl Plugin for ThrowingPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{ResolveSet, Turn};
         use crate::turn::AddAction;
-        app.init_resource::<AirborneThrows>().add_action::<Throw>().add_systems(Turn, (land_throws, resolve_throws).chain().in_set(ResolveSet::Act));
+        app.init_resource::<AirborneThrows>()
+            .add_action::<Throw>()
+            .add_systems(Turn, (land_throws.in_set(crate::plugin::LandSet::Throw), resolve_throws).chain().in_set(ResolveSet::Act));
     }
 
     fn finish(&self, app: &mut App) {

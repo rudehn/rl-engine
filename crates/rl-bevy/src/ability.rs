@@ -1140,7 +1140,7 @@ impl Plugin for AbilitiesPlugin {
             .add_systems(Turn, perceive_abilities.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, redirect_item_uses.in_set(ResolveSet::Redirect))
             // What has landed, then what is cast this pass.
-            .add_systems(Turn, (land_abilities, resolve_abilities).chain().in_set(ResolveSet::Act))
+            .add_systems(Turn, (land_abilities.in_set(crate::plugin::LandSet::Ability), resolve_abilities).chain().in_set(ResolveSet::Act))
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
     }
 
