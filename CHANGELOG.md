@@ -23,7 +23,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
   A blow with a look bursts on its target and still hurts at once.
   An attack with no look is cued as nothing and lands as it is made, so a game is unchanged until it gives one, and a headless run, with nothing watching, lands every shot as it is fired whatever its look.
   A key pressed while a shot flies at the player skips it through `ParticlesPlugin`'s skip path, lands it, and hands the player its turn with the hit already taken.
-- Foundry's guns and shooting droids name what their shots fly as in `items.ron` and `monsters.ron`: a red bolt for the blasters and the droids, a blue charge for the ion pistol, a pale slug for the slug pistol.
+- Foundry's guns and shooting droids name what their shots fly as in `items.ron` and `monsters.ron`: a red bolt for the blasters and the droids, a blue charge for the ion pistol, a pale round for the slug pistol.
+  The look sits inside the attack it belongs to, so `melee` and `ranged` are now named-field structs, `(roll:, kind:, look:)` and `(range:, roll:, kind:, look:)`, and the look is written the way an ability's is in `abilities.ron`.
+- `LandSet::{Ability, Throw, Shot}` orders what lands in one pass, so a kill's credit no longer rests on the scheduler.
 - `Struck` names the worn item each attack came from.
   `Loadout::melee_with` and `Loadout::ranged_with` answer the same question for a caller.
 - Prefabs turn and mirror, marks included: `Prefab::rotated` and `Prefab::flipped` carry marks with the tiles, and `Orient` (`Fixed`, `Turned`, `TurnedOrMirrored`) on `StampPrefab` draws a facing from the stream, with `Fixed` drawing nothing so a map that never asked for a facing is unchanged.
