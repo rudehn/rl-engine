@@ -33,7 +33,7 @@ The five items that opened this section were built in the six stages of `docs/de
 - **A place for a miss.**
   Accuracy is deliberately absent (`docs/design/abilities.md`, "Accuracy does not exist"); the combat docs should say how a game adds a miss as a `DamageStage`, with an example.
 - **A ranged fighter is under-forecast.**
-  `rl_rules::forecast::Combatant::strikes` is filled from `Loadout::blows`, the melee roll plus extra strikes; a `RangedAttack`'s dice never enter the forecast, so a combatant with nothing but a bow reads as unable to hurt anything.
+  `rl_rules::forecast::Combatant::strikes` is filled from `Loadout::blows`, the melee roll plus extra strikes; a `RangedAttack`'s dice never enter the forecast, so a combatant that only shoots reads as unable to hurt anything.
   A fix needs the ranged roll and `RangedAttack::cost` fed into `Combatant` for whichever side of the pair is not adjacent to the other, so the forecast picks melee or ranged per pair instead of assuming melee always applies.
 - **`DamageStages` must not default to empty.**
   A game that forgets it gets raw damage and no word about why, which is the "a resource happens to exist" pattern the rules ban.
