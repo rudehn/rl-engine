@@ -223,6 +223,26 @@ pub struct DamageEvent {
     pub hit: Hit<Entity>,
 }
 
+/// That an attack found something to strike with, and what: written once
+/// per attack that lands a blow or fires a shot, before its damage.
+///
+/// A game hangs what a weapon does to itself on this: heat, ammunition,
+/// wear. It names the worn item rather than leaving the game to work out
+/// which one the loadout would have chosen, which is the engine's decision
+/// and would be copied, and drift, in every game that needed it.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Struck {
+    /// Who attacked.
+    pub attacker: Entity,
+    /// At whom.
+    pub target: Entity,
+    /// The worn item the attack came from; `None` for the attacker's own,
+    /// a fist or a claw, which has nothing to heat or to spend.
+    pub with: Option<Entity>,
+    /// Whether it was a shot rather than a blow in reach.
+    pub ranged: bool,
+}
+
 /// Damage that actually landed, after mitigation, for narration and
 /// on-hit reactions. Zero means the hit was fully stopped; negative healed.
 #[derive(Message, Debug, Clone, Copy)]
@@ -259,8 +279,9 @@ type DefenderData = (&'static mut Health, &'static Position, Option<&'static Res
 /// for them.
 type Gear = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>);
 
-/// The same, as a query hands them back.
-type GearRef<'a> = (Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&'a RangedAttack>, Option<&'a Strikes>);
+/// A worn item's entity beside the same components, as [`Loadout::worn`]
+/// yields them.
+type WornRef<'a> = (Entity, Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&'a RangedAttack>, Option<&'a Strikes>);
 
 /// What an actor fights with, summed at the moment it matters.
 ///
@@ -292,9 +313,13 @@ pub struct Loadout<'w, 's> {
 }
 
 impl Loadout<'_, '_> {
-    /// What `who` wears, in slot order, with each item's combat components.
-    fn worn(&self, who: Entity) -> impl Iterator<Item = GearRef<'_>> + '_ {
-        self.equipped.get(who).ok().into_iter().flat_map(|e| e.0.worn()).filter_map(|(_, item)| self.worn.get(item).ok())
+    /// What `who` wears, in slot order, each item's entity beside its
+    /// combat components.
+    fn worn(&self, who: Entity) -> impl Iterator<Item = WornRef<'_>> + '_ {
+        self.equipped.get(who).ok().into_iter().flat_map(|e| e.0.worn()).filter_map(|(_, item)| {
+            let (armor, melee, ranged, strikes) = self.worn.get(item).ok()?;
+            Some((item, armor, melee, ranged, strikes))
+        })
     }
 
     /// The value of the stat `pick` names on `who`, or zero when the game
@@ -310,35 +335,47 @@ impl Loadout<'_, '_> {
     /// and the armor stat.
     pub fn armor(&self, who: Entity) -> i32 {
         let own = self.own.get(who).ok().and_then(|(armor, ..)| armor).map_or(0, |a| a.0);
-        let worn: i32 = self.worn(who).filter_map(|(armor, ..)| armor).map(|a| a.0).sum();
+        let worn: i32 = self.worn(who).filter_map(|(_, armor, ..)| armor).map(|a| a.0).sum();
         own + worn + self.stat(who, |r| r.armor)
+    }
+
+    /// The blow `who` strikes, as [`Loadout::melee`], with the worn item it
+    /// comes from, or `None` when it is `who`'s own.
+    pub fn melee_with(&self, who: Entity) -> Option<(Option<Entity>, MeleeAttack)> {
+        let wielded = self.worn(who).find_map(|(item, _, melee, ..)| melee.copied().map(|m| (Some(item), m)));
+        let (from, base) = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, melee, ..)| melee.copied()).map(|m| (None, m)))?;
+        let bonus = self.stat(who, |r| r.attack);
+        Some((from, MeleeAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base }))
     }
 
     /// The blow `who` strikes with: the first worn item's in slot order,
     /// or its own, with the attack stat added to the roll. `None` for
     /// something that cannot strike at all.
     pub fn melee(&self, who: Entity) -> Option<MeleeAttack> {
-        let wielded = self.worn(who).find_map(|(_, melee, ..)| melee.copied());
-        let base = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, melee, ..)| melee.copied()))?;
+        self.melee_with(who).map(|(_, m)| m)
+    }
+
+    /// The shot `who` fires, as [`Loadout::ranged`], with the worn item it
+    /// comes from, or `None` when it is `who`'s own.
+    pub fn ranged_with(&self, who: Entity) -> Option<(Option<Entity>, RangedAttack)> {
+        let wielded = self.worn(who).find_map(|(item, _, _, ranged, _)| ranged.copied().map(|r| (Some(item), r)));
+        let (from, base) = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, _, ranged, _)| ranged.copied()).map(|r| (None, r)))?;
         let bonus = self.stat(who, |r| r.attack);
-        Some(MeleeAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base })
+        Some((from, RangedAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base }))
     }
 
     /// The shot `who` fires: the first worn item's in slot order, or its
     /// own, with the attack stat added to the roll. `None` for something
     /// with nothing to shoot with.
     pub fn ranged(&self, who: Entity) -> Option<RangedAttack> {
-        let wielded = self.worn(who).find_map(|(_, _, ranged, _)| ranged.copied());
-        let base = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, _, ranged, _)| ranged.copied()))?;
-        let bonus = self.stat(who, |r| r.attack);
-        Some(RangedAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base })
+        self.ranged_with(who).map(|(_, r)| r)
     }
 
     /// The extra rolls every hit by `who` carries: its own, then each worn
     /// item's in slot order.
     pub fn strikes(&self, who: Entity) -> Vec<(DamageKindId, DiceRoll)> {
         let mut all: Vec<(DamageKindId, DiceRoll)> = self.own.get(who).ok().and_then(|(_, _, _, s)| s).map(|s| s.0.clone()).unwrap_or_default();
-        for (_, _, _, strikes) in self.worn(who) {
+        for (_, _, _, _, strikes) in self.worn(who) {
             all.extend(strikes.map(|s| s.0.iter().copied()).into_iter().flatten());
         }
         all
@@ -368,6 +405,7 @@ pub struct Arena<'w, 's> {
     attackers: Query<'w, 's, &'static Position, With<MyTurn>>,
     targets: Query<'w, 's, &'static Position, With<Health>>,
     loadout: Loadout<'w, 's>,
+    struck: MessageWriter<'w, Struck>,
 }
 
 /// Turns attack intents into damage events: a melee strike on an
@@ -386,9 +424,9 @@ pub fn resolve_attacks(
     mut damage: MessageWriter<DamageEvent>,
     mut resolution: Resolution,
     mut rng: ResMut<CombatRng>,
-    arena: Arena,
+    mut arena: Arena,
 ) {
-    let Arena { map, occupancy, attackers, targets, loadout } = arena;
+    let Arena { map, occupancy, attackers, targets, loadout, struck } = &mut arena;
     for intent in intents.read() {
         let target = intent.action.0;
         let Ok(pos) = attackers.get(intent.actor) else { continue };
@@ -400,13 +438,17 @@ pub fn resolve_attacks(
             continue;
         };
         let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
-            loadout.melee(intent.actor).map(|m| (m.kind, m.dice, m.cost))
+            loadout.melee_with(intent.actor).map(|(from, m)| (from, false, m.kind, m.dice, m.cost))
         } else {
-            loadout.ranged(intent.actor).filter(|r| line_of_fire(&map, &occupancy, pos.0, target_pos.0, r.range)).map(|r| (r.kind, r.dice, r.cost))
+            loadout
+                .ranged_with(intent.actor)
+                .filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range))
+                .map(|(from, r)| (from, true, r.kind, r.dice, r.cost))
         };
         let mut spent = rl_core::turn::BASE_ACTION_COST;
-        if let Some((kind, dice, cost)) = weapon {
+        if let Some((from, ranged, kind, dice, cost)) = weapon {
             spent = cost.unwrap_or(rl_core::turn::BASE_ACTION_COST);
+            struck.write(Struck { attacker: intent.actor, target, with: from, ranged });
             // Floored where it is rolled: a blow that rolls below zero has
             // missed, and the pipeline would read a negative one as a heal.
             let amount = dice.roll_at_least(&mut **rng, 0);
@@ -532,6 +574,7 @@ impl Plugin for CombatPlugin {
         app.add_message::<DamageEvent>()
             .add_message::<DamageDealt>()
             .add_message::<DeathEvent>()
+            .add_message::<Struck>()
             .init_resource::<DamageStages>()
             .add_action::<Attack>()
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")
@@ -892,5 +935,134 @@ mod tests {
         assert_eq!(slow, 140);
         assert_eq!(fast, 80);
         assert_eq!(missed, rl_core::turn::BASE_ACTION_COST, "out of range is a spent turn, not a free one");
+    }
+
+    #[derive(Resource, Default)]
+    struct Heard(Vec<Struck>);
+
+    /// Copies every [`Struck`] into [`Heard`], the way [`status::hear`] does
+    /// for [`StatusEvent`](crate::status::StatusEvent): a headless app swaps
+    /// its message buffers on wall time, so peeking at the buffer after an
+    /// update can miss what a reader added this run would have caught.
+    fn hear(mut events: MessageReader<Struck>, mut heard: ResMut<Heard>) {
+        heard.0.extend(events.read().copied());
+    }
+
+    /// Sends one melee attack from a player adjacent to a target, worn or
+    /// bare-handed, and returns the single [`Struck`] written for it.
+    ///
+    /// Mirrors [`melee_turn_cost`]'s setup, with `ItemsPlugin` added so a
+    /// worn weapon can be equipped.
+    fn struck_by_melee(worn: bool) -> Struck {
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.init_resource::<Heard>().add_systems(PostUpdate, hear);
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let mut player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours)));
+        if !worn {
+            player.insert(MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: None });
+        }
+        let player = player.id();
+        if worn {
+            let slot = SlotId::from_raw(0);
+            let blade = app
+                .world_mut()
+                .spawn((
+                    crate::items::Item,
+                    MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: None },
+                    crate::items::Wearable(EquipShape::in_slot(slot)),
+                ))
+                .id();
+            let mut equipment = Equipment::with_slot_count(1);
+            equipment.equip(blade, &EquipShape::in_slot(slot)).unwrap();
+            app.world_mut().entity_mut(player).insert((crate::items::Inventory { items: vec![blade] }, Equipped(equipment)));
+        }
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(1, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        let struck = app.world().resource::<Heard>().0.clone();
+        assert_eq!(struck.len(), 1, "one attack, one Struck");
+        struck[0]
+    }
+
+    /// Equips two ranged items in slot order on a player three tiles from a
+    /// clear-line target, fires one attack, and returns the [`Struck`]
+    /// written along with both item entities in slot order.
+    fn struck_by_two_guns() -> (Struck, Entity, Entity) {
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.init_resource::<Heard>().add_systems(PostUpdate, hear);
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let (first_slot, second_slot) = (SlotId::from_raw(0), SlotId::from_raw(1));
+        let first = app
+            .world_mut()
+            .spawn((
+                crate::items::Item,
+                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(3), range: 6, cost: None },
+                crate::items::Wearable(EquipShape::in_slot(first_slot)),
+            ))
+            .id();
+        let second = app
+            .world_mut()
+            .spawn((
+                crate::items::Item,
+                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(3), range: 6, cost: None },
+                crate::items::Wearable(EquipShape::in_slot(second_slot)),
+            ))
+            .id();
+        let mut equipment = Equipment::with_slot_count(2);
+        equipment.equip(first, &EquipShape::in_slot(first_slot)).unwrap();
+        equipment.equip(second, &EquipShape::in_slot(second_slot)).unwrap();
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                crate::items::Inventory { items: vec![first, second] },
+                Equipped(equipment),
+            ))
+            .id();
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        let struck = app.world().resource::<Heard>().0.clone();
+        assert_eq!(struck.len(), 1, "one attack, one Struck");
+        (struck[0], first, second)
+    }
+
+    #[test]
+    fn a_blow_names_the_worn_weapon_it_came_from_and_nothing_when_it_came_from_the_attacker() {
+        // Worn: the blow names the item. Bare-handed: it names nothing. A game
+        // that heats or spends a weapon learns which one from this, rather than
+        // working out for itself which item the engine would have picked.
+        let (worn, bare) = (struck_by_melee(true), struck_by_melee(false));
+        assert!(worn.with.is_some(), "a worn weapon's blow names it");
+        assert!(!worn.ranged);
+        assert_eq!(bare.with, None, "a bare-handed blow names nothing");
+    }
+
+    #[test]
+    fn a_shot_names_the_item_it_was_fired_from_and_the_one_loadout_would_pick() {
+        // Two ranged items worn: the shot names whichever the loadout picks,
+        // which is the first in slot order, so the report and the resolver can
+        // never disagree about which weapon fired.
+        let (struck, first, _second) = struck_by_two_guns();
+        assert!(struck.ranged);
+        assert_eq!(struck.with, Some(first));
     }
 }
