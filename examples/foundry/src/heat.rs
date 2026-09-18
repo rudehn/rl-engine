@@ -58,18 +58,20 @@ impl Heat {
         locks
     }
 
-    /// Ends a turn: vents unless it is still working and fired this turn,
-    /// and answers whether this turn is the one that unlocked it.
+    /// Ends a turn: vents if it did not fire this turn, and answers
+    /// whether this turn is the one that unlocked it.
     ///
-    /// A weapon that only ever gets one shot off between quiet turns
-    /// never locks, which is the trade a fast, low-heat weapon makes for
-    /// never taking the burst a slow one does; that trade is this gate.
-    /// A locked weapon has nothing left to fire, so it is exempt from the
-    /// gate and vents every turn without exception, the turn it seized
-    /// included: nothing thereafter but cooling is left for it to do.
-    /// Never below zero.
+    /// Never below zero, and never vents on a turn it fired: a weapon
+    /// that only ever gets one shot off between quiet turns never locks,
+    /// which is the trade a fast, low-heat weapon makes for never taking
+    /// the burst a slow one does. The turn a weapon locks is a turn it
+    /// fired, so that turn does not vent either, spec section 6.2's
+    /// "vents only on a turn its wielder does not fire it" applying with
+    /// no exception for locking: a weapon that locks on turn `T` reaches
+    /// zero at the end of turn `T` plus one whole quiet turn per
+    /// [`Heat::vent`] of [`CAPACITY`] left to shed.
     pub fn turn_end(&mut self) -> bool {
-        if self.locked || !self.fired {
+        if !self.fired {
             self.now = self.now.saturating_sub(self.vent);
         }
         self.fired = false;
@@ -202,7 +204,14 @@ mod tests {
         let mut h = Heat::new(25, 20);
         while !h.fire() {}
         assert_eq!(h.now, 100);
-        // 100 at 20 a quiet turn is five turns; unlocked on the fifth, not before.
+        // The lock turn is a turn it fired, so it vents nothing: still
+        // locked, still at 100, and this first `turn_end` reports no
+        // unlock.
+        assert!(!h.turn_end(), "the locking turn fired, so it does not vent");
+        assert_eq!(h.now, 100);
+        assert!(h.locked);
+        // 100 at 20 a quiet turn is five more turns; unlocked on the
+        // fifth of them, the sixth `turn_end` counted from the lock.
         let unlocked_on = (1..=10).find(|_| h.turn_end()).unwrap();
         assert_eq!(unlocked_on, 5);
         assert_eq!(h.now, 0);
@@ -229,6 +238,48 @@ mod tests {
         assert!(struck[..7].iter().all(|s| s.with == Some(first)));
         assert_eq!(struck[7].with, Some(second), "the eighth shot comes from the other hand");
         assert!(app.world().get::<RangedAttack>(first).is_none(), "locked: stowed");
+    }
+
+    #[test]
+    fn venting_the_turn_that_just_ended_must_run_before_the_next_turns_shot_marks_it_fired() {
+        // The engine's own `schedule` (crates/rl-bevy/src/turn.rs) can
+        // write a `TurnEnd` and deal the next actor's turn in the same
+        // pass, so `TurnSet::React` can read the ending turn's `TurnEnd`
+        // together with the very next turn's `Struck`. Reproducing that
+        // race through the real scheduler is not reliable to pin to a
+        // seed, so this drives the two systems directly, in each order,
+        // on the exact pair of messages a real race would hand them.
+        //
+        // The world is never `update`d before the messages are written:
+        // a headless app's message buffers hold up to two frames, so
+        // running it first, the way the other tests do to let a real
+        // turn resolve, would leave stray `TurnEnd`s in the buffer for a
+        // fresh reader to find and double-count.
+        use bevy::ecs::system::RunSystemOnce;
+
+        fn scenario(vent_first: bool) -> u32 {
+            let mut app = crate::testing::headless(RunSeed(1));
+            // A hand blaster mid-cooldown: quiet so far this turn.
+            let item = app.world_mut().spawn(Heat { per_shot: 15, vent: 20, now: 15, locked: false, fired: false }).id();
+            let bystander = app.world_mut().spawn_empty().id();
+            app.world_mut().write_message(TurnEnd { turn: 1 });
+            app.world_mut().write_message(Struck { attacker: bystander, target: bystander, with: Some(item), ranged: true });
+            if vent_first {
+                app.world_mut().run_system_once(vent_heat).unwrap();
+                app.world_mut().run_system_once(heat_on_struck).unwrap();
+            } else {
+                app.world_mut().run_system_once(heat_on_struck).unwrap();
+                app.world_mut().run_system_once(vent_heat).unwrap();
+            }
+            app.world().get::<Heat>(item).unwrap().now
+        }
+
+        assert_eq!(
+            scenario(false),
+            30,
+            "heat_on_struck first: the new shot marks it fired, so the turn that actually just ended quietly wrongly skips its vent"
+        );
+        assert_eq!(scenario(true), 15, "vent_heat first: the ending turn vents (15 - 20, floored at 0), then the new shot adds its own 15");
     }
 
     #[test]

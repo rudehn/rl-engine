@@ -22,7 +22,15 @@ impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(NewRun, crate::run::start);
         app.add_systems(Turn, crate::gear::grant_dark_sight.in_set(TurnSet::React));
-        app.add_systems(Turn, (crate::heat::heat_on_struck, crate::heat::vent_heat).in_set(TurnSet::React));
+        // Chained, and in this order: the engine's own `schedule`
+        // (crates/rl-bevy/src/turn.rs) can write a `TurnEnd` and deal the
+        // next actor's turn in the same pass, so `TurnSet::React` can see
+        // the ending turn's `TurnEnd` together with the new turn's
+        // `Struck`. Venting first reads each `Heat`'s `fired` as that
+        // ending turn left it; running `heat_on_struck` first would mark
+        // `fired` for the turn that is only just starting, and the turn
+        // that actually just ended quietly would wrongly skip its vent.
+        app.add_systems(Turn, (crate::heat::vent_heat, crate::heat::heat_on_struck).chain().in_set(TurnSet::React));
         // Correct with or without a gear panel: `note_heat` reads
         // `GearView` as `Option<Res<_>>` and does nothing until a game
         // adds `GearViewPlugin`, which this slice's binary does not yet.
