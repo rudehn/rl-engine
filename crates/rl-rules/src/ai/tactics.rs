@@ -183,6 +183,77 @@ impl<A: Copy> Tactic<A> for Follow {
     }
 }
 
+/// Keep the enemies in sight at arm's length: a spotter that calls out
+/// where you are, a skirmisher that stays out of reach, a hound that bays
+/// and never bites.
+///
+/// The enemy-facing twin of [`Follow`]. Fires when the nearest enemy is
+/// further than `keep_within`, and steps down a field toward every enemy
+/// in sight; or when one is nearer than `no_closer_than`, and steps down a
+/// field away from them. In between it returns `None` and the next tactic
+/// has the turn: a shot for a skirmisher, a wait for a spotter. Above
+/// anything that closes in, such as [`Hunt`], which would spend the turn
+/// undoing the distance this keeps.
+///
+/// A step never lengthens the gap to the nearest enemy while closing it,
+/// nor shortens it while backing out: a field that leads round a pillar by
+/// way of the enemy is the way to it, not the way to keep it at a distance,
+/// so a step the field offers that does either is passed over.
+#[derive(Debug, Clone, Copy)]
+pub struct Shadow {
+    /// How far it lets the nearest enemy get before it closes.
+    pub keep_within: i32,
+    /// How near it lets the nearest enemy come before it backs off.
+    pub no_closer_than: i32,
+}
+
+impl Default for Shadow {
+    /// Within five, never nearer than three.
+    fn default() -> Self {
+        Self { keep_within: 5, no_closer_than: 3 }
+    }
+}
+
+impl<A: Copy> Tactic<A> for Shadow {
+    fn name(&self) -> &'static str {
+        "shadow"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let me = ctx.snapshot.me.pos;
+        let nearest = ctx.snapshot.nearest_enemy()?.pos;
+        let gap = geometry::chebyshev(me, nearest);
+        let foes: Vec<Point> = ctx.snapshot.enemies.iter().map(|e| e.pos).collect();
+        if gap > self.keep_within {
+            let closing = |p: Point| geometry::chebyshev(p, nearest) <= gap;
+            if let Some(step) = ctx.fields.descents_toward(&foes, me).into_iter().find(|p| (ctx.can_step)(*p) && closing(*p)) {
+                return Some(Decision::Step(step));
+            }
+            let toward = Direction::between(me, nearest)?;
+            for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
+                let step = me + d.offset();
+                if (ctx.can_step)(step) && geometry::chebyshev(step, nearest) < gap {
+                    return Some(Decision::Step(step));
+                }
+            }
+            return None;
+        }
+        if gap < self.no_closer_than {
+            let backing = |p: Point| geometry::chebyshev(p, nearest) >= gap;
+            if let Some(step) = ctx.fields.descents_away(&foes, me).into_iter().find(|p| (ctx.can_step)(*p) && backing(*p)) {
+                return Some(Decision::Step(step));
+            }
+            let away = Direction::between(nearest, me)?;
+            for d in [away, away.rotate_cw(), away.rotate_ccw()] {
+                let step = me + d.offset();
+                if (ctx.can_step)(step) && geometry::chebyshev(step, nearest) > gap {
+                    return Some(Decision::Step(step));
+                }
+            }
+        }
+        None
+    }
+}
+
 /// Drift: some chance of a random step, otherwise wait.
 ///
 /// Never straight back where it came from while any other cell is open,
@@ -1037,5 +1108,89 @@ mod tests {
         sees.enemies = vec![view(2, 1, 0, 10)];
         let mut ctx = TacticCtx { snapshot: &sees, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
+    }
+
+    /// Shadow's answer for a snapshot of one actor at `me` and one enemy at
+    /// `foe` on open floor, with `blocked` cells nobody can step on.
+    fn shadow(tactic: Shadow, me: Point, foe: Point, blocked: &[Point]) -> Option<Decision<u32>> {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| !blocked.contains(&p) && p != foe && view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut fields = Given::over(&view_t);
+        let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
+        s.enemies.push(view(2, foe.x, foe.y, 10));
+        let mut ctx = TacticCtx { snapshot: &s, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        tactic.evaluate(&mut ctx)
+    }
+
+    /// A spotter closes on an enemy too far off, backs away from one too
+    /// near, and in between leaves the turn to whatever comes after it.
+    #[test]
+    fn a_shadow_closes_on_a_far_enemy_backs_off_a_near_one_and_leaves_the_band_between_to_the_next_tactic() {
+        let keep = Shadow { keep_within: 5, no_closer_than: 3 };
+        let foe = Point::new(2, 5);
+        let gap = |d: Option<Decision<u32>>| match d {
+            Some(Decision::Step(p)) => geometry::chebyshev(p, foe),
+            other => panic!("expected a step, got {other:?}"),
+        };
+        assert_eq!(gap(shadow(keep, Point::new(9, 5), foe, &[])), 6, "seven off, it closes a step");
+        assert_eq!(gap(shadow(keep, Point::new(3, 5), foe, &[])), 2, "one off, it backs a step away");
+        for x in 5..=7 {
+            assert_eq!(shadow(keep, Point::new(x, 5), foe, &[]), None, "{} off is inside the band", x - 2);
+        }
+        let mut alone = Snapshot::alone(view(1, 5, 5, 10));
+        alone.allies.push(view(3, 9, 5, 10));
+        let mut rng = StdRng::seed_from_u64(1);
+        let can_step = |_: Point| true;
+        let mut ctx = TacticCtx { snapshot: &alone, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        assert_eq!(keep.evaluate(&mut ctx), None, "with no enemy in sight there is nobody to shadow");
+    }
+
+    /// Over a spread of places and cells taken, a shadow's step never
+    /// brings it nearer an enemy already inside `no_closer_than`, never
+    /// takes it further from one already past `keep_within`, and is always
+    /// taken when a step that helps is there to take.
+    #[test]
+    fn a_shadow_step_never_shortens_a_gap_it_is_backing_out_of_nor_lengthens_one_it_is_closing_over_a_range_of_seeds() {
+        let tactic = Shadow { keep_within: 5, no_closer_than: 3 };
+        let around = |p: Point| Direction::ALL.into_iter().map(move |d| p + d.offset());
+        for seed in 0..400u64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut cell = || Point::new(rng.random_range(0..12), rng.random_range(0..12));
+            let (me, foe) = (cell(), cell());
+            let blocked: Vec<Point> = (0..6).map(|_| cell()).filter(|p| *p != me && *p != foe).collect();
+            if me == foe {
+                continue;
+            }
+            let (t, r) = open();
+            let view_t = t.view(&r);
+            let free = |p: Point| !blocked.contains(&p) && p != foe && view_t.is_walkable(p);
+            let gap = geometry::chebyshev(me, foe);
+            let decided = shadow(tactic, me, foe, &blocked);
+            let after = match decided {
+                Some(Decision::Step(p)) => {
+                    assert!(free(p) && geometry::chebyshev(me, p) == 1, "seed {seed}: {me:?} stepped to {p:?}, which is no step");
+                    Some(geometry::chebyshev(p, foe))
+                }
+                None => None,
+                other => panic!("seed {seed}: a shadow only steps or passes, not {other:?}"),
+            };
+            if gap > tactic.keep_within {
+                if let Some(after) = after {
+                    assert!(after <= gap, "seed {seed}: closing from {gap}, it stepped out to {after}");
+                }
+                let helps = around(me).any(|p| free(p) && geometry::chebyshev(p, foe) < gap);
+                assert!(!helps || after.is_some(), "seed {seed}: {gap} off with a step toward to take at {me:?}, it passed");
+            } else if gap < tactic.no_closer_than {
+                if let Some(after) = after {
+                    assert!(after >= gap, "seed {seed}: backing out from {gap}, it stepped in to {after}");
+                }
+                let helps = around(me).any(|p| free(p) && geometry::chebyshev(p, foe) > gap);
+                assert!(!helps || after.is_some(), "seed {seed}: {gap} off with a step away to take at {me:?}, it passed");
+            } else {
+                assert_eq!(decided, None, "seed {seed}: {gap} off is inside the band");
+            }
+        }
     }
 }
