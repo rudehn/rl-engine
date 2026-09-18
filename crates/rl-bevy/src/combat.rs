@@ -566,6 +566,23 @@ pub fn bury_the_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
 /// choose whom to strike come with [`MindsPlugin`](crate::minds::MindsPlugin).
 pub struct CombatPlugin;
 
+/// Tells the mind holding the turn how far its own shot reaches.
+///
+/// Combat's contribution to a mind's knowledge, in
+/// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate), and
+/// combat's rather than items': [`Loadout::ranged`] is the shot the
+/// resolver fires, whether a worn gun's or the actor's own, and a mind
+/// built with a gun needs no items to fire it. Reach asks no wits, since
+/// firing what is wielded takes none, so it is read for every mind,
+/// mindless or not.
+pub fn perceive_reach(mut thinking: ResMut<crate::minds::Thinking>, loadout: Loadout) {
+    let Some(thinker) = thinking.actor() else { return };
+    let reach = loadout.ranged(thinker).map(|r| r.range);
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.reach = reach;
+    }
+}
+
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{CleanupSet, Needs, ResolveSet, Turn};
@@ -580,6 +597,7 @@ impl Plugin for CombatPlugin {
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
+            .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
             .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))

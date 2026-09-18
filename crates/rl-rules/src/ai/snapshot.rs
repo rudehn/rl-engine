@@ -133,8 +133,8 @@ pub struct Snapshot<A: Copy> {
     /// which is most of them.
     pub missiles: Vec<Missile<A>>,
     /// How far the actor's own shot carries, if it has one. Read from
-    /// whatever it wields, so a mind that picks up a rifle can shoot
-    /// without its brain changing.
+    /// whatever it wields, or failing that its own, so a mind that picks up
+    /// a rifle can shoot without its brain changing.
     pub reach: Option<i32>,
     /// What lies where it can see, nearest first.
     pub items: Vec<ItemView<A>>,

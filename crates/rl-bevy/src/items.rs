@@ -13,7 +13,7 @@
 //!
 //! What wearing an item does is the item's to say and the engine's to
 //! apply. Its combat components are read straight off it by
-//! [`Loadout`] whenever a blow is struck or met,
+//! [`Loadout`](crate::combat::Loadout) whenever a blow is struck or met,
 //! and what it [`Bestows`] on the registered stats is folded into the
 //! wearer's [`StatBlock`] by [`fold_gear`] the moment its slots change.
 //! Nothing is copied onto the wearer and nothing has to be remembered
@@ -27,7 +27,7 @@ use rl_core::turn::BASE_ACTION_COST;
 use rl_rules::stats::{Modifier, Op, Source};
 use rl_rules::{EquipShape, Equipment, StatId};
 
-use crate::combat::{DeathEvent, Loadout};
+use crate::combat::DeathEvent;
 use crate::components::{Actor, MyTurn, Position};
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
@@ -512,19 +512,19 @@ impl Belongings<'_, '_> {
     }
 }
 
-/// Tells the mind holding the turn what it carries to throw, how far its
-/// own shot reaches, and what lies in sight worth having.
+/// Tells the mind holding the turn what it carries to throw and what lies
+/// in sight worth having.
 ///
 /// Items' contribution to a mind's knowledge, in
 /// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate). Only a
 /// mind with the wits to pick up or put on is told what lies about; what
-/// it stands on it can feel, and anything else it has to see. Reach asks
-/// no wits at all: firing what is wielded takes none, so [`Loadout::ranged`]
-/// is read for every mind that has one, mindless or not.
-pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongings: Belongings, loadout: Loadout) {
+/// it stands on it can feel, and anything else it has to see. How far its
+/// shot reaches is combat's to tell, in
+/// [`perceive_reach`](crate::combat::perceive_reach), since a gun a mind
+/// was built with needs no items at all.
+pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongings: Belongings) {
     let Some(thinker) = thinking.actor() else { return };
     let missiles = belongings.missiles(thinker);
-    let reach = loadout.ranged(thinker).map(|r| r.range);
     let wits = thinking.snapshot().map(|s| s.wits).unwrap_or_default();
     let mut items = Vec::new();
     if wits.has(rl_rules::Wits::PICKS_UP) || wits.has(rl_rules::Wits::EQUIPS) {
@@ -539,7 +539,6 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
     }
     if let Some(snapshot) = thinking.snapshot_mut() {
         snapshot.missiles = missiles;
-        snapshot.reach = reach;
         snapshot.items.extend(items);
     }
 }

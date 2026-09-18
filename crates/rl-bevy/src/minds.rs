@@ -896,6 +896,37 @@ mod tests {
         let _ = monster;
     }
 
+    #[test]
+    fn a_mind_with_a_ranged_attack_of_its_own_shoots_in_a_game_with_combat_and_minds_but_no_items() {
+        use crate::combat::RangedAttack;
+        use rl_rules::ai::tactics::ShootAtRange;
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        // Built with its gun, and nothing in its brain but shooting: without
+        // its reach it would only ever wait.
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(start.offset(4, 0)),
+            Health::full(10),
+            Faction(sides.theirs),
+            Perception(8),
+            RangedAttack { kind: sides.kind, dice: DiceRoll::flat(2), range: 6, cost: None },
+            Mind(Arc::new(Brain::new().then(ShootAtRange::default()))),
+        ));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..6 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        assert!(app.world().get::<Health>(player).unwrap().current < 30, "it shot the player from four tiles off");
+    }
+
     /// A thrower with nothing in hand, a knife a step away and the player six
     /// off, run for a dozen turns of the player waiting.
     fn with_a_knife_in_reach(wits: Wits) -> (App, Entity, Entity) {
