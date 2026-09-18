@@ -3,6 +3,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
+use rl_engine::rl_core::Point;
 use rl_engine::rl_grid::Rgb;
 
 use crate::droids::Roster;
@@ -114,4 +115,54 @@ pub fn lone_monster(app: &mut App, name: &str) -> Entity {
     let monster = crate::droids::spawn_monster(&mut commands, &roster, id, pos.0, map, &registries);
     queue.apply(app.world_mut());
     monster
+}
+
+/// What walking from `from` to `to` on the current deck costs, in
+/// hundredths of a step, round the walls and never through a shut door.
+///
+/// Never less than what a sound spends on the same way, which is how a
+/// test places a listener in earshot: sound goes by the rooms, not
+/// through them.
+pub fn walk(app: &App, from: Point, to: Point) -> i32 {
+    let map = app.world().resource::<WorldMap>();
+    let view = map.view();
+    let mut flood = rl_engine::rl_grid::DijkstraMap::covering(&view);
+    flood.build(&view, map.to_local(to), rl_engine::rl_grid::PathRules::EIGHT_WAY);
+    map.to_local(from).and_then(|l| flood.value(l)).unwrap_or(i32::MAX)
+}
+
+/// Spawns `name` on the current deck somewhere the player has no line to,
+/// `min..=max` hundredths of a step's walk from the player: out of sight,
+/// so whatever it learns of the player's corner of the deck it learns by
+/// ear. Returns the monster and where it stands.
+pub fn out_of_sight(app: &mut App, name: &str, min: i32, max: i32) -> (Entity, Point) {
+    app.update();
+    app.update();
+    let registries = app.world().resource::<Registries>().clone();
+    let roster = Roster::load(&registries);
+    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    let from = app.world().get::<Position>(player).copied().expect("the player stands somewhere").0;
+    let at = {
+        let world = app.world();
+        let (deck, occupancy, sight) = (world.resource::<WorldMap>(), world.resource::<Occupancy>(), world.get::<Viewshed>(player));
+        // One flood from the player, read at every cell.
+        let view = deck.view();
+        let mut flood = rl_engine::rl_grid::DijkstraMap::covering(&view);
+        flood.build(&view, deck.to_local(from), rl_engine::rl_grid::PathRules::EIGHT_WAY);
+        let bounds = deck.window_tiles();
+        (bounds.y..bounds.bottom())
+            .flat_map(|y| (bounds.x..bounds.right()).map(move |x| Point::new(x, y)))
+            .find(|p| {
+                let steps = deck.to_local(*p).and_then(|l| flood.value(l)).unwrap_or(i32::MAX);
+                deck.is_walkable(*p) && !occupancy.is_occupied(*p) && !sight.is_some_and(|v| v.in_line(*p)) && (min..=max).contains(&steps)
+            })
+            .expect("a corner of the deck out of the player's line and within the walk asked for")
+    };
+    let map = app.world().resource::<WorldMap>().current();
+    let id = roster.defs.expect(name);
+    let mut queue = CommandQueue::default();
+    let mut commands = Commands::new(&mut queue, app.world_mut());
+    let monster = crate::droids::spawn_monster(&mut commands, &roster, id, at, map, &registries);
+    queue.apply(app.world_mut());
+    (monster, at)
 }

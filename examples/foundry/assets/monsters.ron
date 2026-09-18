@@ -17,20 +17,26 @@
 //               the same shape, and is what a shot flies as; absent, a shot lands unseen
 //   speed:      percent of normal, 100 normal, 200 twice as fast
 //   flee_at:    percent health at or below which it runs; 0 never flees
-//   alarm:      optional; true when noticing an enemy wakes every droid on the deck
+//   alarm:      optional; true when noticing an enemy sounds the deck's alarm, a klaxon
+//               heard in every open corner of the deck
+//   hearing:    optional; how it hears, as (threshold: steps of loudness a sound must still
+//               have when it arrives, memory: turns it goes looking, may be left out, 6);
+//               a shot or a blow carries ten steps and the alarm the whole deck, and a shut
+//               bulkhead takes three off; absent means deaf. Only a monster whose wits
+//               include "searches" goes to what it heard
 //   spawn:      one or more (min deck, max deck, weight, min group, max group);
 //               several entries let a group grow with depth
 //   drops:      optional; [(item name, percent chance)] rolled on death
 #![enable(implicit_some)]
 [
-    (name: "line droid", glyph: 'd', color: (0.85, 0.75, 0.55), hp: 8, armor: 0, profile: "chassis", faction: "droids", wits: "mindless",
-     perception: 8, melee: (roll: "1d2", kind: "kinetic"), ranged: (range: 5, roll: "1d4", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), speed: 100, flee_at: 0,
+    (name: "line droid", glyph: 'd', color: (0.85, 0.75, 0.55), hp: 8, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
+     perception: 8, melee: (roll: "1d2", kind: "kinetic"), ranged: (range: 5, roll: "1d4", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), speed: 100, flee_at: 0, hearing: (threshold: 0, memory: 8),
      spawn: [(1, 2, 100, 1, 2), (2, 4, 90, 2, 3)], drops: [("hand blaster", 5), ("slug", 5)]),
-    (name: "probe droid", glyph: 'p', color: (0.5, 0.5, 0.55), hp: 6, armor: 0, profile: "chassis", faction: "droids", wits: "mindless",
-     perception: 10, dark_sight: 4, melee: (roll: "1d2", kind: "kinetic"), ranged: (range: 4, roll: "1d4", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), speed: 120, flee_at: 0, alarm: true,
+    (name: "probe droid", glyph: 'p', color: (0.5, 0.5, 0.55), hp: 6, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
+     perception: 10, dark_sight: 4, melee: (roll: "1d2", kind: "kinetic"), ranged: (range: 4, roll: "1d4", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), speed: 120, flee_at: 0, alarm: true, hearing: (threshold: 0, memory: 8),
      spawn: [(1, 6, 20, 1, 1)], drops: [("slug", 10)]),
-    (name: "heavy droid", glyph: 'D', color: (0.6, 0.6, 0.7), hp: 18, armor: 2, profile: "chassis", faction: "droids", wits: "mindless",
-     perception: 8, melee: (roll: "1d4", kind: "kinetic"), ranged: (range: 6, roll: "1d6+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), speed: 90, flee_at: 0,
+    (name: "heavy droid", glyph: 'D', color: (0.6, 0.6, 0.7), hp: 18, armor: 2, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
+     perception: 8, melee: (roll: "1d4", kind: "kinetic"), ranged: (range: 6, roll: "1d6+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), speed: 90, flee_at: 0, hearing: (threshold: 0, memory: 8),
      spawn: [(3, 8, 40, 1, 1)], drops: [("blaster carbine", 10), ("composite plate", 10)]),
     (name: "coolant rat", glyph: 'r', color: (0.6, 0.7, 0.75), hp: 4, armor: 0, profile: "organic", faction: "vermin", wits: "animal",
      perception: 6, melee: (roll: "1d3", kind: "kinetic"), speed: 110, flee_at: 50,

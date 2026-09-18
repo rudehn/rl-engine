@@ -15,9 +15,9 @@
 //! engine's panels and `upgrades::ChoicePanel` take the rectangle
 //! `main.rs` cuts for them, which a headless test has no screen to cut.
 use bevy::prelude::*;
-use rl_engine::rl_bevy::AddAction;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, ResolveSet, Turn, TurnSet};
+use rl_engine::rl_bevy::{AddAction, AddSound};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, ViewSet};
 
 /// Foundry's own systems: the run's start, and every reaction a task
@@ -27,6 +27,9 @@ pub struct FoundryPlugin;
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(NewRun, crate::run::start);
+        // The alarm is a sound of Foundry's own, declared once so
+        // `sound_alarm` finds it by name.
+        app.add_sound(crate::droids::ALARM_SOUND);
         // Chained, and in this order: the engine's own `schedule`
         // (crates/rl-bevy/src/turn.rs) can write a `TurnEnd` and deal the
         // next actor's turn in the same pass, so `TurnSet::React` can see

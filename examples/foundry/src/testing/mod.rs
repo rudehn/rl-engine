@@ -62,6 +62,7 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
         StealthPlugin,
         FactsPlugin,
         AbilitiesPlugin,
+        NoisePlugin::new(crate::droids::NOISE),
     ));
     app.add_engine_effects().insert_resource(Seed(seed)).insert_resource(crate::content::registries());
     app.insert_resource(Counters(Ledger::default()));

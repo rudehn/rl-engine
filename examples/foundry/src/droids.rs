@@ -22,11 +22,12 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
+use rl_engine::rl_rules::ai::hearing::HearingStats;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
-pub use alarm::{Alarm, Sounded, sound_alarm};
+pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, Sounded, sound_alarm};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub use spawns::populate_deck;
 
@@ -70,9 +71,13 @@ pub struct MonsterDef {
     pub speed: u32,
     /// Percent health at or below which it runs; zero never flees.
     pub flee_at: i32,
-    /// True when noticing an enemy wakes every droid on the deck.
+    /// True when noticing an enemy sounds the deck's alarm.
     #[serde(default)]
     pub alarm: bool,
+    /// How it hears; absent, it is deaf, and neither the alarm nor a
+    /// firefight draws it.
+    #[serde(default)]
+    pub hearing: Option<HearingStats>,
     /// One or more `(min deck, max deck, weight, min group, max group)`
     /// rows; several let a group grow with depth.
     pub spawn: Vec<(i32, i32, u32, u32, u32)>,
@@ -155,9 +160,8 @@ impl Roster {
 }
 
 /// Spawns `id` on `map` at `at`: an actor with health, armor, resistances,
-/// perception, a mind and the notice every monster carries so a probe's
-/// alarm and an ion hit both have something to act on. `RangedAttack` and
-/// `Alarm` are added only for a kind that names them; a kind naming
+/// perception, a mind and the notice every monster carries. `RangedAttack`,
+/// `Alarm` and `Hearing` are added only for a kind that names them; a kind naming
 /// `dark_sight` gets [`NativeDarkSight`] rather than `DarkSight` itself,
 /// which [`sensors::sync_dark_sight`] sets from it the moment this pass's
 /// `Turn` schedule runs.
@@ -178,6 +182,9 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
     }
     if d.alarm {
         e.insert(Alarm);
+    }
+    if let Some(hearing) = d.hearing {
+        e.insert(Hearing(hearing));
     }
     e.id()
 }
@@ -216,15 +223,62 @@ mod tests {
         assert_eq!(struck.target, player);
     }
 
+    /// Where `listener` last heard something, if it still remembers.
+    fn heard(app: &App, listener: Entity) -> Option<Point> {
+        app.world().get::<Heard>(listener).and_then(|h| h.last_known())
+    }
+
+    fn at(app: &App, e: Entity) -> Point {
+        app.world().get::<Position>(e).expect("it stands somewhere").0
+    }
+
+    /// The alarm is a klaxon, not a broadcast: a droid far across the deck
+    /// hears it where the probe sounded it, and a rat, being deaf to it,
+    /// hears nothing.
     #[test]
-    fn a_probe_that_notices_the_player_wakes_every_droid_on_its_deck() {
+    fn a_probe_that_notices_the_player_sounds_an_alarm_a_droid_across_the_deck_hears_and_a_rat_does_not() {
         let mut app = crate::testing::headless(RunSeed(1));
-        let (probe, player, others) = crate::testing::probe_and_sleepers(&mut app);
+        let probe = crate::testing::lone_monster(&mut app, "probe droid");
+        let (far, _) = crate::testing::out_of_sight(&mut app, "line droid", 1500, 4000);
+        let (rat, _) = crate::testing::out_of_sight(&mut app, "coolant rat", 500, 1500);
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let sounded = at(&app, probe);
         app.world_mut().write_message(Noticed { observer: probe, subject: player, at: Point::ZERO });
         app.update();
-        for d in others {
-            assert!(app.world().get::<Aware>(d).is_some_and(|a| a.of(player).is_alert()), "a sleeper slept through the alarm");
-        }
+        assert_eq!(heard(&app, far), Some(sounded), "fifteen steps and more round the deck, it heard the alarm, and where");
+        assert!(app.world().get::<Heard>(rat).is_none(), "a rat has no ear for it");
+    }
+
+    /// A droid that hears the alarm comes to where it sounded, round
+    /// whatever walls are in the way.
+    #[test]
+    fn a_droid_that_hears_the_alarm_goes_to_where_it_sounded() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let probe = crate::testing::lone_monster(&mut app, "probe droid");
+        let (far, post) = crate::testing::out_of_sight(&mut app, "line droid", 800, 1500);
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let sounded = at(&app, probe);
+        let before = crate::testing::walk(&app, post, sounded);
+        app.world_mut().write_message(Noticed { observer: probe, subject: player, at: Point::ZERO });
+        app.update();
+        crate::testing::pass_turns(&mut app, 4);
+        let after = crate::testing::walk(&app, at(&app, far), sounded);
+        assert!(after < before, "it went to look: {before} hundredths of a step from the alarm, then {after}");
+    }
+
+    /// A shot is heard ten steps off by a droid that cannot see it, which
+    /// is what draws a deck's droids into a firefight.
+    #[test]
+    fn a_droid_hears_a_shot_it_cannot_see() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (far, _) = crate::testing::out_of_sight(&mut app, "line droid", 500, 900);
+        let target = crate::testing::lone_monster(&mut app, "coolant rat");
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let shooter = at(&app, player);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("energy");
+        app.world_mut().write_message(DamageEvent { target, hit: rl_engine::rl_rules::Hit::by(player, kind, 1) });
+        app.update();
+        assert_eq!(heard(&app, far), Some(shooter), "it heard the shot, where it was fired from");
     }
 
     #[test]

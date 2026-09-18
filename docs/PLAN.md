@@ -295,6 +295,11 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   So a thing is named once, singular, and `rl-core` gains `noun`, which says a name of one with an article and of several counted and in the plural; the narrator's `{what}`, the bag, the gear panel, the nearby rail and inspect all say names through it, and Corsair's `doubloons`, `rum` and `powder` became `doubloon`, `bottle of rum` and `charge of powder`, a mass noun being named by its measure.
   And the bag's footer offered to wear a pebble: it now offers only what applies to the row picked out, and the use key uses only what lends an ability, since using anything else from the bag spent a turn on nothing. Nate, 2026-09-18: "Yes".
   Nate, 2026-09-17: "noise system, to alert monsters", then "It should just hear a noise and go to it."
+- 2026-09-18: Foundry's alarm on the engine's noise.
+  A probe that noticed the commando used to make every droid on its deck aware of the commando at once, wherever it stood; it now sounds a klaxon, a `MakeNoise` of Foundry's own loud enough to reach every open corner of a deck, and whoever hears it comes to where the probe stood and has still to notice the commando there.
+  Droids hear from `hearing` in `monsters.ron` and coolant rats do not; a shot or a blow carries ten steps, and steps, doors and landings make none.
+  The droids were `mindless`, which never follows a trail, so the alarm would have sent nobody anywhere: they are `["mindless", "searches"]` now, which also has them look where they last saw the commando.
+  Nate, 2026-09-18: "update the alarm droid in the foundry example to use the new noise system", with the alarm filling the deck and gunfire heard; and on an answered alarm no longer being a commando caught: "That's good".
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.

@@ -114,6 +114,7 @@ fn main() -> AppExit {
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map))
         .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
+        .add_plugins(NoisePlugin::new(foundry::droids::NOISE))
         // The engine's own effects: `Mend`, for `stims`.
         .add_engine_effects()
         .insert_resource(foundry::content::registries())
