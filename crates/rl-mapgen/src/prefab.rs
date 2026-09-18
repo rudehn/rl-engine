@@ -239,6 +239,55 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
     }
 }
 
+/// Stamps one of several pieces, chosen by weight.
+///
+/// One entry per piece with the weight it is drawn at; a zero weight is
+/// never drawn, which is how a game keeps a piece in the list while it is
+/// being worked on. Fails if nothing carries weight, since a chain that
+/// asked for a vault and got none has generated a map its game does not
+/// expect.
+#[derive(Debug, Clone)]
+pub struct StampOneOf {
+    /// A stable name, so two stamps in one chain draw different streams.
+    pub name: &'static str,
+    /// The pieces and their weights.
+    pub choices: Vec<(Prefab, u32)>,
+    /// Where the chosen piece goes.
+    pub at: Placement,
+    /// How it may be turned before it lands.
+    pub orient: Orient,
+}
+
+impl<C: BuildContext> Pass<C> for StampOneOf {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn phase(&self) -> Phase {
+        Phase::Structures
+    }
+    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+        let total: u32 = self.choices.iter().map(|(_, w)| w).sum();
+        if total == 0 {
+            return Err(BuildError::new(self.name, "no candidate carries weight".to_string()));
+        }
+        let mut roll = ctx.rng().random_range(0..total);
+        let chosen = self
+            .choices
+            .iter()
+            .find(|(_, w)| {
+                if roll < *w {
+                    true
+                } else {
+                    roll -= w;
+                    false
+                }
+            })
+            .map(|(p, _)| p.clone())
+            .expect("the roll is below the total, so some candidate holds it");
+        StampPrefab { name: self.name, prefab: chosen, at: self.at, orient: self.orient }.apply(ctx)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +447,57 @@ mod tests {
         let stamped = c.outputs().first::<Stamped>().unwrap();
         let origin = stamped.bounds.origin();
         stamped.marks.iter().map(|(ch, p)| (*ch, Point::new(p.x - origin.x, p.y - origin.y))).collect()
+    }
+
+    #[test]
+    fn a_weighted_stamp_picks_every_candidate_that_carries_weight_and_never_one_that_does_not() {
+        // Three candidates, each with its own mark so the stamped map says
+        // which was chosen, and the third weightless.
+        let wall = TileRegistry::standard().expect("wall");
+        let piece = |mark: char| {
+            let middle = format!("#{mark}#");
+            Prefab::parse(&["###", &middle, "###"], |c| match c {
+                '#' => Some(wall),
+                _ => None,
+            })
+            .unwrap()
+        };
+        let mut picked = std::collections::BTreeSet::new();
+        for seed in 0..60 {
+            let tiles = TileRegistry::standard();
+            let floor = tiles.expect("floor");
+            // 60x40, not the crate's usual smaller fixture size: at 40x30 the
+            // `Rooms` pass's own room-count floor (its `min_rooms`, unrelated
+            // to this pass) sometimes misses by chance in 30 attempts, which
+            // is a property of that pass, not of the one under test here.
+            let mut c = BaseContext::blank(60, 40, tiles, wall);
+            Chain::new()
+                .then(Rooms { floor, min_size: 8, max_size: 10, ..Default::default() })
+                .then(StampOneOf {
+                    name: "vault",
+                    choices: vec![(piece('a'), 3), (piece('b'), 1), (piece('c'), 0)],
+                    at: Placement::InRoom(0),
+                    orient: Orient::Fixed,
+                })
+                .run(&mut c, RunSeed(seed))
+                .unwrap();
+            picked.insert(c.outputs().first::<Stamped>().unwrap().marks[0].0);
+        }
+        assert!(picked.contains(&'a') && picked.contains(&'b'), "both weighted candidates must come up over sixty seeds");
+        assert!(!picked.contains(&'c'), "a weightless candidate is never chosen");
+    }
+
+    #[test]
+    fn a_weighted_stamp_with_nothing_to_choose_from_fails_the_chain() {
+        let tiles = TileRegistry::standard();
+        let wall = tiles.expect("wall");
+        let mut c = BaseContext::blank(40, 30, tiles, wall);
+        let err = Chain::new()
+            .then(StampOneOf { name: "vault", choices: Vec::new(), at: Placement::Center, orient: Orient::Fixed })
+            .run(&mut c, RunSeed(1))
+            .unwrap_err();
+        // Loudly, at generation time: a silent skip would leave a map missing
+        // the thing the chain said it must have.
+        assert!(format!("{err:?}").contains("vault"));
     }
 }

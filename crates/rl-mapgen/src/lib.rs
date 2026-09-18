@@ -32,5 +32,5 @@ pub mod prelude {
     pub use crate::context::{BaseContext, BuildContext, Outputs};
     pub use crate::dungeon;
     pub use crate::passes;
-    pub use crate::prefab::{Orient, Placement, Prefab, StampPrefab, Stamped};
+    pub use crate::prefab::{Orient, Placement, Prefab, StampOneOf, StampPrefab, Stamped};
 }
