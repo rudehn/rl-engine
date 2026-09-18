@@ -110,10 +110,9 @@ impl Plugin for FoundryPlugin {
         // `narrate_quests` is, reading `QuestChange` one frame behind the
         // fact that finished it (`rl_bevy::events`'s own doc on it).
         app.add_systems(Update, crate::mission::offer_the_pick);
-        // Uplink's own reach bonus: unordered against `heat`'s and
-        // `ammo`'s systems above, for the reason `upgrades::react_uplink`
-        // gives.
-        app.add_systems(Turn, crate::upgrades::react_uplink.in_set(TurnSet::React));
+        // Uplink's own reach bonus: after `heat`'s and `ammo`'s chains
+        // above, for the reason `upgrades::react_uplink` gives.
+        app.add_systems(Turn, crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(crate::ammo::sync_ammo).in_set(TurnSet::React));
         // The pick screen: declared while building, the way Corsair
         // declares its ledger, so `upgrades::modal` finds it the moment
         // anything looks. `choice_keys` is exclusive (it calls

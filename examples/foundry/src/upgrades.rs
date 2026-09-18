@@ -136,10 +136,13 @@ fn raise(world: &mut World, item: Entity) {
 /// message, so this repeats `raise`'s few lines against queries rather
 /// than share it with [`apply`]'s `World`-based version.
 ///
-/// Unordered against `heat`'s and `ammo`'s own `TurnSet::React` systems:
-/// one turn is one action, so the same weapon can never be both the one
-/// just equipped or unequipped and the one a `Struck` or a `TurnEnd` this
-/// same pass is stowing or reloading.
+/// Ordered after `heat`'s and `ammo`'s own `TurnSet::React` systems, which
+/// move a weapon's `RangedAttack` in and out of [`Stowed`] by command, a
+/// copy of the attack taken as the command is written. Run before those
+/// commands apply, a raise would land on the copy being replaced and be
+/// lost with it, while [`Reached`] still said it was given: equipping an
+/// empty slug pistol from the ground is an equip and a stowing in one
+/// pass. After them, the attack is wherever this pass left it.
 pub fn react_uplink(
     mut commands: Commands,
     mut events: MessageReader<ItemEvent>,

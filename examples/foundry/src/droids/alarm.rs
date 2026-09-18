@@ -20,22 +20,30 @@ use rl_engine::prelude::*;
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Alarm;
 
+/// The decks whose alarm has sounded this run, so each logs its line once.
+///
+/// A resource [`run::start`](crate::run::start) inserts fresh, not a
+/// `Local`: a deck's [`MapId`] is the same in every run, so a record that
+/// outlived its run would keep a second run started from the menu from
+/// ever logging the alarm on a deck that sounded in the first.
+#[derive(Resource, Debug, Default)]
+pub struct Sounded(pub BTreeSet<MapId>);
+
 /// Reacts to every [`Noticed`] whose observer carries [`Alarm`]: every
 /// actor sharing the observer's [`Faction`] on the observer's map is made
 /// alert to the subject at the point it was seen, through [`Aware`]'s own
 /// [`Awareness::alerted_to`], the same way a blow wakes an observer that
 /// never saw it coming.
 ///
-/// Logs one line the first time a given deck's alarm sounds, kept in a
-/// [`Local`] rather than a resource: nothing else in the game has a use
-/// for which decks have sounded, so nothing else needs to read it.
+/// Logs one line the first time a given deck's alarm sounds in a run,
+/// kept in [`Sounded`].
 pub fn sound_alarm(
     mut noticed: MessageReader<Noticed>,
     alarmed: Query<(&OnMap, &Faction), With<Alarm>>,
     mut droids: Query<(&mut Aware, &Faction, &OnMap)>,
     turns: Res<Turns>,
     mut log: ResMut<MessageLog>,
-    mut sounded: Local<BTreeSet<MapId>>,
+    mut sounded: ResMut<Sounded>,
 ) {
     for ev in noticed.read() {
         let Ok((on_map, alarm_faction)) = alarmed.get(ev.observer) else { continue };
@@ -47,7 +55,7 @@ pub fn sound_alarm(
             state.alerted_to(ev.at);
             aware.0.insert(ev.subject, state);
         }
-        if sounded.insert(on_map.0) {
+        if sounded.0.insert(on_map.0) {
             log.bad(format!("Deck {}: an alarm sounds.", crate::decks::deck_of(on_map.0)), turns.turn_number());
         }
     }

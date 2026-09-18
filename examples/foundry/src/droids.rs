@@ -25,7 +25,7 @@ use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Search
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
-pub use alarm::{Alarm, sound_alarm};
+pub use alarm::{Alarm, Sounded, sound_alarm};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub use spawns::populate_deck;
 
@@ -223,6 +223,21 @@ mod tests {
         app.update();
         for d in others {
             assert!(app.world().get::<Aware>(d).is_some_and(|a| a.of(player).is_alert()), "a sleeper slept through the alarm");
+        }
+    }
+
+    #[test]
+    fn a_deck_that_sounded_its_alarm_in_one_run_logs_it_again_in_the_next_run_in_the_same_app() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let alarms = |app: &App| app.world().resource::<MessageLog>().iter().filter(|e| e.text.ends_with("an alarm sounds.")).count();
+        for run in 0..2 {
+            let (probe, player, _) = crate::testing::probe_and_sleepers(&mut app);
+            let before = alarms(&app);
+            app.world_mut().write_message(Noticed { observer: probe, subject: player, at: Point::ZERO });
+            app.update();
+            assert_eq!(alarms(&app), before + 1, "run {run}: the alarm was not logged");
+            app.world_mut().write_message(Restart { seed: Some(RunSeed(1)) });
+            app.update();
         }
     }
 

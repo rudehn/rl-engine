@@ -41,6 +41,7 @@ pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(Lighting::dark());
     commands.insert_resource(Roster::load(&registries));
+    commands.insert_resource(crate::droids::Sounded::default());
     // Seeded once, here, and never again: `Drops` is a resource a kill's
     // roll keeps advancing, not a stream `Seed::stream` is asked for
     // fresh on every event the way `scatter_on_arrival`'s own is.
