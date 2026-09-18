@@ -802,6 +802,40 @@ mod tests {
         app.world().resource::<Turns>().now()
     }
 
+    /// A weapon's cost and the actor's speed compose by scaling the cost
+    /// once, not by pre-scaling the weapon and applying speed a second time:
+    /// `scaled_cost(70, 200)` is 35, and nothing in the resolver or the
+    /// scheduler may charge less or more than that single scaling gives.
+    #[test]
+    fn a_weapons_cost_and_the_actors_speed_compose_by_scaling_the_cost_once() {
+        use crate::components::Speed;
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                Speed(200),
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: Some(70) },
+            ))
+            .id();
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(1, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), 35, "scaled_cost(70, 200) is 35: the weapon's cost scaled by speed exactly once");
+    }
+
     #[test]
     fn a_blow_costs_what_its_weapon_says_and_an_ordinary_turn_when_it_says_nothing() {
         // Identical blows but for what the weapon charges: 70 hundredths of a

@@ -13,6 +13,7 @@
 //! [`Combatant`] from whatever its components are.
 
 use rl_core::DiceRoll;
+use rl_core::turn::BASE_ACTION_COST;
 
 use crate::content::Registry;
 use crate::damage::{DamageKind, DamageKindId, DamageStage, Defender, Hit, Resistances, resolve};
@@ -29,6 +30,11 @@ pub struct Combatant<'a> {
     pub armor: i32,
     /// Speed as a percentage of normal.
     pub speed: u32,
+    /// What one of its blows costs, in hundredths of a step: the same unit
+    /// and the same convention as `MeleeAttack::cost`. `None` is
+    /// [`BASE_ACTION_COST`], so a caller that has not read a weapon's cost,
+    /// or has none to read, forecasts the ordinary turn per blow.
+    pub blow_cost: Option<u32>,
     /// What it resists.
     pub resists: &'a Resistances,
     /// Every roll one blow of its lands, the main one first.
@@ -38,7 +44,7 @@ pub struct Combatant<'a> {
 impl Combatant<'_> {
     /// A combatant that neither strikes nor resists anything.
     pub fn unarmed(health: i32, armor: i32, speed: u32, resists: &Resistances) -> Combatant<'_> {
-        Combatant { health, armor, speed, resists, strikes: &[] }
+        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[] }
     }
 }
 
@@ -79,15 +85,20 @@ pub fn blows_to_fell<A: Copy>(attacker: &Combatant<'_>, defender: &Combatant<'_>
     Some((defender.health as f32 / per_blow).ceil() as u32)
 }
 
-/// How many whole turns `blows` take an actor of `speed`, rounded up.
+/// How many whole turns `blows` take an actor of `speed` swinging at `cost`
+/// each, rounded up. `None` is [`BASE_ACTION_COST`].
 ///
-/// A turn is what an actor of speed 100 gets one action for, so a faster
-/// actor fits more blows into the same span and reaches its target sooner.
-pub fn turns_for(blows: u32, speed: u32) -> u32 {
+/// A turn is what an actor of speed 100 gets for one blow at the ordinary
+/// cost, so a faster actor or a cheaper blow both fit more of them into the
+/// same span. Multiplying blows by cost before dividing by speed, rather
+/// than rounding a single blow's turns and multiplying that out, is what
+/// keeps a weapon's price from being rounded away one blow at a time.
+pub fn turns_for(blows: u32, speed: u32, cost: Option<u32>) -> u32 {
     if speed == 0 {
         return u32::MAX;
     }
-    ((blows as u64 * 100).div_ceil(speed as u64)) as u32
+    let cost = cost.unwrap_or(BASE_ACTION_COST) as u64;
+    ((blows as u64 * cost).div_ceil(speed as u64)) as u32
 }
 
 /// How a duel is likely to go for the side asking.
@@ -140,8 +151,8 @@ pub struct Duel {
 
 /// Runs the duel both ways and reads the result.
 pub fn duel<A: Copy>(asker: &Combatant<'_>, subject: &Combatant<'_>, kinds: &Registry<DamageKind>, stages: &[&dyn DamageStage<A>]) -> Duel {
-    let to_fell = blows_to_fell(asker, subject, kinds, stages).map(|b| turns_for(b, asker.speed));
-    let to_fall = blows_to_fell(subject, asker, kinds, stages).map(|b| turns_for(b, subject.speed));
+    let to_fell = blows_to_fell(asker, subject, kinds, stages).map(|b| turns_for(b, asker.speed, asker.blow_cost));
+    let to_fall = blows_to_fell(subject, asker, kinds, stages).map(|b| turns_for(b, subject.speed, subject.blow_cost));
     let outlook = match (to_fell, to_fall) {
         (None, None) => Outlook::Even,
         (Some(_), None) => Outlook::Easy,
@@ -187,7 +198,7 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
-        let attacker = Combatant { health: 10, armor: 0, speed: 100, resists: &none, strikes: &strikes };
+        let attacker = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
         let bare = Combatant::unarmed(10, 0, 100, &none);
         let armored = Combatant::unarmed(10, 1, 100, &none);
         let open = expected_damage::<u32>(&attacker, &bare, &kinds, &stages);
@@ -203,23 +214,46 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let biter = Combatant { health: 30, armor: 0, speed: 100, resists: &none, strikes: &strikes };
+        let biter = Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
         let plated = Combatant::unarmed(30, 10, 100, &none);
         assert_eq!(blows_to_fell::<u32>(&biter, &plated, &kinds, &stages), None);
         let stalemate = duel::<u32>(&plated, &biter, &kinds, &stages);
         assert_eq!(stalemate.turns_to_fall, None, "the plated one is never felled");
         assert_eq!(stalemate.outlook, Outlook::Even, "neither side can end it, which is even and not a win");
-        let armed = Combatant { health: 30, armor: 10, speed: 100, resists: &none, strikes: &strikes };
+        let armed = Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
         assert_eq!(duel::<u32>(&armed, &biter, &kinds, &stages).outlook, Outlook::Easy, "armor it cannot pierce and a blow that lands");
     }
 
     #[test]
     fn speed_turns_blows_into_fewer_turns_and_never_rounds_one_away() {
-        assert_eq!(turns_for(3, 100), 3);
-        assert_eq!(turns_for(4, 200), 2);
-        assert_eq!(turns_for(3, 200), 2, "one and a half turns is two");
-        assert_eq!(turns_for(1, 50), 2);
-        assert_eq!(turns_for(1, 0), u32::MAX, "an actor that never acts never arrives");
+        assert_eq!(turns_for(3, 100, None), 3);
+        assert_eq!(turns_for(4, 200, None), 2);
+        assert_eq!(turns_for(3, 200, None), 2, "one and a half turns is two");
+        assert_eq!(turns_for(1, 50, None), 2);
+        assert_eq!(turns_for(1, 0, None), u32::MAX, "an actor that never acts never arrives");
+    }
+
+    #[test]
+    fn a_cost_of_none_forecasts_the_same_turns_as_the_ordinary_cost_stated_outright() {
+        for (blows, speed) in [(3, 100), (4, 200), (3, 200), (1, 50), (7, 133)] {
+            assert_eq!(turns_for(blows, speed, None), turns_for(blows, speed, Some(BASE_ACTION_COST)), "blows={blows} speed={speed}");
+        }
+    }
+
+    #[test]
+    fn a_cheaper_blow_fells_the_same_target_in_fewer_turns_than_the_ordinary_cost() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
+        let target = Combatant::unarmed(30, 0, 100, &none);
+        let quick = Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes };
+        let ordinary = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
+        let cheaper = duel::<u32>(&quick, &target, &kinds, &stages);
+        let plain = duel::<u32>(&ordinary, &target, &kinds, &stages);
+        assert!(cheaper.turns_to_fell.is_some() && plain.turns_to_fell.is_some(), "both land the same blows and fell the target");
+        assert!(cheaper.turns_to_fell < plain.turns_to_fell, "a 70-cost blow fells in fewer turns than a 100-cost one");
     }
 
     #[test]
@@ -230,8 +264,8 @@ mod tests {
         let none = Resistances::new();
         let hard = [(kinds.expect("kinetic"), DiceRoll { num: 1, sides: 8, bonus: 4 })];
         let soft = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let strong = Combatant { health: 40, armor: 0, speed: 100, resists: &none, strikes: &hard };
-        let weak = Combatant { health: 40, armor: 0, speed: 100, resists: &none, strikes: &soft };
+        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard };
+        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft };
         assert_eq!(duel::<u32>(&strong, &weak, &kinds, &stages).outlook, Outlook::Easy);
         assert_eq!(duel::<u32>(&weak, &strong, &kinds, &stages).outlook, Outlook::Deadly);
         assert_eq!(duel::<u32>(&strong, &strong, &kinds, &stages).outlook, Outlook::Even);

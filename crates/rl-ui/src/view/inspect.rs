@@ -226,10 +226,15 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let (Some(my_health), Some(their_health)) = (my_health, their_health) else { return };
     let my_strikes = duelists.loadout.blows(me);
     let their_strikes = duelists.loadout.blows(entity);
+    // The forecast counts one blow as the melee weapon's own charge, the
+    // same cost `resolve_attacks` spends the turn on; unarmed or with
+    // nothing wielded, `None` reads as the ordinary cost, same as a real
+    // blow would.
     let asker = Combatant {
         health: my_health.current,
         armor: duelists.loadout.armor(me),
         speed: my_speed.map(|s| s.0).unwrap_or(100),
+        blow_cost: duelists.loadout.melee(me).and_then(|m| m.cost),
         resists: my_resists.map(|r| &r.0).unwrap_or(&none),
         strikes: &my_strikes,
     };
@@ -237,6 +242,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         health: their_health.current,
         armor: duelists.loadout.armor(entity),
         speed: their_speed.map(|s| s.0).unwrap_or(100),
+        blow_cost: duelists.loadout.melee(entity).and_then(|m| m.cost),
         resists: their_resists.map(|r| &r.0).unwrap_or(&none),
         strikes: &their_strikes,
     };
@@ -403,5 +409,25 @@ mod tests {
         assert_eq!(duel.turns_to_fell, Some(3), "10 health at 3.5 a blow is three blows");
         assert_eq!(duel.turns_to_fall, Some(12), "30 health at 2.5 a blow is twelve");
         assert_eq!(duel.outlook, Outlook::Easy);
+    }
+
+    /// The forecast's blow count comes from armor and dice alone, but a
+    /// weapon's own cost changes how many turns those blows take: the same
+    /// `MeleeAttack::cost` the resolver charges, read off the same
+    /// `Loadout` the resolver strikes with.
+    #[test]
+    fn a_faster_weapon_forecasts_fewer_turns_without_changing_the_blow_count() {
+        let mut stage = stage();
+        stage.actor("a weakling", 'w', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let ordinary = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        stage.app.world_mut().get_mut::<MeleeAttack>(stage.player).unwrap().cost = Some(30);
+        stage.tick();
+        let quicker = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        assert_eq!(quicker.turns_to_fell.map(|_| ()), ordinary.turns_to_fell.map(|_| ()), "the same blows still fell it");
+        assert!(quicker.turns_to_fell < ordinary.turns_to_fell, "a 30-cost weapon fells it in fewer turns than the ordinary cost did");
     }
 }

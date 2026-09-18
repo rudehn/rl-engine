@@ -80,7 +80,7 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - `ai::awareness`: `NoticeStats` (a certain radius, a chance beyond it, a light bonus and a memory) and `StealthStats`, the pure `notices` roll, and `Awareness`, which goes `Unaware` to `Alert` on a sighting and back once its memory runs out; plus the `SearchLastKnown` tactic, which walks to where an enemy was last seen.
 - `gas`: `GasDef` (spread, fade, the concentration that hides what is behind it, whether it burns, a status for breathing enough), loaded by status name, and `diffuse`, an exchange with each neighbour and a fade of at least one unit, so every cloud clears.
 - `fire`: `Tinder` and `spread`, one catch chance per burning neighbour from rolls the caller passes in, so the spread does not depend on visiting order.
-- `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, and an `Outlook` read off the two counts. Pure, so an inspect panel's numbers cannot drift from the fight.
+- `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, weighed by each side's own blow cost and speed, and an `Outlook` read off the two counts. Pure, so an inspect panel's numbers cannot drift from the fight.
 
 ## Tier 2: the Bevy layer
 
