@@ -80,6 +80,46 @@ pub fn dual_blasters(app: &mut App) -> (Entity, Entity, Entity) {
     (player, first, second)
 }
 
+/// Spawns the player wielding a fresh slug pistol, with `slugs` loose
+/// slugs already in the bag before it goes on, and runs the turn that
+/// equips it: with none at all, that turn is also the one `reload` finds
+/// nothing to feed it and dries it on the spot, so the caller never sees
+/// a first shot for free. Returns the player, then the pistol.
+pub fn slug_pistol_with(app: &mut App, slugs: u32) -> (Entity, Entity) {
+    app.update();
+    app.update();
+    let registries = app.world().resource::<Registries>().clone();
+    let armory = Armory::load(&registries);
+    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    if slugs > 0 {
+        give_slugs(app, player, slugs);
+    }
+    let mut queue = CommandQueue::default();
+    let mut commands = Commands::new(&mut queue, app.world_mut());
+    let pistol = crate::gear::spawn_item(&mut commands, &armory, armory.defs.expect("slug pistol"), &registries);
+    queue.apply(app.world_mut());
+    app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(pistol);
+    app.world_mut().write_message(Intent::new(player, Equip(pistol)));
+    app.update();
+    (player, pistol)
+}
+
+/// Puts `count` slugs straight in `actor`'s bag and writes the same
+/// `ItemEvent::PickedUp` a real pickup off the deck would, so `reload`
+/// reacts to it exactly as it would to the real thing.
+pub fn give_slugs(app: &mut App, actor: Entity, count: u32) {
+    let registries = app.world().resource::<Registries>().clone();
+    let armory = Armory::load(&registries);
+    let id = armory.defs.expect("slugs");
+    let mut queue = CommandQueue::default();
+    let mut commands = Commands::new(&mut queue, app.world_mut());
+    let slugs = crate::gear::spawn_item(&mut commands, &armory, id, &registries);
+    commands.entity(slugs).insert(Stack { key: id.index() as u64, count });
+    queue.apply(app.world_mut());
+    app.world_mut().get_mut::<Inventory>(actor).unwrap().items.push(slugs);
+    app.world_mut().write_message(ItemEvent::PickedUp { actor, item: slugs, merged_into: None });
+}
+
 /// `Struck` messages copied out as they are written, the way the engine's
 /// own combat tests keep them: a headless app rotates its message buffers
 /// on wall time, so reading them straight off `Messages<Struck>` after

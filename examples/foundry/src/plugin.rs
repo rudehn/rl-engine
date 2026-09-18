@@ -35,5 +35,15 @@ impl Plugin for FoundryPlugin {
         // `GearView` as `Option<Res<_>>` and does nothing until a game
         // adds `GearViewPlugin`, which this slice's binary does not yet.
         app.add_systems(Update, crate::heat::note_heat.in_set(ViewSet::Annotate));
+        // Ammunition's own economy, unordered against the heat systems
+        // above and against each other: `Heat` and `Ammo` never share an
+        // item (`gear::Armory::load` refuses a file that tries), so
+        // `spend_ammo` and `reload` never touch an entity `vent_heat` or
+        // `heat_on_struck` does, and `spend_ammo` reacts to `Struck` while
+        // `reload` reacts to `ItemEvent`, two message kinds a single
+        // action never writes both of in the way a turn's end and the
+        // next turn's shot can land together. Nothing here needs a
+        // `.chain()`.
+        app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::reload).in_set(TurnSet::React));
     }
 }

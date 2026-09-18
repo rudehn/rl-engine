@@ -109,25 +109,33 @@ pub struct Armory {
     pub table: BandedTable<Id<ItemDef>>,
 }
 
+/// One item's own shape, checked against nothing but itself: whether its
+/// slot claims make sense, and whether it names a weapon that runs on both
+/// of the two economies at once, which neither `heat_on_struck` nor
+/// `spend_ammo` is written to expect on the same entity.
+fn validate_def(d: &ItemDef, _: &Registry<ItemDef>) -> Result<(), String> {
+    if d.slot.is_none() && !d.also.is_empty() {
+        return Err("also without a slot".into());
+    }
+    if d.stack && d.slot.is_some() {
+        return Err("a worn item cannot stack".into());
+    }
+    if d.either && !d.also.is_empty() {
+        return Err("either with also".into());
+    }
+    if d.heat.is_some() && d.ammo.is_some() {
+        return Err("a weapon cannot run on both heat and ammo".into());
+    }
+    Ok(())
+}
+
 impl Armory {
     /// Loads `items.ron` against `registries`, validates it, and builds
     /// the spawn table; panics with every problem the file has, since a
     /// broken item file is a game that cannot start.
     pub fn load(registries: &Registries) -> Self {
         let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
-        defs.validate(|d, _| {
-            if d.slot.is_none() && !d.also.is_empty() {
-                return Err("also without a slot".into());
-            }
-            if d.stack && d.slot.is_some() {
-                return Err("a worn item cannot stack".into());
-            }
-            if d.either && !d.also.is_empty() {
-                return Err("either with also".into());
-            }
-            Ok(())
-        })
-        .unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+        defs.validate(validate_def).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         let mut table = BandedTable::default();
         for (id, d) in defs.iter() {
             if let Some((lo, hi, w)) = d.spawn {
@@ -307,5 +315,41 @@ mod tests {
         assert_eq!(app.world().get::<DarkSight>(player).map(|d| d.0), Some(6));
         unwear(&mut app, player, helmet);
         assert_eq!(app.world().get::<DarkSight>(player), None);
+    }
+
+    /// A definition with fields left at their most inert: no slot, no
+    /// attack, no economy, nothing to spawn with. Tests that care about one
+    /// property override just that field, rather than restating all
+    /// fifteen every time.
+    fn blank_def(name: &str) -> ItemDef {
+        ItemDef {
+            name: name.to_string(),
+            glyph: '?',
+            color: (0.0, 0.0, 0.0),
+            slot: None,
+            either: false,
+            also: Vec::new(),
+            tags: Vec::new(),
+            armor: 0,
+            resists: Vec::new(),
+            melee: None,
+            ranged: None,
+            cost: None,
+            heat: None,
+            ammo: None,
+            dark_sight: None,
+            stack: false,
+            spawn: None,
+        }
+    }
+
+    #[test]
+    fn a_weapon_naming_both_heat_and_ammo_fails_to_validate() {
+        let r = crate::content::registries();
+        let armory = Armory::load(&r);
+        let mut d = blank_def("double economy");
+        d.heat = Some((10, 10));
+        d.ammo = Some(rl_engine::rl_core::Id::from_raw(0).into());
+        assert!(validate_def(&d, &armory.defs).is_err(), "heat and ammo on the same weapon");
     }
 }
