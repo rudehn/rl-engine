@@ -73,6 +73,46 @@ impl Prefab {
         &self.marks
     }
 
+    /// A copy turned a quarter-turn clockwise `quarters` times, marks and
+    /// all. Four is the piece as it was, so a caller may pass any number.
+    ///
+    /// Marks turn with the tiles because a mark is a position in the
+    /// piece, not on the map: a vault's chest stays in its alcove however
+    /// the vault is laid down.
+    pub fn rotated(&self, quarters: u8) -> Self {
+        let mut out = self.clone();
+        for _ in 0..(quarters % 4) {
+            out = out.turned();
+        }
+        out
+    }
+
+    /// A copy mirrored left to right, marks and all.
+    pub fn flipped(&self) -> Self {
+        let (w, h) = (self.width(), self.height());
+        let mut cells: Grid<Option<TileId>> = Grid::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                cells.set(Point::new(w - 1 - x, y), self.tile(Point::new(x, y)));
+            }
+        }
+        let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(w - 1 - p.x, p.y))).collect();
+        Self { cells, marks }
+    }
+
+    /// One quarter-turn clockwise.
+    fn turned(&self) -> Self {
+        let (w, h) = (self.width(), self.height());
+        let mut cells: Grid<Option<TileId>> = Grid::new(h, w);
+        for y in 0..h {
+            for x in 0..w {
+                cells.set(Point::new(h - 1 - y, x), self.tile(Point::new(x, y)));
+            }
+        }
+        let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(h - 1 - p.y, p.x))).collect();
+        Self { cells, marks }
+    }
+
     /// Writes the prefab with its top-left at `origin`.
     pub fn stamp(&self, terrain: &mut rl_grid::Terrain, origin: Point) {
         for y in 0..self.height() {
@@ -193,6 +233,38 @@ mod tests {
         assert_eq!(p.tile(Point::new(2, 1)), None, "the mark is transparent");
         assert_eq!(p.marks(), &[('$', Point::new(2, 1))]);
         assert!(Prefab::parse(&["##", "#"], |_| None).is_err());
+    }
+
+    #[test]
+    fn a_quarter_turn_moves_every_tile_and_its_marks_the_same_way() {
+        let p = vault(TileId(0), TileId(1));
+        let (w, h) = (p.width(), p.height());
+        let turned = p.rotated(1);
+        assert_eq!((turned.width(), turned.height()), (h, w), "a quarter turn swaps the sides");
+
+        // The mark is the anchor: wherever it was, it is now at the point a
+        // clockwise turn sends it to, and the tile under it is still nothing.
+        let (_, before) = p.marks()[0];
+        let (_, after) = turned.marks()[0];
+        assert_eq!(after, Point::new(h - 1 - before.y, before.x));
+        assert_eq!(turned.tile(after), None);
+
+        // Four turns is where it started, which is the property that catches
+        // an off-by-one in the transform.
+        assert_eq!(p.rotated(4), p);
+        assert_eq!(p.rotated(1).rotated(3), p);
+    }
+
+    #[test]
+    fn a_mirror_moves_every_tile_and_its_marks_the_same_way() {
+        let p = vault(TileId(0), TileId(1));
+        let w = p.width();
+        let flipped = p.flipped();
+        assert_eq!((flipped.width(), flipped.height()), (w, p.height()), "a mirror keeps the shape");
+        let (_, before) = p.marks()[0];
+        let (_, after) = flipped.marks()[0];
+        assert_eq!(after, Point::new(w - 1 - before.x, before.y));
+        assert_eq!(p.flipped().flipped(), p, "twice mirrored is where it started");
     }
 
     #[test]
