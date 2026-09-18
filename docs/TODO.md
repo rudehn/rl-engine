@@ -70,6 +70,13 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Streams out of the prelude.**
   Corsair's loot drop rolls from `ResMut<CombatRng>` (`examples/corsair/src/items.rs`, `drop_loot`), which the randomness rule forbids; a game's draws come from `Seed::stream`.
   Remove `CombatRng` and `AbilityRng` from the preludes, and fix the drop.
+- **Admission scans its waiting actors linearly.**
+  `admit_new_actors` (`crates/rl-bevy/src/turn.rs`) checks each waiting actor against the fresh list and the `arriving` list with a linear scan, so admission is quadratic in the number waiting, and it runs every pass.
+  Harmless while only the player ever waits, and briefly; a game that parks a crowd on maps nobody has visited would pay for it.
+  A `BTreeSet` of what has been seen makes it linear.
+- **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
+  The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
+  Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
 
 ## 5. Documentation
 
