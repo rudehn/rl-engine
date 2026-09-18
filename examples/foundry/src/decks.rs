@@ -67,6 +67,12 @@ impl Foundry {
         &self.tiles
     }
 
+    /// The wall lamp's tile, for `light::light_the_lamps` to find on a
+    /// built deck.
+    pub fn lamp(&self) -> TileId {
+        self.lamp
+    }
+
     /// Each tile in full light, from `assets/tiles.ron`; a tile the file
     /// forgets stops the game at startup, by name.
     pub fn appearance(&self) -> TileAppearance {
@@ -106,9 +112,12 @@ impl Foundry {
         Ok(vec![(a, 1), (b, 1)])
     }
 
-    /// The reactor chamber, deck three only: one `R`, its console beside
-    /// it, and a hatch it keeps facing since a corridor meets it there,
-    /// which is why it is stamped with [`Orient::Fixed`].
+    /// The reactor chamber, deck three only: one `R`, the console's
+    /// machinery on the far wall behind it, and a hatch. The machinery
+    /// stands at the back rather than in the hatch's way: in front of it,
+    /// the chamber could only be entered diagonally between two walls,
+    /// which the engine refuses. Stamped [`Orient::Fixed`], since nothing
+    /// about the chamber reads better turned.
     fn reactor(&self) -> Result<Prefab, BuildError> {
         let (bulkhead, console, hatch) = (self.bulkhead, self.console, self.hatch);
         let legend = |c: char| match c {
@@ -117,7 +126,7 @@ impl Foundry {
             'h' => Some(hatch),
             _ => None,
         };
-        Prefab::parse(&["#####", "#...#", "#.R.#", "#.c.#", "##h##"], legend).map_err(|e| BuildError::new("reactor", e))
+        Prefab::parse(&["#####", "#.c.#", "#.R.#", "#...#", "##h##"], legend).map_err(|e| BuildError::new("reactor", e))
     }
 
     /// Runs the deck's chain and hands back the context still open, so a
@@ -130,7 +139,14 @@ impl Foundry {
         // One stream per deck, so building deck 2 first does not change deck 1.
         let seed = RunSeed(self.seed.0 ^ (deck as u64) << 32);
         let mut chain = Chain::new()
-            .then(Rooms { floor: self.deck, min_size: 5, max_size: 11, ..Default::default() })
+            // Every room is at least two cells wider and taller than the
+            // largest piece stamped into one, five: `Placement::AnyRoom`
+            // centres a piece in its room, so a ring of the room's own
+            // floor always runs around it, and whichever way the piece's
+            // opening faces it opens onto that ring rather than onto the
+            // room's wall. Rooms of five let a piece fill its room edge to
+            // edge and cut its own opening off.
+            .then(Rooms { floor: self.deck, min_size: 7, max_size: 12, ..Default::default() })
             .then(Doors { door: self.hatch })
             .then(StampOneOf { name: "armory", choices: self.armories()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored })
             .then(StampOneOf { name: "store", choices: self.stores()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored });
@@ -230,6 +246,41 @@ mod tests {
                             assert!(tables.walkable[tile.index()], "deck {deck}, seed {s}: mark {c} at {p:?} sits on a wall");
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// Every mark a player must reach, and the way down, can be walked to
+    /// from the deck's entry one orthogonal step at a time, the strictest
+    /// reading of the engine's rule that a diagonal never squeezes between
+    /// two walls. The reactor chamber once put its console square in the
+    /// hatch's way, and the whole chamber could only be entered diagonally
+    /// between two walls, which the engine refuses: the mission could not
+    /// be finished on any seed.
+    #[test]
+    fn every_mark_and_the_way_down_can_be_walked_to_from_the_entry_over_a_span_of_seeds() {
+        let tables = Foundry::new(RunSeed(0)).tiles().tables();
+        for s in 0..60 {
+            let foundry = Foundry::new(RunSeed(s));
+            for deck in 1..=DECKS {
+                let built = foundry.build(map_of(deck), None).unwrap();
+                let walkable = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]);
+                let mut seen = BTreeSet::from([(built.entry.x, built.entry.y)]);
+                let mut queue = vec![built.entry];
+                while let Some(p) = queue.pop() {
+                    for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
+                        if walkable(n) && seen.insert((n.x, n.y)) {
+                            queue.push(n);
+                        }
+                    }
+                }
+                let reached = |p: rl_engine::rl_core::Point| seen.contains(&(p.x, p.y));
+                for spot in built.spots.iter().filter(|s| matches!(char::from_u32(s.tag), Some('A' | 'L' | 'R'))) {
+                    assert!(reached(spot.at), "deck {deck}, seed {s}: mark {:?} at {:?} cannot be walked to", char::from_u32(spot.tag), spot.at);
+                }
+                if let Some(exit) = built.exit {
+                    assert!(reached(exit), "deck {deck}, seed {s}: the way down at {exit:?} cannot be walked to");
                 }
             }
         }
