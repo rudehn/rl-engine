@@ -60,6 +60,10 @@ pub struct ItemDef {
     /// The range, roll and damage kind a shot deals, while wielded.
     #[serde(default)]
     pub ranged: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
+    /// The range, roll and damage kind it strikes with when thrown; absent,
+    /// it cannot be thrown at all.
+    #[serde(default)]
+    pub throw: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
     /// What one blow or shot costs, in hundredths of a step. Absent is
     /// [`BASE_ACTION_COST`](rl_engine::rl_core::turn::BASE_ACTION_COST).
     #[serde(default)]
@@ -197,6 +201,9 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     }
     if let Some((range, dice, kind)) = d.ranged {
         e.insert(RangedAttack { kind: kind.id(), dice, range, cost: d.cost });
+    }
+    if let Some((range, dice, kind)) = d.throw {
+        e.insert(Throwable { range, strike: Some((kind.id(), dice)) });
     }
     if let Some((per_shot, vent)) = d.heat {
         e.insert(Heat::new(per_shot, vent));
@@ -348,6 +355,7 @@ mod tests {
             resists: Vec::new(),
             melee: None,
             ranged: None,
+            throw: None,
             cost: None,
             heat: None,
             ammo: None,

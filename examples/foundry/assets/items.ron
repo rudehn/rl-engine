@@ -12,6 +12,7 @@
 //   resists:   optional; [(damage kind, percent removed)] while worn: "kinetic" | "energy" | "ion"
 //   melee:     optional; (roll, kind) while wielded, roll as "NdS+B"
 //   ranged:    optional; (range, roll, kind) while wielded
+//   throw:     optional; (range, roll, kind) when thrown; absent, it cannot be thrown
 //   cost:      optional; what one blow or shot costs, in hundredths of a step; absent is 100
 //   heat:      optional; (per shot, vent per quiet turn); the weapon locks at 100 until it cools to 0
 //   ammo:      optional; the tag of what one shot spends, as "slug"
@@ -20,7 +21,7 @@
 //   spawn:     optional; (min deck, max deck, weight) for lying on a deck
 #![enable(implicit_some)]
 [
-    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: ("1d6+1", "kinetic"), cost: 100, spawn: (1, 10, 3)),
+    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: ("1d6+1", "kinetic"), throw: (4, "1d6", "kinetic"), cost: 100, spawn: (1, 10, 3)),
     (name: "mono-axe", glyph: '/', color: (0.7, 0.75, 0.8), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: ("2d6+1", "kinetic"), cost: 140, spawn: (2, 10, 2)),
     (name: "hand blaster", glyph: '}', color: (0.95, 0.4, 0.3), slot: "main hand", either: true, tags: ["weapon"], ranged: (5, "1d6", "energy"), cost: 80, heat: (15, 20), spawn: (1, 10, 3)),
     (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (9, "1d8+1", "energy"), cost: 100, heat: (22, 22), spawn: (2, 10, 2)),
