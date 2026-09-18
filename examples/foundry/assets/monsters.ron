@@ -9,6 +9,8 @@
 //   profile:    how it takes a hit: "chassis" | "organic"
 //   faction:    "droids" | "vermin"
 //   wits:       "mindless" | "animal" | "sapient", or a list as in the engine's Wits
+//               ("flees", "searches", "opens_doors", "picks_up", "equips", "throws" on top);
+//               a droid names "opens_doors", so a shut door never stops one on a trail
 //   perception: how far it sees, in tiles
 //   dark_sight: optional; tiles it sees without light: radar, for the droids that have it
 //   melee:      optional; (roll:, kind:, look:); a monster with one strikes what is beside it; look is
@@ -40,13 +42,13 @@
 //   drops:      optional; [(item name, percent chance)] rolled on death
 #![enable(implicit_some)]
 [
-    (name: "line droid", glyph: 'd', color: (0.85, 0.75, 0.55), hp: 8, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
+    (name: "line droid", glyph: 'd', color: (0.85, 0.75, 0.55), hp: 8, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches", "opens_doors"],
      perception: 8, melee: (roll: "1d2", kind: "kinetic"), ranged: (range: 5, roll: "1d4", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 100, flee_at: 0, hearing: (threshold: 0, memory: 8),
      spawn: [(1, 2, 100, 1, 2), (2, 4, 90, 2, 3)], drops: [("hand blaster", 5), ("slug", 5)]),
-    (name: "probe droid", glyph: 'p', color: (0.5, 0.5, 0.55), hp: 6, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
+    (name: "probe droid", glyph: 'p', color: (0.5, 0.5, 0.55), hp: 6, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches", "opens_doors"],
      perception: 10, dark_sight: 4, notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 120, flee_at: 0, alarm: true, shadow: (keep_within: 5, no_closer_than: 3), hearing: (threshold: 0, memory: 8),
      spawn: [(1, 6, 20, 1, 1)], drops: [("slug", 10)]),
-    (name: "heavy droid", glyph: 'D', color: (0.6, 0.6, 0.7), hp: 18, armor: 2, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
+    (name: "heavy droid", glyph: 'D', color: (0.6, 0.6, 0.7), hp: 18, armor: 2, profile: "chassis", faction: "droids", wits: ["mindless", "searches", "opens_doors"],
      perception: 8, melee: (roll: "1d4", kind: "kinetic"), ranged: (range: 6, roll: "1d6+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 90, flee_at: 0, hearing: (threshold: 0, memory: 8),
      spawn: [(3, 8, 40, 1, 1)], drops: [("blaster carbine", 10), ("composite plate", 10)]),
     (name: "coolant rat", glyph: 'r', color: (0.6, 0.7, 0.75), hp: 4, armor: 0, profile: "organic", faction: "vermin", wits: "animal",

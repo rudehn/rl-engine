@@ -310,4 +310,17 @@ mod tests {
             assert!((1..100).contains(&notice_chance(&notice, &commando)), "{name}: past that, a roll, never certain and never hopeless");
         }
     }
+
+    /// Droids have the wits to work a door and rats do not, so a shut door
+    /// stops the vermin and never a droid on the commando's trail. The
+    /// engine's minds open a door for any mind with the wit; this is only
+    /// which kinds have it.
+    #[test]
+    fn every_droid_opens_doors_and_a_coolant_rat_does_not() {
+        let roster = Roster::load(&crate::content::registries());
+        for (name, opens) in [("line droid", true), ("probe droid", true), ("heavy droid", true), ("coolant rat", false)] {
+            let wits = roster.defs.get(roster.defs.expect(name)).wits;
+            assert_eq!(wits.has(Wits::OPENS_DOORS), opens, "{name}");
+        }
+    }
 }
