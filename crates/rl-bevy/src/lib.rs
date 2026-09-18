@@ -29,6 +29,7 @@ pub mod items;
 pub mod knowledge;
 pub mod lighting;
 pub mod minds;
+pub mod noise;
 pub mod places;
 pub mod plugin;
 pub mod registries;
@@ -70,6 +71,7 @@ pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Profile, Sight, Thinking,
     a_mind_holds_the_turn,
 };
+pub use noise::{AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, Sound, SoundId, Sounds};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
@@ -119,6 +121,7 @@ pub mod prelude {
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
     pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Thinking};
+    pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, Sounds};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };

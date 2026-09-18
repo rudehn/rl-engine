@@ -113,6 +113,14 @@ pub enum TurnSet {
     /// [`PresentSet::Narrate`] instead, since this runs once per pass and
     /// a frame may hold hundreds.
     React,
+    /// What the pass's sounds reached: every noise made in it, the
+    /// engine's and a game's, flooded and heard at once.
+    ///
+    /// After [`React`](TurnSet::React) rather than in it, so a shout a game
+    /// writes there is heard in the same pass whichever order the executor
+    /// ran the two in, and a replay cannot tell them apart. Empty unless
+    /// the game added [`NoisePlugin`](crate::noise::NoisePlugin).
+    Listen,
     /// Requeue and recover.
     Cleanup,
 }
@@ -201,7 +209,10 @@ impl Plugin for CorePlugin {
             )
             .configure_sets(Update, EngineSet::Present.run_if(crate::state::world_is_shown))
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
-            .configure_sets(Turn, (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Cleanup).chain())
+            .configure_sets(
+                Turn,
+                (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Listen, TurnSet::Cleanup).chain(),
+            )
             .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
             .configure_sets(Turn, DecideSet::Perceive.run_if(crate::minds::a_mind_holds_the_turn))
             .configure_sets(Turn, (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate).chain().in_set(DecideSet::Perceive))

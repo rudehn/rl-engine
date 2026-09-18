@@ -122,9 +122,11 @@ pub struct Snapshot<A: Copy> {
     /// The abilities it could use this turn, already narrowed to what it
     /// can afford. Empty for an actor with none, which is most of them.
     pub usable: Vec<Usable>,
-    /// Where the freshest enemy it knows about but cannot see was last
-    /// seen: what a search walks toward. `None` for an actor that is
-    /// tracking nothing, and always `None` in a game without stealth.
+    /// Where the freshest trail it is on leads: an enemy it knows about
+    /// but cannot see, where it was last seen, or a sound, where it was
+    /// heard. What a search walks toward. `None` for an actor that is
+    /// tracking nothing, and always `None` in a game with neither stealth
+    /// nor noise.
     pub last_known: Option<Point>,
     /// What the actor is able to do. A tactic that needs a capability asks
     /// here before it decides, whatever the brain it sits in would like.

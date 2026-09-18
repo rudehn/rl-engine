@@ -222,7 +222,7 @@ impl Plugin for StealthPlugin {
 }
 
 /// Takes the hiders the mind holding the turn has not noticed out of its
-/// enemies, and points its search at the freshest trail it is on.
+/// enemies, and offers every trail it is on for its search to follow.
 ///
 /// Stealth's contribution to a mind's knowledge, in
 /// [`PerceiveSet::Filter`](crate::plugin::PerceiveSet::Filter), after
@@ -233,13 +233,15 @@ pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hi
     let Ok(aware) = aware.get(thinker) else { return };
     let Some(snapshot) = thinking.snapshot_mut() else { return };
     snapshot.enemies.retain(|e| !hidden.contains(e.id) || aware.knows(e.id));
-    snapshot.last_known = aware
+    let lost: Vec<(u32, Point)> = aware
         .0
         .iter()
         .filter(|(subject, _)| !snapshot.enemies.iter().any(|e| e.id == **subject))
         .filter_map(|(_, state)| Some((state.stale_turns()?, state.last_known()?)))
-        .min_by_key(|(stale, at)| (*stale, *at))
-        .map(|(_, at)| at);
+        .collect();
+    for (stale, at) in lost {
+        thinking.offer_trail(at, stale);
+    }
 }
 
 /// The observer holding the turn.

@@ -214,6 +214,11 @@ impl rl_rules::Fields for Walking<'_> {
 /// `hazards` is a `BitGrid` over the loaded window rather than a list of
 /// cells, because [`TacticCtx::can_step`] is asked once per cell of a
 /// scavenger's search and a fire is hundreds of cells.
+///
+/// The trail a search follows is offered rather than written: stealth
+/// offers where it last saw something and hearing where it last heard
+/// something, and the freshest becomes [`Snapshot::last_known`] when the
+/// snapshot is closed, so neither has to know the other exists.
 #[derive(Resource)]
 pub struct Thinking {
     actor: Option<Entity>,
@@ -222,11 +227,12 @@ pub struct Thinking {
     reach: i32,
     hazards: BitGrid,
     origin: Point,
+    trail: Option<(u32, Point)>,
 }
 
 impl Default for Thinking {
     fn default() -> Self {
-        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO }
+        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO, trail: None }
     }
 }
 
@@ -272,6 +278,17 @@ impl Thinking {
         self.hazards.contains(p - self.origin)
     }
 
+    /// Offers a trail the mind could follow: something it knows of at
+    /// `at`, `stale_turns` ago. The freshest offered, ties to the lower
+    /// cell, becomes [`Snapshot::last_known`], so which contributor offered
+    /// first cannot reach a tactic.
+    pub fn offer_trail(&mut self, at: Point, stale_turns: u32) {
+        let offer = (stale_turns, at);
+        if self.trail.is_none_or(|held| offer < held) {
+            self.trail = Some(offer);
+        }
+    }
+
     fn open(&mut self, actor: Entity, snapshot: Snapshot<Entity>, at: Point, reach: i32, map: &WorldMap) {
         let window = map.window_tiles();
         if self.hazards.width() != window.width || self.hazards.height() != window.height {
@@ -284,11 +301,15 @@ impl Thinking {
         self.snapshot = Some(snapshot);
         self.at = at;
         self.reach = reach;
+        self.trail = None;
     }
 
     fn close(&mut self) -> Option<(Entity, Snapshot<Entity>)> {
         let actor = self.actor.take()?;
-        let snapshot = self.snapshot.take()?;
+        let mut snapshot = self.snapshot.take()?;
+        if let Some((_, at)) = self.trail.take() {
+            snapshot.last_known = Some(at);
+        }
         Some((actor, snapshot))
     }
 }
