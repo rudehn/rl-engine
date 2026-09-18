@@ -291,7 +291,7 @@ mod tests {
             Resists(resists),
             Afflicted::default(),
             Speed(120),
-            RangedAttack { kind, dice: DiceRoll::flat(3), range: 6 },
+            RangedAttack { kind, dice: DiceRoll::flat(3), range: 6, cost: None },
             Strikes(vec![(kind, DiceRoll::new(1, 4))]),
         ));
         stage.tick();

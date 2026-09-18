@@ -971,7 +971,7 @@ mod tests {
         let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
         stage.tick();
         let (user, kind) = (stage.player, stage.kind);
-        stage.app.world_mut().entity_mut(user).insert(RangedAttack { kind, dice: rl_core::DiceRoll::flat(2), range: 6 });
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack { kind, dice: rl_core::DiceRoll::flat(2), range: 6, cost: None });
         let near = stage.actor("near", 'n', 2, 0);
         let far = stage.actor("far", 'f', 4, 0);
         stage.tick();

@@ -260,7 +260,7 @@ impl Armory {
                 e.insert(MeleeAttack { kind: kind.id(), dice: enchant.strike(dice, &rule), cost: None });
             }
             if let Some((range, dice, kind)) = &d.ranged {
-                e.insert(RangedAttack { kind: kind.id(), dice: enchant.strike(*dice, &rule), range: *range });
+                e.insert(RangedAttack { kind: kind.id(), dice: enchant.strike(*dice, &rule), range: *range, cost: None });
             }
             let extra = enchant.strikes(&self.affixes);
             if !extra.is_empty() {

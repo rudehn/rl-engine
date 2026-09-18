@@ -94,6 +94,11 @@ pub struct RangedAttack {
     pub dice: DiceRoll,
     /// Furthest cell it reaches.
     pub range: i32,
+    /// What one shot with it costs, in hundredths of a step. `None` is
+    /// [`BASE_ACTION_COST`](rl_core::turn::BASE_ACTION_COST). A shot that
+    /// finds nothing in reach costs the ordinary turn rather than this,
+    /// since what was spent was the aim.
+    pub cost: Option<u32>,
 }
 
 /// Extra rolls every hit carries, each its own [`DamageEvent`]: a flaming
@@ -397,7 +402,7 @@ pub fn resolve_attacks(
         let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
             loadout.melee(intent.actor).map(|m| (m.kind, m.dice, m.cost))
         } else {
-            loadout.ranged(intent.actor).filter(|r| line_of_fire(&map, &occupancy, pos.0, target_pos.0, r.range)).map(|r| (r.kind, r.dice, None))
+            loadout.ranged(intent.actor).filter(|r| line_of_fire(&map, &occupancy, pos.0, target_pos.0, r.range)).map(|r| (r.kind, r.dice, r.cost))
         };
         let mut spent = rl_core::turn::BASE_ACTION_COST;
         if let Some((kind, dice, cost)) = weapon {
@@ -577,7 +582,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(us),
-                RangedAttack { kind: blunt, dice: DiceRoll::flat(3), range: 6 },
+                RangedAttack { kind: blunt, dice: DiceRoll::flat(3), range: 6, cost: None },
                 Strikes(vec![(blunt, DiceRoll::flat(2))]),
             ))
             .id();
@@ -711,7 +716,7 @@ mod tests {
             .world_mut()
             .spawn((
                 crate::items::Item,
-                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(4), range: 5 },
+                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(4), range: 5, cost: None },
                 Strikes(vec![(sides.kind, DiceRoll::flat(2))]),
                 crate::items::Wearable(EquipShape::in_slot(off)),
             ))
@@ -808,5 +813,50 @@ mod tests {
         assert_eq!(quick, 70, "the weapon's cost is what the turn charges");
         assert_eq!(heavy, 140);
         assert_eq!(plain, rl_core::turn::BASE_ACTION_COST, "no cost stated is the ordinary cost");
+    }
+
+    /// Fires one ranged attack with `cost` and `range` at a target `offset`
+    /// cells east, and answers what the turn cost.
+    ///
+    /// Mirrors [`melee_turn_cost`]: both actors start the clock at zero, so
+    /// once the shot (or the miss) and the target's stranded wait have both
+    /// been charged, the clock reads exactly what the shooter's turn cost.
+    fn shot_turn_cost(cost: Option<u32>, range: i32, offset: i32) -> u32 {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(1), range, cost },
+            ))
+            .id();
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(offset, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.world().resource::<Turns>().now()
+    }
+
+    #[test]
+    fn a_shot_charges_the_weapons_cost_and_a_shot_at_nothing_still_costs_a_turn() {
+        // A marksman rifle is slow, a hand blaster fast, and a shot with no
+        // line of fire costs the ordinary turn: the shooter spent it aiming.
+        let slow = shot_turn_cost(Some(140), 6, 4);
+        let fast = shot_turn_cost(Some(80), 6, 4);
+        let missed = shot_turn_cost(Some(140), 3, 4);
+        assert_eq!(slow, 140);
+        assert_eq!(fast, 80);
+        assert_eq!(missed, rl_core::turn::BASE_ACTION_COST, "out of range is a spent turn, not a free one");
     }
 }
