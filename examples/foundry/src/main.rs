@@ -4,6 +4,9 @@
 use bevy::prelude::*;
 use foundry::plugin::FoundryPlugin;
 use rl_engine::RoguelikePlugins;
+use rl_engine::rl_bevy::effects::AddEngineEffects;
+use rl_engine::rl_bevy::registries::Registries;
+use rl_engine::rl_bevy::{AbilitiesPlugin, EffectKinds, FactsPlugin};
 
 /// Columns and rows the terminal window opens with. The screen split
 /// itself is a later task's, once there is something to draw in it.
@@ -12,7 +15,18 @@ const ROWS: i32 = 40;
 
 fn main() -> AppExit {
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS)).add_plugins(FoundryPlugin).insert_resource(foundry::content::registries());
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS))
+        .add_plugins(FoundryPlugin)
+        .add_plugins((FactsPlugin, AbilitiesPlugin))
+        // The engine's own effects: `Mend`, for `stims`.
+        .add_engine_effects()
+        .insert_resource(foundry::content::registries());
+    let abilities = {
+        let world = app.world();
+        let (kinds, registries) = (world.resource::<EffectKinds>(), world.resource::<Registries>());
+        foundry::upgrades::load_abilities(kinds, registries)
+    };
+    app.insert_resource(abilities);
     app.run()
 }
 

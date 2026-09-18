@@ -1,0 +1,25 @@
+// Foundry's abilities: what a commando calls on besides a weapon.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:        unique; `stims` is granted by the first upgrade
+//   description: optional; what it is, in a sentence, for the list on `a`
+//   look:        optional; (glyph:, color: (r:, g:, b:))
+//   aim:         Foe (default) | Ally | SelfOnly | Ground | Anyone
+//   mode:        Own | Adjacent | Bolt(range:) | Ball(range:, radius:) | Beam(range:) | Cone(length:)
+//   costs:       optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n)
+//   time:        optional; hundredths of a step the turn costs (default 100)
+//   cooldown:    optional; hundredths before it may be used again (default 0)
+//   effects:     each (kind:, chance:, args:); kind is one the engine ships:
+//                Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport
+#![enable(implicit_some)]
+[
+    (
+        name: "stims",
+        description: "A shot of combat stimulants. It closes a wound, and needs twenty turns before the next.",
+        look: (glyph: '+', color: (r: 140, g: 230, b: 160)),
+        aim: SelfOnly,
+        mode: Own,
+        cooldown: 2000,
+        effects: [(kind: "Mend", args: (kind: "care", roll: "2d4+4"))],
+    ),
+]

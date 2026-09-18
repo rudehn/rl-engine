@@ -1,0 +1,21 @@
+// Foundry's mission: what the charges ask of you.
+//
+// Every field:
+//   name:       unique, referred to by `after`
+//   title:      what the mission screen shows
+//   text:       the brief, shown under the title
+//   after:      optional; names of objectives that must be done before this one opens
+//   objectives: a list of (text, on, need)
+//     on:       what it counts: ChargeSet(deck)
+//     need:     Total(n) counts matching facts
+//   victory:    optional; finishing this wins the run. The first slice ends on the
+//               upgrade chosen after the charge, not on the charge, so it is false here.
+#![enable(implicit_some)]
+[
+    (
+        name: "first_charge",
+        title: "The first reactor",
+        text: "The reactor on the third deck feeds the assembly lines above it. Set a charge on its console.",
+        objectives: [(text: "Set a charge on the reactor", on: ChargeSet(3), need: Total(1))],
+    ),
+]

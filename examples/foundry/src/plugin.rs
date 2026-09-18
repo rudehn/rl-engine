@@ -11,8 +11,9 @@
 //! beside the engine plugins it needs, and neither registers a game
 //! system of its own. Every later task adds its systems here.
 use bevy::prelude::*;
-use rl_engine::rl_bevy::plugin::{NewRun, Turn, TurnSet};
-use rl_engine::rl_ui::ViewSet;
+use rl_engine::rl_bevy::AddAction;
+use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PresentSet, ResolveSet, Turn, TurnSet};
+use rl_engine::rl_ui::{AddModal, ViewSet};
 
 /// Foundry's own systems: the run's start, and every reaction a task
 /// after this one adds.
@@ -86,5 +87,34 @@ impl Plugin for FoundryPlugin {
         // else in this game: `sync_dark_sight` is its one owner, the same
         // way `ammo.rs`'s `sync_ammo` owns a weapon's loaded state.
         app.add_systems(Turn, (crate::droids::unjam_sensors, crate::droids::jam_sensors, crate::droids::sync_dark_sight).chain().in_set(TurnSet::React));
+        // The mission: loaded fresh every run, the way the roster and the
+        // armory are.
+        app.add_systems(NewRun, crate::mission::start);
+        // The console spawns the moment deck three is first entered,
+        // unordered against `loot::scatter_on_arrival` and
+        // `droids::populate_deck` above: none of the three shares a
+        // tile-claiming concern with either of the others.
+        app.add_systems(Turn, crate::mission::spawn_console_on_arrival.in_set(TurnSet::React));
+        app.add_action::<crate::mission::SetCharge>();
+        app.add_systems(Turn, crate::mission::resolve_set_charge.in_set(ResolveSet::Act));
+        // A game's reaction to the mission finishing, not to a turn
+        // itself: an ordinary `Update` system, the way Corsair's own
+        // `narrate_quests` is, reading `QuestChange` one frame behind the
+        // fact that finished it (`rl_bevy::events`'s own doc on it).
+        app.add_systems(Update, crate::mission::offer_the_pick);
+        // Uplink's own reach bonus: unordered against `heat`'s and
+        // `ammo`'s systems above, for the reason `upgrades::react_uplink`
+        // gives.
+        app.add_systems(Turn, crate::upgrades::react_uplink.in_set(TurnSet::React));
+        // The pick screen: declared while building, the way Corsair
+        // declares its ledger, so `upgrades::modal` finds it the moment
+        // anything looks. `choice_keys` is exclusive (it calls
+        // `upgrades::apply`, which needs the whole `World`), so it is
+        // ordered the same place a game's own key handlers run.
+        app.add_modal(crate::upgrades::MODAL);
+        app.init_resource::<crate::upgrades::ChoiceScreen>();
+        app.init_resource::<crate::upgrades::Choosing>();
+        app.add_systems(Update, crate::upgrades::choice_keys.in_set(EngineSet::Input));
+        app.add_systems(Update, crate::upgrades::draw_choice.in_set(PresentSet::Overlay));
     }
 }

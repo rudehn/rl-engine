@@ -8,17 +8,20 @@
 //!
 //! Split by what a helper sets up rather than kept as one file: [`gear`]
 //! for weapons, armor and ammunition, [`droids`] for monsters and their
-//! attacks, [`loot`] for what a deck scatters and a kill drops. Every
-//! helper is re-exported here, so `crate::testing::x` still finds
-//! whichever of the four files `x` actually lives in.
+//! attacks, [`loot`] for what a deck scatters and a kill drops, and
+//! [`mission`] for the reactor console and the upgrade pick. Every helper
+//! is re-exported here, so `crate::testing::x` still finds whichever file
+//! `x` actually lives in.
 
 mod droids;
 mod gear;
 mod loot;
+mod mission;
 
 pub use droids::*;
 pub use gear::*;
 pub use loot::*;
+pub use mission::*;
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
@@ -30,11 +33,12 @@ use rl_engine::rl_ui::UiPlugin;
 /// A run with no window, seeded, with every plugin Foundry's stealth,
 /// radar and combat need already added.
 ///
-/// `FactsPlugin` and `AbilitiesPlugin` are here for later tasks; a plugin
-/// asserts what it cannot work without the moment play begins, so this
-/// harness satisfies both with the smallest thing that counts as
-/// "nothing yet": an empty ledger, and abilities loaded from no
-/// definitions at all.
+/// `FactsPlugin` needs `Quests` or `Counters` inserted before play begins;
+/// `mission::start`, added to `NewRun` by `FoundryPlugin`, inserts both the
+/// moment the run starts, the same as the real binary. `AbilitiesPlugin`
+/// needs `Abilities`, loaded here from `assets/abilities.ron` the way
+/// `main.rs` loads it, since it names no seed and is the same for every
+/// run.
 pub fn headless(seed: RunSeed) -> App {
     let mut app = rl_engine::rl_bevy::plugin::headless_app();
     app.add_plugins((
@@ -54,7 +58,7 @@ pub fn headless(seed: RunSeed) -> App {
     let abilities = {
         let world = app.world();
         let (kinds, registries) = (world.resource::<EffectKinds>(), world.resource::<Registries>());
-        Abilities::load("[]", kinds, &registries.names()).unwrap_or_else(|e| panic!("no abilities: {e}"))
+        crate::upgrades::load_abilities(kinds, registries)
     };
     app.insert_resource(abilities);
     app.add_plugins(UiPlugin);
@@ -112,6 +116,13 @@ pub fn hit(app: &mut App, target: Entity, kind: &str, amount: i32) {
     let registries = app.world().resource::<Registries>().clone();
     let kind = registries.damage_kinds.expect(kind);
     app.world_mut().write_message(DamageDealt { target, hit: Hit::from_source(None, kind, amount), dealt: amount });
+    app.update();
+}
+
+/// Two updates: enough for one resolved action and whatever it triggers to
+/// settle, the way most of this module's own helpers already open with.
+pub fn settle(app: &mut App) {
+    app.update();
     app.update();
 }
 

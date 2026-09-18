@@ -25,6 +25,9 @@ pub mod heat;
 /// Items on the decks, scattered the moment each is first entered, and
 /// items the dead leave behind.
 pub mod loot;
+/// The reactor console, `SetCharge`, and the mission it completes: deck
+/// three's one objective, and the hinge into `upgrades`.
+pub mod mission;
 /// `FoundryPlugin`, the one list of Foundry's own systems that `main.rs`
 /// and `testing::headless` both add.
 pub mod plugin;
@@ -34,3 +37,6 @@ pub mod run;
 /// plain library, never the `#[cfg(test)]` build only `cargo test`'s own
 /// unit tests get.
 pub mod testing;
+/// The one pick the first slice offers once its charge is set: three
+/// permanent upgrades, and the screen that lets the player choose one.
+pub mod upgrades;
