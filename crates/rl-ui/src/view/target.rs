@@ -76,13 +76,14 @@ pub struct AimThrow {
     pub item: Entity,
 }
 
-/// Open the targeting cursor on a shot with the user's [`RangedAttack`].
+/// Open the targeting cursor on a shot with the user's [`RangedAttack`],
+/// its own or the one a worn item lends it, as [`Loadout`] reads them.
 ///
 /// What a game writes when its fire key is pressed. The cursor opens on the
 /// nearest foe, previews through [`shot`] the line the shot takes and
 /// whether it reaches, and writes an [`Attack`] on whoever stands under the
 /// cursor when the player confirms. Needs [`CombatPlugin`] to be resolved,
-/// and does nothing for a user with no [`RangedAttack`].
+/// and does nothing for a user with no [`RangedAttack`] of either kind.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AimFire {
     /// Who is firing.
@@ -220,7 +221,9 @@ pub struct Aiming<'w, 's> {
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>)>,
     living: Query<'w, 's, &'static Health, Without<Dead>>,
     missiles: Query<'w, 's, (), With<Throwable>>,
-    shooters: Query<'w, 's, (), With<RangedAttack>>,
+    /// Whether a user has a shot at all: its own, or a worn gun's, read
+    /// the way the resolver fires it, so a gun in hand opens the cursor.
+    loadout: Loadout<'w, 's>,
 }
 
 impl Aiming<'_, '_> {
@@ -318,7 +321,7 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
         }
     }
     for request in requests.fires.read() {
-        if aiming.shooters.contains(request.user) {
+        if aiming.loadout.ranged(request.user).is_some() {
             asked = Some((request.user, Pointing::Fire));
         }
     }
@@ -438,7 +441,10 @@ pub struct Reach<'w, 's> {
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>, Option<&'static Inventory>)>,
     subjects: Query<'w, 's, Standing>,
     missiles: Query<'w, 's, (&'static Throwable, Option<&'static Name>)>,
-    guns: Query<'w, 's, (&'static RangedAttack, Has<MeleeAttack>)>,
+    /// The shot the preview reaches with and whether a blow is in hand
+    /// point blank: the user's own or a worn item's, as the resolver
+    /// strikes.
+    loadout: Loadout<'w, 's>,
     living: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
 }
 
@@ -485,7 +491,8 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     let from = from.0;
 
     if view.firing {
-        let Ok((gun, has_melee)) = reach.guns.get(user) else { return };
+        let Some(gun) = reach.loadout.ranged(user) else { return };
+        let has_melee = reach.loadout.melee(user).is_some();
         view.what.clear();
         let flies = shot(&reach.map, &reach.occupancy, from, view.cursor, gun.range);
         let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who));
@@ -1004,6 +1011,36 @@ mod tests {
         stage.press(KeyCode::Enter);
         assert_eq!(attacks(&mut stage), vec![far], "the resolver judges the blocked line, as it would any attack");
         assert!(!stage.app.world().resource::<TargetView>().aiming());
+    }
+
+    /// A gun worn is a gun to aim: the cursor opens for a user whose only
+    /// shot comes from what it wears, and the preview reaches as far as
+    /// that gun does, because both read the same [`Loadout`] the resolver
+    /// fires with.
+    #[test]
+    fn a_shot_from_a_worn_gun_opens_the_cursor_and_previews_the_guns_own_reach() {
+        let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
+        let (user, kind) = (stage.player, stage.kind);
+        let gun = stage.app.world_mut().spawn((Item, RangedAttack { kind, dice: rl_core::DiceRoll::flat(2), range: 3, cost: None })).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(gun, &rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))).expect("one slot, one gun");
+        stage.app.world_mut().entity_mut(user).insert(worn);
+        stage.actor("near", 'n', 2, 0);
+        stage.actor("far", 'f', 5, 0);
+        stage.tick();
+        let at = stage.at;
+
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert!(view.aiming() && view.firing, "the worn gun opened the cursor");
+        assert_eq!(view.cursor, at.offset(2, 0), "on the nearest foe");
+        assert!(view.legal, "within the gun's three tiles");
+
+        stage.press(KeyCode::Tab);
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.cursor, at.offset(5, 0));
+        assert_eq!(view.why, vec![Blocked::OutOfReach], "five tiles is past a gun that reaches three");
     }
 
     /// A user with nothing to shoot with opens no cursor.

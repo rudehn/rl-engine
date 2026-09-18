@@ -15,6 +15,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
   `StampOneOf` stamps one of several candidates chosen by weight, and fails the chain loudly if nothing carries weight.
 - `ShootAtRange` fires what a mind wields down a clear line at an enemy two or more tiles off, leaving anything at its elbow to `MeleeAdjacent`. `Snapshot` gains `reach`, how far the actor's own shot carries, filled from `Loadout::ranged` for every mind that has one.
 - Fixed: `cargo doc` with warnings denied failed on eight broken or redundant documentation links, which had been failing CI's doc step since before the 0.2.0 release; and a `Restart` with no seed called `RunSeed::fresh`, which is not compiled on wasm, so `rl-bevy` did not build for the browser. A restart there derives its seed from the run before it instead, so two runs in a session differ and a page opened on one seed plays the same sequence of runs.
+- Fixed: the targeting cursor would not open for a shot whose gun was worn rather than the shooter's own, and its preview read the shooter's own `RangedAttack` alone.
+  `AimFire` and the shot preview now read `Loadout::ranged` and `Loadout::melee`, the same shot the resolver fires, so a gun in hand opens the cursor and previews its own reach.
 - Fixed: `Placement::AnyRoom` could choose a room an earlier stamp in the same chain had already used.
   The later stamp then drew over the earlier one's tiles, while the earlier one's marks were still reported on cells that were no longer floor.
   `AnyRoom` now excludes any room whose bounds intersect an earlier `Stamped` in the chain, and fails the chain if none remain.
