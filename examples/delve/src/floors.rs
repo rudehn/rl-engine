@@ -11,7 +11,7 @@ use rl_engine::rl_grid::{Light, Rgb};
 use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::dungeon::{Bsp, Doors, FarthestExit, RandomStart, Rooms};
 use rl_engine::rl_mapgen::passes::{CellularCave, KeepLargestRegion, Scatter};
-use rl_engine::rl_mapgen::prefab::{Placement, Prefab, StampPrefab};
+use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_world::WorldGraph;
@@ -193,7 +193,7 @@ impl PlaceRules for Whale {
             // The Heart: one chamber, and what beats in it.
             _ => Chain::new()
                 .then(Rooms { floor: open, attempts: 60, min_size: 15, max_size: 18, min_rooms: 2 })
-                .then(StampPrefab { name: "heart", prefab: self.heart()?, at: Placement::AnyRoom })
+                .then(StampPrefab { name: "heart", prefab: self.heart()?, at: Placement::AnyRoom, orient: Orient::Fixed })
                 .then(RandomStart),
         };
         chain.run(&mut ctx, seed)?;

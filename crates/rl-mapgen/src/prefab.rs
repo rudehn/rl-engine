@@ -143,6 +143,38 @@ pub enum Placement {
     AnyRoom,
 }
 
+/// How a piece may be turned before it is laid down.
+///
+/// Authored per stamp rather than per prefab, since the same vault may be
+/// free to turn in a cave and fixed against a corridor that has to meet
+/// its door.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Orient {
+    /// Exactly as it was drawn.
+    #[default]
+    Fixed,
+    /// One of the four quarter-turns, drawn from the pass's stream.
+    Turned,
+    /// One of the four quarter-turns, and mirrored or not: eight facings.
+    TurnedOrMirrored,
+}
+
+impl Orient {
+    /// The piece as this policy leaves it, drawing from `rng` only when
+    /// there is a choice to make, so a fixed stamp advances no stream and
+    /// a chain that adds one does not move every map after it.
+    pub fn apply(self, prefab: &Prefab, rng: &mut impl Rng) -> Prefab {
+        match self {
+            Orient::Fixed => prefab.clone(),
+            Orient::Turned => prefab.rotated(rng.random_range(0..4)),
+            Orient::TurnedOrMirrored => {
+                let turned = prefab.rotated(rng.random_range(0..4));
+                if rng.random_bool(0.5) { turned.flipped() } else { turned }
+            }
+        }
+    }
+}
+
 /// Where a prefab landed: its bounds and its marks in map coordinates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stamped {
@@ -161,6 +193,8 @@ pub struct StampPrefab {
     pub prefab: Prefab,
     /// Where it goes.
     pub at: Placement,
+    /// How it may be turned before it lands.
+    pub orient: Orient,
 }
 
 impl<C: BuildContext> Pass<C> for StampPrefab {
@@ -171,7 +205,8 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
         Phase::Structures
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        let (w, h) = (self.prefab.width(), self.prefab.height());
+        let prefab = self.orient.apply(&self.prefab, ctx.rng());
+        let (w, h) = (prefab.width(), prefab.height());
         let bounds = ctx.terrain().bounds();
         let centred = |r: Rect| Point::new(r.x + (r.width - w) / 2, r.y + (r.height - h) / 2);
         let fits = |r: &Rect| r.width >= w && r.height >= h;
@@ -197,8 +232,8 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
         if placed.intersection(&bounds) != Some(placed) {
             return Err(BuildError::new(self.name, format!("{placed:?} is off the map")));
         }
-        self.prefab.stamp(ctx.terrain_mut(), origin);
-        let marks = self.prefab.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
+        prefab.stamp(ctx.terrain_mut(), origin);
+        let marks = prefab.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
         ctx.emit(Stamped { bounds: placed, marks });
         Ok(())
     }
@@ -308,7 +343,7 @@ mod tests {
         let mut c = BaseContext::blank(60, 40, tiles, wall);
         Chain::new()
             .then(Rooms { floor, min_size: 8, max_size: 10, ..Default::default() })
-            .then(StampPrefab { name: "vault", prefab: vault(wall, floor), at: Placement::InRoom(0) })
+            .then(StampPrefab { name: "vault", prefab: vault(wall, floor), at: Placement::InRoom(0), orient: Orient::Fixed })
             .run(&mut c, RunSeed(2))
             .unwrap();
         let room = c.outputs().first::<Room>().unwrap().0;
@@ -324,10 +359,44 @@ mod tests {
         let tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let mut c = BaseContext::blank(20, 20, tiles, wall);
-        let off = StampPrefab { name: "off", prefab: vault(wall, floor), at: Placement::At(Point::new(18, 18)) };
+        let off = StampPrefab { name: "off", prefab: vault(wall, floor), at: Placement::At(Point::new(18, 18)), orient: Orient::Fixed };
         assert!(Chain::new().then(off).run(&mut c, RunSeed(1)).is_err());
         c.emit(Room(Rect::new(2, 2, 3, 3)));
-        let small = StampPrefab { name: "small", prefab: vault(wall, floor), at: Placement::AnyRoom };
+        let small = StampPrefab { name: "small", prefab: vault(wall, floor), at: Placement::AnyRoom, orient: Orient::Fixed };
         assert!(Chain::new().then(small).run(&mut c, RunSeed(1)).is_err());
+    }
+
+    #[test]
+    fn an_oriented_stamp_is_the_same_piece_under_one_seed_and_varies_across_seeds() {
+        // Determinism first: the same seed lays the same piece down, or a
+        // saved run would reload a different map than it saved.
+        let first = stamped_marks(RunSeed(7), Orient::TurnedOrMirrored);
+        assert_eq!(first, stamped_marks(RunSeed(7), Orient::TurnedOrMirrored), "one seed, one map");
+
+        // Then variety: over a span of seeds an oriented stamp must land its
+        // mark in more than one place, or the orientation did nothing.
+        let seen: std::collections::BTreeSet<_> = (0..40).map(|s| stamped_marks(RunSeed(s), Orient::TurnedOrMirrored)).collect();
+        assert!(seen.len() > 1, "forty seeds laid the piece exactly one way");
+
+        // And a fixed stamp faces one way whatever the seed, so every chain
+        // that has one today keeps the map it has today.
+        let fixed: std::collections::BTreeSet<_> = (0..40).map(|s| stamped_marks(RunSeed(s), Orient::Fixed)).collect();
+        assert_eq!(fixed.len(), 1, "a fixed stamp faces the same way under every seed");
+    }
+
+    /// Stamps the vault into a fixed room under `seed` and answers its marks
+    /// relative to the stamp's own bounds, which is its facing.
+    fn stamped_marks(seed: RunSeed, orient: Orient) -> Vec<(char, Point)> {
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut c = BaseContext::blank(60, 40, tiles, wall);
+        Chain::new()
+            .then(Rooms { floor, min_size: 8, max_size: 10, ..Default::default() })
+            .then(StampPrefab { name: "vault", prefab: vault(wall, floor), at: Placement::InRoom(0), orient })
+            .run(&mut c, seed)
+            .unwrap();
+        let stamped = c.outputs().first::<Stamped>().unwrap();
+        let origin = stamped.bounds.origin();
+        stamped.marks.iter().map(|(ch, p)| (*ch, Point::new(p.x - origin.x, p.y - origin.y))).collect()
     }
 }

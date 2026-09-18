@@ -18,7 +18,7 @@ use rl_engine::rl_core::{Grid2D, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_grid::{Light, Rgb};
 use rl_engine::rl_mapgen::dungeon::{Doors, ExitPoint, FarthestExit, RandomStart, Rooms};
 use rl_engine::rl_mapgen::passes::{CellularCave, KeepLargestRegion, StartPoint};
-use rl_engine::rl_mapgen::prefab::{Placement, Prefab, StampPrefab, Stamped};
+use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab, Stamped};
 use rl_engine::rl_mapgen::{BaseContext, BuildContext, BuildError, Chain};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_ui::{MessageLog, Tones};
@@ -121,7 +121,7 @@ impl PlaceRules for Caves {
             Chain::new()
                 .then(Rooms { floor: cave, attempts: 40, min_size: 4, max_size: 9, min_rooms: 4 })
                 .then(Doors { door })
-                .then(StampPrefab { name: "vault", prefab: vault, at: Placement::AnyRoom })
+                .then(StampPrefab { name: "vault", prefab: vault, at: Placement::AnyRoom, orient: Orient::Fixed })
                 .then(RandomStart)
         } else {
             Chain::new()
