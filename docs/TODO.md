@@ -55,10 +55,6 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Corsair, Delve and Heist have no map fingerprint tests.**
   A change to their maps goes unnoticed: the Foundry branch changed Corsair's cave maps and Delve's heart floor, and nothing in either game noticed.
   A fingerprint tripwire per game over a few seeds' maps, labelled as such, would make the next such change a deliberate re-baseline.
-- **One thrown from a stack is named as the stack.**
-  A throw splits one off a stack and the one keeps the stack's `Name`, so the log says "You throw pebbles." of a single pebble, and the engine's own tests stack "knives".
-  The engine keeps grammar out, so the fix is a name for one, authored beside the stack's, and not a pluraliser; decide whether it lives on `Stack` or in its own component before building it.
-  Found 2026-09-17 photographing the heist's pebble.
 
 ## 4. Simplify
 

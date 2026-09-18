@@ -385,7 +385,7 @@ mod tests {
             let name = e.display_name("cutlass", &armory.affixes);
             assert!(name.contains("cutlass") && name.contains('+'), "{name}");
         }
-        assert_eq!(armory.roll_quality(armory.defs.expect("rum"), Quality::HOARD, &mut rng), Enchanted::plain(), "drink is never enchanted");
+        assert_eq!(armory.roll_quality(armory.defs.expect("bottle of rum"), Quality::HOARD, &mut rng), Enchanted::plain(), "drink is never enchanted");
     }
 
     /// A knife can be thrown and gear is scored, better gear higher, so a
@@ -519,7 +519,7 @@ mod tests {
             let mut q = w.query_filtered::<Entity, With<Player>>();
             q.single(w).unwrap()
         };
-        let rum_kind = app.world().resource::<Armory>().defs.expect("rum");
+        let rum_kind = app.world().resource::<Armory>().defs.expect("bottle of rum");
         let rum = {
             let w = app.world();
             let bag = w.get::<Inventory>(me).expect("a bag");

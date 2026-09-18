@@ -435,7 +435,7 @@ fn start(
         .spawn((
             Item,
             Pebble,
-            Name::new("pebbles"),
+            Name::new("pebble"),
             Stack { key: 2, count: 6 },
             Throwable { range: 7, strike: None },
             Glyph::new('\u{b7}', Color::srgb(0.7, 0.7, 0.7)).on_layer(2),

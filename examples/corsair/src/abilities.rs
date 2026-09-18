@@ -70,7 +70,7 @@ impl Effect for Plunder {
                 w.resource_scope(|w: &mut World, armory: Mut<Armory>| {
                     let mut queue = bevy::ecs::world::CommandQueue::default();
                     let mut commands = Commands::new(&mut queue, w);
-                    armory.spawn(&mut commands, armory.defs.expect("doubloons"), coin, Some(at));
+                    armory.spawn(&mut commands, armory.defs.expect("doubloon"), coin, Some(at));
                     queue.apply(w);
                 });
             });
@@ -155,7 +155,7 @@ mod tests {
 
     /// The bag's powder stack, as a count.
     fn powder(app: &mut App, me: Entity) -> Option<(Entity, u32)> {
-        let kind = app.world().resource::<Armory>().defs.expect("powder");
+        let kind = app.world().resource::<Armory>().defs.expect("charge of powder");
         let bag = app.world().get::<Inventory>(me).expect("a bag").items.clone();
         bag.into_iter()
             .find(|i| app.world().get::<ItemKind>(*i).is_some_and(|k| k.0 == kind))
@@ -173,7 +173,7 @@ mod tests {
         use_it(&mut app, me, "plunder", at);
         app.update();
         assert_eq!(app.world().get::<Purse>(foe), Some(&Purse(0)), "the purse is empty");
-        let doubloons = app.world().resource::<Armory>().defs.expect("doubloons");
+        let doubloons = app.world().resource::<Armory>().defs.expect("doubloon");
         let spilled: u32 = {
             let w = app.world_mut();
             let mut q = w.query::<(&ItemKind, &Position, Option<&Stack>)>();

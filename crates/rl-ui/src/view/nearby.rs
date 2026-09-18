@@ -111,6 +111,7 @@ pub struct Around<'w, 's> {
     watchers: Watchers<'w, 's>,
     noise: rl_bevy::NoiseRunning<'w>,
     heard: Query<'w, 's, &'static rl_bevy::Heard>,
+    stacks: Query<'w, 's, &'static Stack>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
@@ -124,7 +125,8 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
     view.focused = around.focus.within(&list).copied();
     for sighting in list {
         let Ok((name, glyph, health, faction)) = around.seen.get(sighting.entity) else { continue };
-        let mut row = Row::new(sighting.entity, name.as_str().to_string(), *glyph).at(sighting.distance);
+        let count = around.stacks.get(sighting.entity).map_or(1, |s| s.count);
+        let mut row = Row::new(sighting.entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(sighting.distance);
         row.health = health.map(|h| (h.current, h.max));
         row.relation = match (mine, faction) {
             (Some(mine), Some(theirs)) => Some(around.rules.factions.relation(mine.0, theirs.0)),

@@ -1,7 +1,9 @@
 // Corsair's items: what lies on the sand and what the dead leave behind.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:   unique, referred to by drop and spawn tables
+//   name:   unique, referred to by drop and spawn tables; one of it, singular, since the engine
+//           says a stack as "5 throwing knives"; a thing with no plural is named by its measure,
+//           "bottle of rum"
 //   glyph:  one character
 //   color:  (r, g, b) in 0..=1
 //   slot:   optional; where it is worn: "main hand" | "off hand" | "body" | "head"
@@ -30,8 +32,8 @@
     (name: "buckler", glyph: '[', color: (0.6, 0.6, 0.5), slot: "off hand", tags: ["armor", "shield"], armor: 1, spawn: (2, 40, 2)),
     (name: "leather jerkin", glyph: '[', color: (0.6, 0.4, 0.2), slot: "body", tags: ["armor"], armor: 1, spawn: (0, 40, 2)),
     (name: "tricorne", glyph: '[', color: (0.3, 0.3, 0.35), slot: "head", tags: ["armor", "hat"], armor: 1, spawn: (6, 40, 1)),
-    (name: "rum", glyph: '!', color: (0.9, 0.6, 0.2), tags: ["rum"], grants: ["swig"], stack: true, spawn: (0, 40, 4)),
-    (name: "doubloons", glyph: '$', color: (1.0, 0.85, 0.2), stack: true, spawn: (0, 40, 4)),
+    (name: "bottle of rum", glyph: '!', color: (0.9, 0.6, 0.2), tags: ["rum"], grants: ["swig"], stack: true, spawn: (0, 40, 4)),
+    (name: "doubloon", glyph: '$', color: (1.0, 0.85, 0.2), stack: true, spawn: (0, 40, 4)),
     (name: "throwing knife", glyph: '/', color: (0.78, 0.8, 0.86), thrown: (6, "1d4+1", "cutlass"), stack: true, spawn: (1, 40, 2)),
-    (name: "powder", glyph: ',', color: (0.4, 0.4, 0.42), tags: ["powder"], stack: true, spawn: (0, 40, 3)),
+    (name: "charge of powder", glyph: ',', color: (0.4, 0.4, 0.42), tags: ["powder"], stack: true, spawn: (0, 40, 3)),
 ]

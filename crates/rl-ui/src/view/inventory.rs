@@ -243,7 +243,7 @@ mod tests {
         let knives = stage
             .app
             .world_mut()
-            .spawn((Item, Name::new("knives"), Stack { key: 1, count: 3 }, Throwable { range: 5, strike: Some((kind, DiceRoll::new(1, 4))) }))
+            .spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable { range: 5, strike: Some((kind, DiceRoll::new(1, 4))) }))
             .id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
         worn.equip(blade, &EquipShape::in_slot(hand)).unwrap();
@@ -253,7 +253,7 @@ mod tests {
         let view = stage.app.world().resource::<InventoryView>();
         assert_eq!(view.entity, Some(player));
         let labels: Vec<&str> = view.rows.iter().map(|r| r.label.as_str()).collect();
-        assert_eq!(labels, vec!["knives", "a blade", "a hat"], "pickup order, worn or not");
+        assert_eq!(labels, vec!["knife", "a blade", "a hat"], "pickup order, worn or not, each by its name for one");
 
         let knives = &view.rows[0];
         assert_eq!((knives.count, knives.throw_range), (3, Some(5)));

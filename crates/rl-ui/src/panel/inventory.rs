@@ -8,8 +8,12 @@
 //! intents itself; throwing opens the targeting cursor through
 //! [`AimThrow`], the way a game's throw key would. A game binds nothing.
 //! Using an item that lends an ability uses the ability: on the spot when
-//! it needs no aim, through the targeting cursor by [`AimAt`] when it does;
-//! using anything else is the game's, answered from [`ItemEvent::Used`].
+//! it needs no aim, through the targeting cursor by [`AimAt`] when it does.
+//! Nothing else is used from here; an item a game answers itself from
+//! [`ItemEvent::Used`] is used by the game's own key, since the bag cannot
+//! know it does anything and a use that did nothing would spend a turn.
+//! The footer offers only the keys that do something to the row picked
+//! out: wear or take off, drop, use, throw, and close.
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
@@ -236,16 +240,20 @@ pub fn inventory_keys(
         intents.drops.write(Intent::new(user, DropItem(item)));
         true
     } else if binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm) {
+        // Only what lends an ability is used from here: using anything else
+        // spent a turn on nothing, and the footer never offers it.
         match row.lends.first() {
             // An aimed ability wants the cursor; the bag closes for it.
             Some(lent) if lent.aimed => {
                 intents.aims.write(AimAt { user, ability: lent.ability });
+                true
             }
-            _ => {
+            Some(_) => {
                 intents.uses.write(Intent::new(user, UseItem(item)));
+                true
             }
+            None => false,
         }
-        true
     } else if binds.throw.just_pressed(input) && row.throw_range.is_some() {
         // The bag closes and the targeting cursor opens in its place.
         intents.throws.write(AimThrow { user, item });
@@ -258,6 +266,31 @@ pub fn inventory_keys(
         // up when it runs.
         modals.close_all();
     }
+}
+
+/// The keys that do something to `row`, and the one that closes the bag.
+///
+/// Only what applies, so the footer never offers to wear a pebble. Short
+/// enough for a narrow frame: the direction keys walk the rows on every
+/// screen and need no saying here.
+fn hints(row: Option<&ItemRow>, binds: &InventoryKeys, confirm: String, close: String) -> String {
+    let mut keys = Vec::new();
+    if let Some(row) = row {
+        if row.worn() {
+            keys.push(format!("{} take off", binds.wear.label()));
+        } else if row.wearable() {
+            keys.push(format!("{} wear", binds.wear.label()));
+        }
+        keys.push(format!("{} drop", binds.drop.label()));
+        if !row.lends.is_empty() {
+            keys.push(format!("{confirm} use"));
+        }
+        if row.throw_range.is_some() {
+            keys.push(format!("{} throw", binds.throw.label()));
+        }
+    }
+    keys.push(close);
+    keys.join(" \u{2022} ")
 }
 
 /// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach.
@@ -338,24 +371,16 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
         return;
     }
     let bindings = keys.bindings();
-    // Short enough for a narrow frame: the direction keys walk the rows
-    // on every screen and need no saying here.
-    let hints = format!(
-        "{} wear \u{2022} {} drop \u{2022} {} use \u{2022} {} throw \u{2022} {}",
-        binds.wear.label(),
-        binds.drop.label(),
-        key_name(bindings.cursor.confirm),
-        binds.throw.label(),
-        key_name(bindings.cursor.close)
-    );
+    // The cursor survives the rebuild, clamped to the rows there are now,
+    // before the footer asks which row it is on.
+    menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
+    let hints = hints(view.row(menu.selected), binds, key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, &layout.title, &hints, palette);
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
 
-    // The cursor survives the rebuild, clamped to the rows there are now.
-    menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
     if view.rows.is_empty() {
         terminal.print_on(inner.x, inner.y, &clip(&layout.empty, width), palette.get(Tones::MUTED), surface);
         return;
@@ -377,7 +402,7 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
             terminal.set(x, y, Cell::new(glyph.ch, glyph.fg).on(bg));
             x += 2;
         }
-        let label = if row.count > 1 { format!("{} {}", row.count, row.label) } else { row.label.clone() };
+        let label = rl_core::noun::listed(&row.label, row.count);
         let tag = if row.worn() { row.slot_name.clone() } else { String::new() };
         let room = (inner.right() - x).max(0) as usize;
         terminal.print_on(x, y, &clip(&label, room.saturating_sub(tag.chars().count() + 1)), fg, bg);
@@ -433,7 +458,7 @@ mod tests {
         let knives = stage
             .app
             .world_mut()
-            .spawn((Item, Name::new("knives"), Stack { key: 1, count: 3 }, Throwable { range: 5, strike: Some((kind, DiceRoll::new(1, 4))) }))
+            .spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable { range: 5, strike: Some((kind, DiceRoll::new(1, 4))) }))
             .id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
         worn.equip(blade, &EquipShape::in_slot(hand)).unwrap();
@@ -457,15 +482,21 @@ mod tests {
         assert!(first.starts_with(") a blade") && first.ends_with("hand"), "glyph, name, and the slot it is worn in at the right: {first:?}");
         assert_eq!(inside(&stage, 2), "a hat");
         assert_eq!(inside(&stage, 3), "3 knives", "a stack says how many");
-        assert!(stage.row(13).contains("e wear \u{2022} d drop \u{2022} enter use \u{2022} t throw \u{2022} esc"), "{:?}", stage.row(13));
+        assert!(stage.row(13).contains("e take off \u{2022} d drop \u{2022} esc"), "the worn blade can come off or be dropped: {:?}", stage.row(13));
         assert_eq!(inside(&stage, 5), "1d6 kinetic", "the blade's own blow");
         assert_eq!(inside(&stage, 6), "worn on the hand");
 
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "armor +1");
         assert_eq!(inside(&stage, 6), "goes on the head");
+        assert!(stage.row(13).contains("e wear \u{2022} d drop \u{2022} esc"), "the hat goes on: {:?}", stage.row(13));
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "thrown 1d4 kinetic to 5");
+        assert!(
+            stage.row(13).contains("d drop \u{2022} t throw \u{2022} esc") && !stage.row(13).contains("wear"),
+            "knives are thrown, never worn: {:?}",
+            stage.row(13)
+        );
 
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open());
@@ -508,9 +539,9 @@ mod tests {
         stage.press(KeyCode::KeyI);
         assert_eq!(inside(&stage, 2), "3 knives", "and is out of the bag");
         stage.press(KeyCode::Enter);
-        assert_eq!(drain(&mut stage).3, vec![knives], "confirm uses the row picked out, which the cursor now rests on");
+        assert!(drain(&mut stage).3.is_empty(), "knives lend nothing to use, so confirm does nothing and spends no turn");
+        assert!(!closed(&stage), "and the bag stays up");
 
-        stage.press(KeyCode::KeyI);
         stage.press(KeyCode::ArrowUp);
         stage.press(KeyCode::KeyT);
         assert!(drain(&mut stage).4.is_empty(), "a blade is not thrown");
@@ -554,7 +585,7 @@ mod tests {
             let a = stage.app.world().resource::<Abilities>();
             (a.expect("quaff"), a.expect("zap"))
         };
-        let potions = stage.app.world_mut().spawn((Item, Name::new("potions"), Grants(vec![quaff]), Stack { key: 1, count: 2 })).id();
+        let potions = stage.app.world_mut().spawn((Item, Name::new("potion"), Grants(vec![quaff]), Stack { key: 1, count: 2 })).id();
         let wand = stage.app.world_mut().spawn((Item, Name::new("a wand"), Grants(vec![zap]), Charges::full(3))).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![potions, wand] });
         stage.tick();

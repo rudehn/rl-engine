@@ -110,7 +110,7 @@ pub fn empty_handed(app: &mut App) -> Entity {
 pub fn give_slugs(app: &mut App, actor: Entity, count: u32) {
     let registries = app.world().resource::<Registries>().clone();
     let armory = Armory::load(&registries);
-    let id = armory.defs.expect("slugs");
+    let id = armory.defs.expect("slug");
     let mut queue = CommandQueue::default();
     let mut commands = Commands::new(&mut queue, app.world_mut());
     let slugs = crate::gear::spawn_item(&mut commands, &armory, id, &registries);

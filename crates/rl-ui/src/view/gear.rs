@@ -82,11 +82,7 @@ pub fn collect_gear(
     for (slot, def) in registries.slots.iter() {
         let item = worn.and_then(|w| w.in_slot(slot)).map(|entity| {
             let (name, glyph, stack) = items.get(entity).unwrap_or((None, None, None));
-            let shown = match (name, stack) {
-                (Some(n), Some(s)) if s.count > 1 => format!("{} x{}", n.as_str(), s.count),
-                (Some(n), _) => n.as_str().to_string(),
-                (None, _) => String::new(),
-            };
+            let shown = name.map(|n| rl_core::noun::listed(n.as_str(), stack.map_or(1, |s| s.count))).unwrap_or_default();
             Row::new(entity, shown, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE)))
         });
         view.slots.push(GearSlot { slot, name: def.name.clone(), item });
@@ -135,13 +131,13 @@ mod tests {
         });
         let player = stage.player;
 
-        let darts = stage.app.world_mut().spawn((Item, Name::new("darts"), Glyph::new('|', Color::WHITE), Stack { key: 1, count: 7 })).id();
+        let darts = stage.app.world_mut().spawn((Item, Name::new("dart"), Glyph::new('|', Color::WHITE), Stack { key: 1, count: 7 })).id();
         let mut worn = Equipped(rl_rules::Equipment::with_slot_count(2));
         worn.equip(darts, &EquipShape::in_slot(hand)).expect("the slot exists");
         stage.app.world_mut().entity_mut(player).insert(worn);
         stage.tick();
 
         let view = stage.app.world().resource::<GearView>();
-        assert_eq!(view.by_name("main hand").unwrap().item.as_ref().unwrap().label, "darts x7");
+        assert_eq!(view.by_name("main hand").unwrap().item.as_ref().unwrap().label, "7 darts", "the count first, and the name for many");
     }
 }

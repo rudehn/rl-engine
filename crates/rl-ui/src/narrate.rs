@@ -464,7 +464,8 @@ type Entry = Option<(String, ToneId)>;
 ///
 /// Placeholders: `{who}` and `{whom}` are `you` or `the <Name>`, and
 /// `{Who}` and `{Whom}` the same capitalised; `{what}` is the thing's
-/// [`Name`] as written, and `{What}` capitalised; `{n}` the amount;
+/// [`Name`] said with its count, `a pebble` or `5 pebbles` (see
+/// [`rl_core::noun`]), and `{What}` capitalised; `{n}` the amount;
 /// `{named}` the registry's name for the status, kind or ability; and
 /// `{detail}` whatever more there is to say. A name other than the player's
 /// is coloured as the thing is drawn.
@@ -574,6 +575,7 @@ struct Named {
 pub struct Names<'w, 's> {
     player: Query<'w, 's, (), With<Player>>,
     names: Query<'w, 's, (Option<&'static Name>, Option<&'static Glyph>)>,
+    stacks: Query<'w, 's, &'static Stack>,
 }
 
 impl Names<'_, '_> {
@@ -589,10 +591,12 @@ impl Names<'_, '_> {
         }
     }
 
-    /// The thing's [`Name`] as written, in its colour, or `something`.
+    /// The thing's [`Name`] as a sentence says it, `a pebble` or `5
+    /// pebbles` by its [`Stack`], in its colour, or `something`.
     fn thing(&self, e: Option<Entity>) -> Named {
+        let count = e.and_then(|e| self.stacks.get(e).ok()).map_or(1, |s| s.count);
         match e.and_then(|e| self.names.get(e).ok()) {
-            Some((Some(name), glyph)) => Named { text: name.as_str().to_string(), color: glyph.map(|g| g.fg) },
+            Some((Some(name), glyph)) => Named { text: rl_core::noun::counted(name.as_str(), count), color: glyph.map(|g| g.fg) },
             _ => Named { text: "something".into(), color: None },
         }
     }
@@ -816,5 +820,25 @@ mod tests {
         let (text, spans) = render("{Who} takes {n} from {named} {odd}.", &said, &names);
         assert_eq!(text, "Something takes 4 from venom {odd}.");
         assert!(spans.is_empty());
+    }
+
+    /// A thing is named once, as one of it, and said with its count: one
+    /// with an article, several counted and in the plural.
+    #[test]
+    fn a_thing_is_said_as_one_with_an_article_and_as_several_counted() {
+        let mut app = App::new();
+        let one = app.world_mut().spawn((Name::new("pebble"), Stack { key: 1, count: 1 })).id();
+        let five = app.world_mut().spawn((Name::new("pebble"), Stack { key: 1, count: 5 })).id();
+        let loose = app.world_mut().spawn(Name::new("ember")).id();
+        let mut state: bevy::ecs::system::SystemState<Names> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let names = state.get(app.world()).expect("every input is optional");
+        let say = |what: Entity| {
+            let mut said = Said::new(Phrase::YouThrow, 0);
+            said.what = Some(what);
+            render("You throw {what}.", &said, &names).0
+        };
+        assert_eq!(say(one), "You throw a pebble.");
+        assert_eq!(say(five), "You throw 5 pebbles.");
+        assert_eq!(say(loose), "You throw an ember.", "no stack is one");
     }
 }

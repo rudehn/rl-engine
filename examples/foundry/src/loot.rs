@@ -237,7 +237,7 @@ mod tests {
         // A property over many rolls rather than one lucky seed: the
         // design's rate, within a margin a correct roll never leaves.
         let armory = crate::gear::Armory::load(&crate::content::registries());
-        let slugs = armory.defs.expect("slugs");
+        let slugs = armory.defs.expect("slug");
         let mut rng = rand::rngs::StdRng::seed_from_u64(4);
         let hits = (0..10_000).filter(|_| !roll_drops(&[(slugs, 10)], &mut rng).is_empty()).count();
         assert!((850..=1150).contains(&hits), "{hits} drops in ten thousand");
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn a_real_kill_drops_its_guaranteed_item_at_the_death_tile() {
         let mut app = crate::testing::headless(RunSeed(2));
-        let at = crate::testing::kill_with_a_guaranteed_drop(&mut app, "slugs");
+        let at = crate::testing::kill_with_a_guaranteed_drop(&mut app, "slug");
         let map = app.world().resource::<WorldMap>().current();
         let landed = {
             let world = app.world_mut();

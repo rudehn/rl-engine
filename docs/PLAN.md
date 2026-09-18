@@ -290,7 +290,10 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   Found on the way: `DijkstraMap::descents` offered the diagonal past a wall's corner that the flood never took and the move resolver refuses, so a mind descending round a corner could choose it every turn and never move; descending now takes only the flood's own steps.
   And a listener heard its own footsteps, louder than the fight it was walking to.
   `rl-ui` shows it: `Row::heard`, and a `?` on the nearby rail for a monster coming to look; the heist tells the thief of a door or a scuffle out of sight, and which way.
-  Found photographing it: the heist logged the clatter before the throw, and a throw from a stack is named as the whole stack, which `docs/TODO.md` now carries.
+  Found photographing it: the heist logged the clatter before the throw, and one thrown from a stack was named as the whole stack, "You throw pebbles.".
+  A first fix stored two names on every stack, one for one and one for many; Nate, 2026-09-18: "I don't know that I want to store 2 names, I want simplicity... The item name should be pebble".
+  So a thing is named once, singular, and `rl-core` gains `noun`, which says a name of one with an article and of several counted and in the plural; the narrator's `{what}`, the bag, the gear panel, the nearby rail and inspect all say names through it, and Corsair's `doubloons`, `rum` and `powder` became `doubloon`, `bottle of rum` and `charge of powder`, a mass noun being named by its measure.
+  And the bag's footer offered to wear a pebble: it now offers only what applies to the row picked out, and the use key uses only what lends an ability, since using anything else from the bag spent a turn on nothing. Nate, 2026-09-18: "Yes".
   Nate, 2026-09-17: "noise system, to alert monsters", then "It should just hear a noise and go to it."
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.

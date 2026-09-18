@@ -1,7 +1,8 @@
 // Foundry's gear: what lies on the decks and what the dead leave behind.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:      unique; spawn tables and drops refer to it
+//   name:      unique; spawn tables and drops refer to it; one of it, singular, since the engine
+//              says a stack as "12 slugs"
 //   glyph:     one character
 //   color:     (r, g, b) in 0..=1
 //   slot:      optional; where it is worn: "main hand" | "off hand" | "head" | "torso" | "arms" | "legs"
@@ -27,7 +28,7 @@
     (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (9, "1d8+1", "energy"), cost: 100, heat: (22, 22), spawn: (2, 10, 2)),
     (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (5, "1d6", "ion"), cost: 90, heat: (25, 20), spawn: (1, 10, 2)),
     (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (6, "1d8", "kinetic"), cost: 100, ammo: "slug", spawn: (1, 10, 2)),
-    (name: "slugs", glyph: ',', color: (0.7, 0.65, 0.5), tags: ["slug"], stack: true, spawn: (1, 10, 4)),
+    (name: "slug", glyph: ',', color: (0.7, 0.65, 0.5), tags: ["slug"], stack: true, spawn: (1, 10, 4)),
     (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), slot: "head", tags: ["armor"], armor: 1, spawn: (1, 10, 2)),
     (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6, spawn: (2, 10, 1)),
     (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1, spawn: (1, 10, 3)),

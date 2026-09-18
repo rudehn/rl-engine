@@ -165,6 +165,8 @@ pub struct Duelists<'w, 's> {
     player: Query<'w, 's, (Entity, &'static Position, Fighter, Option<&'static Faction>), With<Player>>,
     subjects: Query<'w, 's, Subject, NotYou>,
     fighters: Query<'w, 's, (Fighter, Option<&'static Faction>)>,
+    /// How many a stack under the cursor holds, for its name.
+    stacks: Query<'w, 's, &'static Stack>,
     /// What each side strikes with and meets a blow in, gear included:
     /// the same answer the resolver acts on.
     loadout: Loadout<'w, 's>,
@@ -209,7 +211,8 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         .filter(|(_, pos, _, _, on)| pos.0 == view.cursor && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here)
         .max_by_key(|(entity, _, _, glyph, _)| (Some(*entity) == focused, glyph.layer));
     let Some((entity, pos, name, glyph, _)) = under else { return };
-    let mut row = Row::new(entity, name.as_str().to_string(), *glyph).at(geometry::chebyshev(origin.0, pos.0));
+    let count = duelists.stacks.get(entity).map_or(1, |s| s.count);
+    let mut row = Row::new(entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();
     if let Some(((health, _, _), _)) = theirs {
         row.health = health.map(|h| (h.current, h.max));

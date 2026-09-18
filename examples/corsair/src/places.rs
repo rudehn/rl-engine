@@ -215,9 +215,9 @@ pub fn populate_places(mut commands: Commands, mut entered: MessageReader<PlaceE
                 let gear = ["cutlass", "boarding axe", "pistol", "buckler", "tricorne"];
                 (stock.armory.defs.expect(gear[rng.random_range(0..gear.len())]), 1)
             } else if rng.random_bool(0.7) {
-                (stock.armory.defs.expect("doubloons"), rng.random_range(20..=60))
+                (stock.armory.defs.expect("doubloon"), rng.random_range(20..=60))
             } else {
-                (stock.armory.defs.expect("rum"), rng.random_range(1..=3))
+                (stock.armory.defs.expect("bottle of rum"), rng.random_range(1..=3))
             };
             let enchant = stock.armory.roll_quality(id, crate::items::Quality::HOARD, &mut rng);
             stock.armory.spawn_with(&mut commands, id, n, Some(spot.at), enchant);

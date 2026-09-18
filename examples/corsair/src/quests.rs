@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(quests.tracker.state(quests.defs.expect("sea_legs")), QuestState::Open);
         assert_eq!(quests.tracker.state(hoard), QuestState::Locked);
         let carry = &quests.defs.get(hoard).objectives[1];
-        assert_eq!(carry.on, Matcher::any(facts.carrying).about(armory.defs.expect("doubloons").raw() as u64));
+        assert_eq!(carry.on, Matcher::any(facts.carrying).about(armory.defs.expect("doubloon").raw() as u64));
         assert_eq!(carry.need, Need::Latest(100));
         let sea_legs = &quests.defs.get(quests.defs.expect("sea_legs")).objectives[0];
         let beasts = loaded.registries.factions.expect("beasts");

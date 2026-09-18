@@ -16,6 +16,8 @@
 //!   reshuffle one another.
 //! - [`DiceRoll`]: `NdS+B` notation parsed once at load.
 //! - [`Id<T>`] and [`Interner<T>`]: cheap typed ids for content.
+//! - [`noun`]: a thing's name said of one or of several, `a pebble` or
+//!   `5 pebbles`, from the one name a game gives it.
 //! - [`stats`]: quantiles and normalisation, so worlds are cut by
 //!   proportion rather than by magic numbers.
 //! - [`TurnQueue`]: the integer-clock scheduler.
@@ -29,6 +31,7 @@ pub mod disjoint;
 pub mod geometry;
 pub mod grid;
 pub mod id;
+pub mod noun;
 pub mod point;
 pub mod seed;
 pub mod stats;

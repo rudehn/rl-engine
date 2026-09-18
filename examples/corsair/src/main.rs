@@ -387,9 +387,9 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
     let (cutlass, kit) = {
         let mut commands = world.commands();
         let cutlass = armory.spawn(&mut commands, armory.defs.expect("cutlass"), 1, None);
-        let rum = armory.spawn(&mut commands, armory.defs.expect("rum"), 2, None);
+        let rum = armory.spawn(&mut commands, armory.defs.expect("bottle of rum"), 2, None);
         // Enough for a few broadsides before the first port.
-        let powder = armory.spawn(&mut commands, armory.defs.expect("powder"), 6, None);
+        let powder = armory.spawn(&mut commands, armory.defs.expect("charge of powder"), 6, None);
         // A few to throw, and the cutthroats carry more.
         let knives = armory.spawn(&mut commands, armory.defs.expect("throwing knife"), 3, None);
         (cutlass, vec![cutlass, rum, powder, knives])

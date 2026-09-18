@@ -34,7 +34,7 @@
         after: ["sea_legs"],
         objectives: [
             (text: "Reach a smugglers' vault", on: EnteredCave(2), need: Total(1)),
-            (text: "Carry a hundred doubloons", on: Carrying("doubloons"), need: Latest(100)),
+            (text: "Carry a hundred doubloons", on: Carrying("doubloon"), need: Latest(100)),
         ],
     ),
     (
