@@ -65,8 +65,10 @@ impl Screen {
             // The pack's rows, a rule, and what the row picked out is worth.
             pack: centred(56, 3, 16),
             controls: map.inflate(-2),
-            // The ending's words, the seed and turn, and three choices.
-            menu: centred(44, 6, 10),
+            // The most the menu may take: the ending's words, the seed and
+            // turn, and three choices. The engine closes the frame under
+            // the last row, so the shorter pause menu leaves no gap.
+            menu: centred(44, 6, 12),
             // Three upgrades, a blank row, and what the one picked out does.
             choice: centred(60, 8, 7),
         }
