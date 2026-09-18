@@ -1,10 +1,10 @@
 //! A headless Foundry, for the tests this crate and its integration
 //! tests add.
 //!
-//! The engine plugins the design needs, with no window: enough of the
-//! real wiring that a test exercises it rather than a mock of it. Only
-//! `gear::grant_dark_sight` is Foundry's own system so far; later tasks
-//! add more here.
+//! The engine plugins the design needs, with no window, plus
+//! [`FoundryPlugin`](crate::plugin::FoundryPlugin): the same one `main.rs`
+//! adds, so a test exercises exactly what the player runs rather than a
+//! harness that quietly fell behind it.
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
@@ -43,8 +43,7 @@ pub fn headless(seed: RunSeed) -> App {
     };
     app.insert_resource(abilities);
     app.add_plugins(UiPlugin);
-    app.add_systems(NewRun, crate::run::start);
-    app.add_systems(Turn, crate::gear::grant_dark_sight.in_set(TurnSet::React));
+    app.add_plugins(crate::plugin::FoundryPlugin);
     app
 }
 

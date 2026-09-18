@@ -210,7 +210,10 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
 /// Recomputed from everything currently worn, each time something is
 /// equipped or unequipped, rather than added or subtracted incrementally:
 /// if a wearer ever carries two dark-sight items at once, it sees by the
-/// larger of the two, so putting one on can never narrow its sight.
+/// larger of the two, so putting one on can never narrow its sight. This
+/// also means a wearer with dark sight of its own from some other source
+/// would lose it the moment its gear changed; nothing in this slice grants
+/// dark sight any way but this one, so the case cannot yet arise.
 pub fn grant_dark_sight(mut commands: Commands, mut events: MessageReader<ItemEvent>, wearers: Query<&Equipped>, sights: Query<&WornDarkSight>) {
     let actors = events.read().filter_map(|ev| match *ev {
         ItemEvent::Equipped { actor, .. } | ItemEvent::Unequipped { actor, .. } => Some(actor),
@@ -287,7 +290,7 @@ mod tests {
     #[test]
     fn a_weapons_file_numbers_reach_its_attack_and_a_two_hander_claims_the_off_hand() {
         let mut app = crate::testing::headless(RunSeed(1));
-        let (axe, carbine) = spawn_two(&mut app, "vibro-axe", "blaster carbine");
+        let (axe, carbine) = spawn_two(&mut app, "mono-axe", "blaster carbine");
         let world = app.world();
         let melee = world.get::<MeleeAttack>(axe).expect("the axe swings");
         assert_eq!(melee.cost, Some(140));

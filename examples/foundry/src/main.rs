@@ -2,8 +2,8 @@
 //! and everything else, live in `lib.rs`.
 
 use bevy::prelude::*;
+use foundry::plugin::FoundryPlugin;
 use rl_engine::RoguelikePlugins;
-use rl_engine::rl_bevy::plugin::{NewRun, Turn, TurnSet};
 
 /// Columns and rows the terminal window opens with. The screen split
 /// itself is a later task's, once there is something to draw in it.
@@ -12,8 +12,7 @@ const ROWS: i32 = 40;
 
 fn main() -> AppExit {
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS)).insert_resource(foundry::content::registries()).add_systems(NewRun, foundry::run::start);
-    app.add_systems(Turn, foundry::gear::grant_dark_sight.in_set(TurnSet::React));
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS)).add_plugins(FoundryPlugin).insert_resource(foundry::content::registries());
     app.run()
 }
 

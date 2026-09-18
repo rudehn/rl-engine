@@ -18,7 +18,10 @@ pub mod gear;
 /// What a weapon that runs hot pays and sheds; fields only until
 /// `heat`'s systems give them behaviour.
 pub mod heat;
-/// The run's start, called from `main.rs` and from `testing::headless`.
+/// `FoundryPlugin`, the one list of Foundry's own systems that `main.rs`
+/// and `testing::headless` both add.
+pub mod plugin;
+/// The run's start, added to [`plugin::FoundryPlugin`] in [`NewRun`](rl_engine::rl_bevy::plugin::NewRun).
 pub mod run;
 /// The headless harness, always built: an integration test links the
 /// plain library, never the `#[cfg(test)]` build only `cargo test`'s own
