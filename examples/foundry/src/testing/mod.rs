@@ -28,7 +28,7 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::RunSeed;
 use rl_engine::rl_rules::Hit;
 use rl_engine::rl_rules::prelude::Ledger;
-use rl_engine::rl_ui::UiPlugin;
+use rl_engine::rl_ui::{NarratorPlugin, UiPlugin};
 
 /// A run with no window, seeded, with every plugin Foundry's stealth,
 /// radar and combat need already added.
@@ -72,7 +72,9 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
         crate::upgrades::load_abilities(kinds, registries)
     };
     app.insert_resource(abilities);
-    app.add_plugins(UiPlugin);
+    // The narrator the binary adds, since every line Foundry says from
+    // inside a turn reaches the log through it.
+    app.add_plugins((UiPlugin, NarratorPlugin::default()));
     app
 }
 

@@ -64,8 +64,7 @@ pub fn sound_alarm(
     alarmed: Query<(&Position, &OnMap), With<Alarm>>,
     sounds: Res<Sounds>,
     mut noise: MessageWriter<MakeNoise>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
+    mut tell: MessageWriter<Tell>,
     mut sounded: ResMut<Sounded>,
 ) {
     let alarm = sounds.get(ALARM_SOUND).expect("FoundryPlugin declares the alarm's sound");
@@ -73,7 +72,7 @@ pub fn sound_alarm(
         let Ok((at, on_map)) = alarmed.get(ev.observer) else { continue };
         noise.write(MakeNoise { at: at.0, loudness: ALARM_LOUDNESS, sound: alarm, maker: Some(ev.observer) });
         if sounded.0.insert(on_map.0) {
-            log.bad(format!("Deck {}: an alarm sounds.", crate::decks::deck_of(on_map.0)), turns.turn_number());
+            tell.write(Tell::new(format!("Deck {}: an alarm sounds.", crate::decks::deck_of(on_map.0)), Tones::BAD));
         }
     }
 }

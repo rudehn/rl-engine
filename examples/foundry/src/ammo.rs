@@ -14,9 +14,9 @@
 //! worn item exactly as it does for a locked weapon.
 
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{Equipped, Inventory, Player, RangedAttack, Stack, Struck, Tagged, Turns};
+use rl_engine::rl_bevy::{Equipped, Inventory, Player, RangedAttack, Stack, Struck, Tagged};
 use rl_engine::rl_rules::TagId;
-use rl_engine::rl_ui::{Facets, GearView, MessageLog, Tones};
+use rl_engine::rl_ui::{Facets, GearView, Tell, Tones};
 
 use crate::heat::Stowed;
 
@@ -125,7 +125,7 @@ pub fn spend_ammo(mut commands: Commands, mut struck: MessageReader<Struck>, mut
 /// Only a weapon the player wears says so in the log: a pistol at the
 /// bottom of the pack, or in a droid's hand, going dry is nothing the
 /// player can act on, and reads as noise between the lines that matter.
-pub fn sync_ammo(mut commands: Commands, world: AmmoWorld, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
+pub fn sync_ammo(mut commands: Commands, world: AmmoWorld, mut tell: MessageWriter<Tell>) {
     for inv in world.inventories.iter() {
         for &item in &inv.items {
             let Ok(ammo) = world.ammos.get(item) else { continue };
@@ -137,13 +137,13 @@ pub fn sync_ammo(mut commands: Commands, world: AmmoWorld, turns: Res<Turns>, mu
                 let Ok(attack) = world.rangeds.get(item) else { continue };
                 commands.entity(item).remove::<RangedAttack>().insert(Stowed::Ranged(*attack)).insert(Dry);
                 if yours {
-                    log.bad(format!("Your {} runs dry.", name()), turns.turn_number());
+                    tell.write(Tell::new(format!("Your {} runs dry.", name()), Tones::BAD));
                 }
             } else if has_ammo && is_dry {
                 let Ok(Stowed::Ranged(attack)) = world.stowed.get(item) else { continue };
                 commands.entity(item).remove::<Stowed>().remove::<Dry>().insert(*attack);
                 if yours {
-                    log.notice(format!("Your {} is loaded again.", name()), turns.turn_number());
+                    tell.write(Tell::new(format!("Your {} is loaded again.", name()), Tones::NOTICE));
                 }
             }
         }

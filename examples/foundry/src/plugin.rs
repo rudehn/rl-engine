@@ -18,7 +18,7 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, ResolveSet, Turn, TurnSet};
 use rl_engine::rl_bevy::{AddAction, AddSound};
-use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, ViewSet};
+use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, ViewSet};
 
 /// Foundry's own systems: the run's start, and every reaction a task
 /// after this one adds.
@@ -66,7 +66,12 @@ impl Plugin for FoundryPlugin {
         // per pass, so one actor's own shot and its own bag changing
         // (dropping, picking up, equipping) can never land in the same
         // pass to race each other in the first place.
-        app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().in_set(TurnSet::React));
+        //
+        // After heat's pair, only for the log: every line Foundry tells in
+        // one pass reads in one fixed order, the deck arrived on, then the
+        // alarm, then the weapon's heat, then its ammunition, rather than
+        // whichever order the executor ran the tellers in.
+        app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().after(crate::heat::heat_on_struck).in_set(TurnSet::React));
         // A deck fills the moment it is first entered, the way delve's own
         // floors do.
         app.add_systems(Turn, crate::droids::populate_deck.in_set(TurnSet::React));
@@ -83,8 +88,9 @@ impl Plugin for FoundryPlugin {
         // `TurnSet::React` system, this one included.
         app.add_systems(Turn, crate::loot::drop_on_death.in_set(TurnSet::React));
         // A probe's alarm reacts to the same `Noticed` the engine's own
-        // stealth writes; nothing here needs ordering against it.
-        app.add_systems(Turn, crate::droids::sound_alarm.in_set(TurnSet::React));
+        // stealth writes; nothing here needs ordering against it. Before
+        // heat's pair for the order of the log, as above.
+        app.add_systems(Turn, crate::droids::sound_alarm.before(crate::heat::vent_heat).in_set(TurnSet::React));
         // Chained, and in this order: the engine's own `schedule` can
         // write a `TurnEnd` and deal the very next turn's `DamageDealt` in
         // the same pass, so `unjam_sensors` must count the turn that just
@@ -142,13 +148,20 @@ impl Plugin for FoundryPlugin {
         app.add_systems(Update, (crate::upgrades::choice_keys, crate::light::toggle_lamp, crate::input::player_input).chain().in_set(EngineSet::Input));
         // The lifts between decks, laid on first arrival beside everything
         // else a deck fills with, and the line the log gives each deck.
-        app.add_systems(Turn, crate::lifts::link_decks.in_set(TurnSet::React));
+        // First of Foundry's lines in a pass, for the order of the log.
+        app.add_systems(Turn, crate::lifts::link_decks.before(crate::droids::sound_alarm).in_set(TurnSet::React));
         // Light: each deck's ambient, set between the turns and the light
         // the way delve's `set_ambient` is, so the frame a lift lands on
         // is drawn in the new deck's light; and the stores' wall lamps,
         // hung on first arrival.
         app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
         app.add_systems(Turn, crate::light::light_the_lamps.in_set(TurnSet::React));
+    }
+
+    /// Every line Foundry says from inside a turn is a `Tell`, which only
+    /// the engine's narrator collects and speaks.
+    fn finish(&self, app: &mut App) {
+        rl_engine::rl_bevy::plugin::depends_on::<NarrationViewPlugin>(app, "FoundryPlugin");
     }
 }
 

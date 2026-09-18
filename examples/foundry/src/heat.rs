@@ -16,8 +16,8 @@
 //! naming the item an attack came from, and a whole [`TurnEnd`].
 
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Struck, TurnEnd, Turns};
-use rl_engine::rl_ui::{Facets, GearView, MessageLog, Tones};
+use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Struck, TurnEnd};
+use rl_engine::rl_ui::{Facets, GearView, Tell, Tones};
 
 /// How hot a weapon may run before it locks.
 pub const CAPACITY: u32 = 100;
@@ -108,7 +108,7 @@ pub fn heat_on_struck(
     mut struck: MessageReader<Struck>,
     mut heats: Query<&mut Heat>,
     weapons: Query<(Option<&MeleeAttack>, Option<&RangedAttack>)>,
-    mut said: Said,
+    mut said: HeatWords,
 ) {
     for ev in struck.read() {
         let Some(item) = ev.with else { continue };
@@ -125,9 +125,8 @@ pub fn heat_on_struck(
             }
         }
         if said.player.contains(ev.attacker) {
-            let now = said.turns.turn_number();
             let line = format!("Your {} overheats and locks.", said.name(item));
-            said.log.bad(line, now);
+            said.tell.write(Tell::new(line, Tones::BAD));
         }
     }
 }
@@ -136,8 +135,8 @@ pub fn heat_on_struck(
 /// that unlocks, takes its [`Stowed`] attack back off the shelf and gives
 /// it back to the item. As with locking, only the player's own weapon
 /// says so in the log.
-pub fn vent_heat(mut commands: Commands, mut ends: MessageReader<TurnEnd>, mut heats: Query<(Entity, &mut Heat, Option<&Stowed>)>, mut said: Said) {
-    for ev in ends.read() {
+pub fn vent_heat(mut commands: Commands, mut ends: MessageReader<TurnEnd>, mut heats: Query<(Entity, &mut Heat, Option<&Stowed>)>, mut said: HeatWords) {
+    for _ in ends.read() {
         for (entity, mut heat, stowed) in &mut heats {
             if !heat.turn_end() {
                 continue;
@@ -153,24 +152,24 @@ pub fn vent_heat(mut commands: Commands, mut ends: MessageReader<TurnEnd>, mut h
             }
             if said.worn.iter().any(|e| e.0.worn().any(|(_, item)| item == entity)) {
                 let line = format!("Your {} cools and unlocks.", said.name(entity));
-                said.log.notice(line, ev.turn);
+                said.tell.write(Tell::new(line, Tones::NOTICE));
             }
         }
     }
 }
 
 /// What the heat systems need to say something in the log about the
-/// player's own weapon, and nobody else's.
+/// player's own weapon, and nobody else's: told to the narrator, so the
+/// line reads under the shot that locked it.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Said<'w, 's> {
+pub struct HeatWords<'w, 's> {
     player: Query<'w, 's, (), With<Player>>,
     worn: Query<'w, 's, &'static Equipped, With<Player>>,
     names: Query<'w, 's, &'static Name>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
+    tell: MessageWriter<'w, Tell>,
 }
 
-impl Said<'_, '_> {
+impl HeatWords<'_, '_> {
     /// What `item` is called, for a log line.
     fn name(&self, item: Entity) -> &str {
         self.names.get(item).map(Name::as_str).unwrap_or("weapon")

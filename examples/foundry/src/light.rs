@@ -78,8 +78,7 @@ type LampBearer = (Entity, Has<LightSource>);
 pub struct LampSwitch<'w, 's> {
     commands: Commands<'w, 's>,
     waits: MessageWriter<'w, Intent<Wait>>,
-    log: ResMut<'w, MessageLog>,
-    turns: Res<'w, Turns>,
+    tell: MessageWriter<'w, Tell>,
 }
 
 /// `L` switches the shoulder lamp off, or on again, and spends the turn,
@@ -96,13 +95,12 @@ pub fn toggle_lamp(
         return;
     }
     let Ok((me, lit)) = player.single() else { return };
-    let now = switch.turns.turn_number();
     if lit {
         switch.commands.entity(me).remove::<LightSource>();
-        switch.log.muted("You switch the lamp off. The dark hides you, and them.", now);
+        switch.tell.write(Tell::new("You switch the lamp off. The dark hides you, and them.", Tones::MUTED));
     } else {
         switch.commands.entity(me).insert(SHOULDER_LAMP);
-        switch.log.notice("You switch the lamp on.", now);
+        switch.tell.write(Tell::new("You switch the lamp on.", Tones::NOTICE));
     }
     switch.waits.write(Intent::new(me, Wait));
 }

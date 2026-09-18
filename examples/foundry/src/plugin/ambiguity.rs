@@ -121,12 +121,12 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
 /// pair needs any more.
 fn allowed(world: &World) -> Vec<Allowed> {
     use crate::*;
-    use rl_engine::rl_bevy::{ability, combat, stealth, throwing};
+    use rl_engine::rl_bevy::{ability, stealth};
     let ids = ids(world);
     let on = |names: &[&str]| -> Vec<ComponentId> { names.iter().map(|n| ids.iter().find(|(name, _)| name == n).expect("named in ids").1).collect() };
     let pair = |a, b, what: &[&str], why| Allowed { a: Some(a), b: Some(b), on: on(what), why };
     let claims = ["Acting", "Messages<ActionDone>", "Messages<ActionRefused>"];
-    let mut allowed = vec![
+    let allowed = vec![
         Allowed { a: None, b: None, on: on(&claims), why: "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass" },
         pair(
             id(droids::sound_alarm),
@@ -137,8 +137,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(id(ammo::note_ammo), id(heat::note_heat), &["GearView", "Facets"], "no weapon has both Ammo and Heat, so no row gets a facet from both"),
         // Something lands only in a pass that dealt nobody a turn, since
         // nothing is dealt while it flies, so never beside a charge.
-        pair(id(mission::resolve_set_charge), id(throwing::land_throws), &["Turns"], "a throw lands in a pass no charge is set in"),
-        pair(id(mission::resolve_set_charge), id(combat::land_shots), &["Turns"], "a shot lands in a pass no charge is set in"),
         pair(id(mission::resolve_set_charge), id(ability::land_abilities), &["Turns", "Position"], "an ability lands in a pass no charge is set in"),
         pair(
             id(mission::resolve_set_charge),
@@ -149,21 +147,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(id(ability::refresh_known), id(ammo::spend_ammo), &["Inventory"], "Known is rebuilt every pass, and a slug grants nothing"),
         pair(id(ability::refresh_known), id(ammo::sync_ammo), &["Inventory"], "Known is rebuilt every pass, and a slug grants nothing"),
     ];
-    // Five systems write the log in `TurnSet::React`; these are the
-    // pairs of them nothing else happens to order.
-    let logs = [
-        (id(heat::vent_heat), id(droids::sound_alarm)),
-        (id(heat::vent_heat), id(lifts::link_decks)),
-        (id(heat::heat_on_struck), id(droids::sound_alarm)),
-        (id(heat::heat_on_struck), id(ammo::sync_ammo)),
-        (id(heat::heat_on_struck), id(lifts::link_decks)),
-        (id(droids::sound_alarm), id(ammo::sync_ammo)),
-        (id(droids::sound_alarm), id(lifts::link_decks)),
-        (id(ammo::sync_ammo), id(lifts::link_decks)),
-    ];
-    for (a, b) in logs {
-        allowed.push(pair(a, b, &["MessageLog"], "two log lines in one pass: only their order within it"));
-    }
     allowed
 }
 

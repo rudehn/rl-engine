@@ -75,9 +75,10 @@ impl Screen {
     }
 }
 
-/// Every panel, each in its own cut of `screen`, and the narrator that
-/// fills the log: shared by `main` and by the tests that read the screen
-/// back, so what a test reads is what the window draws.
+/// Every panel, each in its own cut of `screen`: shared by `main` and by
+/// the tests that read the screen back, so what a test reads is what the
+/// window draws. The narrator that fills the log is added beside the
+/// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
     app.add_plugins((
         VitalsPanel::new(screen.vitals).bars(12).heading("Vitals"),
@@ -95,7 +96,6 @@ fn add_panels(app: &mut App, screen: &Screen) {
         GameMenuPanel::new(screen.menu).title("Foundry").died("The foundry keeps you.").won("The first charge is set."),
         ChoicePanel(screen.choice),
     ));
-    app.add_plugins(NarratorPlugin::default());
 }
 
 fn main() -> AppExit {
@@ -115,6 +115,7 @@ fn main() -> AppExit {
     app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map))
         .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
         .add_plugins(NoisePlugin::new(foundry::droids::NOISE))
+        .add_plugins(NarratorPlugin::default())
         // The engine's own effects: `Mend`, for `stims`.
         .add_engine_effects()
         .insert_resource(foundry::content::registries())
@@ -191,6 +192,26 @@ mod tests {
         let palette = app.world().resource::<Palette>();
         let bad = rl_engine::rl_ui::readable(palette.get(Tones::BAD), palette);
         assert_eq!(app.world().resource::<Terminal>().get(x, y).unwrap().fg, bad);
+    }
+
+    /// The log reads in the order things happened: a probe that spots the
+    /// commando is logged noticing it, and only then sounding the alarm
+    /// its noticing set off, in the log the player reads.
+    #[test]
+    fn a_probe_that_spots_the_commando_is_logged_noticing_it_before_the_alarm_it_sounds() {
+        let mut app = on_screen(RunSeed(1));
+        let (_, me) = foundry::testing::droid_facing_player(&mut app, "probe droid", 4);
+        let lines = |app: &App| app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect::<Vec<_>>();
+        for _ in 0..20 {
+            if lines(&app).iter().any(|l| l.contains("alarm")) {
+                break;
+            }
+            app.world_mut().write_message(Intent::new(me, Wait));
+            app.update();
+        }
+        let lines = lines(&app);
+        let at = |what: &str| lines.iter().position(|l| l.contains(what)).unwrap_or_else(|| panic!("{what:?} not in {lines:#?}"));
+        assert!(at("The probe droid notices you.") < at("alarm"), "{lines:#?}");
     }
 
     #[test]

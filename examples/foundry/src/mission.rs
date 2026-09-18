@@ -178,9 +178,8 @@ pub struct ChargeWorld<'w, 's> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct ChargeReport<'w> {
     facts: Res<'w, Facts>,
-    turns: Res<'w, Turns>,
     happened: MessageWriter<'w, Happened>,
-    log: ResMut<'w, MessageLog>,
+    tell: MessageWriter<'w, Tell>,
 }
 
 /// Resolves [`SetCharge`]: adjacent to an unspent [`Console`] on the
@@ -207,14 +206,14 @@ pub fn resolve_set_charge(
             world.consoles.iter().find(|(_, cp, cm, spent)| !spent && cm.map(|m| m.0).unwrap_or(MapId::SURFACE) == map && geometry::is_adjacent(pos.0, cp.0))
         });
         let Some((console, _, cm, _)) = found else {
-            report.log.bad("There is nothing here to set a charge on.", report.turns.turn_number());
+            report.tell.write(Tell::new("There is nothing here to set a charge on.", Tones::BAD));
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         };
         commands.entity(console).insert(Spent);
         let deck = crate::decks::deck_of(cm.map(|m| m.0).unwrap_or(MapId::SURFACE));
         report.happened.write(Happened(Fact::new(report.facts.charge_set).about(deck as u64)));
-        report.log.good("You set the charge. The reactor stirs.", report.turns.turn_number());
+        report.tell.write(Tell::new("You set the charge. The reactor stirs.", Tones::GOOD));
         resolution.done(intent.actor, CHARGE_COST);
     }
 }

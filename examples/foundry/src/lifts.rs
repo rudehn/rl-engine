@@ -32,15 +32,15 @@ pub fn deck_line(deck: u32) -> String {
 /// the log every time. On the run's first arrival it also says how to see
 /// the keys, under the deck's own line: in `run::start` it would be
 /// written before the warp lands and read as if it came first.
-pub fn link_decks(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, turns: Res<Turns>, help: Res<ControlsKeys>, mut log: ResMut<MessageLog>) {
+pub fn link_decks(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, help: Res<ControlsKeys>, mut tell: MessageWriter<Tell>) {
     for ev in entered.read() {
         let deck = deck_of(ev.map);
-        log.notice(deck_line(deck), turns.turn_number());
+        tell.write(Tell::new(deck_line(deck), Tones::NOTICE));
         if !ev.first {
             continue;
         }
         if deck == 1 {
-            log.muted(format!("Press {} for the controls.", help.toggle.label()), turns.turn_number());
+            tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
         }
         if deck > 1 {
             let up = Transition { to: Destination::Place { map: map_of(deck - 1), arrive: Arrive::Exit } };
