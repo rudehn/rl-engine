@@ -172,6 +172,7 @@ impl Goblins {
                 MeleeAttack {
                     kind: self.stab,
                     dice: DiceRoll::new(1, 4),
+                    cost: None,
                 },
                 Perception(10),
                 Mind(self.mind.clone()),
@@ -263,6 +264,7 @@ fn start(
                 MeleeAttack {
                     kind: kinds.expect("slash"),
                     dice: DiceRoll::new(1, 6),
+                    cost: None,
                 },
             ),
             // Lit, you see further and are noticed sooner.
@@ -558,5 +560,32 @@ mod tests {
             app.world().resource::<Turns>().now() > clock,
             "which took the turn"
         );
+    }
+
+    /// Whether each actor dealt a turn was the player, in the order dealt,
+    /// read inside the pass that dealt it: a reader in `Update` would miss
+    /// every turn dealt and spent within one frame.
+    #[derive(Resource, Default)]
+    struct Dealt(Vec<bool>);
+
+    fn record_deals(mut dealt: ResMut<Dealt>, fresh: Query<Has<Player>, Added<MyTurn>>) {
+        dealt.0.extend(fresh.iter());
+    }
+
+    #[test]
+    fn on_a_fresh_run_the_player_is_dealt_the_first_turn_over_a_span_of_seeds() {
+        for seed in 0..8u64 {
+            let mut app = headless(seed);
+            app.init_resource::<Dealt>()
+                .add_systems(Turn, record_deals.in_set(TurnSet::Decide));
+            app.update();
+            app.update();
+            let dealt = &app.world().resource::<Dealt>().0;
+            assert_eq!(
+                dealt.first(),
+                Some(&true),
+                "seed {seed}: {dealt:?} dealt someone else the first turn before the player"
+            );
+        }
     }
 }
