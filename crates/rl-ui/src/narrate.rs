@@ -7,9 +7,9 @@
 //! saw. So it is a view, a collector and a presenter, the split every panel
 //! has, with one twist in where the collector runs.
 //!
-//! The view, [`NarrationView`], is rows of [`Said`]: which [`Phrase`], who
-//! did it, to whom, with what, how much, where, and whether the player saw
-//! it. No string the game did not supply. The collector runs in
+//! The view, [`NarrationView`], is rows of [`Said`]: its [`Words`], an
+//! engine [`Phrase`] or a game's own line, who did it, to whom, with what,
+//! how much, where, and whether the player saw it. No string the game did not supply. The collector runs in
 //! [`TurnSet::Record`], once per pass rather than
 //! once per frame, because one pass is one actor's action and reading that
 //! pass's events in a fixed order gives the true order across a frame of
@@ -32,8 +32,8 @@
 //! what the pass did, and the collector reads it with that pass's events,
 //! after them, as a row whose [`Words`] are the game's own. A line pushed
 //! straight to the [`MessageLog`] from inside a pass lands ahead of every
-//! row the frame has yet to speak, so an alarm reads above the sighting
-//! that set it off. A line from outside the turns, the one a run opens
+//! row the frame has yet to speak, so a game's answer to a sighting
+//! reads above the sighting itself. A line from outside the turns, the one a run opens
 //! with or a key refused before any turn is spent, has no pass to wait
 //! for and still goes to the log directly.
 
@@ -232,8 +232,8 @@ impl Said {
 /// A line of a game's own, told in its place among what the turns did.
 ///
 /// Written from inside a pass, usually in [`TurnSet::React`] as the
-/// game's answer to what the pass did: the alarm a sighting sets off, the
-/// weapon that overheats on the shot. The collector reads it with the
+/// game's answer to what the pass did: what a sighting sets off, what an
+/// attack costs the thing it was made with. The collector reads it with the
 /// pass's own events, after them, and the presenter speaks it with them,
 /// so it lands in the log below what it answers and above whatever the
 /// next actor does. `text` is a template with the [`Phrasebook`]'s
@@ -969,7 +969,10 @@ mod tests {
         assert_eq!(say(loose), "You throw an ember.", "no stack is one");
     }
 
-    /// A game's answer to every blow, told in `TurnSet::React` the way a
+    /// A game's answer to every blow, told in `TurnSet::Listen`: the last
+    /// phase a game's reaction can land in before the record is read, so a
+    /// collector that ran any earlier in the pass would miss it until the
+    /// next pass, whatever order the executor chose. Otherwise the way a
     /// game answers what a pass did.
     fn answer_blows(mut dealt: MessageReader<DamageDealt>, mut tell: MessageWriter<Tell>) {
         for d in dealt.read() {
@@ -989,7 +992,7 @@ mod tests {
     #[test]
     fn a_games_line_is_spoken_after_the_event_it_answers_in_one_pass_and_before_the_next_pass() {
         let mut stage = Stage::new((NarratorPlugin::default(), MindsPlugin));
-        stage.app.add_systems(Turn, answer_blows.in_set(TurnSet::React));
+        stage.app.add_systems(Turn, answer_blows.in_set(TurnSet::Listen));
         let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
         let brain = std::sync::Arc::new(rl_rules::Brain::new().then(rl_rules::ai::tactics::MeleeAdjacent));
         let slime = stage
