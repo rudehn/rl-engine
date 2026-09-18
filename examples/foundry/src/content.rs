@@ -6,10 +6,11 @@
 //! kept in one place so a droid and a commando cannot drift from it.
 
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_grid::Rgb;
+use rl_engine::rl_core::DiceRoll;
 use rl_engine::rl_rules::ability::Look;
 use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::{DamageKind, Registry, Resistances, SlotDef, StatusDef, TagDef};
+use rl_engine::rl_rules::{DamageKind, NameRef, Registry, Resistances, SlotDef, StatusDef, TagDef};
+use serde::Deserialize;
 
 /// How a body takes a hit.
 ///
@@ -47,23 +48,53 @@ impl<'de> serde::Deserialize<'de> for Profile {
     }
 }
 
-/// What a shot flies as, the way a content file writes it: a glyph and
-/// its colour, `(r, g, b)` in `0..=1` like every other colour in Foundry's
-/// files, as `look: ('*', (1.0, 0.3, 0.15))`.
+/// A blow as a content file writes it: `(roll: "1d6", kind: "kinetic")`,
+/// with an optional `look`.
 ///
-/// Its own type rather than the engine's [`Look`], which spells a colour
-/// in bytes: a file whose every other colour is a fraction should not
-/// switch scales for one field.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-pub struct ShotLook(pub char, pub (f32, f32, f32));
+/// Named fields rather than a tuple, so the look sits inside the attack
+/// it belongs to, and a droid that punches and shoots says which of the
+/// two a look is for. The look is the engine's own, written the way an
+/// ability's is in `abilities.ron`: a look is one thing wherever it is.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct MeleeDef {
+    /// The damage roll, as `"NdS+B"`.
+    pub roll: DiceRoll,
+    /// The damage kind.
+    pub kind: NameRef<DamageKind>,
+    /// The colour it bursts in on whoever it strikes; absent, it shows
+    /// nothing.
+    #[serde(default)]
+    pub look: Option<Look>,
+}
 
-impl ShotLook {
-    /// The engine's [`Look`] for it, each channel rounded to the nearest
-    /// byte.
-    pub fn look(self) -> Look {
-        let byte = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let (r, g, b) = self.1;
-        Look { glyph: self.0, color: Rgb::new(byte(r), byte(g), byte(b)) }
+impl MeleeDef {
+    /// The engine's attack for it, at the ordinary cost.
+    pub fn attack(&self) -> MeleeAttack {
+        MeleeAttack { look: self.look, ..MeleeAttack::new(self.kind.id(), self.roll) }
+    }
+}
+
+/// A shot as a content file writes it: `(range: 5, roll: "1d6", kind:
+/// "energy")`, with an optional `look`, for the reasons [`MeleeDef`] has
+/// named fields.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct RangedDef {
+    /// The furthest cell it reaches.
+    pub range: i32,
+    /// The damage roll, as `"NdS+B"`.
+    pub roll: DiceRoll,
+    /// The damage kind.
+    pub kind: NameRef<DamageKind>,
+    /// What flies from the shooter to the target; absent, a shot lands
+    /// unseen.
+    #[serde(default)]
+    pub look: Option<Look>,
+}
+
+impl RangedDef {
+    /// The engine's attack for it, at the ordinary cost.
+    pub fn attack(&self) -> RangedAttack {
+        RangedAttack { look: self.look, ..RangedAttack::new(self.kind.id(), self.roll, self.range) }
     }
 }
 
@@ -132,6 +163,47 @@ mod tests {
         assert_eq!((chassis.get(kinetic), chassis.get(energy), chassis.get(ion)), (50, 0, -100));
         let organic = resistances(Profile::Organic, &r);
         assert_eq!((organic.get(kinetic), organic.get(energy), organic.get(ion)), (0, 25, 75));
+    }
+
+    /// The design's table of what each attack flies as, to the byte: a
+    /// blaster's bolt, an ion pistol's charge, a slug. Walks every item
+    /// and every monster in the files, so a new gun without a row here, or
+    /// a blade or a bite given a look, fails it.
+    #[test]
+    fn every_attack_in_the_files_flies_the_look_the_design_gives_it_and_no_blow_bursts() {
+        use bevy::ecs::world::CommandQueue;
+        use bevy::prelude::*;
+        use rl_engine::rl_core::{Point, RunSeed};
+        use rl_engine::rl_grid::Rgb;
+        let bolt = Some(('*', Rgb::new(255, 77, 38)));
+        let table = [
+            ("hand blaster", bolt),
+            ("blaster carbine", bolt),
+            ("ion pistol", Some(('~', Rgb::new(89, 166, 255)))),
+            ("slug pistol", Some(('o', Rgb::new(242, 204, 115)))),
+            ("line droid", bolt),
+            ("probe droid", bolt),
+            ("heavy droid", bolt),
+        ];
+        let flies = |name: &str| table.iter().find(|(n, _)| *n == name).and_then(|(_, look)| *look);
+        let mut app = crate::testing::headless(RunSeed(1));
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = crate::gear::Armory::load(&registries);
+        let roster = crate::droids::Roster::load(&registries);
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, app.world_mut());
+        let mut spawned: Vec<(String, Entity)> =
+            armory.defs.iter().map(|(id, d)| (d.name.clone(), crate::gear::spawn_item(&mut commands, &armory, id, &registries))).collect();
+        let map = MapId::SURFACE;
+        spawned.extend(
+            roster.defs.iter().map(|(id, d)| (d.name.clone(), crate::droids::spawn_monster(&mut commands, &roster, id, Point::ZERO, map, &registries))),
+        );
+        queue.apply(app.world_mut());
+        for (name, e) in spawned {
+            let fired = app.world().get::<RangedAttack>(e).and_then(|r| r.look).map(|l| (l.glyph, l.color));
+            assert_eq!(fired, flies(&name), "{name}");
+            assert_eq!(app.world().get::<MeleeAttack>(e).and_then(|m| m.look), None, "{name} bursts on nothing yet");
+        }
     }
 
     #[test]

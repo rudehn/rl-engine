@@ -30,7 +30,7 @@ pub use alarm::{Alarm, Sounded, sound_alarm};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub use spawns::populate_deck;
 
-use crate::content::{Profile, ShotLook, resistances};
+use crate::content::{MeleeDef, Profile, RangedDef, resistances};
 
 /// The roster file, compiled in so the binary runs from anywhere.
 const MONSTERS_RON: &str = include_str!("../assets/monsters.ron");
@@ -61,13 +61,10 @@ pub struct MonsterDef {
     #[serde(default)]
     pub dark_sight: Option<i32>,
     /// The roll and damage kind a blow deals.
-    pub melee: (DiceRoll, NameRef<DamageKind>),
+    pub melee: MeleeDef,
     /// The range, roll and damage kind a shot deals; present, it shoots.
     #[serde(default)]
-    pub ranged: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
-    /// What its shot flies as; only a kind that shoots names one.
-    #[serde(default)]
-    pub look: Option<ShotLook>,
+    pub ranged: Option<RangedDef>,
     /// Its `Speed`, a percentage of normal: 100 is normal, 200 twice as
     /// fast, and 50 half as fast.
     pub speed: u32,
@@ -138,7 +135,6 @@ impl Roster {
     /// the same target. A kind flees only if it names `flee_at` above zero.
     pub(crate) fn from_ron(ron: &str, registries: &Registries) -> Self {
         let defs: Registry<MonsterDef> = registries.names().load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
-        defs.validate(validate_def).unwrap_or_else(|e| panic!("monster roster: {e}"));
         let mut table = BandedTable::default();
         let mut brains = Vec::new();
         for (id, d) in defs.iter() {
@@ -158,16 +154,6 @@ impl Roster {
     }
 }
 
-/// One kind's own shape, checked against nothing but itself: a look names
-/// what a shot flies as, so a kind that does not shoot has nothing to wear
-/// it on.
-fn validate_def(d: &MonsterDef, _: &Registry<MonsterDef>) -> Result<(), String> {
-    if d.look.is_some() && d.ranged.is_none() {
-        return Err("a look on a kind that does not shoot".into());
-    }
-    Ok(())
-}
-
 /// Spawns `id` on `map` at `at`: an actor with health, armor, resistances,
 /// perception, a mind and the notice every monster carries so a probe's
 /// alarm and an ion hit both have something to act on. `RangedAttack` and
@@ -177,16 +163,15 @@ fn validate_def(d: &MonsterDef, _: &Registry<MonsterDef>) -> Result<(), String> 
 /// `Turn` schedule runs.
 pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef>, at: Point, map: MapId, registries: &Registries) -> Entity {
     let d = roster.defs.get(id);
-    let (dice, kind) = d.melee;
     let mut e = commands.spawn((
         (Actor, Blocks, Position(at), OnMap(map)),
         (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
         (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
-        (Notice(NoticeStats::default()), MeleeAttack::new(kind.id(), dice), Kind(id)),
+        (Notice(NoticeStats::default()), d.melee.attack(), Kind(id)),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
-    if let Some((range, dice, kind)) = d.ranged {
-        e.insert(RangedAttack { look: d.look.map(ShotLook::look), ..RangedAttack::new(kind.id(), dice, range) });
+    if let Some(ranged) = d.ranged {
+        e.insert(ranged.attack());
     }
     if let Some(n) = d.dark_sight {
         e.insert(NativeDarkSight(n));
@@ -229,20 +214,6 @@ mod tests {
         let struck = crate::testing::run_until_struck(&mut app, droid, 10);
         assert!(struck.ranged, "four tiles off with a clear line: it shoots");
         assert_eq!(struck.target, player);
-    }
-
-    /// Every droid that shoots fires the blaster bolt of the design's
-    /// table, and a rat, which only bites, fires nothing; no punch or bite
-    /// bursts.
-    #[test]
-    fn every_shooting_droid_fires_a_blaster_bolt_and_nothing_bites_or_punches_with_a_look() {
-        let bolt = Some(('*', rl_engine::rl_grid::Rgb::new(255, 77, 38)));
-        for (name, fires) in [("line droid", bolt), ("probe droid", bolt), ("heavy droid", bolt), ("coolant rat", None)] {
-            let mut app = crate::testing::headless(RunSeed(1));
-            let monster = crate::testing::lone_monster(&mut app, name);
-            assert_eq!(app.world().get::<RangedAttack>(monster).and_then(|r| r.look).map(|l| (l.glyph, l.color)), fires, "{name}");
-            assert_eq!(app.world().get::<MeleeAttack>(monster).and_then(|m| m.look), None, "{name}");
-        }
     }
 
     #[test]

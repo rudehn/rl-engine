@@ -21,7 +21,7 @@ use rl_engine::rl_rules::{BandedEntry, BandedTable, DamageKind, EquipShape, Name
 use serde::Deserialize;
 
 use crate::ammo::Ammo;
-use crate::content::ShotLook;
+use crate::content::{MeleeDef, RangedDef};
 use crate::heat::Heat;
 
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
@@ -57,13 +57,10 @@ pub struct ItemDef {
     pub resists: Vec<(NameRef<DamageKind>, i32)>,
     /// The roll and damage kind a blow deals, while wielded.
     #[serde(default)]
-    pub melee: Option<(DiceRoll, NameRef<DamageKind>)>,
+    pub melee: Option<MeleeDef>,
     /// The range, roll and damage kind a shot deals, while wielded.
     #[serde(default)]
-    pub ranged: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
-    /// What a shot from it flies as; only a weapon that shoots names one.
-    #[serde(default)]
-    pub look: Option<ShotLook>,
+    pub ranged: Option<RangedDef>,
     /// The range, roll and damage kind it strikes with when thrown; absent,
     /// it cannot be thrown at all.
     #[serde(default)]
@@ -136,9 +133,6 @@ fn validate_def(d: &ItemDef, _: &Registry<ItemDef>) -> Result<(), String> {
     if d.heat.is_some() && d.ammo.is_some() {
         return Err("a weapon cannot run on both heat and ammo".into());
     }
-    if d.look.is_some() && d.ranged.is_none() {
-        return Err("a look on something that does not shoot".into());
-    }
     Ok(())
 }
 
@@ -203,11 +197,11 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
         }
         e.insert(Resists(r));
     }
-    if let Some((dice, kind)) = d.melee {
-        e.insert(MeleeAttack { cost: d.cost, ..MeleeAttack::new(kind.id(), dice) });
+    if let Some(melee) = d.melee {
+        e.insert(MeleeAttack { cost: d.cost, ..melee.attack() });
     }
-    if let Some((range, dice, kind)) = d.ranged {
-        e.insert(RangedAttack { cost: d.cost, look: d.look.map(ShotLook::look), ..RangedAttack::new(kind.id(), dice, range) });
+    if let Some(ranged) = d.ranged {
+        e.insert(RangedAttack { cost: d.cost, ..ranged.attack() });
     }
     if let Some((range, dice, kind)) = d.throw {
         e.insert(Throwable { range, strike: Some((kind.id(), dice)) });
@@ -345,29 +339,6 @@ mod tests {
         assert_eq!(app.world().get::<DarkSight>(player).map(|d| d.0), Some(9), "the new helmet's own radius, not the old one's");
     }
 
-    /// The design's table of what each gun fires, to the byte: a blaster's
-    /// bolt, an ion pistol's charge, a slug. A blade fires nothing, and
-    /// neither does a helmet.
-    #[test]
-    fn every_gun_fires_the_look_the_table_gives_it_and_nothing_else_fires_one() {
-        use rl_engine::rl_grid::Rgb;
-        let bolt = ('*', Rgb::new(255, 77, 38));
-        let table =
-            [("hand blaster", bolt), ("blaster carbine", bolt), ("ion pistol", ('~', Rgb::new(89, 166, 255))), ("slug pistol", ('.', Rgb::new(242, 204, 115)))];
-        let mut app = crate::testing::headless(RunSeed(1));
-        let registries = app.world().resource::<Registries>().clone();
-        let armory = Armory::load(&registries);
-        for (id, d) in armory.defs.iter() {
-            let mut queue = CommandQueue::default();
-            let item = spawn_item(&mut Commands::new(&mut queue, app.world_mut()), &armory, id, &registries);
-            queue.apply(app.world_mut());
-            let fired = app.world().get::<RangedAttack>(item).and_then(|r| r.look).map(|l| (l.glyph, l.color));
-            let named = table.iter().find(|(name, _)| *name == d.name).map(|(_, look)| *look);
-            assert_eq!(fired, named, "{}", d.name);
-            assert_eq!(app.world().get::<MeleeAttack>(item).and_then(|m| m.look), None, "{} bursts on nothing", d.name);
-        }
-    }
-
     /// A definition with fields left at their most inert: no slot, no
     /// attack, no economy, nothing to spawn with. Tests that care about one
     /// property override just that field, rather than restating all
@@ -385,7 +356,6 @@ mod tests {
             resists: Vec::new(),
             melee: None,
             ranged: None,
-            look: None,
             throw: None,
             cost: None,
             heat: None,

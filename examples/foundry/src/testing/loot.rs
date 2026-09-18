@@ -138,7 +138,7 @@ pub fn kill_with_a_guaranteed_drop(app: &mut App, item: &str) -> Point {
     let ron = format!(
         "[(name: \"test target\", glyph: 'x', color: (1.0, 1.0, 1.0), hp: 10, armor: 0, \
          profile: \"chassis\", faction: \"droids\", wits: \"mindless\", perception: 1, \
-         melee: (\"1d1\", \"kinetic\"), speed: 100, flee_at: 0, spawn: [(1, 99, 1, 1, 1)], \
+         melee: (roll: \"1d1\", kind: \"kinetic\"), speed: 100, flee_at: 0, spawn: [(1, 99, 1, 1, 1)], \
          drops: [(\"{item}\", 100)])]"
     );
     let roster = crate::droids::Roster::from_ron(&ron, &registries);
