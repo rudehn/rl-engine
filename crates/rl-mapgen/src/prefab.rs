@@ -150,10 +150,12 @@ pub enum Placement {
     Center,
     /// Top-left at this point.
     At(Point),
-    /// Centred in the emitted [`Room`] with this index, which must be big
-    /// enough to hold it.
+    /// Centred in the emitted [`Room`] with this index, which must exceed
+    /// the piece by a cell on every side, so the room's floor runs all
+    /// round it and whichever way its opening faces, it opens onto floor.
     InRoom(usize),
-    /// Centred in a random emitted [`Room`] big enough to hold it, and
+    /// Centred in a random emitted [`Room`] that exceeds it by a cell on
+    /// every side, as [`InRoom`](Placement::InRoom) requires, and
     /// clear of every [`Stamped`] this chain already emitted: a room an
     /// earlier `AnyRoom` stamp landed in is never chosen again, so two
     /// stamps in one chain never draw over each other and bury a mark
@@ -227,14 +229,21 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
         let (w, h) = (prefab.width(), prefab.height());
         let bounds = ctx.terrain().bounds();
         let centred = |r: Rect| Point::new(r.x + (r.width - w) / 2, r.y + (r.height - h) / 2);
-        let fits = |r: &Rect| r.width >= w && r.height >= h;
+        // A room must exceed the piece by a cell on every side, so the
+        // piece is laid with the room's floor all round it: one exactly
+        // its size would put its walls on the room's edge, over the room's
+        // doorways, with an opening that may face the room's own wall.
+        let fits = |r: &Rect| r.width >= w + 2 && r.height >= h + 2;
         let origin = match self.at {
             Placement::Center => centred(bounds),
             Placement::At(p) => p,
             Placement::InRoom(i) => {
                 let room = ctx.outputs().iter::<Room>().nth(i).ok_or_else(|| BuildError::new(self.name, format!("no room {i}")))?.0;
                 if !fits(&room) {
-                    return Err(BuildError::new(self.name, format!("room {i} is {}x{}, the prefab {w}x{h}", room.width, room.height)));
+                    return Err(BuildError::new(
+                        self.name,
+                        format!("room {i} is {}x{}, the prefab {w}x{h} and a cell of floor all round", room.width, room.height),
+                    ));
                 }
                 centred(room)
             }
@@ -243,7 +252,7 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
                 let free = |r: &Rect| taken.iter().all(|t| r.intersection(t).is_none());
                 let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(fits).filter(free).collect();
                 if rooms.is_empty() {
-                    return Err(BuildError::new(self.name, format!("no free room holds {w}x{h}")));
+                    return Err(BuildError::new(self.name, format!("no free room holds {w}x{h} with a cell of floor all round")));
                 }
                 centred(rooms[ctx.rng().random_range(0..rooms.len())])
             }
@@ -473,6 +482,43 @@ mod tests {
         assert!(Chain::new().then(small).run(&mut c, RunSeed(1)).is_err());
     }
 
+    /// A piece laid in a room always has the room's floor all round it: a
+    /// room no bigger than the piece would put the piece's walls on the
+    /// room's own edge, where an opening facing the room's wall leads
+    /// nowhere and the room's doorways are walled over. So a room must
+    /// exceed the piece by a cell on every side, for `InRoom` and for
+    /// `AnyRoom` alike.
+    #[test]
+    fn a_piece_laid_in_a_room_has_floor_all_round_it_and_a_room_its_own_size_is_refused() {
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let room = |c: &mut BaseContext, r: Rect| {
+            for p in r.cells() {
+                c.terrain_mut().set(p, floor);
+            }
+            c.emit(Room(r));
+        };
+        // The vault is 5x4: a room of exactly 5x4, and one of 6x5, still
+        // short of a cell on one side each way, are both refused.
+        for (w, h) in [(5, 4), (6, 5), (7, 5), (6, 6)] {
+            let mut c = BaseContext::blank(30, 20, tiles.clone(), wall);
+            room(&mut c, Rect::new(2, 2, w, h));
+            let any = StampPrefab { name: "any", prefab: vault(wall, floor), at: Placement::AnyRoom, orient: Orient::Fixed };
+            assert!(Chain::new().then(any).run(&mut c, RunSeed(1)).is_err(), "AnyRoom took a {w}x{h} room for a 5x4 piece");
+            let one = StampPrefab { name: "one", prefab: vault(wall, floor), at: Placement::InRoom(0), orient: Orient::Fixed };
+            assert!(Chain::new().then(one).run(&mut c, RunSeed(1)).is_err(), "InRoom took a {w}x{h} room for a 5x4 piece");
+        }
+        let mut c = BaseContext::blank(30, 20, tiles.clone(), wall);
+        room(&mut c, Rect::new(2, 2, 7, 6));
+        let any = StampPrefab { name: "any", prefab: vault(wall, floor), at: Placement::AnyRoom, orient: Orient::Fixed };
+        Chain::new().then(any).run(&mut c, RunSeed(1)).expect("a 7x6 room holds a 5x4 piece with a cell to spare all round");
+        let placed = c.outputs().first::<Stamped>().unwrap().bounds;
+        let ring = Rect::new(placed.x - 1, placed.y - 1, placed.width + 2, placed.height + 2);
+        for p in ring.cells().filter(|p| !placed.contains(*p)) {
+            assert_eq!(c.terrain().get(p), Some(floor), "the ring cell {p:?} around the piece is floor");
+        }
+    }
+
     #[test]
     fn an_oriented_stamp_is_the_same_piece_under_one_seed_and_varies_across_seeds() {
         // Determinism first: the same seed lays the same piece down, or a
@@ -614,10 +660,11 @@ mod tests {
         for seed in 0..200 {
             let tiles = TileRegistry::standard();
             let floor = tiles.expect("floor");
-            // 70x40 with rooms 5 to 11, the size Foundry's decks use: at
-            // smaller maps or a higher minimum, `Rooms` itself sometimes
-            // misses its room count by chance, which is that pass's own
-            // property, not this one's.
+            // 70x40 with rooms 5 to 11, every one big enough for the 3x3
+            // piece and its cell of floor all round: at smaller maps or a
+            // higher minimum, `Rooms` itself sometimes misses its room
+            // count by chance, which is that pass's own property, not
+            // this one's.
             let mut c = BaseContext::blank(70, 40, tiles, wall);
             Chain::new()
                 .then(Rooms { floor, min_size: 5, max_size: 11, ..Default::default() })

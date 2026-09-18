@@ -39,9 +39,6 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Light is recast once a frame, not once a turn.**
   `update_lighting` runs in `EngineSet::Light`, after every `Turn` pass the frame ran, so a droid acting in the same frame the player switches a lamp off still sees by the old light, for one turn.
   Foundry's lamp shows it; recasting the dynamic layer inside the turn loop, when a source was added or removed, would close it.
-- **`Placement::AnyRoom` can cut a piece's own opening off.**
-  It centres a piece in any room at least the piece's size, so a piece exactly as wide or tall as its room fills it edge to edge, and an opening that faces the room's wall leads nowhere.
-  Foundry sidesteps it by making every room two cells larger than any piece; requiring a one-cell ring in `AnyRoom` itself would fix it for every game, at the price of Corsair's and Delve's fingerprints.
 - **A ranged fighter is under-forecast.**
   `rl_rules::forecast::Combatant::strikes` is filled from `Loadout::blows`, the melee roll plus extra strikes; a `RangedAttack`'s dice never enter the forecast, so a combatant that only shoots reads as unable to hurt anything.
   A fix needs the ranged roll and `RangedAttack::cost` fed into `Combatant` for whichever side of the pair is not adjacent to the other, so the forecast picks melee or ranged per pair instead of assuming melee always applies.
