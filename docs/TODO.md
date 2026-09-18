@@ -30,13 +30,15 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Anyone travels.**
   `WarpRequest` and `GoThrough` ignore everyone but the player (`crates/rl-bevy/src/places.rs`, `resolve_warps`).
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.
-- **Attack cost, and a place for a miss.**
-  `resolve_attacks` charges `BASE_ACTION_COST` for every blow.
-  Weapon speed is the most common combat knob; put the cost on `MeleeAttack` and `RangedAttack`.
+- **A place for a miss.**
   Accuracy is deliberately absent (`docs/design/abilities.md`, "Accuracy does not exist"); the combat docs should say how a game adds a miss as a `DamageStage`, with an example.
 - **`DamageStages` must not default to empty.**
   A game that forgets it gets raw damage and no word about why, which is the "a resource happens to exist" pattern the rules ban.
   Default to `SubtractArmor`, or declare it with `needs`.
+- **`Rooms` can run out of attempts on a small map.**
+  Asked for three rooms sized 8 to 10 on a 40x30 map, it fails roughly one seed in sixty inside its default thirty attempts.
+  Whether that is a tuning problem, a default `attempts` too low for the room sizes it is asked to fit, or a limit the pass should just document is not yet decided.
+  Either way, a test that stamps rooms on a small map has to know this failure rate exists rather than treat every seed as good.
 
 ## 4. Simplify
 

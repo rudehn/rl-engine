@@ -850,7 +850,7 @@ mod tests {
 
     #[test]
     fn a_shot_charges_the_weapons_cost_and_a_shot_at_nothing_still_costs_a_turn() {
-        // A marksman rifle is slow, a hand blaster fast, and a shot with no
+        // A slow weapon costs more than a fast one, and a shot with no
         // line of fire costs the ordinary turn: the shooter spent it aiming.
         let slow = shot_turn_cost(Some(140), 6, 4);
         let fast = shot_turn_cost(Some(80), 6, 4);

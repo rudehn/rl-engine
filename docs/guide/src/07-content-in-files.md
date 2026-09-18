@@ -120,7 +120,10 @@ impl Bestiary {
             .spawn((
                 (Actor, Blocks, Kind(id), Position(at), Speed(def.speed), Faction(self.faction)),
                 (Health::full(def.hp), Armor(def.armor), Perception(def.perception), Mind(self.minds[id.index()].clone())),
-                (MeleeAttack { kind: def.kind.id(), dice: def.attack }, Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
+                (
+                    MeleeAttack { kind: def.kind.id(), dice: def.attack, cost: None },
+                    Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5),
+                ),
                 // What the narrator, and later the rail, call it.
                 (Name::new(def.name.clone()),),
             ))
