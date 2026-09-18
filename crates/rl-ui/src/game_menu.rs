@@ -29,7 +29,7 @@ use crate::controls::{AddControls, ControlInput, EngineKey, key_name};
 use crate::log::MessageLog;
 use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame, wrap};
-use crate::tone::{Palette, Tones};
+use crate::tone::{Palette, ToneId, Tones};
 use crate::view::SheetView;
 
 /// The name the menu's modal is declared under.
@@ -51,7 +51,8 @@ impl Default for MenuKeys {
 /// Where the menu is drawn and what it says.
 #[derive(Resource, Debug, Clone)]
 pub struct MenuLayout {
-    /// The terminal cells it occupies.
+    /// The most of the terminal it may occupy; it is drawn from the
+    /// top-left down only as far as its rows need.
     pub rect: Rect,
     /// The top border while playing.
     pub title: String,
@@ -111,7 +112,9 @@ impl MenuItem {
 pub struct GameMenuPanel(MenuLayout);
 
 impl GameMenuPanel {
-    /// The menu in `rect`.
+    /// The menu in `rect`, from its top-left corner down only as far as
+    /// its rows need: the rectangle is the most it may take, so one size
+    /// serves both the short pause menu and the ending's longer screen.
     pub fn new(rect: Rect) -> Self {
         Self(MenuLayout { rect, title: "Menu".into(), died: "You died.".into(), won: "You have won.".into(), abandoned: "The run is over.".into() })
     }
@@ -321,28 +324,37 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
     };
     let bindings = keys.bindings();
     let hints = format!("\u{2191}\u{2193} pick \u{2022} {} choose", key_name(bindings.cursor.confirm));
+    let width = (rect.width - 4).max(0) as usize;
+    // What the ending says above the choices, worked out first so the
+    // frame can close right under the last row: `layout.rect` is the most
+    // the menu may take, not a box to fill, so the pause menu's four rows
+    // do not trail the empty rows the ending's words needed.
+    let mut words: Vec<(String, ToneId)> = Vec::new();
+    if let Some(ending) = ending.as_deref().filter(|_| !playing) {
+        if !ending.epitaph.is_empty() {
+            words.extend(wrap(&ending.epitaph, width).into_iter().map(|line| (line, Tones::TEXT)));
+        }
+        words.push((clip(&format!("Seed {}, turn {}.", ending.seed.0, ending.turn), width), Tones::MUTED));
+        if let Some(slot) = morgue.as_deref().and_then(|m| m.last()) {
+            words.push((clip(&format!("Written to the morgue as {slot}."), width), Tones::MUTED));
+        }
+        words.push((String::new(), Tones::MUTED));
+    }
+    let items = MenuItem::offered(playing);
+    let height = ((words.len() + items.len()) as i32 + 2).min(rect.height);
+    let rect = Rect::new(rect.x, rect.y, rect.width, height);
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, title, &hints, palette);
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
-    let width = inner.width.max(0) as usize;
     let mut y = inner.y;
-    if let Some(ending) = ending.as_deref().filter(|_| !playing) {
-        if !ending.epitaph.is_empty() {
-            for line in wrap(&ending.epitaph, width) {
-                terminal.print_on(inner.x, y, &line, palette.get(Tones::TEXT), surface);
-                y += 1;
-            }
+    for (line, tone) in &words {
+        if y >= inner.bottom() {
+            break;
         }
-        terminal.print_on(inner.x, y, &clip(&format!("Seed {}, turn {}.", ending.seed.0, ending.turn), width), palette.get(Tones::MUTED), surface);
-        y += 1;
-        if let Some(slot) = morgue.as_deref().and_then(|m| m.last()) {
-            terminal.print_on(inner.x, y, &clip(&format!("Written to the morgue as {slot}."), width), palette.get(Tones::MUTED), surface);
-            y += 1;
-        }
+        terminal.print_on(inner.x, y, line, palette.get(*tone), surface);
         y += 1;
     }
-    let items = MenuItem::offered(playing);
     for (i, item) in items.iter().enumerate() {
         if y >= inner.bottom() {
             break;
@@ -390,6 +402,19 @@ mod tests {
         stage.press(KeyCode::Escape);
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open(), "the same key closes it again");
+    }
+
+    /// The menu is only as tall as what it says: its rectangle is the most
+    /// it may take, so a pause menu of four rows closes right under the
+    /// fourth instead of trailing empty rows the ending screen needed, and
+    /// nothing below it is painted over.
+    #[test]
+    fn the_frame_closes_under_the_last_row_and_leaves_the_rest_of_its_rectangle_alone() {
+        let mut stage = staged();
+        stage.press(KeyCode::Escape);
+        assert_eq!(inside(&stage, 4), "Quit");
+        assert!(stage.row(5).starts_with('\u{2514}'), "the bottom border is the next row: {:?}", stage.row(5));
+        assert!(stage.rows()[6..].iter().all(|r| r.is_empty()), "and the rest of the rectangle is untouched: {:?}", stage.rows());
     }
 
     /// A new run and the same seed again are each one message; quitting is

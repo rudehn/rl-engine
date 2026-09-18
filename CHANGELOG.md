@@ -21,6 +21,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
   `AimFire` and the shot preview now read `Loadout::ranged` and `Loadout::melee`, the same shot the resolver fires, so a gun in hand opens the cursor and previews its own reach.
 - Fixed: a killing blow that carried the player's health below zero showed a negative count on the vitals bar, on the very screen the run ends on. The bar reads empty instead.
 - Fixed: `GearPanel` drew every facet in the text tone, whatever tone the game gave it, and clipped a long row from the end, so the facet was the first thing lost. Facets now keep their tone, and the item's name gives way before them.
+- Fixed: `GameMenuPanel` filled its whole rectangle, so one sized for the ending's words left the pause menu trailing empty rows. The rectangle is now the most the menu may take, and its frame closes under its last row.
 - Fixed: `Placement::AnyRoom` and `Placement::InRoom` took a room exactly the size of the piece, which laid the piece's walls on the room's own edge, over its doorways, and could leave the piece's opening facing the room's wall with no way in.
   Both now require the room to exceed the piece by a cell on every side, so a piece always has floor all round it; a chain whose rooms are all too small fails loudly as before.
   Corsair's bottom cave level draws rooms of seven to eleven instead of four to nine so one always holds its 7x5 vault, which moves that level's map on every seed; no fingerprint tripwire moved.
