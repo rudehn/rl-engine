@@ -75,6 +75,11 @@ pub struct MeleeAttack {
     pub kind: DamageKindId,
     /// Damage roll.
     pub dice: DiceRoll,
+    /// What one blow with it costs, in hundredths of a step. `None` is
+    /// [`BASE_ACTION_COST`](rl_core::turn::BASE_ACTION_COST), so a game
+    /// that does not care about weapon speed writes nothing and every
+    /// blow costs a turn.
+    pub cost: Option<u32>,
 }
 
 /// What a shot does, and how far it reaches. An attack on a target that is
@@ -390,11 +395,13 @@ pub fn resolve_attacks(
             continue;
         };
         let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
-            loadout.melee(intent.actor).map(|m| (m.kind, m.dice))
+            loadout.melee(intent.actor).map(|m| (m.kind, m.dice, m.cost))
         } else {
-            loadout.ranged(intent.actor).filter(|r| line_of_fire(&map, &occupancy, pos.0, target_pos.0, r.range)).map(|r| (r.kind, r.dice))
+            loadout.ranged(intent.actor).filter(|r| line_of_fire(&map, &occupancy, pos.0, target_pos.0, r.range)).map(|r| (r.kind, r.dice, None))
         };
-        if let Some((kind, dice)) = weapon {
+        let mut spent = rl_core::turn::BASE_ACTION_COST;
+        if let Some((kind, dice, cost)) = weapon {
+            spent = cost.unwrap_or(rl_core::turn::BASE_ACTION_COST);
             // Floored where it is rolled: a blow that rolls below zero has
             // missed, and the pipeline would read a negative one as a heal.
             let amount = dice.roll_at_least(&mut **rng, 0);
@@ -404,7 +411,7 @@ pub fn resolve_attacks(
                 damage.write(DamageEvent { target, hit: Hit::by(intent.actor, kind, amount) });
             }
         }
-        resolution.done(intent.actor, rl_core::turn::BASE_ACTION_COST);
+        resolution.done(intent.actor, spent);
     }
 }
 
@@ -639,7 +646,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(sides.ours),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(10) },
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(10), cost: None },
             ))
             .id();
         let slot = SlotId::from_raw(0);
@@ -695,7 +702,7 @@ mod tests {
             .world_mut()
             .spawn((
                 crate::items::Item,
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::new(2, 6) },
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::new(2, 6), cost: None },
                 Strikes(vec![(sides.kind, DiceRoll::flat(1))]),
                 crate::items::Wearable(EquipShape::in_slot(hand)),
             ))
@@ -712,7 +719,7 @@ mod tests {
         let mut worn = Equipment::with_slot_count(2);
         worn.equip(blade, &EquipShape::in_slot(hand)).unwrap();
         worn.equip(pistol, &EquipShape::in_slot(off)).unwrap();
-        let fist = MeleeAttack { kind: sides.kind, dice: DiceRoll::new(1, 3) };
+        let fist = MeleeAttack { kind: sides.kind, dice: DiceRoll::new(1, 3), cost: None };
         let player = app
             .world_mut()
             .spawn((
@@ -753,5 +760,53 @@ mod tests {
         let (_, blow, strikes) = loadout(&mut app, player);
         assert_eq!(blow, Some(DiceRoll { num: 1, sides: 3, bonus: 2 }), "the fist again, still with the stat");
         assert_eq!(strikes.len(), 2, "the blade's strike went with it");
+    }
+
+    /// Charges one melee blow with `cost` and answers what the turn cost.
+    ///
+    /// Both actors start the clock at zero, so once the player's blow and
+    /// the target's stranded wait (it has no mind to act with) have both
+    /// been charged, the clock reads exactly what the player's turn cost:
+    /// [`run_turns`](crate::plugin::run_turns) keeps running passes until
+    /// the player holds a turn again, which happens the instant the clock
+    /// reaches it.
+    fn melee_turn_cost(cost: Option<u32>) -> u32 {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost },
+            ))
+            .id();
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(1, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.world().resource::<Turns>().now()
+    }
+
+    #[test]
+    fn a_blow_costs_what_its_weapon_says_and_an_ordinary_turn_when_it_says_nothing() {
+        // Identical blows but for what the weapon charges: 70 hundredths of a
+        // step against 140, and nothing stated. A weapon that charges half as
+        // much comes round twice as often, which is the whole of weapon speed.
+        let quick = melee_turn_cost(Some(70));
+        let heavy = melee_turn_cost(Some(140));
+        let plain = melee_turn_cost(None);
+        assert_eq!(quick, 70, "the weapon's cost is what the turn charges");
+        assert_eq!(heavy, 140);
+        assert_eq!(plain, rl_core::turn::BASE_ACTION_COST, "no cost stated is the ordinary cost");
     }
 }

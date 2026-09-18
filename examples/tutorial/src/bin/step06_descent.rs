@@ -211,7 +211,7 @@ fn start(
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Grants(vec![screech]), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }, Inventory::default()),
+            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6), cost: None }, Inventory::default()),
         ))
         .id();
     warps.write(WarpRequest::into_place(player, map_of(1)));
@@ -369,7 +369,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             let mut e = commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
                 (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
-                (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3) },),
+                (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3), cost: None },),
             ));
             if clever {
                 e.insert((

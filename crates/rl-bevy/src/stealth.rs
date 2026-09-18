@@ -393,7 +393,7 @@ mod tests {
                 .world_mut()
                 .spawn((
                     (Actor, Blocks, Position(start.offset(gap, 0)), Health::full(100), Armor(0), Faction(them)),
-                    (MeleeAttack { kind, dice: DiceRoll::flat(0) }, Perception(reach), Mind(Arc::new(brain)), Notice(notice)),
+                    (MeleeAttack { kind, dice: DiceRoll::flat(0), cost: None }, Perception(reach), Mind(Arc::new(brain)), Notice(notice)),
                 ))
                 .id();
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

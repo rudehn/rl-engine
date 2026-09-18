@@ -728,7 +728,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(us),
-                MeleeAttack { kind: blunt, dice: DiceRoll::flat(1) },
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(1), cost: None },
             ))
             .id();
         // Shove first, strike second: the game's tactic outranks the
@@ -741,7 +741,7 @@ mod tests {
             Health::full(5),
             Faction(them),
             Perception(8),
-            MeleeAttack { kind: blunt, dice: DiceRoll::flat(3) },
+            MeleeAttack { kind: blunt, dice: DiceRoll::flat(3), cost: None },
             Mind(brain),
         ));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -772,7 +772,7 @@ mod tests {
                 Health::full(30),
                 Faction(us),
                 Armor(1),
-                MeleeAttack { kind: blunt, dice: DiceRoll::flat(50) },
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(50), cost: None },
             ))
             .id();
         let brain = Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt));
@@ -785,7 +785,7 @@ mod tests {
                 Health::full(5),
                 Faction(them),
                 Perception(8),
-                MeleeAttack { kind: blunt, dice: DiceRoll::flat(3) },
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(3), cost: None },
                 Mind(brain),
             ))
             .id();
@@ -841,7 +841,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(sides.ours),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1) },
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: None },
             ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -867,7 +867,7 @@ mod tests {
                 Health::full(20),
                 Faction(sides.theirs),
                 Perception(8),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(3) },
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(3), cost: None },
                 Mind(Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt))),
                 Intelligence(wits),
             ))
@@ -921,7 +921,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(sides.ours),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1) },
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: None },
             ))
             .id();
         let knife = app.world_mut().spawn((Item, Position(start.offset(5, 0)), Throwable { range: 6, strike: Some((sides.kind, DiceRoll::flat(4))) })).id();
@@ -1101,7 +1101,7 @@ mod tests {
                 Health::full(5),
                 Faction(them),
                 Perception(8),
-                MeleeAttack { kind: blunt, dice: DiceRoll::flat(1) },
+                MeleeAttack { kind: blunt, dice: DiceRoll::flat(1), cost: None },
                 Mind(brain.clone()),
             ));
         }
@@ -1214,7 +1214,7 @@ mod tests {
                 Health::full(20),
                 Faction(sides.ours),
                 Perception(8),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(2) },
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(2), cost: None },
                 Mind(brain.clone()),
             ))
             .id();
@@ -1227,7 +1227,7 @@ mod tests {
                 Health::full(20),
                 Faction(sides.theirs),
                 Perception(8),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(2) },
+                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(2), cost: None },
                 Mind(brain),
             ))
             .id();

@@ -146,7 +146,7 @@ fn start(
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6) }),
+            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6), cost: None }),
         ))
         .id();
     warps.write(WarpRequest::into_place(player, WARREN));
@@ -266,7 +266,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
                 (Health::full(6), Armor(0), Perception(7), DarkSight(9), Mind(rats.mind.clone()), Glyph::new('r', Color::srgb(0.72, 0.55, 0.45)).on_layer(5)),
-                (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3) }, Name::new("rat")),
+                (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3), cost: None }, Name::new("rat")),
             ));
             placed += 1;
         }

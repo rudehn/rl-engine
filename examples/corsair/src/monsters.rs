@@ -169,7 +169,7 @@ impl Bestiary {
                 Health::full(m.hp),
                 Armor(m.armor),
                 Faction(m.faction.id()),
-                MeleeAttack { kind: m.kind.id(), dice: m.attack },
+                MeleeAttack { kind: m.kind.id(), dice: m.attack, cost: None },
                 Perception(m.perception),
                 Speed(m.speed),
                 Mind(self.brains[id.index()].clone()),

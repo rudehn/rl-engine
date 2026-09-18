@@ -248,7 +248,7 @@ impl Beasts {
         let mut beast = commands.spawn((
             (Actor, Blocks, Position(at), Health::full(d.hp), Armor(d.armor), Faction(self.whale)),
             (
-                MeleeAttack { kind: self.bite, dice: d.attack },
+                MeleeAttack { kind: self.bite, dice: d.attack, cost: None },
                 Perception(d.perception),
                 Speed(d.speed),
                 Mind(self.brains[id.index()].clone()),
@@ -342,7 +342,7 @@ fn start(
                 Health::full(30),
                 Armor(1),
                 Faction(you),
-                MeleeAttack { kind: registries.damage_kinds.expect("blade"), dice: DiceRoll::new(1, 6) },
+                MeleeAttack { kind: registries.damage_kinds.expect("blade"), dice: DiceRoll::new(1, 6), cost: None },
                 BRAND,
                 // A brand burns down while it is lit, and keeps what is left
                 // while it is smothered.

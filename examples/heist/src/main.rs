@@ -205,7 +205,7 @@ impl Watch {
             .spawn((
                 (Actor, Blocks, Kind(id), Position(at), Speed(d.speed), Faction(self.faction), Health::full(d.hp), Armor(d.armor)),
                 (
-                    MeleeAttack { kind: d.kind.id(), dice: d.attack },
+                    MeleeAttack { kind: d.kind.id(), dice: d.attack, cost: None },
                     Perception(d.perception),
                     DarkSight(d.dark_sight),
                     Notice(d.notice),
@@ -449,7 +449,7 @@ fn start(
                 Armor(0),
                 Faction(thief),
                 // A fist, for a hound that has you cornered. Against a cudgel it is a mistake.
-                MeleeAttack { kind: registries.damage_kinds.expect("fist"), dice: DiceRoll::new(1, 2) },
+                MeleeAttack { kind: registries.damage_kinds.expect("fist"), dice: DiceRoll::new(1, 2), cost: None },
                 // Enough to make out the floor at your feet in the dark.
                 DarkSight(2),
                 // Quiet and subtle: a watchman has to be close, or you have
