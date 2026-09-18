@@ -88,6 +88,10 @@ impl Prefab {
     }
 
     /// A copy mirrored left to right, marks and all.
+    ///
+    /// A hand-drawn piece with an opening on one side reads as a
+    /// different piece once mirrored, without a second drawing to keep
+    /// in sync with the first.
     pub fn flipped(&self) -> Self {
         let (w, h) = (self.width(), self.height());
         let mut cells: Grid<Option<TileId>> = Grid::new(w, h);
@@ -226,6 +230,26 @@ mod tests {
         .unwrap()
     }
 
+    /// A piece with no left-right symmetry: the opening is on the left
+    /// only, and the mark sits off the centre column. `vault` cannot
+    /// stand in for a mirror test, since every row of it reads the same
+    /// backwards and its mark sits on the one column a mirror fixes.
+    fn lopsided(wall: TileId, floor: TileId) -> Prefab {
+        Prefab::parse(
+            &[
+                "#####", //
+                ".$..#", //
+                "#####", //
+            ],
+            |c| match c {
+                '#' => Some(wall),
+                '.' => Some(floor),
+                _ => None,
+            },
+        )
+        .unwrap()
+    }
+
     #[test]
     fn parse_keeps_marks_and_transparency() {
         let p = vault(TileId(0), TileId(1));
@@ -257,13 +281,23 @@ mod tests {
 
     #[test]
     fn a_mirror_moves_every_tile_and_its_marks_the_same_way() {
-        let p = vault(TileId(0), TileId(1));
+        let (wall, floor) = (TileId(0), TileId(1));
+        let p = lopsided(wall, floor);
         let w = p.width();
         let flipped = p.flipped();
         assert_eq!((flipped.width(), flipped.height()), (w, p.height()), "a mirror keeps the shape");
         let (_, before) = p.marks()[0];
         let (_, after) = flipped.marks()[0];
         assert_eq!(after, Point::new(w - 1 - before.x, before.y));
+        assert_ne!(after.x, before.x, "the fixture's mark is off-centre, so a mirror must move it");
+
+        // The opening is on the left in the source piece and the wall is
+        // on the right; a mirror swaps which side is which.
+        assert_eq!(p.tile(Point::new(0, 1)), Some(floor));
+        assert_eq!(p.tile(Point::new(w - 1, 1)), Some(wall));
+        assert_eq!(flipped.tile(Point::new(0, 1)), Some(wall));
+        assert_eq!(flipped.tile(Point::new(w - 1, 1)), Some(floor));
+
         assert_eq!(p.flipped().flipped(), p, "twice mirrored is where it started");
     }
 
