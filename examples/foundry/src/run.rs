@@ -38,6 +38,10 @@ pub fn start(
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(Lighting::dark());
     commands.insert_resource(Roster::load(&registries));
+    // Seeded once, here, and never again: `Drops` is a resource a kill's
+    // roll keeps advancing, not a stream `Seed::stream` is asked for
+    // fresh on every event the way `scatter_on_arrival`'s own is.
+    commands.insert_resource(crate::loot::Drops(seed.stream(b"foundry.drops", 0)));
 
     let kinetic = registries.damage_kinds.expect("kinetic");
     let player = commands

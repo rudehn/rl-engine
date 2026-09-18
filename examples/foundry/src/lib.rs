@@ -22,6 +22,9 @@ pub mod gear;
 /// What a weapon that runs hot pays and sheds; fields only until
 /// `heat`'s systems give them behaviour.
 pub mod heat;
+/// Items on the decks, scattered the moment each is first entered, and
+/// items the dead leave behind.
+pub mod loot;
 /// `FoundryPlugin`, the one list of Foundry's own systems that `main.rs`
 /// and `testing::headless` both add.
 pub mod plugin;

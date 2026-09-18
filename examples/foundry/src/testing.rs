@@ -9,7 +9,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::RunSeed;
+use rl_engine::rl_core::{Point, RunSeed, geometry};
 use rl_engine::rl_grid::Rgb;
 use rl_engine::rl_rules::Hit;
 use rl_engine::rl_rules::prelude::Ledger;
@@ -313,6 +313,69 @@ pub fn hit(app: &mut App, target: Entity, kind: &str, amount: i32) {
     let kind = registries.damage_kinds.expect(kind);
     app.world_mut().write_message(DamageDealt { target, hit: Hit::from_source(None, kind, amount), dealt: amount });
     app.update();
+}
+
+/// Warps the player onto `deck`'s entry and lets the arrival resolve; deck one needs nothing extra, since `run::start` warps there already.
+pub fn arrive_on(app: &mut App, deck: u32) {
+    (0..2).for_each(|_| app.update());
+    if deck != 1 {
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: crate::decks::map_of(deck), arrive: Arrive::Entry } });
+        (0..2).for_each(|_| app.update());
+    }
+}
+
+/// Items on, or beside, every armory and store mark on the current deck: `OnMap` filters out an earlier deck's own scatter, and a store's item
+/// counts against whichever of its two marks is nearest, never both.
+pub fn items_at_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
+    let map = app.world().resource::<WorldMap>().current();
+    let spots = app.world().resource::<WorldMap>().place(map).map(|p| p.spots.clone()).unwrap_or_default();
+    let positions: Vec<Point> = {
+        let world = app.world_mut();
+        let mut q = world.query_filtered::<(&Position, &OnMap), With<Item>>();
+        q.iter(world).filter(|(_, on)| on.0 == map).map(|(p, _)| p.0).collect()
+    };
+    let by_tag = |c: char| spots.iter().filter(|s| s.tag == c as u32).map(|s| s.at).collect::<Vec<Point>>();
+    let (armory_marks, store_marks) = (by_tag('A'), by_tag('L'));
+    let armories = armory_marks.iter().map(|m| positions.iter().filter(|p| *p == m).count()).collect();
+    let mut stores = vec![0usize; store_marks.len()];
+    for p in &positions {
+        let closest = store_marks.iter().enumerate().map(|(i, m)| (i, geometry::chebyshev(*p, *m))).filter(|(_, d)| *d <= 1).min_by_key(|(_, d)| *d);
+        if let Some((i, _)) = closest {
+            stores[i] += 1;
+        }
+    }
+    (armories, stores)
+}
+
+/// Runs the same fight twice from `seed`: once where the dying actor carries drops (`heavy droid`) and once with none (`coolant rat`), returning
+/// the health twenty follow-up melee blows took off a fresh target each time. The kill is a bare `DeathEvent`; the victim carries only `Kind`
+/// and `OnMap`, never `Actor`, so only `drop_on_death` reading the wrong stream could shift the follow-up rolls.
+pub fn combat_rolls_across_a_kill(seed: RunSeed) -> (Vec<i32>, Vec<i32>) {
+    let run = |kind: &str| -> Vec<i32> {
+        let mut app = headless(seed);
+        app.update();
+        app.update();
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let pos = app.world().get::<Position>(player).copied().expect("the player stands somewhere");
+        let (map, id) = (app.world().resource::<WorldMap>().current(), app.world().resource::<crate::droids::Roster>().defs.expect(kind));
+        let victim = app.world_mut().spawn((crate::droids::Kind(id), OnMap(map))).id();
+        app.world_mut().write_message(DeathEvent { entity: victim, at: pos.0, credit: None, was_player: false });
+        app.update();
+        let (at, floor) = (pos.0.offset(1, 0), app.world().resource::<WorldMap>().tile(pos.0).unwrap());
+        app.world_mut().resource_mut::<WorldMap>().set_tile(at, floor);
+        let target = app.world_mut().spawn((Blocks, Position(at), Health::full(1_000_000))).id();
+        let (mut amounts, mut last) = (Vec::new(), 1_000_000);
+        for _ in 0..20 {
+            app.world_mut().write_message(Intent::new(player, Attack(target)));
+            app.update();
+            let now = app.world().get::<Health>(target).unwrap().current;
+            amounts.push(last - now);
+            last = now;
+        }
+        amounts
+    };
+    (run("heavy droid"), run("coolant rat"))
 }
 
 /// Waits the player forward `n` whole turns, one at a time.

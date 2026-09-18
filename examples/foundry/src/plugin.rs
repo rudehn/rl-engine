@@ -58,6 +58,18 @@ impl Plugin for FoundryPlugin {
         // A deck fills the moment it is first entered, the way delve's own
         // floors do.
         app.add_systems(Turn, crate::droids::populate_deck.in_set(TurnSet::React));
+        // A deck's loot scatters the same moment, from its own stream
+        // (`foundry.scatter`); unordered against `populate_deck`, which
+        // reads the same `PlaceEntered` through its own cursor and never
+        // shares a tile-claiming concern with an item.
+        app.add_systems(Turn, crate::loot::scatter_on_arrival.in_set(TurnSet::React));
+        // Whatever a kill's kind carries falls where it died, from
+        // `Drops` rather than the combat stream a kill's own dice came
+        // from. Needs no ordering against `process_deaths`
+        // (crates/rl-bevy/src/combat.rs): that runs in `TurnSet::Cleanup`,
+        // which the engine's own schedule always runs after every
+        // `TurnSet::React` system, this one included.
+        app.add_systems(Turn, crate::loot::drop_on_death.in_set(TurnSet::React));
         // A probe's alarm reacts to the same `Noticed` the engine's own
         // stealth writes; nothing here needs ordering against it.
         app.add_systems(Turn, crate::droids::sound_alarm.in_set(TurnSet::React));
