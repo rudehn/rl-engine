@@ -427,7 +427,13 @@ mod tests {
         stage.tick();
         let quicker = stage.app.world().resource::<InspectView>().duel.expect("a duel");
 
-        assert_eq!(quicker.turns_to_fell.map(|_| ()), ordinary.turns_to_fell.map(|_| ()), "the same blows still fell it");
-        assert!(quicker.turns_to_fell < ordinary.turns_to_fell, "a 30-cost weapon fells it in fewer turns than the ordinary cost did");
+        // Same setup as `the_forecast_runs_both_ways_through_the_games_own_mitigation`:
+        // 10 health at 3.5 a blow is three blows, which at the ordinary cost
+        // is three turns; at a 30 cost each, the same three blows fit in one.
+        assert_eq!(ordinary.turns_to_fell, Some(3), "three blows at the ordinary cost is three turns");
+        assert_eq!(quicker.turns_to_fell, Some(1), "the same three blows at a 30 cost each fit in one turn");
+        // The weakling's own blow is untouched by the player's weapon, so
+        // its side of the duel does not move.
+        assert_eq!(quicker.turns_to_fall, ordinary.turns_to_fall, "the weakling's own cost never changed");
     }
 }

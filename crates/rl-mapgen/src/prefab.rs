@@ -585,7 +585,9 @@ mod tests {
             .unwrap_err();
         // Named and caught rather than wrapped: a wrapped total could land a
         // roll on the wrong candidate, or on none, silently.
-        assert!(format!("{err:?}").contains("vault"));
+        let text = format!("{err:?}");
+        assert!(text.contains("vault"));
+        assert!(text.contains("overflow"), "the error says what went wrong, not just which pass: {text}");
     }
 
     #[test]

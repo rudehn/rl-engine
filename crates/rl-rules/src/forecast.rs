@@ -98,7 +98,11 @@ pub fn turns_for(blows: u32, speed: u32, cost: Option<u32>) -> u32 {
         return u32::MAX;
     }
     let cost = cost.unwrap_or(BASE_ACTION_COST) as u64;
-    ((blows as u64 * cost).div_ceil(speed as u64)) as u32
+    // Saturating rather than truncating: an enormous cost on a very slow
+    // actor must read as "never" (`u32::MAX`, the forecast's own sentinel
+    // for that), not as whatever the low 32 bits of the true count happen
+    // to be.
+    (blows as u64 * cost).div_ceil(speed as u64).try_into().unwrap_or(u32::MAX)
 }
 
 /// How a duel is likely to go for the side asking.
@@ -231,6 +235,14 @@ mod tests {
         assert_eq!(turns_for(3, 200, None), 2, "one and a half turns is two");
         assert_eq!(turns_for(1, 50, None), 2);
         assert_eq!(turns_for(1, 0, None), u32::MAX, "an actor that never acts never arrives");
+    }
+
+    #[test]
+    fn a_turn_count_too_large_for_a_u32_saturates_to_the_never_sentinel_instead_of_wrapping() {
+        // u32::MAX blows at the ordinary cost and a speed of 1 is far past
+        // what a u32 holds; a truncating cast would wrap it down to some
+        // small number instead of the "never" it should read as.
+        assert_eq!(turns_for(u32::MAX, 1, None), u32::MAX);
     }
 
     #[test]
