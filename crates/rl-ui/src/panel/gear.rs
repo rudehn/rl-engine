@@ -104,8 +104,8 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
 }
 
 /// An item's name followed by its facets, each in its own tone, in
-/// `width` cells. The facets are the game's word on the item, a heat gauge
-/// or a count, so the name gives way first; only when the facets alone
+/// `width` cells. The facets are the game's word on the item, a gauge or
+/// a count, so the name gives way first; only when the facets alone
 /// overrun the room is the whole line clipped from the end.
 fn labelled(label: &str, facets: &[Facet], width: usize, palette: &Palette) -> Vec<Segment> {
     let tail: Vec<Segment> = facets.iter().flat_map(|f| [(" \u{00b7} ".to_string(), None), (f.text.clone(), Some(palette.get(f.tone)))]).collect();
@@ -146,8 +146,8 @@ mod tests {
 
     /// A facet is the game's word on the item and is kept whole: a long
     /// name gives way first, and the facet is drawn in its own tone, so a
-    /// weapon running hot reads as trouble on the rail however long its
-    /// name is.
+    /// warning the game puts on an item reads as one however long the
+    /// item's name is.
     #[test]
     fn a_facet_keeps_its_tone_and_a_long_name_gives_way_to_it() {
         let slots = || rl_rules::Registry::from_defs(vec![SlotDef::new("main hand")]).unwrap();
@@ -158,16 +158,16 @@ mod tests {
                 Update,
                 (|mut view: ResMut<GearView>, mut facets: ResMut<crate::Facets>| {
                     for row in view.rows_mut() {
-                        row.facets.push(facets.facet("heat", "locked").toned(Tones::BAD));
+                        row.facets.push(facets.facet("state", "locked").toned(Tones::BAD));
                     }
                 })
                 .in_set(crate::ViewSet::Annotate),
             );
         })
         .screen(26, 3);
-        let gun = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("very long blaster"), rl_render::Glyph::new('}', Color::WHITE))).id();
+        let item = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("very long name"), rl_render::Glyph::new('}', Color::WHITE))).id();
         let mut worn = rl_bevy::Equipped(rl_rules::Equipment::with_slot_count(1));
-        worn.equip(gun, &EquipShape::in_slot(hand)).expect("the slot exists");
+        worn.equip(item, &EquipShape::in_slot(hand)).expect("the slot exists");
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(worn);
         stage.tick();
