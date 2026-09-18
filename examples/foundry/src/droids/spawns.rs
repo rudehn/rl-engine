@@ -1,6 +1,6 @@
 //! Populating a deck the first time it is entered.
 //!
-//! [`plan_population`] is the pure half, tested without an `App` at all:
+//! `plan_population` is the pure half, tested without an `App` at all:
 //! it draws groups from a [`BandedTable`] at a deck's band and finds each
 //! monster a spot at least [`MIN_DISTANCE_FROM_ENTRY`] tiles from the way
 //! in, on whatever a `walkable` predicate the caller supplies allows, with
@@ -78,7 +78,7 @@ pub struct Stock<'w> {
 }
 
 /// Populates a deck the first time it is entered, the way `examples/delve`
-/// fills a floor: follows [`plan_population`] against the deck's real
+/// fills a floor: follows `plan_population` against the deck's real
 /// terrain and spawns what it plans. A revisit is not a first arrival, so
 /// `PlaceEntered::first` being false leaves it alone: nobody new.
 ///

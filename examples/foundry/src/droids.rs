@@ -3,12 +3,12 @@
 //! shoots what it holds a weapon for, once it is in reach, before ever
 //! closing to a punch.
 //!
-//! [`alarm`] holds a probe's radar reporting to the rest of the deck.
-//! [`sensors`] holds what an ion hit does to that same radar, and owns
+//! `alarm` holds a probe's radar reporting to the rest of the deck.
+//! `sensors` holds what an ion hit does to that same radar, and owns
 //! `DarkSight` as derived state: [`sensors::sync_dark_sight`] is the one
 //! system that ever sets or clears it, from a monster's own
 //! [`NativeDarkSight`] and whatever it wears, folded together with whether
-//! it is currently [`sensors::Jammed`]. [`spawns`] holds populating a deck
+//! it is currently [`sensors::Jammed`]. `spawns` holds populating a deck
 //! the first time it is entered. Kept out of this file so it stays about
 //! the roster and the spawn, which is already most of a file's worth on
 //! its own.

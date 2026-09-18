@@ -13,7 +13,7 @@
 //!
 //! What wearing an item does is the item's to say and the engine's to
 //! apply. Its combat components are read straight off it by
-//! [`Loadout`](crate::combat::Loadout) whenever a blow is struck or met,
+//! [`Loadout`] whenever a blow is struck or met,
 //! and what it [`Bestows`] on the registered stats is folded into the
 //! wearer's [`StatBlock`] by [`fold_gear`] the moment its slots change.
 //! Nothing is copied onto the wearer and nothing has to be remembered

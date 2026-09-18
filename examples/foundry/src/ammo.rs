@@ -8,7 +8,7 @@
 //! actually decides it, the wielder's bag right now, so no way of
 //! changing that bag can leave a weapon's state stale. Going dry is the
 //! same shape as running hot: the attack comes off the item and is put
-//! by as [`Stowed`](crate::heat::Stowed), reusing Task 6's holder rather
+//! by as [`Stowed`], reusing Task 6's holder rather
 //! than inventing a second one, so the engine's own
 //! [`Loadout`](rl_engine::rl_bevy::Loadout) falls through to the next
 //! worn item exactly as it does for a locked weapon.

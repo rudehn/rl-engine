@@ -4,7 +4,7 @@
 //! [`load`] turns `assets/quests.ron` into a [`Quests`] and the one
 //! [`Facts`] kind it counts, the way `examples/corsair/src/quests.rs`
 //! does for its own, larger vocabulary; Foundry's objective vocabulary is
-//! one variant, [`On::ChargeSet`]. [`spawn_console_on_arrival`] plants
+//! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants
 //! [`Console`] at deck three's `R` mark, beside the loot Task 9 scatters
 //! on the same first arrival. [`resolve_set_charge`] is [`SetCharge`]'s
 //! resolver: adjacent to an unset console, it spends three whole turns
@@ -184,7 +184,7 @@ pub struct ChargeReport<'w> {
 }
 
 /// Resolves [`SetCharge`]: adjacent to an unspent [`Console`] on the
-/// actor's own map, it charges [`CHARGE_COST`] (three whole turns),
+/// actor's own map, it charges `CHARGE_COST` (three whole turns),
 /// spends the console, and reports [`Facts::charge_set`] through
 /// [`Happened`] for the tracker to count. Anywhere else, or a console
 /// already spent, fails at [`BASE_ACTION_COST`] with a log line and

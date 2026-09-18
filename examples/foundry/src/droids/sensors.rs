@@ -37,8 +37,8 @@ pub struct Jammed {
 
 /// Reacts to every [`DamageDealt`] of the `ion` kind that dealt more than
 /// nothing to a target currently reading as sighted (`DarkSight` present):
-/// jams it for [`JAM_TURNS`]. A target already [`Jammed`] only has its
-/// clock reset to [`JAM_TURNS`] rather than stacking a second jam on top
+/// jams it for `JAM_TURNS`. A target already [`Jammed`] only has its
+/// clock reset to `JAM_TURNS` rather than stacking a second jam on top
 /// of the first. Also inflicts `sensors down` so a badge shows it.
 ///
 /// A hit that finds neither a current `DarkSight` nor an existing `Jammed`

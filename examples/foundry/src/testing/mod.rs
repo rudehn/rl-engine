@@ -6,10 +6,10 @@
 //! adds, so a test exercises exactly what the player runs rather than a
 //! harness that quietly fell behind it.
 //!
-//! Split by what a helper sets up rather than kept as one file: [`gear`]
-//! for weapons, armor and ammunition, [`droids`] for monsters and their
-//! attacks, [`loot`] for what a deck scatters and a kill drops, and
-//! [`mission`] for the reactor console and the upgrade pick. Every helper
+//! Split by what a helper sets up rather than kept as one file: `gear`
+//! for weapons, armor and ammunition, `droids` for monsters and their
+//! attacks, `loot` for what a deck scatters and a kill drops, and
+//! `mission` for the reactor console and the upgrade pick. Every helper
 //! is re-exported here, so `crate::testing::x` still finds whichever file
 //! `x` actually lives in.
 

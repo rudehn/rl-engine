@@ -24,7 +24,7 @@
 //! `gear::spawn_item`, which this pick does not touch. `heat::vent_heat`
 //! and `ammo::sync_ammo` only ever relocate a weapon's whole
 //! `RangedAttack` between it and
-//! [`Stowed::Ranged`](crate::heat::Stowed::Ranged) wholesale; neither
+//! [`Stowed::Ranged`] wholesale; neither
 //! reads or rewrites the number inside, so the bonus rides along through a
 //! lock or a dry spell for free.
 
@@ -133,7 +133,7 @@ fn raise(world: &mut World, item: Entity) {
 /// way every other reactive system in this game is (`heat::heat_on_struck`,
 /// `ammo::spend_ammo`): reading `ItemEvent` through `Messages::drain`
 /// instead would starve any other system that ever reads the same
-/// message, so this repeats [`raise`]'s few lines against queries rather
+/// message, so this repeats `raise`'s few lines against queries rather
 /// than share it with [`apply`]'s `World`-based version.
 ///
 /// Unordered against `heat`'s and `ammo`'s own `TurnSet::React` systems:

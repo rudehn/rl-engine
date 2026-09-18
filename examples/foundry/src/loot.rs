@@ -1,6 +1,6 @@
 //! Items on the decks, and items the dead leave behind.
 //!
-//! [`plan_scatter`] is the pure half, tested without an `App` at all: it
+//! `plan_scatter` is the pure half, tested without an `App` at all: it
 //! places one item at every `A` mark, two at every `L` (the mark itself
 //! and a free floor tile beside it), and a handful more on random floor
 //! tiles, all drawn from a [`BandedTable`] at a deck's band.
@@ -48,10 +48,10 @@ pub fn roll_drops(drops: &[(Id<ItemDef>, u32)], rng: &mut impl Rng) -> Vec<Id<It
 }
 
 /// A deck's guaranteed loot spots and the floor they sit on, bundled so
-/// [`plan_scatter`] takes one fewer argument than clippy's own limit on a
+/// `plan_scatter` takes one fewer argument than clippy's own limit on a
 /// function's parameter list starts complaining about.
 ///
-/// `pub(crate)`, with [`plan_scatter`] and [`Origin`]: `testing::loot`'s
+/// `pub(crate)`, with `plan_scatter` and [`Origin`]: `testing::loot`'s
 /// `items_at_marks` recomputes the exact same plan `scatter_on_arrival`
 /// already made, to read off each item's origin rather than guess one
 /// from where it landed.
@@ -157,7 +157,7 @@ pub struct Scatter<'w> {
 
 /// Scatters a deck's loot the moment it is entered, the way `populate_deck`
 /// seeds its monsters: one item at every `A` mark, two at every `L`, and
-/// `3 + deck` more loose, all planned by [`plan_scatter`] against the
+/// `3 + deck` more loose, all planned by `plan_scatter` against the
 /// deck's real terrain. Draws from `Seed::stream(b"foundry.scatter",
 /// deck)`, the game's own stream and never [`Drops`]: a deck's own layout
 /// must never depend on how many kills happened to land before it was
