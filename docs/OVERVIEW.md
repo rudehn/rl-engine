@@ -250,6 +250,7 @@ It is built only on the public API, so it is the test that the seams are right.
 A commando fights down three decks of a droid foundry, and the worked example of combat depth: `examples/foundry`.
 Blasters run hot and lock until they cool, a slug pistol spends slugs and runs dry, and both are the game's own components that the engine's `Loadout` simply stops finding while a weapon is stowed; the heat, and the slugs left, show as facets on the gear row.
 Line droids fire their own `RangedAttack`, built in rather than held, so `ShootAtRange` fires it and no weapon ever runs hot in a droid's hands; a probe's radar is a `DarkSight` that an ion hit jams, and a probe that notices the commando wakes the deck.
+Every gun and every shooting droid names the `look` its shot flies as in `items.ron` and `monsters.ron`, a red bolt, a blue ion charge or a pale slug, and the damage kinds know nothing of it; a shot is seen to cross the deck and hurts when it arrives, and any key skips it with the hit already taken.
 The decks below the first are dark, and the commando's shoulder lamp is the stealth trade: `L` switches it off, and then, away from the stores' wall lamps, a droid without radar has to be beside you to see you.
 A charge set on the reactor console on deck three is a fact the quest tracker counts, and the pick of one upgrade from three ends the run.
 It is a library with a thin binary, so every system is in one `FoundryPlugin` that the window and the headless tests both add, and `tests/fingerprint.rs` pins a scripted run.

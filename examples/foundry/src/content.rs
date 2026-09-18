@@ -6,6 +6,8 @@
 //! kept in one place so a droid and a commando cannot drift from it.
 
 use rl_engine::rl_bevy::prelude::*;
+use rl_engine::rl_grid::Rgb;
+use rl_engine::rl_rules::ability::Look;
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{DamageKind, Registry, Resistances, SlotDef, StatusDef, TagDef};
 
@@ -42,6 +44,26 @@ impl<'de> serde::Deserialize<'de> for Profile {
             }
         }
         deserializer.deserialize_str(ProfileVisitor)
+    }
+}
+
+/// What a shot flies as, the way a content file writes it: a glyph and
+/// its colour, `(r, g, b)` in `0..=1` like every other colour in Foundry's
+/// files, as `look: ('*', (1.0, 0.3, 0.15))`.
+///
+/// Its own type rather than the engine's [`Look`], which spells a colour
+/// in bytes: a file whose every other colour is a fraction should not
+/// switch scales for one field.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+pub struct ShotLook(pub char, pub (f32, f32, f32));
+
+impl ShotLook {
+    /// The engine's [`Look`] for it, each channel rounded to the nearest
+    /// byte.
+    pub fn look(self) -> Look {
+        let byte = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let (r, g, b) = self.1;
+        Look { glyph: self.0, color: Rgb::new(byte(r), byte(g), byte(b)) }
     }
 }
 
