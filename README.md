@@ -221,6 +221,18 @@ cargo run -p heist -- --seed 7
 
 Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `t` to throw a pebble, `s` to snuff a lamp, `c` to shut a door, `L` to open or shade the lantern, `>` `<` or Enter for stairs and for the window out, `v` to show light, `i` for your pockets, `x` to look, `tab` to pick out what is in sight, `p` for the log, Escape for the menu, `q` to quit, and `?` for all of them on one screen.
 
+### Foundry, a fight down a droid foundry
+
+`examples/foundry` is a commando fighting down three decks of a droid foundry, and the engine's worked example of combat depth: weapons that run hot or run dry, droids that shoot and raise the alarm, radar that an ion hit blinds, and a reactor charge that ends in a choice of upgrade.
+It is a library with a thin binary, so its own tests and a fingerprint tripwire play the same game the window does.
+
+```sh
+cargo run -p foundry -- --seed 7
+FOUNDRY_START=3 cargo run -p foundry -- --seed 7   # start on the reactor deck, for a screenshot
+```
+
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for the lifts, `f` to fire, `t` to throw a blade, `g` to pick up, `e` to set a charge beside the console, `L` to switch the shoulder lamp off or on, `i` for the pack, `a` for abilities, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
+
 ### Abilities in any genre
 
 Abilities being data that serves any genre is proved by a test, not a game: `crates/rl-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.

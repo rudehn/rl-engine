@@ -1,26 +1,126 @@
-//! Opens Foundry's window and loads its content; the crate's own docs,
-//! and everything else, live in `lib.rs`.
+//! Foundry: a commando fighting down three decks of a droid foundry, with
+//! weapons that run hot or run dry, droids that shoot and raise the alarm,
+//! and a reactor charge that ends in a choice of upgrade. This binary
+//! opens the window, cuts the screen and adds the panels; the game itself,
+//! and its docs, live in `lib.rs`.
+//!
+//! `cargo run -p foundry -- --seed 7`. For a screenshot of a deeper deck,
+//! `FOUNDRY_START=3` starts the run on deck three instead of deck one.
 
 use bevy::prelude::*;
 use foundry::plugin::FoundryPlugin;
-use rl_engine::RoguelikePlugins;
-use rl_engine::rl_bevy::effects::AddEngineEffects;
-use rl_engine::rl_bevy::registries::Registries;
-use rl_engine::rl_bevy::{AbilitiesPlugin, EffectKinds, FactsPlugin};
+use foundry::run::StartDeck;
+use foundry::upgrades::ChoicePanel;
+use rl_engine::prelude::*;
+use rl_engine::rl_core::{Rect, RunSeed};
 
-/// Columns and rows the terminal window opens with. The screen split
-/// itself is a later task's, once there is something to draw in it.
+/// Terminal size in cells.
 const COLS: i32 = 100;
 const ROWS: i32 = 40;
+/// Rows given to the log at the bottom of the screen.
+const LOG_ROWS: i32 = 4;
+/// Columns given to the rail down the right.
+const RAIL: i32 = 30;
+/// Rows the rail gives to vitals and to gear; the rest is what is nearby.
+const VITALS_ROWS: i32 = 7;
+const GEAR_ROWS: i32 = 9;
+
+/// The screen, cut up once so every panel and the map agree on it.
+struct Screen {
+    map: Rect,
+    log: Rect,
+    vitals: Rect,
+    gear: Rect,
+    nearby: Rect,
+    hint: Rect,
+    inspect: Rect,
+    target: Rect,
+    abilities: Rect,
+    pack: Rect,
+    controls: Rect,
+    menu: Rect,
+    choice: Rect,
+}
+
+impl Screen {
+    fn new() -> Self {
+        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        let (map, log) = panel::split_bottom(left, LOG_ROWS);
+        let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
+        let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
+        // The last row of the rail says how to see the controls.
+        let (nearby, hint) = panel::split_bottom(nearby, 1);
+        let centred = |w: i32, y: i32, h: i32| Rect::new(map.x + (map.width - w) / 2, map.y + y, w, h);
+        Self {
+            map,
+            log,
+            vitals,
+            gear,
+            nearby,
+            hint,
+            inspect: Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10),
+            target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
+            // One ability, a rule, and what it does.
+            abilities: centred(42, 3, 12),
+            // The pack's rows, a rule, and what the row picked out is worth.
+            pack: centred(56, 3, 16),
+            controls: map.inflate(-2),
+            // The ending's words, the seed and turn, and three choices.
+            menu: centred(44, 6, 10),
+            // Three upgrades, a blank row, and what the one picked out does.
+            choice: centred(60, 8, 7),
+        }
+    }
+}
+
+/// Every panel, each in its own cut of `screen`, and the narrator that
+/// fills the log: shared by `main` and by the tests that read the screen
+/// back, so what a test reads is what the window draws.
+fn add_panels(app: &mut App, screen: &Screen) {
+    app.add_plugins((
+        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals"),
+        // What is worn, with each blaster's heat as a facet on its row.
+        GearPanel::new(screen.gear),
+        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the deck"),
+        LogPanel::new(screen.log),
+        InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close"),
+        TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
+        AbilityPanel::new(screen.abilities).title("Abilities").called("abilities"),
+        InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but dust."),
+        // Every key `input::declare_controls` and the engine's screens
+        // declare, with the hint that opens it in the rail's last row.
+        ControlsPanel::new(screen.controls).hint(screen.hint),
+        GameMenuPanel::new(screen.menu).title("Foundry").died("The foundry keeps you.").won("The first charge is set."),
+        ChoicePanel(screen.choice),
+    ));
+    app.add_plugins(NarratorPlugin::default());
+}
 
 fn main() -> AppExit {
+    // Through the replay module, so a recorded run replays on its own seed.
+    let mut seed = rl_engine::rl_bevy::replay::seed().unwrap_or_else(RunSeed::fresh);
+    let args = rl_engine::rl_bevy::replay::args();
+    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        [] => {}
+        ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
+        _ => {
+            eprintln!("usage: foundry [--seed N]");
+            return AppExit::error();
+        }
+    }
+    let screen = Screen::new();
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS))
-        .add_plugins(FoundryPlugin)
-        .add_plugins((FactsPlugin, AbilitiesPlugin))
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map))
+        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
         // The engine's own effects: `Mend`, for `stims`.
         .add_engine_effects()
-        .insert_resource(foundry::content::registries());
+        .insert_resource(foundry::content::registries())
+        .insert_resource(Seed(seed))
+        .add_plugins(FoundryPlugin);
+    add_panels(&mut app, &screen);
+    if let Some(deck) = std::env::var("FOUNDRY_START").ok().and_then(|d| d.parse().ok()) {
+        app.insert_resource(StartDeck(deck));
+    }
     let abilities = {
         let world = app.world();
         let (kinds, registries) = (world.resource::<EffectKinds>(), world.resource::<Registries>());
@@ -32,8 +132,63 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::prelude::WorldMap;
-    use rl_engine::rl_core::RunSeed;
+    use rl_engine::rl_bevy::testing::KeyScriptPlugin;
+    use rl_engine::rl_render::{MapViewPlugin, Terminal};
+
+    use super::*;
+
+    /// A headless run drawing the window's own screen into a terminal no
+    /// window shows: the same cut, the same panels, the same map view, so
+    /// a test reads back the text the player would see.
+    fn on_screen(seed: RunSeed) -> App {
+        let mut app = foundry::testing::headless(seed);
+        let screen = Screen::new();
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map)));
+        app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
+        add_panels(&mut app, &screen);
+        app.finish();
+        app.cleanup();
+        for _ in 0..4 {
+            app.update();
+        }
+        app
+    }
+
+    /// Row `y` of the screen, as text.
+    fn row(app: &App, y: i32) -> String {
+        let t = app.world().resource::<Terminal>();
+        (0..t.width()).map(|x| t.get(x, y).map_or(' ', |c| c.glyph)).collect()
+    }
+
+    #[test]
+    fn the_opening_screen_names_the_first_deck_in_the_log_and_the_way_to_the_controls_in_the_rail() {
+        let app = on_screen(RunSeed(7));
+        let log: Vec<String> = (ROWS - LOG_ROWS..ROWS).map(|y| row(&app, y)).collect();
+        assert!(log.iter().any(|l| l.starts_with("Deck 1: the upper assembly hall.")), "{log:#?}");
+        assert!(log.iter().any(|l| l.starts_with("Press ? for the controls.")), "{log:#?}");
+        assert!(row(&app, ROWS - 1).trim_end().ends_with("? controls"), "the rail's last row: {:?}", row(&app, ROWS - 1));
+        assert!(row(&app, 0)[(COLS - RAIL) as usize..].starts_with("Vitals"));
+    }
+
+    /// The heat facet is the one thing on the rail the engine could not
+    /// have drawn by itself: a blaster fired until it locks says so on its
+    /// gear row, in full and in the palette's warning tone, however long
+    /// the slot and the name ahead of it.
+    #[test]
+    fn a_blaster_fired_until_it_locks_reads_locked_in_the_warning_tone_on_the_gear_panel() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, _) = foundry::testing::player_with_hand_blaster(&mut app);
+        foundry::testing::fire_at_a_target(&mut app, me, 7);
+        app.update();
+        let y = (0..ROWS).find(|y| row(&app, *y).contains("main hand")).expect("a gear row for the main hand");
+        let line = row(&app, y);
+        assert!(line.trim_end().ends_with("\u{00b7} locked"), "{line:?}");
+        // The last letter of "locked", wherever the row ends.
+        let x = (0..COLS).rev().find(|x| app.world().resource::<Terminal>().get(*x, y).is_some_and(|c| c.glyph == 'd')).unwrap();
+        let palette = app.world().resource::<Palette>();
+        let bad = rl_engine::rl_ui::readable(palette.get(Tones::BAD), palette);
+        assert_eq!(app.world().resource::<Terminal>().get(x, y).unwrap().fg, bad);
+    }
 
     #[test]
     fn a_new_run_puts_the_commando_on_deck_one() {
