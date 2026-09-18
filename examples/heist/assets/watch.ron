@@ -18,10 +18,13 @@
 //   notice:     how it notices a quiet player: (certain: tiles always noticed, chance_pct:
 //               0..=100 per turn beyond that, lit_bonus: tiles added to certain while the
 //               player stands in light, memory: turns it searches after losing sight)
-//   hears:      tiles within which a pebble's clatter, or a shout, reaches it
+//   hearing:    how it hears, as (threshold: steps of loudness a sound must still have when it
+//               arrives, memory: turns it goes looking before it forgets, may be left out, 6);
+//               a pebble's clatter or a shout carries ten steps over open boards, a shut door
+//               takes three off, a wall stops it, and a thief's step carries two
 //   spawn:      (first_floor, last_floor, weight, min_group, max_group)
 [
-    (name: "watchman", glyph: 'W', color: (0.85, 0.80, 0.60), hp: 12, armor: 1, attack: "1d4", kind: "cudgel", wits: "sapient", perception: 9, dark_sight: 2, speed: 100, notice: (certain: 2, chance_pct: 20, lit_bonus: 4, memory: 8), hears: 8, spawn: (1, 3, 5, 1, 1)),
-    (name: "hound",    glyph: 'h', color: (0.70, 0.55, 0.35), hp: 6,  armor: 0, attack: "1d3", kind: "bite",   wits: "animal",  perception: 7, dark_sight: 5, speed: 130, notice: (certain: 3, chance_pct: 35, lit_bonus: 2, memory: 5), hears: 10, spawn: (2, 3, 3, 1, 1)),
-    (name: "sergeant", glyph: 'S', color: (0.95, 0.85, 0.45), hp: 18, armor: 2, attack: "1d6", kind: "cudgel", wits: "sapient", perception: 10, dark_sight: 3, speed: 100, notice: (certain: 3, chance_pct: 30, lit_bonus: 5, memory: 10), hears: 10, spawn: (3, 3, 2, 1, 1)),
+    (name: "watchman", glyph: 'W', color: (0.85, 0.80, 0.60), hp: 12, armor: 1, attack: "1d4", kind: "cudgel", wits: "sapient", perception: 9, dark_sight: 2, speed: 100, notice: (certain: 2, chance_pct: 20, lit_bonus: 4, memory: 8), hearing: (threshold: 2), spawn: (1, 3, 5, 1, 1)),
+    (name: "hound",    glyph: 'h', color: (0.70, 0.55, 0.35), hp: 6,  armor: 0, attack: "1d3", kind: "bite",   wits: "animal",  perception: 7, dark_sight: 5, speed: 130, notice: (certain: 3, chance_pct: 35, lit_bonus: 2, memory: 5), hearing: (threshold: 0), spawn: (2, 3, 3, 1, 1)),
+    (name: "sergeant", glyph: 'S', color: (0.95, 0.85, 0.45), hp: 18, armor: 2, attack: "1d6", kind: "cudgel", wits: "sapient", perception: 10, dark_sight: 3, speed: 100, notice: (certain: 3, chance_pct: 30, lit_bonus: 5, memory: 10), hearing: (threshold: 0), spawn: (3, 3, 2, 1, 1)),
 ]

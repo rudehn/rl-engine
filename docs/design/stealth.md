@@ -197,6 +197,7 @@ The vitals strip reads hidden or seen off the same data.
   Phase E, and the one breaking change to a tier-1 type, so it is last and separable.
 - **Noise.**
   A second sense with its own propagation is a bigger idea than this one and should not be smuggled in as a third knob on `Notice`.
+  Built since, beside stealth rather than inside it: `docs/design/noise.md`.
 
 ## 10. Phases
 

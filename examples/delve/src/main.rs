@@ -23,6 +23,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_rules::AbilityId;
 use rl_engine::rl_rules::ai::awareness::{NoticeStats, StealthStats};
+use rl_engine::rl_rules::ai::hearing::HearingStats;
 use rl_engine::rl_rules::ai::tactics::SearchLastKnown;
 use rl_engine::rl_rules::ai::tactics::UseAbility;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
@@ -36,6 +37,10 @@ const COLS: i32 = 90;
 const ROWS: i32 = 46;
 const LOG_ROWS: i32 = 4;
 const BEASTS_RON: &str = include_str!("../assets/beasts.ron");
+/// How far the whale carries a sound, in steps of open gut. A step is
+/// heard by nothing but a keen ear close by; a blow carries far enough to
+/// bring whatever hunts by ear from the next chamber.
+const NOISE: NoiseRules = NoiseRules { step: 2, strike: 8, door: 5, landing: 6, door_muffle: 3 };
 
 fn main() -> AppExit {
     // Through the replay module, so a recorded run replays with the
@@ -46,6 +51,7 @@ fn main() -> AppExit {
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("The Hollow Whale", COLS, ROWS).map(screen.map))
         .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, LightingPlugin, AbilitiesPlugin, StealthPlugin, FirePlugin, GasPlugin))
+        .add_plugins(NoisePlugin::new(NOISE))
         // The engine's seven effects, and the one the delve adds.
         .add_engine_effects()
         .add_effect::<effects::Drain>()
@@ -219,6 +225,8 @@ struct BeastDef {
     #[serde(default)]
     notice: Option<NoticeStats>,
     #[serde(default)]
+    hearing: Option<HearingStats>,
+    #[serde(default)]
     abilities: Vec<NameRef<AbilityDef>>,
 }
 
@@ -269,6 +277,9 @@ impl Beasts {
         }
         if let Some(notice) = d.notice {
             beast.insert(Notice(notice));
+        }
+        if let Some(hearing) = d.hearing {
+            beast.insert(Hearing(hearing));
         }
         beast.id()
     }
@@ -705,6 +716,7 @@ mod tests {
             StealthPlugin,
             FirePlugin,
             GasPlugin,
+            NoisePlugin::new(NOISE),
         ));
         app.add_engine_effects().add_effect::<effects::Drain>();
         let screen = Screen::new();
@@ -765,6 +777,54 @@ mod tests {
             q.single(w).unwrap()
         };
         (app, player)
+    }
+
+    /// A rat round a corner from a fight it cannot see hears the blows and
+    /// comes to them: the whale's rats hunt by ear, and a fight is loud.
+    #[test]
+    fn a_rat_round_a_corner_hears_a_fight_and_comes_to_it() {
+        let (mut app, player) = settled(7);
+        let crab = beside(&mut app, player, "stomach crab");
+        let at = app.world().get::<Position>(player).unwrap().0;
+        // Somewhere five to seven steps' walk from the fight and out of its
+        // line, so what the rat learns it learns by ear. Walking there costs
+        // at least what the sound spends.
+        let post = {
+            let map = app.world().resource::<WorldMap>();
+            let sight = app.world().get::<Viewshed>(player).unwrap();
+            let view = map.view();
+            let mut walk = DijkstraMap::covering(&view);
+            walk.build(&view, map.to_local(at), PathRules::EIGHT_WAY);
+            let bounds = map.window_tiles();
+            (bounds.y..bounds.bottom())
+                .flat_map(|y| (bounds.x..bounds.right()).map(move |x| Point::new(x, y)))
+                .find(|p| {
+                    let steps = map.to_local(*p).and_then(|l| walk.value(l)).unwrap_or(i32::MAX);
+                    map.is_walkable(*p) && (500..=700).contains(&steps) && !sight.in_line(*p) && !app.world().resource::<Occupancy>().is_occupied(*p)
+                })
+                .expect("a corner of the Maw within earshot")
+        };
+        let rat = app.world_mut().resource_scope(|world: &mut World, beasts: Mut<Beasts>| {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, world);
+            let e = beasts.spawn(&mut commands, beasts.defs.expect("bone rat"), post);
+            queue.apply(world);
+            e
+        });
+        app.update();
+        let crab_at = app.world().get::<Position>(crab).unwrap().0;
+        app.world_mut().write_message(Intent::new(player, Attack(crab)));
+        app.update();
+        // Whichever blow arrived loudest: the player's, or the crab's back.
+        let heard = app.world().get::<Heard>(rat).and_then(|h| h.last_known());
+        assert!(heard == Some(at) || heard == Some(crab_at), "the rat heard the fight, and where: {heard:?}");
+        app.world_mut().entity_mut(crab).despawn();
+        for _ in 0..3 {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+        let now = app.world().get::<Position>(rat).unwrap().0;
+        assert!(geometry::chebyshev(now, at) < geometry::chebyshev(post, at), "and came to it: {post:?} then {now:?}");
     }
 
     /// A beast of `kind` on a free tile beside the player.

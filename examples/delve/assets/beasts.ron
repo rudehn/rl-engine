@@ -24,11 +24,16 @@
 //               chance_pct: 0..=100 per turn beyond that, lit_bonus: tiles added while the
 //               player stands in light, may be left out, memory: turns it searches after
 //               losing sight, may be left out, 6); absent means it sees you the moment it can
+//   hearing:    optional; how it hears, as (threshold: steps of loudness a sound must still have
+//               when it arrives, memory: turns it goes looking before it forgets, may be left out,
+//               6); a step carries two steps of open gut, a blow eight and a thrown thing six, and
+//               a curtain of sinew hides what is behind it but not what it sounds like; absent
+//               means deaf. Only a beast that searches goes to what it heard
 //   abilities:  optional; names from `abilities.ron` it knows; it leads with one when one is worth firing
 [
     (name: "gut eel", glyph: 'e', color: (0.6, 0.75, 0.5), hp: 6, armor: 0, attack: "1d4", wits: "mindless", perception: 7, speed: 120, flee_at: 0, spawn: (1, 3, 4, 1, 3), glow: (intensity: 70, radius: 2, color: (r: 120, g: 255, b: 150), flicker: 40), dark_sight: 4, notice: (certain: 2, chance_pct: 20, lit_bonus: 3, memory: 4), abilities: ["spit"]),
     (name: "stomach crab", glyph: 'c', color: (0.85, 0.5, 0.4), hp: 9, armor: 2, attack: "1d5", wits: "mindless", perception: 6, speed: 80, flee_at: 0, spawn: (1, 4, 3, 2, 4), dark_sight: 3, notice: (certain: 1, chance_pct: 10, lit_bonus: 2, memory: 3)),
-    (name: "bone rat", glyph: 'r', color: (0.8, 0.8, 0.7), hp: 5, armor: 0, attack: "1d3", wits: "animal", perception: 9, speed: 140, flee_at: 40, spawn: (2, 5, 4, 3, 6), dark_sight: 6, notice: (certain: 3, chance_pct: 35, lit_bonus: 4, memory: 6)),
-    (name: "salt ghost", glyph: 'g', color: (0.7, 0.85, 0.95), hp: 14, armor: 1, attack: "1d6+1", wits: "sapient", perception: 10, speed: 100, flee_at: 0, spawn: (3, 5, 2, 1, 2), glow: (intensity: 90, radius: 3, color: (r: 170, g: 220, b: 255), flicker: 90), dark_sight: 7, notice: (certain: 2, chance_pct: 15, lit_bonus: 6, memory: 8)),
+    (name: "bone rat", glyph: 'r', color: (0.8, 0.8, 0.7), hp: 5, armor: 0, attack: "1d3", wits: "animal", perception: 9, speed: 140, flee_at: 40, spawn: (2, 5, 4, 3, 6), dark_sight: 6, notice: (certain: 3, chance_pct: 35, lit_bonus: 4, memory: 6), hearing: (threshold: 0, memory: 5)),
+    (name: "salt ghost", glyph: 'g', color: (0.7, 0.85, 0.95), hp: 14, armor: 1, attack: "1d6+1", wits: "sapient", perception: 10, speed: 100, flee_at: 0, spawn: (3, 5, 2, 1, 2), glow: (intensity: 90, radius: 3, color: (r: 170, g: 220, b: 255), flicker: 90), dark_sight: 7, notice: (certain: 2, chance_pct: 15, lit_bonus: 6, memory: 8), hearing: (threshold: 1, memory: 8)),
     (name: "heart warden", glyph: 'W', color: (0.95, 0.2, 0.25), hp: 40, armor: 3, attack: "2d6", wits: "animal", perception: 13, speed: 90, flee_at: 0, spawn: (99, 99, 0, 1, 1), glow: (intensity: 210, radius: 7, color: (r: 255, g: 45, b: 55), flicker: 110), dark_sight: 12),
 ]

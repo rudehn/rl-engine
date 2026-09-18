@@ -17,8 +17,8 @@
 //!
 //! Every piece of that is an engine seam a game fills: a `Sense` the game
 //! pushes for its own tactic, a `Choice` that tactic makes and the engine
-//! routes to the game's own action, `Aware` set from a sound the engine
-//! never heard of, and a `RunOver` with the score in it.
+//! routes to the game's own action, a shout of the game's own carried by
+//! the engine's noise, and a `RunOver` with the score in it.
 //!
 //! `cargo run -p heist -- --seed 7`
 
@@ -31,7 +31,8 @@ use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::Sight;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ai::awareness::{Awareness, NoticeStats, StealthStats};
+use rl_engine::rl_rules::ai::awareness::{NoticeStats, StealthStats};
+use rl_engine::rl_rules::ai::hearing::HearingStats;
 use rl_engine::rl_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
@@ -48,12 +49,19 @@ const LOG_ROWS: i32 = 4;
 const RAIL: i32 = 26;
 /// The watch, compiled in so the binary runs from anywhere.
 const WATCH_RON: &str = include_str!("../assets/watch.ron");
+/// How loud the house is at night, in steps of bare boards. A thief's
+/// step is heard by nothing but a hound close by, a pebble's clatter
+/// carries as far as a shout, and a shut door takes three steps off either.
+const NOISE: NoiseRules = NoiseRules { step: 2, strike: 6, door: 4, landing: 10, door_muffle: 3 };
+/// A watchman's shout, or a hound's bay.
+const SHOUT: i32 = 10;
 
 fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("The Counting House", COLS, ROWS).map(screen.map))
-        .add_plugins((CombatPlugin, MindsPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin))
+        .add_plugins((CombatPlugin, MindsPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, NoisePlugin::new(NOISE)))
+        .add_sound("shout")
         .init_resource::<LightOverlay>()
         .insert_resource(Seed::from_args())
         .add_plugins((
@@ -82,9 +90,9 @@ fn main() -> AppExit {
         // What a watchman knows that the engine does not: which lamps are out.
         .add_systems(Turn, notice_dark_lamps.in_set(PerceiveSet::Annotate))
         // What this turn caused, answered inside it: a floor fills on
-        // arrival, a pebble is heard, a shout carries, a pebble is forgotten.
-        .add_systems(Turn, (populate_floor, hear_pebbles, raise_alarm, fade_pebbles).in_set(TurnSet::React))
-        .add_systems(Update, file_the_take.in_set(PresentSet::Narrate));
+        // arrival, and a watchman who sees you shouts.
+        .add_systems(Turn, (populate_floor, raise_alarm).in_set(TurnSet::React))
+        .add_systems(Update, (file_the_take, narrate_noise).in_set(PresentSet::Narrate));
     declare_controls(&mut app);
     app.run()
 }
@@ -150,7 +158,7 @@ struct WatchDef {
     dark_sight: i32,
     speed: u32,
     notice: NoticeStats,
-    hears: i32,
+    hearing: HearingStats,
     spawn: (i32, i32, u32, u32, u32),
 }
 
@@ -163,11 +171,6 @@ impl Named for WatchDef {
 /// Marks a watcher with its kind.
 #[derive(Component, Clone, Copy)]
 struct Kind(Id<WatchDef>);
-
-/// How far a sound reaches this watcher, in tiles: a pebble's clatter, or
-/// another watchman's shout.
-#[derive(Component, Clone, Copy)]
-struct Hears(i32);
 
 /// The watch: the definitions, one brain per kind, and the table that says
 /// who stands where.
@@ -209,7 +212,7 @@ impl Watch {
                     Perception(d.perception),
                     DarkSight(d.dark_sight),
                     Notice(d.notice),
-                    Hears(d.hears),
+                    Hearing(d.hearing),
                     Mind(self.brains[id.index()].clone()),
                     Intelligence(d.wits),
                     Name::new(d.name.clone()),
@@ -227,11 +230,6 @@ struct Coin;
 /// A pebble, thrown to make a noise somewhere else.
 #[derive(Component, Clone, Copy)]
 struct Pebble;
-
-/// A thrown pebble lies where it fell for this many whole turns, then is
-/// forgotten, and with it whatever was listening for it.
-#[derive(Component, Clone, Copy)]
-struct Fading(u32);
 
 /// A lamp on the wall, and what it sheds when lit.
 #[derive(Component, Clone, Copy)]
@@ -612,75 +610,61 @@ struct Say<'w> {
     log: ResMut<'w, MessageLog>,
 }
 
-/// A watcher that can hear, and what it knows.
-type Listener<'a> = (Entity, &'a Position, Option<&'a OnMap>, &'a Hears, &'a mut Aware);
-
-/// Tells every watcher within earshot of `at` that something is there.
-fn alert_listeners(listeners: &mut Query<Listener>, here: MapId, subject: Entity, at: Point, but: Option<Entity>) -> usize {
-    let mut told = 0;
-    for (who, pos, on, hears, mut aware) in listeners.iter_mut() {
-        if Some(who) == but || on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || geometry::chebyshev(pos.0, at) > hears.0 {
+/// A watchman who spots you shouts, and a hound bays: a noise of the
+/// game's own at the watcher, which everyone in earshot comes to.
+fn raise_alarm(
+    mut noticed: MessageReader<Noticed>,
+    mut noise: MessageWriter<MakeNoise>,
+    player: Query<Entity, With<Player>>,
+    watchers: Query<&Position>,
+    sounds: Res<Sounds>,
+) {
+    let Ok(me) = player.single() else { return };
+    let shout = sounds.get("shout").expect("declared in main");
+    for ev in noticed.read() {
+        if ev.subject != me {
             continue;
         }
-        aware.0.insert(subject, Awareness::Alert { at, stale_turns: 0 });
-        told += 1;
+        if let Ok(at) = watchers.get(ev.observer) {
+            noise.write(MakeNoise { at: at.0, loudness: SHOUT, sound: shout, maker: Some(ev.observer) });
+        }
     }
-    told
 }
 
-/// A thrown pebble clatters where it lands, and every watcher in earshot
-/// turns to look: the pebble is entered in their awareness as a thing
-/// last heard from there, so a search walks to it, and it fades after a
-/// few turns so the search ends.
-fn hear_pebbles(mut commands: Commands, mut thrown: MessageReader<ItemEvent>, pebbles: Query<(), With<Pebble>>, mut listeners: Query<Listener>, mut say: Say) {
+/// What the house heard, told to the thief: a pebble's clatter, and
+/// whether anything turned to look; and a shout, when anyone was near
+/// enough to come.
+fn narrate_noise(
+    mut thrown: MessageReader<ItemEvent>,
+    mut heard: MessageReader<NoiseHeard>,
+    pebbles: Query<(), With<Pebble>>,
+    kinds: Query<&Kind>,
+    watch: Res<Watch>,
+    sounds: Res<Sounds>,
+    mut say: Say,
+) {
+    let heard: Vec<NoiseHeard> = heard.read().copied().collect();
+    let turn = say.turns.turn_number();
     for ev in thrown.read() {
         let ItemEvent::Thrown { item, at, .. } = *ev else { continue };
         if !pebbles.contains(item) {
             continue;
         }
-        // Too quiet to be noticed by sight, and gone in a few turns: what
-        // was heard was a sound, not a thing to keep watching.
-        commands.entity(item).insert((Stealth(StealthStats { quiet: 99, subtlety: 100 }), Fading(6)));
-        let told = alert_listeners(&mut listeners, say.map.current(), item, at.0, None);
-        let heard = if told > 0 { "The pebble clatters across the floor. Something turns to look." } else { "The pebble clatters across the floor." };
-        say.log.muted(heard, say.turns.turn_number());
+        let looked = heard.iter().any(|h| h.sound == Sounds::LANDING && h.at == at.0 && kinds.contains(h.listener));
+        let line = if looked { "The pebble clatters across the floor. Something turns to look." } else { "The pebble clatters across the floor." };
+        say.log.muted(line, turn);
     }
-}
-
-/// A watchman who spots you shouts, a hound bays, and everyone in earshot
-/// knows where you were.
-fn raise_alarm(
-    mut noticed: MessageReader<Noticed>,
-    mut listeners: Query<Listener>,
-    player: Query<Entity, With<Player>>,
-    kinds: Query<&Kind>,
-    watch: Res<Watch>,
-    mut say: Say,
-) {
-    let Ok(me) = player.single() else { return };
-    for ev in noticed.read() {
-        if ev.subject != me {
-            continue;
-        }
-        let told = alert_listeners(&mut listeners, say.map.current(), me, ev.at, Some(ev.observer));
-        if told > 0 {
-            let hound = kinds.get(ev.observer).is_ok_and(|k| watch.defs.get(k.0).name == "hound");
-            let cry = if hound { "A hound bays. Boots on the boards." } else { "A shout goes up. Boots on the boards." };
-            say.log.bad(cry, say.turns.turn_number());
+    let shout = sounds.get("shout");
+    let mut criers: Vec<Entity> = Vec::new();
+    for h in heard.iter().filter(|h| Some(h.sound) == shout && kinds.contains(h.listener)) {
+        if let Some(crier) = h.maker.filter(|c| !criers.contains(c)) {
+            criers.push(crier);
         }
     }
-}
-
-/// A pebble that has lain a while is forgotten, and whoever was searching
-/// for its sound gives up.
-fn fade_pebbles(mut commands: Commands, mut ends: MessageReader<TurnEnd>, mut fading: Query<(Entity, &mut Fading)>) {
-    for _ in ends.read() {
-        for (e, mut left) in &mut fading {
-            left.0 = left.0.saturating_sub(1);
-            if left.0 == 0 {
-                commands.entity(e).despawn();
-            }
-        }
+    for crier in criers {
+        let hound = kinds.get(crier).is_ok_and(|k| watch.defs.get(k.0).name == "hound");
+        let cry = if hound { "A hound bays. Boots on the boards." } else { "A shout goes up. Boots on the boards." };
+        say.log.bad(cry, turn);
     }
 }
 
@@ -897,8 +881,9 @@ mod tests {
     /// with the keys wired as `main` wires them.
     fn headless(seed: u64) -> App {
         let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin));
-        app.insert_resource(Seed(RunSeed(seed)))
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, NoisePlugin::new(NOISE)));
+        app.add_sound("shout")
+            .insert_resource(Seed(RunSeed(seed)))
             .add_plugins((UiPlugin, rl_engine::rl_bevy::testing::KeyScriptPlugin))
             .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, Vec2::ONE))
             .init_resource::<LightOverlay>()
@@ -910,7 +895,7 @@ mod tests {
             .add_choice::<Relight>()
             .add_systems(Turn, (resolve_snuffs, resolve_relights, resolve_escapes).in_set(ResolveSet::Act))
             .add_systems(Turn, notice_dark_lamps.in_set(PerceiveSet::Annotate))
-            .add_systems(Turn, (populate_floor, hear_pebbles, raise_alarm, fade_pebbles).in_set(TurnSet::React));
+            .add_systems(Turn, (populate_floor, raise_alarm).in_set(TurnSet::React));
         declare_controls(&mut app);
         app
     }
@@ -966,6 +951,21 @@ mod tests {
         }
     }
 
+    /// What walking from `from` to `to` costs, in hundredths of a step,
+    /// round the walls and never through a shut door.
+    fn walk(app: &App, from: Point, to: Point) -> i32 {
+        let map = app.world().resource::<WorldMap>();
+        let view = map.view();
+        let mut flood = DijkstraMap::covering(&view);
+        flood.build(&view, map.to_local(to), PathRules::EIGHT_WAY);
+        map.to_local(from).and_then(|l| flood.value(l)).unwrap_or(i32::MAX)
+    }
+
+    /// Where `watcher` last heard something, if it still remembers.
+    fn heard(app: &App, watcher: Entity) -> Option<Point> {
+        app.world().get::<Heard>(watcher).and_then(|h| h.last_known())
+    }
+
     fn aware_of(app: &App, watcher: Entity, subject: Entity) -> bool {
         app.world().get::<Aware>(watcher).is_some_and(|a| a.knows(subject))
     }
@@ -989,36 +989,39 @@ mod tests {
     }
 
     /// A pebble thrown across the cellar is heard where it lands: the
-    /// watchman who heard it walks to the sound and, finding nothing, gives
-    /// up when the sound is forgotten.
+    /// watchman who heard it walks to the sound and, finding nothing there,
+    /// forgets it, and never learns the thief was the one who threw it.
     #[test]
     fn a_thrown_pebble_draws_a_watchman_to_where_it_clattered() {
         let (mut app, player, at) = settled(7);
         let (dir, _) = open_line(&app, at, 3);
         let landing = at + Point::new(dir.offset().x * 3, dir.offset().y * 3);
-        // Out of the thief's certain radius, in earshot of the landing.
+        // Out of the thief's certain radius, and in earshot of the landing
+        // by a way round the walls: sound goes by the rooms, not through
+        // them. Walking there costs at least what the sound spends, so six
+        // steps' walk is inside the watchman's eight.
         let post = {
-            let map = app.world().resource::<WorldMap>();
-            let bounds = map.window_tiles();
-            let mut rng = app.world().resource::<Seed>().stream(b"test.post", 0);
-            (0..400)
-                .map(|_| Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom())))
-                .find(|p| map.is_walkable(*p) && (4..=6).contains(&geometry::chebyshev(*p, landing)) && geometry::chebyshev(*p, at) >= 3)
+            let bounds = app.world().resource::<WorldMap>().window_tiles();
+            (bounds.y..bounds.bottom())
+                .flat_map(|y| (bounds.x..bounds.right()).map(move |x| Point::new(x, y)))
+                .find(|p| {
+                    app.world().resource::<WorldMap>().is_walkable(*p) && (400..=600).contains(&walk(&app, *p, landing)) && geometry::chebyshev(*p, at) >= 3
+                })
                 .expect("floor in earshot of the landing")
         };
         let deaf_to_sight = NoticeStats { certain: 1, chance_pct: 0, lit_bonus: 0, memory: 6 };
         let watcher = watchman(&mut app, post, deaf_to_sight);
         let pebbles = app.world().get::<Inventory>(player).unwrap().items[0];
-        let before = geometry::chebyshev(post, landing);
+        let before = walk(&app, post, landing);
         app.world_mut().write_message(Intent::new(player, Throw { item: pebbles, at: landing }));
         app.update();
-        assert!(aware_of(&app, watcher, pebbles) || app.world().get::<Aware>(watcher).is_some_and(|a| !a.0.is_empty()), "it heard the clatter");
+        assert_eq!(heard(&app, watcher), Some(landing), "it heard the clatter, and where");
         wait(&mut app, player, 4);
-        let after = geometry::chebyshev(app.world().get::<Position>(watcher).unwrap().0, landing);
-        assert!(after < before, "it went to look: {before} cells from the sound, then {after}");
-        wait(&mut app, player, 8);
-        let lying = app.world_mut().query_filtered::<(), (With<Pebble>, With<Position>)>().iter(app.world()).count();
-        assert_eq!(lying, 0, "and the pebble was forgotten");
+        let after = walk(&app, app.world().get::<Position>(watcher).unwrap().0, landing);
+        assert!(after < before, "it went to look: {before} hundredths of a step from the sound, then {after}");
+        // Arrived where it could see the spot, it found a pebble and
+        // nobody, and let the sound go without learning who threw it.
+        assert_eq!(heard(&app, watcher), None, "and the sound was forgotten once the spot was seen");
         assert!(!aware_of(&app, watcher, player), "the thief was never in it");
     }
 

@@ -1,7 +1,7 @@
 # Noise and hearing
 
-Status: proposed 2026-09-17, against `main` at `56a60eb`.
-Built in phases A to E below.
+Status: phases A to D built 2026-09-17, against `main` at `56a60eb`; E next.
+Section 14 records where the build differs from this design.
 
 ## 0. Summary
 
@@ -263,3 +263,19 @@ A benchmark: a crowded floor with every monster stepping every turn, to measure 
 - **Cost.**
   With no filter by side, every step within earshot of a listener that cannot see it is a flood.
   A flood is bounded by its loudness, 81 cells at four steps, and quiet steps are the tuning; the benchmark keeps it honest.
+
+## 14. What the build changed
+
+- **A listener does not hear itself.**
+  §5 had the flood never read the maker at all.
+  In the first test that made steps loud, a listener walking toward a fight heard its own step louder than the fight, went to that instead, saw its own cell and forgot both.
+  Its own noise is the one sound a listener knows the maker of.
+- **Heist's pebble test changed what it measures, not what it means.**
+  The old earshot was a straight-line radius through walls, and the test placed its watchman by straight-line distance.
+  With sound going round the rooms that watchman was out of earshot, so the test now places it, and measures its progress, by the walk.
+  It also says where the search ends: at the spot, once the watchman sees it, and not at a despawned pebble, which now lies where it fell for the thief to pick up again.
+
+Found on the way, and fixed: `DijkstraMap::descents` offered every lower neighbour, including the diagonal past a wall's corner that the flood itself never took and the move resolver refuses.
+A watchman going to a sound stood at the corner choosing that step every turn and never moved.
+Any mind descending round a corner could do the same; hunting mostly escaped it because the player moves and the field changes.
+Descending now takes only a step the flood would, and a property test over a seed range holds it to that.

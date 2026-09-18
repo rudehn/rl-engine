@@ -34,7 +34,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Symmetric shadowcasting field of view.
 - Region flood and labelling.
 - A* with scratch buffers.
-- Region-bounded `DijkstraMap` with scale and rescan for flee maps.
+- Region-bounded `DijkstraMap` with scale and rescan for flee maps; descending it takes only a step the flood itself would take, so a mover is never handed the diagonal past a wall's corner that the move resolver refuses.
 - `SpatialGrid`.
 - Targeting: own, adjacent, bolt, ball, beam and cone shapes resolved to a footprint against a caller-named blocker, and `clear_shot`.
 - Light: `Light` as an intensity, a landed colour and a waver the renderer alone reads, `Emitter` with a flicker, integer falloff to zero at the rim, screen blending, and a `LightField` cast through the shadowcast in an order-independent way, with a flood for glowing areas and a compose over two layers and an ambient.
@@ -217,7 +217,8 @@ Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter'
 
 Five floors of a beached leviathan, mouth to heart, with no surface and, below the Maw's grey daylight, no light but a brand, the bile and whatever a beast sheds: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
 `floors.rs` is the whole map builder; it is the test that a dungeon delve is first-class.
-It is where lighting, stealth and abilities meet. The brand burns `Fuel` and shift and `L` smothers it, which is a way past a beast that has not noticed you rather than only a way to see less; a torch lies on the first floor to carry and set down, whalers' lamps are the fixtures, and `v` shows light as digits. The delver's five knacks are data in `assets/abilities.ron`, with `Drain` the delve's own effect in `effects.rs`, and gut eels spit back.
+It is where lighting, stealth, hearing and abilities meet. The brand burns `Fuel` and shift and `L` smothers it, which is a way past a beast that has not noticed you rather than only a way to see less; a torch lies on the first floor to carry and set down, whalers' lamps are the fixtures, and `v` shows light as digits. The delver's five knacks are data in `assets/abilities.ron`, with `Drain` the delve's own effect in `effects.rs`, and gut eels spit back.
+Its bone rats and salt ghosts hear, from `hearing` in `beasts.ron`: a fight carries eight steps of open gut, so a beast round a corner comes to one it cannot see, and a curtain of sinew hides a fight but does not quiet it.
 Fire and gas meet here: slicks of fat catch and burn to cinder, sinew curtains burn away, one bile pool in four reeks of a gas that burns and dazes, burning flesh smokes enough to hide in, and the fireball sets what it lands on alight.
 The rail shows vitals with the mana bar and which beasts in sight have noticed you.
 
@@ -226,7 +227,7 @@ The rail shows vitals with the mana bar and which beasts in sight have noticed y
 Three floors of a counting house after hours, and the worked example of stealth and light together: `examples/heist`.
 A thief with a shaded lantern climbs from the cellars to the strongroom and out of a window onto the roofs, and the coin carried out is the score, in the epitaph and in the morgue file.
 The dark is the mechanic. Wall lamps are the only light; `s` snuffs the one beside you and `L` opens or shades the lantern, so being seen is a thing the player chooses moment by moment.
-What the engine cannot know, the heist says in the engine's own seams: which lamps are out is a `Sense` pushed in `PerceiveSet::Annotate`, relighting one is a `Tactic` of the game's own returning `Decision::own`, and `add_choice` routes it to the game's own action; a thrown pebble is entered in every listener's `Aware` as a sound heard at a cell, which the engine's own search walks to; a watchman who notices the player passes that on to everyone in earshot.
+What the engine cannot know, the heist says in the engine's own seams: which lamps are out is a `Sense` pushed in `PerceiveSet::Annotate`, relighting one is a `Tactic` of the game's own returning `Decision::own`, and `add_choice` routes it to the game's own action; a thrown pebble is the engine's landing noise, which a watchman who hears it round the walls walks to, and forgets once it sees the spot; a watchman who notices the player shouts, a noise of the game's own that brings everyone in earshot, and the log says what the house heard from `NoiseHeard`.
 It is the test that stealth, light, the perceive stage and a game's own choices meet without any of them knowing about the others.
 
 ## The open world: Corsair
