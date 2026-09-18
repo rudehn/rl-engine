@@ -71,6 +71,12 @@ pub struct MonsterDef {
     pub speed: u32,
     /// Percent health at or below which it runs; zero never flees.
     pub flee_at: i32,
+    /// How it notices a subject that can go unnoticed, the commando among
+    /// them; absent, the engine's default, which is sure only of what is
+    /// adjacent. A sentry names its own, since a droid that hesitates at a
+    /// lit commando in blaster range is not a sentry.
+    #[serde(default)]
+    pub notice: Option<NoticeStats>,
     /// True when noticing an enemy sounds the deck's alarm.
     #[serde(default)]
     pub alarm: bool,
@@ -171,7 +177,7 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
         (Actor, Blocks, Position(at), OnMap(map)),
         (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
         (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
-        (Notice(NoticeStats::default()), d.melee.attack(), Kind(id)),
+        (Notice(d.notice.unwrap_or_default()), d.melee.attack(), Kind(id)),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
     if let Some(ranged) = d.ranged {
@@ -306,5 +312,35 @@ mod tests {
         assert_eq!(app.world().get::<DarkSight>(probe), None, "blinded");
         crate::testing::pass_turns(&mut app, 3);
         assert_eq!(app.world().get::<DarkSight>(probe).map(|d| d.0), Some(4), "and back after three turns");
+    }
+
+    /// The whole chain in play, with no `Noticed` written by hand: a probe
+    /// with a clear line to the commando sees it, notices it, and sounds
+    /// the alarm, as well as opening fire.
+    #[test]
+    fn a_probe_that_spots_the_commando_in_play_sounds_the_alarm_as_well_as_opening_fire() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (probe, player) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
+        let struck = crate::testing::run_until_struck(&mut app, probe, 20);
+        assert!(struck.ranged && struck.target == player, "the probe shoots the commando");
+        let alarms = app.world().resource::<MessageLog>().iter().filter(|e| e.text.ends_with("an alarm sounds.")).count();
+        assert_eq!(alarms, 1, "the probe saw the commando and fired on it, and never sounded the alarm");
+    }
+
+    /// With the lamp on, a droid is sure of the commando well past any
+    /// blaster's reach, so a lit fight opens as it always did; unlit, a
+    /// droid is sure only up close, and past that noticing is a roll a
+    /// careful commando can slip.
+    #[test]
+    fn a_lit_commando_is_noticed_at_once_within_eight_and_an_unlit_one_past_two_is_a_roll() {
+        use rl_engine::rl_rules::ai::awareness::{certain_radius, notice_chance};
+        let roster = Roster::load(&crate::content::registries());
+        let commando = StealthStats::default();
+        for name in ["line droid", "probe droid", "heavy droid"] {
+            let notice = roster.defs.get(roster.defs.expect(name)).notice.expect("every droid names how it notices");
+            assert_eq!(certain_radius(&notice, &commando, true), 8, "{name}, lit");
+            assert_eq!(certain_radius(&notice, &commando, false), 2, "{name}, unlit");
+            assert!((1..100).contains(&notice_chance(&notice, &commando)), "{name}: past that, a roll, never certain and never hopeless");
+        }
     }
 }

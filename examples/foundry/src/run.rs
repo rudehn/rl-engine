@@ -53,6 +53,13 @@ pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries
             (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(20), RevealsMap),
             (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, &registries)), crate::light::SHOULDER_LAMP),
             (MeleeAttack::new(kinetic, DiceRoll::new(1, 3)), Name::new("you"), Glyph::new('@', Color::WHITE).on_layer(10)),
+            // Noticeable, not sneaky: no skill at hiding, but a subject a
+            // droid has to notice rather than one it sees the instant it
+            // comes into view. Without it nothing ever notices the
+            // commando, so a probe that spots it never sounds its alarm,
+            // and the lamp decides only whether a droid can see, never how
+            // sure it is.
+            Stealth(StealthStats::default()),
         ))
         .id();
     // A hand blaster in hand from the first turn: the slice's own weapon,
