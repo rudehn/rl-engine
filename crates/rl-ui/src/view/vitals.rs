@@ -108,7 +108,9 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
             n if n <= health.max * 2 => Tones::NOTICE,
             _ => Tones::GOOD,
         };
-        view.bars.push(Bar::new("health", health.current, health.max, tone));
+        // A killing blow can carry health below zero; the bar reads empty
+        // rather than a negative count on the screen the run ends on.
+        view.bars.push(Bar::new("health", health.current.max(0), health.max, tone));
     }
     let Some(registries) = &me.registries else { return };
     for active in afflicted.into_iter().flat_map(|a| a.iter()) {
@@ -143,6 +145,16 @@ mod tests {
         stage.app.world_mut().get_mut::<Health>(player).unwrap().current = 5;
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().health().unwrap().tone, Tones::BAD, "a sixth is bad news");
+    }
+
+    #[test]
+    fn a_blow_that_carries_health_below_zero_reads_as_an_empty_bar() {
+        let mut stage = Stage::new(VitalsViewPlugin);
+        let player = stage.player;
+        stage.app.world_mut().get_mut::<Health>(player).unwrap().current = -3;
+        stage.tick();
+        let view = stage.app.world().resource::<VitalsView>();
+        assert_eq!(view.health().map(|h| (h.value, h.max)), Some((0, 30)));
     }
 
     #[test]
