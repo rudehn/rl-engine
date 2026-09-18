@@ -145,7 +145,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             let mut e = commands.spawn((
                 (Actor, Blocks, Position(p), Speed(110), Faction(rats.faction)),
                 (Health::full(6), Armor(0), Perception(7), DarkSight(9)),
-                (MeleeAttack { kind: rats.bite, dice: DiceRoll::new(1, 3), cost: None },),
+                (MeleeAttack::new(rats.bite, DiceRoll::new(1, 3)),),
             ));
             if clever {
                 e.insert((

@@ -52,7 +52,7 @@ pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(20), RevealsMap),
             (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, &registries)), crate::light::SHOULDER_LAMP),
-            (MeleeAttack { kind: kinetic, dice: DiceRoll::new(1, 3), cost: None }, Name::new("you"), Glyph::new('@', Color::WHITE).on_layer(10)),
+            (MeleeAttack::new(kinetic, DiceRoll::new(1, 3)), Name::new("you"), Glyph::new('@', Color::WHITE).on_layer(10)),
         ))
         .id();
     // A hand blaster in hand from the first turn: the slice's own weapon,

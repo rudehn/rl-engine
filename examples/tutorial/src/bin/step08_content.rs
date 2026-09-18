@@ -226,10 +226,7 @@ impl Bestiary {
             .spawn((
                 (Actor, Blocks, Kind(id), Position(at), Speed(def.speed), Faction(self.faction)),
                 (Health::full(def.hp), Armor(def.armor), Perception(def.perception), Mind(self.minds[id.index()].clone())),
-                (
-                    MeleeAttack { kind: def.kind.id(), dice: def.attack, cost: None },
-                    Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5),
-                ),
+                (MeleeAttack::new(def.kind.id(), def.attack), Glyph::new(def.glyph, Color::srgb(def.color.0, def.color.1, def.color.2)).on_layer(5)),
                 // What the narrator, and later the rail, call it.
                 (Name::new(def.name.clone()),),
             ))
@@ -272,7 +269,7 @@ fn start(
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6), cost: None }),
+            (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
             (Inventory::default(),),
         ))
         .id();

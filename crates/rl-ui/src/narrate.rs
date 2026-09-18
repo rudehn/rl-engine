@@ -739,7 +739,7 @@ mod tests {
                 Position(stage.at.offset(1, 0)),
                 Health::full(20),
                 Faction(theirs),
-                MeleeAttack { kind, dice: DiceRoll::flat(2), cost: None },
+                MeleeAttack::new(kind, DiceRoll::flat(2)),
                 Name::new("slime"),
                 rl_render::Glyph::new('s', green).on_layer(5),
             ))
@@ -789,7 +789,7 @@ mod tests {
         let a = stage
             .app
             .world_mut()
-            .spawn((Actor, Blocks, Position(far), Health::full(20), Faction(theirs), MeleeAttack { kind, dice: DiceRoll::flat(3), cost: None }, Name::new("a")))
+            .spawn((Actor, Blocks, Position(far), Health::full(20), Faction(theirs), MeleeAttack::new(kind, DiceRoll::flat(3)), Name::new("a")))
             .id();
         let b = stage.app.world_mut().spawn((Actor, Blocks, Position(far.offset(1, 0)), Health::full(20), Armor(9), Faction(theirs), Name::new("b"))).id();
         stage.tick();

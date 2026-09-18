@@ -168,11 +168,11 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
         (Actor, Blocks, Position(at), OnMap(map)),
         (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
         (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
-        (Notice(NoticeStats::default()), MeleeAttack { kind: kind.id(), dice, cost: None }, Kind(id)),
+        (Notice(NoticeStats::default()), MeleeAttack::new(kind.id(), dice), Kind(id)),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
     if let Some((range, dice, kind)) = d.ranged {
-        e.insert(RangedAttack { kind: kind.id(), dice, range, cost: None });
+        e.insert(RangedAttack::new(kind.id(), dice, range));
     }
     if let Some(n) = d.dark_sight {
         e.insert(NativeDarkSight(n));

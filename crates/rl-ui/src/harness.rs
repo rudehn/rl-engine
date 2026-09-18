@@ -52,7 +52,7 @@ impl Stage {
                     Health::full(30),
                     Armor(0),
                     Faction(ours),
-                    MeleeAttack { kind, dice: rl_core::DiceRoll::new(1, 6), cost: None },
+                    MeleeAttack::new(kind, rl_core::DiceRoll::new(1, 6)),
                     Name::new("you"),
                     Inventory::default(),
                     rl_render::Glyph::new('@', Color::WHITE).on_layer(10),
@@ -85,7 +85,7 @@ impl Stage {
                 Health::full(10),
                 Armor(0),
                 Faction(theirs),
-                MeleeAttack { kind, dice: rl_core::DiceRoll::new(1, 4), cost: None },
+                MeleeAttack::new(kind, rl_core::DiceRoll::new(1, 4)),
                 Name::new(name.to_string()),
                 rl_render::Glyph::new(glyph, Color::WHITE).on_layer(5),
             ))

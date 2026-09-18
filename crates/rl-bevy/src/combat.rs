@@ -20,6 +20,7 @@
 use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
+use rl_rules::ability::Look;
 use rl_rules::damage::{DamageKindId, Defender};
 use rl_rules::faction::FactionDef;
 use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances, StatId};
@@ -80,6 +81,33 @@ pub struct MeleeAttack {
     /// that does not care about weapon speed writes nothing and every
     /// blow costs a turn.
     pub cost: Option<u32>,
+    /// What a blow looks like as it lands: a burst on whoever it struck.
+    /// `None` shows nothing, which is how a plain blow reads: the log says
+    /// it, and the target's health bar moves.
+    pub look: Option<Look>,
+}
+
+impl MeleeAttack {
+    /// A blow of `kind` rolling `dice`, costing an ordinary turn and
+    /// showing nothing.
+    ///
+    /// A constructor rather than a literal, so a field that is only ever
+    /// wanted by some games is added without touching every call site.
+    pub const fn new(kind: DamageKindId, dice: DiceRoll) -> Self {
+        Self { kind, dice, cost: None, look: None }
+    }
+
+    /// One blow costs `cost` hundredths of a step.
+    pub const fn costing(mut self, cost: u32) -> Self {
+        self.cost = Some(cost);
+        self
+    }
+
+    /// A blow bursts on its target in `look`.
+    pub const fn looking(mut self, look: Look) -> Self {
+        self.look = Some(look);
+        self
+    }
 }
 
 /// What a shot does, and how far it reaches. An attack on a target that is
@@ -99,6 +127,30 @@ pub struct RangedAttack {
     /// finds nothing in reach costs the ordinary turn rather than this,
     /// since what was spent was the aim.
     pub cost: Option<u32>,
+    /// What flies from the shooter to the target. With one, a shot is seen
+    /// to fly and, while something watches, lands when it arrives rather
+    /// than when it is fired. `None` flies nothing and lands at once.
+    pub look: Option<Look>,
+}
+
+impl RangedAttack {
+    /// A shot of `kind` rolling `dice` out to `range`, costing an ordinary
+    /// turn and flying nothing.
+    pub const fn new(kind: DamageKindId, dice: DiceRoll, range: i32) -> Self {
+        Self { kind, dice, range, cost: None, look: None }
+    }
+
+    /// One shot costs `cost` hundredths of a step.
+    pub const fn costing(mut self, cost: u32) -> Self {
+        self.cost = Some(cost);
+        self
+    }
+
+    /// A shot flies in `look`.
+    pub const fn looking(mut self, look: Look) -> Self {
+        self.look = Some(look);
+        self
+    }
 }
 
 /// Extra rolls every hit carries, each its own [`DamageEvent`]: a flaming
@@ -643,7 +695,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(us),
-                RangedAttack { kind: blunt, dice: DiceRoll::flat(3), range: 6, cost: None },
+                RangedAttack::new(blunt, DiceRoll::flat(3), 6),
                 Strikes(vec![(blunt, DiceRoll::flat(2))]),
             ))
             .id();
@@ -671,6 +723,23 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Attack(far)));
         app.update();
         assert_eq!(app.world().get::<Health>(far).unwrap().current, 20);
+    }
+
+    /// A call site names only what it cares about: `new` leaves every
+    /// optional field unset, and each builder sets the one it names.
+    #[test]
+    fn a_new_attack_leaves_every_optional_field_unset_and_each_builder_sets_its_own() {
+        let kind = DamageKindId::from_raw(0);
+        let look = rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 40) };
+        let blow = MeleeAttack::new(kind, DiceRoll::flat(2));
+        assert_eq!((blow.kind, blow.dice, blow.cost, blow.look), (kind, DiceRoll::flat(2), None, None));
+        let blow = blow.costing(70).looking(look);
+        assert_eq!((blow.cost, blow.look), (Some(70), Some(look)));
+
+        let shot = RangedAttack::new(kind, DiceRoll::flat(3), 6);
+        assert_eq!((shot.kind, shot.dice, shot.range, shot.cost, shot.look), (kind, DiceRoll::flat(3), 6, None, None));
+        let shot = shot.costing(140).looking(look);
+        assert_eq!((shot.cost, shot.look), (Some(140), Some(look)));
     }
 
     /// What `who` fights with, as a panel or a resolver would ask.
@@ -712,7 +781,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(sides.ours),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(10), cost: None },
+                MeleeAttack::new(sides.kind, DiceRoll::flat(10)),
             ))
             .id();
         let slot = SlotId::from_raw(0);
@@ -768,7 +837,7 @@ mod tests {
             .world_mut()
             .spawn((
                 crate::items::Item,
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::new(2, 6), cost: None },
+                MeleeAttack::new(sides.kind, DiceRoll::new(2, 6)),
                 Strikes(vec![(sides.kind, DiceRoll::flat(1))]),
                 crate::items::Wearable(EquipShape::in_slot(hand)),
             ))
@@ -777,7 +846,7 @@ mod tests {
             .world_mut()
             .spawn((
                 crate::items::Item,
-                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(4), range: 5, cost: None },
+                RangedAttack::new(sides.kind, DiceRoll::flat(4), 5),
                 Strikes(vec![(sides.kind, DiceRoll::flat(2))]),
                 crate::items::Wearable(EquipShape::in_slot(off)),
             ))
@@ -785,7 +854,7 @@ mod tests {
         let mut worn = Equipment::with_slot_count(2);
         worn.equip(blade, &EquipShape::in_slot(hand)).unwrap();
         worn.equip(pistol, &EquipShape::in_slot(off)).unwrap();
-        let fist = MeleeAttack { kind: sides.kind, dice: DiceRoll::new(1, 3), cost: None };
+        let fist = MeleeAttack::new(sides.kind, DiceRoll::new(1, 3));
         let player = app
             .world_mut()
             .spawn((
@@ -851,7 +920,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(sides.ours),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost },
+                MeleeAttack { cost, ..MeleeAttack::new(sides.kind, DiceRoll::flat(1)) },
             ))
             .id();
         let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(1, 0)), Health::full(20), Faction(sides.theirs))).id();
@@ -885,7 +954,7 @@ mod tests {
                 Health::full(30),
                 Faction(sides.ours),
                 Speed(200),
-                MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: Some(70) },
+                MeleeAttack::new(sides.kind, DiceRoll::flat(1)).costing(70),
             ))
             .id();
         let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(1, 0)), Health::full(20), Faction(sides.theirs))).id();
@@ -931,7 +1000,7 @@ mod tests {
                 Viewshed::new(8),
                 Health::full(30),
                 Faction(sides.ours),
-                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(1), range, cost },
+                RangedAttack { cost, ..RangedAttack::new(sides.kind, DiceRoll::flat(1), range) },
             ))
             .id();
         let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(offset, 0)), Health::full(20), Faction(sides.theirs))).id();
@@ -980,18 +1049,14 @@ mod tests {
         let sides = crate::testing::two_sides(&mut app);
         let mut player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours)));
         if !worn {
-            player.insert(MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: None });
+            player.insert(MeleeAttack::new(sides.kind, DiceRoll::flat(1)));
         }
         let player = player.id();
         if worn {
             let slot = SlotId::from_raw(0);
             let blade = app
                 .world_mut()
-                .spawn((
-                    crate::items::Item,
-                    MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(1), cost: None },
-                    crate::items::Wearable(EquipShape::in_slot(slot)),
-                ))
+                .spawn((crate::items::Item, MeleeAttack::new(sides.kind, DiceRoll::flat(1)), crate::items::Wearable(EquipShape::in_slot(slot))))
                 .id();
             let mut equipment = Equipment::with_slot_count(1);
             equipment.equip(blade, &EquipShape::in_slot(slot)).unwrap();
@@ -1021,19 +1086,11 @@ mod tests {
         let (first_slot, second_slot) = (SlotId::from_raw(0), SlotId::from_raw(1));
         let first = app
             .world_mut()
-            .spawn((
-                crate::items::Item,
-                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(3), range: 6, cost: None },
-                crate::items::Wearable(EquipShape::in_slot(first_slot)),
-            ))
+            .spawn((crate::items::Item, RangedAttack::new(sides.kind, DiceRoll::flat(3), 6), crate::items::Wearable(EquipShape::in_slot(first_slot))))
             .id();
         let second = app
             .world_mut()
-            .spawn((
-                crate::items::Item,
-                RangedAttack { kind: sides.kind, dice: DiceRoll::flat(3), range: 6, cost: None },
-                crate::items::Wearable(EquipShape::in_slot(second_slot)),
-            ))
+            .spawn((crate::items::Item, RangedAttack::new(sides.kind, DiceRoll::flat(3), 6), crate::items::Wearable(EquipShape::in_slot(second_slot))))
             .id();
         let mut equipment = Equipment::with_slot_count(2);
         equipment.equip(first, &EquipShape::in_slot(first_slot)).unwrap();

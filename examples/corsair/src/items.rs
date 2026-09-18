@@ -257,10 +257,10 @@ impl Armory {
                 e.insert(Armor(d.armor));
             }
             if let (Some(dice), Some(kind)) = (d.attack, &d.kind) {
-                e.insert(MeleeAttack { kind: kind.id(), dice: enchant.strike(dice, &rule), cost: None });
+                e.insert(MeleeAttack::new(kind.id(), enchant.strike(dice, &rule)));
             }
             if let Some((range, dice, kind)) = &d.ranged {
-                e.insert(RangedAttack { kind: kind.id(), dice: enchant.strike(*dice, &rule), range: *range, cost: None });
+                e.insert(RangedAttack::new(kind.id(), enchant.strike(*dice, &rule), *range));
             }
             let extra = enchant.strikes(&self.affixes);
             if !extra.is_empty() {
@@ -343,7 +343,7 @@ pub fn drop_loot(
 /// A bare-knuckle strike: what the player fights with when nothing worn
 /// carries a blow of its own.
 pub fn unarmed(armory: &Armory) -> MeleeAttack {
-    MeleeAttack { kind: armory.fist, dice: DiceRoll::new(1, 3), cost: None }
+    MeleeAttack::new(armory.fist, DiceRoll::new(1, 3))
 }
 
 /// An item on the ground as the status line sees it.

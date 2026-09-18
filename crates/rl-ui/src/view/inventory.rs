@@ -234,7 +234,7 @@ mod tests {
                 Item,
                 Name::new("a blade"),
                 Wearable(EquipShape::in_slot(hand)),
-                MeleeAttack { kind, dice: DiceRoll::new(1, 6), cost: None },
+                MeleeAttack::new(kind, DiceRoll::new(1, 6)),
                 Strikes(vec![(kind, DiceRoll::flat(1))]),
                 Bestows(vec![(might, Op::Add(2))]),
             ))

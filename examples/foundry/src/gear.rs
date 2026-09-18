@@ -197,10 +197,10 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
         e.insert(Resists(r));
     }
     if let Some((dice, kind)) = d.melee {
-        e.insert(MeleeAttack { kind: kind.id(), dice, cost: d.cost });
+        e.insert(MeleeAttack { cost: d.cost, ..MeleeAttack::new(kind.id(), dice) });
     }
     if let Some((range, dice, kind)) = d.ranged {
-        e.insert(RangedAttack { kind: kind.id(), dice, range, cost: d.cost });
+        e.insert(RangedAttack { cost: d.cost, ..RangedAttack::new(kind.id(), dice, range) });
     }
     if let Some((range, dice, kind)) = d.throw {
         e.insert(Throwable { range, strike: Some((kind.id(), dice)) });

@@ -451,7 +451,7 @@ mod tests {
                 Name::new("a blade"),
                 rl_render::Glyph::new(')', Color::WHITE),
                 Wearable(EquipShape::in_slot(hand)),
-                MeleeAttack { kind, dice: DiceRoll::new(1, 6), cost: None },
+                MeleeAttack::new(kind, DiceRoll::new(1, 6)),
             ))
             .id();
         let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();

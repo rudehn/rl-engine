@@ -96,7 +96,7 @@ fn start(
         .spawn((
             (Actor, Player, Blocks, Position(Point::ZERO)),
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Health::full(24), Armor(1), MeleeAttack { kind: kinds.expect("kick"), dice: DiceRoll::new(1, 6), cost: None }),
+            (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
         ))
         .id();
     warps.write(WarpRequest::into_place(player, WARREN));

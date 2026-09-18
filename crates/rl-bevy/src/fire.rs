@@ -599,7 +599,7 @@ mod tests {
                 Health::full(10),
                 Faction(sides.theirs),
                 Perception(8),
-                MeleeAttack { kind: sides.kind, dice: rl_core::DiceRoll::flat(1), cost: None },
+                MeleeAttack::new(sides.kind, rl_core::DiceRoll::flat(1)),
                 Mind(Arc::new(Brain::new().then(Hunt))),
             ))
             .id();

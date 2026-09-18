@@ -978,7 +978,7 @@ mod tests {
         let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
         stage.tick();
         let (user, kind) = (stage.player, stage.kind);
-        stage.app.world_mut().entity_mut(user).insert(RangedAttack { kind, dice: rl_core::DiceRoll::flat(2), range: 6, cost: None });
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 6));
         let near = stage.actor("near", 'n', 2, 0);
         let far = stage.actor("far", 'f', 4, 0);
         stage.tick();
@@ -1021,7 +1021,7 @@ mod tests {
     fn a_shot_from_a_worn_gun_opens_the_cursor_and_previews_the_guns_own_reach() {
         let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
         let (user, kind) = (stage.player, stage.kind);
-        let gun = stage.app.world_mut().spawn((Item, RangedAttack { kind, dice: rl_core::DiceRoll::flat(2), range: 3, cost: None })).id();
+        let gun = stage.app.world_mut().spawn((Item, RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 3))).id();
         let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
         worn.equip(gun, &rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))).expect("one slot, one gun");
         stage.app.world_mut().entity_mut(user).insert(worn);

@@ -291,7 +291,7 @@ mod tests {
             Resists(resists),
             Afflicted::default(),
             Speed(120),
-            RangedAttack { kind, dice: DiceRoll::flat(3), range: 6, cost: None },
+            RangedAttack::new(kind, DiceRoll::flat(3), 6),
             Strikes(vec![(kind, DiceRoll::new(1, 4))]),
         ));
         stage.tick();
@@ -351,7 +351,7 @@ mod tests {
         let blade = stage
             .app
             .world_mut()
-            .spawn((Item, Name::new("a blade"), Armor(2), MeleeAttack { kind, dice: DiceRoll::new(2, 6), cost: None }, Bestows(vec![(might, Op::Add(5))])))
+            .spawn((Item, Name::new("a blade"), Armor(2), MeleeAttack::new(kind, DiceRoll::new(2, 6)), Bestows(vec![(might, Op::Add(5))])))
             .id();
         let mut worn = Equipped(rl_rules::Equipment::with_slot_count(2));
         worn.equip(blade, &rl_rules::EquipShape::in_slot(hand)).expect("the slot exists");

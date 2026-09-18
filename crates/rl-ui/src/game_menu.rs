@@ -472,7 +472,7 @@ mod tests {
                 Position(stage.at.offset(1, 0)),
                 Health::full(9),
                 Faction(theirs),
-                MeleeAttack { kind, dice: DiceRoll::flat(30), cost: None },
+                MeleeAttack::new(kind, DiceRoll::flat(30)),
                 Name::new("ogre"),
             ))
             .id();

@@ -253,7 +253,7 @@ mod tests {
         app.update();
         app.update();
         let tag: TagId = rl_engine::rl_core::Id::from_raw(0);
-        let attack = RangedAttack { kind: rl_engine::rl_core::Id::from_raw(0), dice: Default::default(), range: 6, cost: None };
+        let attack = RangedAttack::new(rl_engine::rl_core::Id::from_raw(0), Default::default(), 6);
         let slugs = app.world_mut().spawn((Tagged(vec![tag]), Stack { key: 0, count: 1 })).id();
         let a = app.world_mut().spawn((Ammo { tag }, attack)).id();
         let b = app.world_mut().spawn((Ammo { tag }, attack)).id();
@@ -274,10 +274,7 @@ mod tests {
         // whatsoever, so a future change to either system that widened
         // that query would be caught here rather than in play.
         let mut app = crate::testing::headless(RunSeed(1));
-        let item = app
-            .world_mut()
-            .spawn((Dry, Stowed::Ranged(RangedAttack { kind: rl_engine::rl_core::Id::from_raw(0), dice: Default::default(), range: 6, cost: None })))
-            .id();
+        let item = app.world_mut().spawn((Dry, Stowed::Ranged(RangedAttack::new(rl_engine::rl_core::Id::from_raw(0), Default::default(), 6)))).id();
         app.world_mut().write_message(rl_engine::rl_bevy::TurnEnd { turn: 1 });
         app.world_mut().run_system_once(crate::heat::vent_heat).unwrap();
         assert!(app.world().get::<RangedAttack>(item).is_none(), "still dry: vent_heat has nothing here to vent");

@@ -272,7 +272,7 @@ mod tests {
                     Viewshed::new(8),
                     Health::full(30),
                     Faction(sides.ours),
-                    MeleeAttack { kind: sides.kind, dice: DiceRoll::flat(5), cost: None },
+                    MeleeAttack::new(sides.kind, DiceRoll::flat(5)),
                 ))
                 .id();
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

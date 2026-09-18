@@ -169,11 +169,7 @@ impl Goblins {
             (
                 Health::full(8),
                 Armor(0),
-                MeleeAttack {
-                    kind: self.stab,
-                    dice: DiceRoll::new(1, 4),
-                    cost: None,
-                },
+                MeleeAttack::new(self.stab, DiceRoll::new(1, 4)),
                 Perception(10),
                 Mind(self.mind.clone()),
                 // Sapient: it searches where it lost you, and opens doors.
@@ -261,11 +257,7 @@ fn start(
             (
                 Health::full(30),
                 Armor(1),
-                MeleeAttack {
-                    kind: kinds.expect("slash"),
-                    dice: DiceRoll::new(1, 6),
-                    cost: None,
-                },
+                MeleeAttack::new(kinds.expect("slash"), DiceRoll::new(1, 6)),
             ),
             // Lit, you see further and are noticed sooner.
             TORCH,
