@@ -158,7 +158,7 @@ impl Armory {
 /// `either` reaches for the named hands directly, since a one-handed
 /// weapon that fits either one is not naming a single slot at all; `also`
 /// folds each extra slot a two-hander claims onto the one it starts in.
-fn shape_of(d: &ItemDef, registries: &Registries) -> Option<EquipShape> {
+pub fn shape_of(d: &ItemDef, registries: &Registries) -> Option<EquipShape> {
     if d.either {
         let main = registries.slots.expect("main hand");
         let off = registries.slots.expect("off hand");

@@ -48,7 +48,7 @@ pub fn clock(app: &App) -> u32 {
 pub fn player_with_hand_blaster(app: &mut App) -> (Entity, Entity) {
     app.update();
     app.update();
-    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    let player = crate::testing::empty_handed(app);
     let item = equip_new(app, player, "hand blaster");
     (player, item)
 }

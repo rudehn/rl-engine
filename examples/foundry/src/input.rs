@@ -179,6 +179,7 @@ mod tests {
         let mut app = crate::testing::headless(RunSeed(5));
         app.add_plugins(KeyScriptPlugin);
         crate::testing::settle(&mut app);
+        crate::testing::empty_handed(&mut app);
         let before = crate::testing::clock(&app);
         press(&mut app, KeyCode::KeyF);
         assert!(said(&app, "You have nothing in hand to fire."));

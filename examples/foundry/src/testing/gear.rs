@@ -20,7 +20,7 @@ pub fn dual_blasters(app: &mut App) -> (Entity, Entity, Entity) {
     let registries = app.world().resource::<Registries>().clone();
     let armory = Armory::load(&registries);
     let id = armory.defs.expect("hand blaster");
-    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    let player = empty_handed(app);
     let mut equip_one = || {
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
@@ -46,7 +46,7 @@ pub fn slug_pistol_with(app: &mut App, slugs: u32) -> (Entity, Entity) {
     app.update();
     let registries = app.world().resource::<Registries>().clone();
     let armory = Armory::load(&registries);
-    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    let player = empty_handed(app);
     if slugs > 0 {
         give_slugs(app, player, slugs);
     }
@@ -71,7 +71,7 @@ pub fn dual_slug_pistols_with(app: &mut App, slugs: u32) -> (Entity, Entity, Ent
     let registries = app.world().resource::<Registries>().clone();
     let armory = Armory::load(&registries);
     let id = armory.defs.expect("slug pistol");
-    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    let player = empty_handed(app);
     if slugs > 0 {
         give_slugs(app, player, slugs);
     }
@@ -88,6 +88,20 @@ pub fn dual_slug_pistols_with(app: &mut App, slugs: u32) -> (Entity, Entity, Ent
     let first = equip_one();
     let second = equip_one();
     (player, first, second)
+}
+
+/// Takes the commando's starting kit out of its hands and its bag and
+/// out of the world, so a test that arms it with something else knows
+/// exactly what it wields and which hand each piece lands in. Returns the
+/// player.
+pub fn empty_handed(app: &mut App) -> Entity {
+    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    let kit = std::mem::take(&mut app.world_mut().get_mut::<Inventory>(player).unwrap().items);
+    for item in kit {
+        app.world_mut().get_mut::<Equipped>(player).unwrap().0.unequip(item);
+        app.world_mut().despawn(item);
+    }
+    player
 }
 
 /// Puts `count` slugs straight in `actor`'s bag and writes the same

@@ -17,6 +17,7 @@ use rl_engine::rl_rules::damage::SubtractArmor;
 use crate::content::{Profile, resistances};
 use crate::decks::{Foundry, map_of};
 use crate::droids::Roster;
+use crate::gear::{Armory, shape_of, spawn_item};
 
 /// The deck a run starts on, when it is not deck one: `main.rs` reads it
 /// from `FOUNDRY_START` for a screenshot of a deeper deck. Absent, the run
@@ -25,7 +26,8 @@ use crate::droids::Roster;
 pub struct StartDeck(pub u32);
 
 /// Builds the foundry's decks and combat rules, loads the roster every
-/// deck spawns from, spawns the commando with its lamp lit, and warps it
+/// deck spawns from, spawns the commando with its lamp lit and a hand
+/// blaster in hand, and warps it
 /// onto deck one, or onto [`StartDeck`]'s. Runs once, in [`NewRun`].
 ///
 /// Reads the registries from a resource rather than building them itself:
@@ -56,9 +58,18 @@ pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries
             (Player, Blocks, Position(Point::ZERO), Viewshed::new(20), RevealsMap),
             (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, &registries)), crate::light::SHOULDER_LAMP),
             (MeleeAttack { kind: kinetic, dice: DiceRoll::new(1, 3), cost: None }, Name::new("you"), Glyph::new('@', Color::WHITE).on_layer(10)),
-            (Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len()))),
         ))
         .id();
+    // A hand blaster in hand from the first turn: the slice's own weapon,
+    // spawned as any found one is so it carries its heat, since a deck's
+    // droids shoot from five tiles and nothing promises a gun on deck one.
+    let armory = Armory::load(&registries);
+    let id = armory.defs.expect("hand blaster");
+    let blaster = spawn_item(&mut commands, &armory, id, &registries);
+    let mut worn = Equipment::with_slot_count(registries.slots.len());
+    let shape = shape_of(armory.defs.get(id), &registries).expect("a hand blaster is worn");
+    worn.equip(blaster, &shape).expect("an empty commando has a free hand");
+    commands.entity(player).insert((Inventory { items: vec![blaster] }, Equipped(worn)));
 
     commands.insert_resource(PlaceRulesRes(Box::new(foundry)));
     let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
@@ -142,6 +153,20 @@ mod tests {
 
     fn record_deals(mut dealt: ResMut<Dealt>, fresh: Query<Has<Player>, Added<MyTurn>>) {
         dealt.0.extend(fresh.iter());
+    }
+
+    #[test]
+    fn a_new_run_puts_a_hand_blaster_that_runs_hot_in_the_commandos_hand_over_a_span_of_seeds() {
+        for s in 0..4u64 {
+            let mut app = crate::testing::headless(RunSeed(s));
+            crate::testing::settle(&mut app);
+            let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+            let worn: Vec<Entity> = app.world().get::<Equipped>(me).unwrap().0.worn().map(|(_, item)| item).collect();
+            assert_eq!(worn.len(), 1, "seed {s}: one thing in hand");
+            assert_eq!(app.world().get::<Name>(worn[0]).map(Name::as_str), Some("hand blaster"), "seed {s}");
+            assert!(app.world().get::<crate::heat::Heat>(worn[0]).is_some(), "seed {s}: and it carries its heat");
+            assert!(app.world().get::<Inventory>(me).unwrap().items.contains(&worn[0]), "seed {s}: worn from the bag, as a found one is");
+        }
     }
 
     #[test]

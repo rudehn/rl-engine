@@ -57,12 +57,14 @@ fn fingerprint(app: &mut App) -> u64 {
 const WALK: [Direction; 8] =
     [Direction::East, Direction::East, Direction::South, Direction::South, Direction::West, Direction::West, Direction::North, Direction::North];
 
-/// A commando with a hand blaster, and health enough to last the run, who
+/// The commando with its starting hand blaster, and health enough to last the run, who
 /// shoots the nearest droid in sight whenever there is one and walks the
 /// square otherwise, for `turns` of its own turns.
 fn run(seed: u64, turns: usize) -> u64 {
     let mut app = foundry::testing::headless(RunSeed(seed));
-    let (player, _) = foundry::testing::player_with_hand_blaster(&mut app);
+    // The hand blaster the commando starts with, as a real run does.
+    foundry::testing::settle(&mut app);
+    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
     app.world_mut().entity_mut(player).insert(Health::full(400));
     let mut taken = 0;
     let mut shots = 0;
@@ -107,7 +109,7 @@ fn fingerprint_tripwire_a_scripted_two_hundred_turn_run_on_seed_seven_comes_to_t
     assert_eq!(first, run(7, 200), "one seed, two runs, one fingerprint");
     assert_ne!(first, run(8, 200), "another seed is another run");
     assert_eq!(
-        first, 10_829_036_418_565_687_338,
+        first, 16_098_196_171_125_892_784,
         "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say so in the changelog"
     );
 }
