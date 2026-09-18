@@ -82,7 +82,9 @@ fn collect_struck(mut events: MessageReader<Struck>, mut log: ResMut<StruckLog>)
 /// Places a target three tiles east of `shooter`, on floor stamped clear
 /// for it so the shot always has a line regardless of what the deck
 /// generated there, and sends `shots` attacks at it one at a time,
-/// returning every `Struck` each one wrote, in order.
+/// returning every `Struck` the shooter wrote, in order. Only the
+/// shooter's: the commando's lamp lets a deck's droids see it, and a
+/// droid that closes in and fights back writes `Struck`s of its own.
 ///
 /// The target carries no `Actor`, so it never enters the turn queue and
 /// never acts: a still target for a test that cares only about what the
@@ -106,7 +108,7 @@ pub fn fire_at_a_target(app: &mut App, shooter: Entity, shots: usize) -> Vec<Str
         app.world_mut().write_message(Intent::new(shooter, Attack(target)));
         app.update();
     }
-    app.world_mut().resource_mut::<StruckLog>().0.drain(..).collect()
+    app.world_mut().resource_mut::<StruckLog>().0.drain(..).filter(|s| s.attacker == shooter).collect()
 }
 
 /// Writes a `DamageDealt` of `kind` dealing `amount` straight to `target`,

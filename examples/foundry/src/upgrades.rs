@@ -18,12 +18,12 @@
 //! own `raise` are the only code that ever touches a weapon's range for
 //! this reason, both guarded by [`Reached`] against ever adding it twice,
 //! and the run has no way to un-pick an upgrade once made. A derived
-//! design would also need a
-//! stored "range before any bonus" nowhere in the file currently keeps
-//! (`RangedAttack::range` is both the label and the value in one field),
-//! and the only place to add it is `gear::spawn_item`, which this pick
-//! does not touch. `heat::vent_heat` and `ammo::sync_ammo` only ever
-//! relocate a weapon's whole `RangedAttack` between it and
+//! design would also need a stored "range before any bonus" nowhere in
+//! the file currently keeps (`RangedAttack::range` is both the label and
+//! the value in one field), and the only place to add it is
+//! `gear::spawn_item`, which this pick does not touch. `heat::vent_heat`
+//! and `ammo::sync_ammo` only ever relocate a weapon's whole
+//! `RangedAttack` between it and
 //! [`Stowed::Ranged`](crate::heat::Stowed::Ranged) wholesale; neither
 //! reads or rewrites the number inside, so the bonus rides along through a
 //! lock or a dry spell for free.
@@ -52,7 +52,7 @@ pub const OFFERED: [Upgrade; 3] = [Upgrade::Stims, Upgrade::Uplink, Upgrade::Ser
 /// The name and the one-line pitch a menu row shows for `upgrade`.
 fn blurb(upgrade: Upgrade) -> (&'static str, &'static str) {
     match upgrade {
-        Upgrade::Stims => ("Stims", "An ability that closes a wound; twenty turns before the next."),
+        Upgrade::Stims => ("Stims", "An ability that closes a wound, once every twenty turns."),
         Upgrade::Uplink => ("Uplink", "One more tile of reach on every ranged weapon you wear."),
         Upgrade::Servos => ("Servos", "A tenth faster at everything, for good."),
     }
@@ -214,6 +214,8 @@ fn modal(modals: &Modals) -> ModalId {
 /// reaction to the first charge's objective finishing.
 pub fn offer(modals: &mut Modals, screen: &mut ChoiceScreen, choosing: &mut Choosing) {
     choosing.0 = Some(OFFERED);
+    screen.menu.title = "The charge is set. Choose one upgrade".to_string();
+    screen.menu.hints = "\u{2191}\u{2193} pick \u{2022} enter choose".to_string();
     screen.menu.set_rows(
         OFFERED
             .iter()
@@ -260,22 +262,35 @@ pub fn choice_keys(world: &mut World) {
     apply(upgrade, player, world);
     world.resource_mut::<Modals>().close_one(id);
     world.resource_mut::<Choosing>().0 = None;
-    world.write_message(RunOver::won().saying("The first charge is set. The rest of the foundry waits below."));
+    // The ending screen's title already says the charge is set; the
+    // epitaph says what the run kept for it, and what is left.
+    let (name, _) = blurb(upgrade);
+    world.write_message(RunOver::won().saying(format!("{name} fitted. The rest of the foundry waits below.")));
 }
 
-/// Draws the pick screen while it is open. `Terminal` is `None` in a
-/// headless test, which adds no window: absence here means nothing to
-/// draw into, not a game with no screen at all, the same as `heat::note_heat`
-/// reads a missing `GearView`.
-pub fn draw_choice(screen: Res<ChoiceScreen>, modals: Res<Modals>, palette: Res<Palette>, terminal: Option<ResMut<Terminal>>) {
-    let Some(mut terminal) = terminal else { return };
+/// The pick's presenter: draws [`ChoiceScreen`] in the rectangle it is
+/// built with, the way the engine's own panels take theirs, so `main.rs`
+/// cuts it from the screen beside every other panel rather than the
+/// screen working out where to sit on its own. A headless test adds none,
+/// and the pick still opens, reads its keys and ends the run without it.
+pub struct ChoicePanel(pub Rect);
+
+/// Where [`ChoicePanel`] draws.
+#[derive(Resource, Debug, Clone, Copy)]
+struct ChoiceRect(Rect);
+
+impl Plugin for ChoicePanel {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(ChoiceRect(self.0)).add_systems(Update, draw_choice.in_set(PresentSet::Overlay));
+    }
+}
+
+/// Draws the pick screen while it is open.
+fn draw_choice(screen: Res<ChoiceScreen>, modals: Res<Modals>, palette: Res<Palette>, rect: Res<ChoiceRect>, mut terminal: ResMut<Terminal>) {
     if !modals.is_open(modal(&modals)) {
         return;
     }
-    let bounds = terminal.bounds();
-    let (w, h) = (bounds.width.min(56), bounds.height.min(11));
-    let rect = Rect::new((bounds.width - w) / 2, (bounds.height - h) / 2, w, h);
-    draw_menu(&mut terminal, rect, &screen.menu, &palette);
+    draw_menu(&mut terminal, rect.0, &screen.menu, &palette);
 }
 
 /// Loads Foundry's one ability, `stims`, granted by the first upgrade.

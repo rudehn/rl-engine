@@ -22,6 +22,13 @@ pub mod gear;
 /// What a weapon that runs hot pays and sheds; fields only until
 /// `heat`'s systems give them behaviour.
 pub mod heat;
+/// Keys to intents, declared once so the controls screen lists them.
+pub mod input;
+/// The lifts between decks, and the line the log gives each deck.
+pub mod lifts;
+/// The dim first deck, the dark ones below, the stores' wall lamps and
+/// the commando's shoulder lamp.
+pub mod light;
 /// Items on the decks, scattered the moment each is first entered, and
 /// items the dead leave behind.
 pub mod loot;

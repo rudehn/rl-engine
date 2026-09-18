@@ -10,10 +10,15 @@
 //! adds it beside the engine's plugins, `testing::headless` adds it
 //! beside the engine plugins it needs, and neither registers a game
 //! system of its own. Every later task adds its systems here.
+//!
+//! The one exception is drawing into a rectangle of the screen: the
+//! engine's panels and `upgrades::ChoicePanel` take the rectangle
+//! `main.rs` cuts for them, which a headless test has no screen to cut.
 use bevy::prelude::*;
 use rl_engine::rl_bevy::AddAction;
-use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PresentSet, ResolveSet, Turn, TurnSet};
-use rl_engine::rl_ui::{AddModal, ViewSet};
+use rl_engine::rl_bevy::EngineState;
+use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, ResolveSet, Turn, TurnSet};
+use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, ViewSet};
 
 /// Foundry's own systems: the run's start, and every reaction a task
 /// after this one adds.
@@ -116,11 +121,31 @@ impl Plugin for FoundryPlugin {
         // declares its ledger, so `upgrades::modal` finds it the moment
         // anything looks. `choice_keys` is exclusive (it calls
         // `upgrades::apply`, which needs the whole `World`), so it is
-        // ordered the same place a game's own key handlers run.
+        // ordered the same place a game's own key handlers run, chained
+        // below with the rest of the keys. Its drawing is not here:
+        // `upgrades::ChoicePanel` takes a rectangle of the screen, so
+        // `main.rs` adds it beside the engine's own panels.
         app.add_modal(crate::upgrades::MODAL);
         app.init_resource::<crate::upgrades::ChoiceScreen>();
         app.init_resource::<crate::upgrades::Choosing>();
-        app.add_systems(Update, crate::upgrades::choice_keys.in_set(EngineSet::Input));
-        app.add_systems(Update, crate::upgrades::draw_choice.in_set(PresentSet::Overlay));
+        // The keys, declared once so the controls screen lists what these
+        // systems read. Chained, the pick first: a confirm that closes the
+        // pick must not fall through, the same frame, to the world's own
+        // keys as a step or a lift. `f` and `t` hand the engine's
+        // targeting cursor an `AimFire` or `AimThrow`; registering both
+        // here is a no-op beside the cursor's own plugin and lets a
+        // headless test with no cursor press the keys all the same.
+        crate::input::declare_controls(app);
+        app.add_message::<AimFire>().add_message::<AimThrow>();
+        app.add_systems(Update, (crate::upgrades::choice_keys, crate::light::toggle_lamp, crate::input::player_input).chain().in_set(EngineSet::Input));
+        // The lifts between decks, laid on first arrival beside everything
+        // else a deck fills with, and the line the log gives each deck.
+        app.add_systems(Turn, crate::lifts::link_decks.in_set(TurnSet::React));
+        // Light: each deck's ambient, set between the turns and the light
+        // the way delve's `set_ambient` is, so the frame a lift lands on
+        // is drawn in the new deck's light; and the stores' wall lamps,
+        // hung on first arrival.
+        app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
+        app.add_systems(Turn, crate::light::light_the_lamps.in_set(TurnSet::React));
     }
 }

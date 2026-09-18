@@ -18,23 +18,24 @@ use crate::content::{Profile, resistances};
 use crate::decks::{Foundry, map_of};
 use crate::droids::Roster;
 
+/// The deck a run starts on, when it is not deck one: `main.rs` reads it
+/// from `FOUNDRY_START` for a screenshot of a deeper deck. Absent, the run
+/// starts on deck one, which is every real run.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct StartDeck(pub u32);
+
 /// Builds the foundry's decks and combat rules, loads the roster every
-/// deck spawns from, spawns the commando, and warps it onto deck one.
-/// Runs once, in [`NewRun`].
+/// deck spawns from, spawns the commando with its lamp lit, and warps it
+/// onto deck one, or onto [`StartDeck`]'s. Runs once, in [`NewRun`].
 ///
 /// Reads the registries from a resource rather than building them itself:
 /// `main.rs` inserts them before the run starts, the way its content is
 /// loaded before anything else runs.
 ///
 /// Spawned without [`Actor`], deliberately: see [`admit_the_player`].
-pub fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    registries: Res<Registries>,
-    mut warps: MessageWriter<WarpRequest>,
-    mut next: ResMut<NextState<EngineState>>,
-) {
+pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries>, first: Option<Res<StartDeck>>, mut begin: Begin) {
     let foundry = Foundry::new(seed.0);
+    commands.insert_resource(crate::light::LampTile(foundry.lamp()));
     commands.insert_resource(foundry.appearance());
     commands.insert_resource(WorldMap::new(foundry.tiles().tables()));
 
@@ -53,15 +54,26 @@ pub fn start(
     let player = commands
         .spawn((
             (Player, Blocks, Position(Point::ZERO), Viewshed::new(20), RevealsMap),
-            (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, &registries))),
+            (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, &registries)), crate::light::SHOULDER_LAMP),
             (MeleeAttack { kind: kinetic, dice: DiceRoll::new(1, 3), cost: None }, Name::new("you"), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len()))),
         ))
         .id();
 
     commands.insert_resource(PlaceRulesRes(Box::new(foundry)));
-    warps.write(WarpRequest::into_place(player, map_of(1)));
-    next.set(EngineState::Playing);
+    let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
+    begin.log.notice(format!("Seed {}. The drop ship is gone. The reactor is three decks down.", seed.0.0), 0);
+    begin.warps.write(WarpRequest::into_place(player, map_of(deck)));
+    begin.next.set(EngineState::Playing);
+}
+
+/// What starting a run writes beyond the world itself: the log's first
+/// line, the warp onto the first deck, and the state that begins play.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Begin<'w> {
+    warps: MessageWriter<'w, WarpRequest>,
+    next: ResMut<'w, NextState<EngineState>>,
+    log: ResMut<'w, MessageLog>,
 }
 
 /// Gives the player [`Actor`] the moment its first [`PlaceEntered`]
