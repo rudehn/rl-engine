@@ -24,7 +24,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Fixed: `GameMenuPanel` filled its whole rectangle, so one sized for the ending's words left the pause menu trailing empty rows. The rectangle is now the most the menu may take, and its frame closes under its last row.
 - Fixed: `Placement::AnyRoom` and `Placement::InRoom` took a room exactly the size of the piece, which laid the piece's walls on the room's own edge, over its doorways, and could leave the piece's opening facing the room's wall with no way in.
   Both now require the room to exceed the piece by a cell on every side, so a piece always has floor all round it; a chain whose rooms are all too small fails loudly as before.
-  Corsair's bottom cave level draws rooms of seven to eleven instead of four to nine so one always holds its 7x5 vault, which moves that level's map on every seed; no fingerprint tripwire moved.
+  Corsair's bottom cave level draws rooms of nine to eleven instead of four to nine, so every room holds its 7x5 vault with the ring; that level's map moves on every seed.
+  Delve's heart floor draws rooms of seventeen to twenty instead of fifteen to eighteen, so every room holds the 15x11 heart with the ring; at fifteen to eighteen, seed 21 found no room at all and the floor failed to build.
+  Both games' floor tests now cover three hundred seeds; no fingerprint tripwire moved.
 - Fixed: `Placement::AnyRoom` could choose a room an earlier stamp in the same chain had already used.
   The later stamp then drew over the earlier one's tiles, while the earlier one's marks were still reported on cells that were no longer floor.
   `AnyRoom` now excludes any room whose bounds intersect an earlier `Stamped` in the chain, and fails the chain if none remain.

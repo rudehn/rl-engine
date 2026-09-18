@@ -192,7 +192,9 @@ impl PlaceRules for Whale {
                 .then(Spill { name: "tallow", tile: self.tallow, on: open, chance_pct: 6 }),
             // The Heart: one chamber, and what beats in it.
             _ => Chain::new()
-                .then(Rooms { floor: open, attempts: 60, min_size: 15, max_size: 18, min_rooms: 2 })
+                // Seventeen and up, so every room holds the 15x11 heart with
+                // the cell of floor all round it that `AnyRoom` requires.
+                .then(Rooms { floor: open, attempts: 60, min_size: 17, max_size: 20, min_rooms: 2 })
                 .then(StampPrefab { name: "heart", prefab: self.heart()?, at: Placement::AnyRoom, orient: Orient::Fixed })
                 .then(RandomStart),
         };
@@ -205,9 +207,12 @@ impl PlaceRules for Whale {
 mod tests {
     use super::*;
 
+    /// Over three hundred seeds, not three: a floor that fails to build
+    /// is a run that crashes on its stairs, and the heart's room was once
+    /// too small for its chamber on seed 21 alone.
     #[test]
-    fn every_floor_builds_with_a_way_in_and_the_heart_holds_the_warden() {
-        for seed in [1u64, 2, 3] {
+    fn every_floor_builds_with_a_way_in_and_the_heart_holds_the_warden_over_a_span_of_seeds() {
+        for seed in 0u64..300 {
             let whale = Whale::new(RunSeed(seed));
             let tables = whale.tiles().tables();
             for floor in 1..=FLOORS {

@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn every_deck_builds_over_a_span_of_seeds_with_an_entry_and_an_exit() {
-        for s in 0..40 {
+        for s in 0..300 {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
