@@ -11,8 +11,10 @@
 //   wits:       "mindless" | "animal" | "sapient", or a list as in the engine's Wits
 //   perception: how far it sees, in tiles
 //   dark_sight: optional; tiles it sees without light: radar, for the droids that have it
-//   melee:      (roll:, kind:, look:); look is optional, (glyph:, color: (r:, g:, b:)) in bytes as
-//               in abilities.ron, and a blow bursts on its target in its colour; absent, it shows nothing
+//   melee:      optional; (roll:, kind:, look:); a monster with one strikes what is beside it; look is
+//               optional, (glyph:, color: (r:, g:, b:)) in bytes as in abilities.ron, and a blow bursts
+//               on its target in its colour; absent, it shows nothing. With neither melee nor
+//               ranged, it never attacks at all
 //   ranged:     optional; (range:, roll:, kind:, look:); a droid with one shoots; look is optional,
 //               the same shape, and is what a shot flies as; absent, a shot lands unseen
 //   speed:      percent of normal, 100 normal, 200 twice as fast
@@ -22,8 +24,12 @@
 //               added to certain while the subject stands in light, may be left out, 0,
 //               memory: turns it keeps looking, may be left out, 6); absent, the engine's
 //               default: sure only of what is adjacent, 25 percent a turn beyond
-//   alarm:      optional; true when noticing an enemy sounds the deck's alarm, a klaxon
-//               heard in every open corner of the deck
+//   alarm:      optional; true when it sounds the deck's alarm, a klaxon heard in every open
+//               corner of the deck, on every turn it takes knowing where an enemy is; the log
+//               says so once, when it first notices
+//   shadow:     optional; (keep_within:, no_closer_than:) in tiles: it keeps the enemies in sight
+//               that far off, closing past keep_within and backing off inside no_closer_than,
+//               and waits in between rather than hunting; absent, it closes in
 //   hearing:    optional; how it hears, as (threshold: steps of loudness a sound must still
 //               have when it arrives, memory: turns it goes looking, may be left out, 6);
 //               a shot or a blow carries ten steps and the alarm the whole deck, and a shut
@@ -38,7 +44,7 @@
      perception: 8, melee: (roll: "1d2", kind: "kinetic"), ranged: (range: 5, roll: "1d4", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 100, flee_at: 0, hearing: (threshold: 0, memory: 8),
      spawn: [(1, 2, 100, 1, 2), (2, 4, 90, 2, 3)], drops: [("hand blaster", 5), ("slug", 5)]),
     (name: "probe droid", glyph: 'p', color: (0.5, 0.5, 0.55), hp: 6, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
-     perception: 10, dark_sight: 4, melee: (roll: "1d2", kind: "kinetic"), ranged: (range: 4, roll: "1d4", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 120, flee_at: 0, alarm: true, hearing: (threshold: 0, memory: 8),
+     perception: 10, dark_sight: 4, notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 120, flee_at: 0, alarm: true, shadow: (keep_within: 5, no_closer_than: 3), hearing: (threshold: 0, memory: 8),
      spawn: [(1, 6, 20, 1, 1)], drops: [("slug", 10)]),
     (name: "heavy droid", glyph: 'D', color: (0.6, 0.6, 0.7), hp: 18, armor: 2, profile: "chassis", faction: "droids", wits: ["mindless", "searches"],
      perception: 8, melee: (roll: "1d4", kind: "kinetic"), ranged: (range: 6, roll: "1d6+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 90, flee_at: 0, hearing: (threshold: 0, memory: 8),

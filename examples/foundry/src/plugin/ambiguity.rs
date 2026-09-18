@@ -56,6 +56,7 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("loot::scatter_on_arrival", id(loot::scatter_on_arrival)),
         ("loot::drop_on_death", id(loot::drop_on_death)),
         ("droids::sound_alarm", id(droids::sound_alarm)),
+        ("droids::shout_alarm", id(droids::shout_alarm)),
         ("droids::unjam_sensors", id(droids::unjam_sensors)),
         ("droids::jam_sensors", id(droids::jam_sensors)),
         ("droids::sync_dark_sight", id(droids::sync_dark_sight)),
@@ -131,8 +132,14 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(droids::sound_alarm),
             id(stealth::wake_on_damage),
-            &["Aware", "Messages<Noticed>"],
-            "both only raise awareness; one sees the other's a pass late",
+            &["Messages<Noticed>"],
+            "a probe woken by a blow is logged sounding the alarm this pass or the next, after its notice either way",
+        ),
+        pair(
+            id(droids::shout_alarm),
+            id(stealth::wake_on_damage),
+            &["Aware"],
+            "a probe shouts in its own pass and strikes nobody, so no blow wakes it in the pass it shouts in",
         ),
         pair(id(ammo::note_ammo), id(heat::note_heat), &["GearView", "Facets"], "no weapon has both Ammo and Heat, so no row gets a facet from both"),
         // Something lands only in a pass that dealt nobody a turn, since

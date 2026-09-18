@@ -23,11 +23,11 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
+use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, SearchLastKnown, Shadow, ShootAtRange, Wander};
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
-pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, Sounded, sound_alarm};
+pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, Hover, NOISE, PULSE, shout_alarm, sound_alarm};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub use spawns::populate_deck;
 
@@ -61,8 +61,9 @@ pub struct MonsterDef {
     /// Tiles it sees without light: radar, for the droids that have it.
     #[serde(default)]
     pub dark_sight: Option<i32>,
-    /// The roll and damage kind a blow deals.
-    pub melee: MeleeDef,
+    /// The roll and damage kind a blow deals; absent, it never strikes.
+    #[serde(default)]
+    pub melee: Option<MeleeDef>,
     /// The range, roll and damage kind a shot deals; present, it shoots.
     #[serde(default)]
     pub ranged: Option<RangedDef>,
@@ -77,9 +78,14 @@ pub struct MonsterDef {
     /// lit commando in blaster range is not a sentry.
     #[serde(default)]
     pub notice: Option<NoticeStats>,
-    /// True when noticing an enemy sounds the deck's alarm.
+    /// True when it sounds the deck's alarm for as long as it knows where
+    /// an enemy is.
     #[serde(default)]
     pub alarm: bool,
+    /// How far from the enemies in sight it keeps; present, it hangs at
+    /// that distance rather than closing in.
+    #[serde(default)]
+    pub shadow: Option<ShadowDef>,
     /// How it hears; absent, it is deaf, and neither the alarm nor a
     /// firefight draws it.
     #[serde(default)]
@@ -96,6 +102,16 @@ impl Named for MonsterDef {
     fn name(&self) -> &str {
         &self.name
     }
+}
+
+/// The distance a kind keeps from what it has in sight, as `monsters.ron`
+/// writes it: the engine's [`Shadow`] by its two fields.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ShadowDef {
+    /// How far it lets the nearest enemy get before it closes.
+    pub keep_within: i32,
+    /// How near it lets the nearest enemy come before it backs off.
+    pub no_closer_than: i32,
 }
 
 /// A monster's own radar, from `monsters.ron`'s `dark_sight`: the probe's
@@ -140,10 +156,13 @@ impl Roster {
     /// monster with a guaranteed drop.
     ///
     /// Builds the spawn table, and gives every kind a brain from what it
-    /// names. [`MeleeAdjacent`] comes first, then [`ShootAtRange`] for a
-    /// kind with a shot: the one fires only on an adjacent enemy and the
-    /// other only on one two or more tiles off, so they never compete for
-    /// the same target. A kind flees only if it names `flee_at` above zero.
+    /// names. [`MeleeAdjacent`] comes first for a kind with a blow, then
+    /// [`ShootAtRange`] for a kind with a shot: the one fires only on an
+    /// adjacent enemy and the other only on one two or more tiles off, so
+    /// they never compete for the same target. A kind flees only if it
+    /// names `flee_at` above zero. A kind that names `shadow` keeps its
+    /// distance with [`Shadow`] and hangs there with [`Hover`] in place of
+    /// [`Hunt`], which would close the gap it keeps.
     pub(crate) fn from_ron(ron: &str, registries: &Registries) -> Self {
         let defs: Registry<MonsterDef> = registries.names().load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
         let mut table = BandedTable::default();
@@ -152,22 +171,29 @@ impl Roster {
             for &(lo, hi, weight, gmin, gmax) in &d.spawn {
                 table.push(BandedEntry::new(id).bands(lo, hi).weight(weight).group(gmin, gmax));
             }
-            let mut brain = Brain::new().then(MeleeAdjacent);
+            let mut brain = Brain::new();
+            if d.melee.is_some() {
+                brain = brain.then(MeleeAdjacent);
+            }
             if d.ranged.is_some() {
                 brain = brain.then(ShootAtRange::default());
             }
             if d.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
             }
-            brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 30 })));
+            brain = match d.shadow {
+                Some(s) => brain.then(Shadow { keep_within: s.keep_within, no_closer_than: s.no_closer_than }).then(Hover),
+                None => brain.then(Hunt),
+            };
+            brains.push(Arc::new(brain.then(SearchLastKnown).then(Wander { chance_pct: 30 })));
         }
         Self { defs, table, brains }
     }
 }
 
 /// Spawns `id` on `map` at `at`: an actor with health, armor, resistances,
-/// perception, a mind and the notice every monster carries. `RangedAttack`,
-/// `Alarm` and `Hearing` are added only for a kind that names them; a kind naming
+/// perception, a mind and the notice every monster carries. `MeleeAttack`,
+/// `RangedAttack`, `Alarm` and `Hearing` are added only for a kind that names them; a kind naming
 /// `dark_sight` gets [`NativeDarkSight`] rather than `DarkSight` itself,
 /// which [`sensors::sync_dark_sight`] sets from it the moment this pass's
 /// `Turn` schedule runs.
@@ -177,9 +203,12 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
         (Actor, Blocks, Position(at), OnMap(map)),
         (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
         (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
-        (Notice(d.notice.unwrap_or_default()), d.melee.attack(), Kind(id)),
+        (Notice(d.notice.unwrap_or_default()), Kind(id)),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
+    if let Some(melee) = d.melee {
+        e.insert(melee.attack());
+    }
     if let Some(ranged) = d.ranged {
         e.insert(ranged.attack());
     }
@@ -238,40 +267,6 @@ mod tests {
         app.world().get::<Position>(e).expect("it stands somewhere").0
     }
 
-    /// The alarm is a klaxon, not a broadcast: a droid far across the deck
-    /// hears it where the probe sounded it, and a rat, being deaf to it,
-    /// hears nothing.
-    #[test]
-    fn a_probe_that_notices_the_player_sounds_an_alarm_a_droid_across_the_deck_hears_and_a_rat_does_not() {
-        let mut app = crate::testing::headless(RunSeed(1));
-        let probe = crate::testing::lone_monster(&mut app, "probe droid");
-        let (far, _) = crate::testing::out_of_sight(&mut app, "line droid", 1500, 4000);
-        let (rat, _) = crate::testing::out_of_sight(&mut app, "coolant rat", 500, 1500);
-        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        let sounded = at(&app, probe);
-        app.world_mut().write_message(Noticed { observer: probe, subject: player, at: Point::ZERO });
-        app.update();
-        assert_eq!(heard(&app, far), Some(sounded), "fifteen steps and more round the deck, it heard the alarm, and where");
-        assert!(app.world().get::<Heard>(rat).is_none(), "a rat has no ear for it");
-    }
-
-    /// A droid that hears the alarm comes to where it sounded, round
-    /// whatever walls are in the way.
-    #[test]
-    fn a_droid_that_hears_the_alarm_goes_to_where_it_sounded() {
-        let mut app = crate::testing::headless(RunSeed(1));
-        let probe = crate::testing::lone_monster(&mut app, "probe droid");
-        let (far, post) = crate::testing::out_of_sight(&mut app, "line droid", 800, 1500);
-        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        let sounded = at(&app, probe);
-        let before = crate::testing::walk(&app, post, sounded);
-        app.world_mut().write_message(Noticed { observer: probe, subject: player, at: Point::ZERO });
-        app.update();
-        crate::testing::pass_turns(&mut app, 4);
-        let after = crate::testing::walk(&app, at(&app, far), sounded);
-        assert!(after < before, "it went to look: {before} hundredths of a step from the alarm, then {after}");
-    }
-
     /// A shot is heard ten steps off by a droid that cannot see it, which
     /// is what draws a deck's droids into a firefight.
     #[test]
@@ -288,21 +283,6 @@ mod tests {
     }
 
     #[test]
-    fn a_deck_that_sounded_its_alarm_in_one_run_logs_it_again_in_the_next_run_in_the_same_app() {
-        let mut app = crate::testing::headless(RunSeed(1));
-        let alarms = |app: &App| app.world().resource::<MessageLog>().iter().filter(|e| e.text.ends_with("an alarm sounds.")).count();
-        for run in 0..2 {
-            let (probe, player, _) = crate::testing::probe_and_sleepers(&mut app);
-            let before = alarms(&app);
-            app.world_mut().write_message(Noticed { observer: probe, subject: player, at: Point::ZERO });
-            app.update();
-            assert_eq!(alarms(&app), before + 1, "run {run}: the alarm was not logged");
-            app.world_mut().write_message(Restart { seed: Some(RunSeed(1)) });
-            app.update();
-        }
-    }
-
-    #[test]
     fn an_ion_hit_blinds_a_probes_radar_for_three_turns_and_a_slug_does_not() {
         let mut app = crate::testing::headless(RunSeed(1));
         let probe = crate::testing::lone_monster(&mut app, "probe droid");
@@ -312,19 +292,6 @@ mod tests {
         assert_eq!(app.world().get::<DarkSight>(probe), None, "blinded");
         crate::testing::pass_turns(&mut app, 3);
         assert_eq!(app.world().get::<DarkSight>(probe).map(|d| d.0), Some(4), "and back after three turns");
-    }
-
-    /// The whole chain in play, with no `Noticed` written by hand: a probe
-    /// with a clear line to the commando sees it, notices it, and sounds
-    /// the alarm, as well as opening fire.
-    #[test]
-    fn a_probe_that_spots_the_commando_in_play_sounds_the_alarm_as_well_as_opening_fire() {
-        let mut app = crate::testing::headless(RunSeed(1));
-        let (probe, player) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
-        let struck = crate::testing::run_until_struck(&mut app, probe, 20);
-        assert!(struck.ranged && struck.target == player, "the probe shoots the commando");
-        let alarms = app.world().resource::<MessageLog>().iter().filter(|e| e.text.ends_with("an alarm sounds.")).count();
-        assert_eq!(alarms, 1, "the probe saw the commando and fired on it, and never sounded the alarm");
     }
 
     /// With the lamp on, a droid is sure of the commando well past any

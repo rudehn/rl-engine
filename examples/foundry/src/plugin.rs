@@ -87,10 +87,11 @@ impl Plugin for FoundryPlugin {
         // which the engine's own schedule always runs after every
         // `TurnSet::React` system, this one included.
         app.add_systems(Turn, crate::loot::drop_on_death.in_set(TurnSet::React));
-        // A probe's alarm reacts to the same `Noticed` the engine's own
-        // stealth writes; nothing here needs ordering against it. Before
-        // heat's pair for the order of the log, as above.
-        app.add_systems(Turn, crate::droids::sound_alarm.before(crate::heat::vent_heat).in_set(TurnSet::React));
+        // A probe's alarm: its line reacts to the same `Noticed` the
+        // engine's own stealth writes, before heat's pair for the order of
+        // the log, as above; its shout answers each action it finishes,
+        // and touches nothing else of Foundry's.
+        app.add_systems(Turn, (crate::droids::sound_alarm.before(crate::heat::vent_heat), crate::droids::shout_alarm).in_set(TurnSet::React));
         // Chained, and in this order: the engine's own `schedule` can
         // write a `TurnEnd` and deal the very next turn's `DamageDealt` in
         // the same pass, so `unjam_sensors` must count the turn that just

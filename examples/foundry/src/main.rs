@@ -203,7 +203,7 @@ mod tests {
         let (_, me) = foundry::testing::droid_facing_player(&mut app, "probe droid", 4);
         let lines = |app: &App| app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect::<Vec<_>>();
         for _ in 0..20 {
-            if lines(&app).iter().any(|l| l.contains("alarm")) {
+            if lines(&app).iter().any(|l| l == "The probe droid sounds an alarm.") {
                 break;
             }
             app.world_mut().write_message(Intent::new(me, Wait));
@@ -211,7 +211,7 @@ mod tests {
         }
         let lines = lines(&app);
         let at = |what: &str| lines.iter().position(|l| l.contains(what)).unwrap_or_else(|| panic!("{what:?} not in {lines:#?}"));
-        assert!(at("The probe droid notices you.") < at("alarm"), "{lines:#?}");
+        assert!(at("The probe droid notices you.") < at("The probe droid sounds an alarm."), "{lines:#?}");
     }
 
     #[test]

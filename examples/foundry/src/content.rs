@@ -182,7 +182,7 @@ mod tests {
             ("ion pistol", Some(('~', Rgb::new(89, 166, 255)))),
             ("slug pistol", Some(('o', Rgb::new(242, 204, 115)))),
             ("line droid", bolt),
-            ("probe droid", bolt),
+            ("probe droid", None),
             ("heavy droid", bolt),
         ];
         let flies = |name: &str| table.iter().find(|(n, _)| *n == name).and_then(|(_, look)| *look);

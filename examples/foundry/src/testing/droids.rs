@@ -5,18 +5,27 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::Point;
 use rl_engine::rl_grid::Rgb;
+use rl_engine::rl_rules::Awareness;
 
 use crate::droids::Roster;
 
 /// Spawns `name` `range` tiles east of the player, on floor stamped clear
-/// for it the way [`super::fire_at_a_target`] clears its own line, so its
-/// brain always has a shot regardless of what the deck generated there.
-/// Also lights the player's own tile: the foundry's decks are otherwise
-/// pitch dark (`run::start` inserts `Lighting::dark()`), and a monster
-/// with no `DarkSight` of its own, such as a line droid, sees nothing
-/// past what it is touching outside of light, spec section 8.2's whole
-/// point for radar. Returns the monster, then the player.
+/// for it, the way [`droid_down_a_lane`] does with a lane as long as the
+/// range. Returns the monster, then the player.
 pub fn droid_facing_player(app: &mut App, name: &str, range: i32) -> (Entity, Entity) {
+    droid_down_a_lane(app, name, range, range)
+}
+
+/// Spawns `name` `at` tiles east of the player, with the `lane` tiles east
+/// of the player stamped to floor the way [`super::fire_at_a_target`]
+/// clears its own line, so its brain always has a shot, and room to close
+/// or back off, regardless of what the deck generated there. Also lights
+/// the player's own tile: the foundry's decks are otherwise pitch dark
+/// (`run::start` inserts `Lighting::dark()`), and a monster with no
+/// `DarkSight` of its own, such as a line droid, sees nothing past what it
+/// is touching outside of light, spec section 8.2's whole point for radar.
+/// Returns the monster, then the player.
+pub fn droid_down_a_lane(app: &mut App, name: &str, at: i32, lane: i32) -> (Entity, Entity) {
     app.update();
     app.update();
     let registries = app.world().resource::<Registries>().clone();
@@ -27,15 +36,15 @@ pub fn droid_facing_player(app: &mut App, name: &str, range: i32) -> (Entity, En
     let floor = app.world().resource::<WorldMap>().tile(pos.0).expect("the player's own tile is loaded");
     {
         let mut world_map = app.world_mut().resource_mut::<WorldMap>();
-        for dx in 1..=range {
+        for dx in 1..=lane.max(at) {
             world_map.set_tile(pos.0.offset(dx, 0), floor);
         }
     }
     let id = roster.defs.expect(name);
     let mut queue = CommandQueue::default();
     let mut commands = Commands::new(&mut queue, app.world_mut());
-    commands.spawn((Position(pos.0), LightSource::new(255, range + 2, Rgb::WHITE)));
-    let droid = crate::droids::spawn_monster(&mut commands, &roster, id, pos.0.offset(range, 0), map, &registries);
+    commands.spawn((Position(pos.0), LightSource::new(255, lane.max(at) + 2, Rgb::WHITE)));
+    let droid = crate::droids::spawn_monster(&mut commands, &roster, id, pos.0.offset(at, 0), map, &registries);
     queue.apply(app.world_mut());
     app.update();
     (droid, player)
@@ -77,26 +86,38 @@ pub fn run_until_struck(app: &mut App, attacker: Entity, max_turns: usize) -> Dr
     panic!("{attacker:?} never struck within {max_turns} turns");
 }
 
-/// A probe carrying `Alarm`, the player, and two line droids elsewhere on
-/// the same deck that have noticed nothing, for a test of `sound_alarm`.
-/// Returns the probe, then the player, then the two sleepers.
-pub fn probe_and_sleepers(app: &mut App) -> (Entity, Entity, Vec<Entity>) {
-    app.update();
-    app.update();
-    let registries = app.world().resource::<Registries>().clone();
-    let roster = Roster::load(&registries);
-    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-    let pos = app.world().get::<Position>(player).copied().expect("the player stands somewhere");
-    let map = app.world().resource::<WorldMap>().current();
-    let probe_id = roster.defs.expect("probe droid");
-    let line_id = roster.defs.expect("line droid");
-    let mut queue = CommandQueue::default();
-    let mut commands = Commands::new(&mut queue, app.world_mut());
-    let probe = crate::droids::spawn_monster(&mut commands, &roster, probe_id, pos.0, map, &registries);
-    let a = crate::droids::spawn_monster(&mut commands, &roster, line_id, pos.0, map, &registries);
-    let b = crate::droids::spawn_monster(&mut commands, &roster, line_id, pos.0, map, &registries);
-    queue.apply(app.world_mut());
-    (probe, player, vec![a, b])
+/// Makes `observer` alert to `subject` where `subject` stands, as if it
+/// had just noticed it: what a probe that knows where the commando is
+/// holds.
+pub fn alert(app: &mut App, observer: Entity, subject: Entity) {
+    let at = app.world().get::<Position>(subject).expect("the subject stands somewhere").0;
+    let mut aware = Aware::default();
+    aware.0.insert(subject, Awareness::Alert { at, stale_turns: 0 });
+    app.world_mut().entity_mut(observer).insert(aware);
+}
+
+/// Every alarm shouted and every cue played, copied out as they are
+/// written, for the same reason [`super::fire_at_a_target`] copies out
+/// `Struck`: a headless app rotates its buffers on wall time.
+#[derive(Resource, Default)]
+pub struct Alarms {
+    /// Who shouted the alarm, and where, in order.
+    pub shouts: Vec<(Entity, Point)>,
+    /// Every cue, in order.
+    pub cues: Vec<Cued>,
+}
+
+/// Copies every alarm and every cue written this frame into [`Alarms`].
+fn record_alarms(mut noise: MessageReader<MakeNoise>, mut cues: MessageReader<Cued>, sounds: Res<Sounds>, mut alarms: ResMut<Alarms>) {
+    let alarm = sounds.get(crate::droids::ALARM_SOUND);
+    alarms.shouts.extend(noise.read().filter(|n| Some(n.sound) == alarm).filter_map(|n| Some((n.maker?, n.at))));
+    alarms.cues.extend(cues.read().cloned());
+}
+
+/// Starts keeping [`Alarms`], from this frame on.
+pub fn record_alarms_from_now(app: &mut App) {
+    app.init_resource::<Alarms>();
+    app.add_systems(PostUpdate, record_alarms);
 }
 
 /// Spawns `name` alone on the current deck, at no point that matters to the
