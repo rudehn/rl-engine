@@ -31,6 +31,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Fixed: a player spawned as an `Actor` at the origin and warped onto its first map, as Delve, the tutorial and the starter template all start a run, was frozen a step or two forward before its warp landed, so the monsters its arrival put there took a dozen or more turns before its first.
   `admit_new_actors` now admits an actor the pass it first stands on the current map inside the loaded window, and keeps one spawned anywhere else waiting until then, so the player-first tie-break applies to a warped player too.
   Foundry drops the workaround that spawned its player without `Actor`; no fingerprint tripwire moved.
+- `CorePlugin`'s idle-state warning is declared ambiguous with every other system, since it only reads the state and warns, so a game that runs Bevy's ambiguity detection over its own schedules is not told about it.
+  Foundry runs that detection as a test, which fails on any unordered conflicting pair of its systems not on a commented allowlist.
 - Fixed: `Placement::AnyRoom` could choose a room an earlier stamp in the same chain had already used.
   The later stamp then drew over the earlier one's tiles, while the earlier one's marks were still reported on cells that were no longer floor.
   `AnyRoom` now excludes any room whose bounds intersect an earlier `Stamped` in the chain, and fails the chain if none remain.

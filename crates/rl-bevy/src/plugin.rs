@@ -241,7 +241,10 @@ impl Plugin for CorePlugin {
             .add_systems(Turn, crate::cue::hold_for_cues.in_set(TurnSet::Cleanup))
             .needs::<WorldMap>("CorePlugin", "`WorldMap::new(tiles.tables())`, the map every engine system reads")
             .add_systems(OnEnter(EngineState::Playing), check_requirements)
-            .add_systems(Update, warn_if_play_never_began)
+            // Ambiguous with everything on purpose: it reads the state and
+            // whether a map exists, and warns, so no order changes it, and a
+            // game's exclusive system in `Update` should not have to say so.
+            .add_systems(Update, warn_if_play_never_began.ambiguous_with_all())
             // The run's life: begun at startup, ended by the first `RunOver`,
             // torn down and begun again by a `Restart`.
             .add_systems(Startup, begin_first_run)

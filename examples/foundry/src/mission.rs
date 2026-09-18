@@ -225,7 +225,8 @@ pub fn resolve_set_charge(
 /// frame behind the fact that finished it (`rl_bevy::events`'s own doc on
 /// [`QuestChange`]), which is why this is a plain `Update` system rather
 /// than anything in `TurnSet`: nothing here is itself a reaction to a
-/// turn, only to what the tracker made of one after the fact.
+/// turn, only to what the tracker made of one after the fact. Runs before
+/// `EngineSet::Input`, so the key handlers find the pick open.
 pub fn offer_the_pick(
     mut changes: MessageReader<QuestChange>,
     quests: Res<Quests>,

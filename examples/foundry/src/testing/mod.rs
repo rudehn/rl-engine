@@ -40,6 +40,16 @@ use rl_engine::rl_ui::UiPlugin;
 /// `main.rs` loads it, since it names no seed and is the same for every
 /// run.
 pub fn headless(seed: RunSeed) -> App {
+    let mut app = headless_without_foundry(seed);
+    app.add_plugins(crate::plugin::FoundryPlugin);
+    app
+}
+
+/// [`headless`] without [`FoundryPlugin`](crate::plugin::FoundryPlugin):
+/// the engine as Foundry configures it and none of Foundry's own systems,
+/// so a test can tell which systems are Foundry's by what adding the
+/// plugin adds. Never plays: nothing starts a run.
+pub fn headless_without_foundry(seed: RunSeed) -> App {
     let mut app = rl_engine::rl_bevy::plugin::headless_app();
     app.add_plugins((
         FovPlugin,
@@ -62,7 +72,6 @@ pub fn headless(seed: RunSeed) -> App {
     };
     app.insert_resource(abilities);
     app.add_plugins(UiPlugin);
-    app.add_plugins(crate::plugin::FoundryPlugin);
     app
 }
 

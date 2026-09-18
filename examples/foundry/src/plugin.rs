@@ -109,7 +109,10 @@ impl Plugin for FoundryPlugin {
         // itself: an ordinary `Update` system, the way Corsair's own
         // `narrate_quests` is, reading `QuestChange` one frame behind the
         // fact that finished it (`rl_bevy::events`'s own doc on it).
-        app.add_systems(Update, crate::mission::offer_the_pick);
+        // Before the input set, so the pick is open before any key handler
+        // reads `Modals` that frame and a key cannot fall through to the
+        // world while the pick is pending, and before the drawing.
+        app.add_systems(Update, crate::mission::offer_the_pick.before(EngineSet::Input));
         // Uplink's own reach bonus: after `heat`'s and `ammo`'s chains
         // above, for the reason `upgrades::react_uplink` gives.
         app.add_systems(Turn, crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(crate::ammo::sync_ammo).in_set(TurnSet::React));
@@ -145,3 +148,6 @@ impl Plugin for FoundryPlugin {
         app.add_systems(Turn, crate::light::light_the_lamps.in_set(TurnSet::React));
     }
 }
+
+#[cfg(test)]
+mod ambiguity;
