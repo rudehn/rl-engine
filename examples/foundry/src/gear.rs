@@ -94,8 +94,10 @@ impl Named for ItemDef {
 /// suite, and whatever else ever names one.
 ///
 /// A component on the item rather than a field the game copies onto the
-/// wearer, so [`grant_dark_sight`] can read it off whatever is currently
-/// equipped without tracking which slot it came from.
+/// wearer, so [`sync_dark_sight`](crate::droids::sync_dark_sight) can read
+/// it off whatever is currently equipped without tracking which slot it
+/// came from, and fold it together with a monster's own native radar and
+/// whether either is jammed.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WornDarkSight(pub i32);
 
@@ -211,48 +213,6 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     e.id()
 }
 
-/// Wearing an item with [`WornDarkSight`] gives its wearer [`DarkSight`]
-/// at that radius; taking it off, or taking off the only one that
-/// granted it, takes `DarkSight` away.
-///
-/// Recomputed from everything currently worn, each time something is
-/// equipped or unequipped, rather than added or subtracted incrementally:
-/// if a wearer ever carries two dark-sight items at once, it sees by the
-/// larger of the two, so putting one on can never narrow its sight. This
-/// also means a wearer with dark sight of its own from some other source
-/// would lose it the moment its gear changed; nothing in this slice grants
-/// dark sight any way but this one, so the case cannot yet arise.
-///
-/// A wearer currently [`Jammed`](crate::droids::Jammed) is skipped rather
-/// than re-granted: the jam is about the sensor, not about who put it
-/// there, so a rangefinder helmet is blinded by an ion hit exactly the way
-/// a probe's own radar is, and re-equipping the same helmet mid-jam must
-/// not quietly undo that.
-pub fn grant_dark_sight(
-    mut commands: Commands,
-    mut events: MessageReader<ItemEvent>,
-    wearers: Query<&Equipped>,
-    sights: Query<&WornDarkSight>,
-    jammed: Query<(), With<crate::droids::Jammed>>,
-) {
-    let actors = events.read().filter_map(|ev| match *ev {
-        ItemEvent::Equipped { actor, .. } | ItemEvent::Unequipped { actor, .. } => Some(actor),
-        _ => None,
-    });
-    for actor in actors {
-        let Ok(worn) = wearers.get(actor) else { continue };
-        match worn.0.worn().filter_map(|(_, item)| sights.get(item).ok()).map(|s| s.0).max() {
-            Some(n) if !jammed.contains(actor) => {
-                commands.entity(actor).insert(DarkSight(n));
-            }
-            Some(_) => {}
-            None => {
-                commands.entity(actor).remove::<DarkSight>();
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bevy::ecs::world::CommandQueue;
@@ -328,6 +288,47 @@ mod tests {
         assert_eq!(app.world().get::<DarkSight>(player).map(|d| d.0), Some(6));
         unwear(&mut app, player, helmet);
         assert_eq!(app.world().get::<DarkSight>(player), None);
+    }
+
+    /// The reviewer's own reproduction, Fix round 1, finding 1: a jam that
+    /// stored the radius it took away and a `grant_dark_sight` that wrote
+    /// `DarkSight` from gear alone fought over the same component the
+    /// moment a jammed wearer took the helmet off, and the wearer kept
+    /// radar for good with no helmet on. `DarkSight` derived fresh every
+    /// pass by `sync_dark_sight` has nothing left to fight over: with the
+    /// helmet gone, there is nothing for it to read once the jam clears.
+    #[test]
+    fn a_jammed_wearer_who_takes_the_helmet_off_has_no_dark_sight_once_the_jam_clears() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (player, helmet) = wear(&mut app, "rangefinder helmet");
+        assert_eq!(app.world().get::<DarkSight>(player).map(|d| d.0), Some(6));
+        crate::testing::hit(&mut app, player, "ion", 1);
+        assert_eq!(app.world().get::<DarkSight>(player), None, "jammed");
+        unwear(&mut app, player, helmet);
+        crate::testing::pass_turns(&mut app, 3);
+        assert_eq!(app.world().get::<DarkSight>(player), None, "no helmet, so nothing to see by once the jam clears either");
+    }
+
+    #[test]
+    fn a_jammed_wearer_who_swaps_helmets_gets_the_new_ones_radius_once_the_jam_clears() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (player, old_helmet) = wear(&mut app, "rangefinder helmet");
+        crate::testing::hit(&mut app, player, "ion", 1);
+        assert_eq!(app.world().get::<DarkSight>(player), None, "jammed");
+        unwear(&mut app, player, old_helmet);
+        // A second sensor helmet, spawned by hand at a radius nothing in
+        // the roster names, so a leftover 6 from the old one could never
+        // be mistaken for the new one's own 9.
+        let head = app.world().resource::<Registries>().slots.expect("head");
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, app.world_mut());
+        let new_helmet = commands.spawn((Item, Wearable(EquipShape::in_slot(head)), WornDarkSight(9))).id();
+        queue.apply(app.world_mut());
+        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(new_helmet);
+        app.world_mut().write_message(Intent::new(player, Equip(new_helmet)));
+        app.update();
+        crate::testing::pass_turns(&mut app, 3);
+        assert_eq!(app.world().get::<DarkSight>(player).map(|d| d.0), Some(9), "the new helmet's own radius, not the old one's");
     }
 
     /// A definition with fields left at their most inert: no slot, no

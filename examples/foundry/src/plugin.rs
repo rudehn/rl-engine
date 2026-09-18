@@ -21,7 +21,6 @@ pub struct FoundryPlugin;
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(NewRun, crate::run::start);
-        app.add_systems(Turn, crate::gear::grant_dark_sight.in_set(TurnSet::React));
         // Chained, and in this order: the engine's own `schedule`
         // (crates/rl-bevy/src/turn.rs) can write a `TurnEnd` and deal the
         // next actor's turn in the same pass, so `TurnSet::React` can see
@@ -62,13 +61,18 @@ impl Plugin for FoundryPlugin {
         // A probe's alarm reacts to the same `Noticed` the engine's own
         // stealth writes; nothing here needs ordering against it.
         app.add_systems(Turn, crate::droids::sound_alarm.in_set(TurnSet::React));
-        // Chained, and in this order for the same reason heat's pair is
-        // above: the engine's own `schedule` can write a `TurnEnd` and
-        // deal the very next turn's `DamageDealt` in the same pass, so
-        // `unjam_sensors` must count the turn that just ended down before
-        // `jam_sensors` reads a hit that turn's actor just landed.
-        // Reversed, a fresh jam from that new hit would be counted down
-        // before it had stood for even one whole turn of its own.
-        app.add_systems(Turn, (crate::droids::unjam_sensors, crate::droids::jam_sensors).chain().in_set(TurnSet::React));
+        // Chained, and in this order: the engine's own `schedule` can
+        // write a `TurnEnd` and deal the very next turn's `DamageDealt` in
+        // the same pass, so `unjam_sensors` must count the turn that just
+        // ended down before `jam_sensors` reads a hit that turn's actor
+        // just landed (reversed, a fresh jam from that new hit would be
+        // counted down before it had stood for even one whole turn of its
+        // own), and `sync_dark_sight` must read `DarkSight` last of the
+        // three, after both, so it derives an actor's sight from the jam
+        // exactly as this pass leaves it rather than as it stood before
+        // either ran. `DarkSight` is otherwise never written anywhere
+        // else in this game: `sync_dark_sight` is its one owner, the same
+        // way `ammo.rs`'s `sync_ammo` owns a weapon's loaded state.
+        app.add_systems(Turn, (crate::droids::unjam_sensors, crate::droids::jam_sensors, crate::droids::sync_dark_sight).chain().in_set(TurnSet::React));
     }
 }
