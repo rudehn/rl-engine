@@ -153,7 +153,11 @@ pub enum Placement {
     /// Centred in the emitted [`Room`] with this index, which must be big
     /// enough to hold it.
     InRoom(usize),
-    /// Centred in a random emitted [`Room`] big enough to hold it.
+    /// Centred in a random emitted [`Room`] big enough to hold it, and
+    /// clear of every [`Stamped`] this chain already emitted: a room an
+    /// earlier `AnyRoom` stamp landed in is never chosen again, so two
+    /// stamps in one chain never draw over each other and bury a mark
+    /// under the next piece's wall.
     AnyRoom,
 }
 
@@ -235,9 +239,11 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
                 centred(room)
             }
             Placement::AnyRoom => {
-                let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(fits).collect();
+                let taken: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+                let free = |r: &Rect| taken.iter().all(|t| r.intersection(t).is_none());
+                let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(fits).filter(free).collect();
                 if rooms.is_empty() {
-                    return Err(BuildError::new(self.name, format!("no room holds {w}x{h}")));
+                    return Err(BuildError::new(self.name, format!("no free room holds {w}x{h}")));
                 }
                 centred(rooms[ctx.rng().random_range(0..rooms.len())])
             }
@@ -588,6 +594,45 @@ mod tests {
         let text = format!("{err:?}");
         assert!(text.contains("vault"));
         assert!(text.contains("overflow"), "the error says what went wrong, not just which pass: {text}");
+    }
+
+    /// Three `AnyRoom` stamps in one chain, over a span of seeds, never
+    /// choose the same room twice: if they did, the second stamp would
+    /// draw over the first's tiles while the first's mark was still
+    /// reported, and an item's spot could land on a wall.
+    #[test]
+    fn any_room_stamps_in_one_chain_never_land_on_each_other() {
+        let wall = TileRegistry::standard().expect("wall");
+        let piece = |mark: char| {
+            let middle = format!("#{mark}#");
+            Prefab::parse(&["###", &middle, "###"], |c| match c {
+                '#' => Some(wall),
+                _ => None,
+            })
+            .unwrap()
+        };
+        for seed in 0..200 {
+            let tiles = TileRegistry::standard();
+            let floor = tiles.expect("floor");
+            // 70x40 with rooms 5 to 11, the size Foundry's decks use: at
+            // smaller maps or a higher minimum, `Rooms` itself sometimes
+            // misses its room count by chance, which is that pass's own
+            // property, not this one's.
+            let mut c = BaseContext::blank(70, 40, tiles, wall);
+            Chain::new()
+                .then(Rooms { floor, min_size: 5, max_size: 11, ..Default::default() })
+                .then(StampPrefab { name: "a", prefab: piece('a'), at: Placement::AnyRoom, orient: Orient::Fixed })
+                .then(StampPrefab { name: "b", prefab: piece('b'), at: Placement::AnyRoom, orient: Orient::Fixed })
+                .then(StampPrefab { name: "c", prefab: piece('c'), at: Placement::AnyRoom, orient: Orient::Fixed })
+                .run(&mut c, RunSeed(seed))
+                .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+            let bounds: Vec<Rect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+            for i in 0..bounds.len() {
+                for j in (i + 1)..bounds.len() {
+                    assert!(bounds[i].intersection(&bounds[j]).is_none(), "seed {seed}: stamps {i} and {j} overlap: {:?} and {:?}", bounds[i], bounds[j]);
+                }
+            }
+        }
     }
 
     #[test]
