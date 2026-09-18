@@ -334,6 +334,27 @@ mod tests {
         .unwrap()
     }
 
+    /// A square with a different mark in each corner, so no rotation or
+    /// mirror maps it onto itself. `lopsided` is not enough for a test
+    /// that must tell every one of the eight facings apart: its top and
+    /// bottom border rows are identical, so its own mirror image already
+    /// equals a plain quarter-turn of it, which would hide a `.flipped()`
+    /// that had stopped running.
+    fn four_marked_corners(floor: TileId) -> Prefab {
+        Prefab::parse(
+            &[
+                "1.2", //
+                "...", //
+                "4.3", //
+            ],
+            |c| match c {
+                '.' => Some(floor),
+                _ => None,
+            },
+        )
+        .unwrap()
+    }
+
     #[test]
     fn parse_keeps_marks_and_transparency() {
         let p = vault(TileId(0), TileId(1));
@@ -423,9 +444,18 @@ mod tests {
         assert_eq!(first, stamped_marks(RunSeed(7), Orient::TurnedOrMirrored), "one seed, one map");
 
         // Then variety: over a span of seeds an oriented stamp must land its
-        // mark in more than one place, or the orientation did nothing.
+        // marks in more than one arrangement, or the orientation did nothing.
         let seen: std::collections::BTreeSet<_> = (0..40).map(|s| stamped_marks(RunSeed(s), Orient::TurnedOrMirrored)).collect();
         assert!(seen.len() > 1, "forty seeds laid the piece exactly one way");
+
+        // `four_marked_corners` has a different mark in each corner, so
+        // none of the eight facings coincide: mirroring must reach four
+        // that turning alone cannot, the four whose corner order is the
+        // mirror image of a turned one's. If `.flipped()` stopped running,
+        // `TurnedOrMirrored` would draw the same rng calls but only ever
+        // land a turned facing, and `seen` would shrink to `turned_only`.
+        let turned_only: std::collections::BTreeSet<_> = (0..40).map(|s| stamped_marks(RunSeed(s), Orient::Turned)).collect();
+        assert!(seen.len() > turned_only.len(), "mirroring must reach facings a quarter-turn alone cannot");
 
         // And a fixed stamp faces one way whatever the seed, so every chain
         // that has one today keeps the map it has today.
@@ -433,15 +463,22 @@ mod tests {
         assert_eq!(fixed.len(), 1, "a fixed stamp faces the same way under every seed");
     }
 
-    /// Stamps the vault into a fixed room under `seed` and answers its marks
-    /// relative to the stamp's own bounds, which is its facing.
+    /// Stamps `four_marked_corners` into a fixed room under `seed` and
+    /// answers its marks relative to the stamp's own bounds, which is its
+    /// facing. `four_marked_corners`, not `lopsided`, is the fixture: a
+    /// mirror of `lopsided` lands on one of its own quarter-turns because
+    /// its top and bottom border rows are identical, so it cannot tell a
+    /// facing mirroring alone reaches apart from one turning alone reaches.
+    /// A square with four distinct corner marks has no such accident: no
+    /// rotation or reflection maps it onto itself, so all eight facings,
+    /// and their four-mark arrangements, are pairwise distinct.
     fn stamped_marks(seed: RunSeed, orient: Orient) -> Vec<(char, Point)> {
         let tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let mut c = BaseContext::blank(60, 40, tiles, wall);
         Chain::new()
             .then(Rooms { floor, min_size: 8, max_size: 10, ..Default::default() })
-            .then(StampPrefab { name: "vault", prefab: vault(wall, floor), at: Placement::InRoom(0), orient })
+            .then(StampPrefab { name: "vault", prefab: four_marked_corners(floor), at: Placement::InRoom(0), orient })
             .run(&mut c, seed)
             .unwrap();
         let stamped = c.outputs().first::<Stamped>().unwrap();
