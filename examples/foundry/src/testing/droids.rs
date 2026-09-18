@@ -101,16 +101,24 @@ pub fn alert(app: &mut App, observer: Entity, subject: Entity) {
 /// `Struck`: a headless app rotates its buffers on wall time.
 #[derive(Resource, Default)]
 pub struct Alarms {
-    /// Who shouted the alarm, and where, in order.
-    pub shouts: Vec<(Entity, Point)>,
+    /// Who shouted the alarm, where, and whether the player could see it
+    /// there, in order.
+    pub shouts: Vec<(Entity, Point, bool)>,
     /// Every cue, in order.
     pub cues: Vec<Cued>,
 }
 
 /// Copies every alarm and every cue written this frame into [`Alarms`].
-fn record_alarms(mut noise: MessageReader<MakeNoise>, mut cues: MessageReader<Cued>, sounds: Res<Sounds>, mut alarms: ResMut<Alarms>) {
+fn record_alarms(
+    mut noise: MessageReader<MakeNoise>,
+    mut cues: MessageReader<Cued>,
+    sounds: Res<Sounds>,
+    sight: Query<&Viewshed, With<Player>>,
+    mut alarms: ResMut<Alarms>,
+) {
     let alarm = sounds.get(crate::droids::ALARM_SOUND);
-    alarms.shouts.extend(noise.read().filter(|n| Some(n.sound) == alarm).filter_map(|n| Some((n.maker?, n.at))));
+    let seen = |at: Point| sight.iter().any(|v| v.can_see(at));
+    alarms.shouts.extend(noise.read().filter(|n| Some(n.sound) == alarm).filter_map(|n| Some((n.maker?, n.at, seen(n.at)))));
     alarms.cues.extend(cues.read().cloned());
 }
 

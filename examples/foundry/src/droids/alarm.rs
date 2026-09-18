@@ -6,7 +6,7 @@
 //! brain keeps the commando in sight at a distance rather than closing to
 //! fight. For every turn it takes knowing where the commando is, it shouts
 //! again, so the deck keeps homing in for as long as the probe hangs
-//! there, and each shout is a pulse on the probe the player can see. The
+//! there, and a shout the player can see is a pulse on the probe. The
 //! log says so once, when it first notices, since a line a turn would
 //! bury everything else.
 //!
@@ -34,8 +34,9 @@ pub const ALARM_SOUND: &str = "alarm";
 /// deck" still holds wherever the probe stands.
 pub const ALARM_LOUDNESS: i32 = 80;
 
-/// What a shout looks like: a red bang on the probe, pulsing where it
-/// hangs.
+/// What a shout looks like: a burst of red on the probe's own cell. A
+/// burst is drawn in its look's colour alone, so the glyph is never shown
+/// and says only what the pulse is.
 pub const PULSE: Look = Look { glyph: '!', color: rl_engine::rl_grid::Rgb::new(255, 51, 38) };
 
 /// How loud the engine's own actions are on a deck. A blow or a shot
@@ -68,17 +69,20 @@ pub fn sound_alarm(mut noticed: MessageReader<Noticed>, alarmed: Query<(), With<
 
 /// Shouts the alarm for every action an [`Alarm`] carrier finishes while it
 /// knows where the player is: a [`MakeNoise`] of [`ALARM_SOUND`] where it
-/// stands, as loud as [`ALARM_LOUDNESS`], and a [`PULSE`] on it. Whoever
-/// hears it comes to look; the engine's hearing decides who that is.
+/// stands, as loud as [`ALARM_LOUDNESS`], and a [`PULSE`] on it when the
+/// player can see it there. Whoever hears it comes to look; the engine's
+/// hearing decides who that is.
 ///
 /// On the probe's own actions rather than on the clock, so a probe frozen
 /// on a deck the commando left says nothing, and one that notices and acts
 /// in the same pass shouts in that pass. The pulse is a cue like any
-/// other, so it holds the turns while it plays and a key skips it.
+/// other, so it holds the turns while it plays and a key skips it; one out
+/// of sight would give the probe away and hold the turns for nothing to
+/// see, so the noise goes out and the pulse does not.
 pub fn shout_alarm(
     mut done: MessageReader<ActionDone>,
     alarmed: Query<(&Position, &Aware), With<Alarm>>,
-    players: Query<Entity, With<Player>>,
+    players: Query<(Entity, &Viewshed), With<Player>>,
     sounds: Res<Sounds>,
     mut noise: MessageWriter<MakeNoise>,
     mut cues: MessageWriter<Cued>,
@@ -86,10 +90,13 @@ pub fn shout_alarm(
     let alarm = sounds.get(ALARM_SOUND).expect("FoundryPlugin declares the alarm's sound");
     for ev in done.read() {
         let Ok((at, aware)) = alarmed.get(ev.actor) else { continue };
-        if !players.iter().any(|p| aware.knows(p)) {
+        if !players.iter().any(|(p, _)| aware.knows(p)) {
             continue;
         }
         noise.write(MakeNoise { at: at.0, loudness: ALARM_LOUDNESS, sound: alarm, maker: Some(ev.actor) });
+        if !players.iter().any(|(_, sight)| sight.can_see(at.0)) {
+            continue;
+        }
         cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE) } });
     }
 }
@@ -120,12 +127,14 @@ mod tests {
     }
 
     /// A probe that has not noticed anyone says nothing; one that knows
-    /// where the commando is shouts the alarm on every turn it takes, and
-    /// every shout is a pulse on the probe itself.
+    /// where the commando is shouts the alarm on every turn it takes. The
+    /// pulse is for the eye: a probe the player cannot see shouts without
+    /// one, so an unseen probe neither gives itself away nor holds the
+    /// turns.
     #[test]
-    fn a_probe_shouts_and_pulses_on_every_turn_it_knows_where_the_commando_is_and_never_before() {
+    fn a_probe_out_of_sight_shouts_on_every_turn_it_knows_where_the_commando_is_without_a_pulse() {
         let mut app = crate::testing::headless(RunSeed(1));
-        let (probe, _) = crate::testing::out_of_sight(&mut app, "probe droid", 1500, 4000);
+        let (probe, _) = crate::testing::out_of_sight(&mut app, "probe droid", 3000, 6000);
         crate::testing::record_alarms_from_now(&mut app);
         crate::testing::pass_turns(&mut app, 2);
         assert!(app.world().resource::<crate::testing::Alarms>().shouts.is_empty(), "it knows nothing, so it says nothing");
@@ -133,8 +142,24 @@ mod tests {
         crate::testing::alert(&mut app, probe, me);
         crate::testing::pass_turns(&mut app, 4);
         let alarms = app.world().resource::<crate::testing::Alarms>();
-        let shouts: Vec<Point> = alarms.shouts.iter().filter(|(who, _)| *who == probe).map(|(_, at)| *at).collect();
+        let shouts: Vec<&(Entity, Point, bool)> = alarms.shouts.iter().filter(|(who, ..)| *who == probe).collect();
         assert!(shouts.len() >= 4, "four turns, a shout on each of its own: {shouts:?}");
+        assert!(shouts.iter().all(|(.., seen)| !seen), "and all of them out of sight: {shouts:?}");
+        assert!(alarms.cues.iter().all(|c| c.actor != probe), "no pulse for a probe nobody sees: {:?}", alarms.cues);
+    }
+
+    /// A probe in plain view pulses on every shout, on itself where it
+    /// shouted, in the alarm's red.
+    #[test]
+    fn a_probe_in_sight_pulses_on_itself_every_time_it_shouts() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (probe, me) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
+        crate::testing::record_alarms_from_now(&mut app);
+        crate::testing::alert(&mut app, probe, me);
+        crate::testing::pass_turns(&mut app, 4);
+        let alarms = app.world().resource::<crate::testing::Alarms>();
+        let shouts: Vec<Point> = alarms.shouts.iter().filter(|(who, _, seen)| *who == probe && *seen).map(|(_, at, _)| *at).collect();
+        assert!(shouts.len() >= 4, "four turns in plain view, a shout on each: {:?}", alarms.shouts);
         let pulses: Vec<&Cued> = alarms.cues.iter().filter(|c| c.actor == probe).collect();
         assert_eq!(pulses.len(), shouts.len(), "a pulse for every shout: {pulses:?}");
         for (cue, shouted) in pulses.iter().zip(&shouts) {
@@ -158,8 +183,8 @@ mod tests {
         crate::testing::alert(&mut app, probe, me);
         crate::testing::pass_turns(&mut app, 1);
         let last = app.world().resource::<crate::testing::Alarms>().shouts.last().copied();
-        assert_eq!(last.map(|(who, _)| who), Some(probe), "it shouted");
-        assert_eq!(heard(&app, far), last.map(|(_, at)| at), "fifteen steps and more round the deck, it heard the alarm, and where");
+        assert_eq!(last.map(|(who, ..)| who), Some(probe), "it shouted");
+        assert_eq!(heard(&app, far), last.map(|(_, at, _)| at), "fifteen steps and more round the deck, it heard the alarm, and where");
         assert!(app.world().get::<Heard>(rat).is_none(), "a rat has no ear for it");
     }
 
