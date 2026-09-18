@@ -11,7 +11,7 @@ Status: design agreed, not yet planned.
 It exists for three reasons, in order.
 
 1. It is the example that exercises the engine's combat depth: three damage kinds with a real counter-triangle, eighteen weapons across melee and ranged, four armor slots, and a loot curve over ten floors.
-2. It drives two small engine additions that the engine's own documents already say are missing, listed in section 10.
+2. It drives four small engine additions, listed in section 10, each of which the engine's own documents already say is missing or which a game cannot do without copying engine logic.
 3. It is a science-fiction example beside a pirate one and two dungeons, which is the evidence that the engine carries no genre.
 
 It is expected to move to its own repository once it is playable.
@@ -112,7 +112,8 @@ A weapon that reaches 100 locks, and stays locked until its heat reaches zero.
 A weapon vents only on a turn its wielder does not fire it, which is what makes heat accumulate on a fast weapon and what makes venting a decision rather than a pause.
 
 Heat lives on the weapon, not on the wielder.
-Weapons are entities, so this is a game-side `Heat` component and one system in `TurnSet::React`, with no engine change.
+Weapons are entities, so this is a game-side `Heat` component and systems in `TurnSet::React`.
+It needs one engine change, section 10.4: the game must learn which weapon a blow came from, and working that out itself would mean re-deriving `Loadout`'s choice.
 
 Dual wielding two heat weapons is therefore a real build: alternate hands, and one vents while the other fires.
 It costs the off-hand slot, which is where a shield or a gauntlet ability would otherwise go.
@@ -277,7 +278,8 @@ Sealed armories with a guaranteed piece behind a locked door, coolant leaks whos
 
 ## 10. Engine changes
 
-Two, each small, each independently useful, and each landing as its own commit with its own tests before the game depends on it.
+Four, each small, each independently useful, and each landing as its own commit with its own tests before the game depends on it.
+10.2 and 10.3 landed on 2026-09-17; 10.4 and 10.5 were found while planning the game and land first in its plan.
 
 ### 10.1 Radar needs no engine change
 
@@ -308,6 +310,25 @@ Rotation by 90, 180 and 270 degrees, horizontal flip, and a weighted pick among 
 The shape is proven in `fantasy-rogue`'s prefab v2, including the rule that marks rotate with the prefab.
 
 Tests: a stamped prefab's marks land on the same tiles after each rotation and flip as the authored layout implies; a weighted pick over a seed range produces the expected distribution; an existing unrotated stamp is byte-identical to today's output.
+
+### 10.4 A blow says what struck it
+
+Found while planning, after the design was agreed.
+`DamageEvent` carries the attacker but not the item, so nothing tells a game which weapon fired.
+Heat and ammunition both need it, and a game that worked it out itself would be re-deriving `Loadout`'s choice of weapon, which is the failure `docs/PLAN.md` section 1 was written against.
+`resolve_attacks` writes a `Struck` message naming the attacker, the target, the worn item the blow came from if any, and whether it was a shot.
+
+Tests: a worn weapon's blow names it; a bare-handed blow names nothing; a shot names the ranged item; with two ranged items worn, the one `Loadout` picks is the one named.
+
+### 10.5 A mind can shoot
+
+Found while planning, after the design was agreed.
+No tactic makes a ranged attack: a mind melees, throws or uses an ability, so a droid carrying a blaster would walk up and punch.
+This is `docs/TODO.md` section 2, "no keep-at-range for a shooter".
+A `ShootAtRange` tactic mirrors `ThrowAtRange`: the snapshot learns how far the actor's own shot carries, and the tactic attacks an enemy two or more tiles off down a clear line.
+Keeping at range, backing off to hold a distance, stays in the TODO; shooting when there is a shot is the part the game cannot do without.
+
+Tests in `rl-rules`, without an `App`: a shooter with a clear line to an enemy in reach attacks it; a blocked line, an enemy out of reach, an adjacent enemy and a mind with no shot all decline.
 
 ## 11. Progression
 
@@ -347,7 +368,7 @@ Playable end to end, and the thing to build first.
 - Line droids with their first two spawn entries, probe droids, heavy droids, coolant rats.
 - Reactor one, its objective, and the first field-upgrade pick.
 - Ground loot by band and drops on death.
-- Both engine changes, each with its own tests.
+- The engine changes in sections 10.4 and 10.5, each with its own tests; 10.2 and 10.3 have already landed.
 
 What is deliberately absent from the slice: decks 4-10, the other twelve weapons, the other fourteen armor pieces, hunters, mini-bosses, the overseer, composed encounters, and the second and third upgrade picks.
 
