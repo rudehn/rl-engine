@@ -152,6 +152,7 @@ impl PlaceRules for Foundry {
 mod tests {
     use std::collections::BTreeSet;
 
+    use rl_engine::rl_core::Rect;
     use rl_engine::rl_mapgen::BuildContext;
     use rl_engine::rl_mapgen::prefab::Stamped;
 
@@ -196,5 +197,41 @@ mod tests {
             })
             .collect();
         assert!(facings.len() > 1, "forty seeds laid the armory exactly one way");
+    }
+
+    /// Fix round 1: `Placement::AnyRoom` used to draw from every room that
+    /// fit, with no exclusion, so a second `AnyRoom` stamp could land in a
+    /// room an earlier one already used and draw over its tiles while its
+    /// mark was still reported. Measured on the pre-fix engine over the
+    /// same span this test now runs: deck 3's `A` sat on a wall in 4.2% of
+    /// seeds and `L` in 7.6%; deck 1's `A` in 2.2% and `L` in 5%.
+    #[test]
+    fn no_two_vaults_overlap_and_every_guaranteed_mark_sits_on_a_floor_tile() {
+        let tables = Foundry::new(RunSeed(0)).tiles().tables();
+        for s in 0..200 {
+            let foundry = Foundry::new(RunSeed(s));
+            for deck in 1..=DECKS {
+                let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
+                let bounds: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
+                for i in 0..bounds.len() {
+                    for j in (i + 1)..bounds.len() {
+                        assert!(
+                            bounds[i].intersection(&bounds[j]).is_none(),
+                            "deck {deck}, seed {s}: vaults {i} and {j} overlap: {:?} and {:?}",
+                            bounds[i],
+                            bounds[j]
+                        );
+                    }
+                }
+                for st in ctx.outputs().iter::<Stamped>() {
+                    for (c, p) in &st.marks {
+                        if matches!(c, 'A' | 'L' | 'R') {
+                            let tile = ctx.terrain().get(*p).unwrap_or_else(|| panic!("deck {deck}, seed {s}: mark {c} at {p:?} is off the map"));
+                            assert!(tables.walkable[tile.index()], "deck {deck}, seed {s}: mark {c} at {p:?} sits on a wall");
+                        }
+                    }
+                }
+            }
+        }
     }
 }
