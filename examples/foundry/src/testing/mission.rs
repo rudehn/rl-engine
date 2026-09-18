@@ -14,15 +14,6 @@ use crate::upgrades::Upgrade;
 /// `mission::spawn_console_on_arrival` plants there on first arrival, so a
 /// test can send `SetCharge` without hunting for a walkable tile of its
 /// own.
-///
-/// Also zeroes the run's clock, every waiting entry shifted down with it:
-/// every deck's own droids are due before the player ever holds its first
-/// turn on it (`droids::spawns::populate_deck`'s own groups get to act
-/// while the player's admission is still catching up to whichever deck it
-/// last arrived on), so the exact number of hundredths a lone action costs
-/// would otherwise depend on how many of them got there first. The player
-/// itself already holds its turn, uncommitted, by the time this runs, so
-/// the reset touches only the queue, never it.
 pub fn beside_the_console(app: &mut App) -> Entity {
     crate::testing::arrive_on(app, 3);
     let console_at = {
@@ -38,9 +29,6 @@ pub fn beside_the_console(app: &mut App) -> Entity {
     let map = app.world().resource::<WorldMap>().current();
     app.world_mut().get_mut::<Position>(player).unwrap().0 = beside;
     app.world_mut().entity_mut(player).insert(OnMap(map));
-    let mut turns = app.world_mut().resource_mut::<Turns>();
-    let (now, entries) = turns.export();
-    turns.import(0, entries.into_iter().map(|(e, t)| (e, t.saturating_sub(now))));
     player
 }
 

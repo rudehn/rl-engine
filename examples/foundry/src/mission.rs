@@ -252,9 +252,16 @@ mod tests {
     fn setting_the_charge_takes_three_turns_and_completes_the_quest() {
         let mut app = crate::testing::headless(RunSeed(2));
         let player = crate::testing::beside_the_console(&mut app);
+        // A difference, not an absolute reading: the clock already carries
+        // whatever it cost to reach deck three at all (a real run's own
+        // stair transitions, once Foundry has them, are `GoThrough`'s
+        // normal `BASE_ACTION_COST`), and `run::admit_the_player`'s own
+        // fix only guarantees the player's first turn precedes every
+        // monster's, never that nothing moves before this one action does.
+        let before = crate::testing::clock(&app);
         app.world_mut().write_message(Intent::new(player, SetCharge));
         crate::testing::settle(&mut app);
-        assert_eq!(crate::testing::clock(&app), 300, "a charge takes three turns to set");
+        assert_eq!(crate::testing::clock(&app) - before, 300, "a charge takes three turns to set");
         assert!(crate::testing::quest_done(&app, "first_charge"));
         assert!(app.world().resource::<crate::upgrades::Choosing>().0.is_some(), "and the choice is offered");
     }
