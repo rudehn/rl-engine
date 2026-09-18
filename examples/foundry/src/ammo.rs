@@ -16,7 +16,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::{Equipped, Inventory, Player, RangedAttack, Stack, Struck, Tagged, Turns};
 use rl_engine::rl_rules::TagId;
-use rl_engine::rl_ui::MessageLog;
+use rl_engine::rl_ui::{Facets, GearView, MessageLog, Tones};
 
 use crate::heat::Stowed;
 
@@ -150,6 +150,31 @@ pub fn sync_ammo(mut commands: Commands, world: AmmoWorld, turns: Res<Turns>, mu
     }
 }
 
+/// Notes each worn ammunition-fed weapon's rounds on its gear row, the
+/// way `heat::note_heat` notes a blaster's heat: `N left`, counted from
+/// the player's bag, or `dry` in [`Tones::BAD`], since the engine has never
+/// heard of ammunition and the player should not have to open the pack to
+/// know whether the next shot is there.
+///
+/// `GearView` is `None` until a game adds `GearViewPlugin`: absence means
+/// no gear panel to annotate, not that anything is wrong.
+pub fn note_ammo(view: Option<ResMut<GearView>>, mut facets: ResMut<Facets>, world: AmmoWorld) {
+    let Some(mut view) = view else { return };
+    let Some(bag) = world.inventories.iter().find(|inv| world.player.iter().any(|e| e.0.worn().any(|(_, item)| inv.items.contains(&item)))) else { return };
+    for row in view.rows_mut() {
+        let Ok(ammo) = world.ammos.get(row.entity) else { continue };
+        let left: u32 = bag
+            .items
+            .iter()
+            .filter(|i| world.tagged.get(**i).is_ok_and(|t| t.contains(&ammo.tag)))
+            .filter_map(|i| world.stacks.get(*i).ok())
+            .map(|s| s.count)
+            .sum();
+        let facet = if left == 0 { facets.facet("ammo", "dry").toned(Tones::BAD) } else { facets.facet("ammo", format!("{left} left")) };
+        row.facets.push(facet);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::ecs::system::RunSystemOnce;
@@ -257,5 +282,22 @@ mod tests {
         app.world_mut().run_system_once(crate::heat::vent_heat).unwrap();
         assert!(app.world().get::<RangedAttack>(item).is_none(), "still dry: vent_heat has nothing here to vent");
         assert!(app.world().get::<Stowed>(item).is_some(), "still stowed");
+    }
+
+    #[test]
+    fn a_worn_pistols_row_counts_the_slugs_left_and_reads_dry_once_they_are_gone() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        app.add_plugins(rl_engine::rl_ui::GearViewPlugin);
+        let (player, pistol) = crate::testing::slug_pistol_with(&mut app, 2);
+        app.update();
+        let said = |app: &App| -> Option<(String, rl_engine::rl_ui::ToneId)> {
+            let view = app.world().resource::<GearView>();
+            let row = view.worn().map(|(_, row)| row).find(|row| row.entity == pistol)?;
+            row.facet(app.world().resource::<Facets>().get("ammo")?).map(|f| (f.text.clone(), f.tone))
+        };
+        assert_eq!(said(&app).map(|s| s.0).as_deref(), Some("2 left"));
+        crate::testing::fire_at_a_target(&mut app, player, 2);
+        app.update();
+        assert_eq!(said(&app), Some(("dry".to_string(), Tones::BAD)));
     }
 }

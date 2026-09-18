@@ -42,10 +42,13 @@ impl Plugin for FoundryPlugin {
         // `fired` for the turn that is only just starting, and the turn
         // that actually just ended quietly would wrongly skip its vent.
         app.add_systems(Turn, (crate::heat::vent_heat, crate::heat::heat_on_struck).chain().in_set(TurnSet::React));
-        // Correct with or without a gear panel: `note_heat` reads
-        // `GearView` as `Option<Res<_>>` and does nothing until a game
-        // adds `GearViewPlugin`, which this slice's binary does not yet.
-        app.add_systems(Update, crate::heat::note_heat.in_set(ViewSet::Annotate));
+        // Correct with or without a gear panel: `note_heat` and
+        // `note_ammo` read `GearView` as `Option<ResMut<_>>` and do nothing
+        // until a game adds `GearViewPlugin`, as the binary's `GearPanel`
+        // does and a headless test need not. Unordered against each
+        // other: no weapon carries both `Heat` and `Ammo`, so no row ever
+        // gets a facet from both.
+        app.add_systems(Update, (crate::heat::note_heat, crate::ammo::note_ammo).in_set(ViewSet::Annotate));
         // Ammunition's own economy, chained in this order: `spend_ammo`
         // takes a slug off the bag a `Struck` just fired from, and
         // `sync_ammo` reads whatever bag every `Ammo` item's wielder now
