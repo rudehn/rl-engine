@@ -16,6 +16,14 @@
 //! Nothing here decides who strikes or knows what else a turn could be
 //! spent on: the [`minds`](crate::minds) choose for monsters, and an
 //! ability's damage arrives as the same [`DamageEvent`] a sword's does.
+//!
+//! How an attack looks belongs to what attacks, never to the kind of
+//! damage it deals: two guns dealing one kind fly two colours, the way two
+//! abilities do. A [`RangedAttack`] with a look flies it and, while
+//! something watches the [`cue`](crate::cue)s, lands when it arrives, the
+//! way a throw does; a [`MeleeAttack`] with one bursts on its target. One
+//! with none is instant and unseen, which is every attack a game has not
+//! given a look.
 
 use bevy::prelude::*;
 use rand::rngs::StdRng;
@@ -26,6 +34,7 @@ use rl_rules::faction::FactionDef;
 use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances, StatId};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
+use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
 use crate::items::{Equipped, Item};
 use crate::registries::Registries;
 use crate::status::StatBlock;
@@ -460,6 +469,41 @@ pub struct Arena<'w, 's> {
     struck: MessageWriter<'w, Struck>,
 }
 
+/// What an attack is seen as, and the shots in the air while it is.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Sight<'w> {
+    cues: MessageWriter<'w, Cued>,
+    hold: ResMut<'w, TurnHold>,
+    airborne: ResMut<'w, AirborneShots>,
+}
+
+/// A shot fired and not yet arrived: whom it is at, and every hit it
+/// carries, the main one first, rolled when it was fired.
+///
+/// Rolled at the trigger rather than on arrival, so the combat stream
+/// draws in the same order whether or not anything watches, and a run
+/// played in a window rolls what the same run played headless rolls.
+#[derive(Debug, Clone)]
+pub struct ShotLanding {
+    target: Entity,
+    hits: Vec<Hit<Entity>>,
+}
+
+/// Shots in the air, to land on the first pass after their flight has
+/// been seen.
+#[derive(Resource, Debug, Default)]
+pub struct AirborneShots(Vec<ShotLanding>);
+
+/// The weapon one attack is made with, as [`Loadout`] chose it.
+struct Weapon {
+    from: Option<Entity>,
+    ranged: bool,
+    kind: DamageKindId,
+    dice: DiceRoll,
+    cost: Option<u32>,
+    look: Option<Look>,
+}
+
 /// Turns attack intents into damage events: a melee strike on an
 /// adjacent target, a shot on a distant one with a clear line of fire,
 /// each followed by the attacker's extra strikes. A shot at nothing in
@@ -469,6 +513,14 @@ pub struct Arena<'w, 's> {
 /// swung and a worn pistol fired without either being copied onto the
 /// wearer.
 ///
+/// An attack with a [`Look`] is seen: a shot flies from the shooter to
+/// the target, and a blow bursts on the target. With something watching,
+/// a shot's hits wait in [`AirborneShots`] until the flight has been
+/// seen, the way a thrown knife does; a blow has no flight to wait for
+/// and hurts at once. [`Struck`] is written as the attack is made either
+/// way, since what a weapon does to itself happens at the trigger, not
+/// at the target.
+///
 /// One turn, one strike: an attack by an actor that already acted this
 /// pass finds the turn spent, whatever spent it.
 pub fn resolve_attacks(
@@ -477,41 +529,86 @@ pub fn resolve_attacks(
     mut resolution: Resolution,
     mut rng: ResMut<CombatRng>,
     mut arena: Arena,
+    sight: Sight,
 ) {
     let Arena { map, occupancy, attackers, targets, loadout, struck } = &mut arena;
+    let Sight { mut cues, mut hold, mut airborne } = sight;
     for intent in intents.read() {
-        let target = intent.action.0;
-        let Ok(pos) = attackers.get(intent.actor) else { continue };
-        if !resolution.claim(intent.actor) {
+        let (actor, target) = (intent.actor, intent.action.0);
+        let Ok(pos) = attackers.get(actor) else { continue };
+        if !resolution.claim(actor) {
             continue;
         }
         let Ok(target_pos) = targets.get(target) else {
-            resolution.done(intent.actor, rl_core::turn::BASE_ACTION_COST);
+            resolution.done(actor, rl_core::turn::BASE_ACTION_COST);
             continue;
         };
         let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
-            loadout.melee_with(intent.actor).map(|(from, m)| (from, false, m.kind, m.dice, m.cost))
+            loadout.melee_with(actor).map(|(from, m)| Weapon { from, ranged: false, kind: m.kind, dice: m.dice, cost: m.cost, look: m.look })
         } else {
-            loadout
-                .ranged_with(intent.actor)
-                .filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range))
-                .map(|(from, r)| (from, true, r.kind, r.dice, r.cost))
+            loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range)).map(|(from, r)| Weapon {
+                from,
+                ranged: true,
+                kind: r.kind,
+                dice: r.dice,
+                cost: r.cost,
+                look: r.look,
+            })
         };
-        let mut spent = rl_core::turn::BASE_ACTION_COST;
-        if let Some((from, ranged, kind, dice, cost)) = weapon {
-            spent = cost.unwrap_or(rl_core::turn::BASE_ACTION_COST);
-            struck.write(Struck { attacker: intent.actor, target, with: from, ranged });
-            // Floored where it is rolled: a blow that rolls below zero has
-            // missed, and the pipeline would read a negative one as a heal.
-            let amount = dice.roll_at_least(&mut **rng, 0);
-            damage.write(DamageEvent { target, hit: Hit::by(intent.actor, kind, amount) });
-            for (kind, dice) in loadout.strikes(intent.actor) {
-                let amount = dice.roll_at_least(&mut **rng, 0);
-                damage.write(DamageEvent { target, hit: Hit::by(intent.actor, kind, amount) });
+        let Some(Weapon { from, ranged, kind, dice, cost, look }) = weapon else {
+            resolution.done(actor, rl_core::turn::BASE_ACTION_COST);
+            continue;
+        };
+        resolution.done(actor, cost.unwrap_or(rl_core::turn::BASE_ACTION_COST));
+        struck.write(Struck { attacker: actor, target, with: from, ranged });
+        // Floored where it is rolled: a blow that rolls below zero has
+        // missed, and the pipeline would read a negative one as a heal.
+        let mut hits = vec![Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))];
+        hits.extend(loadout.strikes(actor).into_iter().map(|(kind, dice)| Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))));
+        let shot = ShotLanding { target, hits };
+        match (look, ranged) {
+            (Some(look), true) => {
+                let to = Anchor::on(target, target_pos.0);
+                cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Given(look) } });
+                if hold.is_watched() {
+                    hold.launch();
+                    airborne.0.push(shot);
+                    continue;
+                }
             }
+            (Some(look), false) => {
+                cues.write(Cued { actor, cue: Cue::Burst { on: vec![Anchor::on(target, target_pos.0)], look: LookOf::Given(look) } });
+            }
+            (None, _) => {}
         }
-        resolution.done(intent.actor, spent);
+        land(shot, &mut damage);
     }
+}
+
+/// Lands every shot in the air, on the first pass after its flight has
+/// been seen, on a target still standing: one killed or taken out of the
+/// world while the shot flew is missed, not hurt twice or looked for.
+/// Landing counts as progress, so the loop goes on to deal the next turn.
+pub fn land_shots(
+    mut airborne: ResMut<AirborneShots>,
+    mut hold: ResMut<TurnHold>,
+    mut turns: ResMut<Turns>,
+    alive: Query<(), (With<Health>, Without<Dead>)>,
+    mut damage: MessageWriter<DamageEvent>,
+) {
+    for shot in std::mem::take(&mut airborne.0) {
+        if alive.contains(shot.target) {
+            land(shot, &mut damage);
+        }
+        hold.land();
+        turns.progress = true;
+    }
+}
+
+/// Every hit an attack carries, down the damage pipeline.
+fn land(shot: ShotLanding, damage: &mut MessageWriter<DamageEvent>) {
+    let target = shot.target;
+    damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent { target, hit }));
 }
 
 /// Where a shot from `from` at `to` flies within `range`: the cells it
@@ -645,12 +742,13 @@ impl Plugin for CombatPlugin {
             .add_message::<DeathEvent>()
             .add_message::<Struck>()
             .init_resource::<DamageStages>()
+            .init_resource::<AirborneShots>()
             .add_action::<Attack>()
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
-            .add_systems(Turn, resolve_attacks.in_set(ResolveSet::Act))
+            .add_systems(Turn, (land_shots, resolve_attacks).chain().in_set(ResolveSet::Act))
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
             .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))
             .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))
@@ -740,6 +838,148 @@ mod tests {
         assert_eq!((shot.kind, shot.dice, shot.range, shot.cost, shot.look), (kind, DiceRoll::flat(3), 6, None, None));
         let shot = shot.costing(140).looking(look);
         assert_eq!((shot.cost, shot.look), (Some(140), Some(look)));
+    }
+
+    #[derive(Resource, Default)]
+    struct Seen {
+        cues: Vec<Cued>,
+        struck: Vec<Struck>,
+        dealt: Vec<DamageDealt>,
+    }
+
+    /// Records every cue, every [`Struck`] and every [`DamageDealt`], for
+    /// the reason [`hear`] does.
+    fn see(mut cues: MessageReader<Cued>, mut struck: MessageReader<Struck>, mut dealt: MessageReader<DamageDealt>, mut seen: ResMut<Seen>) {
+        seen.cues.extend(cues.read().cloned());
+        seen.struck.extend(struck.read().copied());
+        seen.dealt.extend(dealt.read().copied());
+    }
+
+    const LOOK: Look = Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 40) };
+
+    /// A player armed with what `arm` makes of the one damage kind, facing
+    /// a mindless target with twenty health `dx` cells east, with play
+    /// begun and everything [`see`] records recorded. Watched when
+    /// `watched`, the way a game that draws its cues is.
+    fn duel<B: Bundle>(dx: i32, watched: bool, arm: impl FnOnce(DamageKindId) -> B) -> (App, Point, Entity, Entity) {
+        let (mut app, start, kind) = arena();
+        app.init_resource::<Seen>().add_systems(PostUpdate, see);
+        let player = app
+            .world_mut()
+            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(FactionId::from_raw(0)), arm(kind)))
+            .id();
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(dx, 0)), Health::full(20), Faction(FactionId::from_raw(1)))).id();
+        if watched {
+            app.world_mut().resource_mut::<TurnHold>().watch();
+        }
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, start, player, target)
+    }
+
+    fn hp(app: &App, who: Entity) -> i32 {
+        app.world().get::<Health>(who).unwrap().current
+    }
+
+    #[test]
+    fn a_shot_with_a_look_cues_one_flight_from_the_shooter_to_its_target_in_that_look() {
+        let (mut app, start, player, target) = duel(4, false, |kind| RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        let flight = Cue::Flight { from: Anchor::on(player, start), to: Anchor::on(target, start.offset(4, 0)), look: LookOf::Given(LOOK) };
+        assert_eq!(app.world().resource::<Seen>().cues, vec![Cued { actor: player, cue: flight }]);
+    }
+
+    /// A shot that names no look flies nothing and lands as it always did,
+    /// even with something watching: nothing was cued, so nothing is waited on.
+    #[test]
+    fn a_shot_with_no_look_cues_nothing_and_lands_at_once_even_watched() {
+        let (mut app, _, player, target) = duel(4, true, |kind| RangedAttack::new(kind, DiceRoll::flat(3), 6));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert!(app.world().resource::<Seen>().cues.is_empty());
+        assert_eq!(hp(&app, target), 17);
+        assert!(!app.world().resource::<TurnHold>().in_flight());
+    }
+
+    /// With something watching, the shot and its extra strikes wait in
+    /// the air until the flight has been seen, and the trigger pull is
+    /// reported when it happens, so heat and ammunition answer the shot
+    /// rather than its arrival. Without a watcher it all lands at once.
+    #[test]
+    fn a_watched_shot_hurts_when_its_flight_has_been_seen_and_an_unwatched_one_at_once() {
+        let arm = |kind| (RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK), Strikes(vec![(kind, DiceRoll::flat(2))]));
+        let (mut app, _, player, target) = duel(4, true, arm);
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert_eq!(hp(&app, target), 20, "in the air");
+        assert_eq!(app.world().resource::<Seen>().struck.len(), 1, "but fired");
+        assert!(app.world().resource::<TurnHold>().in_flight());
+        assert_eq!(app.world().resource::<Turns>().now(), 0, "no turn is dealt while it flies");
+        app.update();
+        assert_eq!(hp(&app, target), 20, "nor does it land while the turns are held");
+
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        assert_eq!(hp(&app, target), 20 - 3 - 2, "the shot and its strike, landed");
+        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert_eq!(app.world().resource::<Seen>().struck.len(), 1, "and fired once");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "and the turn comes round");
+
+        let (mut app, _, player, target) = duel(4, false, arm);
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert_eq!(hp(&app, target), 15, "unwatched, it lands as it is fired");
+    }
+
+    /// A target that someone else kills while the shot flies, or that is
+    /// gone altogether, is not hit by it: the shot lands on nothing and the
+    /// turns go on.
+    #[test]
+    fn a_target_killed_or_gone_mid_flight_takes_nothing_from_the_shot() {
+        let (mut app, start, player, target) = duel(4, true, |kind| RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK));
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        let other = app.world_mut().spawn(Position(start.offset(0, 3))).id();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.world_mut().write_message(DamageEvent { target, hit: Hit::by(other, kind, 99) });
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        let dealt: Vec<(Option<Entity>, i32)> = app.world().resource::<Seen>().dealt.iter().map(|d| (d.hit.credit, d.dealt)).collect();
+        assert_eq!(dealt, vec![(Some(other), 99)], "the other's blow killed it, and the shot found it dead");
+        assert!(!app.world().resource::<TurnHold>().in_flight());
+
+        let (mut app, _, player, target) = duel(4, true, |kind| RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.world_mut().resource_mut::<Turns>().remove(target);
+        app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), target);
+        app.world_mut().despawn(target);
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        assert!(app.world().resource::<Seen>().dealt.is_empty(), "gone, it takes nothing");
+        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(app.world().get::<MyTurn>(player).is_some(), "and the turn comes round");
+    }
+
+    /// A blow that names a look bursts on whoever it struck, and hurts at
+    /// once, watched or not: nothing flies, so there is nothing to wait for.
+    /// One that names none shows nothing.
+    #[test]
+    fn a_blow_with_a_look_bursts_on_its_target_and_one_without_shows_nothing() {
+        let (mut app, start, player, target) = duel(1, true, |kind| MeleeAttack::new(kind, DiceRoll::flat(4)).looking(LOOK));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        let burst = Cue::Burst { on: vec![Anchor::on(target, start.offset(1, 0))], look: LookOf::Given(LOOK) };
+        assert_eq!(app.world().resource::<Seen>().cues, vec![Cued { actor: player, cue: burst }]);
+        assert_eq!(hp(&app, target), 16, "and it hurt at once");
+
+        let (mut app, _, player, target) = duel(1, true, |kind| MeleeAttack::new(kind, DiceRoll::flat(4)));
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert!(app.world().resource::<Seen>().cues.is_empty());
+        assert_eq!(hp(&app, target), 16);
     }
 
     /// What `who` fights with, as a panel or a resolver would ask.

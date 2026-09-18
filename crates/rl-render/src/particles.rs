@@ -573,4 +573,54 @@ mod tests {
         assert!(!app.world().resource::<Particles>().is_holding(), "dropped");
         assert!(!app.world().resource::<TurnHold>().is_held(), "and let go, without waiting for the frame's end");
     }
+
+    /// The player cancels an animation and takes the hit: a shot fired at
+    /// the player is in the air, the turns wait on its flight, and a key
+    /// skips it through the real skip path. The key finds the player
+    /// holding its turn with the shot already landed, so nothing a quick
+    /// player presses is read against a health bar the shot has not yet
+    /// reached.
+    #[test]
+    fn a_key_pressed_while_a_shot_at_the_player_flies_lands_it_before_the_player_moves() {
+        use rl_core::{DiceRoll, Rect};
+        use rl_rules::ai::{Brain, tactics::ShootAtRange};
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin, rl_bevy::testing::KeyScriptPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, rl_bevy::world::StreamingPlugin));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
+        let start = rl_bevy::testing::surface(&mut app);
+        let sides = rl_bevy::testing::two_sides(&mut app);
+        let me = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap, Health::full(30), Faction(sides.ours))).id();
+        let look = rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 40) };
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(start.offset(4, 0)),
+            Health::full(10),
+            Faction(sides.theirs),
+            Perception(8),
+            RangedAttack::new(sides.kind, DiceRoll::flat(3), 6).looking(look),
+            Mind(std::sync::Arc::new(Brain::new().then(ShootAtRange::default()))),
+        ));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        assert!(app.world().get::<MyTurn>(me).is_some(), "the player goes first");
+
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        app.update();
+        let hp = |app: &App| app.world().get::<Health>(me).unwrap().current;
+        assert!(app.world().resource::<TurnHold>().in_flight(), "the shot is in the air");
+        assert!(app.world().resource::<TurnHold>().is_held() && app.world().resource::<Particles>().is_holding(), "and the turns wait on it");
+        assert_eq!(hp(&app), 30, "it has not arrived");
+        assert!(app.world().get::<MyTurn>(me).is_none());
+
+        app.world_mut().resource_mut::<rl_bevy::testing::KeyScript>().press(KeyCode::KeyH);
+        app.update();
+        assert_eq!(hp(&app), 27, "the key landed the shot");
+        assert!(!app.world().resource::<TurnHold>().in_flight());
+        assert!(app.world().get::<MyTurn>(me).is_some(), "and the player holds its turn, hurt, in the frame the key was read");
+    }
 }

@@ -72,6 +72,7 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("light::light_the_lamps", id(light::light_the_lamps)),
         ("engine stealth::wake_on_damage", id(stealth::wake_on_damage)),
         ("engine combat::resolve_attacks", id(combat::resolve_attacks)),
+        ("engine combat::land_shots", id(combat::land_shots)),
         ("engine items::resolve_items", id(items::resolve_items)),
         ("engine items::fold_gear", id(items::fold_gear)),
         ("engine ability::resolve_abilities", id(ability::resolve_abilities)),
@@ -120,7 +121,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
 /// pair needs any more.
 fn allowed(world: &World) -> Vec<Allowed> {
     use crate::*;
-    use rl_engine::rl_bevy::{ability, stealth, throwing};
+    use rl_engine::rl_bevy::{ability, combat, stealth, throwing};
     let ids = ids(world);
     let on = |names: &[&str]| -> Vec<ComponentId> { names.iter().map(|n| ids.iter().find(|(name, _)| name == n).expect("named in ids").1).collect() };
     let pair = |a, b, what: &[&str], why| Allowed { a: Some(a), b: Some(b), on: on(what), why };
@@ -137,6 +138,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
         // Something lands only in a pass that dealt nobody a turn, since
         // nothing is dealt while it flies, so never beside a charge.
         pair(id(mission::resolve_set_charge), id(throwing::land_throws), &["Turns"], "a throw lands in a pass no charge is set in"),
+        pair(id(mission::resolve_set_charge), id(combat::land_shots), &["Turns"], "a shot lands in a pass no charge is set in"),
         pair(id(mission::resolve_set_charge), id(ability::land_abilities), &["Turns", "Position"], "an ability lands in a pass no charge is set in"),
         pair(
             id(mission::resolve_set_charge),

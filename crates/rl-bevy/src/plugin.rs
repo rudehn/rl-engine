@@ -351,6 +351,7 @@ pub fn clear_run(world: &mut World) {
     reset::<crate::ability::Offered>(world);
     reset::<crate::ability::Airborne>(world);
     reset::<crate::throwing::AirborneThrows>(world);
+    reset::<crate::combat::AirborneShots>(world);
     if world.contains_resource::<crate::lighting::Lighting>() {
         world.insert_resource(crate::lighting::Lighting::dark());
     }
