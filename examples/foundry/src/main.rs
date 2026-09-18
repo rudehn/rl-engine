@@ -3,6 +3,7 @@
 
 use bevy::prelude::*;
 use rl_engine::RoguelikePlugins;
+use rl_engine::rl_bevy::plugin::NewRun;
 
 /// Columns and rows the terminal window opens with. The screen split
 /// itself is a later task's, once there is something to draw in it.
@@ -11,6 +12,22 @@ const ROWS: i32 = 40;
 
 fn main() -> AppExit {
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS)).insert_resource(foundry::content::registries());
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS)).insert_resource(foundry::content::registries()).add_systems(NewRun, foundry::run::start);
     app.run()
+}
+
+#[cfg(test)]
+mod tests {
+    use rl_engine::rl_bevy::prelude::WorldMap;
+    use rl_engine::rl_core::RunSeed;
+
+    #[test]
+    fn a_new_run_puts_the_commando_on_deck_one() {
+        let mut app = foundry::testing::headless(RunSeed(3));
+        for _ in 0..5 {
+            app.update();
+        }
+        let map = app.world().resource::<WorldMap>().current();
+        assert_eq!(foundry::decks::deck_of(map), 1);
+    }
 }
