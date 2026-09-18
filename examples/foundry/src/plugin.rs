@@ -35,15 +35,26 @@ impl Plugin for FoundryPlugin {
         // `GearView` as `Option<Res<_>>` and does nothing until a game
         // adds `GearViewPlugin`, which this slice's binary does not yet.
         app.add_systems(Update, crate::heat::note_heat.in_set(ViewSet::Annotate));
-        // Ammunition's own economy, unordered against the heat systems
-        // above and against each other: `Heat` and `Ammo` never share an
-        // item (`gear::Armory::load` refuses a file that tries), so
-        // `spend_ammo` and `reload` never touch an entity `vent_heat` or
-        // `heat_on_struck` does, and `spend_ammo` reacts to `Struck` while
-        // `reload` reacts to `ItemEvent`, two message kinds a single
-        // action never writes both of in the way a turn's end and the
-        // next turn's shot can land together. Nothing here needs a
-        // `.chain()`.
-        app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::reload).in_set(TurnSet::React));
+        // Ammunition's own economy, chained in this order: `spend_ammo`
+        // takes a slug off the bag a `Struck` just fired from, and
+        // `sync_ammo` reads whatever bag every `Ammo` item's wielder now
+        // has and dries or reloads from it. Reversed, a pass that spent
+        // the last slug would leave every one of that bag's weapons
+        // reading as loaded into the next pass's `Resolve`, and a shot
+        // would go out on a bag `spend_ammo` had already emptied.
+        // Unordered against the heat systems above: `Heat` and `Ammo`
+        // never share an item (`gear::Armory::load` refuses a file that
+        // tries), so neither ammo system ever touches an entity
+        // `vent_heat` or `heat_on_struck` does.
+        //
+        // The two never need ordering against a *different* actor's turn
+        // the way heat's pair does against a `TurnEnd` the scheduler can
+        // deal in the same pass as the next turn: `Resolution::claim`
+        // (crates/rl-bevy/src/turn.rs, around line 212) is `Acting::claim_action`
+        // underneath, and it lets one actor resolve at most one action
+        // per pass, so one actor's own shot and its own bag changing
+        // (dropping, picking up, equipping) can never land in the same
+        // pass to race each other in the first place.
+        app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().in_set(TurnSet::React));
     }
 }
