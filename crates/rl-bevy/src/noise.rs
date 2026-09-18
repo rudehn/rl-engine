@@ -5,11 +5,12 @@
 //! pass floods once from where it was made, walls stop it and a closed door
 //! muffles it, and every listener it reaches with enough left goes to look.
 //!
-//! A listener hears a place, never a who. The flood never reads who made a
-//! sound, because a monster behind a wall cannot tell a friend's footsteps
-//! from an enemy's; it hears something, it goes to see, and whether it then
-//! sees anyone is the ordinary sight and notice roll. A sound at a cell it
-//! can already see is not followed: it has looked.
+//! A listener hears a place, never a who. Who made a sound decides nothing
+//! but that its maker does not hear it, because a monster behind a wall
+//! cannot tell a friend's footsteps from an enemy's; it hears something, it
+//! goes to see, and whether it then sees anyone is the ordinary sight and
+//! notice roll. A sound at a cell it can already see is not followed: it
+//! has looked.
 //!
 //! What was heard is a [`Heard`] of its own rather than an entry in
 //! stealth's [`Aware`](crate::stealth::Aware), so a game with noise and no
@@ -30,10 +31,13 @@ use rl_grid::{CostSource, DijkstraMap, PathRules};
 use rl_rules::ai::awareness::Awareness;
 use rl_rules::ai::hearing::{self, HearingStats};
 
-use crate::combat::Dead;
+use crate::combat::{DamageEvent, Dead};
 use crate::components::{MyTurn, Player, Position};
+use crate::doors::DoorEvent;
+use crate::items::ItemEvent;
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
+use crate::turn::Stepped;
 use crate::world::WorldMap;
 
 /// What a sound was, as an interned name. Never constructed; it only
@@ -140,8 +144,9 @@ pub struct MakeNoise {
     pub loudness: i32,
     /// What it was.
     pub sound: SoundId,
-    /// Who made it, for a game's own reactions. The engine never reads it
-    /// to decide who reacts: a listener hears a place, not a who.
+    /// Who made it, for a game's own reactions. The engine reads it only
+    /// so its maker does not hear it: a listener hears a place, not a who,
+    /// but it knows its own footsteps.
     pub maker: Option<Entity>,
 }
 
@@ -243,18 +248,69 @@ impl NoisePlugin {
 impl Plugin for NoisePlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, PerceiveSet, Turn, TurnSet};
+        // What the engine's sources read exists whether or not the game
+        // added combat or items; registering one twice is what
+        // `add_message` is built for.
         app.insert_resource(self.rules)
             .init_resource::<Sounds>()
             .init_resource::<Earshot>()
             .add_message::<MakeNoise>()
             .add_message::<NoiseHeard>()
+            .add_message::<DamageEvent>()
+            .add_message::<ItemEvent>()
             .add_systems(Turn, age_heard.in_set(DecideSet::Notice))
             .add_systems(Turn, follow_heard.in_set(PerceiveSet::Annotate))
-            .add_systems(Turn, resolve_noise.in_set(TurnSet::Listen));
+            .add_systems(Turn, (make_engine_noise, resolve_noise).chain().in_set(TurnSet::Listen));
     }
 
     fn finish(&self, app: &mut App) {
         crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "NoisePlugin");
+    }
+}
+
+/// What the engine's own actions did this pass, as its noise reads them.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Sources<'w, 's> {
+    stepped: MessageReader<'w, 's, Stepped>,
+    blows: MessageReader<'w, 's, DamageEvent>,
+    doors: MessageReader<'w, 's, DoorEvent>,
+    items: MessageReader<'w, 's, ItemEvent>,
+    footfalls: Query<'w, 's, &'static Footfall>,
+    positions: Query<'w, 's, &'static Position>,
+}
+
+/// Writes the noise of the engine's own actions this pass: every step, a
+/// blow where its attacker stands, a door, and a thrown thing where it
+/// came to rest.
+///
+/// A blow is one sound per attacker however many strikes it carried, so a
+/// flurry is not heard as four. A mend is not a blow, and damage over time
+/// has no attacker, so neither makes a sound. How loud each is comes from
+/// [`NoiseRules`], and a stepper's own [`Footfall`] in place of the rule.
+pub fn make_engine_noise(mut sources: Sources, rules: Res<NoiseRules>, mut noise: MessageWriter<MakeNoise>) {
+    for step in sources.stepped.read() {
+        let loudness = sources.footfalls.get(step.actor).map_or(rules.step, |f| f.0);
+        noise.write(MakeNoise { at: step.to, loudness, sound: Sounds::STEP, maker: Some(step.actor) });
+    }
+    let mut attackers: Vec<Entity> = Vec::new();
+    for blow in sources.blows.read() {
+        if let Some(attacker) = blow.hit.attacker.filter(|a| blow.hit.amount >= 0 && !attackers.contains(a)) {
+            attackers.push(attacker);
+        }
+    }
+    for attacker in attackers {
+        if let Ok(at) = sources.positions.get(attacker) {
+            noise.write(MakeNoise { at: at.0, loudness: rules.strike, sound: Sounds::STRIKE, maker: Some(attacker) });
+        }
+    }
+    for door in sources.doors.read() {
+        let (DoorEvent::Opened { actor, at } | DoorEvent::Closed { actor, at }) = *door;
+        noise.write(MakeNoise { at, loudness: rules.door, sound: Sounds::DOOR, maker: Some(actor) });
+    }
+    for item in sources.items.read() {
+        if let ItemEvent::Thrown { actor, at, .. } = *item {
+            noise.write(MakeNoise { at: at.0, loudness: rules.landing, sound: Sounds::LANDING, maker: Some(actor) });
+        }
     }
 }
 
@@ -297,6 +353,10 @@ pub fn resolve_noise(
         earshot.0.reset(region);
         earshot.0.build(&view, [from], PathRules::EIGHT_WAY);
         for (i, (listener, pos, ear, ..)) in near.iter().enumerate() {
+            // Its own noise is the one thing a listener knows the maker of.
+            if noise.maker == Some(*listener) {
+                continue;
+            }
             let Some(travelled) = map.to_local(pos.0).and_then(|p| earshot.0.value(p)) else { continue };
             let left = hearing::left_after(noise.loudness, travelled);
             if !hearing::heard(left, ear.threshold) {
@@ -339,7 +399,7 @@ pub fn age_heard(mut listeners: Query<(&Hearing, &mut Heard), HoldingTheTurn>) {
 ///
 /// Seeing the cell is having looked: anyone there is already in its
 /// snapshot, or hiding and up to the notice roll. This is what ends a
-/// search that arrived, and why a listener never follows its own steps.
+/// search that arrived.
 pub fn follow_heard(mut thinking: ResMut<Thinking>, sight: Sight, mut listeners: Query<(&mut Heard, Option<&OnMap>)>) {
     let Some(thinker) = thinking.actor() else { return };
     let Ok((mut heard, on)) = listeners.get_mut(thinker) else { return };
@@ -378,8 +438,16 @@ mod tests {
 
     impl Field {
         fn new(rules: NoiseRules) -> Field {
+            Field::with(Some(rules))
+        }
+
+        /// The field with hearing only if `rules` are given.
+        fn with(rules: Option<NoiseRules>) -> Field {
             let mut app = headless_app();
-            app.add_plugins((FovPlugin, MindsPlugin, StreamingPlugin, NoisePlugin::new(rules)));
+            app.add_plugins((FovPlugin, MindsPlugin, StreamingPlugin));
+            if let Some(rules) = rules {
+                app.add_plugins(NoisePlugin::new(rules));
+            }
             let start = crate::testing::surface(&mut app);
             app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
             let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(16), RevealsMap)).id();
@@ -413,6 +481,13 @@ mod tests {
         /// The player waits a whole turn and everyone else takes theirs.
         fn wait(&mut self) {
             self.app.world_mut().write_message(Intent::new(self.player, Wait));
+            self.app.update();
+        }
+
+        /// The player steps once toward `dir`, and everyone else takes
+        /// their turn.
+        fn step(&mut self, dir: rl_core::Direction) {
+            self.app.world_mut().write_message(Intent::new(self.player, crate::turn::Step(dir)));
             self.app.update();
         }
 
@@ -520,6 +595,62 @@ mod tests {
         let told = &field.app.world().resource::<Told>().0;
         assert_eq!(told, &vec![NoiseHeard { listener: player, at, sound: shout, maker: None }]);
         assert!(!field.heard(player).is_alert(), "the player's own turn is the game's");
+    }
+
+    const LOUD_STEPS: NoiseRules = NoiseRules { step: 4, strike: 6, door: 5, landing: 0, door_muffle: 2 };
+
+    #[test]
+    fn a_step_is_heard_where_it_lands_and_a_footfall_of_its_own_replaces_the_rule() {
+        let mut field = Field::new(LOUD_STEPS);
+        let listener = field.listener(5, 0, 0, 1);
+        field.step(rl_core::Direction::East);
+        assert_eq!(field.heard(listener).last_known(), Some(field.start.offset(1, 0)), "four steps off, a step of four is heard");
+
+        let mut field = Field::new(LOUD_STEPS);
+        let player = field.player;
+        field.app.world_mut().entity_mut(player).insert(Footfall(3));
+        let listener = field.listener(5, 0, 0, 1);
+        field.step(rl_core::Direction::East);
+        assert!(!field.heard(listener).is_alert(), "a lighter foot falls short of it");
+    }
+
+    #[test]
+    fn a_flurry_is_one_sound_where_the_attacker_stands_and_a_mend_is_none() {
+        let mut field = Field::new(LOUD_STEPS);
+        field.app.init_resource::<Told>().add_systems(PostUpdate, tell);
+        let (player, start) = (field.player, field.start);
+        let listener = field.listener(3, 0, 0, 1);
+        let healer = field.app.world_mut().spawn(Position(start.offset(0, 2))).id();
+        let kind = rl_rules::damage::DamageKindId::from_raw(0);
+        for hit in [rl_rules::Hit::by(player, kind, 3), rl_rules::Hit::by(player, kind, 0), rl_rules::Hit::by(healer, kind, -4)] {
+            field.app.world_mut().write_message(DamageEvent { target: listener, hit });
+        }
+        field.wait();
+        let told = &field.app.world().resource::<Told>().0;
+        assert_eq!(told, &vec![NoiseHeard { listener, at: start, sound: Sounds::STRIKE, maker: Some(player) }]);
+    }
+
+    #[test]
+    fn a_door_opened_is_heard_at_the_door() {
+        let mut field = Field::new(LOUD_STEPS);
+        field.app.init_resource::<Told>().add_systems(PostUpdate, tell);
+        field.tile(1, 0, "door_closed");
+        let listener = field.listener(4, 3, 0, 1);
+        let player = field.player;
+        field.app.world_mut().write_message(Intent::new(player, crate::doors::Open(rl_core::Direction::East)));
+        field.app.update();
+        let door = field.start.offset(1, 0);
+        let told = &field.app.world().resource::<Told>().0;
+        assert_eq!(told, &vec![NoiseHeard { listener, at: door, sound: Sounds::DOOR, maker: Some(player) }]);
+    }
+
+    #[test]
+    fn without_the_plugin_a_listener_hears_nothing_however_close() {
+        let mut field = Field::with(None);
+        let listener = field.listener(2, 0, 0, 1);
+        field.step(rl_core::Direction::East);
+        field.wait();
+        assert!(!field.heard(listener).is_alert(), "no NoisePlugin, no noise");
     }
 
     #[test]

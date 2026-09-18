@@ -24,7 +24,7 @@ Four decisions shape the rest:
 3. **A listener hears a place, not a who.**
    Hearing is not noticing.
    A monster that hears something goes to look, and whether it then sees anyone is the ordinary sight and notice roll.
-   The engine never tells a listener who made a sound or what was going on there.
+   The engine never tells a listener who made a sound or what was going on there; it only spares a listener its own.
 4. **Hearing stands apart from stealth.**
    What was heard is kept in its own component, not in `Aware`, so a game with noise and no stealth has monsters that come round the corner to see what the clatter was.
 
@@ -93,8 +93,8 @@ pub struct MakeNoise {
     pub loudness: i32,
     /// What it was, for a game phrasing a log line.
     pub sound: SoundId,
-    /// Who made it, for a game's own reactions. The engine never reads it
-    /// to decide who reacts.
+    /// Who made it, for a game's own reactions. The engine reads it only
+    /// so its maker does not hear it.
     pub maker: Option<Entity>,
 }
 
@@ -153,13 +153,14 @@ Were the resolver in `React` too, a shout written there would be heard in this p
 
 ## 5. What a listener does with it
 
-**The flood never reads who made the sound.**
+**Who made a sound decides nothing but that its maker does not hear it.**
 A listener cannot tell an ally's footsteps from an enemy's, and does not try.
 It hears a sound, and it goes to see.
+It does know its own footsteps: without that, a listener walking toward a fight would hear its own step louder than the fight, and forget the fight for it.
 
 **A sound at a cell it can see is not investigated.**
 In the perceive stage, if the thinker can see the cell it heard, it forgets the sound: it has looked, and anything there is already in its snapshot, or is hiding and up to the notice roll.
-This is also what ends a search that arrived, and why a listener never investigates its own footsteps.
+This is also what ends a search that arrived.
 
 **The trail it follows is the freshest one.**
 `Thinking` gains `offer_trail(at, stale_turns)`, and stealth and noise each offer theirs.

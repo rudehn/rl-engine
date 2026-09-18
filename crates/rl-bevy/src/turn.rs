@@ -265,6 +265,21 @@ pub struct ActionRefused {
     pub actor: Entity,
 }
 
+/// An actor stepped from one cell to the next under its own power.
+///
+/// Written by the move resolver for every step it lets through, and only
+/// then: a warp, a shove or a swap is not a step. What reads it is what
+/// cares that someone walked, such as the noise their feet made.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stepped {
+    /// Who.
+    pub actor: Entity,
+    /// From where.
+    pub from: Point,
+    /// To where.
+    pub to: Point,
+}
+
 /// A whole turn has passed. Per-turn simulations subscribe to this.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct TurnEnd {
@@ -408,6 +423,7 @@ pub fn resolve_moves(
     map: Res<WorldMap>,
     mut occupancy: ResMut<Occupancy>,
     mut actors: TurnHolder,
+    mut stepped: MessageWriter<Stepped>,
 ) {
     for intent in intents.read() {
         if !resolution.claim(intent.actor) {
@@ -429,6 +445,7 @@ pub fn resolve_moves(
         if blocks {
             occupancy.relocate(intent.actor, pos.0, target);
         }
+        stepped.write(Stepped { actor: intent.actor, from: pos.0, to: target });
         pos.0 = target;
         if let Some(mut v) = viewshed {
             v.dirty = true;

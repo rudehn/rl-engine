@@ -187,6 +187,7 @@ impl Plugin for CorePlugin {
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
             .add_message::<TurnEnd>()
+            .add_message::<turn::Stepped>()
             .add_message::<RunOver>()
             .add_message::<Restart>()
             .add_message::<places::WarpRequest>()
