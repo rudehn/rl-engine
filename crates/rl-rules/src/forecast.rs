@@ -11,6 +11,17 @@
 //! forecast and a panel may recompute it as often as it likes. Nothing here
 //! knows what a combatant is called, either; the caller fills a
 //! [`Combatant`] from whatever its components are.
+//!
+//! [`Combatant::strikes`] is filled from the melee roll and any extra
+//! strikes, `Loadout::blows` in `rl-bevy`; a `RangedAttack`'s own dice never
+//! enter it, and [`Combatant::blow_cost`] is read from the same actor's
+//! melee weapon. This is a melee-only forecast: a combatant that only
+//! shoots is under-forecast, since none of its blows are counted. Widening
+//! it to ranged fights needs the pair's distance, since a melee combatant
+//! forecasts a blow it cannot land at range and a ranged one forecasts
+//! nothing at all when adjacent, so `Combatant` would need the ranged roll
+//! and cost alongside the melee ones, chosen by the caller once it knows
+//! whether the pair is adjacent.
 
 use rl_core::DiceRoll;
 use rl_core::turn::BASE_ACTION_COST;
