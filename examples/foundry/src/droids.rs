@@ -115,16 +115,24 @@ pub struct Roster {
 }
 
 impl Roster {
-    /// Loads `monsters.ron` against `registries`, builds the spawn table,
-    /// and gives every kind a brain built from what it names: a shot in
-    /// reach before a melee kind will ever reach for it does not apply,
-    /// since [`MeleeAdjacent`] only ever fires on an adjacent enemy and so
-    /// never competes with [`ShootAtRange`] for the same one; a mind that
-    /// flees does so only if it names `flee_at` above zero. Panics with
-    /// every problem the file has, since a broken roster is a game that
-    /// cannot start.
+    /// Loads `monsters.ron` against `registries`. Panics with every
+    /// problem the file has, since a broken roster is a game that cannot
+    /// start.
     pub fn load(registries: &Registries) -> Self {
-        let defs: Registry<MonsterDef> = registries.names().load(MONSTERS_RON).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
+        Self::from_ron(MONSTERS_RON, registries)
+    }
+
+    /// As [`load`](Self::load), but from `ron` rather than the compiled-in
+    /// roster: `pub(crate)` for a test's own tiny roster, such as one
+    /// monster with a guaranteed drop `load` alone could never build.
+    /// Builds the spawn table and gives every kind a brain built from what
+    /// it names: a shot in reach before a melee kind will ever reach for
+    /// it does not apply, since [`MeleeAdjacent`] only ever fires on an
+    /// adjacent enemy and so never competes with [`ShootAtRange`] for the
+    /// same one; a mind that flees does so only if it names `flee_at`
+    /// above zero.
+    pub(crate) fn from_ron(ron: &str, registries: &Registries) -> Self {
+        let defs: Registry<MonsterDef> = registries.names().load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
         let mut table = BandedTable::default();
         let mut brains = Vec::new();
         for (id, d) in defs.iter() {

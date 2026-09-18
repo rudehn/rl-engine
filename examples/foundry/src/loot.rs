@@ -3,16 +3,15 @@
 //! [`plan_scatter`] is the pure half, tested without an `App` at all: it
 //! places one item at every `A` mark, two at every `L` (the mark itself
 //! and a free floor tile beside it), and a handful more on random floor
-//! tiles well clear of any mark, all drawn from a [`BandedTable`] at a
-//! deck's band. [`scatter_on_arrival`] is the one line of Bevy over it,
-//! the way `droids::spawns::populate_deck` is over `plan_population`:
-//! reads a [`PlaceEntered`] for the first arrival, plans against the real
-//! map, and spawns what the plan says.
+//! tiles, all drawn from a [`BandedTable`] at a deck's band.
+//! [`scatter_on_arrival`] is the one line of Bevy over it, the way
+//! `droids::spawns::populate_deck` is over `plan_population`: reads a
+//! [`PlaceEntered`] for the first arrival, plans against the real map,
+//! and spawns what the plan says.
 //!
-//! [`roll_drops`] is the other pure half: what a dead monster's own drop
-//! table pays out. [`drop_on_death`] rolls it from [`Drops`], the game's
-//! own stream, on every [`DeathEvent`], never the engine's combat one, so
-//! a kill never nudges a single later blow in the run.
+//! [`roll_drops`] is the other pure half: what a dead monster's drop
+//! table pays out. [`drop_on_death`] rolls it from [`Drops`], never the
+//! engine's combat stream, so a kill never nudges a later blow.
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -23,13 +22,6 @@ use rl_engine::rl_core::Rect;
 use crate::decks::deck_of;
 use crate::droids::{Kind, Roster};
 use crate::gear::{Armory, ItemDef};
-
-/// No random item lands nearer than this, in Chebyshev tiles, to any mark
-/// the same deck also guarantees an item to. Any closer and it would sit
-/// inside the very square a store's own second item is allowed to land
-/// in, so a scatter that drew a loose item there could never be told
-/// apart from the guaranteed one.
-const MIN_DISTANCE_FROM_MARKS: i32 = 2;
 
 /// The stream every kill's drop rolls come from: seeded once, from
 /// `Seed::stream(b"foundry.drops", 0)`, when the run starts, and never
@@ -58,65 +50,83 @@ pub fn roll_drops(drops: &[(Id<ItemDef>, u32)], rng: &mut impl Rng) -> Vec<Id<It
 /// A deck's guaranteed loot spots and the floor they sit on, bundled so
 /// [`plan_scatter`] takes one fewer argument than clippy's own limit on a
 /// function's parameter list starts complaining about.
+///
+/// `pub(crate)`, with [`plan_scatter`] and [`Origin`]: `testing::loot`'s
+/// `items_at_marks` recomputes the exact same plan `scatter_on_arrival`
+/// already made, to read off each item's origin rather than guess one
+/// from where it landed.
 #[derive(Clone, Copy)]
-struct Layout<'a> {
+pub(crate) struct Layout<'a> {
     /// The floor's own bounds, for a random loose item's anchor.
-    bounds: Rect,
+    pub(crate) bounds: Rect,
     /// Where an `A` mark guarantees exactly one item.
-    armories: &'a [Point],
+    pub(crate) armories: &'a [Point],
     /// Where an `L` mark guarantees two: the mark itself, and a free
     /// floor tile beside it.
-    stores: &'a [Point],
+    pub(crate) stores: &'a [Point],
+}
+
+/// How many loose items a deck's own scatter adds, on top of what its
+/// marks guarantee. Named once so [`scatter_on_arrival`] and a test never
+/// drift apart on the design's `3 + deck`.
+pub(crate) fn extra_loose_items(deck: u32) -> u32 {
+    3 + deck
+}
+
+/// Where in the plan one placed item came from, so a test can attribute
+/// each one to the mark that earned it instead of guessing from where it
+/// landed: two marks close enough together that a free tile beside one
+/// also sits within a step of the other would make a guess by proximity
+/// wrong, and a real store's own two `L`s can sit exactly that close
+/// (`decks::Foundry::stores`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Origin {
+    /// The guaranteed item at the `i`th of `layout.armories`.
+    Armory(usize),
+    /// One of the two guaranteed items at the `i`th of `layout.stores`:
+    /// the mark itself and the free tile beside it both count here.
+    Store(usize),
+    /// One of the `extra` loose items, tied to no particular mark.
+    Loose,
 }
 
 /// Plans a deck's whole scatter the moment it is entered: one item at
 /// each of `layout.armories`, two at each of `layout.stores` (the mark
 /// itself, and a free floor tile beside it, [`geometry::square`] radius
-/// one), and `extra` more on random floor tiles at least
-/// [`MIN_DISTANCE_FROM_MARKS`] from every mark and from each other. Every
-/// item is drawn from `table` at `band`. A random slot gives up after
-/// forty draws, so a deck with nowhere left to stand one stops trying
-/// rather than spinning, the same way `droids::spawns::plan_population`
-/// does; a mark the table cannot fill is simply left bare rather than
-/// panicking.
-///
-/// A store's own free tile also keeps [`MIN_DISTANCE_FROM_MARKS`] from
-/// every *other* mark, not just clear of `used`: a room's own two `L`s
-/// can sit as close as two Chebyshev tiles apart
-/// (`decks::Foundry::stores`), close enough that a tile beside one can
-/// also sit right next to the other, and a caller counting what landed
-/// near each mark could never then tell whose item it actually was.
-fn plan_scatter(
+/// one), and `extra` more on random floor tiles, none of them sharing a
+/// tile with another. Every item is drawn from `table` at `band`. A
+/// random slot gives up after forty draws, so a deck with nowhere left to
+/// stand one stops trying rather than spinning, the same way
+/// `droids::spawns::plan_population` does; a mark the table cannot fill
+/// is simply left bare rather than panicking.
+pub(crate) fn plan_scatter(
     table: &BandedTable<Id<ItemDef>>,
     band: i32,
     layout: &Layout,
     extra: u32,
     walkable: &mut impl FnMut(Point) -> bool,
     rng: &mut impl Rng,
-) -> Vec<(Id<ItemDef>, Point)> {
+) -> Vec<(Id<ItemDef>, Point, Origin)> {
     let Layout { bounds, armories, stores } = *layout;
-    let mut placed: Vec<(Id<ItemDef>, Point)> = Vec::new();
+    let mut placed: Vec<(Id<ItemDef>, Point, Origin)> = Vec::new();
     let mut used: Vec<Point> = Vec::new();
-    let marks: Vec<Point> = armories.iter().chain(stores).copied().collect();
 
-    for &mark in armories {
+    for (i, &mark) in armories.iter().enumerate() {
         if let Some(id) = table.pick(band, rng).map(|e| e.item) {
-            placed.push((id, mark));
+            placed.push((id, mark, Origin::Armory(i)));
             used.push(mark);
         }
     }
-    for &mark in stores {
+    for (i, &mark) in stores.iter().enumerate() {
         if let Some(id) = table.pick(band, rng).map(|e| e.item) {
-            placed.push((id, mark));
+            placed.push((id, mark, Origin::Store(i)));
             used.push(mark);
         }
-        let beside = geometry::square(mark, 1).find(|&p| {
-            p != mark && walkable(p) && !used.contains(&p) && marks.iter().all(|&m| m == mark || geometry::chebyshev(p, m) >= MIN_DISTANCE_FROM_MARKS)
-        });
+        let beside = geometry::square(mark, 1).find(|&p| p != mark && walkable(p) && !used.contains(&p));
         if let Some(beside) = beside
             && let Some(id) = table.pick(band, rng).map(|e| e.item)
         {
-            placed.push((id, beside));
+            placed.push((id, beside, Origin::Store(i)));
             used.push(beside);
         }
     }
@@ -124,12 +134,11 @@ fn plan_scatter(
     for _ in 0..extra {
         for _ in 0..40 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            let clear = walkable(p) && !used.contains(&p) && marks.iter().all(|m| geometry::chebyshev(*m, p) >= MIN_DISTANCE_FROM_MARKS);
-            if !clear {
+            if !walkable(p) || used.contains(&p) {
                 continue;
             }
             if let Some(id) = table.pick(band, rng).map(|e| e.item) {
-                placed.push((id, p));
+                placed.push((id, p, Origin::Loose));
                 used.push(p);
             }
             break;
@@ -167,8 +176,8 @@ pub fn scatter_on_arrival(mut commands: Commands, mut entered: MessageReader<Pla
         let armories: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'A' as u32).map(|s| s.at).collect();
         let stores: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'L' as u32).map(|s| s.at).collect();
         let layout = Layout { bounds: place.terrain.bounds(), armories: &armories, stores: &stores };
-        let plan = plan_scatter(&armory.table, deck as i32, &layout, 3 + deck, &mut |p| map.is_walkable(p), &mut rng);
-        for (id, p) in plan {
+        let plan = plan_scatter(&armory.table, deck as i32, &layout, extra_loose_items(deck), &mut |p| map.is_walkable(p), &mut rng);
+        for (id, p, _origin) in plan {
             let item = crate::gear::spawn_item(&mut commands, &armory, id, registries);
             commands.entity(item).insert((Position(p), OnMap(ev.map)));
         }
@@ -218,8 +227,7 @@ mod tests {
     use super::*;
 
     /// Two armories and two stores on an open floor, far enough apart that
-    /// no mark's own radius ever brushes another's. Kept as the raw marks
-    /// too, since a property test reads them back out of `plan`'s result.
+    /// no mark's own radius ever brushes another's.
     fn synthetic_marks() -> (Vec<Point>, Vec<Point>) {
         (vec![Point::new(10, 10), Point::new(60, 40)], vec![Point::new(30, 30), Point::new(50, 10)])
     }
@@ -254,50 +262,87 @@ mod tests {
     }
 
     #[test]
-    fn open_ground_always_scatters_the_full_count_over_a_span_of_seeds() {
+    fn revisiting_a_deck_scatters_nothing_new() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::arrive_on(&mut app, 1);
+        let count = |app: &mut App| -> usize {
+            let map = crate::decks::map_of(1);
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<&OnMap, With<Item>>();
+            q.iter(world).filter(|on| on.0 == map).count()
+        };
+        let first = count(&mut app);
+        assert!(first > 0, "deck one starts with something to find");
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        app.world_mut().write_message(WarpRequest::into_place(player, crate::decks::map_of(2)));
+        app.update();
+        app.update();
+        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: crate::decks::map_of(1), arrive: Arrive::Entry } });
+        app.update();
+        app.update();
+        assert_eq!(count(&mut app), first, "a second arrival on deck one scattered nothing new");
+    }
+
+    #[test]
+    fn every_scattered_item_on_a_live_deck_is_walkable_over_a_span_of_seeds() {
+        for s in 0..20u64 {
+            let mut app = crate::testing::headless(RunSeed(s));
+            crate::testing::arrive_on(&mut app, 1);
+            let map = app.world().resource::<WorldMap>().current();
+            let positions: Vec<Point> = {
+                let world = app.world_mut();
+                let mut q = world.query_filtered::<(&Position, &OnMap), With<Item>>();
+                q.iter(world).filter(|(_, on)| on.0 == map).map(|(p, _)| p.0).collect()
+            };
+            assert!(!positions.is_empty(), "seed {s}: nothing scattered");
+            let wm = app.world().resource::<WorldMap>();
+            for p in &positions {
+                assert!(wm.is_walkable(*p), "seed {s}: {p:?} on a wall");
+            }
+        }
+    }
+
+    #[test]
+    fn a_real_kill_drops_its_guaranteed_item_at_the_death_tile() {
+        let mut app = crate::testing::headless(RunSeed(2));
+        let at = crate::testing::kill_with_a_guaranteed_drop(&mut app, "slugs");
+        let map = app.world().resource::<WorldMap>().current();
+        let landed = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<(&Position, &OnMap), With<Item>>();
+            q.iter(world).any(|(p, on)| p.0 == at && on.0 == map)
+        };
+        assert!(landed, "no item landed at the death tile {at:?}");
+    }
+
+    /// Covers the full count, one item per armory and two per store by
+    /// origin, and no two items ever sharing a tile, in one pass over the
+    /// same plans: all three properties of the same generated data,
+    /// rather than three separate plans that could drift apart.
+    #[test]
+    fn open_ground_satisfies_every_mark_by_origin_with_no_shared_tile_over_a_span_of_seeds() {
         let armory = crate::gear::Armory::load(&crate::content::registries());
         let (armories, stores) = synthetic_marks();
         let layout = Layout { bounds: Rect::new(0, 0, 80, 60), armories: &armories, stores: &stores };
         for s in 0..20 {
             for deck in 1..=3u32 {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(s);
-                let plan = plan_scatter(&armory.table, deck as i32, &layout, 3 + deck, &mut |_| true, &mut rng);
-                let expect = armories.len() + stores.len() * 2 + (3 + deck) as usize;
+                let plan = plan_scatter(&armory.table, deck as i32, &layout, extra_loose_items(deck), &mut |_| true, &mut rng);
+                let expect = armories.len() + stores.len() * 2 + extra_loose_items(deck) as usize;
                 assert_eq!(plan.len(), expect, "deck {deck}, seed {s}");
-            }
-        }
-    }
-
-    #[test]
-    fn every_armory_mark_gets_one_item_and_every_store_mark_gets_two_over_a_span_of_seeds() {
-        let armory = crate::gear::Armory::load(&crate::content::registries());
-        let (armories, stores) = synthetic_marks();
-        let layout = Layout { bounds: Rect::new(0, 0, 80, 60), armories: &armories, stores: &stores };
-        for s in 0..20 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
-            let plan = plan_scatter(&armory.table, 2, &layout, 5, &mut |_| true, &mut rng);
-            for &mark in &armories {
-                assert_eq!(plan.iter().filter(|(_, p)| *p == mark).count(), 1, "seed {s}: {mark:?}");
-            }
-            for &mark in &stores {
-                let near = plan.iter().filter(|(_, p)| geometry::chebyshev(*p, mark) <= 1).count();
-                assert_eq!(near, 2, "seed {s}: {mark:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn no_two_items_ever_share_a_tile_over_a_span_of_seeds() {
-        let armory = crate::gear::Armory::load(&crate::content::registries());
-        let (armories, stores) = synthetic_marks();
-        let layout = Layout { bounds: Rect::new(0, 0, 80, 60), armories: &armories, stores: &stores };
-        for s in 0..20 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
-            let plan = plan_scatter(&armory.table, 3, &layout, 8, &mut |_| true, &mut rng);
-            let mut seen: Vec<Point> = Vec::new();
-            for (_, p) in &plan {
-                assert!(!seen.contains(p), "seed {s}: two items on {p:?}");
-                seen.push(*p);
+                for i in 0..armories.len() {
+                    let n = plan.iter().filter(|(_, _, o)| *o == Origin::Armory(i)).count();
+                    assert_eq!(n, 1, "deck {deck}, seed {s}: armory {i}");
+                }
+                for i in 0..stores.len() {
+                    let n = plan.iter().filter(|(_, _, o)| *o == Origin::Store(i)).count();
+                    assert_eq!(n, 2, "deck {deck}, seed {s}: store {i}");
+                }
+                let mut seen: Vec<Point> = Vec::new();
+                for (_, p, _) in &plan {
+                    assert!(!seen.contains(p), "deck {deck}, seed {s}: two items on {p:?}");
+                    seen.push(*p);
+                }
             }
         }
     }
@@ -313,6 +358,42 @@ mod tests {
                 plan_scatter(&armory.table, 2, &layout, 6, &mut |_| true, &mut rng)
             };
             assert_eq!(plan(), plan(), "seed {s}: two runs of the same seed disagreed");
+        }
+    }
+
+    /// The test above uses marks spread far apart on open ground; a real
+    /// deck's own tighter layout (`decks::Foundry::stores` places its two
+    /// `L`s only two Chebyshev tiles apart) needs its own real terrain
+    /// and walkability to exercise, no `App` involved.
+    #[test]
+    fn every_real_deck_scatters_walkable_items_by_origin_over_a_span_of_seeds() {
+        let armory = crate::gear::Armory::load(&crate::content::registries());
+        for s in 0..20 {
+            let foundry = crate::decks::Foundry::new(RunSeed(s));
+            let tables = foundry.tiles().tables();
+            for deck in 1..=crate::decks::DECKS {
+                let build = foundry.build(crate::decks::map_of(deck), None).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
+                let armories: Vec<Point> = build.spots.iter().filter(|sp| sp.tag == 'A' as u32).map(|sp| sp.at).collect();
+                let stores: Vec<Point> = build.spots.iter().filter(|sp| sp.tag == 'L' as u32).map(|sp| sp.at).collect();
+                let layout = Layout { bounds: build.terrain.bounds(), armories: &armories, stores: &stores };
+                let mut walkable = |p: Point| build.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]);
+                let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+                let plan = plan_scatter(&armory.table, deck as i32, &layout, extra_loose_items(deck), &mut walkable, &mut rng);
+                let mut seen: Vec<Point> = Vec::new();
+                for (_, p, _) in &plan {
+                    assert!(walkable(*p), "deck {deck}, seed {s}: {p:?} on a wall");
+                    assert!(!seen.contains(p), "deck {deck}, seed {s}: two items on {p:?}");
+                    seen.push(*p);
+                }
+                for i in 0..armories.len() {
+                    let n = plan.iter().filter(|(_, _, o)| *o == Origin::Armory(i)).count();
+                    assert_eq!(n, 1, "deck {deck}, seed {s}: armory {i}");
+                }
+                for i in 0..stores.len() {
+                    let n = plan.iter().filter(|(_, _, o)| *o == Origin::Store(i)).count();
+                    assert_eq!(n, 2, "deck {deck}, seed {s}: store {i}");
+                }
+            }
         }
     }
 }
