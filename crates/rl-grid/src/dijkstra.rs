@@ -30,12 +30,15 @@ pub struct DijkstraMap {
     region: Rect,
     values: Vec<i32>,
     heap: BinaryHeap<Reverse<(i32, u64, u32)>>,
+    /// The rules the last flood stepped by, so descending takes only the
+    /// steps it took.
+    rules: PathRules,
 }
 
 impl DijkstraMap {
     /// An unreached map over `region`.
     pub fn new(region: Rect) -> Self {
-        Self { region, values: vec![UNREACHED; region.area().max(0) as usize], heap: BinaryHeap::new() }
+        Self { region, values: vec![UNREACHED; region.area().max(0) as usize], heap: BinaryHeap::new(), rules: PathRules::default() }
     }
 
     /// A map over a whole grid.
@@ -82,6 +85,7 @@ impl DijkstraMap {
     pub fn build_weighted(&mut self, source: &impl CostSource, goals: impl IntoIterator<Item = (Point, i32)>, rules: PathRules) {
         self.values.iter_mut().for_each(|v| *v = UNREACHED);
         self.heap.clear();
+        self.rules = rules;
         let mut order = 0u64;
         for (goal, start) in goals {
             let Some(local) = self.local(goal) else { continue };
@@ -115,6 +119,7 @@ impl DijkstraMap {
     /// ```
     pub fn rescan(&mut self, source: &impl CostSource, rules: PathRules) {
         self.heap.clear();
+        self.rules = rules;
         let mut order = 0u64;
         for (local, v) in self.values.iter().enumerate() {
             if *v != UNREACHED {
@@ -162,6 +167,10 @@ impl DijkstraMap {
     /// Ties break clockwise from north, so the same situation gives the
     /// same step every run. Occupancy is not consulted: a blocked step is
     /// the caller's to refuse, after which it may try the next best.
+    ///
+    /// Only a step the flood itself would take is offered. A diagonal past
+    /// a wall's corner is often lower than going round, and a mover handed
+    /// it is refused by the same corner rule every turn and never moves.
     pub fn descend(&self, p: Point) -> Option<Point> {
         self.best_neighbour(p, |a, b| a < b)
     }
@@ -179,6 +188,7 @@ impl DijkstraMap {
         let mut out: Vec<(i32, usize, Point)> = Direction::ALL
             .iter()
             .enumerate()
+            .filter(|(_, d)| self.steps(p, **d))
             .filter_map(|(i, d)| {
                 let n = p + d.offset();
                 self.value(n).filter(|v| *v < here).map(|v| (v, i, n))
@@ -191,7 +201,7 @@ impl DijkstraMap {
     fn best_neighbour(&self, p: Point, better: impl Fn(i32, i32) -> bool) -> Option<Point> {
         let here = self.value(p)?;
         let mut best: Option<(i32, Point)> = None;
-        for d in Direction::ALL {
+        for d in Direction::ALL.into_iter().filter(|d| self.steps(p, *d)) {
             let n = p + d.offset();
             let Some(v) = self.value(n) else { continue };
             if !better(v, here) {
@@ -205,6 +215,22 @@ impl DijkstraMap {
         best.map(|(_, n)| n)
     }
 
+    /// Whether the flood could have stepped from `p` toward `dir`.
+    ///
+    /// A cell beside a reached one that the flood could enter was reached,
+    /// so within the region "both sides have a value" is the flood's own
+    /// corner test, asked without the terrain it was built over.
+    fn steps(&self, p: Point, dir: Direction) -> bool {
+        if !dir.is_diagonal() {
+            return true;
+        }
+        if !self.rules.diagonals {
+            return false;
+        }
+        let (dx, dy) = dir.delta();
+        self.rules.cut_corners || (self.value(p.offset(dx, 0)).is_some() && self.value(p.offset(0, dy)).is_some())
+    }
+
     /// Copies the values of a map of the same shape, whatever its region
     /// is, so a map can be re-addressed in another coordinate space.
     ///
@@ -213,6 +239,7 @@ impl DijkstraMap {
     pub fn copy_values_from(&mut self, other: &DijkstraMap) {
         assert_eq!(self.values.len(), other.values.len(), "maps differ in shape");
         self.values.copy_from_slice(&other.values);
+        self.rules = other.rules;
     }
 
     /// Every reached cell with its value, row-major within the region.
@@ -249,6 +276,39 @@ mod tests {
         assert_eq!(map.value(p(3, 1)), Some(300));
         assert_eq!(map.value(p(4, 1)), None);
         assert_eq!(map.value(p(9, 9)), None);
+    }
+
+    #[test]
+    fn over_a_seed_range_every_descent_is_a_step_the_flood_itself_would_take() {
+        let registry = crate::tile::TileRegistry::standard();
+        let (wall, floor) = (registry.expect("wall"), registry.expect("floor"));
+        for rules in [PathRules::default(), PathRules::CARDINAL] {
+            for seed in 0..20u64 {
+                let mut rng = StdRng::seed_from_u64(seed);
+                let terrain = crate::terrain::Terrain::from_fn(20, 15, |_| if rng.random_range(0..100) < 35 { wall } else { floor });
+                let view = terrain.view(&registry);
+                let goal = (0..).map(|_| p(rng.random_range(0..20), rng.random_range(0..15))).find(|g| view.is_passable(*g)).unwrap();
+                let mut map = DijkstraMap::covering(&view);
+                map.build(&view, [goal], rules);
+                for (from, _) in map.iter().collect::<Vec<_>>() {
+                    for to in map.descents(from) {
+                        let dir = Direction::between(from, to).expect("a neighbour");
+                        assert!(step_cost(&view, from, dir, rules).is_some(), "seed {seed}: {from:?} to {to:?} is not a step under {rules:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn descending_round_a_wall_corner_goes_round_it_rather_than_through() {
+        // From the far side of the corner at (1, 0), the diagonal onto the
+        // row below is lower than going straight down, and is not a step.
+        let (t, r) = parse(&[".#.", "..."]);
+        let view = t.view(&r);
+        let mut map = DijkstraMap::covering(&view);
+        map.build(&view, [p(0, 1)], PathRules::default());
+        assert_eq!(map.descend(p(2, 0)), Some(p(2, 1)), "straight down, since the diagonal squeezes past the wall");
     }
 
     #[test]
