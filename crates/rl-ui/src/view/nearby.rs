@@ -109,6 +109,8 @@ pub struct Around<'w, 's> {
     seen: Query<'w, 's, Seen>,
     factions: Query<'w, 's, &'static Faction>,
     watchers: Watchers<'w, 's>,
+    noise: rl_bevy::NoiseRunning<'w>,
+    heard: Query<'w, 's, &'static rl_bevy::Heard>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
@@ -130,6 +132,9 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
         };
         if sighting.actor && around.watchers.running() && around.watchers.is_watcher(sighting.entity) {
             row.aware = Some(around.watchers.sees(sighting.entity, me));
+        }
+        if sighting.actor && around.noise.get() {
+            row.heard = around.heard.get(sighting.entity).ok().map(|h| h.is_alert());
         }
         if sighting.actor { view.actors.push(row) } else { view.things.push(row) }
     }
@@ -199,6 +204,34 @@ mod tests {
         plain.actor("anyone", 'a', 2, 0);
         plain.tick();
         assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].aware, None, "no stealth, no reading");
+    }
+
+    #[test]
+    fn a_row_says_whether_it_is_going_to_look_at_a_sound_only_when_noise_is_running() {
+        let rules = rl_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
+        let mut stage = Stage::new((NearbyViewPlugin, rl_bevy::NoisePlugin::new(rules)));
+        let listening = stage.actor("listening", 'l', 2, 0);
+        let quiet = stage.actor("quiet", 'q', 3, 0);
+        let deaf = stage.actor("deaf", 'd', 4, 0);
+        let ear = rl_bevy::Hearing(rl_rules::HearingStats { threshold: 0, memory: 6 });
+        for listener in [listening, quiet] {
+            stage.app.world_mut().entity_mut(listener).insert(ear);
+        }
+        let at = stage.at;
+        stage.app.world_mut().get_mut::<rl_bevy::Heard>(listening).unwrap().0 = rl_rules::Awareness::Alert { at, stale_turns: 0 };
+        stage.tick();
+
+        let view = stage.app.world().resource::<NearbyView>();
+        let heard = |e: Entity| view.actors.iter().find(|r| r.entity == e).map(|r| r.heard);
+        assert_eq!(heard(listening), Some(Some(true)));
+        assert_eq!(heard(quiet), Some(Some(false)));
+        assert_eq!(heard(deaf), Some(None), "something with no Hearing hears nothing and says nothing");
+
+        let mut plain = Stage::new(NearbyViewPlugin);
+        let anyone = plain.actor("anyone", 'a', 2, 0);
+        plain.app.world_mut().entity_mut(anyone).insert(ear);
+        plain.tick();
+        assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].heard, None, "no noise, no reading, Hearing or not");
     }
 
     #[test]

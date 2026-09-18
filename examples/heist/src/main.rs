@@ -92,7 +92,9 @@ fn main() -> AppExit {
         // What this turn caused, answered inside it: a floor fills on
         // arrival, and a watchman who sees you shouts.
         .add_systems(Turn, (populate_floor, raise_alarm).in_set(TurnSet::React))
-        .add_systems(Update, (file_the_take, narrate_noise).in_set(PresentSet::Narrate));
+        .add_systems(Update, file_the_take.in_set(PresentSet::Narrate))
+        // After the narrator, so the pebble clatters after it is thrown.
+        .add_systems(Update, (narrate_the_house, narrate_what_the_thief_hears).after(ViewSet::Speak).in_set(PresentSet::Narrate));
     declare_controls(&mut app);
     app.run()
 }
@@ -453,6 +455,9 @@ fn start(
                 // Quiet and subtle: a watchman has to be close, or you have
                 // to be standing in light, before it is sure of you.
                 Stealth(StealthStats { quiet: 2, subtlety: 15 }),
+                // A thief listens: a door or a scuffle out of sight is told
+                // in the log, with which way it came from.
+                Hearing(HearingStats { threshold: 0, memory: 0 }),
                 Name::new("you"),
                 Glyph::new('@', Color::WHITE).on_layer(10),
             ),
@@ -634,7 +639,7 @@ fn raise_alarm(
 /// What the house heard, told to the thief: a pebble's clatter, and
 /// whether anything turned to look; and a shout, when anyone was near
 /// enough to come.
-fn narrate_noise(
+fn narrate_the_house(
     mut thrown: MessageReader<ItemEvent>,
     mut heard: MessageReader<NoiseHeard>,
     pebbles: Query<(), With<Pebble>>,
@@ -665,6 +670,50 @@ fn narrate_noise(
         let hound = kinds.get(crier).is_ok_and(|k| watch.defs.get(k.0).name == "hound");
         let cry = if hound { "A hound bays. Boots on the boards." } else { "A shout goes up. Boots on the boards." };
         say.log.bad(cry, turn);
+    }
+}
+
+/// A door or a scuffle the thief heard and could not see, and which way it
+/// came from. Footsteps are left out: the watch walk all night, and a log
+/// of every step is a log nobody reads.
+fn narrate_what_the_thief_hears(mut heard: MessageReader<NoiseHeard>, thief: Query<(Entity, &Position, &Viewshed), With<Player>>, mut say: Say) {
+    let turn = say.turns.turn_number();
+    let Ok((me, pos, sight)) = thief.single() else { return };
+    for h in heard.read().filter(|h| h.listener == me && !sight.can_see(h.at)) {
+        let what = if h.sound == Sounds::DOOR {
+            "A door"
+        } else if h.sound == Sounds::STRIKE {
+            "Blows"
+        } else {
+            continue;
+        };
+        say.log.muted(format!("{what}, somewhere to the {}.", compass(pos.0, h.at)), turn);
+    }
+}
+
+/// Which way `to` lies from `from`, as a thief would say it.
+fn compass(from: Point, to: Point) -> &'static str {
+    let (dx, dy) = (to.x - from.x, to.y - from.y);
+    // Within a step of straight along an axis for every two along it reads
+    // as that axis; otherwise it is a diagonal.
+    let (ew, ns) = (dx.signum(), dy.signum());
+    let (ew, ns) = if dx.abs() > 2 * dy.abs() {
+        (ew, 0)
+    } else if dy.abs() > 2 * dx.abs() {
+        (0, ns)
+    } else {
+        (ew, ns)
+    };
+    match (ew, ns) {
+        (0, -1) => "north",
+        (1, -1) => "northeast",
+        (1, 0) => "east",
+        (1, 1) => "southeast",
+        (0, 1) => "south",
+        (-1, 1) => "southwest",
+        (-1, 0) => "west",
+        (-1, -1) => "northwest",
+        _ => "near",
     }
 }
 
@@ -895,7 +944,8 @@ mod tests {
             .add_choice::<Relight>()
             .add_systems(Turn, (resolve_snuffs, resolve_relights, resolve_escapes).in_set(ResolveSet::Act))
             .add_systems(Turn, notice_dark_lamps.in_set(PerceiveSet::Annotate))
-            .add_systems(Turn, (populate_floor, raise_alarm).in_set(TurnSet::React));
+            .add_systems(Turn, (populate_floor, raise_alarm).in_set(TurnSet::React))
+            .add_systems(Update, (narrate_the_house, narrate_what_the_thief_hears).after(ViewSet::Speak).in_set(PresentSet::Narrate));
         declare_controls(&mut app);
         app
     }
@@ -1023,6 +1073,39 @@ mod tests {
         // nobody, and let the sound go without learning who threw it.
         assert_eq!(heard(&app, watcher), None, "and the sound was forgotten once the spot was seen");
         assert!(!aware_of(&app, watcher, player), "the thief was never in it");
+    }
+
+    /// A door opened out of the thief's sight is told in the log, with the
+    /// way it lies.
+    #[test]
+    fn a_door_the_thief_hears_and_cannot_see_is_told_with_its_direction() {
+        let (mut app, player, at) = settled(7);
+        let door = {
+            let map = app.world().resource::<WorldMap>();
+            let sight = app.world().get::<Viewshed>(player).unwrap();
+            let bounds = map.window_tiles();
+            (bounds.y..bounds.bottom())
+                .flat_map(|y| (bounds.x..bounds.right()).map(move |x| Point::new(x, y)))
+                .filter(|p| !sight.can_see(*p) && map.is_walkable(*p) && geometry::chebyshev(*p, at) <= 6)
+                .find(|p| walk(&app, *p, at) <= 400)
+                .expect("floor out of sight and within earshot")
+        };
+        let hand = app.world_mut().spawn(Position(door)).id();
+        app.world_mut().write_message(DoorEvent::Opened { actor: hand, at: door });
+        wait(&mut app, player, 1);
+        let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
+        let told = format!("A door, somewhere to the {}.", compass(at, door));
+        assert!(lines.contains(&told), "{told:?} in {lines:?}");
+    }
+
+    #[test]
+    fn a_compass_reads_an_axis_when_nearly_along_it_and_a_diagonal_otherwise() {
+        let o = Point::new(10, 10);
+        assert_eq!(compass(o, Point::new(10, 2)), "north");
+        assert_eq!(compass(o, Point::new(15, 8)), "east", "five across and two up is east");
+        assert_eq!(compass(o, Point::new(14, 13)), "southeast");
+        assert_eq!(compass(o, Point::new(3, 10)), "west");
+        assert_eq!(compass(o, o), "near");
     }
 
     /// Snuffing a lamp puts its light out, and a watchman with hands who

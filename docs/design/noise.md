@@ -1,6 +1,6 @@
 # Noise and hearing
 
-Status: phases A to D built 2026-09-17, against `main` at `56a60eb`; E next.
+Status: built 2026-09-17, phases A to E, against `main` at `56a60eb`.
 Section 14 records where the build differs from this design.
 
 ## 0. Summary
@@ -279,3 +279,6 @@ Found on the way, and fixed: `DijkstraMap::descents` offered every lower neighbo
 A watchman going to a sound stood at the corner choosing that step every turn and never moved.
 Any mind descending round a corner could do the same; hunting mostly escaped it because the player moves and the field changes.
 Descending now takes only a step the flood would, and a property test over a seed range holds it to that.
+- **The heist's lines about sound follow the narrator's.**
+  The clatter was logged before "You throw" in the old heist as well, since it was written in `React` and the narrator speaks later.
+  The heist now narrates what was heard after `ViewSet::Speak`, and gives the thief `Hearing`, so a door or a scuffle out of sight is told with the way it came from.

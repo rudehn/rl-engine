@@ -143,10 +143,14 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
         name.push_str(&facet.text);
     }
     // Something that has not noticed you reads muted, so the names in its
-    // colour are the ones hunting you; one that has, carries a mark.
+    // colour are the ones hunting you; one that has, carries a mark. One
+    // coming to look at a sound carries a question: it has not seen you,
+    // and it is on its way.
     let tone = if row.aware == Some(false) { Tones::MUTED } else { relation_tone(row.relation) };
     if row.aware == Some(true) {
         terminal.print_on(inner.x + 1, y, "!", palette.get(Tones::BAD), bg);
+    } else if row.heard == Some(true) {
+        terminal.print_on(inner.x + 1, y, "?", palette.get(Tones::NOTICE), bg);
     }
     terminal.print_on(inner.x + 2, y, &clip(&name, name_width.max(0) as usize), palette.get(tone), bg);
     if has_bar {
@@ -180,6 +184,27 @@ mod tests {
         assert_eq!(rows[4], "On the ground", "the second heading has no count");
         assert!(rows[6].starts_with("! rum"), "{:?}", rows[6]);
         assert!(!rows[6].contains('\u{2588}'), "a thing on the floor has no health bar");
+    }
+
+    #[test]
+    fn one_coming_to_look_at_a_sound_carries_a_question_and_one_that_has_seen_you_the_bang_instead() {
+        let rules = rl_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
+        let panel = NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("");
+        let mut stage = Stage::new((panel, rl_bevy::NoisePlugin::new(rules))).screen(24, 10);
+        let rat = stage.actor("rat", 'r', 2, 0);
+        stage.app.world_mut().entity_mut(rat).insert(rl_bevy::Hearing::default());
+        let at = stage.at;
+        stage.app.world_mut().get_mut::<rl_bevy::Heard>(rat).unwrap().0 = rl_rules::Awareness::Alert { at, stale_turns: 0 };
+        stage.tick();
+        assert!(stage.rows()[2].starts_with("r?rat"), "{:?}", stage.rows()[2]);
+        assert_eq!(stage.app.world().resource::<Terminal>().get(1, 2).map(|c| c.fg), Some(stage.app.world().resource::<Palette>().get(Tones::NOTICE)));
+
+        let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
+        row.aware = Some(true);
+        let palette = stage.app.world().resource::<Palette>().clone();
+        let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, 6, &palette);
+        assert_eq!(terminal.get(1, 0).map(|c| c.glyph), Some('!'), "a monster that has seen you is hunting you, whatever it heard");
     }
 
     #[test]

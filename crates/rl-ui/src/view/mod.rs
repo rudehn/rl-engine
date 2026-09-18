@@ -65,6 +65,11 @@ pub struct Row {
     /// a facet because the engine knows it and it reads the same in every
     /// game.
     pub aware: Option<bool>,
+    /// Whether it is going to look at something it heard: `None` for
+    /// something deaf, or in a game without noise. Beside `aware` and for
+    /// the same reason, and apart from it, since a monster coming to look
+    /// at a sound has not noticed anyone.
+    pub heard: Option<bool>,
     /// What the game added. Empty until an annotate system pushes.
     pub facets: Vec<Facet>,
 }
@@ -72,7 +77,7 @@ pub struct Row {
 impl Row {
     /// A row for `entity` with nothing but a name and a glyph.
     pub fn new(entity: Entity, label: impl Into<String>, glyph: Glyph) -> Self {
-        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, aware: None, facets: Vec::new() }
+        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, aware: None, heard: None, facets: Vec::new() }
     }
 
     /// The same row, `distance` tiles away.

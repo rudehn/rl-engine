@@ -189,6 +189,25 @@ pub struct Heard(pub Awareness);
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref)]
 pub struct Footfall(pub i32);
 
+/// Whether [`NoisePlugin`] was added, for the systems outside this module
+/// that read what was heard.
+///
+/// Asked of the plugin rather than of the components, as
+/// [`StealthRunning`](crate::stealth::StealthRunning) is, because
+/// [`Hearing`] brings a [`Heard`] with it whether or not anything will ever
+/// fill it. The plugin's own message is the proof it was added.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct NoiseRunning<'w> {
+    heard: Option<Res<'w, Messages<NoiseHeard>>>,
+}
+
+impl NoiseRunning<'_> {
+    /// Whether noise is running.
+    pub fn get(&self) -> bool {
+        self.heard.is_some()
+    }
+}
+
 /// The flood every noise reuses, so hearing allocates nothing once it has
 /// grown to the loudest sound in play.
 #[derive(Resource, Debug)]
