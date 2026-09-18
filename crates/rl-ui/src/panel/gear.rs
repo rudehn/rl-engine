@@ -5,7 +5,8 @@ use rl_bevy::PresentSet;
 use rl_core::Rect;
 use rl_render::Terminal;
 
-use crate::panel::{clear, clip, frame, section};
+use crate::facet::Facet;
+use crate::panel::{Segment, clear, clip, clip_rich, frame, print_rich, section};
 use crate::tone::{Palette, Tones};
 use crate::view::{GearView, GearViewPlugin};
 
@@ -93,17 +94,25 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
         match &slot.item {
             Some(item) => {
                 terminal.print_on(x, y, &item.glyph.ch.to_string(), item.glyph.fg, bg);
-                let mut name = item.label.clone();
-                for facet in &item.facets {
-                    name.push_str(" \u{00b7} ");
-                    name.push_str(&facet.text);
-                }
-                terminal.print_on(x + 2, y, &clip(&name, room.saturating_sub(2)), palette.get(Tones::TEXT), bg);
+                let runs = labelled(&item.label, &item.facets, room.saturating_sub(2), &palette);
+                print_rich(&mut terminal, x + 2, y, &runs, palette.get(Tones::TEXT), bg, &palette);
             }
             None => terminal.print_on(x, y, &clip(&layout.empty, room), palette.get(Tones::MUTED), bg),
         }
         y += 1;
     }
+}
+
+/// An item's name followed by its facets, each in its own tone, in
+/// `width` cells. The facets are the game's word on the item, a heat gauge
+/// or a count, so the name gives way first; only when the facets alone
+/// overrun the room is the whole line clipped from the end.
+fn labelled(label: &str, facets: &[Facet], width: usize, palette: &Palette) -> Vec<Segment> {
+    let tail: Vec<Segment> = facets.iter().flat_map(|f| [(" \u{00b7} ".to_string(), None), (f.text.clone(), Some(palette.get(f.tone)))]).collect();
+    let tail_width: usize = tail.iter().map(|(r, _)| r.chars().count()).sum();
+    let label = if label.chars().count() + tail_width > width && tail_width < width { clip(label, width - tail_width) } else { label.to_string() };
+    let runs: Vec<Segment> = std::iter::once((label, None)).chain(tail).collect();
+    clip_rich(&runs, width)
 }
 
 #[cfg(test)]
@@ -133,5 +142,39 @@ mod tests {
         assert!(rows[1].starts_with('\u{2500}'), "underlined: {:?}", rows[1]);
         assert_eq!(rows[2], "main hand / rusty blade", "the slot name, the glyph, the item");
         assert_eq!(rows[3], "body      \u{2014}", "and an empty slot is still a line");
+    }
+
+    /// A facet is the game's word on the item and is kept whole: a long
+    /// name gives way first, and the facet is drawn in its own tone, so a
+    /// weapon running hot reads as trouble on the rail however long its
+    /// name is.
+    #[test]
+    fn a_facet_keeps_its_tone_and_a_long_name_gives_way_to_it() {
+        let slots = || rl_rules::Registry::from_defs(vec![SlotDef::new("main hand")]).unwrap();
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 26, 3)), move |app| {
+            app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
+            app.add_systems(
+                Update,
+                (|mut view: ResMut<GearView>, mut facets: ResMut<crate::Facets>| {
+                    for row in view.rows_mut() {
+                        row.facets.push(facets.facet("heat", "locked").toned(Tones::BAD));
+                    }
+                })
+                .in_set(crate::ViewSet::Annotate),
+            );
+        })
+        .screen(26, 3);
+        let gun = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("very long blaster"), rl_render::Glyph::new('}', Color::WHITE))).id();
+        let mut worn = rl_bevy::Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(gun, &EquipShape::in_slot(hand)).expect("the slot exists");
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        assert_eq!(stage.row(2), "main hand } very\u{2026} \u{00b7} locked", "the name gave way, the facet did not");
+        let bad = crate::tone::readable(stage.app.world().resource::<Palette>().get(Tones::BAD), stage.app.world().resource::<Palette>());
+        let cell = stage.app.world().resource::<Terminal>().get(25, 2).unwrap();
+        assert_eq!(cell.fg, bad, "the facet is drawn in its own tone");
     }
 }

@@ -18,6 +18,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Fixed: the targeting cursor would not open for a shot whose gun was worn rather than the shooter's own, and its preview read the shooter's own `RangedAttack` alone.
   `AimFire` and the shot preview now read `Loadout::ranged` and `Loadout::melee`, the same shot the resolver fires, so a gun in hand opens the cursor and previews its own reach.
 - Fixed: a killing blow that carried the player's health below zero showed a negative count on the vitals bar, on the very screen the run ends on. The bar reads empty instead.
+- Fixed: `GearPanel` drew every facet in the text tone, whatever tone the game gave it, and clipped a long row from the end, so the facet was the first thing lost. Facets now keep their tone, and the item's name gives way before them.
 - Fixed: `Placement::AnyRoom` could choose a room an earlier stamp in the same chain had already used.
   The later stamp then drew over the earlier one's tiles, while the earlier one's marks were still reported on cells that were no longer floor.
   `AnyRoom` now excludes any room whose bounds intersect an earlier `Stamped` in the chain, and fails the chain if none remain.
