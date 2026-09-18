@@ -27,6 +27,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
   Corsair's bottom cave level draws rooms of nine to eleven instead of four to nine, so every room holds its 7x5 vault with the ring; that level's map moves on every seed.
   Delve's heart floor draws rooms of seventeen to twenty instead of fifteen to eighteen, so every room holds the 15x11 heart with the ring; at fifteen to eighteen, seed 21 found no room at all and the floor failed to build.
   Both games' floor tests now cover three hundred seeds; no fingerprint tripwire moved.
+- Fixed: a player spawned as an `Actor` at the origin and warped onto its first map, as Delve, the tutorial and the starter template all start a run, was frozen a step or two forward before its warp landed, so the monsters its arrival put there took a dozen or more turns before its first.
+  `admit_new_actors` now admits an actor the pass it first stands on the current map inside the loaded window, and keeps one spawned anywhere else waiting until then, so the player-first tie-break applies to a warped player too.
+  Foundry drops the workaround that spawned its player without `Actor`; no fingerprint tripwire moved.
 - Fixed: `Placement::AnyRoom` could choose a room an earlier stamp in the same chain had already used.
   The later stamp then drew over the earlier one's tiles, while the earlier one's marks were still reported on cells that were no longer floor.
   `AnyRoom` now excludes any room whose bounds intersect an earlier `Stamped` in the chain, and fails the chain if none remain.

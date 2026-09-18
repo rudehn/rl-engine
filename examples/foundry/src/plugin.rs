@@ -27,12 +27,6 @@ pub struct FoundryPlugin;
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(NewRun, crate::run::start);
-        // Gives the player back the `Actor` it was deliberately spawned
-        // without, the moment its own warp lands; see `run::admit_the_player`'s
-        // own doc for the freeze this sidesteps. Unordered against every
-        // other `PlaceEntered` reaction below: it only ever inserts
-        // `Actor` on the player, which none of them reads or writes.
-        app.add_systems(Turn, crate::run::admit_the_player.in_set(TurnSet::React));
         // Chained, and in this order: the engine's own `schedule`
         // (crates/rl-bevy/src/turn.rs) can write a `TurnEnd` and deal the
         // next actor's turn in the same pass, so `TurnSet::React` can see

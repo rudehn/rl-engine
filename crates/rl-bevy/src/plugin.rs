@@ -822,4 +822,54 @@ mod tests {
         assert!(k.is_explored(start.offset(3, 3)));
         assert!(k.explored_count() > 50);
     }
+
+    /// One walled hall, whatever map is asked for, entered at (2, 2).
+    struct Hall(TileRegistry);
+
+    impl crate::places::PlaceRules for Hall {
+        fn build(&self, _: crate::places::MapId, _: Option<&rl_world::WorldGraph>) -> Result<crate::places::PlaceBuild, rl_mapgen::BuildError> {
+            let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
+            let terrain = rl_grid::Terrain::from_fn(12, 8, |p| if p.x == 0 || p.y == 0 || p.x == 11 || p.y == 7 { wall } else { floor });
+            Ok(crate::places::PlaceBuild { terrain, entry: Point::new(2, 2), exit: None, spots: Vec::new() })
+        }
+    }
+
+    /// Stands three actors beside the entry the first time a place is
+    /// entered, in `TurnSet::React`, the way a game populates one.
+    fn populate(mut commands: Commands, mut entered: MessageReader<crate::places::PlaceEntered>) {
+        for ev in entered.read().filter(|ev| ev.first) {
+            for dx in [2, 4, 6] {
+                commands.spawn((Actor, Blocks, Position(ev.entry.offset(dx, 2))));
+            }
+        }
+    }
+
+    /// Whether each actor dealt a turn was the player, in the order dealt,
+    /// read inside the pass that dealt it.
+    #[derive(Resource, Default)]
+    struct Dealt(Vec<bool>);
+
+    fn record_deals(mut dealt: ResMut<Dealt>, fresh: Query<Has<Player>, Added<MyTurn>>) {
+        dealt.0.extend(fresh.iter());
+    }
+
+    #[test]
+    fn a_player_spawned_as_an_actor_and_warped_into_a_place_takes_the_first_turn_there() {
+        let mut app = headless_app();
+        let tiles = TileRegistry::standard();
+        app.insert_resource(crate::world::WorldMap::new(tiles.tables()));
+        app.insert_resource(crate::places::PlaceRulesRes(Box::new(Hall(tiles))));
+        app.init_resource::<Dealt>();
+        app.add_systems(Turn, (populate.in_set(TurnSet::React), record_deals.in_set(TurnSet::Decide)));
+        // Spawned the way a game starts a run: an actor at the origin of a
+        // surface it has none of, and a warp onto its first place.
+        let player = spawn_player(&mut app, Point::ZERO);
+        app.world_mut().write_message(crate::places::WarpRequest::into_place(player, crate::places::MapId(1)));
+        app.update();
+        app.update();
+        let dealt = &app.world().resource::<Dealt>().0;
+        assert_eq!(dealt.first(), Some(&true), "{dealt:?}: someone was dealt a turn before the player");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "the player holds the first turn");
+        assert_eq!(app.world().resource::<Turns>().now(), 0, "and holds it at the clock's start, not frozen a step or two ahead");
+    }
 }

@@ -29,6 +29,9 @@ pub struct Turns {
     /// Whether the current pass dealt, advanced or requeued anything. The
     /// runner clears it before a pass and stops when a pass leaves it clear.
     pub(crate) progress: bool,
+    /// Actors spawned somewhere play is not, waiting to be admitted until
+    /// it is: see [`admit_new_actors`]. In the order they were spawned.
+    arriving: Vec<Entity>,
 }
 
 impl Turns {
@@ -269,10 +272,20 @@ pub struct TurnEnd {
     pub turn: u32,
 }
 
+/// Whether an actor at `pos` on `on` stands where play is: on the current
+/// map, inside its loaded window. Anywhere else it can neither act nor be
+/// seen, and an unset [`OnMap`] is the surface.
+fn where_play_is(map: &WorldMap, pos: Point, on: Option<&OnMap>) -> bool {
+    on.map(|m| m.0).unwrap_or(MapId::SURFACE) == map.current() && map.is_loaded(pos)
+}
+
 /// Deals the next turn if nobody holds one.
 ///
-/// Actors outside the loaded window are frozen: they are put back for a
+/// Actors that were admitted and have since been left behind, on another
+/// map or outside the loaded window, are frozen: they are put back for a
 /// full step without acting, so a distant crowd costs nothing per pass.
+/// An actor that has never been where play is was never admitted at all;
+/// see [`admit_new_actors`].
 /// The clock advances at most once per pass, so a queue holding only
 /// frozen actors moves time forward one step at a time rather than racing
 /// ahead inside the loop.
@@ -297,8 +310,7 @@ pub fn schedule(
         match turns.queue.pop_due(|e| actors.contains(e)) {
             Some(entity) => {
                 let Ok((pos, on)) = actors.get(entity) else { continue };
-                let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE) == map.current();
-                if !here || !map.is_loaded(pos.0) {
+                if !where_play_is(&map, pos.0, on) {
                     debug!("actor {entity:?} at {:?} is on another map or outside the loaded window; frozen", pos.0);
                     turns.queue.insert_after(entity, BASE_ACTION_COST);
                     continue;
@@ -323,7 +335,21 @@ pub fn schedule(
     }
 }
 
+/// Every actor, as admission asks whether it has arrived: whether it is
+/// the player, and where it stands, if anywhere yet.
+type Arrivals<'w, 's> = Query<'w, 's, (Has<Player>, Option<&'static Position>, Option<&'static OnMap>), With<Actor>>;
+
 /// Puts newly spawned actors into the queue and the occupancy index.
+///
+/// An actor is admitted when it first stands where play is, on the current
+/// map inside the loaded window, which for most is the pass after it was
+/// spawned. One spawned anywhere else waits, out of the queue, and is
+/// admitted the pass it arrives: a player spawned at the origin and warped
+/// onto its first map as a run begins, or a crowd placed on a map nobody
+/// has gone to yet. Admitted at once and left to [`schedule`], such an
+/// actor would be frozen a step forward each time it came due before it
+/// got there, and the player would arrive a step or two behind the
+/// monsters its own arrival put there.
 ///
 /// Actors admitted in one pass go in with the player first and the rest in
 /// the order they were spawned. A query's iteration order follows the
@@ -333,15 +359,29 @@ pub fn schedule(
 pub fn admit_new_actors(
     mut turns: ResMut<Turns>,
     mut occupancy: ResMut<Occupancy>,
-    added_actors: Query<(Entity, Has<Player>), Added<Actor>>,
+    map: Res<WorldMap>,
+    added_actors: Query<Entity, Added<Actor>>,
+    actors: Arrivals,
     added_blockers: Query<(Entity, &Position, Option<&OnMap>), Added<Blocks>>,
 ) {
-    let mut fresh: Vec<(bool, Entity)> = added_actors.iter().map(|(e, player)| (!player, e)).collect();
+    let mut waiting = std::mem::take(&mut turns.arriving);
+    waiting.extend(added_actors.iter());
+    let mut fresh: Vec<(bool, Entity)> = Vec::new();
+    for e in waiting {
+        // Despawned, no longer an actor, already queued, or seen twice:
+        // nothing to admit.
+        let Ok((player, pos, on)) = actors.get(e) else { continue };
+        if turns.queue.contains(e) || fresh.iter().any(|(_, f)| *f == e) || turns.arriving.contains(&e) {
+            continue;
+        }
+        match pos {
+            Some(pos) if where_play_is(&map, pos.0, on) => fresh.push((!player, e)),
+            _ => turns.arriving.push(e),
+        }
+    }
     fresh.sort_by_key(|(not_player, e)| (*not_player, e.index()));
     for (_, e) in fresh {
-        if !turns.queue.contains(e) {
-            turns.queue.insert_now(e);
-        }
+        turns.queue.insert_now(e);
     }
     let here = occupancy.current();
     for (e, pos, on) in &added_blockers {

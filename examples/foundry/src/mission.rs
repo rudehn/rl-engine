@@ -255,9 +255,9 @@ mod tests {
         // A difference, not an absolute reading: the clock already carries
         // whatever it cost to reach deck three at all (a real run's own
         // stair transitions, once Foundry has them, are `GoThrough`'s
-        // normal `BASE_ACTION_COST`), and `run::admit_the_player`'s own
-        // fix only guarantees the player's first turn precedes every
-        // monster's, never that nothing moves before this one action does.
+        // normal `BASE_ACTION_COST`), and the engine only promises the
+        // player's first turn precedes every monster's, never that nothing
+        // moves before this one action does.
         let before = crate::testing::clock(&app);
         app.world_mut().write_message(Intent::new(player, SetCharge));
         crate::testing::settle(&mut app);
