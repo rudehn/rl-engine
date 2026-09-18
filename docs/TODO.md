@@ -33,6 +33,15 @@ The five items that opened this section were built in the six stages of `docs/de
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.
 - **A place for a miss.**
   Accuracy is deliberately absent (`docs/design/abilities.md`, "Accuracy does not exist"); the combat docs should say how a game adds a miss as a `DamageStage`, with an example.
+- **A shot is narrated as a blow.**
+  The phrasebook has one `HitsYou` for a blow and a shot alike, so a droid firing from across a dark room reads as "The line droid hits you for 4", named even when the player cannot see it.
+  `DamageEvent` or `Struck` already knows whether an attack was ranged; a `ShootsYou` phrase, and "something" for an attacker out of sight, would say what happened.
+- **Light is recast once a frame, not once a turn.**
+  `update_lighting` runs in `EngineSet::Light`, after every `Turn` pass the frame ran, so a droid acting in the same frame the player switches a lamp off still sees by the old light, for one turn.
+  Foundry's lamp shows it; recasting the dynamic layer inside the turn loop, when a source was added or removed, would close it.
+- **`Placement::AnyRoom` can cut a piece's own opening off.**
+  It centres a piece in any room at least the piece's size, so a piece exactly as wide or tall as its room fills it edge to edge, and an opening that faces the room's wall leads nowhere.
+  Foundry sidesteps it by making every room two cells larger than any piece; requiring a one-cell ring in `AnyRoom` itself would fix it for every game, at the price of Corsair's and Delve's fingerprints.
 - **A ranged fighter is under-forecast.**
   `rl_rules::forecast::Combatant::strikes` is filled from `Loadout::blows`, the melee roll plus extra strikes; a `RangedAttack`'s dice never enter the forecast, so a combatant that only shoots reads as unable to hurt anything.
   A fix needs the ranged roll and `RangedAttack::cost` fed into `Combatant` for whichever side of the pair is not adjacent to the other, so the forecast picks melee or ranged per pair instead of assuming melee always applies.
