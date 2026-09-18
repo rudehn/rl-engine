@@ -241,20 +241,23 @@ mod tests {
     }
 
     #[test]
-    fn venting_the_turn_that_just_ended_must_run_before_the_next_turns_shot_marks_it_fired() {
-        // The engine's own `schedule` (crates/rl-bevy/src/turn.rs) can
-        // write a `TurnEnd` and deal the next actor's turn in the same
-        // pass, so `TurnSet::React` can read the ending turn's `TurnEnd`
-        // together with the very next turn's `Struck`. Reproducing that
-        // race through the real scheduler is not reliable to pin to a
-        // seed, so this drives the two systems directly, in each order,
-        // on the exact pair of messages a real race would hand them.
+    fn heat_on_struck_and_vent_heat_give_different_heat_depending_which_runs_first() {
+        // This is the mechanism, not the wiring: it shows the two systems
+        // are order-sensitive at all, on the exact pair of messages a
+        // same-pass race (see the test below) would hand them. It does
+        // not exercise `FoundryPlugin`'s own registration, so it proves
+        // nothing about which order `Turn`'s `TurnSet::React` actually
+        // runs them in; that is
+        // `foundry_plugin_runs_vent_heat_before_heat_on_struck_so_the_race_resolves_correctly`,
+        // below.
         //
         // The world is never `update`d before the messages are written:
         // a headless app's message buffers hold up to two frames, so
         // running it first, the way the other tests do to let a real
         // turn resolve, would leave stray `TurnEnd`s in the buffer for a
-        // fresh reader to find and double-count.
+        // fresh `RunSystemOnce` reader (which starts counting from zero
+        // every call, unlike a system registered once and left running)
+        // to find and double-count.
         use bevy::ecs::system::RunSystemOnce;
 
         fn scenario(vent_first: bool) -> u32 {
@@ -280,6 +283,51 @@ mod tests {
             "heat_on_struck first: the new shot marks it fired, so the turn that actually just ended quietly wrongly skips its vent"
         );
         assert_eq!(scenario(true), 15, "vent_heat first: the ending turn vents (15 - 20, floored at 0), then the new shot adds its own 15");
+    }
+
+    #[test]
+    fn foundry_plugin_runs_vent_heat_before_heat_on_struck_so_the_race_resolves_correctly() {
+        // The wiring itself, not just the mechanism above: `FoundryPlugin`
+        // is what `main.rs` and `testing::headless` both add, so if this
+        // reads `Heat` correctly, the shipped game does too.
+        //
+        // The engine's own `schedule` (crates/rl-bevy/src/turn.rs) can
+        // write a `TurnEnd` and deal the next actor's turn in the same
+        // pass, so `TurnSet::React` can read the ending turn's `TurnEnd`
+        // together with the very next turn's `Struck`. Reproducing that
+        // exact race through the real scheduler (a second, AI-driven
+        // actor timed to be dealt a turn on the very pass a `TurnEnd` is
+        // written) is not reliable to pin to a seed, but the race's
+        // *effect* on `TurnSet::React` is reproduced exactly: two
+        // messages arriving in front of React together, which is cheap
+        // to force directly, one whole `Turn` pass to run them through.
+        //
+        // `app.update()` twice, as `testing::dual_blasters` does, gets
+        // the player past `NewRun` and admitted to the queue; by then it
+        // holds a turn nothing has resolved (no intent was ever queued
+        // for it), so `schedule()` finds it already holding and returns
+        // at once, `Decide` finds no mind to run and no intent to
+        // resolve, and the one further `Turn` pass below runs
+        // `TurnSet::React` on exactly the two messages this test writes
+        // and nothing `schedule()` adds of its own. `vent_heat` and
+        // `heat_on_struck` are also both real, persistently-registered
+        // systems by this point, so each already read and discarded
+        // whatever the two setup frames wrote; only what this test writes
+        // afterward is unread.
+        let mut app = crate::testing::headless(RunSeed(1));
+        app.update();
+        app.update();
+        // A hand blaster mid-cooldown: quiet so far this turn.
+        let item = app.world_mut().spawn(Heat { per_shot: 15, vent: 20, now: 15, locked: false, fired: false }).id();
+        let bystander = app.world_mut().spawn_empty().id();
+        app.world_mut().write_message(TurnEnd { turn: 1 });
+        app.world_mut().write_message(Struck { attacker: bystander, target: bystander, with: Some(item), ranged: true });
+        app.world_mut().run_schedule(rl_engine::rl_bevy::plugin::Turn);
+        assert_eq!(
+            app.world().get::<Heat>(item).unwrap().now,
+            15,
+            "FoundryPlugin must run vent_heat before heat_on_struck: the ending turn vents (15 - 20, floored at 0), then the new shot adds its own 15"
+        );
     }
 
     #[test]
