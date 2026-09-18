@@ -1,12 +1,5 @@
-//! Foundry: a commando's fight down through the decks of a droid foundry,
-//! alone against whatever the floor below is still assembling.
-//!
-//! This opens the window and loads Foundry's content; the run itself,
-//! its decks and its systems, is later tasks'.
-
-mod content;
-#[cfg(test)]
-mod testing;
+//! Opens Foundry's window and loads its content; the crate's own docs,
+//! and everything else, live in `lib.rs`.
 
 use bevy::prelude::*;
 use rl_engine::RoguelikePlugins;
@@ -18,6 +11,6 @@ const ROWS: i32 = 40;
 
 fn main() -> AppExit {
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS)).insert_resource(content::registries());
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS)).insert_resource(foundry::content::registries());
     app.run()
 }

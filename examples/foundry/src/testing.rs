@@ -1,4 +1,5 @@
-//! A headless Foundry, for the tests this crate and later tasks add.
+//! A headless Foundry, for the tests this crate and its integration
+//! tests add.
 //!
 //! The engine plugins the design needs, with no window: enough of the
 //! real wiring that a test exercises it rather than a mock of it. No

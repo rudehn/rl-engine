@@ -37,10 +37,7 @@ pub fn resistances(profile: Profile, registries: &Registries) -> Resistances {
 /// loaded against them.
 ///
 /// Assembled the way `delve`'s `registries` is: one `Registry::from_defs`
-/// per table, then the struct literal. Both resistance profiles are
-/// resolved once here too, right after the damage table is built, so a
-/// kind renamed on one side and not the other fails now, at startup,
-/// rather than the first hit landing wrong for the rest of the run.
+/// per table, then the struct literal.
 pub fn registries() -> Registries {
     let damage_kinds = Registry::from_defs(vec![
         DamageKind::new("kinetic"),
@@ -53,7 +50,7 @@ pub fn registries() -> Registries {
     ])
     .unwrap();
     let statuses = Registry::from_defs(vec![StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") }]).unwrap();
-    let registries = Registries {
+    Registries {
         damage_kinds,
         statuses,
         factions: Registry::from_defs(vec![FactionDef::new("commando"), FactionDef::new("droids"), FactionDef::new("vermin")]).unwrap(),
@@ -68,11 +65,7 @@ pub fn registries() -> Registries {
         ])
         .unwrap(),
         ..Registries::default()
-    };
-    for profile in [Profile::Chassis, Profile::Organic] {
-        resistances(profile, &registries);
     }
-    registries
 }
 
 #[cfg(test)]
