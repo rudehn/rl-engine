@@ -12,6 +12,10 @@
 pub mod ammo;
 pub mod content;
 pub mod decks;
+/// Line droids, probe droids, heavy droids and coolant rats: the roster
+/// loaded from `monsters.ron`, the spawn that gives one a brain, the
+/// probe's alarm and the jam an ion hit leaves on radar.
+pub mod droids;
 /// The six weapons, six pieces of armor and slugs the decks are seeded
 /// with, and the item entities they spawn as.
 pub mod gear;

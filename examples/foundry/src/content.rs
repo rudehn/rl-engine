@@ -10,12 +10,39 @@ use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{DamageKind, Registry, Resistances, SlotDef, StatusDef, TagDef};
 
 /// How a body takes a hit.
+///
+/// `Deserialize` by hand, from a plain string, so a monster's file writes
+/// `profile: "chassis" | "organic"` the way every other name in content is
+/// written; the derived enum deserializer RON gives a fieldless enum reads
+/// a bare, unquoted identifier instead, which is not this file's style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
     /// Plated: shrugs off half a slug, takes a bolt in full, and is undone by ion.
     Chassis,
     /// Flesh in plate: a bolt is blunted, ion barely registers.
     Organic,
+}
+
+impl<'de> serde::Deserialize<'de> for Profile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ProfileVisitor;
+        impl serde::de::Visitor<'_> for ProfileVisitor {
+            type Value = Profile;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "\"chassis\" or \"organic\"")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, name: &str) -> Result<Profile, E> {
+                match name {
+                    "chassis" => Ok(Profile::Chassis),
+                    "organic" => Ok(Profile::Organic),
+                    other => Err(E::custom(format!("no profile called {other:?}; expected \"chassis\" or \"organic\""))),
+                }
+            }
+        }
+        deserializer.deserialize_str(ProfileVisitor)
+    }
 }
 
 /// The resistance table for `profile`, as percentages removed.

@@ -56,5 +56,19 @@ impl Plugin for FoundryPlugin {
         // (dropping, picking up, equipping) can never land in the same
         // pass to race each other in the first place.
         app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().in_set(TurnSet::React));
+        // A deck fills the moment it is first entered, the way delve's own
+        // floors do.
+        app.add_systems(Turn, crate::droids::populate_deck.in_set(TurnSet::React));
+        // A probe's alarm reacts to the same `Noticed` the engine's own
+        // stealth writes; nothing here needs ordering against it.
+        app.add_systems(Turn, crate::droids::sound_alarm.in_set(TurnSet::React));
+        // Chained, and in this order for the same reason heat's pair is
+        // above: the engine's own `schedule` can write a `TurnEnd` and
+        // deal the very next turn's `DamageDealt` in the same pass, so
+        // `unjam_sensors` must count the turn that just ended down before
+        // `jam_sensors` reads a hit that turn's actor just landed.
+        // Reversed, a fresh jam from that new hit would be counted down
+        // before it had stood for even one whole turn of its own.
+        app.add_systems(Turn, (crate::droids::unjam_sensors, crate::droids::jam_sensors).chain().in_set(TurnSet::React));
     }
 }

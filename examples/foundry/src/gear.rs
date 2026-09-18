@@ -222,7 +222,19 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
 /// also means a wearer with dark sight of its own from some other source
 /// would lose it the moment its gear changed; nothing in this slice grants
 /// dark sight any way but this one, so the case cannot yet arise.
-pub fn grant_dark_sight(mut commands: Commands, mut events: MessageReader<ItemEvent>, wearers: Query<&Equipped>, sights: Query<&WornDarkSight>) {
+///
+/// A wearer currently [`Jammed`](crate::droids::Jammed) is skipped rather
+/// than re-granted: the jam is about the sensor, not about who put it
+/// there, so a rangefinder helmet is blinded by an ion hit exactly the way
+/// a probe's own radar is, and re-equipping the same helmet mid-jam must
+/// not quietly undo that.
+pub fn grant_dark_sight(
+    mut commands: Commands,
+    mut events: MessageReader<ItemEvent>,
+    wearers: Query<&Equipped>,
+    sights: Query<&WornDarkSight>,
+    jammed: Query<(), With<crate::droids::Jammed>>,
+) {
     let actors = events.read().filter_map(|ev| match *ev {
         ItemEvent::Equipped { actor, .. } | ItemEvent::Unequipped { actor, .. } => Some(actor),
         _ => None,
@@ -230,9 +242,10 @@ pub fn grant_dark_sight(mut commands: Commands, mut events: MessageReader<ItemEv
     for actor in actors {
         let Ok(worn) = wearers.get(actor) else { continue };
         match worn.0.worn().filter_map(|(_, item)| sights.get(item).ok()).map(|s| s.0).max() {
-            Some(n) => {
+            Some(n) if !jammed.contains(actor) => {
                 commands.entity(actor).insert(DarkSight(n));
             }
+            Some(_) => {}
             None => {
                 commands.entity(actor).remove::<DarkSight>();
             }

@@ -12,9 +12,11 @@ use rl_engine::rl_rules::damage::SubtractArmor;
 
 use crate::content::{Profile, resistances};
 use crate::decks::{Foundry, map_of};
+use crate::droids::Roster;
 
-/// Builds the foundry's decks and combat rules, spawns the commando, and
-/// warps it onto deck one. Runs once, in [`NewRun`].
+/// Builds the foundry's decks and combat rules, loads the roster every
+/// deck spawns from, spawns the commando, and warps it onto deck one.
+/// Runs once, in [`NewRun`].
 ///
 /// Reads the registries from a resource rather than building them itself:
 /// `main.rs` inserts them before the run starts, the way its content is
@@ -35,6 +37,7 @@ pub fn start(
     commands.insert_resource(combat);
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(Lighting::dark());
+    commands.insert_resource(Roster::load(&registries));
 
     let kinetic = registries.damage_kinds.expect("kinetic");
     let player = commands
