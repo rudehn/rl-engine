@@ -121,6 +121,17 @@ pub enum TurnSet {
     /// ran the two in, and a replay cannot tell them apart. Empty unless
     /// the game added [`NoisePlugin`](crate::noise::NoisePlugin).
     Listen,
+    /// What the pass did, read for the record: every event it raised and
+    /// every answer a game gave in [`React`](TurnSet::React), read in one
+    /// place once they are all in.
+    ///
+    /// Its own phase rather than a reader in `React`, because a reader
+    /// there races the game's own reactions: whichever the executor ran
+    /// first decides whether a game's line lands in this pass or trails
+    /// into the next, behind that pass's events. Before
+    /// [`Cleanup`](TurnSet::Cleanup), so the dead still stand where they
+    /// fell. The narrator's collector runs here.
+    Record,
     /// Requeue and recover.
     Cleanup,
 }
@@ -212,7 +223,8 @@ impl Plugin for CorePlugin {
             .configure_sets(Update, (PresentSet::Narrate, PresentSet::Map, PresentSet::Chrome, PresentSet::Overlay).chain().in_set(EngineSet::Present))
             .configure_sets(
                 Turn,
-                (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Listen, TurnSet::Cleanup).chain(),
+                (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Listen, TurnSet::Record, TurnSet::Cleanup)
+                    .chain(),
             )
             .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
             .configure_sets(Turn, DecideSet::Perceive.run_if(crate::minds::a_mind_holds_the_turn))

@@ -71,6 +71,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You supply** nothing, or a `Phrasebook` with the phrases you would rather it used.
 - **You get** every engine event spoken, split by who did what to whom, with names in the colours of the things they name.
   Reword a phrase, silence one, or read the `NarrationView` and say it your own way.
+  A line of your own told from inside a turn is a `Tell`, written in `TurnSet::React`, and the narrator speaks it after what it answers and before whatever the next actor does.
 
 ## A world above the dungeon
 

@@ -10,12 +10,12 @@
 //! The view, [`NarrationView`], is rows of [`Said`]: which [`Phrase`], who
 //! did it, to whom, with what, how much, where, and whether the player saw
 //! it. No string the game did not supply. The collector runs in
-//! [`TurnSet::React`], once per pass rather than
+//! [`TurnSet::Record`], once per pass rather than
 //! once per frame, because one pass is one actor's action and reading that
 //! pass's events in a fixed order gives the true order across a frame of
-//! many turns: the cast, then the blow it landed, then the next actor's
-//! step. A collector in the drawing phase sees a whole frame's buffers at
-//! once and cannot know which blow followed which cast.
+//! many turns: the look round, then the cast, then the blow it landed, then
+//! the next actor's step. A collector in the drawing phase sees a whole
+//! frame's buffers at once and cannot know which blow followed which cast.
 //!
 //! The presenter, [`NarratorPlugin`], turns each row into a line through
 //! the [`Phrasebook`]: one template per phrase, split by perspective so
@@ -27,8 +27,15 @@
 //! drops the presenter and reads the view itself.
 //!
 //! What using an item means, what a quest said, and how a game's own events
-//! read stay the game's: it pushes those lines to the [`MessageLog`] as it
-//! always did.
+//! read stay the game's words, but not its order to keep. A game writes a
+//! [`Tell`] from inside the pass, in [`TurnSet::React`] where it answers
+//! what the pass did, and the collector reads it with that pass's events,
+//! after them, as a row whose [`Words`] are the game's own. A line pushed
+//! straight to the [`MessageLog`] from inside a pass lands ahead of every
+//! row the frame has yet to speak, so an alarm reads above the sighting
+//! that set it off. A line from outside the turns, the one a run opens
+//! with or a key refused before any turn is spent, has no pass to wait
+//! for and still goes to the log directly.
 
 use std::collections::BTreeMap;
 
@@ -148,11 +155,30 @@ pub enum Phrase {
     StandsInFire,
 }
 
+/// What a row says: one of the engine's phrases, worded by the
+/// [`Phrasebook`], or a game's own words from a [`Tell`].
+///
+/// Two kinds rather than a phrase a game adds to, because [`Phrase`]
+/// enumerates what the engine raises and nothing else; a game's line
+/// arrives already worded and only needs its place in the order.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Words {
+    /// An engine event, said as the phrasebook says it.
+    Phrase(Phrase),
+    /// A game's template, said in its own tone.
+    Own {
+        /// The template, with the phrasebook's placeholders.
+        text: String,
+        /// The tone.
+        tone: ToneId,
+    },
+}
+
 /// One thing that happened, as the narrator reads it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Said {
-    /// What kind of thing.
-    pub phrase: Phrase,
+    /// What is said of it.
+    pub words: Words,
     /// Who did it, if anyone: `{who}` in a template.
     pub who: Option<Entity>,
     /// To whom, if anyone: `{whom}`.
@@ -178,7 +204,82 @@ pub struct Said {
 impl Said {
     /// A row with nothing but its phrase and turn.
     pub fn new(phrase: Phrase, turn: u32) -> Self {
-        Self { phrase, who: None, whom: None, what: None, named: String::new(), detail: String::new(), amount: 0, at: None, seen: true, turn }
+        Self::worded(Words::Phrase(phrase), turn)
+    }
+
+    /// The row a game's [`Tell`] makes, on `turn`.
+    pub fn told(tell: &Tell, turn: u32) -> Self {
+        let mut said = Self::worded(Words::Own { text: tell.text.clone(), tone: tell.tone }, turn);
+        said.who = tell.who;
+        said.whom = tell.whom;
+        said.what = tell.what;
+        said
+    }
+
+    fn worded(words: Words, turn: u32) -> Self {
+        Self { words, who: None, whom: None, what: None, named: String::new(), detail: String::new(), amount: 0, at: None, seen: true, turn }
+    }
+
+    /// The engine phrase, when the row is one.
+    pub fn phrase(&self) -> Option<Phrase> {
+        match self.words {
+            Words::Phrase(phrase) => Some(phrase),
+            Words::Own { .. } => None,
+        }
+    }
+}
+
+/// A line of a game's own, told in its place among what the turns did.
+///
+/// Written from inside a pass, usually in [`TurnSet::React`] as the
+/// game's answer to what the pass did: the alarm a sighting sets off, the
+/// weapon that overheats on the shot. The collector reads it with the
+/// pass's own events, after them, and the presenter speaks it with them,
+/// so it lands in the log below what it answers and above whatever the
+/// next actor does. `text` is a template with the [`Phrasebook`]'s
+/// placeholders, so a name in it wears its colour as an engine line's
+/// does, and a line with no braces is spoken as written.
+///
+/// Always spoken: the game chose to say it, so whether the player saw who
+/// it names is the game's to have weighed. A line written outside the
+/// turns, such as the one a run opens with, is read on the next pass, so
+/// it goes to the [`MessageLog`] directly instead.
+#[derive(Message, Debug, Clone, PartialEq)]
+pub struct Tell {
+    /// What to say, with placeholders as a phrase has.
+    pub text: String,
+    /// The tone it is said in.
+    pub tone: ToneId,
+    /// `{who}`, if anyone.
+    pub who: Option<Entity>,
+    /// `{whom}`, if anyone.
+    pub whom: Option<Entity>,
+    /// `{what}`, if anything.
+    pub what: Option<Entity>,
+}
+
+impl Tell {
+    /// `text`, said in `tone`, naming nobody.
+    pub fn new(text: impl Into<String>, tone: ToneId) -> Self {
+        Self { text: text.into(), tone, who: None, whom: None, what: None }
+    }
+
+    /// Names `who`, for `{who}`.
+    pub fn by(mut self, who: Entity) -> Self {
+        self.who = Some(who);
+        self
+    }
+
+    /// Names `whom`, for `{whom}`.
+    pub fn to(mut self, whom: Entity) -> Self {
+        self.whom = Some(whom);
+        self
+    }
+
+    /// Names `what`, for `{what}`.
+    pub fn about(mut self, what: Entity) -> Self {
+        self.what = Some(what);
+        self
     }
 }
 
@@ -210,7 +311,8 @@ impl Plugin for NarrationViewPlugin {
             .add_message::<LightEvent>()
             .add_message::<FireEvent>()
             .add_message::<AbilityEvent>()
-            .add_systems(Turn, collect_narration.in_set(TurnSet::React));
+            .add_message::<Tell>()
+            .add_systems(Turn, collect_narration.in_set(TurnSet::Record));
     }
 
     fn finish(&self, app: &mut App) {
@@ -220,7 +322,8 @@ impl Plugin for NarrationViewPlugin {
 
 /// Every event the narrator reads, in the order it reads them within a
 /// pass: a use before the blows it landed, blows before the deaths they
-/// caused.
+/// caused, and a game's own lines last, since they answer what the pass
+/// did.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Heard<'w, 's> {
     abilities: MessageReader<'w, 's, AbilityEvent>,
@@ -234,6 +337,7 @@ pub struct Heard<'w, 's> {
     noticed: MessageReader<'w, 's, Noticed>,
     lights: MessageReader<'w, 's, LightEvent>,
     fires: MessageReader<'w, 's, FireEvent>,
+    tells: MessageReader<'w, 's, Tell>,
 }
 
 /// Items that strike or shoot when wielded, which are wielded rather than
@@ -249,11 +353,18 @@ pub struct Witness<'w, 's> {
     player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed), With<Player>>,
     positions: Query<'w, 's, &'static Position>,
     weapons: Weapons<'w, 's>,
+    holding: Query<'w, 's, (), With<MyTurn>>,
 }
 
 impl Witness<'_, '_> {
     fn is_you(&self, e: Entity) -> bool {
         self.player.single().is_ok_and(|(me, _, _)| me == e)
+    }
+
+    /// Whether `e` holds this pass's turn: the one that looked round and
+    /// then acted.
+    fn holds_the_turn(&self, e: Entity) -> bool {
+        self.holding.contains(e)
     }
 
     fn at(&self, e: Entity) -> Option<Point> {
@@ -279,6 +390,13 @@ impl Witness<'_, '_> {
 }
 
 /// Fills [`NarrationView`] with what this pass did.
+///
+/// Runs in [`TurnSet::Record`], after every reaction, so a game's lines
+/// told in [`TurnSet::React`] are read in the pass they answer. Reads by
+/// kind, in [`Heard`]'s order, with one exception: a notice by whoever
+/// held the turn is read first, since it was rolled as that actor looked
+/// round, before it did anything; a notice by anyone else came of what the
+/// turn did, a blow that woke it, and keeps its place after the blows.
 pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witness: Witness) {
     let turn = witness.turns.turn_number();
     let say = |phrase: Phrase, who: Option<Entity>, whom: Option<Entity>| {
@@ -430,9 +548,11 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         said.seen = d.was_player || witness.seen(Some(d.at), &[d.credit]);
         rows.push(said);
     }
+    let mut first: Vec<Said> = Vec::new();
     for n in heard.noticed.read() {
         if witness.is_you(n.subject) {
-            rows.push(say(Phrase::NoticesYou, Some(n.observer), Some(n.subject)));
+            let said = say(Phrase::NoticesYou, Some(n.observer), Some(n.subject));
+            if witness.holds_the_turn(n.observer) { first.push(said) } else { rows.push(said) }
         }
     }
     for l in heard.lights.read() {
@@ -454,6 +574,12 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
             rows.push(said);
         }
     }
+    for tell in heard.tells.read() {
+        let mut said = Said::told(tell, turn);
+        said.at = tell.who.or(tell.whom).and_then(|e| witness.at(e));
+        rows.push(said);
+    }
+    view.rows.extend(first);
     view.rows.extend(rows);
 }
 
@@ -483,7 +609,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 52] = [
+        let table: [(Phrase, &str, ToneId); 49] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -533,9 +659,6 @@ impl Default for Phrasebook {
             (LightGoesOut, "{What} gutters and goes out.", Tones::MUTED),
             (YouStandInFire, "You are standing in fire.", Tones::BAD),
             (StandsInFire, "{Who} is standing in fire.", Tones::TEXT),
-            (YouHit, "You hit {whom} for {n}.", Tones::HIT),
-            (YouKill, "You kill {whom}!", Tones::KILL),
-            (YouDie, "You die.", Tones::BAD),
         ];
         let mut entries = BTreeMap::new();
         for (phrase, text, tone) in table {
@@ -661,7 +784,11 @@ pub fn speak(mut view: ResMut<NarrationView>, book: Res<Phrasebook>, names: Name
         if !said.seen && !book.speak_unseen {
             continue;
         }
-        let Some((template, tone)) = book.get(said.phrase) else { continue };
+        let words = match &said.words {
+            Words::Phrase(phrase) => book.get(*phrase),
+            Words::Own { text, tone } => Some((text.as_str(), *tone)),
+        };
+        let Some((template, tone)) = words else { continue };
         let (text, spans) = render(template, &said, &names);
         if !text.is_empty() {
             log.push_spans(text, spans, tone, said.turn);
@@ -840,5 +967,71 @@ mod tests {
         assert_eq!(say(one), "You throw a pebble.");
         assert_eq!(say(five), "You throw 5 pebbles.");
         assert_eq!(say(loose), "You throw an ember.", "no stack is one");
+    }
+
+    /// A game's answer to every blow, told in `TurnSet::React` the way a
+    /// game answers what a pass did.
+    fn answer_blows(mut dealt: MessageReader<DamageDealt>, mut tell: MessageWriter<Tell>) {
+        for d in dealt.read() {
+            tell.write(Tell::new("Struck: {whom}.", Tones::MUTED).to(d.target));
+        }
+    }
+
+    /// The lines a test cares about, oldest first.
+    fn spoken(stage: &Stage, starts: &[&str]) -> Vec<String> {
+        lines(stage).into_iter().map(|(t, _)| t).filter(|t| starts.iter().any(|s| t.starts_with(s))).collect()
+    }
+
+    /// The player strikes a slime and the slime's mind strikes back in the
+    /// next pass of the same frame; the game answers each blow with a line
+    /// of its own, and every line lands under the blow it answers and over
+    /// the blow that came after.
+    #[test]
+    fn a_games_line_is_spoken_after_the_event_it_answers_in_one_pass_and_before_the_next_pass() {
+        let mut stage = Stage::new((NarratorPlugin::default(), MindsPlugin));
+        stage.app.add_systems(Turn, answer_blows.in_set(TurnSet::React));
+        let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
+        let brain = std::sync::Arc::new(rl_rules::Brain::new().then(rl_rules::ai::tactics::MeleeAdjacent));
+        let slime = stage
+            .app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(stage.at.offset(1, 0)), Health::full(40), Faction(theirs), Perception(6)),
+                (MeleeAttack::new(kind, DiceRoll::flat(2)), Mind(brain), Name::new("slime")),
+            ))
+            .id();
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Attack(slime)));
+        stage.tick();
+        stage.tick();
+        let said = spoken(&stage, &["You hit", "The slime hits", "Struck:"]);
+        assert!(said.len() >= 4, "{said:#?}");
+        assert!(said[0].starts_with("You hit the slime for "), "{said:#?}");
+        assert_eq!(said[1], "Struck: the slime.", "{said:#?}");
+        assert_eq!(said[2], "The slime hits you for 2.", "{said:#?}");
+        assert_eq!(said[3], "Struck: you.", "{said:#?}");
+    }
+
+    /// A mind that notices the player and strikes in one turn is heard to
+    /// notice first: it looked round before it acted, whatever order the
+    /// narrator reads the kinds of event in.
+    #[test]
+    fn a_mind_that_notices_the_player_and_strikes_in_one_turn_is_heard_noticing_first() {
+        let mut stage = Stage::new((NarratorPlugin::default(), MindsPlugin, StealthPlugin));
+        let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
+        stage.app.world_mut().entity_mut(player).insert(Stealth(rl_rules::StealthStats::default()));
+        let brain = std::sync::Arc::new(rl_rules::Brain::new().then(rl_rules::ai::tactics::MeleeAdjacent));
+        stage.app.world_mut().spawn((
+            (Actor, Blocks, Position(stage.at.offset(1, 0)), Health::full(40), Faction(theirs), Perception(6)),
+            (MeleeAttack::new(kind, DiceRoll::flat(2)), Mind(brain), Name::new("slime")),
+            (Notice(rl_rules::NoticeStats::default()), Aware::default()),
+        ));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Wait));
+        stage.tick();
+        stage.tick();
+        let said = spoken(&stage, &["The slime"]);
+        assert_eq!(said.first().map(String::as_str), Some("The slime notices you."), "{said:#?}");
+        assert!(said.iter().any(|l| l == "The slime hits you for 2."), "{said:#?}");
     }
 }
