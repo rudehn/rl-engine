@@ -198,6 +198,8 @@ One thing changes for the better: sound no longer goes through the counting hous
 **The delve hears.**
 The whale's beasts get `hearing` in `beasts.ron`, and a fight in the gullet draws what is near.
 
+**Foundry's alarm is a noise too** (2026-09-18): a probe that notices the commando sounds a klaxon loud enough to fill a deck, droids come to where it sounded, and a shot carries ten steps.
+
 **Corsair and the tutorial are left alone**, and their passing tests are the check that the plugin is opt-in.
 
 ## 9. The UI payoff
