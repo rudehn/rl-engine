@@ -31,7 +31,7 @@
   - [Items and equipment]()
   - [Minds]()
 - [What it perceives]()
-  - [Sight and lighting]()
+  - [Sight and lighting](systems/sight.md)
   - [Noise]()
   - [Stealth]()
 - [What it leaves behind]()
