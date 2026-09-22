@@ -1,12 +1,14 @@
-//! Populating a deck the first time it is entered.
+//! Populating a deck on arrival: the first time down, and again on the
+//! climb back up.
 //!
 //! `plan_population` is the pure half, tested without an `App` at all:
-//! it draws groups from a [`BandedTable`] at a deck's band and finds each
+//! it draws groups from a [`BandedTable`] at a band and finds each
 //! monster a spot at least [`MIN_DISTANCE_FROM_ENTRY`] tiles from the way
 //! in, on whatever a `walkable` predicate the caller supplies allows, with
 //! no two groups ever sharing a tile. [`populate_deck`] is the one line of
-//! Bevy over it: reads a [`PlaceEntered`] for the first arrival, plans
-//! against the real map, and spawns what the plan says.
+//! Bevy over it: reads a [`PlaceEntered`] for every arrival, plans against
+//! the real map at the deck's own band on the way down and at the run's
+//! deepest band on the way back up, and spawns what the plan says.
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -77,27 +79,40 @@ pub struct Stock<'w> {
     registries: Res<'w, Registries>,
 }
 
-/// Populates a deck the first time it is entered, the way `examples/delve`
-/// fills a floor: follows `plan_population` against the deck's real
-/// terrain and spawns what it plans. A revisit is not a first arrival, so
-/// `PlaceEntered::first` being false leaves it alone: nobody new.
+/// Populates a deck on every arrival, the way `examples/delve` fills a
+/// floor: follows `plan_population` against the deck's real terrain and
+/// spawns what it plans. A first arrival draws at the deck's own band. A
+/// revisit is the climb, and the climb is drawn at the band of the
+/// deepest deck the run has reached rather than the deck's own, the way
+/// NetHack's ascension run and DCSS's Orb Run both make the way back the
+/// harder half: a deck one revisited after the core holds what the
+/// deepest deck holds.
 ///
-/// Draws from `Seed::stream(b"foundry.spawns", deck)`, the game's own
-/// stream, never a combat one: two decks drawing groups from the same
-/// stream would let deck two's population depend on how many rooms deck
-/// one happened to roll first.
-pub fn populate_deck(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
+/// Draws from `Seed::stream(b"foundry.spawns", deck)` on a first arrival
+/// and `Seed::stream(b"foundry.climb", deck)` on a revisit, never a combat
+/// one: two decks drawing groups from the same stream would let deck
+/// two's population depend on how many rooms deck one happened to roll
+/// first, and a deck's climb population sharing its first-arrival stream
+/// would make the climb the same fight all over again. The stream is
+/// derived fresh from the deck on every arrival rather than kept in a
+/// persistent generator, so a deck revisited twice draws the same groups
+/// both times; a run has no reason to bounce between two decks, and the
+/// alternative is a generator this system would have to keep per deck
+/// forever just to guard against a case that never happens.
+pub fn populate_deck(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock, deepest: Res<crate::climb::Deepest>) {
     let Stock { roster, map, seed, registries } = &stock;
     for ev in entered.read() {
-        if !ev.first {
-            continue;
-        }
         let Some(place) = map.place(ev.map) else { continue };
         let deck = crate::decks::deck_of(ev.map);
-        let mut rng = seed.stream(b"foundry.spawns", deck as u64);
+        // A first arrival is the deck's own band. A revisit is the climb,
+        // and the climb is drawn at the deepest band the run reached, so
+        // the way up is the harder half rather than a walk through decks
+        // the commando already emptied.
+        let band = if ev.first { deck } else { deepest.0 };
+        let mut rng = seed.stream(if ev.first { b"foundry.spawns" } else { b"foundry.climb" }, u64::from(deck));
         let bounds = place.terrain.bounds();
-        let target = BASE_GROUPS + deck * GROUPS_PER_DECK;
-        let groups = plan_population(&roster.table, deck as i32, bounds, ev.entry, target, &mut |p| map.is_walkable(p), &mut rng);
+        let target = BASE_GROUPS + band * GROUPS_PER_DECK;
+        let groups = plan_population(&roster.table, band as i32, bounds, ev.entry, target, &mut |p| map.is_walkable(p), &mut rng);
         for (id, p) in groups.into_iter().flatten() {
             spawn_monster(&mut commands, roster, id, p, ev.map, registries);
         }
@@ -214,25 +229,50 @@ mod tests {
         }
     }
 
+    /// The climb is drawn at the deepest band the run reached, so a deck
+    /// one revisited after the core holds what the core's neighbours hold
+    /// rather than what deck one held on the way down. One table, sampled
+    /// deeper, which is how NetHack's ascension run works.
+    ///
+    /// Two runs of one seed, alike but for how deep they went: what a
+    /// revisit adds is what is measured, not what the deck holds, because
+    /// every revisit adds somebody whatever the band is. Only the band
+    /// tells the two runs apart.
     #[test]
-    fn revisiting_a_deck_spawns_nobody_new() {
-        let mut app = crate::testing::headless(RunSeed(4));
-        app.update();
-        app.update();
-        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        let count = |app: &mut App| -> usize {
-            let world = app.world_mut();
-            let mut q = world.query::<(&Kind, &OnMap)>();
-            q.iter(world).filter(|(_, on)| on.0 == crate::decks::map_of(1)).count()
+    fn a_revisited_deck_repopulates_at_the_deepest_band_the_run_reached() {
+        let added_after = |depth: u32| -> usize {
+            let mut app = crate::testing::headless(RunSeed(5));
+            crate::testing::arrive_on(&mut app, 1);
+            let before = crate::testing::monsters_on(&mut app, 1);
+            crate::testing::arrive_on(&mut app, depth);
+            crate::testing::arrive_on(&mut app, 1);
+            crate::testing::monsters_on(&mut app, 1) - before
         };
-        let first = count(&mut app);
-        assert!(first > 0, "deck one starts with something to fight");
-        app.world_mut().write_message(WarpRequest::into_place(player, crate::decks::map_of(2)));
-        app.update();
-        app.update();
-        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: crate::decks::map_of(1), arrive: Arrive::Entry } });
-        app.update();
-        app.update();
-        assert_eq!(count(&mut app), first, "a second arrival on deck one added nobody");
+        let (shallow, deep) = (added_after(2), added_after(9));
+        assert!(deep > shallow, "a climb from deck nine adds more than one from deck two: {shallow} then {deep}");
+    }
+
+    /// Two revisits at the same band draw the identical addition both
+    /// times: the climb's rng is derived fresh from the deck on every
+    /// arrival rather than kept in a generator the game carries forward,
+    /// so a deck bounced back onto twice without the run going any
+    /// deeper in between gets the same groups twice, not two different
+    /// draws from the same stream.
+    #[test]
+    fn a_deck_revisited_twice_at_the_same_band_draws_the_same_addition_both_times() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::arrive_on(&mut app, 2);
+        let before_any_revisit = crate::testing::monsters_on(&mut app, 1);
+        crate::testing::arrive_on(&mut app, 1);
+        let after_first_revisit = crate::testing::monsters_on(&mut app, 1);
+        let first_addition = after_first_revisit - before_any_revisit;
+        assert!(first_addition > 0, "a revisit at a deeper band adds somebody");
+        // Deck two again, still no deeper than the run has already been,
+        // so the climb band for deck one has not moved.
+        crate::testing::arrive_on(&mut app, 2);
+        crate::testing::arrive_on(&mut app, 1);
+        let after_second_revisit = crate::testing::monsters_on(&mut app, 1);
+        let second_addition = after_second_revisit - after_first_revisit;
+        assert_eq!(second_addition, first_addition, "the same band drew a different addition the second time");
     }
 }

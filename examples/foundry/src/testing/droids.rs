@@ -9,6 +9,15 @@ use rl_engine::rl_rules::Awareness;
 
 use crate::droids::Roster;
 
+/// How many living monsters stand on `deck`, for a test about a deck's
+/// population rather than about any one of them.
+pub fn monsters_on(app: &mut App, deck: u32) -> usize {
+    let here = crate::decks::map_of(deck);
+    let world = app.world_mut();
+    let mut q = world.query_filtered::<&OnMap, (With<Mind>, Without<Dead>)>();
+    q.iter(world).filter(|on| on.0 == here).count()
+}
+
 /// Spawns `name` `range` tiles east of the player, on floor stamped clear
 /// for it, the way [`droid_down_a_lane`] does with a lane as long as the
 /// range. Returns the monster, then the player.
