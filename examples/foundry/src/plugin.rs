@@ -132,11 +132,6 @@ impl Plugin for FoundryPlugin {
         // The mission: loaded fresh every run, the way the roster and the
         // armory are.
         app.add_systems(NewRun, crate::mission::start);
-        // The console spawns the moment deck three is first entered,
-        // unordered against `loot::scatter_on_arrival` and
-        // `droids::populate_deck` above: none of the three shares a
-        // tile-claiming concern with either of the others.
-        app.add_systems(Turn, crate::mission::spawn_console_on_arrival.in_set(TurnSet::React));
         // The console is a prop, and its verb is Foundry's: declared once,
         // answered in `React` like every other reaction to a turn.
         app.add_verb(crate::mission::CHARGE);
