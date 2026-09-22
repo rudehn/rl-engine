@@ -12,3 +12,8 @@ dist/
 # book is built. Six Bevy wasm bundles, tens of megabytes each.
 docs/guide/src/demos/
 examples/foundry/.captures/
+
+# Worktrees, and the subagent-driven-development ledger and its scratch.
+# Both are workspace state: the record that outlives them is git history.
+.claude/worktrees/
+.superpowers/
