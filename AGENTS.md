@@ -49,17 +49,18 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 ## Layout
 
 ```
-crates/<name>/src/lib.rs   module-level //! docs name every public item
-crates/<name>/benches/     criterion, on realistic maps, only for hot paths
-docs/PLAN.md               the design and milestones
-docs/design/               how one subsystem works, and why: abilities, fields, lighting,
-                           minds, noise, props, remains, stealth, ui
-docs/guide/                the mdBook; every chapter quotes examples/tutorial
-docs/reviews/              the evidence
-scripts/check-tiers.sh     the tier boundary check
-scripts/check-guide.sh     the guide's includes, images and contents
-scripts/check-overview.sh  the inventory names every plugin, design doc and example
-scripts/check-systems.py   the reference keeps up with the code
+crates/<name>/src/lib.rs        module-level //! docs name every public item
+crates/<name>/benches/          criterion, on realistic maps, only for hot paths
+docs/PLAN.md                    the design and milestones
+docs/design/                    how one subsystem works, and why: abilities, fields, lighting,
+                                minds, noise, props, remains, stealth, ui
+docs/guide/                     the mdBook; every chapter quotes examples/tutorial
+docs/reviews/                   the evidence
+scripts/check-tiers.sh          the tier boundary check
+scripts/check-guide.sh          the guide's includes, images and contents
+scripts/check-overview.sh       the inventory names every plugin, design doc and example
+scripts/check-systems.py        the reference keeps up with the code
+scripts/check-systems-style.sh  the mechanical half of a system page's review
 ```
 
 The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, items and equipment, places and streaming, saving and the morgue, registries and content loading, and the controls, modals and cursors.
@@ -72,3 +73,19 @@ Writing one is a welcome slice, not a prerequisite for touching the code.
 The short version: `UiPlugin` is the base, each panel is its own plugin taking a `Rect`, and a presenter adds its view plugin behind it.
 `docs/guide/src/09-where-to-go-next.md` is the same thing aimed at a game author, and `examples/tutorial/src/bin/step10_panels.rs` is the worked example the chapter quotes.
 Corsair is the full set: vitals, gear, nearby with a game facet for what an enemy wields, log, inspect, and two screens on the modal stack.
+
+## Writing a system page
+
+`docs/guide/src/systems/<system>.md` is what a game author reads to use a system, and `docs/design/<system>.md` is why it is shaped that way.
+The reference is published; the design notes are not.
+
+Six parts, fixed, in this order: one paragraph saying what the system is, then `Turning it on`, `The model`, `Using it`, `The line`, `Where it lives`.
+`The line` says what the engine decides and what the game decides, and it is the section a reader arrives for, so it is never the section cut to fit the 120-line cap.
+`The model` names the public surface and is written from the type definitions and the system bodies; a design note is read for `The line` only, because a design note records what was intended and the code records what is.
+`Using it` opens with one sentence naming what the snippet is an instance of, then the snippet; a second anchor only when turning the system on takes a step the first does not show.
+`Where it lives` says what the crate split buys, such as what can be tested without an `App`, rather than which file holds what, which the manifest at the top of the page already answers.
+No `Cost`, no `Risks`, no `Phases`; those stay in the design notes.
+
+Every code block is an `expand-guide.py` include of a real anchor in `examples/`, fenced `rust,no_run` as the rest of the guide is.
+A page carries no invented code, and the only comments it carries are the manifest and one `include:` marker per snippet.
+Run `scripts/check-systems-style.sh <page>` before committing, and `python3 scripts/check-systems.py --bless <system>` after confirming the page against code that moved.

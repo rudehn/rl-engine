@@ -43,6 +43,8 @@ jobs:
         run: scripts/check-overview.sh
       - name: the system reference keeps up with the code
         run: python3 scripts/check-systems.py
+      - name: the system pages keep to the template
+        run: shopt -s nullglob; for page in docs/guide/src/systems/*.md; do scripts/check-systems-style.sh "$page"; done
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: tests

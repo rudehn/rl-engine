@@ -27,7 +27,7 @@ A game that adds neither has no sight: nothing ever casts a `Viewshed`, `can_see
 
 `LightSource` is the one component for everything that glows.
 `intensity` is the brightness at the source's own tile, `radius` how far it reaches, falling to exactly zero at the rim, and `color` its hue.
-An entity that takes no turns is a fixture in the static layer and an actor or a carried item is in the dynamic layer; either is recast when its sorted list of emitters differs from the last cast, and both are recast whole when the window moves or the map's opacity changes.
+An entity that takes no turns is a fixture in the static layer and an actor or a carried item is in the dynamic layer; either is recast when its sorted list of emitters differs from the last cast, and both are recast whole when the window moves, when play crosses to another map, or when the map's opacity changes.
 An item on the floor lights the tile it lies on, and once picked up it sheds from its carrier's tile instead.
 `DarkSight(pub i32)` is how far an actor sees with no light at all; absent, it sees only what it is touching.
 `Fuel(pub u32)` is turns of light left, burned one per whole turn, and at zero the engine removes the `LightSource` and writes `LightEvent::BurntOut`.
