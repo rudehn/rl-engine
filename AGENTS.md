@@ -88,4 +88,6 @@ No `Cost`, no `Risks`, no `Phases`; those stay in the design notes.
 
 Every code block is an `expand-guide.py` include of a real anchor in `examples/`, fenced `rust,no_run` as the rest of the guide is.
 A page carries no invented code, and the only comments it carries are the manifest and one `include:` marker per snippet.
+The manifest's `files:` lists every source file the page makes a claim about, not only the crate the plugin lives in, because the fingerprint guards exactly what it lists and a page describing a tier 1 type from a tier 2 facade otherwise goes stale without anything noticing.
+`registries.md` is the page that found this: a resource of eight fields in `rl-bevy` over the `Registry` and `Names` in `rl-rules` that `The model` is really about.
 Run `scripts/check-systems-style.sh <page>` before committing, and `python3 scripts/check-systems.py --bless <system>` after confirming the page against code that moved.
