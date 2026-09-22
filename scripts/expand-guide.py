@@ -75,7 +75,7 @@ def expanded(page: pathlib.Path) -> str:
 def main() -> int:
     check = "--check" in sys.argv[1:]
     stale, broken = [], []
-    for page in sorted(GUIDE.glob("*.md")):
+    for page in sorted(GUIDE.rglob("*.md")):
         try:
             want = expanded(page)
         except Missing as e:
