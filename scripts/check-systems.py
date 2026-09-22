@@ -81,6 +81,21 @@ def pages() -> list[pathlib.Path]:
     return sorted(p for p in SYSTEMS.glob("*.md") if not p.name.startswith("_"))
 
 
+PLUGIN = re.compile(r"impl Plugin for ([A-Za-z0-9_]+)")
+
+
+def plugins_in_code() -> set[str]:
+    """Every plugin the workspace defines.
+
+    A plugin is the engine's unit of opt-in, so a plugin no page claims is
+    a subsystem a game can switch on and cannot read about.
+    """
+    found: set[str] = set()
+    for source in CRATES.rglob("*.rs"):
+        found.update(PLUGIN.findall(source.read_text()))
+    return found
+
+
 def bless(name: str) -> int:
     """Write today's fingerprint into one page, and say what it covered."""
     page = SYSTEMS / f"{name}.md"
@@ -127,6 +142,33 @@ def main() -> int:
                 f"    Re-read the page. If it is still true:  scripts/check-systems.py --bless {page.stem}\n"
                 f"    If it is not, fix the page first."
             )
+
+    claimed: dict[str, list[pathlib.Path]] = {}
+    for page in pages():
+        try:
+            fields = manifest(page)
+        except Broken:
+            continue  # already reported above
+        for plugin in fields["plugins"]:
+            # `plugins: none` is how a page whose subsystem defines no plugin
+            # says so out loud, rather than by leaving the field empty.
+            if plugin == "none":
+                continue
+            claimed.setdefault(plugin, []).append(page)
+
+    coverage = []
+    for plugin in sorted(plugins_in_code() - set(claimed)):
+        coverage.append(f"no page documents `{plugin}`. A plugin a game can switch on is one it can read about.")
+    for plugin, holders in sorted(claimed.items()):
+        if len(holders) > 1:
+            coverage.append(f"`{plugin}` is claimed by {' and '.join(p.name for p in holders)}. One page owns a plugin.")
+        if plugin not in plugins_in_code():
+            coverage.append(f"{holders[0]}: claims `{plugin}`, which no crate defines.")
+
+    if coverage and COVERAGE_IS_FATAL:
+        problems.extend(coverage)
+    elif coverage:
+        print(f"  {len(coverage)} system(s) not yet documented, which is expected until the reference is finished.", file=sys.stderr)
 
     for problem in problems:
         print(f"  {problem}", file=sys.stderr)
