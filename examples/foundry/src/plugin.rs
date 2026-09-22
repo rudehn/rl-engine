@@ -83,10 +83,18 @@ impl Plugin for FoundryPlugin {
         // alarm, then the weapon's heat, then its ammunition, rather than
         // whichever order the executor ran the tellers in.
         app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().after(crate::heat::heat_on_struck).in_set(TurnSet::React));
+        // The run's depth memory, one at the start, only ever raised.
+        app.init_resource::<crate::climb::Deepest>();
         // A deck fills the moment it is first entered, the way delve's own
         // floors do: its droids, then its props, then its loot, each from
         // its own stream and each reading the same `PlaceEntered` through
         // its own cursor.
+        //
+        // `remember_depth` goes first, ahead of anything that spawns: it
+        // writes no entity of its own, but `populate_deck` will read
+        // `Deepest` to draw a revisited deck's population at the band the
+        // run has actually reached, and that read is only correct once
+        // this same arrival's `Deepest` is current.
         //
         // Props before loot, because loot lands where nothing stands: an
         // item under a crate is an item nothing can pick up.
@@ -100,7 +108,13 @@ impl Plugin for FoundryPlugin {
         // no tripwire. This is the order the deck is built in.
         app.add_systems(
             Turn,
-            (crate::droids::populate_deck, crate::props::place_on_arrival, crate::mission::spawn_console_on_arrival, crate::loot::scatter_on_arrival)
+            (
+                crate::climb::remember_depth,
+                crate::droids::populate_deck,
+                crate::props::place_on_arrival,
+                crate::mission::spawn_console_on_arrival,
+                crate::loot::scatter_on_arrival,
+            )
                 .chain()
                 .in_set(TurnSet::React),
         );

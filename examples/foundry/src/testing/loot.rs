@@ -9,12 +9,22 @@ use rl_engine::rl_rules::Hit;
 
 /// Warps the player onto `deck`'s entry and lets the arrival, and
 /// whatever it seeds or scatters, resolve. Deck one needs nothing beyond
-/// the two updates every other helper here opens with: `run::start`
-/// warps there the moment the run begins.
+/// the two updates every other helper here opens with, on a fresh app:
+/// `run::start` warps there the moment the run begins.
+///
+/// Also the way back: called again on an app that has already arrived
+/// somewhere, it warps even to deck one, so a test can send the run down
+/// and then check what a second arrival on an earlier deck leaves behind
+/// (a climb's own [`crate::climb::Deepest`], or that a deck revisited
+/// scatters nothing new). Freshness is read off whether a `Player`
+/// already exists: before the run's first update, it does not.
 pub fn arrive_on(app: &mut App, deck: u32) {
-    app.update();
-    app.update();
-    if deck != 1 {
+    let already_playing = app.world_mut().query_filtered::<Entity, With<Player>>().iter(app.world()).next().is_some();
+    if !already_playing {
+        app.update();
+        app.update();
+    }
+    if deck != 1 || already_playing {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: crate::decks::map_of(deck), arrive: Arrive::Entry } });
         app.update();
