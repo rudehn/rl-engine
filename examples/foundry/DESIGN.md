@@ -282,8 +282,8 @@ None of it is identified and none of it is bought: a spec sheet comes with the t
 | Coolant cell | Ammunition | Charges for the coolant sprayer; stacks | planned |
 | Fuel cell | Ammunition | Charges for the arc thrower and the cutting torch; stacks | planned |
 | Heat sink cartridge | Ammunition | Spent on a locked energy weapon, venting it to zero in one turn instead of five | planned |
-| Medkit | Medical | Heals well, over two turns of standing still, which is two turns the deck gets for free | planned |
-| Stim | Medical | Heals at once and less, for the commando who did not pick the Stims upgrade | planned |
+| Medkit | Medical | Twenty points of mending, two a turn over ten turns, which is ten turns of the deck to live through first; a second kit starts the ten again rather than mending twice as fast | exists |
+| Stim | Medical | Seven to thirteen, closed at once, for the commando who did not pick the Stims upgrade | exists |
 | Burn dressing | Medical | Puts out a burning commando, and heals a little of what the fire took | planned |
 | Thermal wrap | Medical | Clears the chill coolant vapour leaves, and holds off the next one for a while | planned |
 | Frag grenade | Grenade | A kinetic burst; the one that works on everything and excels at nothing | planned |
@@ -426,7 +426,9 @@ Abilities run on cooldowns only; there is no energy pool, since heat and ammunit
 
 | Ability | From | Does | Status |
 | --- | --- | --- | --- |
-| Stims | Stims upgrade, stim | Heals, twenty-turn cooldown | exists as the upgrade |
+| Stims | Stims upgrade | Heals, twenty-turn cooldown | exists |
+| Field stims | Stim | Closes a wound at once, and the shot is spent | exists |
+| Med gel | Medkit | Two a turn for ten turns, and the kit is spent | exists |
 | Arc discharge | Arc capacitor | Arc burst on everything adjacent, chassis or flesh | planned |
 | Dash | Reflex implant | Several tiles in a straight line, one turn | planned |
 | Overclock | Upgrade | A few shots that add no heat | planned |

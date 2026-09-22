@@ -161,6 +161,9 @@ pub struct Scatter<'w, 's> {
     map: Res<'w, WorldMap>,
     seed: Res<'w, Seed>,
     registries: Res<'w, Registries>,
+    /// For the items that lend an ability, which the armory resolves as
+    /// it reads the file.
+    abilities: Res<'w, Abilities>,
     /// Where the props already stand: the chain in `plugin` puts them down
     /// before this runs, so an item never lands under a crate, which would
     /// be an item nothing can pick up.
@@ -176,13 +179,13 @@ pub struct Scatter<'w, 's> {
 /// ever built. A revisit is not a first arrival, so nothing is scattered
 /// twice.
 pub fn scatter_on_arrival(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, scatter: Scatter) {
-    let Scatter { map, seed, registries, props } = &scatter;
+    let Scatter { map, seed, registries, abilities, props } = &scatter;
     for ev in entered.read() {
         if !ev.first {
             continue;
         }
         let Some(place) = map.place(ev.map) else { continue };
-        let armory = Armory::load(registries);
+        let armory = Armory::load(registries, abilities);
         let deck = deck_of(ev.map);
         let mut rng = seed.stream(b"foundry.scatter", deck as u64);
         let armories: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'A' as u32).map(|s| s.at).collect();
@@ -215,6 +218,7 @@ pub fn drop_on_death(
     mut deaths: MessageReader<DeathEvent>,
     mut drops: ResMut<Drops>,
     registries: Res<Registries>,
+    abilities: Res<Abilities>,
     roster: Res<Roster>,
     kinds: Query<(&Kind, &OnMap)>,
 ) {
@@ -225,7 +229,7 @@ pub fn drop_on_death(
         if def.drops.is_empty() {
             continue;
         }
-        let armory = armory.get_or_insert_with(|| Armory::load(&registries));
+        let armory = armory.get_or_insert_with(|| Armory::load(&registries, &abilities));
         let table: Vec<(Id<ItemDef>, u32)> = def.drops.iter().map(|(name, pct)| (armory.defs.expect(name), *pct)).collect();
         for id in roll_drops(&table, &mut drops.0) {
             let item = crate::gear::spawn_item(&mut commands, armory, id, &registries);
@@ -250,7 +254,8 @@ mod tests {
     fn a_ten_percent_drop_lands_near_one_time_in_ten_over_many_deaths() {
         // A property over many rolls rather than one lucky seed: the
         // design's rate, within a margin a correct roll never leaves.
-        let armory = crate::gear::Armory::load(&crate::content::registries());
+        let registries = crate::content::registries();
+        let armory = crate::gear::Armory::load(&registries, &crate::testing::abilities(&registries));
         let slugs = armory.defs.expect("slug");
         let mut rng = rand::rngs::StdRng::seed_from_u64(4);
         let hits = (0..10_000).filter(|_| !roll_drops(&[(slugs, 10)], &mut rng).is_empty()).count();
@@ -365,7 +370,8 @@ mod tests {
     /// rather than three separate plans that could drift apart.
     #[test]
     fn open_ground_satisfies_every_mark_by_origin_with_no_shared_tile_over_a_span_of_seeds() {
-        let armory = crate::gear::Armory::load(&crate::content::registries());
+        let registries = crate::content::registries();
+        let armory = crate::gear::Armory::load(&registries, &crate::testing::abilities(&registries));
         let (armories, stores) = synthetic_marks();
         let layout = Layout { bounds: Rect::new(0, 0, 80, 60), armories: &armories, stores: &stores };
         for s in 0..20 {
@@ -393,7 +399,8 @@ mod tests {
 
     #[test]
     fn the_same_seed_plans_the_same_scatter_every_time_over_a_span_of_seeds() {
-        let armory = crate::gear::Armory::load(&crate::content::registries());
+        let registries = crate::content::registries();
+        let armory = crate::gear::Armory::load(&registries, &crate::testing::abilities(&registries));
         let (armories, stores) = synthetic_marks();
         let layout = Layout { bounds: Rect::new(0, 0, 80, 60), armories: &armories, stores: &stores };
         for s in 0..20 {
@@ -411,7 +418,8 @@ mod tests {
     /// and walkability to exercise, no `App` involved.
     #[test]
     fn every_real_deck_scatters_walkable_items_by_origin_over_a_span_of_seeds() {
-        let armory = crate::gear::Armory::load(&crate::content::registries());
+        let registries = crate::content::registries();
+        let armory = crate::gear::Armory::load(&registries, &crate::testing::abilities(&registries));
         for s in 0..20 {
             let foundry = crate::decks::Foundry::new(RunSeed(s));
             let tables = foundry.tiles().tables();

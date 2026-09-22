@@ -9,6 +9,9 @@
 //   either:    optional; true for a one-handed weapon that fits either hand, so two can be dual wielded
 //   also:      optional; slots it also claims when worn, for two-handers
 //   tags:      optional; "weapon" | "armor" | "slug" | "keycard"
+//   grants:    optional; abilities from `abilities.ron` the carrier may use while it is in the
+//              bag, which is how a medical item works: using the item is using what it lends,
+//              and an ability that costs Charge(1) takes one off the stack to do it
 //   armor:     optional; flat armor while worn
 //   resists:   optional; [(damage kind, percent removed)] while worn: "kinetic" | "energy" | "ion"
 //   melee:     optional; (roll:, kind:, look:) while wielded, roll as "NdS+B"; look is optional,
@@ -35,6 +38,13 @@
     // What opens an armory locker, and is spent doing it. A droid carries
     // one because the foundry's own machines open its own lockers.
     (name: "keycard", glyph: '=', color: (0.85, 0.75, 0.3), tags: ["keycard"], stack: true, cost: 60, spawn: (1, 10, 2)),
+    // The medical pair. A stim closes a wound now; a medkit is worth twice
+    // as much and pays it two a turn over ten, which is ten turns of a deck
+    // to live through first. Both are spent by being used, since the
+    // abilities they lend cost a charge and neither carries `Charges` of
+    // its own: one comes off the stack, and the last one takes the item.
+    (name: "stim", glyph: '!', color: (0.55, 0.9, 0.63), grants: ["field stims"], stack: true, cost: 100, spawn: (1, 10, 4)),
+    (name: "medkit", glyph: '!', color: (0.78, 0.94, 0.82), grants: ["med gel"], stack: true, cost: 100, spawn: (2, 10, 2)),
     (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), slot: "head", tags: ["armor"], armor: 1, spawn: (1, 10, 2)),
     (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6, spawn: (2, 10, 1)),
     (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1, spawn: (1, 10, 3)),

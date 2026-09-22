@@ -78,6 +78,20 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
     app
 }
 
+/// Foundry's abilities, for a test that has `Registries` but no `App` to
+/// read `EffectKinds` off.
+///
+/// An `Armory` needs them, since an item may lend an ability, and the
+/// tests that load one against a bare `content::registries()` have no
+/// world at all. The throwaway `App` is there for the effect kinds and
+/// nothing else: it declares what `add_engine_effects` declares, which is
+/// what `main.rs` gives the real load.
+pub fn abilities(registries: &Registries) -> Abilities {
+    let mut app = App::new();
+    app.add_engine_effects();
+    crate::upgrades::load_abilities(app.world().resource::<EffectKinds>(), registries)
+}
+
 /// `Struck` messages copied out as they are written, the way the engine's
 /// own combat tests keep them: a headless app rotates its message buffers
 /// on wall time, so reading them straight off `Messages<Struck>` after

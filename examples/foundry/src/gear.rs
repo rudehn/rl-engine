@@ -17,6 +17,7 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Id};
 use rl_engine::rl_render::Glyph;
+use rl_engine::rl_rules::ability::AbilityDef;
 use rl_engine::rl_rules::{BandedEntry, BandedTable, DamageKind, EquipShape, NameRef, Named, Registry, Resistances, SlotDef, TagDef, TagId};
 use serde::Deserialize;
 
@@ -49,6 +50,11 @@ pub struct ItemDef {
     /// drops that ask by tag rather than by name.
     #[serde(default)]
     pub tags: Vec<NameRef<TagDef>>,
+    /// Abilities it lends whoever carries it, which is how a medical item
+    /// works: using the item is using what it lends, and the engine
+    /// spends the item for an ability that costs a charge.
+    #[serde(default)]
+    pub grants: Vec<NameRef<AbilityDef>>,
     /// Flat armor while worn.
     #[serde(default)]
     pub armor: i32,
@@ -137,11 +143,15 @@ fn validate_def(d: &ItemDef, _: &Registry<ItemDef>) -> Result<(), String> {
 }
 
 impl Armory {
-    /// Loads `items.ron` against `registries`, validates it, and builds
-    /// the spawn table; panics with every problem the file has, since a
-    /// broken item file is a game that cannot start.
-    pub fn load(registries: &Registries) -> Self {
-        let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+    /// Loads `items.ron` against `registries` and `abilities`, validates
+    /// it, and builds the spawn table; panics with every problem the file
+    /// has, since a broken item file is a game that cannot start.
+    ///
+    /// `abilities` is here for `grants`, so an item that names an ability
+    /// nobody loaded is caught while the file is read rather than by a
+    /// medkit that quietly does nothing in the middle of a run.
+    pub fn load(registries: &Registries, abilities: &Abilities) -> Self {
+        let defs: Registry<ItemDef> = registries.names().with("ability", abilities.defs()).load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(validate_def).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         let mut table = BandedTable::default();
         for (id, d) in defs.iter() {
@@ -183,6 +193,12 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     let mut e = commands.spawn((Item, Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));
+    }
+    // What using it does, for anything that is used rather than worn or
+    // wielded: the engine turns a use of the item into a use of what it
+    // lends, and spends the item for it.
+    if !d.grants.is_empty() {
+        e.insert(Grants(d.grants.iter().map(|g| g.id()).collect()));
     }
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
@@ -233,7 +249,7 @@ mod tests {
     /// system of its own.
     fn spawn_two(app: &mut App, a: &str, b: &str) -> (Entity, Entity) {
         let registries = app.world().resource::<Registries>().clone();
-        let armory = Armory::load(&registries);
+        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
         let ea = spawn_item(&mut commands, &armory, armory.defs.expect(a), &registries);
@@ -249,7 +265,7 @@ mod tests {
         app.update();
         app.update();
         let registries = app.world().resource::<Registries>().clone();
-        let armory = Armory::load(&registries);
+        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
         let id = armory.defs.expect(name);
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
@@ -271,8 +287,8 @@ mod tests {
     #[test]
     fn every_item_loads_and_every_spawn_band_on_the_first_three_decks_has_something() {
         let r = crate::content::registries();
-        let armory = Armory::load(&r);
-        assert_eq!(armory.defs.len(), 14, "twelve things to carry, a slug and a keycard");
+        let armory = Armory::load(&r, &crate::testing::abilities(&r));
+        assert_eq!(armory.defs.len(), 16, "twelve things to carry, a slug, a keycard, a stim and a medkit");
         assert!(armory.table.gaps(1..=3).is_empty(), "a deck with nothing to find");
     }
 
@@ -352,6 +368,7 @@ mod tests {
             either: false,
             also: Vec::new(),
             tags: Vec::new(),
+            grants: Vec::new(),
             armor: 0,
             resists: Vec::new(),
             melee: None,
@@ -366,10 +383,133 @@ mod tests {
         }
     }
 
+    /// The commando, wounded by `hurt`, alone on a quiet deck one: the
+    /// droids and the rats are taken off it, because the only thing that
+    /// may move this player's health over the turns a test waits is what
+    /// the test gave them.
+    fn alone_and_wounded(seed: u64, hurt: i32) -> (App, Entity) {
+        let mut app = crate::testing::headless(RunSeed(seed));
+        crate::testing::arrive_on(&mut app, 1);
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let others: Vec<Entity> = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<Entity, (With<Actor>, Without<Player>)>();
+            q.iter(world).collect()
+        };
+        for other in others {
+            app.world_mut().entity_mut(other).despawn();
+        }
+        // Put at the wound rather than dealt one: `testing::hit` writes the
+        // report a blow ends in, which reacts but never takes a point off,
+        // and a real blow would drag armor, resistances and a profile in
+        // between the test and the thing it is measuring.
+        {
+            let mut health = app.world_mut().get_mut::<Health>(player).expect("the commando has health");
+            health.current = health.max - hurt;
+        }
+        (app, player)
+    }
+
+    /// Puts `count` of `name` in the player's bag and returns the stack.
+    fn carry(app: &mut App, player: Entity, name: &str, count: u32) -> Entity {
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+        let id = armory.defs.expect(name);
+        let item = {
+            let mut queue = CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, app.world_mut());
+            let item = spawn_item(&mut commands, &armory, id, &registries);
+            commands.entity(item).insert(Stack { key: id.index() as u64, count });
+            queue.apply(app.world_mut());
+            item
+        };
+        app.world_mut().entity_mut(player).insert(Inventory { items: vec![item] });
+        app.update();
+        item
+    }
+
+    /// What the commando has left.
+    fn health(app: &App, who: Entity) -> i32 {
+        app.world().get::<Health>(who).expect("the commando has health").current
+    }
+
+    /// A stim closes a wound on the spot and the shot is gone with it.
+    ///
+    /// Nothing of Foundry's own runs here: the item lends `field stims`,
+    /// the engine turns using the item into using what it lends, and
+    /// `Charge(1)` takes one off the stack. The roll is `2d4+5`, so the
+    /// gain is between seven and thirteen whatever the dice say, which is
+    /// what makes ten its midpoint and the medkit's twenty twice it.
+    #[test]
+    fn a_stim_closes_a_wound_at_once_and_the_shot_is_spent() {
+        let (mut app, player) = alone_and_wounded(3, 20);
+        let stim = carry(&mut app, player, "stim", 2);
+        let before = health(&app, player);
+
+        app.world_mut().write_message(Intent::new(player, UseItem(stim)));
+        crate::testing::settle(&mut app);
+
+        let gained = health(&app, player) - before;
+        assert!((7..=13).contains(&gained), "2d4+5 closed at once, not {gained}");
+        assert_eq!(app.world().get::<Stack>(stim).map(|s| s.count), Some(1), "one shot off the stack, spent using it");
+    }
+
+    /// A medkit is worth twice a stim and pays it two a turn over ten,
+    /// which is ten turns of a deck the commando has to live through.
+    ///
+    /// Ten turns exactly: the tenth mends and the eleventh does not, so
+    /// the gain is `MEND_PER_TURN * 10` and no more. The status is the
+    /// engine's own, ticking through the damage pipeline a wound arrives
+    /// by, so plate and resistances have nothing to say about it.
+    #[test]
+    fn a_medkit_is_worth_twice_a_stim_spread_over_ten_turns() {
+        let (mut app, player) = alone_and_wounded(4, 25);
+        let medkit = carry(&mut app, player, "medkit", 1);
+        let before = health(&app, player);
+        let mending = app.world().resource::<Registries>().statuses.expect("mending");
+
+        app.world_mut().write_message(Intent::new(player, UseItem(medkit)));
+        crate::testing::settle(&mut app);
+        assert!(app.world().get::<Afflicted>(player).is_some_and(|a| a.0.has(mending)), "the gel is working");
+        assert_eq!(health(&app, player) - before, crate::content::MEND_PER_TURN, "the first of the ten turns is the turn it is used");
+
+        crate::testing::pass_turns(&mut app, 9);
+        let gained = health(&app, player) - before;
+        assert_eq!(gained, crate::content::MEND_PER_TURN * 10, "two a turn for ten turns, twice a stim's ten");
+        assert!(!app.world().get::<Afflicted>(player).is_some_and(|a| a.0.has(mending)), "and it is done");
+
+        crate::testing::pass_turns(&mut app, 3);
+        assert_eq!(health(&app, player) - before, gained, "nothing after the ten");
+        assert!(app.world().get_entity(medkit).is_err(), "the last kit off the stack goes with it");
+    }
+
+    /// A second medkit starts the ten turns again rather than mending
+    /// twice as fast: `mending` refreshes, which is the engine's default
+    /// and the rule that keeps a pack of kits a longer recovery instead of
+    /// a bigger one.
+    #[test]
+    fn a_second_medkit_starts_the_ten_turns_again_rather_than_doubling_the_rate() {
+        let (mut app, player) = alone_and_wounded(5, 25);
+        let kits = carry(&mut app, player, "medkit", 2);
+        let before = health(&app, player);
+
+        app.world_mut().write_message(Intent::new(player, UseItem(kits)));
+        crate::testing::settle(&mut app);
+        crate::testing::pass_turns(&mut app, 2);
+        // The turn it went on and the two after it: three turns of gel.
+        let one_kit = health(&app, player) - before;
+        assert_eq!(one_kit, crate::content::MEND_PER_TURN * 3, "two a turn from the turn it went on");
+
+        app.world_mut().write_message(Intent::new(player, UseItem(kits)));
+        crate::testing::settle(&mut app);
+        crate::testing::pass_turns(&mut app, 2);
+        assert_eq!(health(&app, player) - before, one_kit + crate::content::MEND_PER_TURN * 3, "still two a turn with the second kit in, not four");
+    }
+
     #[test]
     fn a_weapon_naming_both_heat_and_ammo_fails_to_validate() {
         let r = crate::content::registries();
-        let armory = Armory::load(&r);
+        let armory = Armory::load(&r, &crate::testing::abilities(&r));
         let mut d = blank_def("double economy");
         d.heat = Some((10, 10));
         d.ammo = Some(rl_engine::rl_core::Id::from_raw(0).into());

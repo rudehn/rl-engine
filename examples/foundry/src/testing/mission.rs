@@ -81,7 +81,7 @@ pub fn player_with_hand_blaster(app: &mut App) -> (Entity, Entity) {
 /// see the pick's own effect on it.
 pub fn equip_new(app: &mut App, player: Entity, name: &str) -> Entity {
     let registries = app.world().resource::<Registries>().clone();
-    let armory = Armory::load(&registries);
+    let armory = Armory::load(&registries, app.world().resource::<Abilities>());
     let id = armory.defs.expect(name);
     let mut queue = CommandQueue::default();
     let mut commands = Commands::new(&mut queue, app.world_mut());

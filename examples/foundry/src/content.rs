@@ -12,6 +12,16 @@ use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{DamageKind, NameRef, Registry, Resistances, SlotDef, StatusDef, TagDef};
 use serde::Deserialize;
 
+/// What one turn of `mending` gives back.
+///
+/// The medkit's half of the medical pair: a stim closes a wound now, and
+/// a medkit gives twice as much at this a turn, which the commando has to
+/// stay alive to collect. Here rather than in `statuses.ron`, which
+/// Foundry has none of, and read by `assets/abilities.ron` only through
+/// how long it inflicts the status for, which
+/// `a_medkit_is_worth_twice_a_stim_spread_over_ten_turns` holds to.
+pub const MEND_PER_TURN: i32 = 2;
+
 /// How a body takes a hit.
 ///
 /// `Deserialize` by hand, from a plain string, so a monster's file writes
@@ -129,7 +139,19 @@ pub fn registries() -> Registries {
         DamageKind::new("care").unarmored(),
     ])
     .unwrap();
-    let statuses = Registry::from_defs(vec![StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") }]).unwrap();
+    // Mending is what a medkit's gel does: two a turn through the same
+    // pipeline a wound comes in by, so plate and resistances have nothing
+    // to say about it and the commando reads the gain in the log a blow
+    // reads in. `Stacking::Refresh` is the default and is the rule that
+    // matters here: a second medkit puts the clock back to ten turns
+    // rather than mending four a turn, so a pack of them is a longer
+    // recovery and never a faster one.
+    let care = damage_kinds.expect("care");
+    let statuses = Registry::from_defs(vec![
+        StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") },
+        StatusDef { badge: Some('+'), ..StatusDef::new("mending").ticks(care, -MEND_PER_TURN) },
+    ])
+    .unwrap();
     let mut registries = Registries {
         damage_kinds,
         statuses,
@@ -192,7 +214,7 @@ mod tests {
         let flies = |name: &str| table.iter().find(|(n, _)| *n == name).and_then(|(_, look)| *look);
         let mut app = crate::testing::headless(RunSeed(1));
         let registries = app.world().resource::<Registries>().clone();
-        let armory = crate::gear::Armory::load(&registries);
+        let armory = crate::gear::Armory::load(&registries, app.world().resource::<Abilities>());
         let roster = crate::droids::Roster::load(&registries);
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());

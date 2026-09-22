@@ -200,9 +200,10 @@ pub fn fill_containers(
     mut commands: Commands,
     mut asks: MessageReader<FillContainer>,
     registries: Res<Registries>,
+    abilities: Res<Abilities>,
     mut bags: Query<&mut Inventory, With<Container>>,
 ) {
-    let armory = Armory::load(&registries);
+    let armory = Armory::load(&registries, &abilities);
     for ask in asks.read() {
         let Some(id) = armory.defs.id(&ask.item) else {
             warn!("props.ron asks for {:?}, which the armory has no definition for", ask.item);
@@ -334,7 +335,7 @@ mod tests {
             spawn_prop(&mut commands, &registries, id, at.offset(1, 0), here)
         };
         app.world_mut().flush();
-        let armory = Armory::load(&registries);
+        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
         let card = {
             let id = armory.defs.id("keycard").expect("the armory has keycards");
             let mut commands = app.world_mut().commands();

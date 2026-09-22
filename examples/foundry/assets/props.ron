@@ -21,14 +21,14 @@
     // Supply crates stand in the stores. Two turns to lever open, and
     // slugs are what a commando runs out of first.
     (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true, health: 6,
-     container: (contents: [("slug", 4, 9)], opened: (glyph: '"', color: (r: 120, g: 105, b: 75))),
+     container: (contents: [("slug", 4, 9), ("stim", 0, 1)], opened: (glyph: '"', color: (r: 120, g: 105, b: 75))),
      offers: [(verb: "open", time: 200)]),
 
     // An armory locker: better than a crate, and shut. A keycard opens
     // it, and `props::spend_the_keycard` takes the card doing it, so a
     // card found is a locker opened and no more.
     (name: "armory locker", glyph: '&', color: (r: 205, g: 210, b: 220), blocks: true, health: 8,
-     container: (contents: [("slug", 0, 4), ("commando helmet", 0, 1), ("scrap plate", 0, 1)],
+     container: (contents: [("slug", 0, 4), ("commando helmet", 0, 1), ("scrap plate", 0, 1), ("medkit", 0, 1)],
                  locked: "keycard", opened: (glyph: '"', color: (r: 130, g: 135, b: 145))),
      offers: [(verb: "open", time: 300)]),
 
