@@ -40,7 +40,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - `SpatialGrid`.
 - Targeting: own, adjacent, bolt, ball, beam and cone shapes resolved to a footprint against a caller-named blocker, and `clear_shot`.
 - Light: `Light` as an intensity, a landed colour and a waver the renderer alone reads, `Emitter` with a flicker, integer falloff to zero at the rim, screen blending, and a `LightField` cast through the shadowcast in an order-independent way, with a flood for glowing areas and a compose over two layers and an ambient.
-- Criterion benches on realistic maps, lighting at twenty sources included. `rl-bevy` has its own, on one player turn as the crowd of awake minds grows, and `rl-ui` one on the frame: a still frame, a frame in which a carried lamp moved, and the same by how many panels are up.
+- Criterion benches on realistic maps, lighting at twenty sources included. `rl-bevy` has two, on one player turn as the crowd of awake minds grows and on where a pass and a sight recast go; `rl-ui` one on the frame: a still frame, a frame in which a carried lamp moved, and the same by how many panels are up.
 
 ### rl-mapgen
 
@@ -102,7 +102,7 @@ The prose below the table is the why.
 
 | Plugin | Needs | What it adds | What it reports |
 | --- | --- | --- | --- |
-| `CorePlugin` | `WorldMap` | the turn loop and its schedules, the map, `Knowledge`, places and warps, doors, the bump redirect, the action registry, cues and `TurnHold` | `ActionDone`, `ActionRefused`, `TurnEnd`, `Stepped`, `Cued`, `RunOver`, `Restart`, `WarpRequest`, `MapChanged`, `PlaceEntered`, `DoorEvent`, `Bumped`, `Swapped` |
+| `CorePlugin` | `WorldMap` | the turn loop and its schedules, the `Turn` one single-threaded since it runs per actor, the map, `Knowledge`, places and warps, doors, the bump redirect, the action registry, cues and `TurnHold` | `ActionDone`, `ActionRefused`, `TurnEnd`, `Stepped`, `Cued`, `RunOver`, `Restart`, `WarpRequest`, `MapChanged`, `PlaceEntered`, `DoorEvent`, `Bumped`, `Swapped` |
 | `FovPlugin` | `CorePlugin` | every stale `Viewshed` recast, and what a `RevealsMap` saw written into `Knowledge` | - |
 | `StreamingPlugin` | `CorePlugin`; `WorldRes`, `ChunkRulesRes` | the surface streamed a window at a time, with edit deltas kept per chunk | `ChunkLoaded` |
 | `FactsPlugin` | `CorePlugin` | the fact ledger, named counters and the quest tracker | `Happened`, `QuestChange` |

@@ -31,3 +31,7 @@ criterion.workspace = true
 [[bench]]
 name = "turns"
 harness = false
+
+[[bench]]
+name = "passes"
+harness = false

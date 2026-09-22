@@ -291,6 +291,25 @@ impl Plugin for CorePlugin {
             .add_systems(PostUpdate, crate::state::end_runs)
             .add_systems(Last, restart_runs)
             .add_systems(OnEnter(EngineState::Idle), begin_pending_run);
+        // Run on one thread. [`Turn`] is dozens of small systems, and it
+        // runs once per actor turn rather than once per frame, so the
+        // multi-threaded executor's per-system handoff is paid tens of
+        // thousands of times a second and buys nothing: none of these
+        // systems is big enough to be worth a thread.
+        //
+        // Measured by `benches/passes.rs`: a pass of the fifty-two systems
+        // a fighting game adds cost 91 microseconds multi-threaded and 4.3
+        // single-threaded, and the whole of that gap was dispatch, since a
+        // build whose actors carry no `Mind` cost the same 91 as one whose
+        // minds were really deciding. End to end, one player turn with a
+        // hundred and twenty-eight awake minds went from 14.4 milliseconds
+        // to 1.9.
+        //
+        // A game with a genuinely heavy system of its own in the pass can
+        // put the multi-threaded executor back with the same call.
+        app.edit_schedule(Turn, |schedule| {
+            schedule.set_executor(bevy::ecs::schedule::SingleThreadedExecutor::new());
+        });
     }
 }
 

@@ -25,36 +25,35 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 
 | # | Item | Section | Impact | Effort |
 |---|------|---------|--------|--------|
-| 1 | A pass costs about 110 microseconds whoever is in it | 8 | high | medium |
-| 2 | A lit frame is two thirds field of view | 8 | high | medium |
-| 3 | The terminal is still not measured | 8 | medium | low |
-| 4 | The veil bumps a global opacity epoch | 8 | unknown | medium |
-| 5 | Straight-line fallbacks can cut a corner | 3 | medium | medium |
-| 6 | `Follow` and `Shadow` are one tactic | 4 | medium | medium |
-| 7 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
-| 8 | Corsair's tests play a different game from its binary | 3 | medium | medium |
-| 9 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
-| 10 | `OnMap` as a required component | 4 | medium | medium |
-| 11 | The obituary is filed by a presenter | 4 | medium | medium |
-| 12 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 13 | A ranged fighter is under-forecast | 3 | medium | medium |
-| 14 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 15 | What the save holds is stated where the save is | 7 | medium | medium |
-| 16 | Anyone travels | 3 | medium | high |
-| 17 | Movement profiles that change costs | 3 | medium | high |
-| 18 | The narrator hears what registers itself | 7 | medium | high |
-| 19 | An instanced terminal | 8 | high | high |
-| 20 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 21 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 22 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 23 | Admission scans its waiting actors linearly | 4 | low | low |
-| 24 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 25 | A `Burning` entity comes back unlit | 3 | low | low |
-| 26 | A shot is narrated as a blow | 3 | low | low |
-| 27 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 28 | A place for a miss | 3 | low | low |
-| 29 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 30 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 1 | A lit frame is two thirds field of view | 8 | high | medium |
+| 2 | The terminal is still not measured | 8 | medium | low |
+| 3 | The veil bumps a global opacity epoch | 8 | unknown | medium |
+| 4 | Straight-line fallbacks can cut a corner | 3 | medium | medium |
+| 5 | `Follow` and `Shadow` are one tactic | 4 | medium | medium |
+| 6 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
+| 7 | Corsair's tests play a different game from its binary | 3 | medium | medium |
+| 8 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
+| 9 | `OnMap` as a required component | 4 | medium | medium |
+| 10 | The obituary is filed by a presenter | 4 | medium | medium |
+| 11 | Light is recast once a frame, not once a turn | 3 | medium | medium |
+| 12 | A ranged fighter is under-forecast | 3 | medium | medium |
+| 13 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 14 | What the save holds is stated where the save is | 7 | medium | medium |
+| 15 | Anyone travels | 3 | medium | high |
+| 16 | Movement profiles that change costs | 3 | medium | high |
+| 17 | The narrator hears what registers itself | 7 | medium | high |
+| 18 | An instanced terminal | 8 | high | high |
+| 19 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 20 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 21 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 22 | Admission scans its waiting actors linearly | 4 | low | low |
+| 23 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 24 | A `Burning` entity comes back unlit | 3 | low | low |
+| 25 | A shot is narrated as a blow | 3 | low | low |
+| 26 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 27 | A place for a miss | 3 | low | low |
+| 28 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 29 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -62,11 +61,10 @@ The one that mattered most was the bench, which disproved the item that had been
 
 Why the order that is left, in four moves:
 
-1. **Items 1 and 2 first.**
-   They are the two ceilings and both now have numbers: about 110 microseconds per awake mind per turn, and about 10 microseconds per actor per lit frame.
-   Between them they are almost the whole of what a busy moment costs.
-   Neither has been profiled below the system, which is the next step for both rather than a fix.
-2. **Then 3 and 4**, the two performance claims in this file that are still read off the code rather than off a bench.
+1. **Item 1 first.**
+   The turn loop's own ceiling is gone: profiling said a pass was nine tenths schedule dispatch, and one line took a pass from 91 microseconds to 4.3.
+   What is left of a busy moment is the lit frame, and profiling has already said which half of it to attack.
+2. **Then 2 and 3**, the two performance claims in this file still read off the code rather than off a bench.
    Both are cheap to measure and neither should be changed before it is.
 3. **Then the middle band, 5 to 13**, which is the behaviour and consistency debt: it is what a second game hits, not a first.
 4. **Then 18**, the one structural inversion still worth its cost, and 19.
@@ -215,26 +213,30 @@ The run's teardown was a third, and stopped being one on 2026-09-22, when `Reset
 
 ## 8. Make the loops cheap, and know that they are
 
-Everything below except the first item is read off the code rather than off a profile, which is backwards for this project: the tier-1 algorithms, the most careful code in the repo, are the only ones measured.
+Three benches now cover this section: `crates/rl-bevy/benches/turns.rs` on a player turn, `crates/rl-ui/benches/frame.rs` on a frame, and `crates/rl-bevy/benches/passes.rs` on where each of those goes.
+Between them they have settled five items here and struck two, most of them against the reading that filed them.
+What is left below is measured unless it says otherwise.
 
+- **A lit frame is two thirds field of view, and it is the shadowcast.**
+  `crates/rl-ui/benches/frame.rs`: with sixty-four actors around the player, a frame in which a carried lamp moved costs 0.95 ms lit against 0.31 ms unlit, one sight recast per actor at about 10 microseconds each.
+  `crates/rl-bevy/benches/passes.rs` splits the recast: 10.3 microseconds of shadowcast against 1.3 of light gate.
+  The gate is an eighth of it, so making the gate incremental would buy almost nothing; the fix is fewer recasts, not cheaper ones.
+  Bounding the invalidation to the cells the light changed, done the same day, was the first half, and bought 10 per cent, because a crowd standing round a lamp is genuinely inside it.
+  The second half is that a mind which is not about to take a turn does not need its sight recast at all this frame, since `sense` recasts the one that is, inside the pass.
+  One reader stands in the way and it is the whole of the work: `Watchers::judge` (`crates/rl-bevy/src/stealth.rs`) ends on `sight.is_some_and(|s| s.can_see(at))`, reading a non-turn-holder's viewshed, and `collect_nearby` and `collect_vitals` call it every frame for the hunting reading.
+  That line is the fallback for a watcher with no `Aware`; one that keeps an `Aware` answers from that and never looks at a viewshed.
+  So give the fallback a cheaper test or have it recast on demand, and then the frame's pass can skip every mind.
 - **The terminal is still not measured.**
   `crates/rl-bevy/benches/turns.rs` measures a turn and `crates/rl-ui/benches/frame.rs` a frame, and between them they settled three items in this section.
   Neither measures `flush_terminal`, which is Bevy's own sprite and text work over six thousand four hundred entities and is the whole of the instanced-terminal item below.
   It needs a bench with a window, or a count of how many cells actually change in a frame of real play, which is the number the instancing argument rests on and which nobody has.
-- **A pass costs about 110 microseconds whoever is in it.**
-  Measured on 2026-09-22 by `crates/rl-bevy/benches/turns.rs`, which the review that filed this item wrote to check it: one player turn takes 0.40 ms with one awake mind, 1.12 at eight, 3.63 at thirty-two, 6.96 at sixty-four and 14.39 at a hundred and twenty-eight.
-  That is linear, at about 110 microseconds per awake mind, and it is the ceiling: a hundred and twenty-eight awake minds spend a whole frame at sixty hertz on one player turn.
-  The review predicted a quadratic one, from the perceive stage's full-world scans, and was wrong.
-  The scans are real and they are cheap: with the crowd held at sixteen, two thousand items lying on the floor add 0.39 ms to a whole player turn, about twelve microseconds per thousand items per pass, so a radius query against `Occupancy` would buy almost nothing at any inventory a game will actually have.
-  What the 110 microseconds is has not been measured yet.
-  The suspects are the whole `Turn` schedule being dispatched once per actor, forty-odd systems whether or not they have anything to do, and the per-mind field-of-view recast in `sense`.
-  Profile one pass before changing anything: this item is a measurement, not yet a fix.
-- **A lit frame is two thirds field of view.**
-  Measured on 2026-09-22 by `crates/rl-ui/benches/frame.rs`: with sixty-four actors around the player, a frame in which a carried lamp moved costs 0.95 ms lit against 0.31 ms unlit, and the gap is one shadowcast and one light gate per actor, about 10 microseconds each.
-  It is the largest single cost in the frame, and it is not the invalidation being too wide.
-  Bounding that invalidation to the cells the light actually changed, done the same day, bought 10 per cent with the crowd round the player and nothing once it is spread out, because a crowd standing inside a lamp is genuinely inside it.
-  What is left is the re-gate itself, and two directions, neither measured: `gate` rewrites the whole `visible` grid from the whole `line` grid where only the cells whose lit-ness changed can differ; and a mind that is not about to take a turn need not be re-gated this frame at all, since `sense` recasts the one that is.
-  The second is much the larger, and the one to try first.
+- **Done: a pass was nine tenths schedule dispatch.**
+  Profiled on 2026-09-22 by `crates/rl-bevy/benches/passes.rs`, which strips the engine back rather than sampling it: `CorePlugin` alone, twenty-six systems in the pass, cost 57 microseconds; every plugin a fighting game adds, fifty-two systems, cost 91; and the same build with minds really deciding cost 91 as well.
+  The deciding was free and the dispatch was everything, because `Turn` ran on Bevy's multi-threaded executor and runs once per actor turn rather than once per frame, so the per-system handoff was paid tens of thousands of times a second for systems none of which is worth a thread.
+  One line puts it on the single-threaded executor: a pass fell from 91 microseconds to 4.3, and one player turn with a hundred and twenty-eight awake minds from 14.4 milliseconds to 1.9.
+  What is left of the ceiling is small enough that the perceive stage's scans are now the visible part of it: two thousand items on the floor, which used to add 0.39 ms to a turn against a 6.96 ms baseline, now add 0.39 against 0.22.
+  That is the next thing to look at if this ever matters again, and `Occupancy` is still the tool.
+
 - **The veil bumps a global opacity epoch.**
   `set_veil` (`crates/rl-bevy/src/world.rs`) is rewritten every turn by whatever makes smoke, and any change moves `opacity_epoch`, which invalidates every viewshed and forces a full static and dynamic light recast.
   Unmeasured: the frame bench has no gas in it.
