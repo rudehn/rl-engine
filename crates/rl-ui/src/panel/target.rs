@@ -20,6 +20,7 @@ use rl_bevy::PresentSet;
 use rl_core::{Point, Rect};
 use rl_render::{MapView, Terminal};
 
+use crate::cursor::CursorStyle;
 use crate::panel::clip;
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::target::{TargetView, TargetViewPlugin};
@@ -32,6 +33,10 @@ pub struct TargetLayout {
     pub rect: Rect,
     /// Key hints at the right of the row.
     pub hints: String,
+    /// How the cell being aimed at is marked, over the footprint. A glow
+    /// in the title tone by default, which is what a cell about to be
+    /// struck wants; ticks leave it showing what stands there.
+    pub cursor: CursorStyle,
 }
 
 /// Draws [`TargetView`]: the footprint on the map, and a line saying what
@@ -44,12 +49,18 @@ impl TargetPanel {
     /// The banner in `rect`. Pass a zero-height rectangle for the
     /// footprint alone.
     pub fn new(rect: Rect) -> Self {
-        Self(TargetLayout { rect, hints: String::new() })
+        Self(TargetLayout { rect, hints: String::new(), cursor: CursorStyle::glow(Tones::TITLE) })
     }
 
     /// Sets the key hints at the right of the row.
     pub fn hints(mut self, hints: impl Into<String>) -> Self {
         self.0.hints = hints.into();
+        self
+    }
+
+    /// Sets how the cell being aimed at is marked.
+    pub fn cursor(mut self, style: CursorStyle) -> Self {
+        self.0.cursor = style;
         self
     }
 }
@@ -114,8 +125,10 @@ pub fn draw_target(
         tint(&mut terminal, &map, *cell, ground);
     }
     // The cursor itself last and brightest, since a ball's burst can
-    // cover it and a player needs to know where the keys are moving.
-    tint(&mut terminal, &map, view.cursor, palette.get(Tones::TITLE));
+    // cover it and a player needs to know where the keys are moving. The
+    // same mark the look cursor uses, so aiming and looking point the
+    // same way.
+    crate::cursor::mark(&mut terminal, &map, view.cursor, layout.cursor, &palette, t);
 
     let rect = layout.rect;
     if rect.height < 1 || rect.width < 8 {

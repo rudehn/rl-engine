@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `CursorStyle`: how a screen marks the cell it points at, as one parametrized enum. `Glow { tone, pulse }` washes the cell and leaves what stands there showing; `Ticks { marks, tone, pulse }` frames it with four marks and never covers it. Both take a `ToneId`, and either may breathe toward a second tone or sit still.
+  `InspectPanel`, `NearbyPanel` and `TargetPanel` take one in their constructor through `.cursor(..)`, and `cursor::mark` is the one drawing, so looking, aiming and tabbing through what is in sight cannot drift apart.
+  `InspectLayout::pointers` is gone: it is `InspectLayout::cursor` now, a whole style rather than four characters.
 - Foundry's run is ten decks now, not three: `decks::DECKS` is 10, and the reactor chamber that used to stamp only deck three now stamps deck three, six and nine, with a fourth charge on a new core prefab on deck ten, the same five-by-five chamber with machinery down both walls instead of one.
   The line droid, probe droid, heavy droid and coolant rat's spawn bands in `monsters.ron` extend to cover decks four through ten, so every deck through ten has something to spawn.
   `lifts::deck_line` names every deck from one to ten instead of falling to the bare "Deck {n}." for the seven in between.

@@ -8,13 +8,13 @@
 //! described. The ticks are ASCII because a browser build draws with
 //! Bevy's built-in font alone, which has no arrows worth the name.
 
-use bevy::color::Mix;
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
 use rl_core::Rect;
-use rl_render::{Cell, MapView, Terminal};
+use rl_render::{MapView, Terminal};
 use rl_rules::forecast::Outlook;
 
+use crate::cursor::CursorStyle;
 use crate::modal::Modals;
 use crate::panel::nearby::relation_tone;
 use crate::panel::{bar, clear, clip, frame};
@@ -33,10 +33,9 @@ pub struct InspectLayout {
     pub hints: String,
     /// What is shown when the cursor is over nothing.
     pub empty: String,
-    /// The ticks drawn on the cells left of, right of, above and below the
-    /// cursor, framing it: a dash either side and a bar above and below
-    /// by default.
-    pub pointers: [char; 4],
+    /// How the cell the cursor sits on is marked. Four ASCII ticks round
+    /// it by default, breathing, so the cell keeps its own glyph.
+    pub cursor: CursorStyle,
 }
 
 /// Draws [`InspectView`] and the cursor on the map.
@@ -52,13 +51,19 @@ impl InspectPanel {
             title: "Looking at".into(),
             hints: "move \u{2022} tab next \u{2022} esc close".into(),
             empty: "Nothing here.".into(),
-            pointers: ['-', '-', '|', '|'],
+            cursor: CursorStyle::ticks(),
         })
     }
 
     /// Sets the title in the top border.
     pub fn titled(mut self, title: impl Into<String>) -> Self {
         self.0.title = title.into();
+        self
+    }
+
+    /// Sets how the cell being looked at is marked.
+    pub fn cursor(mut self, style: CursorStyle) -> Self {
+        self.0.cursor = style;
         self
     }
 
@@ -99,15 +104,6 @@ pub fn outlook_tone(outlook: Outlook) -> ToneId {
     }
 }
 
-/// Seconds one pulse of the pointers takes.
-const POINTER_PULSE_SECS: f32 = 0.9;
-
-/// How bright the pointers are at time `t`, from 0 to 1 and back, so they
-/// breathe rather than blink.
-pub fn pointer_pulse(t: f32) -> f32 {
-    (t * std::f32::consts::TAU / POINTER_PULSE_SECS).sin() * 0.5 + 0.5
-}
-
 /// Paints the cursor and the panel, while the cursor is open.
 pub fn draw_inspect(
     mut terminal: ResMut<Terminal>,
@@ -121,17 +117,11 @@ pub fn draw_inspect(
     if !modals.is_open(inspect_modal(&modals)) {
         return;
     }
-    // Four ticks on the neighbours, pulsing between the select tone
-    // and the title tone, and the cell itself left as the map drew it:
-    // a cursor that covered the cell would hide what it points at.
+    // However the game marks a cell it is pointing at, drawn where the
+    // cursor is: one style, shared with the nearby rail's highlight and
+    // the targeting cursor, so a player learns one mark.
     if let Some(map_view) = map_view {
-        let color = palette.get(Tones::SELECT).mix(&palette.get(Tones::TITLE), pointer_pulse(time.elapsed_secs()));
-        let around = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        for ((dx, dy), glyph) in around.into_iter().zip(layout.pointers) {
-            let Some(screen) = map_view.to_screen(view.cursor.offset(dx, dy)) else { continue };
-            let under = terminal.get(screen.x, screen.y).unwrap_or_default();
-            terminal.set(screen.x, screen.y, Cell::new(glyph, color).on(under.bg));
-        }
+        crate::cursor::mark(&mut terminal, &map_view, view.cursor, layout.cursor, &palette, time.elapsed_secs());
     }
 
     let rect = layout.rect;
@@ -240,11 +230,11 @@ mod tests {
         assert_eq!(glyph_at(&stage, at.offset(0, 1)), Some('|'), "and below");
         let t = stage.app.world().resource::<Time>().elapsed_secs();
         let palette = stage.app.world().resource::<Palette>();
-        let expected = palette.get(Tones::SELECT).mix(&palette.get(Tones::TITLE), pointer_pulse(t));
+        let expected = palette.get(Tones::SELECT).mix(&palette.get(Tones::TITLE), crate::cursor::pulse(t));
         let map = stage.app.world().resource::<MapView>();
         let screen = map.to_screen(at.offset(-1, 0)).unwrap();
         assert_eq!(stage.app.world().resource::<Terminal>().get(screen.x, screen.y).map(|c| c.fg), Some(expected), "on the pulse");
-        assert!((0.0..=1.0).contains(&pointer_pulse(0.37)));
+        assert!((0.0..=1.0).contains(&crate::cursor::pulse(0.37)));
     }
 
     /// The ground is named whether or not something stands on it.

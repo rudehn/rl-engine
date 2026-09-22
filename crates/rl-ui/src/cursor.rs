@@ -17,13 +17,133 @@
 //! Where each cursor is stays with it, because the two remember different
 //! things: one a cell, the other a cell and what is being aimed. Only what
 //! is done to that cell is here.
+//!
+//! How a cell is marked is here too, as [`CursorStyle`]: every screen that
+//! points at a cell points at it the same two ways, so a game picks one
+//! and picks it everywhere. [`mark`] is the drawing, one place, so the two
+//! styles cannot drift apart.
 
+use bevy::color::Mix;
 use bevy::prelude::*;
 use rl_core::{Direction, Point, Rect};
+use rl_render::{Cell, Terminal};
 
 use crate::controls::Repeats;
 use crate::focus::{Focus, Sighting, cycle};
 use crate::keys::DirectionKeys;
+use crate::tone::{Palette, ToneId, Tones};
+
+/// Seconds one pulse takes, whichever style is pulsing.
+const PULSE_SECS: f32 = 0.9;
+
+/// How bright a pulse is at time `t`, from 0 to 1 and back, so a cursor
+/// breathes rather than blinks.
+pub fn pulse(t: f32) -> f32 {
+    (t * std::f32::consts::TAU / PULSE_SECS).sin() * 0.5 + 0.5
+}
+
+/// How a screen marks the cell it is pointing at.
+///
+/// Two ways, because a cell can be pointed at from outside it or filled
+/// in, and which reads better depends on what is on the cell: a glow says
+/// "this one" at a glance and is what a list's highlight wants; ticks
+/// leave the cell's own glyph showing, which is what a cursor over
+/// something worth reading wants.
+///
+/// Both take a [`ToneId`] rather than a colour, so a game that repaints
+/// its palette repaints its cursors, and both may pulse toward a second
+/// tone rather than sitting still.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorStyle {
+    /// The cell itself glows: its background is washed with `tone`,
+    /// leaving whatever stands there drawn over it.
+    Glow {
+        /// What it glows.
+        tone: ToneId,
+        /// What it breathes toward, when it breathes at all.
+        pulse: Option<ToneId>,
+    },
+    /// Four marks on the cells around it, framing the cell and leaving
+    /// the cell itself exactly as the map drew it.
+    Ticks {
+        /// Left, right, above, below.
+        marks: [char; 4],
+        /// What they are drawn in.
+        tone: ToneId,
+        /// What they breathe toward, when they breathe at all.
+        pulse: Option<ToneId>,
+    },
+}
+
+impl CursorStyle {
+    /// A cell that glows `tone` and sits still.
+    pub fn glow(tone: ToneId) -> Self {
+        Self::Glow { tone, pulse: None }
+    }
+
+    /// The engine's four ASCII ticks, breathing between the select tone
+    /// and the title tone: a dash either side, a bar above and below.
+    ///
+    /// ASCII because a browser build draws with whatever font it is
+    /// given, and the box-drawing characters are the first to go missing.
+    pub fn ticks() -> Self {
+        Self::Ticks { marks: ['-', '-', '|', '|'], tone: Tones::SELECT, pulse: Some(Tones::TITLE) }
+    }
+
+    /// The same, in another tone.
+    pub fn in_tone(self, tone: ToneId) -> Self {
+        match self {
+            Self::Glow { pulse, .. } => Self::Glow { tone, pulse },
+            Self::Ticks { marks, pulse, .. } => Self::Ticks { marks, tone, pulse },
+        }
+    }
+
+    /// The same, breathing toward `tone`, or sitting still with `None`.
+    pub fn breathing(self, tone: Option<ToneId>) -> Self {
+        match self {
+            Self::Glow { tone: base, .. } => Self::Glow { tone: base, pulse: tone },
+            Self::Ticks { marks, tone: base, .. } => Self::Ticks { marks, tone: base, pulse: tone },
+        }
+    }
+
+    /// The colour it is drawn in at `t` seconds.
+    fn color(&self, palette: &Palette, t: f32) -> Color {
+        let (tone, breath) = match *self {
+            Self::Glow { tone, pulse } | Self::Ticks { tone, pulse, .. } => (tone, pulse),
+        };
+        match breath {
+            Some(other) => palette.get(tone).mix(&palette.get(other), pulse(t)),
+            None => palette.get(tone),
+        }
+    }
+}
+
+/// Marks `cell` on the map in `style`, at `t` seconds for whatever is
+/// pulsing.
+///
+/// The one drawing of a cursor, so a screen that points at a cell points
+/// at it the way every other screen does.
+pub fn mark(terminal: &mut Terminal, view: &rl_render::MapView, cell: Point, style: CursorStyle, palette: &Palette, t: f32) {
+    let color = style.color(palette, t);
+    match style {
+        CursorStyle::Glow { .. } => {
+            let Some(screen) = view.to_screen(cell) else { return };
+            let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
+            drawn.bg = color;
+            terminal.set(screen.x, screen.y, drawn);
+        }
+        CursorStyle::Ticks { marks, .. } => {
+            // The cell itself is left alone: a cursor that covered it would
+            // hide what it points at.
+            let around = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+            for ((dx, dy), glyph) in around.into_iter().zip(marks) {
+                let Some(screen) = view.to_screen(cell.offset(dx, dy)) else { continue };
+                let under = terminal.get(screen.x, screen.y).unwrap_or_default();
+                terminal.set(screen.x, screen.y, Cell::new(glyph, color).on(under.bg));
+            }
+        }
+    }
+}
 
 /// The keys both cursors answer to.
 ///
@@ -269,5 +389,64 @@ mod tests {
         assert_eq!((off.at, off.focus.get()), (Point::new(7, 5), None), "bare ground picks out nothing");
         let held = frame(Point::new(9, 5), Focus::default(), &[KeyCode::ArrowRight], &list);
         assert_eq!((held.steer, held.asked), (Steer::Stay, false), "held at the edge is not a move, and asks for nothing");
+    }
+}
+
+#[cfg(test)]
+mod style_tests {
+    use super::*;
+    use crate::harness::Stage;
+    use crate::panel::NearbyPanel;
+    use rl_core::Rect;
+
+    /// What each style does to the map: a glow washes the cell and leaves
+    /// what stands there, ticks leave the cell alone and mark around it.
+    #[test]
+    fn a_glow_washes_the_cell_and_ticks_frame_it_without_covering_it() {
+        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 20, 20)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(60, 24);
+        stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        let at = stage.at.offset(2, 0);
+        let (glow, ticks) = (CursorStyle::glow(Tones::SELECT), CursorStyle::ticks());
+
+        let (palette, view) = {
+            let world = stage.app.world();
+            (world.resource::<Palette>().clone(), *world.resource::<rl_render::MapView>())
+        };
+        let screen = view.to_screen(at).expect("the crab is on screen");
+        let left = view.to_screen(at.offset(-1, 0)).expect("and so is the cell beside it");
+
+        let mut terminal = stage.app.world_mut().resource_mut::<Terminal>();
+        let before = terminal.get(screen.x, screen.y).expect("a cell");
+        mark(&mut terminal, &view, at, glow, &palette, 0.0);
+        let after = terminal.get(screen.x, screen.y).expect("a cell");
+        assert_eq!(after.glyph, before.glyph, "a glow leaves what stands there showing");
+        assert_eq!(after.bg, palette.get(Tones::SELECT), "and washes the cell behind it");
+
+        mark(&mut terminal, &view, at, ticks, &palette, 0.0);
+        assert_eq!(terminal.get(screen.x, screen.y).map(|c| c.glyph), Some(before.glyph), "ticks never cover the cell");
+        assert_eq!(terminal.get(left.x, left.y).map(|c| c.glyph), Some('-'), "they mark around it");
+    }
+
+    /// Pulsing is a second tone to breathe toward, and no pulse is the
+    /// tone itself, whatever the clock reads.
+    #[test]
+    fn a_style_breathes_only_when_it_was_given_something_to_breathe_toward() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(40, 0, 20, 20)));
+        stage.tick();
+        let palette = stage.app.world().resource::<Palette>().clone();
+        let still = CursorStyle::glow(Tones::SELECT);
+        assert_eq!(still.color(&palette, 0.0), still.color(&palette, 0.45), "a still cursor is the same at any moment");
+        assert_eq!(still.color(&palette, 0.0), palette.get(Tones::SELECT));
+
+        let breathing = still.breathing(Some(Tones::TITLE));
+        assert_ne!(breathing.color(&palette, 0.0), breathing.color(&palette, PULSE_SECS / 4.0), "a breathing one is not");
+        assert_eq!(
+            CursorStyle::ticks().in_tone(Tones::BAD).color(&palette, 0.0),
+            CursorStyle::glow(Tones::BAD).breathing(Some(Tones::TITLE)).color(&palette, 0.0)
+        );
     }
 }

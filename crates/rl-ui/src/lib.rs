@@ -105,7 +105,7 @@ pub mod tone;
 pub mod view;
 
 pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats, key_name};
-pub use cursor::{CursorKeys, Steer};
+pub use cursor::{CursorKeys, CursorStyle, Steer, mark};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighting};
 pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, game_menu_modal};
@@ -209,7 +209,7 @@ fn forget_run(mut log: ResMut<MessageLog>, mut modals: ResMut<Modals>) {
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
-    pub use crate::cursor::CursorKeys;
+    pub use crate::cursor::{CursorKeys, CursorStyle};
     pub use crate::facet::{Facet, FacetId, Facets};
     pub use crate::focus::{Focus, InSight, Sighting};
     pub use crate::game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
