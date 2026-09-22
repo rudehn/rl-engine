@@ -24,11 +24,12 @@
      container: (contents: [("slug", 4, 9)], opened: (glyph: '"', color: (r: 120, g: 105, b: 75))),
      offers: [(verb: "open", time: 200)]),
 
-    // An armory locker: better than a crate, and cut open rather than
-    // levered, so it wants something with an edge.
+    // An armory locker: better than a crate, and shut. A keycard opens
+    // it, and `props::spend_the_keycard` takes the card doing it, so a
+    // card found is a locker opened and no more.
     (name: "armory locker", glyph: '&', color: (r: 205, g: 210, b: 220), blocks: true, health: 8,
      container: (contents: [("slug", 0, 4), ("commando helmet", 0, 1), ("scrap plate", 0, 1)],
-                 locked: "weapon", opened: (glyph: '"', color: (r: 130, g: 135, b: 145))),
+                 locked: "keycard", opened: (glyph: '"', color: (r: 130, g: 135, b: 145))),
      offers: [(verb: "open", time: 300)]),
 
     // The reactor console: three turns to set the charge, and Foundry

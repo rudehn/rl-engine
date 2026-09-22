@@ -84,6 +84,7 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("props::place_on_arrival", id(props::place_on_arrival)),
         ("props::fill_containers", id(props::fill_containers)),
         ("props::wreck_the_dead", id(props::wreck_the_dead)),
+        ("props::spend_the_keycard", id(props::spend_the_keycard)),
         ("mission::answer_charge", id(mission::answer_charge)),
         ("engine props::offer_here", id(engine_props::offer_here)),
         ("engine props::resolve_interactions", id(engine_props::resolve_interactions)),
@@ -338,6 +339,33 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &["Position"],
             "a deck's loot is scattered in the pass it is first entered, which broke nothing",
         ),
+        // The keycard is taken in the same pass the locker it opened was
+        // opened in, which is a pass nothing else spent a slug or fired in.
+        pair(
+            id(props::spend_the_keycard),
+            id(ammo::spend_ammo),
+            &["Inventory", "Stack"],
+            "one action a pass: a locker opened and a shot fired are never the same one",
+        ),
+        pair(
+            id(props::spend_the_keycard),
+            id(ammo::sync_ammo),
+            &["Messages<Tell>", "Inventory", "Stack"],
+            "a card is not a slug, and a bag with one card fewer still holds whatever the guns draw from",
+        ),
+        pair(
+            id(props::spend_the_keycard),
+            id(engine_props::close_emptied_containers),
+            &["Inventory"],
+            "a crate's bag and a commando's are never the same bag, and only a commando carries a card",
+        ),
+        pair(id(props::spend_the_keycard), id(ability::refresh_known), &["Inventory"], "Known is rebuilt every pass, and a keycard lends nothing"),
+        Allowed {
+            a: Some(id(props::spend_the_keycard)),
+            b: None,
+            on: on(&["Messages<Tell>"]),
+            why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
+        },
         // A container's bag and a commando's are never the same bag.
         pair(
             id(engine_props::close_emptied_containers),

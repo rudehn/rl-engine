@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn every_armory_on_a_deck_holds_something_and_every_store_holds_two() {
+    fn every_armory_on_a_deck_is_flanked_by_something_and_every_store_by_two() {
         let mut app = crate::testing::headless(RunSeed(5));
         crate::testing::arrive_on(&mut app, 1);
         let (armories, stores) = crate::testing::items_at_marks(&mut app);

@@ -34,6 +34,7 @@ impl Plugin for FoundryPlugin {
         app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
 
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
+        app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));
         // In the engine's own filling stage, so what goes into a crate
         // lands in the frame the crate was put down: the engine asks in
         // `PropSet::Stock` and a game answers in `PropSet::Fill`.

@@ -8,7 +8,7 @@
 //   slot:      optional; where it is worn: "main hand" | "off hand" | "head" | "torso" | "arms" | "legs"
 //   either:    optional; true for a one-handed weapon that fits either hand, so two can be dual wielded
 //   also:      optional; slots it also claims when worn, for two-handers
-//   tags:      optional; "weapon" | "armor" | "slug"
+//   tags:      optional; "weapon" | "armor" | "slug" | "keycard"
 //   armor:     optional; flat armor while worn
 //   resists:   optional; [(damage kind, percent removed)] while worn: "kinetic" | "energy" | "ion"
 //   melee:     optional; (roll:, kind:, look:) while wielded, roll as "NdS+B"; look is optional,
@@ -32,6 +32,9 @@
     (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 5, roll: "1d6", kind: "ion", look: (glyph: '~', color: (r: 89, g: 166, b: 255))), cost: 90, heat: (25, 20), spawn: (2, 10, 2)),
     (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 6, roll: "1d8", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug", spawn: (1, 10, 1)),
     (name: "slug", glyph: ',', color: (0.7, 0.65, 0.5), tags: ["slug"], stack: true, spawn: (1, 10, 4)),
+    // What opens an armory locker, and is spent doing it. A droid carries
+    // one because the foundry's own machines open its own lockers.
+    (name: "keycard", glyph: '=', color: (0.85, 0.75, 0.3), tags: ["keycard"], stack: true, cost: 60, spawn: (1, 10, 2)),
     (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), slot: "head", tags: ["armor"], armor: 1, spawn: (1, 10, 2)),
     (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6, spawn: (2, 10, 1)),
     (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1, spawn: (1, 10, 3)),

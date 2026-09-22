@@ -272,7 +272,7 @@ mod tests {
     fn every_item_loads_and_every_spawn_band_on_the_first_three_decks_has_something() {
         let r = crate::content::registries();
         let armory = Armory::load(&r);
-        assert_eq!(armory.defs.len(), 13);
+        assert_eq!(armory.defs.len(), 14, "twelve things to carry, a slug and a keycard");
         assert!(armory.table.gaps(1..=3).is_empty(), "a deck with nothing to find");
     }
 

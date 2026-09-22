@@ -60,13 +60,22 @@ pub fn items_at_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
         let mut q = world.query_filtered::<(&Position, &OnMap), With<Item>>();
         q.iter(world).filter(|(_, on)| on.0 == map).map(|(p, _)| p.0).collect()
     };
+    // Where the props stand, since the real scatter lands beside the marks
+    // and never under a crate: a plan made without them would not be the
+    // plan the deck was built from.
+    let standing: Vec<Point> = {
+        let world = app.world_mut();
+        let mut q = world.query_filtered::<(&Position, Option<&OnMap>), With<rl_engine::rl_bevy::Prop>>();
+        q.iter(world).filter(|(_, on)| on.map(|m| m.0).unwrap_or(map) == map).map(|(p, _)| p.0).collect()
+    };
     let wm = app.world().resource::<WorldMap>();
     let place = wm.place(map).expect("the current deck is built");
     let armories: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'A' as u32).map(|s| s.at).collect();
     let stores: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'L' as u32).map(|s| s.at).collect();
     let layout = crate::loot::Layout { bounds: place.terrain.bounds(), armories: &armories, stores: &stores };
     let mut rng = seed.stream(b"foundry.scatter", deck as u64);
-    let plan = crate::loot::plan_scatter(&armory.table, deck as i32, &layout, crate::loot::extra_loose_items(deck), &mut |p| wm.is_walkable(p), &mut rng);
+    let mut free = |p: Point| wm.is_walkable(p) && !standing.contains(&p);
+    let plan = crate::loot::plan_scatter(&armory.table, deck as i32, &layout, crate::loot::extra_loose_items(deck), &mut free, &mut rng);
     let count_origin = |o: crate::loot::Origin| plan.iter().filter(|(_, p, at)| *at == o && positions.contains(p)).count();
     let armories = (0..armories.len()).map(|i| count_origin(crate::loot::Origin::Armory(i))).collect();
     let stores = (0..stores.len()).map(|i| count_origin(crate::loot::Origin::Store(i))).collect();
