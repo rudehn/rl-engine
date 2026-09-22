@@ -1,5 +1,14 @@
 //! The keys a game answers to: declared once, read through, and listed.
 //!
+//! The registry is for keys that work while the world is in front of the
+//! player: walking, looking, a game's own verbs, and the key that opens
+//! each screen. A key that only means something while a screen is up is
+//! that screen's own, read only while it is the top one, and written along
+//! its bottom border where the player is already looking. It is not
+//! declared here: two `a`s in one game are no clash when one of them can
+//! only be pressed inside a modal, and a second list of a screen's keys is
+//! a second place to keep in step.
+//!
 //! A game that checks `KeyCode::KeyG` in one system and prints "g get" in
 //! another holds two copies of one fact, and the copy on screen is the one
 //! nobody updates. So a game declares each control once, as a group, an
@@ -213,6 +222,11 @@ fn shifted_symbol(key: KeyCode) -> Option<char> {
 ///
 /// Closed, because it enumerates the bindings the engine owns; a game's
 /// keys are [`Keys::Chords`] and never need a variant here.
+///
+/// Every one of them is a key that works while the world is in front of
+/// the player: a cursor, or the key that opens a screen. A screen's own
+/// keys are not here, because they are read only while that screen is the
+/// top one and are written along its own bottom border.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineKey {
     /// Opening the look cursor, from [`CursorKeys::look`].
@@ -227,10 +241,6 @@ pub enum EngineKey {
     Close,
     /// Opening the whole log, from [`ScrollbackKeys::toggle`].
     OpenLog,
-    /// Scrolling it, from the scrollback's line and page keys.
-    ScrollLog,
-    /// Filtering it by tone, from [`ScrollbackKeys::filter`].
-    FilterLog,
     /// Opening this list, from [`ControlsKeys::toggle`].
     ShowControls,
     /// Opening the character sheet, from [`SheetKeys::toggle`].
@@ -239,15 +249,6 @@ pub enum EngineKey {
     ListAbilities,
     /// Opening the bag, from [`InventoryKeys::toggle`].
     OpenInventory,
-    /// Putting the carried item picked out on, or taking it off, from
-    /// [`InventoryKeys::wear`].
-    Wear,
-    /// Dropping it, from [`InventoryKeys::drop`].
-    Drop,
-    /// Using it, from [`InventoryKeys::use_it`] and the cursors' confirm.
-    UseCarried,
-    /// Throwing it, from [`InventoryKeys::throw`].
-    ThrowCarried,
     /// Opening the menu, from [`MenuKeys::toggle`].
     OpenMenu,
 }
@@ -382,16 +383,10 @@ impl Bindings<'_> {
             EngineKey::Confirm => vec![cursor.confirm.into(), cursor.also_confirm.into()],
             EngineKey::Close => vec![cursor.close.into()],
             EngineKey::OpenLog => self.log.map(|log| vec![log.toggle.into()]).unwrap_or_default(),
-            EngineKey::ScrollLog => self.log.map(|log| [log.up, log.down, log.page_up, log.page_down].map(Chord::key).to_vec()).unwrap_or_default(),
-            EngineKey::FilterLog => self.log.map(|log| vec![log.filter.into()]).unwrap_or_default(),
             EngineKey::ShowControls => vec![self.help.toggle],
             EngineKey::OpenSheet => self.sheet.map(|sheet| vec![sheet.toggle]).unwrap_or_default(),
             EngineKey::ListAbilities => self.abilities.map(|menu| vec![menu.toggle]).unwrap_or_default(),
             EngineKey::OpenInventory => self.inventory.map(|bag| vec![bag.toggle]).unwrap_or_default(),
-            EngineKey::Wear => self.inventory.map(|bag| vec![bag.wear]).unwrap_or_default(),
-            EngineKey::Drop => self.inventory.map(|bag| vec![bag.drop]).unwrap_or_default(),
-            EngineKey::UseCarried => self.inventory.map(|bag| vec![bag.use_it, cursor.confirm.into(), cursor.also_confirm.into()]).unwrap_or_default(),
-            EngineKey::ThrowCarried => self.inventory.map(|bag| vec![bag.throw]).unwrap_or_default(),
             EngineKey::OpenMenu => self.menu.map(|menu| vec![menu.toggle.into()]).unwrap_or_default(),
         }
     }

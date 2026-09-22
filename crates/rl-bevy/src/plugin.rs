@@ -226,7 +226,16 @@ impl Plugin for CorePlugin {
                 (TurnSet::Schedule, TurnSet::Decide, TurnSet::Resolve, TurnSet::Sweep, TurnSet::React, TurnSet::Listen, TurnSet::Record, TurnSet::Cleanup)
                     .chain(),
             )
-            .configure_sets(Turn, (DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide))
+            // `Sense` is in the chain, where its own doc always said it
+            // was: everything after reads what the mind sees now. It was
+            // left out, so `minds::sense` ran unordered against the whole
+            // pass and a mind decided on sight that may or may not have
+            // been recast yet. Foundry's ambiguity test found it the moment
+            // a prop held a `Viewshed` in the same pass.
+            .configure_sets(
+                Turn,
+                (DecideSet::Sense, DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide),
+            )
             .configure_sets(Turn, DecideSet::Perceive.run_if(crate::minds::a_mind_holds_the_turn))
             .configure_sets(Turn, (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate).chain().in_set(DecideSet::Perceive))
             .configure_sets(
@@ -243,6 +252,12 @@ impl Plugin for CorePlugin {
             .add_action::<crate::bump::Bump>()
             .add_action::<crate::bump::Swap>()
             .add_message::<crate::bump::Swapped>()
+            // The message and not the action: a bump into a prop that
+            // offers one thing comes to an interaction, so the writer must
+            // exist in every game, while the sweeper and the resolver are
+            // `PropsPlugin`'s, which is what decides whether props run at
+            // all. The minds register `Intent<Attack>` the same way.
+            .add_message::<turn::Intent<crate::props::Interact>>()
             .add_action::<places::GoThrough>()
             .add_action::<crate::doors::Open>()
             .add_action::<crate::doors::Close>()

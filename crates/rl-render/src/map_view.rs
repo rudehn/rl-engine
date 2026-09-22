@@ -238,12 +238,52 @@ impl Plugin for MapViewPlugin {
         app.init_resource::<TileAppearance>()
             .init_resource::<FieldAppearance>()
             .insert_resource(MapView::new(self.0))
-            .add_systems(Update, (follow_player, draw_map).chain().in_set(PresentSet::Map));
+            .add_systems(Update, (follow_player, draw_map).chain().in_set(PresentSet::Map))
+            // Before the map is drawn, and in `Update` rather than in a
+            // play-only set, because props are put down while a place is
+            // built and `Added` matches for one frame only.
+            .add_systems(Update, (dress_props, redress_emptied).before(draw_map));
     }
 
     fn finish(&self, app: &mut App) {
         depends_on::<CorePlugin>(app, "MapViewPlugin");
         depends_on::<FovPlugin>(app, "MapViewPlugin");
+    }
+}
+
+/// A prop nobody has dressed yet, and which definition to dress it from.
+type Undressed<'w, 's> = Query<'w, 's, (Entity, &'static PropKind), (Added<PropKind>, Without<Glyph>)>;
+
+/// A container that has just been emptied, and which definition says what
+/// an emptied one looks like.
+type JustEmptied<'w, 's> = Query<'w, 's, (Entity, &'static PropKind), Added<Emptied>>;
+
+/// Gives an emptied container the look its definition keeps for one that
+/// is done, so a crate already gone through reads as done at a glance.
+pub fn redress_emptied(mut commands: Commands, registries: Option<Res<Registries>>, emptied: JustEmptied) {
+    let Some(registries) = registries else { return };
+    for (entity, kind) in &emptied {
+        let Some(look) = registries.props.get(kind.0).container.as_ref().and_then(|c| c.opened) else { continue };
+        commands.entity(entity).insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
+    }
+}
+
+/// Gives a prop the glyph its definition asks for.
+///
+/// A prop is described twice, as a tile is: what it is, in `props.ron`,
+/// which `rl-bevy` reads and which knows nothing of colours on a screen,
+/// and how it looks, which is this. The engine spawns a prop with its
+/// [`PropKind`] and no glyph, and whoever draws dresses it, so nothing
+/// below this crate has to name a `Color`.
+///
+/// A prop a game dressed itself keeps what it was given: the query asks
+/// for those with no glyph, so a game that wants one crate to look
+/// different says so and is not overruled.
+pub fn dress_props(mut commands: Commands, registries: Option<Res<Registries>>, bare: Undressed) {
+    let Some(registries) = registries else { return };
+    for (entity, kind) in &bare {
+        let look = registries.props.get(kind.0).look;
+        commands.entity(entity).insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
     }
 }
 
@@ -275,7 +315,10 @@ pub struct Scene<'w, 's> {
     lighting: Option<Res<'w, Lighting>>,
     overlay: Option<Res<'w, LightOverlay>>,
     player: Query<'w, 's, &'static Viewshed, With<Player>>,
-    glyphs: Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>)>,
+    /// What is drawn on the map. A prop nobody has spotted is not: being
+    /// unseen is the whole of what `Hidden` means, and it is one filter
+    /// here rather than a second drawing path.
+    glyphs: Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>), Without<Hidden>>,
     fields: Res<'w, FieldAppearance>,
     fire: Option<Res<'w, Fire>>,
     gases: Option<Res<'w, Gases>>,
@@ -342,6 +385,28 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A prop is described twice, and this is the second half: the engine
+    /// spawns it knowing nothing of colours, and the renderer dresses it.
+    #[test]
+    fn a_prop_is_dressed_from_its_definition_and_one_already_dressed_is_left_alone() {
+        let mut app = App::new();
+        app.add_systems(Update, dress_props);
+        let props = rl_rules::prop::load(r#"[(name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), layer: 2)]"#, &rl_rules::Names::new())
+            .expect("the props load");
+        let id = props.expect("supply crate");
+        let registries = Registries { props, ..Default::default() };
+        app.insert_resource(registries);
+
+        let bare = app.world_mut().spawn((Prop, PropKind(id))).id();
+        let dressed = app.world_mut().spawn((Prop, PropKind(id), Glyph { ch: '#', fg: Color::WHITE, layer: 9 })).id();
+        app.update();
+
+        let glyph = app.world().get::<Glyph>(bare).expect("it was dressed");
+        assert_eq!((glyph.ch, glyph.layer), ('&', 2), "the definition's glyph and layer");
+        assert_eq!(glyph.fg, Color::srgb_u8(190, 165, 115), "and its colour");
+        assert_eq!(app.world().get::<Glyph>(dressed).map(|g| g.ch), Some('#'), "a game that dressed its own is not overruled");
+    }
 
     #[test]
     fn view_maps_between_world_and_screen() {

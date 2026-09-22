@@ -91,12 +91,12 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 5. Documentation
 
+The plugin table landed on 2026-09-21, with `scripts/check-overview.sh` behind it; the plan's progress log says what the review that prompted it found.
+The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
+
 - **Guide chapters for the second half.**
   Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is the 1,280-line `examples/delve/src/main.rs`.
   Four chapters in the guide's style: lights out, being noticed, an ability in RON, saving the run.
-- **A plugin table in the overview.**
-  The rl-bevy section of `docs/OVERVIEW.md` is bullets of a hundred to two hundred words each.
-  A table of plugin, what it needs, what it adds and what it emits serves a returning reader; the prose stays for the why.
 - **One picture of the frame.**
   `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.
 - **Doc comments at `turn.rs` density.**
@@ -121,7 +121,7 @@ The five items that opened this section were built in the six stages of `docs/de
   Ten of the eleven crates have no readme, so their crates.io pages would render empty, and `rl-engine`'s `readme = "../../README.md"` points outside its own package, which `cargo package` refuses.
   Publish in tier order, waiting for the index between each, and dry-run every crate first; `cargo-release` or `release-plz` does the ordering and is worth adopting before the first release rather than after.
 - **Nothing should go out while the API moves this fast.**
-  77 commits touched crate sources in the 30 days to 2026-09-17, changing about 2,100 lines of public declarations, and there is no `CHANGELOG.md`.
+  77 commits touched crate sources in the 30 days to 2026-09-17, changing about 2,100 lines of public declarations; `CHANGELOG.md` records them, but a release every few days is not a kindness to anyone depending on it.
   Publish the five Bevy-free crates first, since their APIs are the most settled and the most reusable on their own, and keep the Bevy layer on a git dependency until it stops moving.
 
 ## Tracked elsewhere

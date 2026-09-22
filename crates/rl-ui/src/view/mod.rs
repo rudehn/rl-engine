@@ -15,10 +15,12 @@
 //! Nothing here runs unless a game asks for it.
 
 pub mod ability;
+pub mod container;
 pub mod gear;
 pub mod inspect;
 pub mod inventory;
 pub mod nearby;
+pub mod offers;
 pub mod sheet;
 pub mod target;
 pub mod vitals;

@@ -28,8 +28,8 @@
 
 use bevy::prelude::*;
 use rl_bevy::{
-    Afflict, Afflicted, Dead, EndRun, EngineState, Equipped, Health, Inventory, MapId, Needs, OnMap, Position, Quests, Registries, Stack, Transition, Turns,
-    Wearable,
+    Afflict, Afflicted, Dead, Emptied, EndRun, EngineState, Equipped, Fired, Health, Hidden, Inventory, MapId, Needs, OnMap, Position, PropKind, Quests,
+    Registries, Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
 };
 use rl_core::Point;
 use rl_rules::Equipment;
@@ -80,6 +80,92 @@ pub trait SaveableState: Resource<Mutability = bevy::ecs::component::Mutable> {
 
     /// Puts it back.
     fn restore(&mut self, saved: Self::Saved);
+}
+
+/// A prop is the engine's to spawn, so it is the engine's to save.
+///
+/// The first kind that is not a game's. Every other kind is a game's
+/// because the engine cannot know what a monster or a sword is made of; a
+/// prop it can, because the engine read the definition out of a
+/// `props.ron` itself and can read it again. A game that saves gets its
+/// props saved without asking, and a game with no props saves none.
+///
+/// What is written down is which definition it is, by name, and the part
+/// of it that is this prop's own history rather than its kind's: how often
+/// its trigger has gone off, whether it has been stocked, whether it has
+/// been emptied, and whether it is still unspotted. Where it stands, and
+/// what a container holds, are [`EntityState`]'s like everything else.
+impl Saveable for PropKind {
+    type Saved = SavedProp;
+
+    fn capture(world: &World, entity: Entity) -> SavedProp {
+        let e = world.entity(entity);
+        let name = world
+            .get_resource::<Registries>()
+            .map(|r| r.props.name(e.get::<PropKind>().expect("a prop kind is what this is keyed by").0).to_string())
+            .unwrap_or_default();
+        SavedProp {
+            name,
+            fired: e.get::<Fired>().map(|f| f.0).unwrap_or_default(),
+            stocked: e.contains::<Stocked>(),
+            emptied: e.contains::<Emptied>(),
+            hidden: e.get::<Hidden>().map(|h| h.spot),
+        }
+    }
+
+    fn restore(world: &mut World, saved: &SavedProp) -> Entity {
+        let registries = world.get_resource::<Registries>().cloned().unwrap_or_default();
+        let Some(id) = registries.props.id(&saved.name) else {
+            warn!("a saved prop is a {:?}, which this build has no definition for; it comes back as nothing", saved.name);
+            return world.spawn_empty().id();
+        };
+        let prop = {
+            let mut commands = world.commands();
+            rl_bevy::spawn_prop(&mut commands, &registries, id, Point::ZERO, MapId::SURFACE)
+        };
+        world.flush();
+        let mut e = world.entity_mut(prop);
+        if saved.fired > 0 {
+            e.insert(Fired(saved.fired));
+        }
+        if saved.stocked {
+            e.insert(Stocked);
+        }
+        if saved.emptied {
+            e.insert(Emptied);
+        }
+        // Spotted is the absence of `Hidden`, and `spawn_prop` puts one on
+        // whatever its definition hides: a plate the player has already
+        // found does not hide itself again on a continued run.
+        match saved.hidden {
+            Some(spot) => {
+                e.insert(Hidden { spot });
+            }
+            None => {
+                e.remove::<Hidden>();
+            }
+        }
+        prop
+    }
+}
+
+/// A prop, as the save writes it down.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SavedProp {
+    /// Which definition, by name.
+    pub name: String,
+    /// How often its trigger has gone off.
+    #[serde(default)]
+    pub fired: u32,
+    /// Whether what it holds has already been asked for.
+    #[serde(default)]
+    pub stocked: bool,
+    /// Whether it has been emptied.
+    #[serde(default)]
+    pub emptied: bool,
+    /// The chance of spotting it, while it is still unspotted.
+    #[serde(default)]
+    pub hidden: Option<u8>,
 }
 
 /// The quest tracker is the engine's, so its saving is too: a game with a
@@ -218,6 +304,13 @@ pub struct EntityState {
     /// Where it leads, for a transition.
     #[serde(default)]
     pub transition: Option<Transition>,
+    /// What is left of it, when it died and stayed: the clock reading it
+    /// died on, and who got the credit if that one was saved too. A game
+    /// spawns the thing alive again from its own record, which is all it
+    /// ever wrote down; this is what tells the engine to lay it back down
+    /// dead.
+    #[serde(default)]
+    pub remains: Option<(u32, Option<SaveId>)>,
 }
 
 impl EntityState {
@@ -241,7 +334,8 @@ impl EntityState {
             (Some(afflicted), Some(registries)) => afflicted.iter().map(|s| (registries.statuses.name(s.id).to_string(), s.turns)).collect(),
             _ => Vec::new(),
         };
-        Self { at, health, bag, worn, statuses, stack: e.get::<Stack>().map(|s| s.count), transition: e.get::<Transition>().copied() }
+        let remains = e.get::<Remains>().map(|r| (r.since, r.credit.map(|c| remap.save_id(c))));
+        Self { at, health, bag, worn, statuses, stack: e.get::<Stack>().map(|s| s.count), transition: e.get::<Transition>().copied(), remains }
     }
 
     /// Puts this back on `entity`, the other entities through `remap`.
@@ -285,6 +379,21 @@ impl EntityState {
         }
         if let Some(transition) = self.transition {
             target.insert(transition);
+        }
+        // Last, and after the health a kind's own spawn gave it: a game
+        // writes down what a thing is, never that it is dead, so what
+        // came back is a living one, and this lays it down again exactly
+        // as the death did. The killer is put back only if it was saved
+        // too, since credit for a blow is not worth keeping an entity
+        // alive for.
+        if let Some((since, credit)) = self.remains {
+            let credit = credit.and_then(|id| remap.entity(id));
+            if let Ok(mut target) = world.get_entity_mut(entity) {
+                target.remove::<WasLiving>().insert((rl_bevy::Prop, Remains { since, credit }));
+            }
+            // And named as what is left of what it was, from the one place
+            // the wording lives: a game's record says what it was.
+            rl_bevy::remains::name_as_remains(world, entity);
         }
         // By request, so each status installs its modifiers the way it did
         // the first time. Only where statuses are resolved at all.
@@ -461,6 +570,7 @@ impl SavePlugin {
 impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SaveRegistry>()
+            .save_kind::<PropKind>()
             .init_resource::<Stash>()
             .insert_resource(SaveSlot { slot: self.slot.clone(), version: self.version })
             .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as `Saves::platform_default(\"my-game\")`")
@@ -605,7 +715,7 @@ mod tests {
 
     fn game(saves: Saves) -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin));
+        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, RemainsPlugin));
         let start = rl_bevy::testing::surface(&mut app);
         rl_bevy::testing::two_sides(&mut app);
         {
@@ -624,6 +734,107 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
+    }
+
+    /// The engine's own kind: a game writes down nothing about its props
+    /// and gets them back whole, where they stood, holding what they held,
+    /// with a sprung trap still sprung and a found plate still found.
+    #[test]
+    fn props_are_saved_by_the_engine_with_each_ones_own_history() {
+        const PROPS: &str = r#"#![enable(implicit_some)]
+            [
+                (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true,
+                 container: (contents: [("coin", 1, 1)]), offers: [(verb: "open", time: 200)]),
+                (name: "pressure plate", glyph: '^', color: (r: 230, g: 140, b: 51),
+                 hidden: (spot: 40), trigger: (on: Entered, fires: 2)),
+            ]"#;
+
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let props = rl_rules::prop::load(PROPS, &rl_rules::Names::new()).expect("the props load");
+        app.world_mut().resource_mut::<Registries>().props = props.clone();
+        let (crate_id, plate_id) = (props.expect("supply crate"), props.expect("pressure plate"));
+
+        let coin = app.world_mut().spawn((Item, Thing { def: "coin".into(), notches: 0 }, Stack { key: 1, count: 5 })).id();
+        let registries = app.world().resource::<Registries>().clone();
+        let (chest, plate) = {
+            let mut commands = app.world_mut().commands();
+            (
+                rl_bevy::spawn_prop(&mut commands, &registries, crate_id, start.offset(1, 0), MapId::SURFACE),
+                rl_bevy::spawn_prop(&mut commands, &registries, plate_id, start.offset(0, 1), MapId::SURFACE),
+            )
+        };
+        app.world_mut().flush();
+        // `Stocked` here is the test's own saved resource, so the prop's is named in full.
+        app.world_mut().entity_mut(chest).insert((Inventory { items: vec![coin] }, rl_bevy::Stocked));
+        // One of the plate's two firings spent, and the player has found it.
+        app.world_mut().entity_mut(plate).insert(Fired(1)).remove::<Hidden>();
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        back.world_mut().resource_mut::<Registries>().props = props;
+        let save = load_run(back.world()).unwrap().expect("a save");
+        assert_eq!(save.count_of::<PropKind>(), 2, "both props were written down, by the engine");
+        save.restore(back.world_mut()).unwrap();
+        play(&mut back);
+
+        let w = back.world_mut();
+        let mut found: Vec<(String, Point, u32, bool)> = w
+            .query::<(&PropKind, &Position, Option<&Fired>, Option<&Hidden>)>()
+            .iter(w)
+            .map(|(kind, at, fired, hidden)| {
+                let name = "".to_string();
+                let _ = name;
+                (w.resource::<Registries>().props.name(kind.0).to_string(), at.0, fired.map(|f| f.0).unwrap_or_default(), hidden.is_some())
+            })
+            .collect();
+        found.sort();
+        assert_eq!(
+            found,
+            vec![("pressure plate".to_string(), start.offset(0, 1), 1, false), ("supply crate".to_string(), start.offset(1, 0), 0, false)],
+            "each prop is back where it stood, with its own history: one firing spent, and no longer hidden"
+        );
+
+        let w = back.world_mut();
+        let held: Vec<u32> = w
+            .query_filtered::<&Inventory, With<PropKind>>()
+            .iter(w)
+            .flat_map(|bag| bag.items.clone())
+            .filter_map(|item| w.get::<Stack>(item).map(|s| s.count))
+            .collect();
+        assert_eq!(held, vec![5], "and the crate still holds the coins it held");
+    }
+
+    /// A body saved is a body continued: the game writes down a person,
+    /// as it always did, and the engine is what remembers that this one
+    /// is lying dead on the floor, so nothing about a game's own record
+    /// of its kinds has to learn the word.
+    #[test]
+    fn remains_are_still_remains_when_the_run_is_continued() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let me = app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30))).id();
+        let ada = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), LeavesRemains)).id();
+        play(&mut app);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        app.world_mut().write_message(DamageEvent { target: ada, hit: rl_rules::Hit::by(me, kind, 99) });
+        app.update();
+        app.update();
+        let since = app.world().get::<Remains>(ada).expect("Ada is remains").since;
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let (ada2, at) = w.query_filtered::<(Entity, &Position), With<Person>>().single(w).map(|(e, p)| (e, p.0)).expect("Ada came back");
+        let w = back.world();
+        assert_eq!(w.get::<Remains>(ada2).map(|r| r.since), Some(since), "still remains, dead on the same turn");
+        assert_eq!(at, start.offset(0, 3), "lying where she fell");
+        assert!(w.get::<Health>(ada2).is_none(), "and not brought back to life by her own record of herself");
+        assert!(w.get::<Actor>(ada2).is_none(), "nor dealt turns again");
     }
 
     /// The whole of a run comes back: every kind by its own account, and

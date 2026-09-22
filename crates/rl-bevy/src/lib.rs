@@ -32,7 +32,9 @@ pub mod minds;
 pub mod noise;
 pub mod places;
 pub mod plugin;
+pub mod props;
 pub mod registries;
+pub mod remains;
 pub mod replay;
 pub mod seed;
 pub mod state;
@@ -79,7 +81,12 @@ pub use plugin::{
     CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Requirements, ResolveSet, Turn, TurnSet,
     clear_run, depends_on,
 };
+pub use props::{
+    AddVerb, Container, Emptied, FillContainer, Fired, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropEffects, PropKind, PropRng, PropSet,
+    PropsPlugin, Refused, Spotted, Stocked, Take, TriggerOn, Triggered, Verb, VerbId, Verbs, spawn_prop,
+};
 pub use registries::Registries;
+pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
 pub use replay::{Pressed, Recording};
 pub use seed::{AddStream, Seed, Stream};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
@@ -128,7 +135,12 @@ pub mod prelude {
     pub use crate::plugin::{
         CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on,
     };
+    pub use crate::props::{
+        AddVerb, Container, Emptied, FillContainer, Fired, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused,
+        Spotted, Take, TriggerOn, Triggered, VerbId, Verbs, spawn_prop,
+    };
     pub use crate::registries::Registries;
+    pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin};
     pub use crate::seed::{AddStream, Seed};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};

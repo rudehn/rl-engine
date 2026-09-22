@@ -83,6 +83,29 @@ pub struct ItemView<A: Copy> {
     pub gain: Option<i32>,
 }
 
+/// A thing standing where the actor can see it that is neither an actor
+/// nor an item: a crate, a lever, a plate, a body.
+///
+/// Whose it is, is all the engine knows and all it will ever say. What a
+/// prop is called, whether it can be opened, searched, stripped, rebuilt
+/// or eaten, and whether it ever goes away are the game's, answered from
+/// its own components on the same entity. A mind that wants to tell one
+/// kind of prop from another reads a [`Sense`] the game pushed.
+///
+/// A body is one of these: what dies and stays is a prop, so a mind that
+/// walks to wrecks and a mind that walks to crates read one list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PropView<A: Copy> {
+    /// The prop.
+    pub id: A,
+    /// Where it stands.
+    pub pos: Point,
+    /// Whose it is, when the game has sides: the side of whatever died, for
+    /// a body. `None` in a game with no factions, and for a crate, which
+    /// takes no side.
+    pub side: Option<FactionId>,
+}
+
 /// Something a game knows about the world that the engine has no word
 /// for, pushed onto a [`Snapshot`] for the game's own tactic to read.
 ///
@@ -140,12 +163,16 @@ pub struct Snapshot<A: Copy> {
     pub reach: Option<i32>,
     /// What lies where it can see, nearest first.
     pub items: Vec<ItemView<A>>,
+    /// What stands where it can see that is neither an actor nor an item,
+    /// nearest first: crates, levers, plates, bodies. Empty in a game
+    /// without props, and never holding one nobody has spotted.
+    pub props: Vec<PropView<A>>,
     /// What the game knows that the engine does not, by type.
     pub senses: Vec<Box<dyn Sense>>,
 }
 
 impl<A: Copy + Ord> Snapshot<A> {
-    /// Sorts enemies, allies, others and items nearest first, ties by position and
+    /// Sorts enemies, allies, others, items and props nearest first, ties by position and
     /// then by identity, so two runs agree on what is "nearest" whatever
     /// order they were seen in: a pile of things on one cell is the normal
     /// case for items, and the first of them is what a scavenger takes.
@@ -156,6 +183,7 @@ impl<A: Copy + Ord> Snapshot<A> {
         self.allies.sort_by_key(key);
         self.others.sort_by_key(key);
         self.items.sort_by_key(|i| (geometry::chebyshev(me, i.pos), i.pos, i.id));
+        self.props.sort_by_key(|p| (geometry::chebyshev(me, p.pos), p.pos, p.id));
     }
 }
 
@@ -174,6 +202,7 @@ impl<A: Copy> Snapshot<A> {
             missiles: Vec::new(),
             reach: None,
             items: Vec::new(),
+            props: Vec::new(),
             senses: Vec::new(),
         }
     }
@@ -201,5 +230,37 @@ impl<A: Copy> Snapshot<A> {
     /// The enemies standing next to the actor.
     pub fn adjacent_enemies(&self) -> impl Iterator<Item = &ActorView<A>> {
         self.enemies.iter().filter(move |e| geometry::is_adjacent(self.me.pos, e.pos))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The sort is what lets a tactic take the first of a list and know it
+    /// took the nearest, however the contributors happened to fill it.
+    #[test]
+    fn props_sort_nearest_first_whatever_order_they_were_seen_in() {
+        let me = ActorView::at(1u32, Point::new(10, 10));
+        let far = PropView { id: 2, pos: Point::new(10, 16), side: None };
+        let near = PropView { id: 3, pos: Point::new(12, 10), side: None };
+        let mut snapshot = Snapshot::alone(me);
+        snapshot.props = vec![far, near];
+        snapshot.sort();
+        assert_eq!(snapshot.props, vec![near, far], "the nearer one comes first");
+    }
+
+    /// Two deaths on one cell leave two bodies, and a tactic that takes
+    /// the first of them must take the same one on every run.
+    #[test]
+    fn props_on_one_cell_are_ordered_by_identity_so_two_runs_agree() {
+        let me = ActorView::at(1u32, Point::new(0, 0));
+        let cell = Point::new(3, 0);
+        let later = PropView { id: 9, pos: cell, side: None };
+        let earlier = PropView { id: 4, pos: cell, side: None };
+        let mut snapshot = Snapshot::alone(me);
+        snapshot.props = vec![later, earlier];
+        snapshot.sort();
+        assert_eq!(snapshot.props, vec![earlier, later], "the same one is first every run");
     }
 }

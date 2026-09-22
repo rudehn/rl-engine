@@ -231,7 +231,11 @@ mod tests {
     /// ended at, with every key stamped by the clock it was read at.
     #[test]
     fn a_recorded_run_plays_back_to_the_same_place_and_clock() {
-        let dir = std::env::temp_dir().join("rl-replay-round-trip");
+        // Named for this process, as every other test that writes a file
+        // here is: two test binaries running at once shared one path and
+        // one `remove_dir_all`, so a run read a file another run was
+        // half way through writing, or had just deleted.
+        let dir = std::env::temp_dir().join(format!("rl-replay-round-trip-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("run.ron");
 

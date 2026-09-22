@@ -90,10 +90,14 @@ pub fn dual_slug_pistols_with(app: &mut App, slugs: u32) -> (Entity, Entity, Ent
     (player, first, second)
 }
 
-/// Takes the commando's starting kit out of its hands and its bag and
-/// out of the world, so a test that arms it with something else knows
-/// exactly what it wields and which hand each piece lands in. Returns the
-/// player.
+/// Empties the commando's hands and its bag and takes what was in them
+/// out of the world, so a test that arms it knows exactly what it wields
+/// and which hand each piece lands in. Returns the player.
+///
+/// A real run starts with nothing, so this finds nothing to clear; it
+/// stays because a test that armed the commando earlier, or a later
+/// starting kit, would leave something here, and a helper that only works
+/// on an empty bag is a helper that breaks the day the bag is not.
 pub fn empty_handed(app: &mut App) -> Entity {
     let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
     let kit = std::mem::take(&mut app.world_mut().get_mut::<Inventory>(player).unwrap().items);

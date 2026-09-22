@@ -43,7 +43,7 @@ fn id<M>(system: impl IntoSystem<(), (), M>) -> TypeId {
 /// one of them meets, for a failure to read by.
 fn names() -> Vec<(&'static str, TypeId)> {
     use crate::*;
-    use rl_engine::rl_bevy::{ability, combat, items, stealth, throwing};
+    use rl_engine::rl_bevy::{ability, combat, items, minds, props as engine_props, remains, stealth, throwing};
     vec![
         ("run::start", id(run::start)),
         ("heat::vent_heat", id(heat::vent_heat)),
@@ -62,7 +62,7 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("droids::sync_dark_sight", id(droids::sync_dark_sight)),
         ("mission::start", id(mission::start)),
         ("mission::spawn_console_on_arrival", id(mission::spawn_console_on_arrival)),
-        ("mission::resolve_set_charge", id(mission::resolve_set_charge)),
+        ("mission::answer_charge", id(mission::answer_charge)),
         ("mission::offer_the_pick", id(mission::offer_the_pick)),
         ("upgrades::react_uplink", id(upgrades::react_uplink)),
         ("upgrades::choice_keys", id(upgrades::choice_keys)),
@@ -81,6 +81,28 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("engine ability::refresh_known", id(ability::refresh_known)),
         ("engine throwing::resolve_throws", id(throwing::resolve_throws)),
         ("engine throwing::land_throws", id(throwing::land_throws)),
+        ("props::place_on_arrival", id(props::place_on_arrival)),
+        ("props::fill_containers", id(props::fill_containers)),
+        ("props::wreck_the_dead", id(props::wreck_the_dead)),
+        ("mission::answer_charge", id(mission::answer_charge)),
+        ("engine props::offer_here", id(engine_props::offer_here)),
+        ("engine props::resolve_interactions", id(engine_props::resolve_interactions)),
+        ("engine props::resolve_takes", id(engine_props::resolve_takes)),
+        ("engine props::spring_on_entered", id(engine_props::spring_on_entered)),
+        ("engine props::spring_on_destroyed", id(engine_props::spring_on_destroyed)),
+        ("engine props::close_emptied_containers", id(engine_props::close_emptied_containers)),
+        ("engine props::stock_containers", id(engine_props::stock_containers)),
+        ("engine props::build_prop_effects", id(engine_props::build_prop_effects)),
+        ("engine props::spot_hidden_props", id(engine_props::spot_hidden_props)),
+        ("engine props::perceive_props", id(engine_props::perceive_props)),
+        ("engine props::report_bare_props", id(engine_props::report_bare_props)),
+        ("engine remains::leave_remains", id(remains::leave_remains)),
+        ("engine minds::sense", id(minds::sense)),
+        ("engine minds::begin_thinking", id(minds::begin_thinking)),
+        ("engine minds::perceive_roster", id(minds::perceive_roster)),
+        ("engine stealth::filter_unnoticed", id(stealth::filter_unnoticed)),
+        ("engine items::perceive_belongings", id(items::perceive_belongings)),
+        ("engine combat::perceive_reach", id(combat::perceive_reach)),
     ]
 }
 
@@ -113,6 +135,23 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Stowed", c.component_id::<crate::heat::Stowed>()),
         ("DarkSight", c.component_id::<DarkSight>()),
         ("Jammed", c.component_id::<crate::droids::Jammed>()),
+        // What props, traps and the lines a pass leaves brought in.
+        ("Messages<Tell>", c.component_id::<Messages<rl_engine::rl_ui::Tell>>()),
+        ("Thinking", c.component_id::<rl_engine::rl_bevy::Thinking>()),
+        ("Messages<Cued>", c.component_id::<Messages<rl_engine::rl_bevy::Cued>>()),
+        ("Messages<DamageEvent>", c.component_id::<Messages<rl_engine::rl_bevy::DamageEvent>>()),
+        ("Messages<Afflict>", c.component_id::<Messages<rl_engine::rl_bevy::Afflict>>()),
+        ("Messages<Cure>", c.component_id::<Messages<rl_engine::rl_bevy::Cure>>()),
+        ("Messages<FillContainer>", c.component_id::<Messages<rl_engine::rl_bevy::FillContainer>>()),
+        ("Messages<Interacted>", c.component_id::<Messages<rl_engine::rl_bevy::Interacted>>()),
+        ("AbilityRng", c.component_id::<rl_engine::rl_bevy::AbilityRng>()),
+        ("Viewshed", c.component_id::<rl_engine::rl_bevy::Viewshed>()),
+        ("Equipped", c.component_id::<rl_engine::rl_bevy::Equipped>()),
+        ("PropKind", c.component_id::<rl_engine::rl_bevy::PropKind>()),
+        ("Occupancy", c.component_id::<rl_engine::rl_bevy::turn::Occupancy>()),
+        ("Stack", c.component_id::<rl_engine::rl_bevy::Stack>()),
+        ("Messages<ItemEvent>", c.component_id::<Messages<rl_engine::rl_bevy::ItemEvent>>()),
+        ("Messages<Triggered>", c.component_id::<Messages<rl_engine::rl_bevy::Triggered>>()),
     ];
     found.into_iter().map(|(name, id)| (name, id.unwrap_or_else(|| panic!("{name} is registered once every schedule is built")))).collect()
 }
@@ -122,7 +161,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
 /// pair needs any more.
 fn allowed(world: &World) -> Vec<Allowed> {
     use crate::*;
-    use rl_engine::rl_bevy::{ability, stealth};
+    use rl_engine::rl_bevy::{ability, combat, items, props as engine_props, stealth, throwing};
     let ids = ids(world);
     let on = |names: &[&str]| -> Vec<ComponentId> { names.iter().map(|n| ids.iter().find(|(name, _)| name == n).expect("named in ids").1).collect() };
     let pair = |a, b, what: &[&str], why| Allowed { a: Some(a), b: Some(b), on: on(what), why };
@@ -142,15 +181,183 @@ fn allowed(world: &World) -> Vec<Allowed> {
             "a probe shouts in its own pass and strikes nobody, so no blow wakes it in the pass it shouts in",
         ),
         pair(id(ammo::note_ammo), id(heat::note_heat), &["GearView", "Facets"], "no weapon has both Ammo and Heat, so no row gets a facet from both"),
-        // Something lands only in a pass that dealt nobody a turn, since
-        // nothing is dealt while it flies, so never beside a charge.
-        pair(id(mission::resolve_set_charge), id(ability::land_abilities), &["Turns", "Position"], "an ability lands in a pass no charge is set in"),
+        // Props, and what they meet. Every entry below is about one of
+        // three invariants: one action a pass, one contributor per field of
+        // the snapshot, and a container's bag is never a commando's.
+        Allowed {
+            a: Some(id(engine_props::perceive_props)),
+            b: None,
+            on: on(&["Thinking"]),
+            why: "one contributor per field of the snapshot: props fill `props` and nothing else, and it is sorted once after them all",
+        },
         pair(
-            id(mission::resolve_set_charge),
-            id(ability::resolve_abilities),
+            id(engine_props::resolve_interactions),
+            id(engine_props::resolve_takes),
             &[&claims[..], &["Position"]].concat(),
-            "one action a pass: a charge and an ability are never resolved in the same one",
+            "one action a pass: opening a crate and taking out of it are two actions, never resolved in the same pass",
         ),
+        pair(
+            id(engine_props::resolve_interactions),
+            id(combat::resolve_attacks),
+            &[&claims[..], &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position"]].concat(),
+            "one action a pass: an interaction and a blow are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_interactions),
+            id(throwing::resolve_throws),
+            &[&claims[..], &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position"]].concat(),
+            "one action a pass: an interaction and a throw are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_interactions),
+            id(ability::resolve_abilities),
+            &[
+                &claims[..],
+                &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "AbilityRng"],
+            ]
+            .concat(),
+            "one action a pass: an interaction and an ability are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_interactions),
+            id(items::resolve_items),
+            &[&claims[..], &["Position"]].concat(),
+            "one action a pass: an interaction and an item action are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_takes),
+            id(throwing::resolve_throws),
+            &[&claims[..], &["Messages<ItemEvent>", "Inventory", "Stack"]].concat(),
+            "one action a pass: taking out of a crate and throwing are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_takes),
+            id(ability::resolve_abilities),
+            &[&claims[..], &["Position", "Inventory", "Stack"]].concat(),
+            "one action a pass: taking out of a crate and using an ability are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_takes),
+            id(items::resolve_items),
+            &[&claims[..], &["Messages<ItemEvent>", "Inventory"]].concat(),
+            "one action a pass: taking out of a crate and picking up are never resolved in the same one",
+        ),
+        // What lands only ever lands in a pass that dealt nobody a turn,
+        // since nothing is dealt while it flies, so never beside an
+        // interaction, which is an action somebody spent a turn on.
+        pair(
+            id(engine_props::resolve_interactions),
+            id(ability::land_abilities),
+            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "AbilityRng"],
+            "an ability lands in a pass no interaction is resolved in",
+        ),
+        pair(
+            id(engine_props::resolve_interactions),
+            id(throwing::land_throws),
+            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position"],
+            "a throw lands in a pass no interaction is resolved in",
+        ),
+        pair(
+            id(engine_props::resolve_interactions),
+            id(combat::land_shots),
+            &["Messages<DamageEvent>"],
+            "a shot lands in a pass no interaction is resolved in",
+        ),
+        pair(id(engine_props::resolve_takes), id(ability::land_abilities), &["Position"], "an ability lands in a pass nothing is taken in"),
+        pair(
+            id(engine_props::resolve_takes),
+            id(throwing::land_throws),
+            &["Messages<ItemEvent>", "Inventory", "Stack"],
+            "a throw lands in a pass nothing is taken in",
+        ),
+        // A trap springs on the one who stepped, or on what broke. Every
+        // trap in `props.ron` lands `Harm` and nothing that moves anyone or
+        // jams anything, so a trap never changes what a probe reads or
+        // afflicts what an ion hit would.
+        pair(
+            id(engine_props::spring_on_entered),
+            id(engine_props::spring_on_destroyed),
+            &[
+                "Occupancy",
+                "Messages<Cued>",
+                "Messages<DamageEvent>",
+                "Messages<Afflict>",
+                "Messages<Cure>",
+                "Messages<Triggered>",
+                "Position",
+                "Viewshed",
+                "AbilityRng",
+            ],
+            "one action a pass: a step and a blow are never the same action, so at most one of these fires in a pass",
+        ),
+        pair(
+            id(engine_props::spring_on_entered),
+            id(droids::shout_alarm),
+            &["Messages<Cued>", "Position", "Viewshed"],
+            "Foundry's traps only harm: none moves anyone, so no cell a probe reads changes under it",
+        ),
+        pair(
+            id(engine_props::spring_on_destroyed),
+            id(droids::shout_alarm),
+            &["Messages<Cued>", "Position", "Viewshed"],
+            "Foundry's traps only harm: none moves anyone, so no cell a probe reads changes under it",
+        ),
+        pair(
+            id(engine_props::spring_on_entered),
+            id(droids::jam_sensors),
+            &["Messages<Afflict>"],
+            "Foundry's traps deal energy, never ion, so no trap jams a radar in the pass one is jammed",
+        ),
+        pair(
+            id(engine_props::spring_on_destroyed),
+            id(droids::jam_sensors),
+            &["Messages<Afflict>"],
+            "Foundry's traps deal energy, never ion, so no trap jams a radar in the pass one is jammed",
+        ),
+        pair(
+            id(engine_props::spring_on_entered),
+            id(stealth::wake_on_damage),
+            &["Position"],
+            "a trap harms whoever stepped on it and moves nobody, so where a woken droid saw them does not change under it",
+        ),
+        pair(
+            id(engine_props::spring_on_destroyed),
+            id(stealth::wake_on_damage),
+            &["Position"],
+            "a bursting prop moves nobody, so where a woken droid saw them does not change under it",
+        ),
+        pair(
+            id(engine_props::spring_on_entered),
+            id(loot::scatter_on_arrival),
+            &["Position"],
+            "a deck is first entered by a warp and not by a step, so no plate springs in the pass its loot is scattered in",
+        ),
+        pair(
+            id(engine_props::spring_on_destroyed),
+            id(loot::scatter_on_arrival),
+            &["Position"],
+            "a deck's loot is scattered in the pass it is first entered, which broke nothing",
+        ),
+        // A container's bag and a commando's are never the same bag.
+        pair(
+            id(engine_props::close_emptied_containers),
+            id(ammo::spend_ammo),
+            &["Inventory"],
+            "a crate's bag and a commando's are never the same bag, and only a commando fires",
+        ),
+        pair(
+            id(engine_props::close_emptied_containers),
+            id(ammo::sync_ammo),
+            &["Inventory"],
+            "a crate's bag and a commando's are never the same bag, and only a commando wields",
+        ),
+        // Every line a pass leaves is its own.
+        Allowed {
+            a: Some(id(mission::answer_charge)),
+            b: None,
+            on: on(&["Messages<Tell>"]),
+            why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
+        },
         pair(id(ability::refresh_known), id(ammo::spend_ammo), &["Inventory"], "Known is rebuilt every pass, and a slug grants nothing"),
         pair(id(ability::refresh_known), id(ammo::sync_ammo), &["Inventory"], "Known is rebuilt every pass, and a slug grants nothing"),
     ];

@@ -19,6 +19,7 @@ pub mod light;
 pub mod loot;
 pub mod mission;
 pub mod plugin;
+pub mod props;
 pub mod run;
 pub mod testing;
 pub mod upgrades;

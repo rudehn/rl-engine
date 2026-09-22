@@ -14,7 +14,6 @@ use rl_engine::prelude::*;
 
 use crate::ammo::Dry;
 use crate::heat::Heat;
-use crate::mission::{Console, SetCharge, Spent};
 
 /// Every key Foundry answers to, by name.
 #[derive(Resource, Clone, Copy)]
@@ -32,7 +31,6 @@ pub struct Binds {
     /// Throw the first thing carried that can be thrown.
     pub throw: ControlId,
     /// Set a charge on the console beside you.
-    pub set_charge: ControlId,
     /// Switch the shoulder lamp off or on; read by
     /// [`light::toggle_lamp`](crate::light::toggle_lamp).
     pub lamp: ControlId,
@@ -50,7 +48,6 @@ pub fn declare_controls(app: &mut App) {
         pick_up: app.add_control("Act", "pick up what is here", [KeyCode::KeyG, KeyCode::Comma]),
         fire: app.add_control("Act", "fire at the nearest droid", KeyCode::KeyF),
         throw: app.add_control("Act", "throw a blade", KeyCode::KeyT),
-        set_charge: app.add_control("Act", "set a charge on the console beside you", KeyCode::KeyE),
         lamp: app.add_control("Act", "switch the lamp off, or on", Chord::shift(KeyCode::KeyL)),
     };
     app.insert_resource(binds);
@@ -77,13 +74,9 @@ pub struct PlayerIntents<'w> {
     waits: MessageWriter<'w, Intent<Wait>>,
     transits: MessageWriter<'w, Intent<GoThrough>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
-    charges: MessageWriter<'w, Intent<SetCharge>>,
     fires: MessageWriter<'w, AimFire>,
     throws: MessageWriter<'w, AimThrow>,
 }
-
-/// Where something stands, and on which map.
-type Placed = (&'static Position, Option<&'static OnMap>);
 
 /// Everything on the deck `f`, `t` and `e` look for.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -92,7 +85,6 @@ pub struct Reach<'w, 's> {
     loadout: Loadout<'w, 's>,
     idle: Query<'w, 's, (&'static Name, Option<&'static Heat>, Has<Dry>)>,
     worn: Query<'w, 's, &'static Equipped>,
-    consoles: Query<'w, 's, Placed, (With<Console>, Without<Spent>)>,
 }
 
 /// Turns keys into an [`Intent`] for the player while it holds the turn,
@@ -108,7 +100,7 @@ pub fn player_input(mut kb: Keyboard, reach: Reach, mut intents: PlayerIntents) 
     if kb.modals.any_open() {
         return;
     }
-    let Ok((me, at, bag, on)) = kb.player.single() else { return };
+    let Ok((me, _at, bag, _on)) = kb.player.single() else { return };
     let now = kb.turns.turn_number();
     let (keys, binds) = (&kb.keys, *kb.binds);
     if let Some(dir) = keys.direction(binds.walk) {
@@ -135,14 +127,6 @@ pub fn player_input(mut kb: Keyboard, reach: Reach, mut intents: PlayerIntents) 
                 intents.throws.write(AimThrow { user: me, item });
             }
             None => kb.log.muted("You have nothing to throw.", now),
-        }
-    } else if keys.just_pressed(binds.set_charge) {
-        let here = on.map_or(MapId::SURFACE, |m| m.0);
-        let beside = reach.consoles.iter().any(|(p, m)| m.map_or(MapId::SURFACE, |m| m.0) == here && geometry::is_adjacent(at.0, p.0));
-        if beside {
-            intents.charges.write(Intent::new(me, SetCharge));
-        } else {
-            kb.log.muted("There is no console here to set a charge on.", now);
         }
     }
 }
@@ -208,29 +192,20 @@ mod tests {
         assert_eq!(asked, vec![blade]);
     }
 
+    /// The whole victory path through the real keys: walking into the
+    /// console sets the charge, because a bump into a prop that offers one
+    /// thing is that offer taken up; the pick opens, Down and Enter take
+    /// the second upgrade, and the run is won with it fitted.
     #[test]
-    fn e_away_from_a_console_says_so_and_spends_no_turn() {
-        let mut app = crate::testing::headless(RunSeed(5));
-        app.add_plugins(KeyScriptPlugin);
-        crate::testing::settle(&mut app);
-        let before = crate::testing::clock(&app);
-        press(&mut app, KeyCode::KeyE);
-        assert!(said(&app, "There is no console here to set a charge on."));
-        assert_eq!(crate::testing::clock(&app), before);
-    }
-
-    /// The whole victory path through the real keys: `e` beside the
-    /// console sets the charge, the pick opens, Down and Enter take the
-    /// second upgrade, and the run is won with it fitted.
-    #[test]
-    fn e_beside_the_console_then_down_and_enter_on_the_pick_wins_the_run_with_uplink() {
+    fn walking_into_the_console_then_down_and_enter_on_the_pick_wins_the_run_with_uplink() {
         let mut app = crate::testing::headless(RunSeed(2));
         app.add_plugins(KeyScriptPlugin);
         let me = crate::testing::beside_the_console(&mut app);
         crate::testing::settle(&mut app);
-        press(&mut app, KeyCode::KeyE);
+        let into_it = crate::testing::key_toward_the_console(&app, me);
+        press(&mut app, into_it);
         crate::testing::settle(&mut app);
-        assert!(crate::testing::quest_done(&app, "first_charge"), "e set the charge");
+        assert!(crate::testing::quest_done(&app, "first_charge"), "walking into it set the charge");
         let pick = app.world().resource::<Modals>().get(crate::upgrades::MODAL).unwrap();
         assert!(app.world().resource::<Modals>().is_top(pick), "and the pick is up");
 

@@ -16,8 +16,8 @@
 //! `main.rs` cuts for them, which a headless test has no screen to cut.
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
-use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, ResolveSet, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddAction, AddSound};
+use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, Turn, TurnSet};
+use rl_engine::rl_bevy::{AddSound, AddVerb, PropSet, PropsPlugin, RemainsPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, ViewSet};
 
 /// Foundry's own systems: the run's start, and every reaction a task
@@ -27,6 +27,17 @@ pub struct FoundryPlugin;
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(NewRun, crate::run::start);
+        // Props and remains: the crates, the cable, the console and the
+        // wreck a droid leaves. `PropsPlugin` owns what a prop is and does;
+        // Foundry says where one stands, what goes in a container, and that
+        // a wreck is worth opening.
+        app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
+
+        app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
+        // In the engine's own filling stage, so what goes into a crate
+        // lands in the frame the crate was put down: the engine asks in
+        // `PropSet::Stock` and a game answers in `PropSet::Fill`.
+        app.add_systems(Update, crate::props::fill_containers.in_set(PropSet::Fill));
         // The alarm is a sound of Foundry's own, declared once so
         // `sound_alarm` finds it by name.
         app.add_sound(crate::droids::ALARM_SOUND);
@@ -73,13 +84,26 @@ impl Plugin for FoundryPlugin {
         // whichever order the executor ran the tellers in.
         app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().after(crate::heat::heat_on_struck).in_set(TurnSet::React));
         // A deck fills the moment it is first entered, the way delve's own
-        // floors do.
-        app.add_systems(Turn, crate::droids::populate_deck.in_set(TurnSet::React));
-        // A deck's loot scatters the same moment, from its own stream
-        // (`foundry.scatter`); unordered against `populate_deck`, which
-        // reads the same `PlaceEntered` through its own cursor and never
-        // shares a tile-claiming concern with an item.
-        app.add_systems(Turn, crate::loot::scatter_on_arrival.in_set(TurnSet::React));
+        // floors do: its droids, then its props, then its loot, each from
+        // its own stream and each reading the same `PlaceEntered` through
+        // its own cursor.
+        //
+        // Props before loot, because loot lands where nothing stands: an
+        // item under a crate is an item nothing can pick up.
+        //
+        // Chained, though no two of them share a tile-claiming concern:
+        // three systems that all spawn, left unordered, queue their
+        // commands in whatever order they finish in, and the entities come
+        // out with different ids from one run to the next. Nothing in the
+        // game plays differently for it, but `tests/fingerprint.rs` hashes
+        // a run by spawn order, and a tripwire that flickers is worse than
+        // no tripwire. This is the order the deck is built in.
+        app.add_systems(
+            Turn,
+            (crate::droids::populate_deck, crate::props::place_on_arrival, crate::mission::spawn_console_on_arrival, crate::loot::scatter_on_arrival)
+                .chain()
+                .in_set(TurnSet::React),
+        );
         // Whatever a kill's kind carries falls where it died, from
         // `Drops` rather than the combat stream a kill's own dice came
         // from. Needs no ordering against `process_deaths`
@@ -113,8 +137,10 @@ impl Plugin for FoundryPlugin {
         // `droids::populate_deck` above: none of the three shares a
         // tile-claiming concern with either of the others.
         app.add_systems(Turn, crate::mission::spawn_console_on_arrival.in_set(TurnSet::React));
-        app.add_action::<crate::mission::SetCharge>();
-        app.add_systems(Turn, crate::mission::resolve_set_charge.in_set(ResolveSet::Act));
+        // The console is a prop, and its verb is Foundry's: declared once,
+        // answered in `React` like every other reaction to a turn.
+        app.add_verb(crate::mission::CHARGE);
+        app.add_systems(Turn, crate::mission::answer_charge.in_set(TurnSet::React));
         // A game's reaction to the mission finishing, not to a turn
         // itself: an ordinary `Update` system, the way Corsair's own
         // `narrate_quests` is, reading `QuestChange` one frame behind the

@@ -1,7 +1,7 @@
 //! Every registry the engine's subsystems read, in one resource.
 //!
-//! Damage kinds, factions, stats, statuses, item tags, equipment slots and
-//! gases are content: a game fills them, and combat, statuses, abilities,
+//! Damage kinds, factions, stats, statuses, item tags, equipment slots,
+//! gases and props are content: a game fills them, and combat, statuses, abilities,
 //! items, gas and the panels read them. They live once, here, rather than in a
 //! resource per subsystem the game copies its own tables into, which is how
 //! two copies of one registry come to disagree about what an id means.
@@ -13,6 +13,7 @@
 use bevy::prelude::*;
 use rl_rules::damage::DamageKind;
 use rl_rules::faction::FactionDef;
+use rl_rules::prop::PropDef;
 use rl_rules::{GasDef, Names, Registry, SlotDef, StatDef, StatusDef, TagDef};
 
 /// Every registry the engine reads, filled by the game before play begins.
@@ -56,6 +57,9 @@ pub struct Registries {
     /// The gases that can hang in the air, which name statuses and so are
     /// loaded after them.
     pub gases: Registry<GasDef>,
+    /// The props that can stand on a map, which name tags and so are
+    /// loaded after them.
+    pub props: Registry<PropDef>,
 }
 
 impl Registries {

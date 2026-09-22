@@ -10,7 +10,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
   `Fuel` reports `LightEvent::BurntOut`.
 - **Worked examples** `heist`, where wall lamps are the only light, snuffing one is how you cross a room, and the watch light them again.
   `delve` below the Maw: a brand that can be smothered, a torch to set down, and `v` to see the light as digits.
-- **Design** `docs/design/lighting.md`.
+- **Design** [`docs/design/lighting.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/lighting.md).
 
 ## Stealth
 
@@ -20,7 +20,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
   A monster that has not noticed you does not act on you, one that loses you searches where it last saw you, and `Watchers` answers who is watching whom for the panels.
 - **Worked examples** `heist`: a thief the watch have to notice, a pebble that draws them to the wrong corner, and a shout that brings the rest.
   `delve` is built around it and Corsair's caves use it.
-- **Design** `docs/design/stealth.md`.
+- **Design** [`docs/design/stealth.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/stealth.md).
 
 ## Abilities
 
@@ -30,7 +30,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You get** a key that writes `AimAt`, a cursor the engine opens, a preview of what the shot would cover, and the turn spent.
   An item that `Grants` an ability lends it to whoever carries it, and a `Charge` cost is spent from the item, so a potion is a line of RON.
 - **Worked examples** `delve` has five, `corsair` four, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
-- **Design** `docs/design/abilities.md`.
+- **Design** [`docs/design/abilities.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/abilities.md).
 
 ## Statuses, stats and gear
 
@@ -109,7 +109,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 - **Two presenters over one view**: `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same log, and neither knows the other exists.
 - **The forecast** in the look cursor is not the panel's arithmetic. `rl_rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
 
-`examples/tutorial/src/bin/step10_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and `docs/design/ui.md` is why it is shaped that way.
+`examples/tutorial/src/bin/step10_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and [`docs/design/ui.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/ui.md) is why it is shaped that way.
 
 ## Testing without a window
 
@@ -150,10 +150,18 @@ A tool that needs only one of them can depend on that crate alone and never comp
 | `delve` | Five floors of a beached whale, no surface at all; lighting, stealth and five knacks; `floors.rs` is the whole map builder |
 | `corsair` | An open-world pirate roguelike with a pirate's abilities, built only on the public API |
 | `heist` | Three floors of a counting house in the dark; stealth and light end to end, with a score to carry out |
+| `foundry` | Three decks of a droid foundry; combat depth, with guns that run hot or dry, droids that shoot back, and a probe that shouts for them |
 
 ## Reading further
 
-- `docs/OVERVIEW.md`, the inventory of what exists and what does not.
-- `docs/PLAN.md`, why, decision by decision.
-- `docs/design/`, one file per subsystem: how it works and why it is shaped that way.
-- `AGENTS.md`, the rules the build enforces and the rules review enforces.
+- [`docs/OVERVIEW.md`](https://github.com/rudehn/rl-engine/blob/main/docs/OVERVIEW.md), the inventory of what exists and what does not.
+- [`docs/PLAN.md`](https://github.com/rudehn/rl-engine/blob/main/docs/PLAN.md), why, decision by decision.
+- [`docs/design/`](https://github.com/rudehn/rl-engine/tree/main/docs/design), one file per subsystem: how it works and why it is shaped that way.
+  Nine of them, and the five this chapter has not sent you to already are
+  [fields](https://github.com/rudehn/rl-engine/blob/main/docs/design/fields.md) (fire and gas),
+  [minds](https://github.com/rudehn/rl-engine/blob/main/docs/design/minds.md) (how a non-player decides),
+  [noise](https://github.com/rudehn/rl-engine/blob/main/docs/design/noise.md) (what a sound is and who hears it),
+  [props](https://github.com/rudehn/rl-engine/blob/main/docs/design/props.md) (crates, levers, containers and traps) and
+  [remains](https://github.com/rudehn/rl-engine/blob/main/docs/design/remains.md) (what is left where something died).
+- [`docs/TODO.md`](https://github.com/rudehn/rl-engine/blob/main/docs/TODO.md), the work that has been found and not started, if you would rather build the engine than a game on it.
+- [`AGENTS.md`](https://github.com/rudehn/rl-engine/blob/main/AGENTS.md), the rules the build enforces and the rules review enforces.

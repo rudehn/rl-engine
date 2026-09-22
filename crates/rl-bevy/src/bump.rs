@@ -31,6 +31,7 @@ use rl_rules::Relation;
 use crate::combat::{Attack, CombatRules, Faction, Health};
 use crate::components::{MyTurn, Position, Viewshed};
 use crate::doors::Open;
+use crate::props::{Interact, OfferedHere, Prop};
 use crate::turn::{Action, Intent, Occupancy, Resolution, Step, corner_ok};
 use crate::world::WorldMap;
 
@@ -112,6 +113,11 @@ pub struct Way<'w, 's> {
     bumps: Option<Res<'w, BumpRules>>,
     bumpers: Query<'w, 's, (&'static Position, Option<&'static Faction>), With<MyTurn>>,
     standing: Query<'w, 's, Option<&'static Faction>, With<Health>>,
+    /// What is offered here, when props are in play at all. `None` in a
+    /// game without [`PropsPlugin`](crate::props::PropsPlugin), and the
+    /// prop branch below is then dead code rather than a special case.
+    offered: Option<Res<'w, OfferedHere>>,
+    props: Query<'w, 's, (), With<Prop>>,
 }
 
 /// What a bump writes.
@@ -121,6 +127,7 @@ pub struct Alternates<'w> {
     opens: MessageWriter<'w, Intent<Open>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
     swaps: MessageWriter<'w, Intent<Swap>>,
+    interacts: MessageWriter<'w, Intent<Interact>>,
     bumped: MessageWriter<'w, Bumped>,
 }
 
@@ -135,6 +142,22 @@ pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: 
         let Ok((pos, side)) = way.bumpers.get(actor) else { continue };
         let dir = intent.action.0;
         let target = pos.0 + dir.offset();
+        // A prop in the way that offers one thing and nothing else: walking
+        // into a crate opens it, the way walking into a door opens that.
+        // Several offers are a question a walk key cannot answer, so the
+        // bump comes to nothing and says so: whoever shows screens can ask
+        // it from the `Bumped` that follows.
+        match way.offers_at(actor, target) {
+            Offered::One(offer) => {
+                out.interacts.write(Intent::new(actor, Interact { prop: offer.prop, verb: offer.verb }));
+                continue;
+            }
+            Offered::Several(prop) => {
+                out.bumped.write(Bumped { actor, into: prop });
+                continue;
+            }
+            Offered::None => {}
+        }
         // Whoever stands there and can be struck, by the rule the attack
         // resolver strikes by: alive, with health to lose.
         let foe = way.occupancy.at(target).iter().copied().find(|other| way.standing.contains(*other));
@@ -160,6 +183,27 @@ pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: 
                 out.steps.write(Intent::new(actor, Step(dir)));
             }
         }
+    }
+}
+
+/// What a prop in the way offers whoever walked into it.
+enum Offered {
+    /// One thing, which the bump comes to.
+    One(crate::props::Offer),
+    /// More than one, which is a question rather than an action.
+    Several(Entity),
+    /// Nothing, or no prop there at all.
+    None,
+}
+
+impl Way<'_, '_> {
+    /// What a prop standing in `target` offers `actor`.
+    fn offers_at(&self, actor: Entity, target: Point) -> Offered {
+        let Some(offered) = self.offered.as_deref() else { return Offered::None };
+        let Some(prop) = self.occupancy.at(target).iter().copied().find(|e| self.props.contains(*e)) else { return Offered::None };
+        let mut open = offered.open_to(actor).filter(|o| o.prop == prop);
+        let Some(first) = open.next().copied() else { return Offered::None };
+        if open.next().is_none() { Offered::One(first) } else { Offered::Several(prop) }
     }
 }
 

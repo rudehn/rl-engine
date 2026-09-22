@@ -147,9 +147,9 @@ impl Plugin for ScrollbackPanel {
     fn finish(&self, app: &mut App) {
         // Declared once the game has declared its own, so the controls
         // screen lists the game's groups first.
+        // Only the key that opens it: scrolling and filtering are written
+        // along its own bottom border.
         app.add_control("Log", "read the whole log", EngineKey::OpenLog);
-        app.add_control("Log", "scroll it", EngineKey::ScrollLog);
-        app.add_control("Log", "filter it by tone", EngineKey::FilterLog);
     }
 }
 

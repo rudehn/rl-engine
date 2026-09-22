@@ -17,6 +17,9 @@
 //! - [`ability`]: what an actor can spend a turn on besides a step and a
 //!   swing, as data: a shape, costs, requirements and a list of effects
 //!   the layer above resolves.
+//! - [`prop`]: what stands on a map that is neither an actor nor an item,
+//!   as data: a look, what it offers, what it holds, what sets it off and
+//!   how hard it is to spot.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
 //! - [`events`]: facts, counters and quests as data over what happened.
 //! - [`balance`]: threat scoring and the spawn-band report, so content is
@@ -48,6 +51,7 @@ pub mod fire;
 pub mod forecast;
 pub mod gas;
 pub mod names;
+pub mod prop;
 pub mod stats;
 pub mod status;
 
@@ -67,6 +71,7 @@ pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
 pub use gas::{Breath, GasDef, GasId};
 pub use names::{NameRef, Names};
+pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, TriggerDef, TriggerOn};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 
@@ -91,6 +96,7 @@ pub mod prelude {
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
     pub use crate::gas::{Breath, GasDef, GasId};
     pub use crate::names::{NameRef, Names};
+    pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, TriggerDef, TriggerOn};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 }

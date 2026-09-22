@@ -61,16 +61,21 @@ pub struct Sighting {
 /// What a sighting is read off.
 type Seen = (Entity, &'static Position, &'static Name, Option<&'static OnMap>, Has<Actor>);
 
+/// What may be listed: something drawn, still alive, and not a prop
+/// nobody has spotted.
+type Sightable = (Without<Dead>, With<Glyph>, Without<Hidden>);
+
 /// The list of what the player can see, borrowed as a system parameter.
 ///
 /// Something needs a [`Name`] and a [`Glyph`] to be on it, the same rule
 /// every row in a view follows, so the list never stops on a thing no
-/// panel could name.
+/// panel could name. A hidden prop is left out until it is spotted, which
+/// is the whole of what hidden means.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct InSight<'w, 's> {
     map: Res<'w, WorldMap>,
     player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed), With<Player>>,
-    seen: Query<'w, 's, Seen, (Without<Dead>, With<Glyph>)>,
+    seen: Query<'w, 's, Seen, Sightable>,
 }
 
 impl InSight<'_, '_> {

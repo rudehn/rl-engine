@@ -130,7 +130,7 @@ pub fn registries() -> Registries {
     ])
     .unwrap();
     let statuses = Registry::from_defs(vec![StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") }]).unwrap();
-    Registries {
+    let mut registries = Registries {
         damage_kinds,
         statuses,
         factions: Registry::from_defs(vec![FactionDef::new("commando"), FactionDef::new("droids"), FactionDef::new("vermin")]).unwrap(),
@@ -145,7 +145,11 @@ pub fn registries() -> Registries {
         ])
         .unwrap(),
         ..Registries::default()
-    }
+    };
+    // Props name the tags above, so they are loaded once those exist, the
+    // way the statuses and the armory are.
+    registries.props = crate::props::load(&registries);
+    registries
 }
 
 #[cfg(test)]
@@ -181,7 +185,7 @@ mod tests {
             ("blaster carbine", bolt),
             ("ion pistol", Some(('~', Rgb::new(89, 166, 255)))),
             ("slug pistol", Some(('o', Rgb::new(242, 204, 115)))),
-            ("line droid", bolt),
+            ("line droid", None),
             ("probe droid", None),
             ("heavy droid", bolt),
         ];

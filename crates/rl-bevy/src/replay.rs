@@ -136,7 +136,7 @@ mod tests {
                 Pressed { clock: 100, keys: vec![KeyCode::KeyH], shift: false },
             ],
         };
-        let dir = std::env::temp_dir().join("rl-recording-round-trip");
+        let dir = std::env::temp_dir().join(format!("rl-recording-round-trip-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("run.ron");
         recording.save(&path).unwrap();

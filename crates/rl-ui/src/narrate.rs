@@ -79,6 +79,13 @@ pub enum Phrase {
     TakesFromStatus,
     /// You killed someone.
     YouKill,
+    /// You broke a prop: a crate, a barrel, a lamp. Nothing is killed
+    /// that was never alive.
+    YouDestroy,
+    /// Somebody else broke one.
+    Destroys,
+    /// One broke with nobody to credit.
+    IsDestroyed,
     /// Someone killed someone else.
     Kills,
     /// Someone died of no one in particular.
@@ -354,11 +361,18 @@ pub struct Witness<'w, 's> {
     positions: Query<'w, 's, &'static Position>,
     weapons: Weapons<'w, 's>,
     holding: Query<'w, 's, (), With<MyTurn>>,
+    props: Query<'w, 's, (), With<rl_bevy::Prop>>,
 }
 
 impl Witness<'_, '_> {
     fn is_you(&self, e: Entity) -> bool {
         self.player.single().is_ok_and(|(me, _, _)| me == e)
+    }
+
+    /// Whether `e` is a prop rather than something that was alive: a
+    /// crate, a lamp, a barrel. What breaks is destroyed, not killed.
+    fn is_a_prop(&self, e: Entity) -> bool {
+        self.props.contains(e)
     }
 
     /// Whether `e` holds this pass's turn: the one that looked round and
@@ -537,11 +551,17 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         rows.push(said);
     }
     for d in heard.deaths.read() {
-        let mut said = match (d.was_player, d.credit) {
-            (true, _) => say(Phrase::YouDie, Some(d.entity), None),
-            (false, Some(by)) if witness.is_you(by) => say(Phrase::YouKill, Some(by), Some(d.entity)),
-            (false, Some(by)) => say(Phrase::Kills, Some(by), Some(d.entity)),
-            (false, None) => say(Phrase::Dies, Some(d.entity), None),
+        // A prop is broken, not killed: nothing dies that was never alive,
+        // and a log that says a supply crate was killed reads as a bug.
+        let thing = witness.is_a_prop(d.entity);
+        let mut said = match (d.was_player, d.credit, thing) {
+            (true, _, _) => say(Phrase::YouDie, Some(d.entity), None),
+            (false, Some(by), false) if witness.is_you(by) => say(Phrase::YouKill, Some(by), Some(d.entity)),
+            (false, Some(by), true) if witness.is_you(by) => say(Phrase::YouDestroy, Some(by), Some(d.entity)),
+            (false, Some(by), false) => say(Phrase::Kills, Some(by), Some(d.entity)),
+            (false, Some(by), true) => say(Phrase::Destroys, Some(by), Some(d.entity)),
+            (false, None, false) => say(Phrase::Dies, Some(d.entity), None),
+            (false, None, true) => say(Phrase::IsDestroyed, Some(d.entity), None),
         };
         // The dead have left their cell already; the event says where.
         said.at = Some(d.at);
@@ -609,7 +629,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 49] = [
+        let table: [(Phrase, &str, ToneId); 52] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -622,6 +642,9 @@ impl Default for Phrasebook {
             (YouTakeFromStatus, "You take {n} from {named}.", Tones::BAD),
             (TakesFromStatus, "{Who} takes {n} from {named}.", Tones::TEXT),
             (YouKill, "You kill {whom}!", Tones::KILL),
+            (YouDestroy, "You destroy {whom}.", Tones::KILL),
+            (Destroys, "{Who} destroys {whom}.", Tones::TEXT),
+            (IsDestroyed, "{Who} is destroyed.", Tones::TEXT),
             (Kills, "{Who} kills {whom}.", Tones::TEXT),
             (Dies, "{Who} dies.", Tones::GOOD),
             (YouDie, "You die.", Tones::BAD),
@@ -902,6 +925,24 @@ mod tests {
         let said = lines(&stage);
         assert!(said.contains(&("The rat is no more.".to_string(), Tones::GOOD)), "{said:?}");
         assert!(!said.iter().any(|(t, _)| t == "The rat dies."), "not spoken twice");
+    }
+
+    /// Nothing dies that was never alive: a crate the player breaks is
+    /// destroyed, and the word "kill" never appears.
+    #[test]
+    fn a_prop_the_player_breaks_is_destroyed_and_never_killed() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let at = stage.at.offset(1, 0);
+        // A crate stands there: a prop with health, which is all it takes to
+        // be broken, and no faction, since a crate takes no side.
+        let supply = stage.app.world_mut().spawn((rl_bevy::Prop, Blocks, Position(at), Health::full(1), Name::new("supply crate"))).id();
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Attack(supply)));
+        stage.tick();
+        let said = lines(&stage);
+        assert!(said.iter().any(|(t, _)| t == "You destroy the supply crate."), "destroyed: {said:?}");
+        assert!(!said.iter().any(|(t, _)| t.contains("kill")), "and never killed: {said:?}");
     }
 
     /// A blow out of the player's sight is a row and not a line, unless the

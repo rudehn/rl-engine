@@ -4,7 +4,8 @@ What exists in the engine, by tier and crate, and what does not yet.
 This page is kept current: every slice that adds or removes a system updates it in the same commit.
 `docs/PLAN.md` holds the reasoning and the milestone history; this page holds only the inventory.
 
-Last updated: 2026-09-17, after weapon speed and prefab facings.
+`git log -1 --format=%cs docs/OVERVIEW.md` says when it was last touched; there is no stamp here to drift from it.
+`scripts/check-overview.sh` fails the build when a plugin, a design doc or an example is missing below, so the inventory cannot quietly fall behind the code.
 
 ## The shape
 
@@ -92,6 +93,31 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 
 ### rl-bevy
 
+Every plugin at a glance, for a reader coming back to it.
+"Needs" lists what a plugin cannot work without: the plugins it checks for in `finish`, then, after the semicolon, the resources it declares with `app.needs`, whose absence is reported with how to make one when play begins.
+The prose below the table is the why.
+
+| Plugin | Needs | What it adds | What it reports |
+| --- | --- | --- | --- |
+| `CorePlugin` | `WorldMap` | the turn loop and its schedules, the map, `Knowledge`, places and warps, doors, the bump redirect, the action registry, cues and `TurnHold` | `ActionDone`, `ActionRefused`, `TurnEnd`, `Stepped`, `Cued`, `RunOver`, `Restart`, `WarpRequest`, `MapChanged`, `PlaceEntered`, `DoorEvent`, `Bumped`, `Swapped` |
+| `FovPlugin` | `CorePlugin` | every stale `Viewshed` recast, and what a `RevealsMap` saw written into `Knowledge` | - |
+| `StreamingPlugin` | `CorePlugin`; `WorldRes`, `ChunkRulesRes` | the surface streamed a window at a time, with edit deltas kept per chunk | `ChunkLoaded` |
+| `FactsPlugin` | `CorePlugin` | the fact ledger, named counters and the quest tracker | `Happened`, `QuestChange` |
+| `CombatPlugin` | `CorePlugin`; `CombatRules`, `Registries` | `Health`, `Armor`, resists, `Loadout`, melee and ranged attacks, the damage pipeline, `AirborneShots` | `DamageEvent`, `DamageDealt`, `DeathEvent`, `Struck` |
+| `MindsPlugin` | `FovPlugin` | `Mind`, `Perception`, `Profile`, `Intelligence`, `Thinking` and the perceive stage, `FlowFields`, the `Attack` action, and the one system that turns a decision into an act | `MindChose` |
+| `StatusPlugin` | `CombatPlugin`; `Registries` | `Afflicted` and `StatBlock` on every actor, per-turn ticks and cures | `Afflict`, `Cure`, `StatusEvent` |
+| `ItemsPlugin` | `CorePlugin` | the ground, bags and slots, stacks, tags, enchantments, `StatBlock`, `fold_gear`, `GearScore` | `ItemEvent` |
+| `ThrowingPlugin` | `ItemsPlugin`, `CombatPlugin` | `Throwable`, the `Throw` action, `flight`, `AirborneThrows` | through `ItemEvent::Thrown` |
+| `AbilitiesPlugin` | `CombatPlugin`; `Abilities`, `Registries` | `Known`, `Pools`, `Cooldowns`, `Charges`, the `Use` action, `Offered`, `Bystanders`, the seven engine effects, `Airborne` | `AbilityEvent` |
+| `LightingPlugin` | `CorePlugin` | `Lighting` (dark), `LightSource`, the static and dynamic layers, `Fuel`, `DarkSight` | `LightEvent` |
+| `StealthPlugin` | `MindsPlugin` | `Notice`, `Stealth`, `Aware`, the roll to notice, the hiders taken out of a snapshot, and the trail it offers `Thinking` | `Noticed` |
+| `NoisePlugin` | `CorePlugin` | `Sounds`, `Hearing`, `Footfall`, the flood in `TurnSet::Listen`, `Heard` | `MakeNoise`, `NoiseHeard` |
+| `GasPlugin` | `CorePlugin`; `Registries` | `Gases` per map, `Vents`, the diffusion step, the map's veil, the `Emit` effect | `Release`, `Breathed` |
+| `FirePlugin` | `CorePlugin`; `FireRules`, `Registries`, `Seed` | `Fire` per map, `Flammable`, `Burning`, the spread step, `Scorched`, the `Ignite` effect | `Kindle`, `FireEvent` |
+| `PropsPlugin` | `CorePlugin`; `Registries` | `Verbs`, `OfferedHere`, the `Interact` action, `Container` on a prop, `Take`, triggers with `Fired`, hidden props with the roll that spots them, `PropRng` | `Interacted`, `FillContainer`, `Triggered`, `Spotted` |
+| `RemainsPlugin` | `CombatPlugin` | `LeavesRemains`, `Remains`, `WasLiving`, `Snapshot::remains` | `RemainsLeft` |
+| `KeyScriptPlugin` | - | `press`, keys played the way a keyboard does, for a headless test | - |
+
 - One plugin per subsystem, each opt-in: `CorePlugin` holds the loop, the map and its places; field of view, combat, minds, statuses, items, lighting, streaming and facts are added by name. A plugin says what it needs with `app.needs::<R>(plugin, hint)`, and on entering play one check lists every missing piece at once with how to make it, `CorePlugin`'s own `WorldMap` included, rather than a subsystem, or the whole frame, quietly doing nothing all run. A plugin that depends on another checks in `finish`, so the order a game lists its plugins in never matters, and a world built while play never began is warned about.
 - The engine-owned loop: a `Turn` schedule run as many passes per frame as it takes, input once per frame, refusals that cost nothing, stall recovery.
 - Replay: `Recording`, a run as its seed, its arguments and every frame's keys stamped with the turn clock they were read at, written as RON; `replay::args` and `replay::seed`, what a game reads its flags and seed through so a replay runs with the ones it was recorded under, `Seed::from_args` included.
@@ -125,9 +151,11 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - Every actor requires a `Speed`, normal unless the spawn says otherwise.
 - Stealth, opt-in by adding `StealthPlugin`: `Notice` on observers and `Stealth` on subjects, `Aware` remembering who has noticed whom, a roll to notice in `DecideSet::Notice` for the actor about to decide, waking on a blow in `TurnSet::React`, and a `Noticed` message on the flip; the minds act only on hiders they have noticed and search where they last saw them; the roll is from `StealthRng`, stealth's own stream, and works without combat, everyone being at odds where there are no sides.
 - Noise, opt-in by adding `NoisePlugin::new(NoiseRules)`: the engine's own actions make it, a step from `Stepped` (the move resolver's message for every step it lets through) as loud as the stepper's `Footfall` or the rule, a blow once per attacker where it stands, a door, and a thrown thing where it lands; a game writes a `MakeNoise` for anything else, with a `SoundId` interned by `Sounds` and `add_sound`; every noise of a pass flooded once in `TurnSet::Listen`, after the pass's reactions, over a square bounded by its loudness and clipped to the loaded window; a `NoiseHeard` for every listener with `Hearing` it reaches with enough left, the player included; and `Heard`, an `Awareness` of the loudest place each listener heard, aged in `DecideSet::Notice` and forgotten after its memory. A listener hears a place and never who made it, except that it does not hear itself, follows it as a trail unless it can see the cell, and stealth and hearing offer their trails to `Thinking::offer_trail`, which puts the freshest in `Snapshot::last_known`.
-- Lighting, opt-in by inserting `Lighting`: `LightSource` on a prop, an actor or an item, shed from the carrier once carried; static and dynamic layers recast only when their sources change; the map's `opacity_epoch` so an edit that changes what blocks sight refreshes light and every viewshed without anyone moving; `DarkSight`; `Fuel` ticked by the turn with `LightEvent::BurntOut`; the viewshed keeps its geometric `line` and its seen `visible`, and minds perceive along a line only what is lit, within their dark sight or adjacent.
+- Lighting, opt-in by adding `LightingPlugin`, which inserts a `Lighting` of its own, dark until the game says otherwise: `LightSource` on a prop, an actor or an item, shed from the carrier once carried; static and dynamic layers recast only when their sources change; the map's `opacity_epoch` so an edit that changes what blocks sight refreshes light and every viewshed without anyone moving; `DarkSight`; `Fuel` ticked by the turn with `LightEvent::BurntOut`; the viewshed keeps its geometric `line` and its seen `visible`, and minds perceive along a line only what is lit, within their dark sight or adjacent.
 - Gas, opt-in by adding `GasPlugin`: a field per gas per map in `Gases`, given off by `Release` and `Vents`, stepped every whole turn over what does not stop a thrown thing, written into the map's veil where thick enough so sight and light stop there, and breathed, as `Breathed` and the gas's status.
 - Fire, opt-in by adding `FirePlugin`: `Fire` per map, set alight by `Kindle` and by what is `Burning`, fed by burning tiles, `Flammable` things and gas that burns, stepped every whole turn from hashed rolls; burnt ground becomes the tile it leaves, whoever stands in it is `Scorched` and given `FireRules::inflicts`, and burning cells smoke and glow through `Lighting::set_glow`. `FireEvent` reports what the game answers. Minds will not step into fire.
+- Props, opt-in by adding `PropsPlugin`: what stands on a map that is neither an actor nor an item, as content. `PropDef` in a `props.ron` (look, whether it blocks, what breaks it, what it offers, what it holds, what sets it off, how hard it is to spot) loaded into `Registries::props`; `spawn_prop` puts one where the game says, and `rl-render`'s `dress_props` gives it the glyph its definition asks for, so nothing below the renderer names a colour. `Verbs` interns what an interaction is called, `open` and `search` being the engine's and `add_verb` a game's; `OfferedHere` is the gate, worked out in `DecideSet::Offer` for whoever holds the turn over what it stands on and stands beside, each offer carrying its cost and, when something is wanted, the tag that refuses it; `Interact { prop, verb }` is the one action, refused for free when the gate did not offer it, and `Interacted` is how a game answers a verb of its own in `TurnSet::React`. A bump into a prop offering exactly one thing comes to an interaction, beside the bump that comes to opening a door. A `Container` is `Inventory` on a prop, stocked by `FillContainer` (the engine rolls the counts from `PropRng`, the game spawns what it named), emptied through `Take`, which merges stacks the way the ground does, and marked `Emptied` when its definition says what an emptied one looks like, which `rl-render` then redresses it as. `Trigger` fires on `Entered`, read from `Stepped`, or on `Destroyed`, read from a prop's own `DeathEvent`, as many times as its `fires` says and counted in `Fired` on the prop; what it lands is engine effects, built from the registry on the first frame by `EffectKinds::build`, so a trap is data and a game answers `Triggered` only for what no effect can say. `Hidden { spot }` keeps a prop out of the map view and out of `InSight` until the player's per-turn roll from `PropRng` finds it, and a hidden trap still springs. `Snapshot::props` is `PropView { id, pos, side }` for everything in sight that is neither actor nor item, bodies included and unspotted props never, filled in `PerceiveSet::Annotate` and asking no wits. Props are saved by the engine itself, by definition name plus each one's own history. A prop with `health` is attacked and killed like anything else. `docs/design/props.md` is the reasoning.
+- Remains, opt-in by adding `RemainsPlugin` and, per actor, `LeavesRemains`: the dead actor is kept rather than despawned, with `WasLiving` taken off it (`Dead`, `Actor`, `Blocks`, `Health`, `Mind`, `Perception`, `Viewshed`) and `Remains { since, credit }` put on, so everything a game spawned it with is still on the same entity under the same save kind, and nothing of what died is copied or guessed at. A `RemainsLeft` for a game to answer in `TurnSet::React`, `Prop` on the body so it is seen, listed and offered verbs like anything else standing in a cell, `RemainsNaming` as the one template that names it (`"{what} remains"` by default, applied on conversion and again on restore), and `EntityState::remains` so a continued run lays them back down. The engine never removes them, never names them, and says nothing about what they are for; `docs/design/remains.md` is the reasoning.
 - `MapFields`, what fire and gas keep per map: the current map's field fitted to the window, every other map's set aside, and every one saved.
 - Facts fed to quests and counters after the frame.
 - Save exports for the scheduler, the world's edits and places, and knowledge.
@@ -154,8 +182,30 @@ Every panel splits three ways: a view (a resource of plain data), a collector (t
 The query is the half a game reuses; the drawing is the half it may replace or drop.
 Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 
+Which is why the view plugins are named here: a game that writes its own presenter over a view the engine already collects adds the view plugin itself, and needs it by name.
+
+| Presenter | View | View plugin |
+| --- | --- | --- |
+| `VitalsPanel` | `VitalsView` | `VitalsViewPlugin` |
+| `GearPanel` | `GearView` | `GearViewPlugin` |
+| `NearbyPanel` | `NearbyView`, `Focus` | `NearbyViewPlugin` |
+| `InspectPanel` | `InspectView`, `Focus` | `InspectViewPlugin` |
+| `TargetPanel` | `TargetView` | `TargetViewPlugin` |
+| `AbilityPanel` | `AbilityView` | `AbilityViewPlugin` |
+| `InventoryPanel` | `InventoryView` | `InventoryViewPlugin` |
+| `SheetPanel` | `SheetView` | `SheetViewPlugin` |
+| `ContainerPanel` | `ContainerView`, `OpenContainer` | `ContainerViewPlugin` |
+| `NarratorPlugin` | `NarrationView` | `NarrationViewPlugin` |
+| `LogPanel` | `MessageLog` | none; the log is `UiPlugin`'s |
+| `ScrollbackPanel` | `MessageLog`, `Scrollback` | none; a second presenter over the same log |
+| `ControlsPanel` | `Controls` | none; the registry is `UiPlugin`'s |
+| `GameMenuPanel` | `GameMenu`, `Ending`, `Obituary` | none; it composes the obituary itself |
+
 - `UiPlugin` owns the `MessageLog`, because a game writes to the log from its own systems whether or not it draws it: a headless test adds the plugin and has a log with no panel. A line may carry `Span`s, runs of its text in the colour of the thing they name, which the log strip and the scrollback draw through `readable`, lifting a dark colour toward the text colour until it clears the surface. `Tones::HIT` and `Tones::KILL` are the two built-in tones brighter than text, for the player's blows and kills. The log is cleared in `EndRun`.
 - The narrator: `NarrationView`, rows of `Said` (its `Words`, an engine `Phrase` or a game's own template and tone, who, whom, what, an amount, a registry name, where, and whether the player saw it), collected in `TurnSet::Record`, a phase of its own after every reaction and before cleanup, one pass at a time so a frame of many turns reads in the order they happened, a notice by the actor holding the turn read before what that actor then did; a game's own line, a `Tell` with a template, a tone and whom it names, written from inside the pass and collected after the pass's events as a row whose `Words` are the game's own; and `NarratorPlugin`, which speaks each row in `ViewSet::Speak` through a `Phrasebook` of one template and tone per phrase, split by perspective (`YouHit`, `HitsYou`, `OthersFight`, `YouKill`, `Dies`, `YouPickUp`, `Wields`, `OpensDoor`, `NoticesYou`, `YouUseOn`, `YouAreAfflicted`, `YourLightGoesOut`, and the rest), with names coloured as the things they name. A game rewords or silences any phrase, speaks the unseen or not, edits rows in `ViewSet::Annotate`, or reads the view itself.
+- `OffersPanel`: the screen that asks which of several things you meant, with `OffersView` behind it, kept by `OffersViewPlugin`. It opens itself when the interact key finds more than one offer in reach and when a bump into a prop that offers more than one is refused, walks its rows on the direction keys, takes the one picked out on confirm, and lists what cannot be taken up greyed with the reason in words. A row reads as the verb's registered name and the prop's own name, so the engine still invents no words.
+- `InteractKey`: the key that does what is here, for what a bump cannot reach: a body underfoot, a plate already found, a prop that does not block. It takes the one offer in reach, and where several are offered it opens `OffersPanel` to ask, or does nothing in a game with no such screen. `InteractKeys` binds it, `Enter` by default.
+- `ContainerPanel`: the screen onto what you opened, run end to end by the engine. It opens itself on the engine's `Interacted` with the `open` verb, the direction keys walk the rows, the cursors' confirm key takes the one picked out and `a` takes everything, and it closes on the cursors' close key or as soon as the container is out of reach. Take-only. `ContainerView` is its view, filled from `OpenContainer`, which is the screen's own state rather than the world's.
 - `GameMenuPanel`: the menu on Escape while playing, and the screen a run ends on, opened by the engine on `EngineState::Over` under the game's words for death or victory with the seed, the turn and where the morgue file went. Back to the run, a new run, the same seed again, or quit; the first two runs are one `Restart` each. On the run's end it composes the `Obituary` from the `Ending`, the sheet when there is one, the last lines of the log and whatever sections the game pushed, and files it in the `Morgue`.
 - Tones: a semantic role interned as a `ToneId` over a `Palette` a game extends with roles the engine never heard of, with `add_tone(name, colour)` declaring and colouring one while the app is built, and a warning by name at startup for any left without a colour. No widget takes a `Color`.
 - Facets: `Facet { key, text, tone }` pushed onto a row in `ViewSet::Annotate`, so a game's vocabulary reaches a panel without an engine type learning a word.
@@ -189,6 +239,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 
 ### rl-overworld
 
+- `OverworldPlugin`, the world map as a screen, opt-in like any other.
 - Says what it needs: no layout, no screen, and it says so when play begins rather than drawing nothing.
 - Open or closed on the shared `Modals` stack, so it and a game's own screens cannot both think they own the arrow keys.
 - The world drawn from its bands with rivers, roads, discovered sites and the player.
@@ -214,7 +265,7 @@ Opt-in is per panel, and a presenter pulls its view plugin in behind it.
 
 ## The guide
 
-`docs/guide` is an mdBook that builds a small roguelike, Warren, in six steps, each playable in the browser: a map on screen, walking, sight and memory, monsters, blows, items, floors, content in RON, and an action of the game's own, ending with the headless tests.
+`docs/guide` is an mdBook that builds a small roguelike, Warren, in nine chapters, each playable in the browser: a map on screen and walking, sight and memory, blows and the log, things to carry and minds, a knack, two floors, content in RON, an action of the game's own, and where to go next.
 Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter's code is compiled by CI and can be played on its own; the chapters quote the sources through mdBook anchors rather than restating them, and `scripts/check-guide.sh` fails the build if an anchor, an image or a table-of-contents entry stops resolving.
 
 ## The dungeon: the Hollow Whale

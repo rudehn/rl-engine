@@ -39,6 +39,8 @@ jobs:
         run: scripts/check-tiers.sh
       - name: the guide's links into the code
         run: scripts/check-guide.sh
+      - name: the inventory keeps up with the code
+        run: scripts/check-overview.sh
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: tests

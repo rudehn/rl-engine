@@ -85,8 +85,19 @@ pub trait AddStream {
     fn add_stream<S: Stream>(&mut self, plugin: &'static str) -> &mut Self;
 }
 
+/// Present once `S` is being derived, so a second plugin asking for the
+/// same stream adds no second deriving system. Two subsystems may honestly
+/// want the same stream: a trap and an ability land the same effects, and
+/// those effects roll from one.
+#[derive(Resource)]
+struct Derived<S: Stream>(std::marker::PhantomData<S>);
+
 impl AddStream for App {
     fn add_stream<S: Stream>(&mut self, plugin: &'static str) -> &mut Self {
+        if self.world().contains_resource::<Derived<S>>() {
+            return self;
+        }
+        self.insert_resource(Derived::<S>(std::marker::PhantomData));
         self.needs::<Seed>(plugin, "`Seed(RunSeed(n))`, the run's seed every stream derives from, or `Seed::from_args()` for `--seed`")
             // Not gated on play: a seed inserted before the app runs, or by a
             // startup system continuing a save, is in place before the first

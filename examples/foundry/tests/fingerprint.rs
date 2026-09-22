@@ -57,14 +57,18 @@ fn fingerprint(app: &mut App) -> u64 {
 const WALK: [Direction; 8] =
     [Direction::East, Direction::East, Direction::South, Direction::South, Direction::West, Direction::West, Direction::North, Direction::North];
 
-/// The commando with its starting hand blaster, and health enough to last the run, who
-/// shoots the nearest droid in sight whenever there is one and walks the
-/// square otherwise, for `turns` of its own turns.
+/// A commando handed a hand blaster, and health enough to last the run,
+/// who shoots the nearest droid in sight whenever there is one and walks
+/// the square otherwise, for `turns` of its own turns.
+///
+/// The gun is handed over here rather than come by honestly: a real run
+/// starts empty-handed and may walk deck one without finding a weapon at
+/// all, and a fingerprint of a walk pins nothing about combat.
 fn run(seed: u64, turns: usize) -> u64 {
     let mut app = foundry::testing::headless(RunSeed(seed));
-    // The hand blaster the commando starts with, as a real run does.
     foundry::testing::settle(&mut app);
     let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+    foundry::testing::equip_new(&mut app, player, "hand blaster");
     app.world_mut().entity_mut(player).insert(Health::full(400));
     let mut taken = 0;
     let mut shots = 0;
@@ -109,7 +113,7 @@ fn fingerprint_tripwire_a_scripted_two_hundred_turn_run_on_seed_seven_comes_to_t
     assert_eq!(first, run(7, 200), "one seed, two runs, one fingerprint");
     assert_ne!(first, run(8, 200), "another seed is another run");
     assert_eq!(
-        first, 16_098_196_171_125_892_784,
+        first, 6_757_679_016_417_713_241,
         "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say so in the changelog"
     );
 }

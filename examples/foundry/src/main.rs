@@ -40,6 +40,8 @@ struct Screen {
     controls: Rect,
     menu: Rect,
     choice: Rect,
+    chest: Rect,
+    here: Rect,
 }
 
 impl Screen {
@@ -71,6 +73,10 @@ impl Screen {
             menu: centred(44, 6, 12),
             // Three upgrades, a blank row, and what the one picked out does.
             choice: centred(60, 8, 7),
+            // What is in the crate, and the keys that take it.
+            chest: centred(46, 6, 14),
+            // What can be done here, when here is more than one thing.
+            here: centred(40, 10, 6),
         }
     }
 }
@@ -90,6 +96,12 @@ fn add_panels(app: &mut App, screen: &Screen) {
         TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
         AbilityPanel::new(screen.abilities).title("Abilities").called("abilities"),
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but dust."),
+        // What is inside a crate or a wreck, opened by walking into it or
+        // by the key that does what is here.
+        ContainerPanel::new(screen.chest).empty("Stripped already."),
+        // What can be done here, when walking into it would be a guess.
+        OffersPanel::new(screen.here).title("Here"),
+        InteractKey,
         // Every key `input::declare_controls` and the engine's screens
         // declare, with the hint that opens it in the rail's last row.
         ControlsPanel::new(screen.controls).hint(screen.hint),

@@ -178,6 +178,7 @@ fn registries() -> Registries {
         slots: Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap(),
         gases,
         damage_kinds,
+        ..Default::default()
     }
 }
 
@@ -786,9 +787,13 @@ mod tests {
         let (mut app, player) = settled(7);
         let crab = beside(&mut app, player, "stomach crab");
         let at = app.world().get::<Position>(player).unwrap().0;
-        // Somewhere five to seven steps' walk from the fight and out of its
-        // line, so what the rat learns it learns by ear. Walking there costs
-        // at least what the sound spends.
+        // Somewhere five to seven steps' walk from the fight and with no
+        // line to it at all, so what the rat learns it learns by ear:
+        // hearing does not follow a sound at a cell the listener can
+        // already see, and the player's own `in_line` is bounded by the
+        // player's sight range rather than by the walls, so a cell it
+        // "cannot see" may still have a clear line from the other end.
+        // Walking there costs at least what the sound spends.
         let post = {
             let map = app.world().resource::<WorldMap>();
             let sight = app.world().get::<Viewshed>(player).unwrap();
@@ -800,7 +805,18 @@ mod tests {
                 .flat_map(|y| (bounds.x..bounds.right()).map(move |x| Point::new(x, y)))
                 .find(|p| {
                     let steps = map.to_local(*p).and_then(|l| walk.value(l)).unwrap_or(i32::MAX);
-                    map.is_walkable(*p) && (500..=700).contains(&steps) && !sight.in_line(*p) && !app.world().resource::<Occupancy>().is_occupied(*p)
+                    map.is_walkable(*p)
+                        && (500..=700).contains(&steps)
+                        && !sight.in_line(*p)
+                        // Round a corner in fact, not only out of range:
+                        // nothing standing here sees the fight. In the
+                        // window's own coordinates, which is what `view` is
+                        // cast in.
+                        && !map
+                            .to_local(*p)
+                            .zip(map.to_local(at))
+                            .is_some_and(|(from, to)| rl_engine::rl_grid::fov::can_see(&view, from, to, 40))
+                        && !app.world().resource::<Occupancy>().is_occupied(*p)
                 })
                 .expect("a corner of the Maw within earshot")
         };
@@ -815,9 +831,16 @@ mod tests {
         let crab_at = app.world().get::<Position>(crab).unwrap().0;
         app.world_mut().write_message(Intent::new(player, Attack(crab)));
         app.update();
-        // Whichever blow arrived loudest: the player's, or the crab's back.
-        let heard = app.world().get::<Heard>(rat).and_then(|h| h.last_known());
-        assert!(heard == Some(at) || heard == Some(crab_at), "the rat heard the fight, and where: {heard:?}");
+        // It heard the fight: the flood reached it, round the corner, and
+        // gave it something to go and look at.
+        //
+        // That it is still carrying the cell is not what to assert on: the
+        // rat acts in this same pass, and hearing drops a trail to a cell
+        // the listener can see, so a rat that has already come round the
+        // corner has rightly forgotten what it heard. What it heard is
+        // read here, and where it goes is read below.
+        assert!(app.world().get::<Heard>(rat).is_some(), "the rat heard the fight");
+        let _ = crab_at;
         app.world_mut().entity_mut(crab).despawn();
         for _ in 0..3 {
             app.world_mut().write_message(Intent::new(player, Wait));

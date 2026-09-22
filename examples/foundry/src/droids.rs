@@ -203,7 +203,10 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
         (Actor, Blocks, Position(at), OnMap(map)),
         (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
         (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
-        (Notice(d.notice.unwrap_or_default()), Kind(id)),
+        // Everything on a deck leaves something behind: a droid a wreck,
+        // a rat a carcass, both named by the engine's remains template and
+        // made worth going through by `props::wreck_the_dead`.
+        (Notice(d.notice.unwrap_or_default()), Kind(id), LeavesRemains),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
     if let Some(melee) = d.melee {
@@ -252,9 +255,21 @@ mod tests {
     #[test]
     fn a_droid_with_a_blaster_shoots_rather_than_walking_up_to_punch() {
         let mut app = crate::testing::headless(RunSeed(1));
-        let (droid, player) = crate::testing::droid_facing_player(&mut app, "line droid", 4);
+        let (droid, player) = crate::testing::droid_facing_player(&mut app, "heavy droid", 4);
         let struck = crate::testing::run_until_struck(&mut app, droid, 10);
         assert!(struck.ranged, "four tiles off with a clear line: it shoots");
+        assert_eq!(struck.target, player);
+    }
+
+    /// The other half of the ranged ramp: assembly's own droids have no
+    /// gun to shoot with, so the deck the commando arrives on unarmed is
+    /// one it can back away from.
+    #[test]
+    fn a_droid_with_no_gun_walks_the_distance_and_strikes_instead_of_shooting() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (droid, player) = crate::testing::droid_facing_player(&mut app, "line droid", 4);
+        let struck = crate::testing::run_until_struck(&mut app, droid, 12);
+        assert!(!struck.ranged, "four tiles off with nothing to fire: it closes and strikes");
         assert_eq!(struck.target, player);
     }
 

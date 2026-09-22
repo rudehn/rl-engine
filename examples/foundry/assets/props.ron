@@ -1,0 +1,54 @@
+// What stands on Foundry's decks that is neither a droid nor a thing to
+// carry: the crates, the consoles, the loose cable, and what a droid
+// leaves when it stops working.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:      unique; the name the nearby rail and the look cursor show
+//   glyph:     one character
+//   color:     (r, g, b) in bytes, as abilities.ron writes a look
+//   layer:     optional; draw order among entities on one cell, default 1
+//   blocks:    optional; whether it stands in the way, default false
+//   health:    optional; what it takes to break it; absent, nothing can
+//   offers:    optional; [(verb:, time:, needs:, effects: [...])]
+//              verb is registered: "open" and "search" are the engine's,
+//              and Foundry adds "charge"; time is hundredths of a step
+//   container: optional; (contents: [(item, min, max)], locked: (needs:),
+//              opened: (glyph:, color:)) - the look it takes once emptied
+//   trigger:   optional; (on: Entered | Destroyed, fires:, effects: [...])
+//   hidden:    optional; (spot:) percent a turn to spot it while in sight
+#![enable(implicit_some)]
+[
+    // Supply crates stand in the stores. Two turns to lever open, and
+    // slugs are what a commando runs out of first.
+    (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true, health: 6,
+     container: (contents: [("slug", 4, 9)], opened: (glyph: '"', color: (r: 120, g: 105, b: 75))),
+     offers: [(verb: "open", time: 200)]),
+
+    // An armory locker: better than a crate, and cut open rather than
+    // levered, so it wants something with an edge.
+    (name: "armory locker", glyph: '&', color: (r: 205, g: 210, b: 220), blocks: true, health: 8,
+     container: (contents: [("slug", 0, 4), ("commando helmet", 0, 1), ("scrap plate", 0, 1)],
+                 locked: "weapon", opened: (glyph: '"', color: (r: 130, g: 135, b: 145))),
+     offers: [(verb: "open", time: 300)]),
+
+    // The reactor console: three turns to set the charge, and Foundry
+    // answers the verb itself, since no effect can report a fact.
+    (name: "reactor console", glyph: 'R', color: (r: 242, g: 166, b: 64), blocks: true,
+     offers: [(verb: "charge", time: 300)]),
+
+    // The same console once its charge is set: no offer, and it reads as
+    // done at a glance.
+    (name: "spent reactor console", glyph: 'R', color: (r: 120, g: 95, b: 55), blocks: true),
+
+    // A cable nobody made safe. Unseen until it is spotted, and it does
+    // not care whether it was: the trigger is the ground, not the eye.
+    (name: "live cable", glyph: '/', color: (r: 140, g: 200, b: 255), hidden: (spot: 35),
+     trigger: (on: Entered, fires: 3, effects: [(kind: "Harm", args: (kind: "energy", roll: "1d4"))])),
+
+    // What a droid leaves. Named by the remains template, so this name is
+    // only what a wreck nobody died into would be called; stripping one is
+    // opening it, and what is in it is whatever the droid had left.
+    (name: "wreckage", glyph: '%', color: (r: 130, g: 130, b: 140),
+     container: (contents: [("slug", 0, 2)]),
+     offers: [(verb: "open", time: 100)]),
+]

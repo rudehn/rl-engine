@@ -18,24 +18,28 @@
 //! way out should not have to rewrite a box-drawing routine to do it.
 
 pub mod ability;
+pub mod container;
 pub mod controls;
 pub mod gear;
 pub mod inspect;
 pub mod inventory;
 pub mod log;
 pub mod nearby;
+pub mod offers;
 pub mod scrollback;
 pub mod sheet;
 pub mod target;
 pub mod vitals;
 
 pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability_modal, reach};
+pub use container::{CONTAINER_MODAL, ContainerKeys, ContainerLayout, ContainerMenu, ContainerPanel, container_modal};
 pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
 pub use inventory::{INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, inventory_modal};
 pub use log::LogPanel;
 pub use nearby::NearbyPanel;
+pub use offers::{OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
 pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
 pub use target::{TargetLayout, TargetPanel};

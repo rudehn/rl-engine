@@ -161,11 +161,11 @@ impl Plugin for InventoryPanel {
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<crate::UiPlugin>(app, "InventoryPanel");
         // After the game's own, so its groups are listed first.
+        // Only the key that opens it. What the bag's own keys do is
+        // written along its bottom border, where a player is already
+        // looking; a second list of them on the controls screen is a second
+        // place to keep in step, and says nothing the screen does not.
         app.add_control(crate::focus::SCREENS_GROUP, &format!("open your {}", self.0.what), EngineKey::OpenInventory);
-        app.add_control(&self.0.title, "put it on, or take it off", EngineKey::Wear);
-        app.add_control(&self.0.title, "drop it", EngineKey::Drop);
-        app.add_control(&self.0.title, "use it", EngineKey::UseCarried);
-        app.add_control(&self.0.title, "throw it", EngineKey::ThrowCarried);
     }
 }
 

@@ -11,7 +11,7 @@
 //! - [`hearing`]: [`HearingStats`], and how far a sound carries: [`carries`](hearing::carries), [`left_after`](hearing::left_after) and [`heard`](hearing::heard).
 //! - [`brain`]: [`Brain`], [`Tactic`], [`TacticCtx`], [`Decision`], [`Choice`], a decision of the game's own, and [`Fields`], the way toward or away from any cells.
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
-//! - [`snapshot`]: [`Snapshot`], [`ActorView`], what it carries and sees lying about, [`Missile`] and [`ItemView`], and a game's own [`Sense`].
+//! - [`snapshot`]: [`Snapshot`], [`ActorView`], what it carries and sees lying about, [`Missile`], [`ItemView`] and [`PropView`], and a game's own [`Sense`].
 //! - [`tactics`]: the tactics every roguelike needs.
 //! - [`wits`]: [`Wits`], what a mind is able to do whatever its brain would
 //!   like, as capabilities with mindless, animal and sapient presets.
@@ -31,5 +31,5 @@ pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Choice, Decision, Fields, NoFields, Tactic, TacticCtx};
 pub use hearing::HearingStats;
 pub use profile::MovementProfile;
-pub use snapshot::{ActorView, ItemView, Missile, Sense, Snapshot, Vitals};
+pub use snapshot::{ActorView, ItemView, Missile, PropView, Sense, Snapshot, Vitals};
 pub use wits::Wits;

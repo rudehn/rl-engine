@@ -81,60 +81,68 @@ pub(crate) fn extra_loose_items(deck: u32) -> u32 {
 /// (`decks::Foundry::stores`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Origin {
-    /// The guaranteed item at the `i`th of `layout.armories`.
+    /// The guaranteed item beside the `i`th of `layout.armories`.
     Armory(usize),
-    /// One of the two guaranteed items at the `i`th of `layout.stores`:
-    /// the mark itself and the free tile beside it both count here.
+    /// One of the two guaranteed items beside the `i`th of
+    /// `layout.stores`.
     Store(usize),
     /// One of the `extra` loose items, tied to no particular mark.
     Loose,
 }
 
-/// Plans a deck's whole scatter the moment it is entered: one item at
-/// each of `layout.armories`, two at each of `layout.stores` (the mark
-/// itself, and a free floor tile beside it, [`geometry::square`] radius
-/// one), and `extra` more on random floor tiles, none of them sharing a
-/// tile with another. Every item is drawn from `table` at `band`. A
-/// random slot gives up after forty draws, so a deck with nowhere left to
-/// stand one stops trying rather than spinning, the same way
+/// Plans a deck's whole scatter the moment it is entered: one item beside
+/// each of `layout.armories`, two beside each of `layout.stores`, and
+/// `extra` more on free floor tiles, none of them sharing a tile with
+/// another. Every item is drawn from `table` at `band`. A random slot
+/// gives up after forty draws, so a deck with nowhere left to stand one
+/// stops trying rather than spinning, the same way
 /// `droids::spawns::plan_population` does; a mark the table cannot fill
 /// is simply left bare rather than panicking.
+///
+/// Beside a mark rather than on it, because a mark is where the props go:
+/// an armory locker stands on its `A` and a supply crate on its `L`, and
+/// an item under a crate is an item nothing can pick up. `free` is what
+/// decides where one may lie: walkable, and with nothing standing there.
 pub(crate) fn plan_scatter(
     table: &BandedTable<Id<ItemDef>>,
     band: i32,
     layout: &Layout,
     extra: u32,
-    walkable: &mut impl FnMut(Point) -> bool,
+    free: &mut impl FnMut(Point) -> bool,
     rng: &mut impl Rng,
 ) -> Vec<(Id<ItemDef>, Point, Origin)> {
     let Layout { bounds, armories, stores } = *layout;
     let mut placed: Vec<(Id<ItemDef>, Point, Origin)> = Vec::new();
     let mut used: Vec<Point> = Vec::new();
 
+    // One beside each armory mark, and two beside each store's: the mark
+    // itself holds a locker or a crate, so what is loose lies around it.
+    let beside = |mark: Point, used: &mut Vec<Point>, free: &mut dyn FnMut(Point) -> bool| -> Option<Point> {
+        geometry::square(mark, 1).find(|&p| p != mark && free(p) && !used.contains(&p))
+    };
     for (i, &mark) in armories.iter().enumerate() {
-        if let Some(id) = table.pick(band, rng).map(|e| e.item) {
-            placed.push((id, mark, Origin::Armory(i)));
-            used.push(mark);
+        if let Some(at) = beside(mark, &mut used, free)
+            && let Some(id) = table.pick(band, rng).map(|e| e.item)
+        {
+            placed.push((id, at, Origin::Armory(i)));
+            used.push(at);
         }
     }
     for (i, &mark) in stores.iter().enumerate() {
-        if let Some(id) = table.pick(band, rng).map(|e| e.item) {
-            placed.push((id, mark, Origin::Store(i)));
-            used.push(mark);
-        }
-        let beside = geometry::square(mark, 1).find(|&p| p != mark && walkable(p) && !used.contains(&p));
-        if let Some(beside) = beside
-            && let Some(id) = table.pick(band, rng).map(|e| e.item)
-        {
-            placed.push((id, beside, Origin::Store(i)));
-            used.push(beside);
+        for _ in 0..2 {
+            if let Some(at) = beside(mark, &mut used, free)
+                && let Some(id) = table.pick(band, rng).map(|e| e.item)
+            {
+                placed.push((id, at, Origin::Store(i)));
+                used.push(at);
+            }
         }
     }
 
     for _ in 0..extra {
         for _ in 0..40 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
-            if !walkable(p) || used.contains(&p) {
+            if !free(p) || used.contains(&p) {
                 continue;
             }
             if let Some(id) = table.pick(band, rng).map(|e| e.item) {
@@ -149,10 +157,14 @@ pub(crate) fn plan_scatter(
 
 /// What scattering a deck's loot the moment it is entered reads.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Scatter<'w> {
+pub struct Scatter<'w, 's> {
     map: Res<'w, WorldMap>,
     seed: Res<'w, Seed>,
     registries: Res<'w, Registries>,
+    /// Where the props already stand: the chain in `plugin` puts them down
+    /// before this runs, so an item never lands under a crate, which would
+    /// be an item nothing can pick up.
+    props: Query<'w, 's, (&'static Position, Option<&'static OnMap>), With<Prop>>,
 }
 
 /// Scatters a deck's loot the moment it is entered, the way `populate_deck`
@@ -164,7 +176,7 @@ pub struct Scatter<'w> {
 /// ever built. A revisit is not a first arrival, so nothing is scattered
 /// twice.
 pub fn scatter_on_arrival(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, scatter: Scatter) {
-    let Scatter { map, seed, registries } = &scatter;
+    let Scatter { map, seed, registries, props } = &scatter;
     for ev in entered.read() {
         if !ev.first {
             continue;
@@ -176,7 +188,9 @@ pub fn scatter_on_arrival(mut commands: Commands, mut entered: MessageReader<Pla
         let armories: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'A' as u32).map(|s| s.at).collect();
         let stores: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'L' as u32).map(|s| s.at).collect();
         let layout = Layout { bounds: place.terrain.bounds(), armories: &armories, stores: &stores };
-        let plan = plan_scatter(&armory.table, deck as i32, &layout, extra_loose_items(deck), &mut |p| map.is_walkable(p), &mut rng);
+        let standing: Vec<Point> = props.iter().filter(|(_, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == ev.map).map(|(at, _)| at.0).collect();
+        let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
+        let plan = plan_scatter(&armory.table, deck as i32, &layout, extra_loose_items(deck), &mut free, &mut rng);
         for (id, p, _origin) in plan {
             let item = crate::gear::spawn_item(&mut commands, &armory, id, registries);
             commands.entity(item).insert((Position(p), OnMap(ev.map)));
@@ -281,6 +295,36 @@ mod tests {
         app.update();
         app.update();
         assert_eq!(count(&mut app), first, "a second arrival on deck one scattered nothing new");
+    }
+
+    /// The commando's half of the ranged ramp in `DESIGN.md`: deck one is
+    /// walked with bare hands, a blade, or the one gun that runs dry, and
+    /// an energy weapon is a deck two find. The weights alone would let a
+    /// later band edit put a blaster back on deck one without anything
+    /// saying so.
+    #[test]
+    fn deck_one_lays_out_no_energy_weapon_and_only_the_gun_that_runs_dry_over_a_span_of_seeds() {
+        let mut decks_with_a_pistol = 0;
+        let seeds = 40u64;
+        for s in 0..seeds {
+            let mut app = crate::testing::headless(RunSeed(s));
+            crate::testing::arrive_on(&mut app, 1);
+            let map = app.world().resource::<WorldMap>().current();
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<(&Name, &OnMap), With<Item>>();
+            let names: Vec<String> = q.iter(world).filter(|(_, on)| on.0 == map).map(|(n, _)| n.as_str().to_owned()).collect();
+            for gun in ["hand blaster", "blaster carbine", "ion pistol"] {
+                assert!(!names.iter().any(|n| n == gun), "seed {s}: a {gun} on deck one");
+            }
+            if names.iter().any(|n| n == "slug pistol") {
+                decks_with_a_pistol += 1;
+            }
+        }
+        // Sixteen of forty seeds, at the weights in `items.ron`: the
+        // design's "about two runs in five". The bounds are loose on
+        // purpose, since the rate is a weight to tune and not a promise.
+        assert!(decks_with_a_pistol > 0, "the slug pistol is findable on deck one at all");
+        assert!(decks_with_a_pistol < seeds, "and not on every deck, or the unarmed opening is one room long");
     }
 
     #[test]

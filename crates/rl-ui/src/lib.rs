@@ -93,6 +93,7 @@ pub mod cursor;
 pub mod facet;
 pub mod focus;
 pub mod game_menu;
+pub mod interact;
 pub mod keys;
 pub mod log;
 pub mod menu;
@@ -108,15 +109,16 @@ pub use cursor::{CursorKeys, Steer};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighting};
 pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, game_menu_modal};
+pub use interact::{InteractKey, InteractKeys};
 pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog, Span};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use narrate::{NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
 pub use panel::{
-    AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel,
-    NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal, inventory_modal,
-    sheet_modal,
+    AbilityKeys, AbilityMenu, AbilityPanel, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel,
+    InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys,
+    SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, sheet_modal,
 };
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
@@ -211,6 +213,7 @@ pub mod prelude {
     pub use crate::facet::{Facet, FacetId, Facets};
     pub use crate::focus::{Focus, InSight, Sighting};
     pub use crate::game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
+    pub use crate::interact::{InteractKey, InteractKeys};
     pub use crate::keys::DirectionKeys;
     pub use crate::log::{LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
@@ -221,9 +224,9 @@ pub mod prelude {
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
     pub use crate::panel::{
-        AbilityKeys, AbilityMenu, AbilityPanel, ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel,
-        LogPanel, NearbyPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, controls_modal,
-        inventory_modal, sheet_modal,
+        AbilityKeys, AbilityMenu, AbilityPanel, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel,
+        InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SheetKeys,
+        SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, sheet_modal,
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{

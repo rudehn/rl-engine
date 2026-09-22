@@ -20,11 +20,19 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt and wander, reading snapshots of what each actor can see.
 - **A turn loop the engine owns**: an integer-clock energy scheduler, speed-scaled action costs and every due turn resolved inside one frame.
 - **RPG rules**: stats and modifiers, a staged damage pipeline with resistances, status effects that tick by the turn, factions, equipment slots, affixes and enchantments.
+- **Items that do things**: the ground, bags and slots with stacks and tags, one `Loadout` summed from what an actor is and wears so nothing is copied onto a wearer, gear that grants stats and abilities, and throwing with the flight the resolver and the preview both read.
+- **Abilities and targeting**: what an actor can spend a turn on as data in RON, with costs against a pool or an item's charges, requirements over statuses, slots and stats, cooldowns on the turn clock, effects as types a game extends, and one cursor that previews through the call the resolver lands with.
+- **Stealth and awareness**: a roll to notice by sight and light, memory of who has noticed whom, waking on a blow, and minds that act only on what they have noticed and search where they last saw it.
+- **Noise and hearing**: every engine action makes its own sound, loudness spent walking through what a tile is made of, and a listener that hears a place rather than who made it and walks to it as a trail.
+- **Fire and gas**: a value per tile stepped a turn at a time, gas whose kinds are a game's content and fire whose rules are the engine's, both writing into what stops sight and light.
+- **Props and remains**: a crate, a lever or a console as content rather than a component and an action in every game, containers with a screen the engine runs end to end, and the dead left where they fell as the entity that died.
 - **Data-driven content**: tiles, monsters, items, statuses and quests are registries loaded from RON files, with weighted spawn tables by depth band.
 - **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
 - **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, fuel that burns down, dark sight, and a viewshed cut to what is lit; opt-in per game, with ambient a value the game writes.
-- **ASCII rendering and UI**: a diffed glyph grid renderer; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory fades to a cold blue; a message log, a status line, menus and an overworld map screen; and a capture tool that plays keys and photographs the window.
+- **ASCII rendering**: a diffed glyph grid renderer; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory fades to a cold blue; animations played from what the turns cued, with the turns held so a bolt is seen to arrive before it hurts; and a capture tool that plays keys and photographs the window.
+- **UI you can take apart**: thirteen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, a controls screen built from the registry every key is declared in, and an overworld map screen.
+- **Telling a run afterwards**: keys written down as they are played and pressed again against the clock they were read at, and an obituary filed to a morgue folder with the seed, the outcome and whatever sections the game added.
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
 - **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
 
@@ -261,10 +269,14 @@ The window opens above the others without taking focus, and the screen must be u
 
 ## Documentation
 
-- **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in ten runnable steps, from a map on screen to an action of your own. Start here. Every step is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
-- `docs/OVERVIEW.md` is the inventory of what exists and what is not built yet, kept current.
-- `docs/PLAN.md` is the design: what was decided, why, and which milestone each piece lands in.
-- `docs/reviews/` holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
+[**docs/**](docs/) is the index of all of it. The short version:
+
+- **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable chapters, from a map on screen to an action of your own. Start here, at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/) for the sidebar and the search. Every chapter is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
+- [**docs/OVERVIEW.md**](docs/OVERVIEW.md) is the inventory of what exists and what is not built yet, kept current, with a table of every plugin and every panel.
+- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for abilities, fire and gas, lighting, minds, noise, props, remains, stealth and the UI.
+- [**docs/PLAN.md**](docs/PLAN.md) is the design: what was decided, why, and which milestone each piece lands in.
+- [**docs/TODO.md**](docs/TODO.md) is the work that has been found and not started.
+- [**docs/reviews/**](docs/reviews/) holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
 - `cargo doc --open -p rl-engine` builds the API reference; every public item is documented and every doc example runs as a test.
 
 ## Building and testing

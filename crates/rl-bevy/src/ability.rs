@@ -258,10 +258,14 @@ impl crate::seed::Stream for AbilityRng {
 /// One use, resolved: where it went and what was under it.
 #[derive(Debug, Clone)]
 pub struct Landing {
-    /// Who used it.
+    /// Who used it. A prop that sprang a trap is as much a user as an
+    /// actor that spent a turn.
     pub user: Entity,
-    /// Which ability.
-    pub ability: AbilityId,
+    /// Which ability, when an ability is what landed. `None` for effects
+    /// landed by something else the engine owns, a prop's trigger or an
+    /// offer it answered, which have no ability and draw no ability's
+    /// look.
+    pub ability: Option<AbilityId>,
     /// Where the user stood.
     pub origin: Point,
     /// Where it was pointed.
@@ -436,6 +440,21 @@ impl EffectKinds {
     /// Every registered name, in order, for an error that lists them.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.0.keys().map(|s| s.as_str())
+    }
+
+    /// Builds the effect registered as `kind` from its own arguments.
+    ///
+    /// For whatever holds effects as content and is not an ability: a
+    /// prop's trigger, an offer it answers. The error names what was
+    /// wrong, or lists what is registered when the kind is not.
+    pub fn build(&self, kind: &str, args: &RawValue, names: &Names<'_>) -> Result<Box<dyn Effect>, String> {
+        match self.0.get(kind) {
+            Some(build) => build(args, names),
+            None => {
+                let known: Vec<&str> = self.names().collect();
+                Err(format!("no effect is registered as {kind:?}; registered: {}", known.join(", ")))
+            }
+        }
     }
 }
 
@@ -658,7 +677,7 @@ impl Bystanders<'_, '_> {
                 }
             }
         }
-        Landed { landing: Landing { user, ability, origin, aim, cells, path, landed_at: landing, targets }, refused }
+        Landed { landing: Landing { user, ability: Some(ability), origin, aim, cells, path, landed_at: landing, targets }, refused }
     }
 }
 
@@ -767,7 +786,8 @@ pub fn land_abilities(
 
 /// Lands a use: the burst over the footprint, the effects, and the report.
 fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>, events: &mut MessageWriter<AbilityEvent>) {
-    let (user, id) = (landing.user, landing.ability);
+    let user = landing.user;
+    let Some(id) = landing.ability else { return };
     if let Some(burst) = burst_of(&landing, world) {
         world.cues.write(Cued { actor: user, cue: burst });
     }
@@ -790,7 +810,7 @@ fn anchor_of(landing: &Landing, world: &EffectWorld<'_, '_>, cell: Point) -> Anc
 /// The flight to where a projectile stopped, for a shape that has one.
 fn flight_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
     let stop = landing.landed_at.filter(|stop| *stop != landing.origin)?;
-    Some(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor_of(landing, world, stop), look: LookOf::Ability(landing.ability) })
+    Some(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor_of(landing, world, stop), look: LookOf::Ability(landing.ability?) })
 }
 
 /// The burst over the footprint, for a shape that covers anything.
@@ -798,7 +818,7 @@ fn burst_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
     if landing.cells.is_empty() {
         return None;
     }
-    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability) })
+    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability?) })
 }
 
 /// Every reason `def` may not be used by `user` right now.
@@ -1301,7 +1321,7 @@ mod tests {
             statuses: content.statuses,
             tags: content.tags,
             slots: content.slots,
-            gases: Default::default(),
+            ..Default::default()
         });
         app.insert_resource(abilities);
         (app, start)

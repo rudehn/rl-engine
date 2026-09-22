@@ -40,10 +40,13 @@ impl Effect for Drain {
         });
         // What was drained is seen to come back: a flight from the one it
         // was taken from to the user, after the burst that took it.
+        // Only for an ability: the knack has a look, and a trap or a prop
+        // landing this same effect has none to fly.
         if let Some(&target) = landing.targets.first()
             && let Some(at) = world.position(target)
+            && let Some(ability) = landing.ability
         {
-            let look = LookOf::Ability(landing.ability);
+            let look = LookOf::Ability(ability);
             world.cues.write(Cued { actor: user, cue: Cue::Flight { from: Anchor::on(target, at), to: Anchor::on(user, landing.origin), look } });
         }
     }

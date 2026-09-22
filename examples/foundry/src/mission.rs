@@ -6,22 +6,12 @@
 //! does for its own, larger vocabulary; Foundry's objective vocabulary is
 //! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants
 //! [`Console`] at deck three's `R` mark, beside the loot Task 9 scatters
-//! on the same first arrival. [`resolve_set_charge`] is [`SetCharge`]'s
-//! resolver: adjacent to an unset console, it spends three whole turns
-//! and reports the fact; anywhere else, it fails for one. [`offer_the_pick`]
-//! is the hinge to `upgrades`: the moment the tracker reports the mission
-//! done, it opens the pick and nothing else in this module ever touches
-//! an upgrade directly.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Id;
 
 const QUESTS_RON: &str = include_str!("../assets/quests.ron");
-
-/// How long setting the charge takes, once adjacent to an unset console:
-/// three whole turns.
-const CHARGE_COST: u32 = 3 * BASE_ACTION_COST;
 
 /// The one fact kind Foundry's mission counts.
 #[derive(Resource)]
@@ -125,56 +115,34 @@ pub fn start(mut commands: Commands, registries: Res<Registries>) {
     commands.insert_resource(facts);
 }
 
-/// Marks the reactor console entity `spawn_console_on_arrival` plants at
-/// deck three's `R` mark.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct Console;
+/// The verb Foundry's console offers, declared once so [`answer_charge`]
+/// finds its id.
+pub const CHARGE: &str = "charge";
 
-/// A console `resolve_set_charge` has already charged. Standing beside it
-/// again sets nothing more: the objective only ever needs one.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct Spent;
-
-/// Spend a charge on the reactor console beside you. The player's own
-/// action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SetCharge;
-impl Action for SetCharge {}
-
-/// Plants [`Console`] at deck three's `R` mark the moment it is first
-/// entered, beside the loot `loot::scatter_on_arrival` plants on the same
-/// arrival: reads the same [`PlaceEntered`] the way that system and
-/// `droids::populate_deck` do, and is unordered against both, since none
-/// of the three ever shares a tile-claiming concern with either of the
-/// others.
-pub fn spawn_console_on_arrival(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>) {
+/// Puts the reactor console at deck three's `R` mark the moment it is
+/// first entered, beside the loot `loot::scatter_on_arrival` plants on
+/// the same arrival: reads the same [`PlaceEntered`] the way that system
+/// and `droids::populate_deck` do, and is unordered against both, since
+/// none of the three ever shares a tile-claiming concern with either of
+/// the others.
+///
+/// The console itself is content: `props.ron` says how it looks, that it
+/// blocks, and that it offers `charge` for three turns, so this system
+/// says only where one stands.
+pub fn spawn_console_on_arrival(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, registries: Res<Registries>) {
     for ev in entered.read() {
         if !ev.first || crate::decks::deck_of(ev.map) != 3 {
             continue;
         }
         let Some(place) = map.place(ev.map) else { continue };
         let Some(spot) = place.spots.iter().find(|s| s.tag == 'R' as u32) else { continue };
-        commands.spawn((Console, Position(spot.at), OnMap(ev.map), Name::new("reactor console"), Glyph::new('R', Color::srgb(0.95, 0.65, 0.25)).on_layer(2)));
+        let Some(id) = registries.props.id("reactor console") else { continue };
+        spawn_prop(&mut commands, &registries, id, spot.at, ev.map);
     }
 }
 
-/// One console, as [`resolve_set_charge`] reads it: where it is, which
-/// map it is on, and whether it has already been spent.
-type ConsoleRow<'w> = (Entity, &'w Position, Option<&'w OnMap>, Has<Spent>);
-
-/// What resolving [`SetCharge`] reads: the actor holding the turn, and
-/// every console on its map that has not already been spent.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct ChargeWorld<'w, 's> {
-    holders: Query<'w, 's, (&'static Position, Option<&'static OnMap>), With<MyTurn>>,
-    consoles: Query<'w, 's, ConsoleRow<'static>, With<Console>>,
-}
-
-/// What resolving [`SetCharge`] reports: the fact the charge set for the
-/// tracker to count, and the line it leaves in the log. Its own param
-/// struct rather than four more arguments on `resolve_set_charge`, the
-/// way `loot::Layout` exists so `plan_scatter` stays under clippy's own
-/// limit on a function's parameter list.
+/// What answering the charge reports: the fact for the tracker to count,
+/// and the line it leaves in the log.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct ChargeReport<'w> {
     facts: Res<'w, Facts>,
@@ -182,39 +150,36 @@ pub struct ChargeReport<'w> {
     tell: MessageWriter<'w, Tell>,
 }
 
-/// Resolves [`SetCharge`]: adjacent to an unspent [`Console`] on the
-/// actor's own map, it charges `CHARGE_COST` (three whole turns),
-/// spends the console, and reports [`Facts::charge_set`] through
-/// [`Happened`] for the tracker to count. Anywhere else, or a console
-/// already spent, fails at [`BASE_ACTION_COST`] with a log line and
-/// nothing to show for it: the rule every resolver in this game follows,
-/// spelled out in `crates/rl-bevy/src/turn.rs`'s own doc on
-/// [`Resolution::failed`].
-pub fn resolve_set_charge(
+/// Answers the `charge` verb: reports the fact the tracker counts, says
+/// so, and leaves the console reading as spent.
+///
+/// The engine has already decided the charge was possible, spent the
+/// three turns the offer asked for, and landed whatever effects the offer
+/// carried, which for this one is none. What is left is the part no
+/// effect could express: a fact about this run. The console then becomes
+/// a different kind of prop, one with no offer and a duller glyph, which
+/// is how it stops being something to charge twice.
+pub fn answer_charge(
     mut commands: Commands,
-    mut intents: MessageReader<Intent<SetCharge>>,
-    mut resolution: Resolution,
-    world: ChargeWorld,
+    mut done: MessageReader<Interacted>,
+    verbs: Res<Verbs>,
+    registries: Res<Registries>,
     mut report: ChargeReport,
+    consoles: Query<(&PropKind, Option<&OnMap>)>,
 ) {
-    for intent in intents.read() {
-        if !resolution.claim(intent.actor) {
+    let Some(charge) = verbs.get(CHARGE) else { return };
+    let Some(spent) = registries.props.id("spent reactor console") else { return };
+    for ev in done.read() {
+        if ev.verb != charge {
             continue;
         }
-        let found = world.holders.get(intent.actor).ok().and_then(|(pos, on)| {
-            let map = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
-            world.consoles.iter().find(|(_, cp, cm, spent)| !spent && cm.map(|m| m.0).unwrap_or(MapId::SURFACE) == map && geometry::is_adjacent(pos.0, cp.0))
-        });
-        let Some((console, _, cm, _)) = found else {
-            report.tell.write(Tell::new("There is nothing here to set a charge on.", Tones::BAD));
-            resolution.failed(intent.actor, BASE_ACTION_COST);
-            continue;
-        };
-        commands.entity(console).insert(Spent);
-        let deck = crate::decks::deck_of(cm.map(|m| m.0).unwrap_or(MapId::SURFACE));
-        report.happened.write(Happened(Fact::new(report.facts.charge_set).about(deck as u64)));
+        let Ok((_, on)) = consoles.get(ev.prop) else { continue };
+        let deck = crate::decks::deck_of(on.map(|m| m.0).unwrap_or(MapId::SURFACE));
+        // The glyph comes off with the kind, so the renderer dresses it
+        // again from the definition of a console already used.
+        commands.entity(ev.prop).remove::<Glyph>().insert(PropKind(spent));
+        report.happened.write(Happened(Fact::new(report.facts.charge_set).about(u64::from(deck))));
         report.tell.write(Tell::new("You set the charge. The reactor stirs.", Tones::GOOD));
-        resolution.done(intent.actor, CHARGE_COST);
     }
 }
 
@@ -248,10 +213,18 @@ mod tests {
     use super::*;
     use rl_engine::rl_core::RunSeed;
 
+    /// Whatever the console offers the player, and to whom.
+    fn charge_offered(app: &App, player: Entity) -> Option<Offer> {
+        let verb = app.world().resource::<Verbs>().get(CHARGE)?;
+        app.world().resource::<OfferedHere>().for_actor(player).iter().find(|o| o.verb == verb).copied()
+    }
+
     #[test]
     fn setting_the_charge_takes_three_turns_and_completes_the_quest() {
         let mut app = crate::testing::headless(RunSeed(2));
         let player = crate::testing::beside_the_console(&mut app);
+        crate::testing::settle(&mut app);
+        let offer = charge_offered(&app, player).expect("standing beside it, the console offers its charge");
         // A difference, not an absolute reading: the clock already carries
         // whatever it cost to reach deck three at all (a real run's own
         // stair transitions, once Foundry has them, are `GoThrough`'s
@@ -259,20 +232,28 @@ mod tests {
         // player's first turn precedes every monster's, never that nothing
         // moves before this one action does.
         let before = crate::testing::clock(&app);
-        app.world_mut().write_message(Intent::new(player, SetCharge));
+        app.world_mut().write_message(Intent::new(player, Interact { prop: offer.prop, verb: offer.verb }));
         crate::testing::settle(&mut app);
         assert_eq!(crate::testing::clock(&app) - before, 300, "a charge takes three turns to set");
         assert!(crate::testing::quest_done(&app, "first_charge"));
         assert!(app.world().resource::<crate::upgrades::Choosing>().0.is_some(), "and the choice is offered");
+        // The console itself is now the spent kind, which is a kind with no
+        // offers, so nothing can charge it again. Read off the prop rather
+        // than off the gate: the gate answers per pass, and with the pick
+        // up no pass is run.
+        let spent = app.world().resource::<Registries>().props.expect("spent reactor console");
+        assert_eq!(app.world().get::<PropKind>(offer.prop).map(|k| k.0), Some(spent), "and a console already charged is a spent one");
     }
 
+    /// Deck one has no console, so nothing offers a charge: the engine
+    /// answers "there is nothing here to do" before a turn is spent, which
+    /// is what replaced this game's own refusal message.
     #[test]
-    fn setting_a_charge_with_nothing_beside_you_reports_nothing() {
+    fn there_is_no_charge_to_set_where_there_is_no_console() {
         let mut app = crate::testing::headless(RunSeed(3));
         crate::testing::settle(&mut app);
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        app.world_mut().write_message(Intent::new(player, SetCharge));
-        crate::testing::settle(&mut app);
-        assert!(!crate::testing::quest_done(&app, "first_charge"), "deck one has no console to charge");
+        assert!(charge_offered(&app, player).is_none(), "deck one offers no charge");
+        assert!(!crate::testing::quest_done(&app, "first_charge"));
     }
 }

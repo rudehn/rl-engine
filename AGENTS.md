@@ -11,7 +11,16 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 
 - Every workspace member declares `tier` under `[package.metadata.rl-engine]` in its `Cargo.toml`. Tier 0 and 1 crates must not depend on Bevy, and no crate depends on a higher tier. `scripts/check-tiers.sh` reads the tiers from `cargo metadata` and checks both; CI runs it.
 - `#![deny(missing_docs)]` on every crate. Doc-tests compile and run; never fence an example as `ignore`.
-- `docs/OVERVIEW.md` is the inventory of what the engine has; a slice that adds or removes a system updates it in the same commit.
+- **A slice that adds or removes a system pays its documentation in the same commit.** Four files, and which of them depends on what the slice is:
+  - `docs/OVERVIEW.md`, always. It is the inventory of what the engine has, and the plugin table in its `rl-bevy` section and the presenter table in its `rl-ui` section are part of it, not a summary of it.
+  - `CHANGELOG.md`, under `Unreleased`, whenever a game on the previous release would have to change a line or would want to. That is the only place a game author reads what moved.
+  - `README.md`'s feature list, when the slice is something a reader shopping for an engine would look for. Not for an addition to a system already listed.
+  - `docs/design/<subsystem>.md`, when the slice is a new subsystem rather than a change to one. The reasoning and the rejected alternatives go there; the inventory stays a list.
+
+  `scripts/check-overview.sh` enforces what can be enforced exactly: every `impl Plugin for X` is named in the overview, every `docs/design/*.md` is listed in the layout section below, and every game in `examples/` is both described in the overview and named in the guide. CI runs it. It cannot check that a sentence is still true, so that stays a review matter.
+
+  `docs/README.md` is the index GitHub renders when someone opens the `docs` folder, and a new design doc goes on it.
+  Only `docs/guide` is published as a website, so a link from a guide chapter to anything outside it is an absolute `https://github.com/rudehn/rl-engine/blob/main/...` link, which resolves from the published book and from GitHub both; a relative one resolves only on GitHub.
 - `cargo fmt --all --check` must pass; `rustfmt.toml` pins the width, so do not hand-wrap.
 - `cargo clippy --workspace --all-targets -- -D warnings` must pass. Do not add crate-wide `#![allow(clippy::too_many_arguments)]`; a system with sixteen parameters is a system to split.
 - Tier 0 and 1 crates build on `wasm32-unknown-unknown`, and so does `rl-save`, whose browser storage and unload bridge exist only there; `scripts/check-tiers.sh --wasm` checks all of them. No `std::time::Instant` in them.
@@ -42,12 +51,18 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 crates/<name>/src/lib.rs   module-level //! docs name every public item
 crates/<name>/benches/     criterion, on realistic maps, only for hot paths
 docs/PLAN.md               the design and milestones
-docs/design/               how one subsystem works, and why: lighting, ui, abilities, stealth
+docs/design/               how one subsystem works, and why: abilities, fields, lighting,
+                           minds, noise, props, remains, stealth, ui
 docs/guide/                the mdBook; every chapter quotes examples/tutorial
 docs/reviews/              the evidence
 scripts/check-tiers.sh     the tier boundary check
 scripts/check-guide.sh     the guide's includes, images and contents
+scripts/check-overview.sh  the inventory names every plugin, design doc and example
 ```
+
+The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, items and equipment, places and streaming, saving and the morgue, registries and content loading, and the controls, modals and cursors.
+Each is documented in its crate's module docs and in the overview; what is missing is the page that says why it is shaped that way.
+Writing one is a welcome slice, not a prerequisite for touching the code.
 
 ## Building UI
 

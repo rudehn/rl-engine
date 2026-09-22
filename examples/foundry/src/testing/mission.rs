@@ -7,19 +7,21 @@ use rl_engine::rl_core::geometry;
 use rl_engine::rl_rules::QuestState;
 
 use crate::gear::Armory;
-use crate::mission::Console;
 use crate::upgrades::Upgrade;
 
 /// Warps the player onto deck three and stands it beside the console
 /// `mission::spawn_console_on_arrival` plants there on first arrival, so a
-/// test can send `SetCharge` without hunting for a walkable tile of its
-/// own.
+/// test can charge it without hunting for a walkable tile of its own.
+///
+/// The console is a prop, so it is found by its kind: whatever `props.ron`
+/// calls a reactor console.
 pub fn beside_the_console(app: &mut App) -> Entity {
     crate::testing::arrive_on(app, 3);
+    let console = app.world().resource::<Registries>().props.expect("reactor console");
     let console_at = {
         let world = app.world_mut();
-        let mut q = world.query_filtered::<&Position, With<Console>>();
-        q.single(world).expect("deck three spawns a console on arrival").0
+        let mut q = world.query::<(&Position, &PropKind)>();
+        q.iter(world).find(|(_, kind)| kind.0 == console).expect("deck three spawns a console on arrival").0.0
     };
     let beside = {
         let map = app.world().resource::<WorldMap>();
@@ -30,6 +32,26 @@ pub fn beside_the_console(app: &mut App) -> Entity {
     app.world_mut().get_mut::<Position>(player).unwrap().0 = beside;
     app.world_mut().entity_mut(player).insert(OnMap(map));
     player
+}
+
+/// The key that walks from `player` toward the console, for a test that
+/// charges it the way a player does: by walking into it.
+///
+/// The console blocks, so a bump into it is what the engine turns into the
+/// interaction its offer describes; there is no charge key any more.
+pub fn key_toward_the_console(app: &App, player: Entity) -> bevy::prelude::KeyCode {
+    let console = app.world().resource::<Registries>().props.expect("reactor console");
+    let world = app.world();
+    let at = world.get::<Position>(player).expect("the player stands somewhere").0;
+    let console_at = world
+        .iter_entities()
+        .filter_map(|e| e.get::<Position>().zip(e.get::<PropKind>()))
+        .find(|(_, kind)| kind.0 == console)
+        .map(|(pos, _)| pos.0)
+        .expect("deck three spawns a console on arrival");
+    let dir = rl_engine::rl_core::Direction::between(at, console_at).expect("the player stands beside it");
+    let keys = world.resource::<rl_engine::rl_ui::DirectionKeys>();
+    keys.0.iter().find(|(_, d)| *d == dir).map(|(k, _)| *k).expect("every direction has a key")
 }
 
 /// Whether the quest named `name` reads [`QuestState::Done`].
