@@ -1,6 +1,7 @@
-//! The first three decks of the foundry: assembly halls of rooms and
-//! doors, each holding an armory and a supply store, with a reactor
-//! chamber added on the deepest of the three.
+//! The foundry's ten decks: assembly halls of rooms and doors, each
+//! holding an armory and a supply store, with a reactor chamber added on
+//! three of them and the core chamber on the tenth, so all four charges
+//! have somewhere to be set.
 //!
 //! This is the whole of a deck builder: a tile registry, one chain per
 //! deck, and [`PlaceBuild::from_context`] to read the entry, the exit and
@@ -16,8 +17,9 @@ use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_world::WorldGraph;
 
-/// How many of the foundry's decks this slice builds.
-pub const DECKS: u32 = 3;
+/// How many decks the foundry has. Charges are set on three, six and
+/// nine, and on the core on ten.
+pub const DECKS: u32 = 10;
 
 /// How every tile looks, compiled in so the binary runs from anywhere.
 const TILES_RON: &str = include_str!("../assets/tiles.ron");
@@ -32,7 +34,7 @@ pub fn map_of(deck: u32) -> MapId {
     MapId(deck)
 }
 
-/// The foundry's tiles and how each of its first three decks is built.
+/// The foundry's tiles and how each of its decks is built.
 pub struct Foundry {
     tiles: TileRegistry,
     hull: TileId,
@@ -46,7 +48,7 @@ pub struct Foundry {
 }
 
 impl Foundry {
-    /// Registers every tile the first three decks are built from.
+    /// Registers every tile the decks are built from.
     pub fn new(seed: RunSeed) -> Self {
         let mut tiles = TileRegistry::new();
         let hull = tiles.register(TileProps::wall("hull")).unwrap();
@@ -112,11 +114,12 @@ impl Foundry {
         Ok(vec![(a, 1), (b, 1)])
     }
 
-    /// The reactor chamber, deck three only: one `R`, the console's
-    /// machinery on the far wall behind it, and a hatch. The machinery
-    /// stands at the back rather than in the hatch's way: in front of it,
-    /// the chamber could only be entered diagonally between two walls,
-    /// which the engine refuses. Stamped [`Orient::Fixed`], since nothing
+    /// The reactor chamber, stamped on decks three, six and nine: one `R`,
+    /// the console's machinery on the far wall behind it, and a hatch.
+    /// The machinery stands at the back rather than in the hatch's way:
+    /// in front of it, the chamber could only be entered diagonally
+    /// between two walls, which the engine refuses. Stamped
+    /// [`Orient::Fixed`], since nothing
     /// about the chamber reads better turned.
     fn reactor(&self) -> Result<Prefab, BuildError> {
         let (bulkhead, console, hatch) = (self.bulkhead, self.console, self.hatch);
@@ -127,6 +130,23 @@ impl Foundry {
             _ => None,
         };
         Prefab::parse(&["#####", "#.c.#", "#.R.#", "#...#", "##h##"], legend).map_err(|e| BuildError::new("reactor", e))
+    }
+
+    /// The core chamber, deck ten only: the same five by five as a
+    /// reactor so the room-size guarantee in `generate` still holds, with
+    /// machinery down both sides rather than one, which is the whole of
+    /// how the core reads as bigger without needing a bigger room.
+    /// Marks `R`, since what stands on it is a console like the other
+    /// three and nothing in the mission distinguishes them.
+    fn core(&self) -> Result<Prefab, BuildError> {
+        let (bulkhead, console, hatch) = (self.bulkhead, self.console, self.hatch);
+        let legend = |c: char| match c {
+            '#' => Some(bulkhead),
+            'c' => Some(console),
+            'h' => Some(hatch),
+            _ => None,
+        };
+        Prefab::parse(&["#####", "#ccc#", "#.R.#", "#c.c#", "##h##"], legend).map_err(|e| BuildError::new("core", e))
     }
 
     /// Runs the deck's chain and hands back the context still open, so a
@@ -148,9 +168,16 @@ impl Foundry {
             .then(Doors { door: self.hatch })
             .then(StampOneOf { name: "armory", choices: self.armories()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored })
             .then(StampOneOf { name: "store", choices: self.stores()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored });
-        if deck == 3 {
-            chain = chain.then(StampPrefab { name: "reactor", prefab: self.reactor()?, at: Placement::AnyRoom, orient: Orient::Fixed });
-        }
+        // Decks three, six and nine each feed a section of the plant, and
+        // deck ten is the core: one reactor chamber on each, so the four
+        // charges have somewhere to be set. The core is its own shape and
+        // marks `R` like the others, so one system plants all four
+        // consoles.
+        chain = match deck {
+            3 | 6 | 9 => chain.then(StampPrefab { name: "reactor", prefab: self.reactor()?, at: Placement::AnyRoom, orient: Orient::Fixed }),
+            DECKS => chain.then(StampPrefab { name: "core", prefab: self.core()?, at: Placement::AnyRoom, orient: Orient::Fixed }),
+            _ => chain,
+        };
         chain.then(RandomStart).then(FarthestExit).run(&mut ctx, seed)?;
         Ok(ctx)
     }
@@ -183,14 +210,17 @@ mod tests {
         }
     }
 
+    /// The charge decks, and only they, hold a reactor: three, six and
+    /// nine, and the core on ten. One each, since two consoles on a deck
+    /// would let one run set the same charge twice.
     #[test]
-    fn only_deck_three_holds_the_reactor_and_it_holds_exactly_one() {
+    fn only_the_charge_decks_hold_a_reactor_and_each_holds_exactly_one() {
         for s in 0..20 {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap();
                 let reactors = built.spots.iter().filter(|s| s.tag == 'R' as u32).count();
-                assert_eq!(reactors, usize::from(deck == 3), "deck {deck}, seed {s}");
+                assert_eq!(reactors, usize::from(matches!(deck, 3 | 6 | 9 | 10)), "deck {deck}, seed {s}");
             }
         }
     }

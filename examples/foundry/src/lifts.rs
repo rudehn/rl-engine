@@ -23,7 +23,12 @@ pub fn deck_line(deck: u32) -> String {
     match deck {
         1 => "Deck 1: the upper assembly hall. The work lights are still on.".to_string(),
         2 => "Deck 2: the lower assembly hall. The lights are out down here.".to_string(),
-        DECKS => format!("Deck {DECKS}: the reactor deck, dark. Find the console and set the charge."),
+        3 => "Deck 3: the first reactor deck, dark. Find the console and set the charge.".to_string(),
+        4 | 5 => format!("Deck {deck}: fabrication. Furnace glow, and the air is worse."),
+        6 => "Deck 6: the second reactor deck.".to_string(),
+        7 | 8 => format!("Deck {deck}: the reactor ring. Nothing down here was built for people."),
+        9 => "Deck 9: the third reactor deck.".to_string(),
+        DECKS => "Deck 10: the core.".to_string(),
         n => format!("Deck {n}."),
     }
 }

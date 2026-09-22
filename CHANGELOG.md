@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Foundry's run is ten decks now, not three: `decks::DECKS` is 10, and the reactor chamber that used to stamp only deck three now stamps deck three, six and nine, with a fourth charge on a new core prefab on deck ten, the same five-by-five chamber with machinery down both walls instead of one.
+  The line droid, probe droid, heavy droid and coolant rat's spawn bands in `monsters.ron` extend to cover decks four through ten, so every deck through ten has something to spawn.
+  `lifts::deck_line` names every deck from one to ten instead of falling to the bare "Deck {n}." for the seven in between.
+  `DESIGN.md`'s progression table now says all ten decks exist and only the four zones remain planned.
 - Foundry's commando starts with nothing but a lit shoulder lamp: no gun, no blade and an empty bag, so the first rooms of deck one are fought with the innate punch and whatever the deck left lying about.
   Ranged weapons are the strongest thing in the game and in the dark the lamp's six tiles is the whole horizon, so both halves of the ramp are handed out a deck at a time.
   Nothing on deck one shoots: the line droid has no bolt any more and strikes with the clamp it runs the lines with, which suits a worker droid, and the probe still carries no attack at all.

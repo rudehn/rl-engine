@@ -56,7 +56,7 @@ Each zone has its own tiles, hazards, light and population, and bands overlap at
 | 7-9 | Reactor ring | Dark | Coolant vents, collapsed sections | Heavier droids, bounty hunters, lamp moths |
 | 10 | The core | Dark | All of the above | The foundry's best, and whoever followed you |
 
-Decks 1-3, the assembly zone, **exist**; decks 4-10 are **planned**.
+All ten decks **exist** and are played; the four zones are **planned**, so every deck is still built as an assembly hall and they differ only in population and depth.
 
 A charge is set on the reactor console on decks 3, 6 and 9, and on the core on deck 10.
 Setting a charge takes three whole turns beside the console and opens a pick of one upgrade from three (**exists** on deck 3).

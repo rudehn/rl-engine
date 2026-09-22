@@ -231,7 +231,7 @@ Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `t`
 
 ### Foundry, a fight down a droid foundry
 
-`examples/foundry` is a commando fighting down three decks of a droid foundry, and the engine's worked example of combat depth: weapons that run hot or run dry, droids that shoot and raise the alarm, radar that an ion hit blinds, and a reactor charge that ends in a choice of upgrade.
+`examples/foundry` is a commando fighting down ten decks of a droid foundry, and the engine's worked example of combat depth: weapons that run hot or run dry, droids that shoot and raise the alarm, radar that an ion hit blinds, and a reactor charge that ends in a choice of upgrade.
 It is a library with a thin binary, so its own tests and a fingerprint tripwire play the same game the window does.
 
 ```sh

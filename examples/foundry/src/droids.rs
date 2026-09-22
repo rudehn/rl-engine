@@ -237,9 +237,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_deck_in_the_slice_has_something_to_spawn() {
+    fn every_deck_of_the_run_has_something_to_spawn() {
         let roster = Roster::load(&crate::content::registries());
-        assert!(roster.table.gaps(1..=3).is_empty());
+        assert!(roster.table.gaps(1..=crate::decks::DECKS as i32).is_empty());
     }
 
     #[test]
