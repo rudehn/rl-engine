@@ -17,7 +17,7 @@
 # Systems
 
 - [Foundations]()
-  - [The turn loop]()
+  - [The turn loop](systems/turn-loop.md)
   - [Registries and content]()
   - [Seeds and determinism]()
 - [The world]()
