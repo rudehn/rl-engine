@@ -5,7 +5,8 @@
 //! [`Facts`] kind it counts, the way `examples/corsair/src/quests.rs`
 //! does for its own, larger vocabulary; Foundry's objective vocabulary is
 //! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants
-//! [`Console`] at deck three's `R` mark, beside the loot Task 9 scatters
+//! [`Console`] on the `R` mark of any deck that reports one, beside the
+//! loot `loot::scatter_on_arrival` plants on the same arrival
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -119,19 +120,19 @@ pub fn start(mut commands: Commands, registries: Res<Registries>) {
 /// finds its id.
 pub const CHARGE: &str = "charge";
 
-/// Puts the reactor console at deck three's `R` mark the moment it is
-/// first entered, beside the loot `loot::scatter_on_arrival` plants on
-/// the same arrival: reads the same [`PlaceEntered`] the way that system
-/// and `droids::populate_deck` do, and is unordered against both, since
-/// none of the three ever shares a tile-claiming concern with either of
-/// the others.
+/// Puts a reactor console on the `R` mark of any deck that reports one,
+/// the moment it is first entered, beside the loot
+/// `loot::scatter_on_arrival` plants on the same arrival: reads the same
+/// [`PlaceEntered`] the way that system and `droids::populate_deck` do,
+/// and is unordered against both, since none of the three ever shares a
+/// tile-claiming concern with either of the others.
 ///
-/// The console itself is content: `props.ron` says how it looks, that it
-/// blocks, and that it offers `charge` for three turns, so this system
-/// says only where one stands.
+/// Which decks have one is the builder's business, not this system's: it
+/// asks the map rather than the deck number, so adding or moving a
+/// reactor is a change to `decks.rs` alone.
 pub fn spawn_console_on_arrival(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, registries: Res<Registries>) {
     for ev in entered.read() {
-        if !ev.first || crate::decks::deck_of(ev.map) != 3 {
+        if !ev.first {
             continue;
         }
         let Some(place) = map.place(ev.map) else { continue };
@@ -255,5 +256,24 @@ mod tests {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         assert!(charge_offered(&app, player).is_none(), "deck one offers no charge");
         assert!(!crate::testing::quest_done(&app, "first_charge"));
+    }
+
+    /// Every charge deck gets its console on the arrival that builds it,
+    /// which is what makes one system serve four reactors instead of the
+    /// one deck three used to name.
+    #[test]
+    fn every_charge_deck_stands_a_console_on_its_reactor_mark_over_a_span_of_seeds() {
+        for s in 0..4u64 {
+            for deck in [3u32, 6, 9, 10] {
+                let mut app = crate::testing::headless(RunSeed(s));
+                crate::testing::arrive_on(&mut app, deck);
+                let world = app.world_mut();
+                let console_id = world.resource::<Registries>().props.expect("reactor console");
+                let here = crate::decks::map_of(deck);
+                let mut q = world.query::<(&OnMap, &PropKind)>();
+                let consoles = q.iter(world).filter(|(on, kind)| on.0 == here && kind.0 == console_id).count();
+                assert_eq!(consoles, 1, "seed {s}, deck {deck}: one console");
+            }
+        }
     }
 }
