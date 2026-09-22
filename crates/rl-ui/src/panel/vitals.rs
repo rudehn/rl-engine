@@ -23,6 +23,14 @@ pub struct VitalsLayout {
     pub hints: String,
     /// Cells given to each bar.
     pub bar_width: i32,
+    /// What the noise gauge is called. Empty says nothing at all, which
+    /// is how a game leaves the reading out.
+    pub noise: String,
+    /// The loudness a full noise gauge stands for, in hundredths of a
+    /// step over open ground, the unit `NoiseHeard::left` reads in. A
+    /// thousand is a blow or a shot heard from the next tile, which is
+    /// the loudest thing most games make.
+    pub loudest: i32,
     /// Whether to print the turn and the position.
     pub show_whereabouts: bool,
     /// A heading with a rule under it, over everything else. Empty draws
@@ -38,12 +46,21 @@ pub struct VitalsPanel(VitalsLayout);
 impl VitalsPanel {
     /// Vitals in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(VitalsLayout { rect, hints: String::new(), bar_width: 10, show_whereabouts: true, heading: String::new() })
+        Self(VitalsLayout { rect, hints: String::new(), bar_width: 10, show_whereabouts: true, heading: String::new(), noise: "noise".into(), loudest: 1000 })
     }
 
     /// Sets the key hints at the right of the last row.
     pub fn hints(mut self, hints: impl Into<String>) -> Self {
         self.0.hints = hints.into();
+        self
+    }
+
+    /// Sets what the noise gauge is called and how loud a full one is,
+    /// in hundredths of a step of loudness. An empty name leaves the
+    /// reading out, which is what a game with no noise wants.
+    pub fn noise(mut self, name: impl Into<String>, loudest: i32) -> Self {
+        self.0.noise = name.into();
+        self.0.loudest = loudest;
         self
     }
 
@@ -131,6 +148,19 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
         terminal.print_on(rect.x, y, word, palette.get(tone), bg);
         y += 1;
     }
+    // How loud it is here, a line of its own on a panel with room, beside
+    // being seen: the same question asked of the other sense.
+    if let Some(noise) = view.noise.filter(|_| !layout.noise.is_empty())
+        && y < bottom
+    {
+        let (fraction, tone) = noise_gauge(noise, layout.loudest);
+        terminal.print_on(rect.x, y, &clip(&layout.noise, rect.width as usize), text, bg);
+        let bar_x = rect.x + 1 + layout.noise.chars().count() as i32;
+        if bar_x + layout.bar_width < rect.right() {
+            bar(&mut terminal, bar_x, y, layout.bar_width, fraction, tone, &palette);
+        }
+        y += 1;
+    }
     if !view.badges.is_empty() && y < bottom {
         let badges: String = view.badges.iter().map(|b| b.text.as_str()).collect();
         terminal.print_on(rect.x, y, &clip(&badges, rect.width as usize), palette.get(Tones::NOTICE), bg);
@@ -151,6 +181,19 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
         let x = rect.right() - 1 - layout.hints.chars().count() as i32;
         terminal.print_on(x.max(rect.x), bottom - 1, &layout.hints, muted, bg);
     }
+}
+
+/// How full the noise gauge is and in what tone: quiet is muted, a noise
+/// at half the loudest a game makes or more is bad, and anything else is
+/// worth noticing.
+fn noise_gauge(noise: i32, loudest: i32) -> (f32, crate::tone::ToneId) {
+    let loudest = loudest.max(1);
+    let tone = match noise {
+        0 => Tones::MUTED,
+        n if n * 2 >= loudest => Tones::BAD,
+        _ => Tones::NOTICE,
+    };
+    ((noise as f32 / loudest as f32).clamp(0.0, 1.0), tone)
 }
 
 /// One thing on a one-row strip.
@@ -191,6 +234,12 @@ fn draw_line(terminal: &mut Terminal, rect: Rect, view: &VitalsView, layout: &Vi
     if let Some(seen) = view.seen {
         let (word, tone) = if seen { ("seen", Tones::BAD) } else { ("hidden", Tones::GOOD) };
         parts.push(Part::Text(word.into(), palette.get(tone)));
+    }
+    // How loud it is where the player stands, as a gauge beside being
+    // seen, since the two are the same question asked of two senses.
+    if let Some(noise) = view.noise.filter(|_| !layout.noise.is_empty()) {
+        let (fraction, tone) = noise_gauge(noise, layout.loudest);
+        parts.push(Part::Gauge(layout.noise.clone(), fraction, tone));
     }
     if !view.badges.is_empty() {
         parts.push(Part::Text(view.badges.iter().map(|b| b.text.as_str()).collect(), palette.get(Tones::NOTICE)));
@@ -254,6 +303,53 @@ mod tests {
         assert!(rows[1].starts_with("health 30/30"), "{:?}", rows[1]);
         assert_eq!(rows[2], "armor 0");
         assert!(rows[3].starts_with("turn 0"), "{:?}", rows[3]);
+    }
+
+    /// The reading is on a tall panel as well as a one-row strip: Foundry
+    /// has a seven-row rail, and the gauge went missing there while the
+    /// strip had it all along.
+    #[test]
+    fn a_tall_panel_shows_the_noise_reading_on_a_line_of_its_own() {
+        let rules = rl_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
+        let panel = VitalsPanel::new(Rect::new(0, 0, 40, 7)).heading("Vitals").noise("noise", 1000);
+        let mut stage = Stage::new((panel, rl_bevy::NoisePlugin::new(rules))).screen(40, 10);
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(rl_bevy::Hearing(rl_rules::HearingStats { threshold: 0, memory: 6 }));
+        stage.tick();
+        assert!(stage.rows().iter().any(|r| r.starts_with("noise")), "a line of its own: {:?}", stage.rows());
+
+        let sound = stage.app.world_mut().resource_mut::<rl_bevy::Sounds>().declare("clatter");
+        stage.app.world_mut().write_message(rl_bevy::MakeNoise { at: stage.at.offset(2, 0), loudness: 10, sound, maker: None });
+        stage.tick();
+        let row = stage.rows().into_iter().find(|r| r.starts_with("noise")).expect("the reading");
+        assert!(row.contains('\u{2588}'), "and it fills as something is heard: {row:?}");
+    }
+
+    /// How loud it is where the commando stands, beside being seen: the
+    /// two are the same question asked of two senses.
+    #[test]
+    fn a_player_with_ears_is_told_how_loud_it_is_where_they_stand() {
+        let rules = rl_bevy::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
+        let panel = VitalsPanel::new(Rect::new(0, 0, 64, 1)).noise("noise", 1000);
+        let mut stage = Stage::new((panel, rl_bevy::NoisePlugin::new(rules))).screen(64, 3);
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(rl_bevy::Hearing(rl_rules::HearingStats { threshold: 0, memory: 6 }));
+        stage.tick();
+        assert!(stage.rows()[0].contains("noise"), "the gauge is there on a quiet turn: {:?}", stage.rows()[0]);
+
+        let sound = stage.app.world_mut().resource_mut::<rl_bevy::Sounds>().declare("clatter");
+        stage.app.world_mut().write_message(rl_bevy::MakeNoise { at: stage.at.offset(2, 0), loudness: 10, sound, maker: None });
+        stage.tick();
+        let row = stage.rows()[0].clone();
+        assert!(row.contains('\u{2588}'), "and fills as something is heard: {row:?}");
+
+        // A game that wants no reading at all says so by naming it nothing.
+        let quiet = VitalsPanel::new(Rect::new(0, 0, 64, 1)).noise("", 1000);
+        let mut without = Stage::new((quiet, rl_bevy::NoisePlugin::new(rules))).screen(64, 3);
+        let deaf = without.player;
+        without.app.world_mut().entity_mut(deaf).insert(rl_bevy::Hearing(rl_rules::HearingStats { threshold: 0, memory: 6 }));
+        without.tick();
+        assert!(!without.rows()[0].contains("noise"), "{:?}", without.rows()[0]);
     }
 
     #[test]

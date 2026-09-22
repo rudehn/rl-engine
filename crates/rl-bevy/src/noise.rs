@@ -164,6 +164,12 @@ pub struct NoiseHeard {
     pub sound: SoundId,
     /// Who made it, as the noise said.
     pub maker: Option<Entity>,
+    /// How much of its loudness was still on it when it arrived, in
+    /// hundredths of a step over open ground, the same unit every clock
+    /// here counts in: what a meter reads, and what `Hearing::threshold`
+    /// is measured against. A shout next door arrives louder than the
+    /// same shout across the deck.
+    pub left: i32,
 }
 
 /// How keenly this actor hears. Absent, it is deaf, which is how every
@@ -381,7 +387,7 @@ pub fn resolve_noise(
             if !hearing::heard(left, ear.threshold) {
                 continue;
             }
-            heard.write(NoiseHeard { listener: *listener, at: noise.at, sound: noise.sound, maker: noise.maker });
+            heard.write(NoiseHeard { listener: *listener, at: noise.at, sound: noise.sound, maker: noise.maker, left });
             let arrived = (left, Reverse(noise.at));
             if loudest[i].is_none_or(|held| arrived > held) {
                 loudest[i] = Some(arrived);
@@ -612,7 +618,21 @@ mod tests {
         field.app.world_mut().write_message(MakeNoise { at, loudness: 6, sound: shout, maker: None });
         field.wait();
         let told = &field.app.world().resource::<Told>().0;
-        assert_eq!(told, &vec![NoiseHeard { listener: player, at, sound: shout, maker: None }]);
+        assert_eq!(told.len(), 1, "one shout, one telling: {told:?}");
+        assert_eq!((told[0].listener, told[0].at, told[0].sound, told[0].maker), (player, at, shout, None));
+        assert!(told[0].left > 0, "and it arrived with something still on it: {}", told[0].left);
+
+        // And it arrives quieter the further it has come, which is what a
+        // meter of the noise around a listener reads. Further still and it
+        // does not arrive at all, which is the threshold's business.
+        let close = told[0].left;
+        let far = field.start.offset(5, 0);
+        field.app.world_mut().resource_mut::<Told>().0.clear();
+        field.app.world_mut().write_message(MakeNoise { at: far, loudness: 6, sound: shout, maker: None });
+        field.wait();
+        let then = &field.app.world().resource::<Told>().0;
+        assert_eq!(then.len(), 1, "still within earshot: {then:?}");
+        assert!(then[0].left < close, "further off, quieter: {close} then {}", then[0].left);
         assert!(!field.heard(player).is_alert(), "the player's own turn is the game's");
     }
 
@@ -646,7 +666,8 @@ mod tests {
         }
         field.wait();
         let told = &field.app.world().resource::<Told>().0;
-        assert_eq!(told, &vec![NoiseHeard { listener, at: start, sound: Sounds::STRIKE, maker: Some(player) }]);
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert_eq!((told[0].listener, told[0].at, told[0].sound, told[0].maker), (listener, start, Sounds::STRIKE, Some(player)));
     }
 
     #[test]
@@ -660,7 +681,8 @@ mod tests {
         field.app.update();
         let door = field.start.offset(1, 0);
         let told = &field.app.world().resource::<Told>().0;
-        assert_eq!(told, &vec![NoiseHeard { listener, at: door, sound: Sounds::DOOR, maker: Some(player) }]);
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert_eq!((told[0].listener, told[0].at, told[0].sound, told[0].maker), (listener, door, Sounds::DOOR, Some(player)));
     }
 
     #[test]
