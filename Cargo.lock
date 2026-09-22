@@ -4191,6 +4191,7 @@ name = "rl-bevy"
 version = "0.2.0"
 dependencies = [
  "bevy",
+ "criterion",
  "rand 0.9.5",
  "rl-core",
  "rl-grid",
@@ -4306,6 +4307,7 @@ name = "rl-ui"
 version = "0.2.0"
 dependencies = [
  "bevy",
+ "criterion",
  "rl-bevy",
  "rl-core",
  "rl-grid",

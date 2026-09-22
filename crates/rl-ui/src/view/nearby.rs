@@ -106,6 +106,7 @@ pub struct Around<'w, 's> {
     rules: Res<'w, CombatRules>,
     focus: Res<'w, Focus>,
     sight: InSight<'w, 's>,
+    sighted: Res<'w, crate::focus::Sighted>,
     seen: Query<'w, 's, Seen>,
     factions: Query<'w, 's, &'static Faction>,
     watchers: Watchers<'w, 's>,
@@ -121,9 +122,9 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
     view.focused = None;
     let Some((me, _)) = around.sight.viewer() else { return };
     let mine = around.factions.get(me).ok();
-    let list = around.sight.list();
-    view.focused = around.focus.within(&list).copied();
-    for sighting in list {
+    let list = around.sighted.list();
+    view.focused = around.focus.within(list).copied();
+    for sighting in list.iter().copied() {
         let Ok((name, glyph, health, faction)) = around.seen.get(sighting.entity) else { continue };
         let count = around.stacks.get(sighting.entity).map_or(1, |s| s.count);
         let mut row = Row::new(sighting.entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(sighting.distance);

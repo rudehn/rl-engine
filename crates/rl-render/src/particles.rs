@@ -390,8 +390,13 @@ pub fn skip_on_key(world: &mut World) {
     if !world.resource::<TurnHold>().is_held() {
         return;
     }
+    // A key pressed, or a key held: a repeat is paced by `rl-ui`, which
+    // this crate is below, so it arrives as an ask rather than as a
+    // `just_pressed` this would see. Taken either way, so an ask that
+    // arrives while nothing holds does not bank a skip for later.
+    let asked = world.resource_mut::<TurnHold>().take_skip_asked();
     let pressed = world.get_resource::<ButtonInput<KeyCode>>().is_some_and(|keys| keys.get_just_pressed().next().is_some());
-    if !pressed {
+    if !pressed && !asked {
         return;
     }
     // Through every hold in the way: a flight skipped lands, and its
@@ -572,6 +577,42 @@ mod tests {
         app.update();
         assert!(!app.world().resource::<Particles>().is_holding(), "dropped");
         assert!(!app.world().resource::<TurnHold>().is_held(), "and let go, without waiting for the frame's end");
+    }
+
+    /// The same, for a key the player is *holding*: a repeat is paced by
+    /// `rl-ui` and never arrives as a `just_pressed`, so walking with a
+    /// direction key down waited out every cue in sight. It asks through
+    /// `TurnHold::ask_skip`, and this is the answering half.
+    #[test]
+    fn a_skip_asked_for_while_the_turns_wait_skips_what_holds_them_the_way_a_press_does() {
+        use rl_core::Rect;
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
+        let start = rl_bevy::testing::surface(&mut app);
+        app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(8), RevealsMap));
+        let eel = app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain } });
+        app.update();
+        assert!(app.world().resource::<TurnHold>().is_held(), "the burst holds the turns");
+
+        // No key is pressed at all: this is the repeat's own path.
+        app.world_mut().resource_mut::<TurnHold>().ask_skip();
+        app.update();
+        assert!(!app.world().resource::<Particles>().is_holding(), "dropped");
+        assert!(!app.world().resource::<TurnHold>().is_held(), "and let go");
+    }
+
+    #[test]
+    fn an_ask_is_taken_once_so_one_repeat_skips_one_hold() {
+        let mut hold = TurnHold::default();
+        assert!(!hold.take_skip_asked(), "nothing asked");
+        hold.ask_skip();
+        assert!(hold.take_skip_asked(), "asked");
+        assert!(!hold.take_skip_asked(), "and not still asking, or a key down would skip everything after it");
     }
 
     /// The player cancels an animation and takes the hit: a shot fired at

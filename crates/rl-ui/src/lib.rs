@@ -107,7 +107,7 @@ pub mod view;
 pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats, key_name};
 pub use cursor::{CursorKeys, CursorStyle, Steer, mark};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
-pub use focus::{Focus, InSight, Sighting};
+pub use focus::{Focus, InSight, Sighted, Sighting};
 pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, game_menu_modal};
 pub use interact::{InteractKey, InteractKeys};
 pub use keys::DirectionKeys;
@@ -139,6 +139,11 @@ use bevy::prelude::*;
 /// in two without breaking it.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ViewSet {
+    /// What every view reads before any view is built: [`Sighted`], the
+    /// list of what the player can see. Its own phase because four
+    /// collectors and both cursors read it, and a full scan and a sort
+    /// once a frame is not six.
+    Sight,
     /// The engine rebuilds every view from the world.
     Collect,
     /// The game pushes what the engine cannot know.
@@ -164,6 +169,7 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
+        use rl_bevy::Reads;
         // The keys, so a headless game with no input plugin still has the
         // resource every reader here takes, and reads nothing pressed.
         app.init_resource::<ButtonInput<KeyCode>>()
@@ -174,14 +180,43 @@ impl Plugin for UiPlugin {
             .init_resource::<DirectionKeys>()
             .init_resource::<CursorKeys>()
             .init_resource::<Focus>()
+            .init_resource::<Sighted>()
             .init_resource::<Controls>()
             .init_resource::<ControlsKeys>()
             .init_resource::<RepeatPace>()
             .init_resource::<Repeats>()
             .init_resource::<MessageLog>()
-            .configure_sets(Update, (ViewSet::Collect, ViewSet::Annotate, ViewSet::Speak).chain().in_set(rl_bevy::PresentSet::Narrate))
+            .configure_sets(Update, (ViewSet::Sight, ViewSet::Collect, ViewSet::Annotate, ViewSet::Speak).chain().in_set(rl_bevy::PresentSet::Narrate))
             .add_systems(First, |mut modals: ResMut<Modals>| modals.begin_frame())
-            .add_systems(Update, controls::advance_repeats.before(rl_bevy::EngineSet::Input))
+            // Before anything reads a key, and before the hold advances:
+            // a window that lost focus never saw what was released while
+            // it was away. The message is Bevy's own, and a headless game
+            // has no window to lose focus, so it is read as optional.
+            .reads::<bevy::window::WindowFocused>()
+            .add_systems(Update, controls::forget_keys_on_focus_change.before(controls::advance_repeats))
+            // Before the skipper, which is the one system that reads what
+            // a repeat asks for. Named directly because `rl-render` is
+            // below this crate and has no set for it; the ask is taken
+            // rather than read, so the worst an inversion would cost is a
+            // repeat honoured a frame late, and a frame is not worth a set.
+            .add_systems(Update, controls::advance_repeats.before(rl_bevy::EngineSet::Input).before(rl_render::particles::skip_on_key))
+            // Once a phase, ahead of everything that reads it: the keys
+            // are read against where things stand now, and the views are
+            // filled against where the turns left them.
+            // Between the streaming and the keys rather than inside the
+            // input phase: everything that reads it reads it there, and a
+            // game's own exclusive input system would otherwise be one
+            // more unordered pair for no gain, since nothing in the phase
+            // moves what is in sight.
+            // Gated on play the way the phases either side of it are:
+            // outside the set, it does not inherit their run condition,
+            // and it reads the `WorldMap` that a torn-down run has not
+            // got.
+            .add_systems(
+                Update,
+                focus::collect_sighted.after(rl_bevy::EngineSet::Stream).before(rl_bevy::EngineSet::Input).run_if(in_state(rl_bevy::EngineState::Playing)),
+            )
+            .add_systems(Update, focus::collect_sighted.in_set(ViewSet::Sight))
             // After every screen has had the key, so the one on top answers
             // it itself when it can and this is only the fallback.
             .add_systems(
@@ -211,7 +246,7 @@ pub mod prelude {
     pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
     pub use crate::cursor::{CursorKeys, CursorStyle};
     pub use crate::facet::{Facet, FacetId, Facets};
-    pub use crate::focus::{Focus, InSight, Sighting};
+    pub use crate::focus::{Focus, InSight, Sighted, Sighting};
     pub use crate::game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
     pub use crate::interact::{InteractKey, InteractKeys};
     pub use crate::keys::DirectionKeys;

@@ -104,6 +104,33 @@ impl InSight<'_, '_> {
     }
 }
 
+/// What the player can see, in list order, collected once a phase.
+///
+/// [`InSight::list`] is a full scan, two allocations and a sort, and five
+/// systems used to ask for it: `browse` and each cursor while the keys are
+/// read, and each view's collector while the frame is drawn. Nothing moves
+/// within either phase, so one collection at the head of each serves every
+/// reader in it and the answers cannot disagree.
+///
+/// Refilled twice a frame rather than once, because the two phases are two
+/// different moments: the turns run between them, and a list collected
+/// before the player's key was resolved is not the list the panels draw.
+#[derive(Resource, Debug, Default)]
+pub struct Sighted(Vec<Sighting>);
+
+impl Sighted {
+    /// What is in sight, actors nearest first and then things.
+    pub fn list(&self) -> &[Sighting] {
+        &self.0
+    }
+}
+
+/// Refills [`Sighted`]. Runs at the head of the input phase and again at
+/// the head of [`ViewSet::Collect`](crate::ViewSet::Collect).
+pub fn collect_sighted(mut sighted: ResMut<Sighted>, sight: InSight) {
+    sighted.0 = sight.list();
+}
+
 /// The one entity the player has picked out of what is in sight.
 ///
 /// Stepped by Tab in the nearby list and by either cursor, and read by all
@@ -168,12 +195,12 @@ pub fn cycle(list: &[Sighting], from: Option<Entity>, back: bool) -> Option<&Sig
 ///
 /// Only with nothing open: inside a cursor the same keys move the cursor,
 /// which moves the focus with it.
-pub fn browse(input: CursorInput, modals: Res<Modals>, sight: InSight, mut focus: ResMut<Focus>) {
+pub fn browse(input: CursorInput, modals: Res<Modals>, sighted: Res<Sighted>, mut focus: ResMut<Focus>) {
     if modals.any_open() {
         return;
     }
     if input.just_pressed(input.keys().next) {
-        focus.step(&sight.list(), input.back());
+        focus.step(sighted.list(), input.back());
     } else if input.just_pressed(input.keys().close) && focus.get().is_some() {
         focus.clear();
     }

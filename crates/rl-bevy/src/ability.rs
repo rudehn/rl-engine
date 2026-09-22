@@ -31,7 +31,7 @@ use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position, Viewshed};
-use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
+use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
 use crate::items::{Equipped, Inventory, Item, Stack, Tagged, UseItem};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
@@ -688,13 +688,10 @@ pub struct Catalog<'w> {
     abilities: Res<'w, Abilities>,
     turns: Res<'w, Turns>,
     hold: ResMut<'w, TurnHold>,
-    airborne: ResMut<'w, Airborne>,
+    airborne: ResMut<'w, Airborne<Landing>>,
 }
 
-/// Uses that have been cast and are flying, to land on the first pass
-/// after their flight has been seen.
-#[derive(Resource, Debug, Default)]
-pub struct Airborne(Vec<Landing>);
+impl crate::cue::Lands for Landing {}
 
 /// Resolves a use: gate, pay, aim, land.
 ///
@@ -751,15 +748,19 @@ pub fn resolve_abilities(
         // The turn is spent on the cast. With something watching, a
         // projectile is seen to fly before it lands: what it does waits in
         // the air for the first pass after the flight has been seen.
-        if let Some(flight) = flight_of(&landing, &world) {
-            world.cues.write(Cued { actor: user, cue: flight });
-            if hold.is_watched() {
-                hold.launch();
-                airborne.0.push(landing);
-                resolution.done(user, def.time);
-                continue;
+        let landing = match flight_of(&landing, &world) {
+            Some(flight) => {
+                world.cues.write(Cued { actor: user, cue: flight });
+                match airborne.launched(&mut hold, landing) {
+                    None => {
+                        resolution.done(user, def.time);
+                        continue;
+                    }
+                    Some(landing) => landing,
+                }
             }
-        }
+            None => landing,
+        };
         land(landing, &abilities, &mut world, &mut events);
         resolution.done(user, def.time);
     }
@@ -772,15 +773,13 @@ pub fn resolve_abilities(
 pub fn land_abilities(
     abilities: Res<Abilities>,
     mut hold: ResMut<TurnHold>,
-    mut airborne: ResMut<Airborne>,
+    mut airborne: ResMut<Airborne<Landing>>,
     mut turns: ResMut<Turns>,
     mut world: EffectWorld,
     mut events: MessageWriter<AbilityEvent>,
 ) {
-    for landing in std::mem::take(&mut airborne.0) {
+    for landing in airborne.landing(&mut hold, &mut turns) {
         land(landing, &abilities, &mut world, &mut events);
-        hold.land();
-        turns.progress = true;
     }
 }
 
@@ -1134,14 +1133,15 @@ pub struct AbilitiesPlugin;
 impl Plugin for AbilitiesPlugin {
     fn build(&self, app: &mut App) {
         use crate::components::Actor;
-        use crate::plugin::Needs;
+        use crate::plugin::{Needs, ResetsOnNewRun};
         use crate::seed::AddStream;
         app.register_required_components::<Actor, Known>();
         app.register_required_components::<Actor, Pools>();
         app.register_required_components::<Actor, Cooldowns>();
         app.init_resource::<EffectKinds>()
             .init_resource::<Offered>()
-            .init_resource::<Airborne>()
+            .reset_on_new_run::<Offered>()
+            .add_airborne::<Landing>()
             .add_message::<AbilityEvent>()
             // `EffectWorld` writes these, so they are this plugin's to
             // register: a writer for a message nobody registered fails the

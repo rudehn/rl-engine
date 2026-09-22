@@ -17,12 +17,22 @@ pub fn load(names: &Names) -> Registry<StatusDef> {
     status::load(STATUSES_RON, names).unwrap_or_else(|e| panic!("assets/statuses.ron: {e}"))
 }
 
+/// The stream the "does the bite poison you" roll comes from: the game's
+/// own, from `Seed::stream(b"corsair.inflicts", 0)`, seeded once when the
+/// run starts.
+///
+/// Never the engine's own `CombatRng`, which this drew from until
+/// 2026-09-22: a roll a game adds must not shift the dice of the blows
+/// the engine has yet to throw.
+#[derive(Resource)]
+pub struct Inflicts(pub rand::rngs::StdRng);
+
 /// A monster's hit that landed may leave its status behind.
 pub fn inflict_on_hit(
     mut dealt: MessageReader<DamageDealt>,
     mut afflict: MessageWriter<Afflict>,
     bestiary: Res<Bestiary>,
-    mut rng: ResMut<CombatRng>,
+    mut rng: ResMut<Inflicts>,
     kinds: Query<&MonsterKind>,
 ) {
     for d in dealt.read() {
@@ -32,7 +42,7 @@ pub fn inflict_on_hit(
         let Some(attacker) = d.hit.attacker else { continue };
         let Ok(kind) = kinds.get(attacker) else { continue };
         let Some((status, turns, pct)) = &bestiary.defs.get(kind.0).inflicts else { continue };
-        if rng.random_range(0..100) < *pct {
+        if rng.0.random_range(0..100) < *pct {
             afflict.write(Afflict { target: d.target, status: status.id(), turns: *turns, by: Some(attacker) });
         }
     }

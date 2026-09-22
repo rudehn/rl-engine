@@ -55,7 +55,7 @@ pub use combat::{
     RangedAttack, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use cue::{Anchor, Cue, Cued, LookOf, TurnHold};
+pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{AddEngineEffects, Cleanse, Emit, Harm, Ignite, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
@@ -78,8 +78,8 @@ pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
 pub use plugin::{
-    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Requirements, ResolveSet, Turn, TurnSet,
-    clear_run, depends_on,
+    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, Requirements, ResetsOnNewRun,
+    ResolveSet, RunResets, Turn, TurnSet, clear_run, depends_on,
 };
 pub use props::{
     AddVerb, Container, Emptied, FillContainer, Fired, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropEffects, PropKind, PropRng, PropSet,
@@ -105,16 +105,15 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 /// that collided with a game's own `Shove` action.
 pub mod prelude {
     pub use crate::ability::{
-        Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants, Known,
-        Landing, Pools, Use,
+        Abilities, AbilitiesPlugin, AbilityEvent, AddEffect, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants, Known, Landing, Pools, Use,
     };
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::combat::{
-        Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
+        Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
         RangedAttack, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    pub use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
+    pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent, Open};
     pub use crate::effects::AddEngineEffects;
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
@@ -133,7 +132,8 @@ pub mod prelude {
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
     pub use crate::plugin::{
-        CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ResolveSet, Turn, TurnSet, depends_on,
+        CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, ResetsOnNewRun, ResolveSet,
+        Turn, TurnSet, depends_on,
     };
     pub use crate::props::{
         AddVerb, Container, Emptied, FillContainer, Fired, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused,

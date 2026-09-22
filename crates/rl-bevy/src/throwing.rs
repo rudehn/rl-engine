@@ -21,7 +21,7 @@ use rl_rules::damage::DamageKindId;
 
 use crate::combat::{CombatRng, DamageEvent, Dead, Health};
 use crate::components::{MyTurn, Position};
-use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
+use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
 use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack};
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
@@ -94,7 +94,7 @@ pub struct Launch<'w, 's> {
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     cues: MessageWriter<'w, Cued>,
     hold: ResMut<'w, TurnHold>,
-    airborne: ResMut<'w, AirborneThrows>,
+    airborne: ResMut<'w, Airborne<ThrowLanding>>,
 }
 
 /// A throw that has left the hand and not yet come down: what it will do
@@ -108,10 +108,7 @@ pub struct ThrowLanding {
     strike: Option<(DamageKindId, DiceRoll)>,
 }
 
-/// Throws in the air, to land on the first pass after their flight has
-/// been seen.
-#[derive(Resource, Debug, Default)]
-pub struct AirborneThrows(Vec<ThrowLanding>);
+impl crate::cue::Lands for ThrowLanding {}
 
 /// Resolves [`Throw`] for the actor holding the turn: the flight, the one
 /// that leaves the hand, the blow if it strikes anyone, and where it lands.
@@ -168,11 +165,7 @@ pub fn resolve_throws(
         // The turn is spent on the throw. With something watching, the
         // knife is in the air until its flight has been seen, and lies
         // nowhere until it comes down.
-        if hold.is_watched() {
-            hold.launch();
-            airborne.0.push(landing);
-            continue;
-        }
+        let Some(landing) = airborne.launched(&mut hold, landing) else { continue };
         land(landing, map.current(), &mut commands, &mut rng, &alive, &mut damage, &mut events);
     }
 }
@@ -188,10 +181,8 @@ pub fn land_throws(
     mut turns: ResMut<crate::turn::Turns>,
 ) {
     let Launch { map, mut rng, alive, mut hold, mut airborne, .. } = launch;
-    for landing in std::mem::take(&mut airborne.0) {
+    for landing in airborne.landing(&mut hold, &mut turns) {
         land(landing, map.current(), &mut commands, &mut rng, &alive, &mut damage, &mut events);
-        hold.land();
-        turns.progress = true;
     }
 }
 
@@ -231,7 +222,7 @@ impl Plugin for ThrowingPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{ResolveSet, Turn};
         use crate::turn::AddAction;
-        app.init_resource::<AirborneThrows>()
+        app.add_airborne::<ThrowLanding>()
             .add_action::<Throw>()
             .add_systems(Turn, (land_throws.in_set(crate::plugin::LandSet::Throw), resolve_throws).chain().in_set(ResolveSet::Act));
     }

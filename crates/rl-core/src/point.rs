@@ -195,6 +195,23 @@ impl Rect {
         if right > x && bottom > y { Some(Rect::new(x, y, right - x, bottom - y)) } else { None }
     }
 
+    /// The smallest rectangle covering both.
+    ///
+    /// An empty rectangle covers nothing, so the union with one is the
+    /// other: growing a bounding box from nothing would otherwise drag it
+    /// to the origin.
+    pub fn union(&self, other: &Rect) -> Rect {
+        if self.is_empty() {
+            return *other;
+        }
+        if other.is_empty() {
+            return *self;
+        }
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        Rect::new(x, y, self.right().max(other.right()) - x, self.bottom().max(other.bottom()) - y)
+    }
+
     /// Every cell inside, row-major.
     pub fn cells(self) -> impl Iterator<Item = Point> {
         (self.y..self.bottom()).flat_map(move |y| (self.x..self.right()).map(move |x| Point::new(x, y)))
@@ -301,5 +318,21 @@ mod tests {
     fn center_is_the_middle_cell() {
         assert_eq!(Rect::new(0, 0, 5, 5).center(), Point::new(2, 2));
         assert_eq!(Rect::new(10, 10, 4, 4).center(), Point::new(12, 12));
+    }
+
+    #[test]
+    fn a_union_covers_both_rectangles_and_an_empty_one_contributes_nothing() {
+        let a = Rect::new(0, 0, 2, 2);
+        let b = Rect::new(5, 4, 1, 1);
+        let both = a.union(&b);
+        assert_eq!(both, Rect::new(0, 0, 6, 5));
+        for r in [a, b] {
+            for p in r.cells() {
+                assert!(both.contains(p), "{p:?} of {r:?} is outside {both:?}");
+            }
+        }
+        let nothing = Rect::new(3, 3, 0, 0);
+        assert_eq!(a.union(&nothing), a, "an empty rectangle is nowhere, not a corner to stretch to");
+        assert_eq!(nothing.union(&a), a);
     }
 }

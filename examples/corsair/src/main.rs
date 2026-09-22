@@ -278,6 +278,10 @@ fn start_world(world: &mut World) {
         saved.as_ref().map(|s| (s.engine.seed, s.state::<StartOptions>().unwrap_or(start.regions))).unwrap_or((world.resource::<Seed>().0, start.regions));
     // A continued run keeps the seed it was saved with, and every stream follows.
     world.insert_resource(Seed(seed));
+    // The game's own stream for what the dead leave, kept from where it
+    // last stood rather than derived per kill.
+    world.insert_resource(items::Drops(Seed(seed).stream(b"corsair.drops", 0)));
+    world.insert_resource(statuses::Inflicts(Seed(seed).stream(b"corsair.inflicts", 0)));
 
     let content = Content::new();
     // Islands rather than a continent: less land, more of it coast.

@@ -318,22 +318,32 @@ pub fn scatter_on_load(mut commands: Commands, mut loaded: MessageReader<ChunkLo
     }
 }
 
+/// The stream every kill's drop rolls come from: seeded once, from
+/// `Seed::stream(b"corsair.drops", 0)`, when the run starts, and never
+/// reseeded, so one kill's roll picks up where the last one left off.
+///
+/// Never the engine's own `CombatRng`, which this drew from until
+/// 2026-09-22: a game's draws come from its own stream, or a kill's loot
+/// shifts the dice of a blow that has not been struck yet.
+#[derive(Resource)]
+pub struct Drops(pub rand::rngs::StdRng);
+
 /// What the dead leave behind, from the bestiary's drop lists.
 pub fn drop_loot(
     mut commands: Commands,
     mut deaths: MessageReader<DeathEvent>,
     armory: Res<Armory>,
     bestiary: Res<crate::monsters::Bestiary>,
-    mut rng: ResMut<CombatRng>,
+    mut rng: ResMut<Drops>,
     kinds: Query<&crate::monsters::MonsterKind>,
 ) {
     for d in deaths.read() {
         let Ok(kind) = kinds.get(d.entity) else { continue };
         for (item, pct) in &bestiary.defs.get(kind.0).drops {
-            if rng.random_range(0..100) < *pct {
+            if rng.0.random_range(0..100) < *pct {
                 let id = item.id();
-                let n = armory.stack_size(id, &mut **rng);
-                let enchant = armory.roll_quality(id, Quality::FOUND, &mut **rng);
+                let n = armory.stack_size(id, &mut rng.0);
+                let enchant = armory.roll_quality(id, Quality::FOUND, &mut rng.0);
                 armory.spawn_with(&mut commands, id, n, Some(d.at), enchant);
             }
         }

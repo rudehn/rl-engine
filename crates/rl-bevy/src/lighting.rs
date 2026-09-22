@@ -19,7 +19,7 @@
 //! clock hook and no notion of a day.
 
 use bevy::prelude::*;
-use rl_core::{Grid2D, Point, geometry};
+use rl_core::{Grid2D, Point, Rect, geometry};
 use rl_grid::{BitGrid, Emitter, Light, LightField, Rgb};
 
 use crate::components::{Actor, Position, Viewshed};
@@ -193,9 +193,66 @@ pub struct Sources<'w, 's> {
     carried: Query<'w, 's, &'static LightSource, (With<Item>, Without<Position>)>,
 }
 
-/// Recasts whatever changed and marks every viewshed stale when the
-/// light did. Runs after the turns and before sight.
-pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, sources: Sources, mut viewsheds: Query<&mut Viewshed>) {
+/// The cells whose light may differ between two emitter lists: the discs
+/// of every emitter in one and not the other.
+///
+/// Both lists are sorted, so this is a merge. `None` means the lists are
+/// the same and nothing moved.
+fn changed_area(was: &[Emitter], now: &[Emitter]) -> Option<Rect> {
+    let mut area: Option<Rect> = None;
+    let mut cover = |e: &Emitter| {
+        // The rim, where light reaches exactly zero, is still a cell whose
+        // value can change, so the disc is taken inclusive of it.
+        let disc = Rect::from_corners(e.origin.offset(-e.radius, -e.radius), e.origin.offset(e.radius, e.radius));
+        area = Some(match area {
+            Some(a) => a.union(&disc),
+            None => disc,
+        });
+    };
+    let (mut i, mut j) = (0, 0);
+    while i < was.len() || j < now.len() {
+        match (was.get(i), now.get(j)) {
+            (Some(a), Some(b)) if a == b => {
+                i += 1;
+                j += 1;
+            }
+            (Some(a), Some(b)) if a < b => {
+                cover(a);
+                i += 1;
+            }
+            (Some(_), Some(b)) => {
+                cover(b);
+                j += 1;
+            }
+            (Some(a), None) => {
+                cover(a);
+                i += 1;
+            }
+            (None, Some(b)) => {
+                cover(b);
+                j += 1;
+            }
+            (None, None) => break,
+        }
+    }
+    area
+}
+
+/// A viewer whose sight the light may have cut differently: where it
+/// stands and how far it sees.
+type Lit = (Option<&'static Position>, &'static mut Viewshed);
+
+/// Recasts whatever changed and marks stale the viewsheds the change could
+/// reach. Runs after the turns and before sight.
+///
+/// Only those it could reach: a viewshed is cut down to what is lit inside
+/// its own range, so a lamp that moved at the far end of the window cannot
+/// change what a mind twenty tiles away sees. Marking every viewshed
+/// instead cost a shadowcast per actor on every frame in which any light
+/// moved, which in a lit game is every frame the player walks: measured at
+/// 11 microseconds per actor per frame by `crates/rl-ui/benches/frame.rs`,
+/// or a frame three times over at sixty-four of them.
+pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, sources: Sources, mut viewsheds: Query<Lit>) {
     let Some(mut lighting) = lighting else { return };
     let lighting = &mut *lighting;
     let here = map.current();
@@ -235,9 +292,17 @@ pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, s
     statics.sort_unstable();
     dynamics.sort_unstable();
 
+    // What moved, before the lists are replaced. `None` where the whole
+    // field is being rebuilt anyway, which is every viewshed's business.
     let mut changed = false;
+    let mut touched: Option<Rect> = None;
+    let mut everywhere = recast_all;
     let view = map.view();
     if recast_all || lighting.static_dirty || statics != lighting.static_emitters {
+        touched = union(touched, changed_area(&lighting.static_emitters, &statics));
+        // A dirty flag says the map changed under the fixtures rather than
+        // that a fixture moved, so the area it touches is not knowable.
+        everywhere |= lighting.static_dirty;
         lighting.statics.clear();
         lighting.statics.cast_all(&view, &mut statics, &mut lighting.scratch);
         lighting.static_emitters = statics;
@@ -245,18 +310,39 @@ pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, s
         changed = true;
     }
     if recast_all || dynamics != lighting.dynamic_emitters {
+        touched = union(touched, changed_area(&lighting.dynamic_emitters, &dynamics));
         lighting.dynamics.clear();
         lighting.dynamics.cast_all(&view, &mut dynamics, &mut lighting.scratch);
         lighting.dynamic_emitters = dynamics;
         changed = true;
     }
     if changed || lighting.composed_with != lighting.ambient {
+        // Ambient lands on every cell, so a change to it reaches everyone.
+        everywhere |= lighting.composed_with != lighting.ambient;
         lighting.combined.compose(&lighting.statics, &lighting.dynamics, lighting.ambient);
         lighting.composed_with = lighting.ambient;
-        for mut v in &mut viewsheds {
-            v.dirty = true;
+        for (pos, mut v) in &mut viewsheds {
+            v.dirty |= everywhere || reaches(touched, pos.map(|p| local(p.0)), v.range);
         }
     }
+}
+
+/// The smaller rectangle covering both, where there are two.
+fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.union(&b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Whether a viewer at `at` seeing `range` tiles could have had its sight
+/// cut differently by a change over `touched`.
+///
+/// A viewer whose cell nobody knows is taken as reachable: it is one
+/// entity, and guessing wrong the other way is sight that never updates.
+fn reaches(touched: Option<Rect>, at: Option<Point>, range: i32) -> bool {
+    let (Some(touched), Some(at)) = (touched, at) else { return true };
+    Rect::from_corners(at.offset(-range, -range), at.offset(range, range)).intersects(&touched)
 }
 
 /// Cuts a computed line of sight down to what light, dark sight or touch
@@ -307,9 +393,12 @@ pub struct LightingPlugin;
 
 impl Plugin for LightingPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{EngineSet, ResolveSet, Turn};
+        use crate::plugin::{EngineSet, ResetsOnNewRun, ResolveSet, Turn};
         app.add_message::<LightEvent>()
             .insert_resource(Lighting::dark())
+            // Dark rather than the ambient the game chose: a new run writes
+            // its own ambient in `NewRun`, as the first one did.
+            .reset_on_new_run_with::<Lighting>(Lighting::dark)
             .add_systems(Update, update_lighting.in_set(EngineSet::Light))
             .add_systems(Turn, tick_fuel.in_set(ResolveSet::Effects));
     }
@@ -330,6 +419,7 @@ mod tests {
     use crate::state::EngineState;
     use crate::turn::{Action, Intent};
     use crate::turn::{Step, Wait};
+    use bevy::ecs::system::RunSystemOnce;
     use rl_grid::{Terrain, TileId, TileRegistry};
     use rl_mapgen::BuildError;
     use rl_world::WorldGraph;
@@ -535,5 +625,68 @@ mod tests {
         assert!(!perceives(Some(&dark), here, 0, Point::new(5, 3)));
         assert!(perceives(Some(&dark), here, 3, Point::new(6, 3)));
         assert!(!perceives(Some(&dark), here, 3, Point::new(7, 3)));
+    }
+
+    /// The unit the bound is built on, tested without an `App`: the area a
+    /// change touched, and who it can reach.
+    #[test]
+    fn a_lamp_that_moved_touches_its_two_discs_and_reaches_only_viewers_whose_range_meets_them() {
+        let lamp = |x: i32| Emitter { origin: Point::new(x, 0), intensity: 200, radius: 4, color: rl_grid::Rgb::new(255, 255, 255), flicker: 0 };
+
+        assert_eq!(changed_area(&[lamp(0)], &[lamp(0)]), None, "nothing moved, nothing touched");
+
+        // Moved from 0 to 20: both discs, since one cell went dark and the
+        // other lit, and nothing between them changed.
+        let touched = changed_area(&[lamp(0)], &[lamp(20)]).expect("it moved");
+        assert!(touched.contains(Point::new(0, 0)) && touched.contains(Point::new(20, 0)), "{touched:?} covers where it was and where it is");
+
+        // A viewer standing on the old cell sees the change; one far off to
+        // the side, whose whole range is outside both discs, does not.
+        assert!(reaches(Some(touched), Some(Point::new(0, 0)), 8), "the one it left");
+        assert!(reaches(Some(touched), Some(Point::new(20, 0)), 8), "the one it reached");
+        assert!(!reaches(Some(touched), Some(Point::new(10, 60)), 8), "sixty tiles away, and its range does not meet either disc");
+        assert!(reaches(Some(touched), None, 8), "a viewer nobody can place is recast rather than left wrong");
+        assert!(reaches(None, Some(Point::new(10, 60)), 8), "no area known means everyone, which is what a rebuilt field gets");
+
+        // A lamp that appeared, and one that went out, each touch their own disc.
+        let lit = changed_area(&[], &[lamp(5)]).expect("it appeared");
+        assert!(lit.contains(Point::new(5, 0)));
+        let out = changed_area(&[lamp(5)], &[]).expect("it went out");
+        assert_eq!(out, lit, "going out touches exactly what coming on did");
+    }
+
+    /// And the whole of it, through the app: a lamp moving at one end of
+    /// the window leaves a mind at the other end alone, and moving beside
+    /// it does not.
+    #[test]
+    fn a_light_that_moved_marks_only_the_viewsheds_it_could_have_changed() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, LightingPlugin));
+        let start = crate::testing::surface(&mut app);
+        app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap)).id();
+        let near = app.world_mut().spawn((Actor, Position(start.offset(6, 0)), Viewshed::new(8))).id();
+        let far = app.world_mut().spawn((Actor, Position(start.offset(60, 0)), Viewshed::new(8))).id();
+        // The lamp the player carries.
+        app.world_mut().entity_mut(player).insert(LightSource::new(200, 6, rl_grid::Rgb::new(255, 255, 255)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..4 {
+            app.update();
+        }
+
+        let clean = |app: &mut App| {
+            for e in [player, near, far] {
+                app.world_mut().get_mut::<Viewshed>(e).expect("a viewshed").dirty = false;
+            }
+        };
+        clean(&mut app);
+        // The lamp moves one cell, by hand, so nothing else in the frame
+        // touches sight.
+        app.world_mut().get_mut::<Position>(player).expect("somewhere").0 = start.offset(1, 0);
+        app.world_mut().run_system_once(update_lighting).expect("the light ran");
+
+        assert!(app.world().get::<Viewshed>(player).unwrap().dirty, "the one carrying it");
+        assert!(app.world().get::<Viewshed>(near).unwrap().dirty, "and one whose range meets the light it moved");
+        assert!(!app.world().get::<Viewshed>(far).unwrap().dirty, "but not one sixty tiles away, which is what cost a shadowcast per actor a frame");
     }
 }

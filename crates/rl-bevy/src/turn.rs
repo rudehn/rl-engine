@@ -40,6 +40,16 @@ impl Turns {
         self.queue.now() / BASE_ACTION_COST
     }
 
+    /// Marks this pass as having done something, so the runner deals
+    /// another rather than reading it as an idle queue.
+    ///
+    /// For a resolver whose work lands a pass later than the turn that
+    /// started it: see [`Airborne`](crate::cue::Airborne), whose landings
+    /// are the only ones in the engine.
+    pub fn made_progress(&mut self) {
+        self.progress = true;
+    }
+
     /// The clock and every waiting entry, for saving.
     pub fn export(&self) -> (u32, Vec<(Entity, u32)>) {
         (self.queue.now(), self.queue.entries().collect())

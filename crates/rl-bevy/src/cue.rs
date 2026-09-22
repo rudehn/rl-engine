@@ -114,6 +114,8 @@ pub struct TurnHold {
     held: bool,
     /// Flights cued and not yet landed.
     in_flight: u32,
+    /// Whether something below the skipper asked for a skip this frame.
+    skip_asked: bool,
 }
 
 impl TurnHold {
@@ -122,6 +124,7 @@ impl TurnHold {
     pub fn reset(&mut self) {
         self.held = false;
         self.in_flight = 0;
+        self.skip_asked = false;
     }
 
     /// Something will play the cues and let go when they are done.
@@ -162,6 +165,108 @@ impl TurnHold {
     /// Whether anything is in the air, during which no turn is dealt.
     pub fn in_flight(&self) -> bool {
         self.in_flight > 0
+    }
+
+    /// Asks that whatever is holding the turns be skipped, as a key press
+    /// does.
+    ///
+    /// For input a plugin below the one that skips cannot see. A key
+    /// pressed is read by the skipper itself; a key *held*, which repeats
+    /// through `rl-ui`'s own pacing rather than through `just_pressed`,
+    /// is not, and a player walking with a direction key down would
+    /// otherwise wait out every cue in sight. `rl-ui` asks here on each
+    /// repeat, and the crate that plays the cues answers, without either
+    /// having to depend on the other.
+    pub fn ask_skip(&mut self) {
+        self.skip_asked = true;
+    }
+
+    /// Whether a skip was asked for since this was last read, clearing it.
+    ///
+    /// Taken rather than read, so one repeat skips one hold: a flag left
+    /// standing would skip everything until the key came up.
+    pub fn take_skip_asked(&mut self) -> bool {
+        std::mem::take(&mut self.skip_asked)
+    }
+}
+
+/// What a resolver put in the air: what its flight will do when it has
+/// been seen.
+///
+/// A marker, as [`Action`](crate::turn::Action) is. What a landing knows
+/// and what landing it does are the subsystem's, and stay in the
+/// subsystem's own system with its own parameters: a shot needs the
+/// damage pipeline, a throw needs `Commands` and the missile's stack, a
+/// cast needs the effect world. What every one of them shares is the
+/// bookkeeping in [`Airborne`], which is where the three copies of it
+/// used to be.
+pub trait Lands: Send + Sync + 'static {}
+
+/// What one subsystem has in the air.
+///
+/// Registered with [`AddAirborne::add_airborne`], which also has it put
+/// back when a run ends. Empty in a game with nothing watching the cues,
+/// since a resolver with no watcher lands what it did at once and puts
+/// nothing here.
+#[derive(Resource, Debug)]
+pub struct Airborne<L: Lands>(Vec<L>);
+
+impl<L: Lands> Default for Airborne<L> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<L: Lands> Airborne<L> {
+    /// Puts `landing` in the air when something watches the cues and will
+    /// let go once the flight has played, and returns `None`.
+    ///
+    /// Hands the landing back when nothing watches, for the caller to
+    /// land now, which is what a headless game and every test without a
+    /// particle plugin get. The one place the rule lives: a resolver that
+    /// wrote the two halves itself had to remember the `launch` as well
+    /// as the push.
+    #[must_use = "a landing handed back has not flown, and the caller lands it now"]
+    pub fn launched(&mut self, hold: &mut TurnHold, landing: L) -> Option<L> {
+        if !hold.is_watched() {
+            return Some(landing);
+        }
+        hold.launch();
+        self.0.push(landing);
+        None
+    }
+
+    /// Everything whose flight has now been seen, taken out of the air.
+    ///
+    /// Frees the hold for each and marks the pass as having done
+    /// something, so the loop goes on to deal the next turn rather than
+    /// reading a landing pass as an idle one.
+    pub fn landing(&mut self, hold: &mut TurnHold, turns: &mut crate::turn::Turns) -> Vec<L> {
+        let landing = std::mem::take(&mut self.0);
+        for _ in &landing {
+            hold.land();
+            turns.made_progress();
+        }
+        landing
+    }
+
+    /// Whether anything of this kind is in the air.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// Registers a kind of landing, and what a run's end does with it.
+pub trait AddAirborne {
+    /// Adds [`Airborne<L>`](Airborne) and has it emptied when a run ends,
+    /// since what was in the air belonged to the run that ended.
+    fn add_airborne<L: Lands>(&mut self) -> &mut Self;
+}
+
+impl AddAirborne for App {
+    fn add_airborne<L: Lands>(&mut self) -> &mut Self {
+        use crate::plugin::ResetsOnNewRun;
+        self.init_resource::<Airborne<L>>().reset_on_new_run::<Airborne<L>>()
     }
 }
 

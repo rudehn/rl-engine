@@ -340,6 +340,29 @@ impl Default for ControlsKeys {
     }
 }
 
+/// Forgets every key that was down when the window lost or regained
+/// focus, and the hold with it.
+///
+/// A key that went down while the window had focus and came up while it
+/// did not is a key the window never saw released: it stays down as far
+/// as the input is concerned, and a held direction keeps firing or a
+/// chord never comes round again. Taking a screenshot does exactly that,
+/// which is how this was found.
+///
+/// Both ways, not only on regaining focus: what is released elsewhere is
+/// released, and whatever was held when the window went away should not
+/// still be held when it comes back.
+pub fn forget_keys_on_focus_change(
+    mut focus: MessageReader<bevy::window::WindowFocused>,
+    mut keys: ResMut<ButtonInput<KeyCode>>,
+    mut repeats: ResMut<Repeats>,
+) {
+    if focus.read().next().is_some() {
+        keys.reset_all();
+        *repeats = Repeats::default();
+    }
+}
+
 /// The binding resources an engine key is read from, borrowed together.
 ///
 /// The scrollback's and the sheet's are optional because a game without
@@ -718,11 +741,49 @@ impl Repeats {
 }
 
 /// Moves [`Repeats`] on by this frame. Runs before any input is read.
-pub fn advance_repeats(input: Res<ButtonInput<KeyCode>>, directions: Res<DirectionKeys>, pace: Res<RepeatPace>, time: Res<Time>, mut repeats: ResMut<Repeats>) {
+pub fn advance_repeats(
+    input: Res<ButtonInput<KeyCode>>,
+    directions: Res<DirectionKeys>,
+    pace: Res<RepeatPace>,
+    time: Res<Time>,
+    mut repeats: ResMut<Repeats>,
+    mut hold: ResMut<rl_bevy::TurnHold>,
+) {
     let held = directions.0.iter().find(|(key, _)| input.pressed(*key));
     let fresh = held.is_some_and(|(key, _)| input.just_pressed(*key));
     let held = held.map(|(_, dir)| (*dir, shifted(&input)));
     repeats.advance(held, fresh, &pace, time.delta_secs());
+    // A repeat is a key the player is still holding down, so it skips what
+    // holds the turns the way a fresh press does. Without this, walking
+    // with a direction key down waits out every cue in sight: the skipper
+    // reads `just_pressed`, which a repeat is not.
+    if repeats.firing_any().is_some() {
+        hold.ask_skip();
+    }
+}
+
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+    use crate::harness::Stage;
+
+    /// A key held when the window went away is not still held when it
+    /// comes back: taking a screenshot takes the focus, the release
+    /// happens somewhere else, and the window never sees it.
+    #[test]
+    fn a_key_down_when_focus_changes_is_forgotten() {
+        // `Stage` adds `UiPlugin` itself, which is where the forgetting
+        // lives; nothing else is needed.
+        let mut stage = Stage::new(());
+        stage.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::KeyL);
+        stage.app.world_mut().resource_mut::<Repeats>().advance(Some((rl_core::Direction::East, false)), true, &RepeatPace::default(), 0.5);
+        assert!(stage.app.world().resource::<ButtonInput<KeyCode>>().pressed(KeyCode::KeyL), "down while the window has it");
+
+        stage.app.world_mut().write_message(bevy::window::WindowFocused { window: Entity::from_raw_u32(1).unwrap(), focused: false });
+        stage.tick();
+        assert!(!stage.app.world().resource::<ButtonInput<KeyCode>>().pressed(KeyCode::KeyL), "and let go when the window loses focus");
+        assert_eq!(stage.app.world().resource::<Repeats>().firing(false), None, "with the hold forgotten too");
+    }
 }
 
 #[cfg(test)]

@@ -40,7 +40,7 @@ use rl_render::Glyph;
 use rl_rules::ability::{AbilityId, Aim, Blocked};
 
 use crate::cursor::{CursorInput, CursorKeys, Steer};
-use crate::focus::{Focus, InSight, Sighting};
+use crate::focus::{Focus, Sighting};
 use crate::modal::{ModalId, Modals};
 use crate::view::Row;
 
@@ -216,7 +216,7 @@ pub struct Aiming<'w, 's> {
     abilities: Option<Res<'w, Abilities>>,
     occupancy: Res<'w, Occupancy>,
     focus: ResMut<'w, Focus>,
-    sight: InSight<'w, 's>,
+    sighted: Res<'w, crate::focus::Sighted>,
     bystanders: Bystanders<'w, 's>,
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>)>,
     living: Query<'w, 's, &'static Health, Without<Dead>>,
@@ -246,7 +246,7 @@ impl Aiming<'_, '_> {
         let aim = self.aim(pointing);
         let me = Sighting { entity: user, at: from.0, actor: true, distance: 0 };
         std::iter::once(me)
-            .chain(self.sight.list().into_iter().filter(|s| s.entity != user))
+            .chain(self.sighted.list().iter().copied().filter(|s| s.entity != user))
             .filter(|s| {
                 let is_user = s.entity == user;
                 let seen = is_user || sight.is_none_or(|v| v.can_see(s.at));

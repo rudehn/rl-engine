@@ -108,6 +108,7 @@ pub struct Look<'w, 's> {
     input: CursorInput<'w>,
     map: Res<'w, WorldMap>,
     sight: InSight<'w, 's>,
+    sighted: Res<'w, crate::focus::Sighted>,
     focus: ResMut<'w, Focus>,
 }
 
@@ -124,8 +125,8 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mu
     let toggled = look.input.just_pressed(look.input.keys().look);
     if toggled && !modals.any_open() {
         modals.open(modal);
-        let list = look.sight.list();
-        let opens_on = look.focus.within(&list).or(list.first()).copied();
+        let list = look.sighted.list();
+        let opens_on = look.focus.within(list).or(list.first()).copied();
         view.cursor = opens_on.map_or(origin, |s| s.at);
         look.focus.set(opens_on.map(|s| s.entity));
         return;
@@ -140,7 +141,7 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mu
     // Steered on a copy, so the list can be borrowed while the focus moves,
     // and written back only when it did.
     let mut focus = *look.focus;
-    let steer = look.input.steer(&mut view.cursor, &mut focus, look.map.window_tiles(), || look.sight.list());
+    let steer = look.input.steer(&mut view.cursor, &mut focus, look.map.window_tiles(), || look.sighted.list().to_vec());
     if focus != *look.focus {
         *look.focus = focus;
     }
@@ -170,6 +171,8 @@ pub struct Duelists<'w, 's> {
     /// What each side strikes with and meets a blow in, gear included:
     /// the same answer the resolver acts on.
     loadout: Loadout<'w, 's>,
+    /// What is a prop rather than a fighter, so a crate gets no forecast.
+    props: Query<'w, 's, (), With<rl_bevy::Prop>>,
 }
 
 /// What a side of a duel is made of, apart from what its [`Loadout`] says.
@@ -222,6 +225,13 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     }
     view.subject = Some(row);
 
+    // A prop is never duelled, whatever health it carries. A crate has
+    // health so it can be broken, not so a panel can work out how many
+    // blows it needs and how long it will take to kill you back; the
+    // forecast is about a fight, and a crate does not fight.
+    if duelists.props.contains(entity) {
+        return;
+    }
     let Some((subject, _)) = theirs else { return };
     let none = rl_rules::Resistances::new();
     let (my_health, my_speed, my_resists) = mine;
@@ -378,6 +388,29 @@ mod tests {
         assert_eq!(view.cursor, stage.at);
         assert!(view.subject.is_none(), "you are not something you look at");
         assert!(view.duel.is_none(), "and never a duel with yourself");
+    }
+
+    /// A crate has health so it can be broken, not so the panel can work
+    /// out a fight with it: a prop is named and its health shown, and no
+    /// forecast is run.
+    #[test]
+    fn a_prop_under_the_cursor_is_named_but_never_duelled() {
+        let mut stage = stage();
+        let at = stage.at.offset(2, 0);
+        stage.app.world_mut().spawn((
+            rl_bevy::Prop,
+            Name::new("supply crate"),
+            Position(at),
+            Health::full(6),
+            rl_render::Glyph::new('&', Color::WHITE).on_layer(2),
+        ));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        stage.tick();
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.subject.as_ref().map(|r| r.label.as_str()), Some("supply crate"), "named, and pointed at");
+        assert_eq!(view.subject.as_ref().and_then(|r| r.health), Some((6, 6)), "with what it takes to break it");
+        assert!(view.duel.is_none(), "and no forecast of a fight a crate cannot have");
     }
 
     /// The ground is always something: the cursor names the tile it is

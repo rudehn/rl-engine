@@ -31,3 +31,8 @@ rl-save.workspace = true
 # own `Bystanders::land`.
 rl-mapgen.workspace = true
 rl-world.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "frame"
+harness = false

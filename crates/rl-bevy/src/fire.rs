@@ -394,8 +394,9 @@ pub struct FirePlugin;
 impl Plugin for FirePlugin {
     fn build(&self, app: &mut App) {
         use crate::ability::AddEffect;
-        use crate::plugin::{FieldSet, Needs, Turn};
+        use crate::plugin::{FieldSet, Needs, ResetsOnNewRun, Turn};
         app.init_resource::<Fire>()
+            .reset_on_new_run::<Fire>()
             .add_message::<Kindle>()
             .add_message::<FireEvent>()
             .add_message::<Afflict>()

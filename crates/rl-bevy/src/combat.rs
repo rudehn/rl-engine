@@ -29,12 +29,12 @@ use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_rules::ability::Look;
-use rl_rules::damage::{DamageKindId, Defender};
+use rl_rules::damage::{DamageKindId, Defender, SubtractArmor};
 use rl_rules::faction::FactionDef;
 use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances, StatId};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
-use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
+use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
 use crate::items::{Equipped, Item};
 use crate::registries::Registries;
 use crate::status::StatBlock;
@@ -259,9 +259,23 @@ impl CombatRules {
     }
 }
 
-/// The mitigation pipeline, in order. Empty means damage lands raw.
-#[derive(Resource, Default)]
+/// The mitigation pipeline, in order.
+///
+/// Defaults to [`SubtractArmor`] alone, which is what every game in this
+/// repository and the template wrote by hand: armor that a blow does not
+/// have to go through is not armor, and a game that inherited the empty
+/// default got raw damage with no word about why. A game that wants
+/// something else, resistances first, a crit that doubles, a block that
+/// halves, inserts its own and this default is never built. A game that
+/// really wants raw damage inserts `DamageStages(Vec::new())` and says so.
+#[derive(Resource)]
 pub struct DamageStages(pub Vec<Box<dyn DamageStage<Entity> + Send + Sync>>);
+
+impl Default for DamageStages {
+    fn default() -> Self {
+        Self(vec![Box::new(SubtractArmor)])
+    }
+}
 
 /// The stream combat rolls from.
 ///
@@ -475,7 +489,7 @@ pub struct Arena<'w, 's> {
 pub struct Shown<'w> {
     cues: MessageWriter<'w, Cued>,
     hold: ResMut<'w, TurnHold>,
-    airborne: ResMut<'w, AirborneShots>,
+    airborne: ResMut<'w, Airborne<ShotLanding>>,
 }
 
 /// A shot fired and not yet arrived: whom it is at, and every hit it
@@ -490,10 +504,7 @@ pub struct ShotLanding {
     hits: Vec<Hit<Entity>>,
 }
 
-/// Shots in the air, to land on the first pass after their flight has
-/// been seen.
-#[derive(Resource, Debug, Default)]
-pub struct AirborneShots(Vec<ShotLanding>);
+impl crate::cue::Lands for ShotLanding {}
 
 /// The weapon one attack is made with, as [`Loadout`] chose it.
 struct Weapon {
@@ -516,7 +527,7 @@ struct Weapon {
 ///
 /// An attack with a [`Look`] is seen: a shot flies from the shooter to
 /// the target, and a blow bursts on the target. With something watching,
-/// a shot's hits wait in [`AirborneShots`] until the flight has been
+/// a shot's hits wait in [`Airborne`] until the flight has been
 /// seen, the way a thrown knife does; a blow has no flight to wait for
 /// and hurts at once. [`Struck`] is written as the attack is made either
 /// way, since what a weapon does to itself happens at the trigger, not
@@ -571,11 +582,9 @@ pub fn resolve_attacks(
             (Some(look), true) => {
                 let to = Anchor::on(target, target_pos.0);
                 cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Given(look) } });
-                if hold.is_watched() {
-                    hold.launch();
-                    airborne.0.push(shot);
-                    continue;
-                }
+                let Some(shot) = airborne.launched(&mut hold, shot) else { continue };
+                land(shot, &mut damage);
+                continue;
             }
             (Some(look), false) => {
                 cues.write(Cued { actor, cue: Cue::Burst { on: vec![Anchor::on(target, target_pos.0)], look: LookOf::Given(look) } });
@@ -591,18 +600,16 @@ pub fn resolve_attacks(
 /// world while the shot flew is missed, not hurt twice or looked for.
 /// Landing counts as progress, so the loop goes on to deal the next turn.
 pub fn land_shots(
-    mut airborne: ResMut<AirborneShots>,
+    mut airborne: ResMut<Airborne<ShotLanding>>,
     mut hold: ResMut<TurnHold>,
     mut turns: ResMut<Turns>,
     alive: Query<(), (With<Health>, Without<Dead>)>,
     mut damage: MessageWriter<DamageEvent>,
 ) {
-    for shot in std::mem::take(&mut airborne.0) {
+    for shot in airborne.landing(&mut hold, &mut turns) {
         if alive.contains(shot.target) {
             land(shot, &mut damage);
         }
-        hold.land();
-        turns.progress = true;
     }
 }
 
@@ -743,7 +750,7 @@ impl Plugin for CombatPlugin {
             .add_message::<DeathEvent>()
             .add_message::<Struck>()
             .init_resource::<DamageStages>()
-            .init_resource::<AirborneShots>()
+            .add_airborne::<ShotLanding>()
             .add_action::<Attack>()
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
@@ -1424,5 +1431,23 @@ mod tests {
         let (struck, first, _second) = struck_by_two_guns();
         assert!(struck.ranged);
         assert_eq!(struck.with, Some(first));
+    }
+
+    #[test]
+    fn the_damage_pipeline_subtracts_armor_unless_the_game_said_otherwise() {
+        // A game that names no pipeline gets the one every game wrote by
+        // hand, rather than raw damage and no word about why.
+        let stages = DamageStages::default();
+        assert_eq!(stages.0.len(), 1, "one stage by default");
+
+        let mut app = headless_app();
+        app.add_plugins(CombatPlugin);
+        assert_eq!(app.world().resource::<DamageStages>().0.len(), 1, "the plugin leaves the default in place");
+
+        // And a game that inserted its own before the plugin keeps it.
+        let mut own = headless_app();
+        own.insert_resource(DamageStages(Vec::new()));
+        own.add_plugins(CombatPlugin);
+        assert!(own.world().resource::<DamageStages>().0.is_empty(), "a game that asked for raw damage still gets it");
     }
 }

@@ -369,19 +369,71 @@ pub fn clear_run(world: &mut World) {
     world.resource_mut::<crate::minds::FlowFields>().invalidate();
     world.remove_resource::<WorldMap>();
     world.remove_resource::<crate::state::Ending>();
-    fn reset<R: Resource + Default>(world: &mut World) {
-        if world.contains_resource::<R>() {
-            world.insert_resource(R::default());
-        }
+    let resets = world.remove_resource::<RunResets>().unwrap_or_default();
+    for entry in &resets.0 {
+        (entry.reset)(world);
     }
-    reset::<crate::fire::Fire>(world);
-    reset::<crate::gas::Gases>(world);
-    reset::<crate::ability::Offered>(world);
-    reset::<crate::ability::Airborne>(world);
-    reset::<crate::throwing::AirborneThrows>(world);
-    reset::<crate::combat::AirborneShots>(world);
-    if world.contains_resource::<crate::lighting::Lighting>() {
-        world.insert_resource(crate::lighting::Lighting::dark());
+    world.insert_resource(resets);
+}
+
+/// What a run's teardown puts back, as the plugins that own it declared.
+///
+/// A list rather than a line per subsystem in [`clear_run`], so a plugin
+/// that keeps something of the run says so where the resource is created
+/// and a plugin nobody added leaves nothing to put back. Filled through
+/// [`ResetsOnNewRun`].
+#[derive(Resource, Default)]
+pub struct RunResets(Vec<RunReset>);
+
+/// One resource a run's teardown puts back.
+struct RunReset {
+    resource: &'static str,
+    /// Boxed rather than a plain `fn`, because the constructor is a value
+    /// the caller chose and cannot be monomorphised into one. Called once
+    /// per run ending, so the indirection costs nothing that matters.
+    reset: Box<dyn Fn(&mut World) + Send + Sync>,
+}
+
+/// Declares a resource the engine puts back when a run ends.
+///
+/// The counterpart of [`Needs`] for what a subsystem keeps rather than
+/// what it requires: a `Fire` field, an airborne queue, what a mind was
+/// offered. A resource that is not there when the run ends is left alone,
+/// so this is safe to declare for something the game inserts.
+///
+/// What [`CorePlugin`] owns itself, the clock, the occupancy index and
+/// what has acted, is put back by [`clear_run`] directly, since it is
+/// there in every game and its absence would be a broken world rather than
+/// a plugin nobody added.
+pub trait ResetsOnNewRun {
+    /// Puts `R` back to its default when a run ends, if it is there.
+    fn reset_on_new_run<R: Resource + Default>(&mut self) -> &mut Self;
+
+    /// Puts `R` back to what `make` returns, for a resource whose empty
+    /// state is not its `Default`, or which has none.
+    fn reset_on_new_run_with<R: Resource>(&mut self, make: fn() -> R) -> &mut Self;
+}
+
+impl ResetsOnNewRun for App {
+    fn reset_on_new_run<R: Resource + Default>(&mut self) -> &mut Self {
+        self.reset_on_new_run_with::<R>(R::default)
+    }
+
+    fn reset_on_new_run_with<R: Resource>(&mut self, make: fn() -> R) -> &mut Self {
+        let resource = std::any::type_name::<R>();
+        self.init_resource::<RunResets>();
+        let mut list = self.world_mut().resource_mut::<RunResets>();
+        // Once: a plugin added twice, or two plugins that share a
+        // resource, must not put it back twice.
+        if !list.0.iter().any(|e| e.resource == resource) {
+            let reset = move |world: &mut World| {
+                if world.contains_resource::<R>() {
+                    world.insert_resource(make());
+                }
+            };
+            list.0.push(RunReset { resource, reset: Box::new(reset) });
+        }
+        self
     }
 }
 
@@ -510,6 +562,44 @@ pub enum CleanupSet {
     /// Requeue what acted, keep the turn of what was refused, recover what
     /// nobody moved, and forget what was despawned.
     Requeue,
+}
+
+/// Says that this plugin reads a message another plugin writes, and that
+/// an empty queue is a perfectly good answer.
+///
+/// Bevy refuses a reader for a message nobody registered, so a system that
+/// reads what an optional plugin writes panics in every game that left
+/// that plugin out: a vitals panel that reads what the player heard breaks
+/// a game with no noise, a prop that bursts breaks one with no combat.
+/// Registering it here says the reading is optional and means it: with the
+/// writer's plugin added the queue fills, without it the queue stays
+/// empty, and the reader asks either way.
+///
+/// The opposite of [`Needs`]. `needs` is for what a plugin cannot work
+/// without, and fails loudly when play begins; this is for what it can
+/// work without, and says so once, where the reading is written.
+///
+/// ```
+/// # use bevy::prelude::*;
+/// # use rl_bevy::plugin::Reads;
+/// # #[derive(Message)]
+/// # struct Heard;
+/// # let mut app = App::new();
+/// // A panel that shows what was heard, in a game that may not have noise.
+/// app.reads::<Heard>();
+/// ```
+pub trait Reads {
+    /// Registers `M` unless it is already registered, because this plugin
+    /// reads it and an empty queue is an answer.
+    fn reads<M: Message>(&mut self) -> &mut Self;
+}
+
+impl Reads for App {
+    fn reads<M: Message>(&mut self) -> &mut Self {
+        // `add_message` is itself idempotent; this is about saying why, in
+        // one place, rather than five plugins each explaining themselves.
+        self.add_message::<M>()
+    }
 }
 
 /// Everything the added plugins cannot work without, checked together when
@@ -935,5 +1025,49 @@ mod tests {
         assert_eq!(dealt.first(), Some(&true), "{dealt:?}: someone was dealt a turn before the player");
         assert!(app.world().get::<MyTurn>(player).is_some(), "the player holds the first turn");
         assert_eq!(app.world().resource::<Turns>().now(), 0, "and holds it at the clock's start, not frozen a step or two ahead");
+    }
+
+    /// A resource one plugin keeps of the run, declared the way a
+    /// subsystem declares its own.
+    #[derive(Resource, Default, PartialEq, Debug)]
+    struct Kept(u32);
+
+    /// One whose empty state is not its `Default`.
+    #[derive(Resource, PartialEq, Debug)]
+    struct Banked(u32);
+
+    impl Banked {
+        fn empty() -> Self {
+            Self(7)
+        }
+    }
+
+    #[test]
+    fn a_resource_that_registered_a_reset_is_put_back_when_the_run_ends_and_one_that_did_not_is_left() {
+        let mut app = headless_app();
+        app.insert_resource(crate::world::WorldMap::new(TileRegistry::standard().tables()));
+        app.insert_resource(Kept(3)).insert_resource(Banked(3));
+        app.reset_on_new_run::<Kept>().reset_on_new_run_with::<Banked>(Banked::empty);
+        // Something nobody declared, to show the list is what decides.
+        #[derive(Resource, Default, PartialEq, Debug)]
+        struct Undeclared(u32);
+        app.insert_resource(Undeclared(3));
+
+        clear_run(app.world_mut());
+
+        assert_eq!(app.world().resource::<Kept>(), &Kept(0), "put back to its default");
+        assert_eq!(app.world().resource::<Banked>(), &Banked(7), "put back to what its own constructor says empty is");
+        assert_eq!(app.world().resource::<Undeclared>(), &Undeclared(3), "nobody declared it, so nobody puts it back");
+    }
+
+    #[test]
+    fn a_reset_declared_twice_is_run_once_and_a_resource_that_is_not_there_is_not_made() {
+        let mut app = headless_app();
+        app.insert_resource(crate::world::WorldMap::new(TileRegistry::standard().tables()));
+        app.reset_on_new_run::<Kept>().reset_on_new_run::<Kept>();
+        assert_eq!(app.world().resource::<RunResets>().0.len(), 1, "declared twice, listed once");
+
+        clear_run(app.world_mut());
+        assert!(app.world().get_resource::<Kept>().is_none(), "a resource the game never inserted is not conjured by its reset");
     }
 }

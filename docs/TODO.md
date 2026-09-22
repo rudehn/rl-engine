@@ -4,11 +4,76 @@ What the engine should do next, and why.
 `docs/PLAN.md` holds the decisions and the history, `docs/OVERVIEW.md` the inventory and its "Not built yet" list; this file holds the work that has been found and not yet started.
 An item leaves this file in the commit that finishes it, with its reasoning moved to the plan's progress log.
 
-Written 2026-09-15 from an architecture review of `main` at `cf5f0a9`.
-The review's standing verdict: the structure is right, and the debt is behaviour the engine ships as data and every game rewrites on top of it, which is the failure `docs/PLAN.md` section 1 was written against.
+Opened 2026-09-15 from an architecture review of `main` at `cf5f0a9`, and added to on 2026-09-22 from a second review of `main` at `c55a7e9`.
+The first review's standing verdict: the structure is right, and the debt is behaviour the engine ships as data and every game rewrites on top of it, which is the failure `docs/PLAN.md` section 1 was written against.
+The second review's: the contributor pattern the minds use is the engine's best seam and was never generalised, so the two other cross-cutting concerns, the save and the narrator, are closed lists every new subsystem has to go and edit; and the loops above tier 1 have no benches, so what they cost is argued rather than measured.
 
-The order below is the recommended order.
-The first section is what every game hits in its first week.
+That review first filed what it read as a save data-loss bug, over `Fuel`, `LightSource`, `Aware` and `Heard`.
+It is not one.
+`docs/design/lighting.md` section 5 says fuel and a light source on an item are the game's to save with its item state, as `Enchant` already is, and `docs/design/noise.md` says `Heard` and `Aware` are lost on load on purpose, with the note that should either become worth saving the two go into `EngineSave` together.
+The item is struck, and what is left of it is the one line in section 3 about `Burning`.
+The reading it rested on is worth keeping as a caution: the save's coverage is legible only from three design docs, and nothing in `crates/rl-save/` states the rule it follows.
+
+The sections below are thematic.
+"The order" is the order to work in, and every open item is in it.
+
+## The order
+
+Ranked by impact against effort.
+Impact is what a game or a player loses while it is unfixed; effort is the size of the change, including the tests and the re-baselines it drags with it.
+Everything in the first band is either a bug, or cheap enough that the reasoning costs more than the work.
+
+| # | Item | Section | Impact | Effort |
+|---|------|---------|--------|--------|
+| 1 | A pass costs about 110 microseconds whoever is in it | 8 | high | medium |
+| 2 | A lit frame is two thirds field of view | 8 | high | medium |
+| 3 | The terminal is still not measured | 8 | medium | low |
+| 4 | The veil bumps a global opacity epoch | 8 | unknown | medium |
+| 5 | Straight-line fallbacks can cut a corner | 3 | medium | medium |
+| 6 | `Follow` and `Shadow` are one tactic | 4 | medium | medium |
+| 7 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
+| 8 | Corsair's tests play a different game from its binary | 3 | medium | medium |
+| 9 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
+| 10 | `OnMap` as a required component | 4 | medium | medium |
+| 11 | The obituary is filed by a presenter | 4 | medium | medium |
+| 12 | Light is recast once a frame, not once a turn | 3 | medium | medium |
+| 13 | A ranged fighter is under-forecast | 3 | medium | medium |
+| 14 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 15 | What the save holds is stated where the save is | 7 | medium | medium |
+| 16 | Anyone travels | 3 | medium | high |
+| 17 | Movement profiles that change costs | 3 | medium | high |
+| 18 | The narrator hears what registers itself | 7 | medium | high |
+| 19 | An instanced terminal | 8 | high | high |
+| 20 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 21 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 22 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 23 | Admission scans its waiting actors linearly | 4 | low | low |
+| 24 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 25 | A `Burning` entity comes back unlit | 3 | low | low |
+| 26 | A shot is narrated as a blow | 3 | low | low |
+| 27 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 28 | A place for a miss | 3 | low | low |
+| 29 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 30 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| - | Everything in 5 and 6 | 5, 6 | gated | gated |
+
+The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
+The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
+
+Why the order that is left, in four moves:
+
+1. **Items 1 and 2 first.**
+   They are the two ceilings and both now have numbers: about 110 microseconds per awake mind per turn, and about 10 microseconds per actor per lit frame.
+   Between them they are almost the whole of what a busy moment costs.
+   Neither has been profiled below the system, which is the next step for both rather than a fix.
+2. **Then 3 and 4**, the two performance claims in this file that are still read off the code rather than off a bench.
+   Both are cheap to measure and neither should be changed before it is.
+3. **Then the middle band, 5 to 13**, which is the behaviour and consistency debt: it is what a second game hits, not a first.
+4. **Then 18**, the one structural inversion still worth its cost, and 19.
+   Both are high effort, and neither is urgent.
+
+Items 20 to 29 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 30 waits on a game that actually wants the tactics it would add.
+Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
 
@@ -25,13 +90,13 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 3. Make what exists real
 
+- **A `Burning` entity comes back unlit.**
+  `EngineSave` records every burning cell, but the `Burning` component on the entity standing in one is not saved and has no design note saying it should not be, unlike `Fuel`, `LightSource`, `Aware` and `Heard`, which all do.
+  A crate that caught fire mid-run reloads without its remaining turns, so `keep_alight` stops refreshing its cell and it burns for whatever the saved field has left rather than for what it had left.
+  Mostly self-healing, since the saved field re-catches it, which is why this is at the bottom of the order rather than the top.
 - **Every game's log lines said inside a turn go through `Tell`.**
   Corsair, the tutorial, Delve and Heist still push lines straight to `MessageLog` from systems in `TurnSet::React` (the tutorial's "You eat the crust. It helps.", Corsair's portal and discovery lines, the heist's), against the narrator's module doc, so a line can land above the event it answers.
   Each should write a `Tell` instead, and the guide chapters that quote the tutorial move with it; Foundry did this on 2026-09-18.
-- **A held key does not skip a cue.**
-  `skip_on_key` in `crates/rl-render/src/particles.rs` skips only on a key just pressed, and a key held to repeat is read by `Repeats`, not `just_pressed`, so walking with a key held waits out every cue in sight.
-  Measured on 2026-09-18 in Foundry: two seconds holding a direction key walked 15 steps on an empty lane and 4 beside a probe that pulses on each of its turns, with the turns held for 143 of the frames.
-  A repeat that fires while the turns are held should skip the way a press does.
 - **Straight-line fallbacks can cut a corner the move resolver refuses.**
   `Hunt`, `SearchLastKnown`, `Follow`, `FleeWhenHurt`, `GiveWay` and `Wander` try diagonal steps checked only by `can_step`, and `corner_ok` in `crates/rl-bevy/src/turn.rs` refuses a diagonal between two unwalkable cells, so a mind can spend turn after turn on a step that never happens.
   `Shadow` checks it with `squeezes`; the others should too, with the fingerprints that move re-baselined.
@@ -53,9 +118,6 @@ The five items that opened this section were built in the six stages of `docs/de
 - **A ranged fighter is under-forecast.**
   `rl_rules::forecast::Combatant::strikes` is filled from `Loadout::blows`, the melee roll plus extra strikes; a `RangedAttack`'s dice never enter the forecast, so a combatant that only shoots reads as unable to hurt anything.
   A fix needs the ranged roll and `RangedAttack::cost` fed into `Combatant` for whichever side of the pair is not adjacent to the other, so the forecast picks melee or ranged per pair instead of assuming melee always applies.
-- **`DamageStages` must not default to empty.**
-  A game that forgets it gets raw damage and no word about why, which is the "a resource happens to exist" pattern the rules ban.
-  Default to `SubtractArmor`, or declare it with `needs`.
 - **`Rooms` can run out of attempts on a small map.**
   Asked for three rooms sized 8 to 10 on a 40x30 map, it fails roughly one seed in sixty inside its default thirty attempts.
   Whether that is a tuning problem, a default `attempts` too low for the room sizes it is asked to fit, or a limit the pass should just document is not yet decided.
@@ -69,6 +131,16 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 4. Simplify
 
+- **`Follow` and `Shadow` are one tactic.**
+  `crates/rl-rules/src/ai/tactics.rs` gives them an identical close-the-gap block, the field descent then `[toward, toward.rotate_cw(), toward.rotate_ccw()]` filtered on chebyshev, and `Shadow`'s own doc calls it "the enemy-facing twin of `Follow`".
+  One tactic parameterised by the roster it keeps station on, allies or enemies, is the same behaviour in half the code, and it closes the corner-cutting item above for `Follow` for free, since `Shadow` already checks `squeezes`.
+- **The obituary is filed by a presenter.**
+  `GameMenuPanel` queries `Morgue`, composes the obituary and writes it to disk (`crates/rl-ui/src/game_menu.rs`), which is the one-system-that-queries-and-draws that `crates/rl-ui/src/lib.rs` forbids, and it is the only reason `rl-ui` depends on `rl-save` at all.
+  Every game that wants a log panel therefore compiles the save crate, and on wasm `web-sys` and `wasm-bindgen` with it.
+  Pushing the obituary's sections in as plain data, the way every other panel is fed, cuts the dependency and restores the rule.
+- **`Thinking` splits its context from its snapshot.**
+  `crates/rl-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.
+  Splitting the two deletes that pattern from six call sites in five crates' worth of subsystems.
 - **Split `crates/rl-bevy/src/ability.rs`.**
   At 1,562 lines it holds the state components, the effect registry, the gate, payment, `Offered`, the `Known` refresh, airborne landings and cue emission.
   State, registry and resolver submodules, and named `SystemParam`s in place of the four-tuple aliases `Spender` and `Bearing` that `gate` and `pay` destructure by position.
@@ -78,9 +150,7 @@ The five items that opened this section were built in the six stages of `docs/de
 - **`OnMap` as a required component.**
   `on.map(|m| m.0).unwrap_or(MapId::SURFACE)` is written in turn, items, minds, places, status and both games, and tutorial step 1 has to explain why a delve's first floor is map one.
   Require `OnMap` on `Position` and the `Option` disappears everywhere.
-- **Streams out of the prelude.**
-  Corsair's loot drop rolls from `ResMut<CombatRng>` (`examples/corsair/src/items.rs`, `drop_loot`), which the randomness rule forbids; a game's draws come from `Seed::stream`.
-  Remove `CombatRng` and `AbilityRng` from the preludes, and fix the drop.
+
 - **Admission scans its waiting actors linearly.**
   `admit_new_actors` (`crates/rl-bevy/src/turn.rs`) checks each waiting actor against the fresh list and the `arriving` list with a linear scan, so admission is quadratic in the number waiting, and it runs every pass.
   Harmless while only the player ever waits, and briefly; a game that parks a crowd on maps nobody has visited would pay for it.
@@ -123,6 +193,69 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 - **Nothing should go out while the API moves this fast.**
   77 commits touched crate sources in the 30 days to 2026-09-17, changing about 2,100 lines of public declarations; `CHANGELOG.md` records them, but a release every few days is not a kindness to anyone depending on it.
   Publish the five Bevy-free crates first, since their APIs are the most settled and the most reusable on their own, and keep the Bevy layer on a git dependency until it stops moving.
+
+## 7. Open the seams the subsystems have to reach through
+
+The minds' perceive stage is the engine's best seam: `crates/rl-bevy/src/minds.rs` says "a subsystem added later adds a contributor and edits nothing here", and it is true, with fire, stealth, items, props, abilities and noise each pushing in from their own module and `minds.rs` naming none of them.
+The engine's two other cross-cutting concerns work the opposite way.
+Each is a closed list in a crate the subsystem does not own, and each has to be edited by hand when anything new lands.
+The run's teardown was a third, and stopped being one on 2026-09-22, when `ResetsOnNewRun` turned `clear_run`'s hand-written list into a registry; that is the shape the two below would take.
+
+- **What the save holds is stated where the save is.**
+  `EntityState` in `crates/rl-save/src/run.rs` is a fixed field list, and `EngineSave` in `engine.rs` has grown one `#[serde(default)]` per subsystem, so the natural reading is that a subsystem is saved when somebody remembered to add it.
+  That reading is wrong, and the review that filed it fell for it: the engine draws a real line, per-instance state on content a *game* authors is the game's to save through `Saveable`, and the engine saves what it owns itself.
+  The line is written down in `docs/design/lighting.md` section 5 and `docs/design/noise.md`, two crates away from the code that follows it, and nowhere in `crates/rl-save/`.
+  The fix is a paragraph in `crates/rl-save/src/run.rs`'s module docs saying which side of the line a component falls on and why, and a line on `EntityState` saying it holds the engine's own state and not the game's.
+  A registry that let each plugin declare its own capture, the shape the minds' perceive stage uses, is the larger version of this and is not obviously worth its cost: it would buy `rl-save` out of depending on six subsystems, and it would buy nothing else, since nothing is actually falling through today.
+  Write the paragraph first and see whether the registry still looks necessary afterwards.
+- **The narrator hears what registers itself.**
+  `Heard` in `crates/rl-ui/src/narrate.rs` is a `SystemParam` holding twelve `MessageReader`s, one per engine subsystem, feeding a closed `Phrase` enum and a `Phrasebook` of defaults.
+  Adding a subsystem to `rl-bevy` therefore means editing `rl-ui`: a reader, a variant, a template.
+  The enum being closed is defensible, since it enumerates the events the engine itself raises, but the *reading* need not be: a `app.narrates::<LightEvent>(..)` that turns one message kind into rows would let each subsystem carry its own phrases and its own defaults.
+
+## 8. Make the loops cheap, and know that they are
+
+Everything below except the first item is read off the code rather than off a profile, which is backwards for this project: the tier-1 algorithms, the most careful code in the repo, are the only ones measured.
+
+- **The terminal is still not measured.**
+  `crates/rl-bevy/benches/turns.rs` measures a turn and `crates/rl-ui/benches/frame.rs` a frame, and between them they settled three items in this section.
+  Neither measures `flush_terminal`, which is Bevy's own sprite and text work over six thousand four hundred entities and is the whole of the instanced-terminal item below.
+  It needs a bench with a window, or a count of how many cells actually change in a frame of real play, which is the number the instancing argument rests on and which nobody has.
+- **A pass costs about 110 microseconds whoever is in it.**
+  Measured on 2026-09-22 by `crates/rl-bevy/benches/turns.rs`, which the review that filed this item wrote to check it: one player turn takes 0.40 ms with one awake mind, 1.12 at eight, 3.63 at thirty-two, 6.96 at sixty-four and 14.39 at a hundred and twenty-eight.
+  That is linear, at about 110 microseconds per awake mind, and it is the ceiling: a hundred and twenty-eight awake minds spend a whole frame at sixty hertz on one player turn.
+  The review predicted a quadratic one, from the perceive stage's full-world scans, and was wrong.
+  The scans are real and they are cheap: with the crowd held at sixteen, two thousand items lying on the floor add 0.39 ms to a whole player turn, about twelve microseconds per thousand items per pass, so a radius query against `Occupancy` would buy almost nothing at any inventory a game will actually have.
+  What the 110 microseconds is has not been measured yet.
+  The suspects are the whole `Turn` schedule being dispatched once per actor, forty-odd systems whether or not they have anything to do, and the per-mind field-of-view recast in `sense`.
+  Profile one pass before changing anything: this item is a measurement, not yet a fix.
+- **A lit frame is two thirds field of view.**
+  Measured on 2026-09-22 by `crates/rl-ui/benches/frame.rs`: with sixty-four actors around the player, a frame in which a carried lamp moved costs 0.95 ms lit against 0.31 ms unlit, and the gap is one shadowcast and one light gate per actor, about 10 microseconds each.
+  It is the largest single cost in the frame, and it is not the invalidation being too wide.
+  Bounding that invalidation to the cells the light actually changed, done the same day, bought 10 per cent with the crowd round the player and nothing once it is spread out, because a crowd standing inside a lamp is genuinely inside it.
+  What is left is the re-gate itself, and two directions, neither measured: `gate` rewrites the whole `visible` grid from the whole `line` grid where only the cells whose lit-ness changed can differ; and a mind that is not about to take a turn need not be re-gated this frame at all, since `sense` recasts the one that is.
+  The second is much the larger, and the one to try first.
+- **The veil bumps a global opacity epoch.**
+  `set_veil` (`crates/rl-bevy/src/world.rs`) is rewritten every turn by whatever makes smoke, and any change moves `opacity_epoch`, which invalidates every viewshed and forces a full static and dynamic light recast.
+  Unmeasured: the frame bench has no gas in it.
+  Measure before changing, and bound the epoch to the cells the veil changed if it earns it.
+  Smaller, in the same system: two `Vec`s of emitters are built and sorted every frame unconditionally, only to be compared against the last frame's.
+- **Struck: view collectors run for screens nobody opened.**
+  Measured on 2026-09-22 by `crates/rl-ui/benches/frame.rs`, at thirty-two actors in sight: the map alone is 265 microseconds a frame, the rail a game always shows takes it to 300, and adding the four screen-backed views whose screens nobody has opened takes it to 309.
+  Nine microseconds of a 309-microsecond frame, three per cent, against a change that breaks two of the five collectors it would gate: `open_on_crowded_bump` reads `OffersView` every frame to decide whether to open the offers screen, and the menu reads `SheetView` at the end of a run to write the obituary.
+  Not worth it.
+  `docs/design/ui.md`'s "every frame, not on a turn boundary" stands, and this is a second reason for it.
+- **`FlowFields` thrashes rather than evicts.**
+  `FlowFields::ensure` (`crates/rl-bevy/src/minds.rs`) clears the entire cache when it reaches thirty-two entries instead of evicting one, and keys it by a `Vec<Point>` of every enemy the asking mind can see, so two hunters seeing different subsets share no flood.
+  The doc's promise that fifty hunters after one player cost one flood holds only when all fifty see exactly the same set.
+  An LRU, and a coarser key than the full roster, would make it hold more often.
+- **An instanced terminal.**
+  `spawn_grid` (`crates/rl-render/src/terminal.rs`) spawns a sprite and a `Text2d` per cell, so an 80 by 40 terminal is 6,400 entities and 3,200 text layouts.
+  The diff in `flush_terminal` helps, but the map view shades every cell individually, flickers flames and shimmers water, so a large share of cells change every frame and each change is a re-layout.
+  Already on `docs/OVERVIEW.md`'s "Not built yet" list; it belongs here too, because it is the ceiling on everything else in this section.
+- **`WorldMap::tile` walks a `BTreeMap` per call.**
+  `active_place()` does a lookup on every `tile`, `is_walkable` and `is_opaque`, and `draw_map` asks two or three times per cell per frame.
+  Caching the active place behind the switch would take thousands of lookups a frame down to none.
 
 ## Tracked elsewhere
 
