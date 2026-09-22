@@ -8,8 +8,9 @@
 //   objectives: a list of (text, on, need)
 //     on:       what it counts: ChargeSet(deck)
 //     need:     Total(n) counts matching facts
-//   victory:    optional; finishing this wins the run. The first slice ends on the
-//               upgrade chosen after the charge, not on the charge, so it is false here.
+//   victory:    optional; finishing this wins the run. No charge wins it: the run is won
+//               by reaching deck one's lift out with the core charge set, which `climb.rs`
+//               answers, so every task here is false.
 #![enable(implicit_some)]
 [
     (
@@ -17,5 +18,26 @@
         title: "The first reactor",
         text: "The reactor on the third deck feeds the assembly lines above it. Set a charge on its console.",
         objectives: [(text: "Set a charge on the reactor", on: ChargeSet(3), need: Total(1))],
+    ),
+    (
+        name: "second_charge",
+        title: "The second reactor",
+        text: "Fabrication runs on the sixth deck's reactor. Three decks down, and darker.",
+        after: ["first_charge"],
+        objectives: [(text: "Set a charge on the reactor", on: ChargeSet(6), need: Total(1))],
+    ),
+    (
+        name: "third_charge",
+        title: "The third reactor",
+        text: "The reactor ring's own feed, on the ninth deck. Below it there is only the core.",
+        after: ["second_charge"],
+        objectives: [(text: "Set a charge on the reactor", on: ChargeSet(9), need: Total(1))],
+    ),
+    (
+        name: "core_charge",
+        title: "The core",
+        text: "The tenth deck. Set the last charge, then climb all ten decks back to the lift you came down on.",
+        after: ["third_charge"],
+        objectives: [(text: "Set a charge on the core", on: ChargeSet(10), need: Total(1))],
     ),
 ]

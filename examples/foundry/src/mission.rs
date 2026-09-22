@@ -1,5 +1,6 @@
-//! The first slice's one task: set a charge on the reactor console, deck
-//! three, then pick an upgrade.
+//! Foundry's mission: four charges, chained one deck's reactor to the
+//! next, decks three, six and nine, then the core on deck ten, each
+//! opening a pick of its own once its console is set.
 //!
 //! [`load`] turns `assets/quests.ron` into a [`Quests`] and the one
 //! [`Facts`] kind it counts, the way `examples/corsair/src/quests.rs`
@@ -120,6 +121,11 @@ pub fn start(mut commands: Commands, registries: Res<Registries>) {
 /// finds its id.
 pub const CHARGE: &str = "charge";
 
+/// The four charge quests, in the order `quests.ron` chains them. Named
+/// once here so the pick and the climb's own win condition read the same
+/// list rather than each spelling it out.
+pub const CHARGE_QUESTS: [&str; 4] = ["first_charge", "second_charge", "third_charge", "core_charge"];
+
 /// Puts a reactor console on the `R` mark of any deck that reports one,
 /// the moment it is first entered, beside the loot
 /// `loot::scatter_on_arrival` plants on the same arrival: reads the same
@@ -184,9 +190,9 @@ pub fn answer_charge(
     }
 }
 
-/// Reacts to the tracker's own report of the mission finishing: never a
-/// mere `Progress`, and never any quest but `first_charge`, since a later
-/// slice's own mission must not open this same pick a second time. One
+/// Reacts to the tracker's own report of a charge quest finishing: never
+/// a mere `Progress`, and never a quest that is not one of the four
+/// charges, so a later mission of any kind cannot open this pick. One
 /// frame behind the fact that finished it (`rl_bevy::events`'s own doc on
 /// [`QuestChange`]), which is why this is a plain `Update` system rather
 /// than anything in `TurnSet`: nothing here is itself a reaction to a
@@ -199,10 +205,10 @@ pub fn offer_the_pick(
     mut screen: ResMut<crate::upgrades::ChoiceScreen>,
     mut choosing: ResMut<crate::upgrades::Choosing>,
 ) {
-    let first_charge = quests.defs.expect("first_charge");
+    let charges = CHARGE_QUESTS.map(|name| quests.defs.expect(name));
     for change in changes.read() {
         if let Change::QuestDone { quest, .. } = change.0
-            && quest == first_charge
+            && charges.contains(&quest)
         {
             crate::upgrades::offer(&mut modals, &mut screen, &mut choosing);
         }
@@ -256,6 +262,18 @@ mod tests {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         assert!(charge_offered(&app, player).is_none(), "deck one offers no charge");
         assert!(!crate::testing::quest_done(&app, "first_charge"));
+    }
+
+    /// The four charges are one chain: each opens only once the one above
+    /// it is done, so a commando cannot charge the core first by riding
+    /// the lifts straight down.
+    #[test]
+    fn the_core_charge_stays_shut_until_the_three_reactors_above_it_are_charged() {
+        let mut app = crate::testing::headless(RunSeed(2));
+        crate::testing::settle(&mut app);
+        let quests = app.world().resource::<Quests>();
+        assert_eq!(quests.tracker.state(quests.defs.expect("first_charge")), QuestState::Open, "the first charge is open from the start");
+        assert_eq!(quests.tracker.state(quests.defs.expect("core_charge")), QuestState::Locked, "the core waits on the three above it");
     }
 
     /// Every charge deck gets its console on the arrival that builds it,

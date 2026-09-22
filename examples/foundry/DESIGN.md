@@ -59,7 +59,7 @@ Each zone has its own tiles, hazards, light and population, and bands overlap at
 All ten decks **exist** and are played; the four zones are **planned**, so every deck is still built as an assembly hall and they differ only in population and depth.
 
 A charge is set on the reactor console on decks 3, 6 and 9, and on the core on deck 10.
-Setting a charge takes three whole turns beside the console and opens a pick of one upgrade from three (**exists** on deck 3).
+Setting a charge takes three whole turns beside the console and opens a pick of one upgrade from three (**exists** on decks 3, 6, 9 and 10).
 
 After the core charge, the commando climbs all ten decks back to the lift they came down on.
 The way up is the harder half:
