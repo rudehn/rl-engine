@@ -87,13 +87,29 @@ impl Screen {
 /// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
     app.add_plugins((
-        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals"),
+        // Three thousand hundredths of a step is the gauge's full: a shot
+        // or a blow next door reads about a third of it, and a probe's
+        // klaxon, at eight times a shot, pegs it and then falls away over
+        // the turns after. Scaled to the shot alone, everything pegged and
+        // the bar said only "something happened".
+        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals").noise("noise", 3000),
         // What is worn, with each blaster's heat as a facet on its row.
         GearPanel::new(screen.gear),
-        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the deck"),
+        // One mark for every cell a screen points at: the rail's tab
+        // navigation, the look cursor and the targeting cursor all frame
+        // the cell rather than washing it, so the commando reads them as
+        // one thing and never loses what is standing there.
+        // A droid does not sleep: one that knows of nothing is idle, one
+        // walking to a noise is searching, and one that has the commando
+        // is hunting.
+        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the deck").cursor(CursorStyle::ticks()).alerts(AlertWords::new(
+            "idle",
+            "searching",
+            "hunting",
+        )),
         LogPanel::new(screen.log),
-        InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close"),
-        TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
+        InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
+        TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back").cursor(CursorStyle::ticks()),
         AbilityPanel::new(screen.abilities).title("Abilities").called("abilities"),
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but dust."),
         // What is inside a crate or a wreck, opened by walking into it or

@@ -8,6 +8,7 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
+use rl_engine::rl_rules::ai::hearing::HearingStats;
 use rl_engine::rl_rules::damage::SubtractArmor;
 
 use crate::content::{Profile, resistances};
@@ -58,6 +59,10 @@ pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries
             // and the lamp decides only whether a droid can see, never how
             // sure it is.
             Stealth(StealthStats::default()),
+            // Ears, so the deck's noise reads on the vitals strip: a
+            // commando hears what a droid hears, from a threshold of
+            // nothing, and decides for themselves what it means.
+            Hearing(HearingStats { threshold: 0, memory: 6 }),
         ))
         .id();
     // Empty hands and an empty bag: what the commando carries is what the
