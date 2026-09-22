@@ -26,7 +26,7 @@ use rl_render::Glyph;
 use rl_rules::Relation;
 
 use crate::focus::{Focus, InSight, Sighting, browse};
-use crate::view::Row;
+use crate::view::{Alert, Row};
 
 /// Everything visible, in list order, and the row picked out.
 ///
@@ -132,11 +132,20 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
             (Some(mine), Some(theirs)) => Some(around.rules.factions.relation(mine.0, theirs.0)),
             _ => None,
         };
-        if sighting.actor && around.watchers.running() && around.watchers.is_watcher(sighting.entity) {
-            row.aware = Some(around.watchers.sees(sighting.entity, me));
-        }
-        if sighting.actor && around.noise.get() {
-            row.heard = around.heard.get(sighting.entity).ok().map(|h| h.is_alert());
+        // Hunting outranks searching: something that has seen you is not
+        // still wondering about a noise. Neither reading at all is a game
+        // with neither stealth nor noise, or a thing that does not notice.
+        if sighting.actor {
+            let hunts = around.watchers.running() && around.watchers.is_watcher(sighting.entity) && around.watchers.sees(sighting.entity, me);
+            let searches = around.noise.get() && around.heard.get(sighting.entity).is_ok_and(|h| h.is_alert());
+            let knows_how =
+                (around.watchers.running() && around.watchers.is_watcher(sighting.entity)) || (around.noise.get() && around.heard.get(sighting.entity).is_ok());
+            row.alert = match (hunts, searches, knows_how) {
+                (true, _, _) => Some(Alert::Hunting),
+                (false, true, _) => Some(Alert::Searching),
+                (false, false, true) => Some(Alert::Unaware),
+                _ => None,
+            };
         }
         if sighting.actor { view.actors.push(row) } else { view.things.push(row) }
     }
@@ -197,15 +206,15 @@ mod tests {
         stage.tick();
 
         let view = stage.app.world().resource::<NearbyView>();
-        let aware = |e: Entity| view.actors.iter().find(|r| r.entity == e).map(|r| r.aware);
-        assert_eq!(aware(hunting), Some(Some(true)));
-        assert_eq!(aware(idle), Some(Some(false)));
-        assert_eq!(aware(blunt), Some(None), "something with no Notice sees on sight and says nothing");
+        let alert = |e: Entity| view.actors.iter().find(|r| r.entity == e).map(|r| r.alert);
+        assert_eq!(alert(hunting), Some(Some(Alert::Hunting)));
+        assert_eq!(alert(idle), Some(Some(Alert::Unaware)));
+        assert_eq!(alert(blunt), Some(None), "something with no Notice sees on sight and says nothing");
 
         let mut plain = Stage::new(NearbyViewPlugin);
         plain.actor("anyone", 'a', 2, 0);
         plain.tick();
-        assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].aware, None, "no stealth, no reading");
+        assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].alert, None, "no stealth, no reading");
     }
 
     #[test]
@@ -224,16 +233,16 @@ mod tests {
         stage.tick();
 
         let view = stage.app.world().resource::<NearbyView>();
-        let heard = |e: Entity| view.actors.iter().find(|r| r.entity == e).map(|r| r.heard);
-        assert_eq!(heard(listening), Some(Some(true)));
-        assert_eq!(heard(quiet), Some(Some(false)));
-        assert_eq!(heard(deaf), Some(None), "something with no Hearing hears nothing and says nothing");
+        let alert = |e: Entity| view.actors.iter().find(|r| r.entity == e).map(|r| r.alert);
+        assert_eq!(alert(listening), Some(Some(Alert::Searching)), "it heard something and is on its way");
+        assert_eq!(alert(quiet), Some(Some(Alert::Unaware)), "it heard nothing");
+        assert_eq!(alert(deaf), Some(None), "something with no Hearing hears nothing and says nothing");
 
         let mut plain = Stage::new(NearbyViewPlugin);
         let anyone = plain.actor("anyone", 'a', 2, 0);
         plain.app.world_mut().entity_mut(anyone).insert(ear);
         plain.tick();
-        assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].heard, None, "no noise, no reading, Hearing or not");
+        assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].alert, None, "no noise, no reading, Hearing or not");
     }
 
     #[test]

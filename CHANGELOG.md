@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A nearby row says what something is doing about you in words rather than by a mark: `Row::alert` is `Alert::{Unaware, Searching, Hunting}`, read off stealth and hearing, and the panel writes it after the name as `(hunting)`. `Row::aware` and `Row::heard` are gone, and so are the `!` and `?` marks.
+  What each state is called is the panel's, through `NearbyPanel::alerts(AlertWords::new(..))`, since one game's monsters sleep where another's stand idle; Foundry's droids are idle, searching and hunting.
+- A nearby row is its own health bar: health washes the row's background from the left in the health's tone rather than taking a column of its own, so a hurt thing reads at a glance. `NearbyLayout::bar_width` and `NearbyPanel::bars` are gone.
 - `CursorStyle`: how a screen marks the cell it points at, as one parametrized enum. `Glow { tone, pulse }` washes the cell and leaves what stands there showing; `Ticks { marks, tone, pulse }` frames it with four marks and never covers it. Both take a `ToneId`, and either may breathe toward a second tone or sit still.
   `InspectPanel`, `NearbyPanel` and `TargetPanel` take one in their constructor through `.cursor(..)`, and `cursor::mark` is the one drawing, so looking, aiming and tabbing through what is in sight cannot drift apart.
   `InspectLayout::pointers` is gone: it is `InspectLayout::cursor` now, a whole style rather than four characters.

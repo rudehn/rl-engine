@@ -11,10 +11,11 @@ use rl_core::Rect;
 use rl_render::{Cell, MapView, Terminal};
 use rl_rules::Relation;
 
+use crate::cursor::CursorStyle;
 use crate::modal::Modals;
-use crate::panel::{bar, clear, clip, frame, section, tint};
+use crate::panel::{clear, clip, frame, section};
 use crate::tone::{Palette, ToneId, Tones};
-use crate::view::{NearbyView, NearbyViewPlugin, Row};
+use crate::view::{Alert, NearbyView, NearbyViewPlugin, Row};
 
 /// Where the nearby rail is drawn and what the headings say.
 #[derive(Resource, Debug, Clone)]
@@ -27,8 +28,53 @@ pub struct NearbyLayout {
     pub actors: String,
     /// The heading over the things on the ground.
     pub things: String,
-    /// Cells given to each health bar.
-    pub bar_width: i32,
+    /// What each state is called, in the game's own words. An empty word
+    /// says nothing at all for that state, which is what a game that
+    /// wants only "hunting" written does with the other two.
+    pub alerts: AlertWords,
+    /// How the cell of the row picked out is marked on the map. A glow by
+    /// default, since the rail's own highlight is a glow and the two read
+    /// as one thing.
+    pub cursor: CursorStyle,
+}
+
+/// What each [`Alert`] is called on a row, in the game's own words.
+///
+/// The engine knows the three states and will not name them: one game's
+/// monsters sleep where another's stand idle, and a droid does neither.
+/// The defaults are plain enough to ship with and plain enough to
+/// replace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlertWords {
+    /// What something that knows of nothing is called.
+    pub unaware: String,
+    /// What something on its way to a noise is called.
+    pub searching: String,
+    /// What something that has noticed you is called.
+    pub hunting: String,
+}
+
+impl Default for AlertWords {
+    fn default() -> Self {
+        Self { unaware: "unaware".into(), searching: "searching".into(), hunting: "hunting".into() }
+    }
+}
+
+impl AlertWords {
+    /// The three, in order.
+    pub fn new(unaware: impl Into<String>, searching: impl Into<String>, hunting: impl Into<String>) -> Self {
+        Self { unaware: unaware.into(), searching: searching.into(), hunting: hunting.into() }
+    }
+
+    /// What `alert` is called, or `None` where the game left it unsaid.
+    pub fn get(&self, alert: Alert) -> Option<&str> {
+        let word = match alert {
+            Alert::Unaware => &self.unaware,
+            Alert::Searching => &self.searching,
+            Alert::Hunting => &self.hunting,
+        };
+        (!word.is_empty()).then_some(word.as_str())
+    }
 }
 
 /// Draws [`NearbyView`] as a rail.
@@ -40,13 +86,26 @@ pub struct NearbyPanel(NearbyLayout);
 impl NearbyPanel {
     /// A rail in `rect`, with the engine's default headings.
     pub fn new(rect: Rect) -> Self {
-        Self(NearbyLayout { rect, title: "Nearby".into(), actors: "In sight".into(), things: "On the ground".into(), bar_width: 6 })
+        Self(NearbyLayout {
+            rect,
+            title: "Nearby".into(),
+            actors: "In sight".into(),
+            things: "On the ground".into(),
+            alerts: AlertWords::default(),
+            cursor: CursorStyle::glow(Tones::SELECT),
+        })
     }
 
     /// Replaces the title in the top border. Empty draws no frame, which
     /// is what a rail flush against the map wants.
     pub fn titled(mut self, title: impl Into<String>) -> Self {
         self.0.title = title.into();
+        self
+    }
+
+    /// Sets how the cell of the row picked out is marked on the map.
+    pub fn cursor(mut self, style: CursorStyle) -> Self {
+        self.0.cursor = style;
         self
     }
 
@@ -57,9 +116,9 @@ impl NearbyPanel {
         self
     }
 
-    /// Sets how many cells a health bar gets.
-    pub fn bars(mut self, width: i32) -> Self {
-        self.0.bar_width = width;
+    /// Sets what each state is called on a row.
+    pub fn alerts(mut self, words: AlertWords) -> Self {
+        self.0.alerts = words;
         self
     }
 }
@@ -91,11 +150,14 @@ pub fn draw_nearby(
     palette: Res<Palette>,
     modals: Res<Modals>,
     map: Option<Res<MapView>>,
+    time: Res<Time>,
 ) {
     if let (Some(focused), Some(map)) = (view.focused, map.as_deref())
         && !modals.any_open()
     {
-        tint(&mut terminal, map, focused.at, Tones::SELECT, &palette);
+        // The same mark the look cursor and the targeting cursor use, so
+        // the row picked out and the cell it stands on read as one thing.
+        crate::cursor::mark(&mut terminal, map, focused.at, layout.cursor, &palette, time.elapsed_secs());
     }
     let rect = layout.rect;
     if rect.width < 6 || rect.height < 4 {
@@ -124,42 +186,55 @@ pub fn draw_nearby(
             if y >= bottom {
                 break;
             }
-            draw_row(&mut terminal, inner, y, row, view.is_focused(row), layout.bar_width, &palette);
+            draw_row(&mut terminal, inner, y, row, view.is_focused(row), &layout.alerts, &palette);
             y += 1;
         }
         y += 1;
     }
 }
 
-fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, bar_width: i32, palette: &Palette) {
-    let bg = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
-    terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', bg).on(bg));
-    terminal.print_on(inner.x, y, &row.glyph.ch.to_string(), row.glyph.fg, bg);
-    let has_bar = row.health.is_some() && inner.width > bar_width + 4;
-    let name_width = if has_bar { inner.width - bar_width - 3 } else { inner.width - 2 };
+fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, words: &AlertWords, palette: &Palette) {
+    // The row is the bar: health fills it from the left in the health's
+    // own tone, mixed into the row's background rather than painted over
+    // it, so a wounded thing reads at a glance without a column of its
+    // own and without shouting.
+    let base = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
+    terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', base).on(base));
+    let filled = match row.health {
+        Some(_) => ((inner.width as f32 * row.health_fraction()).round() as i32).clamp(0, inner.width),
+        None => 0,
+    };
+    let hurt = palette.get(match row.health_fraction() {
+        f if f <= 0.25 => Tones::BAD,
+        f if f <= 0.5 => Tones::NOTICE,
+        _ => Tones::GOOD,
+    });
+    let wash = base.mix(&hurt, 0.35);
+    if filled > 0 {
+        terminal.fill(Rect::new(inner.x, y, filled, 1), Cell::new(' ', base).on(wash));
+    }
+    let bg_at = |x: i32| if x < inner.x + filled { wash } else { base };
+
+    terminal.print_on(inner.x, y, &row.glyph.ch.to_string(), row.glyph.fg, bg_at(inner.x));
     let mut name = row.label.clone();
     for facet in &row.facets {
         name.push_str(" \u{00b7} ");
         name.push_str(&facet.text);
     }
-    // Something that has not noticed you reads muted, so the names in its
-    // colour are the ones hunting you; one that has, carries a mark. One
-    // coming to look at a sound carries a question: it has not seen you,
-    // and it is on its way.
-    let tone = if row.aware == Some(false) { Tones::MUTED } else { relation_tone(row.relation) };
-    if row.aware == Some(true) {
-        terminal.print_on(inner.x + 1, y, "!", palette.get(Tones::BAD), bg);
-    } else if row.heard == Some(true) {
-        terminal.print_on(inner.x + 1, y, "?", palette.get(Tones::NOTICE), bg);
+    // What it is doing about you, in the panel's own words and after the
+    // name: a state a player reads rather than a mark they learn.
+    if let Some(word) = row.alert.and_then(|alert| words.get(alert)) {
+        name.push_str(" (");
+        name.push_str(word);
+        name.push(')');
     }
-    terminal.print_on(inner.x + 2, y, &clip(&name, name_width.max(0) as usize), palette.get(tone), bg);
-    if has_bar {
-        let tone = match row.health_fraction() {
-            f if f <= 0.25 => Tones::BAD,
-            f if f <= 0.5 => Tones::NOTICE,
-            _ => Tones::GOOD,
-        };
-        bar(terminal, inner.right() - bar_width, y, bar_width, row.health_fraction(), tone, palette);
+    // Something that knows of nothing reads muted, so the names in their
+    // own colour are the ones that know you are there.
+    let tone = if row.alert == Some(Alert::Unaware) { Tones::MUTED } else { relation_tone(row.relation) };
+    let text = clip(&name, (inner.width - 2).max(0) as usize);
+    for (i, ch) in text.chars().enumerate() {
+        let x = inner.x + 2 + i as i32;
+        terminal.print_on(x, y, &ch.to_string(), palette.get(tone), bg_at(x));
     }
 }
 
@@ -170,7 +245,7 @@ mod tests {
     use crate::harness::Stage;
 
     #[test]
-    fn the_rail_prints_a_heading_a_glyph_a_name_and_a_bar() {
+    fn the_rail_prints_a_heading_a_glyph_a_name_and_the_row_itself_is_the_health_bar() {
         let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
         stage.actor("crab", 'c', 2, 0);
         stage.thing("rum", '!', 1, 0);
@@ -180,10 +255,21 @@ mod tests {
         assert_eq!(rows[0], "In sight               1", "the heading carries the threat count");
         assert!(rows[1].starts_with('\u{2500}'), "underlined: {:?}", rows[1]);
         assert!(rows[2].starts_with("c crab"), "glyph then name: {:?}", rows[2]);
-        assert!(rows[2].contains('\u{2588}'), "a full health bar: {:?}", rows[2]);
         assert_eq!(rows[4], "On the ground", "the second heading has no count");
         assert!(rows[6].starts_with("! rum"), "{:?}", rows[6]);
-        assert!(!rows[6].contains('\u{2588}'), "a thing on the floor has no health bar");
+
+        // The row is the bar: a crab at full health is washed edge to
+        // edge, and a bottle on the floor, which has no health, is not
+        // washed at all.
+        let (surface, good) = {
+            let palette = stage.app.world().resource::<Palette>();
+            (palette.get(Tones::SURFACE), palette.get(Tones::GOOD))
+        };
+        let full = surface.mix(&good, 0.35);
+        for x in [0, 12, 23] {
+            assert_eq!(bg(&stage, x, 2), full, "the crab's row is washed at column {x}");
+        }
+        assert_eq!(bg(&stage, 12, 6), surface, "a thing on the floor has no health to show");
     }
 
     #[test]
@@ -196,15 +282,16 @@ mod tests {
         let at = stage.at;
         stage.app.world_mut().get_mut::<rl_bevy::Heard>(rat).unwrap().0 = rl_rules::Awareness::Alert { at, stale_turns: 0 };
         stage.tick();
-        assert!(stage.rows()[2].starts_with("r?rat"), "{:?}", stage.rows()[2]);
-        assert_eq!(stage.app.world().resource::<Terminal>().get(1, 2).map(|c| c.fg), Some(stage.app.world().resource::<Palette>().get(Tones::NOTICE)));
+        assert!(stage.rows()[2].contains("rat (searching)"), "{:?}", stage.rows()[2]);
 
+        // And one that has seen you is hunting, whatever it heard.
         let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
-        row.aware = Some(true);
+        row.alert = Some(Alert::Hunting);
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, 6, &palette);
-        assert_eq!(terminal.get(1, 0).map(|c| c.glyph), Some('!'), "a monster that has seen you is hunting you, whatever it heard");
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &AlertWords::default(), &palette);
+        let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
+        assert!(said.contains("(hunting)"), "{said:?}");
     }
 
     #[test]
@@ -254,20 +341,26 @@ mod tests {
             (palette.get(Tones::SELECT), palette.get(Tones::SURFACE))
         };
         let tile = stage.app.world().resource::<MapView>().to_screen(stage.at.offset(3, 0)).expect("the gull is on the map");
-        assert_eq!(bg(&stage, 45, 3), surface, "nothing is picked out yet");
+        // Unpicked and unhurt, so the row carries its own health wash
+        // rather than the selection.
+        let unpicked = surface.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), 0.35);
+        assert_eq!(bg(&stage, 45, 3), unpicked, "nothing is picked out yet");
 
         stage.press(CursorKeys::default().next);
         stage.press(CursorKeys::default().next);
         assert!(stage.rows()[3].contains("g gull"), "{:?}", stage.rows()[3]);
+        // Picked out and unhurt: the selection is what the health washes
+        // over, so the row reads as picked whatever its health.
+        let picked = select.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), 0.35);
         for x in [40, 45, 63] {
-            assert_eq!(bg(&stage, x, 3), select, "the gull's row, edge to edge and under its bar, at column {x}");
+            assert_eq!(bg(&stage, x, 3), picked, "the gull's row, edge to edge, at column {x}");
         }
-        assert_eq!(bg(&stage, 45, 2), surface, "and not the crab's");
+        assert_eq!(bg(&stage, 45, 2), unpicked, "and not the crab's");
         assert_eq!(bg(&stage, tile.x, tile.y), select, "the gull's tile on the map");
         assert_eq!(stage.app.world().resource::<Terminal>().get(tile.x, tile.y).map(|c| c.glyph), Some('g'), "still showing the gull");
 
         stage.press(CursorKeys::default().close);
-        assert_eq!(bg(&stage, 45, 3), surface, "let go");
+        assert_eq!(bg(&stage, 45, 3), unpicked, "let go, and back to its own health wash");
         assert_ne!(bg(&stage, tile.x, tile.y), select);
     }
 

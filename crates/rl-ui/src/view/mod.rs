@@ -40,6 +40,25 @@ use rl_rules::Relation;
 
 use crate::facet::{Facet, FacetId};
 
+/// What something in sight is doing about the player.
+///
+/// Three states and no more, because three is what the engine can say
+/// without guessing: it has noticed you, it is going to look at something
+/// it heard, or it knows of nothing. A game that wants a finer reading, a
+/// droid winding up or a beast feeding, pushes a [`Facet`].
+///
+/// What each is *called* is a panel's, not this: one game's monsters
+/// sleep where another's stand idle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Alert {
+    /// It knows of nothing: it has not noticed you and has heard nothing.
+    Unaware,
+    /// It heard something and is going to look, without having seen you.
+    Searching,
+    /// It has noticed you.
+    Hunting,
+}
+
 /// One entity, as a panel reads it.
 ///
 /// Built by a collector from components; a game's annotate system may push
@@ -62,16 +81,13 @@ pub struct Row {
     pub relation: Option<Relation>,
     /// Current and maximum health, if it has any.
     pub health: Option<(i32, i32)>,
-    /// Whether it has noticed the player: `None` for something that does not
-    /// notice at all, or in a game without stealth. In the view rather than
-    /// a facet because the engine knows it and it reads the same in every
-    /// game.
-    pub aware: Option<bool>,
-    /// Whether it is going to look at something it heard: `None` for
-    /// something deaf, or in a game without noise. Beside `aware` and for
-    /// the same reason, and apart from it, since a monster coming to look
-    /// at a sound has not noticed anyone.
-    pub heard: Option<bool>,
+    /// What it is doing about the player: hunting, searching, or aware of
+    /// nothing. `None` for something that neither notices nor hears, and
+    /// in a game with neither stealth nor noise. In the view rather than a
+    /// facet because the engine knows it and it reads the same in every
+    /// game; what it is *called* is the panel's, since one game's monsters
+    /// sleep and another's stand idle.
+    pub alert: Option<Alert>,
     /// What the game added. Empty until an annotate system pushes.
     pub facets: Vec<Facet>,
 }
@@ -79,7 +95,7 @@ pub struct Row {
 impl Row {
     /// A row for `entity` with nothing but a name and a glyph.
     pub fn new(entity: Entity, label: impl Into<String>, glyph: Glyph) -> Self {
-        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, aware: None, heard: None, facets: Vec::new() }
+        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, alert: None, facets: Vec::new() }
     }
 
     /// The same row, `distance` tiles away.

@@ -38,7 +38,7 @@ pub use gear::GearPanel;
 pub use inspect::InspectPanel;
 pub use inventory::{INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, inventory_modal};
 pub use log::LogPanel;
-pub use nearby::NearbyPanel;
+pub use nearby::{AlertWords, NearbyPanel};
 pub use offers::{OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
 pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
