@@ -19,7 +19,7 @@
 - [Foundations]()
   - [The turn loop](systems/turn-loop.md)
   - [Registries and content](systems/registries.md)
-  - [Seeds and determinism]()
+  - [Seeds and determinism](systems/seeds.md)
 - [The world]()
   - [Grids and tiles]()
   - [Map generation]()

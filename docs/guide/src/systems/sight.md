@@ -2,9 +2,12 @@
      plugins: FovPlugin, LightingPlugin
      files: crates/rl-bevy/src/fov.rs
             crates/rl-bevy/src/lighting.rs
+            crates/rl-bevy/src/components.rs
+            crates/rl-bevy/src/minds.rs
+            crates/rl-bevy/src/knowledge.rs
             crates/rl-grid/src/fov.rs
             crates/rl-grid/src/light.rs
-     fingerprint: abdc2c5a -->
+     fingerprint: 84060e1e -->
 
 # Sight and lighting
 
@@ -91,5 +94,5 @@ What a light means is the game's too: the engine knows emitters and one ambient 
 
 `rl-grid` is tier 1 and has no Bevy in it: `fov.rs` is the symmetric shadowcast, and `light.rs` is `Rgb`, `Light`, `Emitter` and the `LightField` that casts and composes them.
 Both read a borrowed `OpacitySource` and write into buffers the caller owns, so a recast allocates nothing and either can be tested without an `App`.
-`rl-bevy` is tier 2 and has the plugins: `fov.rs` holds `Viewshed`, `cast` and `update_viewsheds`, and `lighting.rs` holds the components, the `Lighting` resource, `update_lighting`, `tick_fuel` and `gate`.
+`rl-bevy` is tier 2 and has the plugins: `fov.rs` holds `is_stale`, `cast` and `update_viewsheds` over the `Viewshed` that `components.rs` defines, and `lighting.rs` holds the light components, the `Lighting` resource, `update_lighting`, `tick_fuel` and `gate`.
 `rl-render` reads the composed field once more, for the color and the waver that gameplay ignores.
