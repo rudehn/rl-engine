@@ -195,6 +195,18 @@ pub struct Said {
     /// A registry's name for the status, kind or ability involved:
     /// `{named}`.
     pub named: String,
+    /// What `who`, `whom` and `what` were called when the row was made,
+    /// filled in by the collector.
+    ///
+    /// A row is made inside the pass and spoken after it, and things
+    /// change in between: what dies becomes remains and is renamed, what
+    /// is thrown merges into a stack, what is picked up leaves the floor.
+    /// A line about a blow that landed on a coolant rat should say so,
+    /// not say it landed on the coolant rat's remains, so the names are
+    /// read when the thing happened rather than when the line is spoken.
+    /// Empty falls back to reading them now, which is what a line made
+    /// outside the turns wants.
+    pub called: [Option<String>; 3],
     /// More words, where there are any: the reasons a use was refused.
     pub detail: String,
     /// How much: `{n}`.
@@ -224,7 +236,19 @@ impl Said {
     }
 
     fn worded(words: Words, turn: u32) -> Self {
-        Self { words, who: None, whom: None, what: None, named: String::new(), detail: String::new(), amount: 0, at: None, seen: true, turn }
+        Self {
+            words,
+            who: None,
+            whom: None,
+            what: None,
+            named: String::new(),
+            called: [None, None, None],
+            detail: String::new(),
+            amount: 0,
+            at: None,
+            seen: true,
+            turn,
+        }
     }
 
     /// The engine phrase, when the row is one.
@@ -362,6 +386,8 @@ pub struct Witness<'w, 's> {
     weapons: Weapons<'w, 's>,
     holding: Query<'w, 's, (), With<MyTurn>>,
     props: Query<'w, 's, (), With<rl_bevy::Prop>>,
+    /// What things are called while the pass is still running.
+    names: Query<'w, 's, (Option<&'static Name>, Option<&'static Stack>)>,
 }
 
 impl Witness<'_, '_> {
@@ -392,6 +418,26 @@ impl Witness<'_, '_> {
             return true;
         }
         at.is_some_and(|p| p == my_pos.0 || sight.can_see(p))
+    }
+
+    /// What `e` is called right now as a line names an actor, in the
+    /// words [`Names::actor`] would use: `None` for the player, who is
+    /// always "you", and for anything unnamed.
+    fn called_actor(&self, e: Option<Entity>) -> Option<String> {
+        let e = e?;
+        if self.is_you(e) {
+            return None;
+        }
+        let (name, _) = self.names.get(e).ok()?;
+        Some(format!("the {}", name?.as_str()))
+    }
+
+    /// The same for a thing, in the words [`Names::thing`] would use,
+    /// counted as its stack stood when the row was made.
+    fn called_thing(&self, e: Option<Entity>) -> Option<String> {
+        let e = e?;
+        let (name, stack) = self.names.get(e).ok()?;
+        Some(rl_core::noun::counted(name?.as_str(), stack.map_or(1, |s| s.count)))
     }
 
     fn status_name(&self, id: rl_rules::StatusId) -> String {
@@ -599,6 +645,12 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         said.at = tell.who.or(tell.whom).and_then(|e| witness.at(e));
         rows.push(said);
     }
+    // What each row's subjects are called, read now, inside the pass: by
+    // the time the row is spoken the dead have been renamed as remains
+    // and a thrown thing has merged into a stack.
+    for said in first.iter_mut().chain(rows.iter_mut()) {
+        said.called = [witness.called_actor(said.who), witness.called_actor(said.whom), witness.called_thing(said.what)];
+    }
     view.rows.extend(first);
     view.rows.extend(rows);
 }
@@ -716,6 +768,18 @@ struct Named {
     color: Option<Color>,
 }
 
+impl Named {
+    /// The same, but under the name the row was made with, when it was
+    /// made with one: what a thing was called then outranks what it is
+    /// called now.
+    fn or_called(self, called: &Option<String>) -> Self {
+        match called {
+            Some(text) => Self { text: text.clone(), color: self.color },
+            None => self,
+        }
+    }
+}
+
 /// What the presenter reads to put names to entities.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Names<'w, 's> {
@@ -765,9 +829,9 @@ pub fn render(template: &str, said: &Said, names: &Names<'_, '_>) -> (String, Ve
         rest = &rest[open + close + 1..];
         let capital = key.chars().next().is_some_and(|c| c.is_uppercase());
         let named = match key.to_ascii_lowercase().as_str() {
-            "who" => Some(names.actor(said.who)),
-            "whom" => Some(names.actor(said.whom)),
-            "what" => Some(names.thing(said.what)),
+            "who" => Some(names.actor(said.who).or_called(&said.called[0])),
+            "whom" => Some(names.actor(said.whom).or_called(&said.called[1])),
+            "what" => Some(names.thing(said.what).or_called(&said.called[2])),
             "n" => Some(Named { text: said.amount.to_string(), color: None }),
             "named" => Some(Named { text: said.named.clone(), color: None }),
             "detail" => Some(Named { text: said.detail.clone(), color: None }),
@@ -925,6 +989,36 @@ mod tests {
         let said = lines(&stage);
         assert!(said.contains(&("The rat is no more.".to_string(), Tones::GOOD)), "{said:?}");
         assert!(!said.iter().any(|(t, _)| t == "The rat dies."), "not spoken twice");
+    }
+
+    /// A blow is spoken of what it landed on, not of what that became.
+    ///
+    /// A kill and the blow before it used to read "You hit the coolant rat
+    /// remains for 2" and "You kill the coolant rat remains!", because a
+    /// row is made inside the pass and spoken after it, and by then the
+    /// rat had become remains and been renamed.
+    #[test]
+    fn a_kill_names_what_was_struck_and_not_what_it_became() {
+        let mut stage = Stage::new_with(NarratorPlugin::default(), |app| {
+            app.add_plugins((rl_bevy::props::PropsPlugin, rl_bevy::remains::RemainsPlugin));
+            app.insert_resource(Seed(rl_bevy::testing::TEST_SEED));
+        });
+        let (player, theirs) = (stage.player, stage.theirs);
+        let rat = stage
+            .app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(stage.at.offset(1, 0)), Health::full(1), Faction(theirs), Name::new("coolant rat"), LeavesRemains))
+            .id();
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Attack(rat)));
+        stage.tick();
+
+        let said = lines(&stage);
+        assert!(said.iter().any(|(t, _)| t == "You kill the coolant rat!"), "the rat, not its remains: {said:?}");
+        assert!(!said.iter().any(|(t, _)| t.contains("remains")), "and nothing reads as a blow on a corpse: {said:?}");
+        // And the engine did rename it, so this is the row keeping its own
+        // words rather than the rename not having happened.
+        assert_eq!(stage.app.world().get::<Name>(rat).map(|n| n.as_str().to_string()), Some("coolant rat remains".into()));
     }
 
     /// Nothing dies that was never alive: a crate the player breaks is
