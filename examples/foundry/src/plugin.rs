@@ -158,6 +158,7 @@ impl Plugin for FoundryPlugin {
         app.add_modal(crate::upgrades::MODAL);
         app.init_resource::<crate::upgrades::ChoiceScreen>();
         app.init_resource::<crate::upgrades::Choosing>();
+        app.init_resource::<crate::upgrades::Taken>();
         // The keys, declared once so the controls screen lists what these
         // systems read. Chained, the pick first: a confirm that closes the
         // pick must not fall through, the same frame, to the world's own

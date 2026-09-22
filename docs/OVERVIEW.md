@@ -304,7 +304,7 @@ Line droids fire their own `RangedAttack`, built in rather than held, so `ShootA
 Every gun and every shooting droid names the `look` its shot flies as inside its `ranged` attack in `items.ron` and `monsters.ron`, written as an ability's look is in `abilities.ron`, a red bolt, a blue ion charge or a pale round, and the damage kinds know nothing of it; a `melee` attack takes a `look` the same way, though none is given one yet; a shot is seen to cross the deck and hurts when it arrives, and any key skips it with the hit already taken.
 The commando carries a `Stealth` with no skill, which makes it a subject a droid has to notice rather than one seen the instant it comes into view; each droid names its own `notice` in `monsters.ron`, sure of a lit commando within eight tiles and of an unlit one only within two, with a roll a turn past that, and a probe's alarm starts on that noticing.
 The decks below the first are dark, and the commando's shoulder lamp is the stealth trade: `L` switches it off, and then, away from the stores' wall lamps, a droid without radar has to be beside you to see you.
-A charge set on the reactor console on decks three, six and nine, or on the core on deck ten, is a fact the quest tracker counts, and the pick of one upgrade from three ends the run.
+A charge set on the reactor console on decks three, six and nine, or on the core on deck ten, is a fact the quest tracker counts, and each charge's pick offers whatever of the three upgrades the run has not already taken.
 It is a library with a thin binary, so every system is in one `FoundryPlugin` that the window and the headless tests both add, and `tests/fingerprint.rs` pins a scripted run.
 
 ## Not built yet

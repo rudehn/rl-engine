@@ -148,8 +148,8 @@ fn why_not(worn: &[Entity], reach: &Reach) -> String {
 
 #[cfg(test)]
 mod tests {
+    use rl_engine::rl_bevy::Ending;
     use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
-    use rl_engine::rl_bevy::{Ending, Outcome};
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
@@ -192,12 +192,13 @@ mod tests {
         assert_eq!(asked, vec![blade]);
     }
 
-    /// The whole victory path through the real keys: walking into the
+    /// The whole pick path through the real keys: walking into the
     /// console sets the charge, because a bump into a prop that offers one
     /// thing is that offer taken up; the pick opens, Down and Enter take
-    /// the second upgrade, and the run is won with it fitted.
+    /// the second upgrade, and the run carries on with it fitted rather
+    /// than ending, since one pick out of four charges is not a run won.
     #[test]
-    fn walking_into_the_console_then_down_and_enter_on_the_pick_wins_the_run_with_uplink() {
+    fn walking_into_the_console_then_down_and_enter_on_the_pick_fits_uplink_and_leaves_the_run_playing() {
         let mut app = crate::testing::headless(RunSeed(2));
         app.add_plugins(KeyScriptPlugin);
         let me = crate::testing::beside_the_console(&mut app);
@@ -212,9 +213,7 @@ mod tests {
         press(&mut app, KeyCode::ArrowDown);
         press(&mut app, KeyCode::Enter);
         crate::testing::settle(&mut app);
-        let ending = app.world().get_resource::<Ending>().expect("the run ended");
-        assert_eq!(ending.outcome, Outcome::Won);
-        assert_eq!(ending.epitaph, "Uplink fitted. The rest of the foundry waits below.");
+        assert!(app.world().get_resource::<Ending>().is_none(), "one pick does not end the run");
         assert!(app.world().get::<crate::upgrades::Uplinked>(me).is_some(), "the second row, Uplink, was the one fitted");
         assert!(!app.world().resource::<Modals>().is_open(pick), "and the pick is closed");
     }

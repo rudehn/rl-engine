@@ -204,13 +204,14 @@ pub fn offer_the_pick(
     mut modals: ResMut<Modals>,
     mut screen: ResMut<crate::upgrades::ChoiceScreen>,
     mut choosing: ResMut<crate::upgrades::Choosing>,
+    taken: Res<crate::upgrades::Taken>,
 ) {
     let charges = CHARGE_QUESTS.map(|name| quests.defs.expect(name));
     for change in changes.read() {
         if let Change::QuestDone { quest, .. } = change.0
             && charges.contains(&quest)
         {
-            crate::upgrades::offer(&mut modals, &mut screen, &mut choosing);
+            crate::upgrades::offer(&mut modals, &mut screen, &mut choosing, &taken);
         }
     }
 }

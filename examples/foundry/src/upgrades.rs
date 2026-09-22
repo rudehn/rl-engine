@@ -1,12 +1,14 @@
-//! The one pick the first slice offers, once its charge is set.
+//! The pick each charge offers, once its console is set.
 //!
 //! Three permanent upgrades, kept for the run: [`Upgrade::Stims`] grants
 //! an ability, [`Upgrade::Servos`] raises [`Speed`], and
 //! [`Upgrade::Uplink`] raises the range of every ranged weapon worn, one
 //! tile, for good. [`apply`] does the one picked; [`Choosing`] is `Some`
-//! while the pick is on screen, and [`choice_keys`] is the whole of
-//! reading it, since nothing about a pick is a turn: no action claims it,
-//! and the run ends the moment one is made.
+//! while a pick is on screen, and [`choice_keys`] is the whole of reading
+//! it, since nothing about a pick is a turn: no action claims it, and the
+//! pick closes without ending the run. [`Taken`] is what keeps four picks
+//! against a pool of three from offering, or applying, the same upgrade
+//! twice.
 //!
 //! Uplink's bonus is applied and removed, not derived fresh every pass the
 //! way `ammo::sync_ammo` and `droids::sensors::sync_dark_sight` compute
@@ -46,8 +48,29 @@ pub enum Upgrade {
     Servos,
 }
 
-/// The three the first reactor offers, from spec section 11.
+/// The pool every charge's pick draws from, from spec section 11.
 pub const OFFERED: [Upgrade; 3] = [Upgrade::Stims, Upgrade::Uplink, Upgrade::Servos];
+
+/// What this run has already fitted, in the order it was picked.
+///
+/// A resource rather than components read off the player, because what an
+/// upgrade did to the player is not always something to read back: servos
+/// raised a number that armor could raise too, and stims pushed an id
+/// onto a list that an implant will push onto later. The pick needs to
+/// know what it offered before, which is its own question.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct Taken(pub Vec<Upgrade>);
+
+/// The upgrades a pick offers given what the run has: the pool in
+/// [`OFFERED`] order, minus what is taken, at most three rows because
+/// three is what the screen and the design both say a pick is.
+///
+/// Empty is a real answer, not a bug: four charges against a pool of
+/// three means the fourth pick has nothing to give, and a pick with no
+/// rows closes itself rather than offering a repeat.
+pub fn on_offer(taken: &Taken) -> Vec<Upgrade> {
+    OFFERED.iter().copied().filter(|u| !taken.0.contains(u)).take(3).collect()
+}
 
 /// The name and the one-line pitch a menu row shows for `upgrade`.
 fn blurb(upgrade: Upgrade) -> (&'static str, &'static str) {
@@ -192,10 +215,12 @@ pub fn react_uplink(
     }
 }
 
-/// `Some` while the run's one pick is on screen; `None` once it has been
-/// made.
-#[derive(Resource, Debug, Default)]
-pub struct Choosing(pub Option<[Upgrade; 3]>);
+/// The upgrades on screen while a pick is open, or `None` while none is.
+///
+/// A `Vec` rather than `[Upgrade; 3]`: a pick late in a run offers fewer
+/// than three, since it never offers what the run already has.
+#[derive(Resource, Default)]
+pub struct Choosing(pub Option<Vec<Upgrade>>);
 
 /// The pick screen's own list: three rows, one line each.
 #[derive(Resource, Default)]
@@ -212,22 +237,26 @@ fn modal(modals: &Modals) -> ModalId {
     modals.get(MODAL).expect("FoundryPlugin declares the choice modal")
 }
 
-/// Opens the pick: fills [`ChoiceScreen`] with [`OFFERED`], one row each,
-/// sets [`Choosing`], and raises the modal. Called from `mission`'s own
-/// reaction to the first charge's objective finishing.
-pub fn offer(modals: &mut Modals, screen: &mut ChoiceScreen, choosing: &mut Choosing) {
-    choosing.0 = Some(OFFERED);
+/// Opens the pick on whatever is left to offer. A pick with nothing left
+/// opens nothing, which is what the fourth charge does against a pool of
+/// three: the charge still counts, and the screen does not appear to
+/// offer a choice that is not there.
+pub fn offer(modals: &mut Modals, screen: &mut ChoiceScreen, choosing: &mut Choosing, taken: &Taken) {
+    let rows = on_offer(taken);
+    if rows.is_empty() {
+        return;
+    }
     screen.menu.title = "The charge is set. Choose one upgrade".to_string();
     screen.menu.hints = "\u{2191}\u{2193} pick \u{2022} enter choose".to_string();
     screen.menu.set_rows(
-        OFFERED
-            .iter()
+        rows.iter()
             .map(|u| {
                 let (name, text) = blurb(*u);
                 MenuRow::new(name).detail(text)
             })
             .collect(),
     );
+    choosing.0 = Some(rows);
     let id = modal(modals);
     modals.open(id);
 }
@@ -235,8 +264,8 @@ pub fn offer(modals: &mut Modals, screen: &mut ChoiceScreen, choosing: &mut Choo
 /// Reads the pick screen's keys, exclusively: moving the cursor is a
 /// resource write same as any menu's, but confirming calls [`apply`],
 /// which needs the whole [`World`] the way [`crate::testing::pick`] does.
-/// No action claims a turn for this: picking an upgrade is not a move the
-/// run's clock counts, and the run ends the moment one is made.
+/// No action claims a turn for this: the pick costs no turn, and the run
+/// carries on once it closes.
 pub fn choice_keys(world: &mut World) {
     let id = modal(world.resource::<Modals>());
     if !world.resource::<Modals>().is_top(id) {
@@ -260,22 +289,20 @@ pub fn choice_keys(world: &mut World) {
         return;
     }
     let selected = screen.menu.selected;
-    let Some(upgrade) = OFFERED.get(selected).copied() else { return };
+    let Some(upgrade) = world.resource::<Choosing>().0.as_ref().and_then(|rows| rows.get(selected).copied()) else { return };
     let Some(player) = world.query_filtered::<Entity, With<Player>>().iter(world).next() else { return };
     apply(upgrade, player, world);
+    world.resource_mut::<Taken>().0.push(upgrade);
     world.resource_mut::<Modals>().close_one(id);
     world.resource_mut::<Choosing>().0 = None;
-    // The ending screen's title already says the charge is set; the
-    // epitaph says what the run kept for it, and what is left.
-    let (name, _) = blurb(upgrade);
-    world.write_message(RunOver::won().saying(format!("{name} fitted. The rest of the foundry waits below.")));
 }
 
 /// The pick's presenter: draws [`ChoiceScreen`] in the rectangle it is
 /// built with, the way the engine's own panels take theirs, so `main.rs`
 /// cuts it from the screen beside every other panel rather than the
 /// screen working out where to sit on its own. A headless test adds none,
-/// and the pick still opens, reads its keys and ends the run without it.
+/// and the pick still opens, reads its keys and applies the upgrade
+/// without it.
 pub struct ChoicePanel(pub Rect);
 
 /// Where [`ChoicePanel`] draws.
@@ -308,6 +335,22 @@ pub fn load_abilities(kinds: &EffectKinds, registries: &Registries) -> Abilities
 mod tests {
     use super::*;
     use rl_engine::rl_core::RunSeed;
+
+    /// A pick never offers what the run already has, so four charges
+    /// across a run give four different upgrades rather than the same
+    /// three over and over, and the pick after the pool runs dry offers
+    /// nothing rather than a repeat.
+    #[test]
+    fn a_pick_offers_only_what_the_run_has_not_taken() {
+        let all = Taken(Vec::new());
+        assert_eq!(on_offer(&all).len(), 3, "nothing taken: the whole pool, capped at three");
+        let two_left = Taken(vec![Upgrade::Stims]);
+        let offer = on_offer(&two_left);
+        assert!(!offer.contains(&Upgrade::Stims), "what is taken is not offered again");
+        assert_eq!(offer.len(), 2);
+        let empty = Taken(vec![Upgrade::Stims, Upgrade::Uplink, Upgrade::Servos]);
+        assert!(on_offer(&empty).is_empty(), "a dry pool offers nothing");
+    }
 
     #[test]
     fn each_upgrade_does_what_it_says() {
