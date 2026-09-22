@@ -91,7 +91,7 @@ pub fn collect_offers(
         let label = if what.is_empty() { verbs.name(offer.verb).to_string() } else { format!("{} {what}", verbs.name(offer.verb)) };
         let refused = offer.refused.map(|why| match why {
             Refused::Needs(tag) => match registries.as_deref() {
-                Some(registries) => format!("needs {}", registries.tags.name(tag)),
+                Some(registries) => format!("needs a {}", registries.tags.name(tag)),
                 None => "needs something you do not carry".to_string(),
             },
         });
@@ -152,7 +152,7 @@ mod tests {
         assert!(labels.contains(&"open supply crate"), "the verb, then what it is done to: {labels:?}");
         assert!(labels.contains(&"open locked cache"), "{labels:?}");
         let cache = view.rows.iter().find(|r| r.label == "open locked cache").expect("listed");
-        assert_eq!(cache.refused.as_deref(), Some("needs cutter"), "and a refusal names what is wanted");
+        assert_eq!(cache.refused.as_deref(), Some("needs a cutter"), "and a refusal names what is wanted");
         assert_eq!(view.open_rows(), 1, "one of the two can be taken up");
     }
 }

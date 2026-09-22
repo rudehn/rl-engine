@@ -144,9 +144,11 @@ pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: 
         let target = pos.0 + dir.offset();
         // A prop in the way that offers one thing and nothing else: walking
         // into a crate opens it, the way walking into a door opens that.
-        // Several offers are a question a walk key cannot answer, so the
-        // bump comes to nothing and says so: whoever shows screens can ask
-        // it from the `Bumped` that follows.
+        // Anything else it offers is a question a walk key cannot answer,
+        // and so is an offer it refuses, since a player who walks into a
+        // locked thing is owed the reason: both come to nothing and say so,
+        // and whoever shows screens asks or explains from the `Bumped`
+        // that follows.
         match way.offers_at(actor, target) {
             Offered::One(offer) => {
                 out.interacts.write(Intent::new(actor, Interact { prop: offer.prop, verb: offer.verb }));
@@ -198,12 +200,19 @@ enum Offered {
 
 impl Way<'_, '_> {
     /// What a prop standing in `target` offers `actor`.
+    ///
+    /// One thing it could do now and nothing else at all is the only case
+    /// a walk key answers. A prop that offers several, or that offers one
+    /// it refuses, is a question or an explanation, which is a screen's.
     fn offers_at(&self, actor: Entity, target: Point) -> Offered {
         let Some(offered) = self.offered.as_deref() else { return Offered::None };
         let Some(prop) = self.occupancy.at(target).iter().copied().find(|e| self.props.contains(*e)) else { return Offered::None };
-        let mut open = offered.open_to(actor).filter(|o| o.prop == prop);
-        let Some(first) = open.next().copied() else { return Offered::None };
-        if open.next().is_none() { Offered::One(first) } else { Offered::Several(prop) }
+        let all: Vec<crate::props::Offer> = offered.for_actor(actor).iter().filter(|o| o.prop == prop).copied().collect();
+        match all.as_slice() {
+            [] => Offered::None,
+            [only] if only.refused.is_none() => Offered::One(*only),
+            _ => Offered::Several(prop),
+        }
     }
 }
 

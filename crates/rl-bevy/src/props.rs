@@ -823,7 +823,7 @@ pub struct PropsPlugin;
 
 impl Plugin for PropsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, Needs, ResolveSet, Turn};
+        use crate::plugin::{DecideSet, Needs, Reads, ResolveSet, Turn};
         use crate::seed::AddStream;
         use crate::turn::AddAction;
         app.needs::<Registries>("PropsPlugin", "`Registries`, with `props` loaded from a `props.ron`")
@@ -834,23 +834,18 @@ impl Plugin for PropsPlugin {
             .add_message::<FillContainer>()
             .add_message::<Triggered>()
             .add_message::<Spotted>()
-            // Taking out of a container is picking something up, and says
-            // so in items' own words. Registered here because a game may
-            // have props and no `ItemsPlugin`, and a writer for a message
-            // nobody registered is a panic; `add_message` is idempotent, so
-            // a game with both gets one.
-            .add_message::<crate::items::ItemEvent>()
-            // Everything an effect may write, for the same reason: a trap
-            // lands effects, an effect may harm, afflict, cure or be worth
-            // seeing, and a game may have traps without combat or statuses.
-            // What nobody resolves, nobody answers.
-            .add_message::<crate::combat::DamageEvent>()
-            // Read, not written: a prop that bursts when it is broken hears
-            // its own death, and a game may have props and no combat.
-            .add_message::<crate::combat::DeathEvent>()
-            .add_message::<crate::status::Afflict>()
-            .add_message::<crate::status::Cure>()
-            .add_message::<crate::cue::Cued>()
+            // What props read and write that belongs to plugins a game may
+            // have left out: taking out of a container says so in items'
+            // own words, a trap lands effects that harm, afflict, cure and
+            // are worth seeing, and a prop that bursts hears its own death.
+            // A game may have props without items, combat or statuses, and
+            // then these queues simply stay empty.
+            .reads::<crate::items::ItemEvent>()
+            .reads::<crate::combat::DamageEvent>()
+            .reads::<crate::combat::DeathEvent>()
+            .reads::<crate::status::Afflict>()
+            .reads::<crate::status::Cure>()
+            .reads::<crate::cue::Cued>()
             .add_action::<Take>()
             .add_stream::<PropRng>("PropsPlugin")
             // The stream effects roll their own dice from. A trap lands the

@@ -109,11 +109,13 @@ pub fn offers_modal(modals: &Modals) -> ModalId {
     modals.get(OFFERS_MODAL).expect("OffersPanel declares the offers modal")
 }
 
-/// Opens the screen when a bump came to nothing because the prop walked
-/// into offers more than one thing.
+/// Opens the screen when a bump came to nothing against a prop.
 ///
-/// The engine refuses that bump rather than guessing; this is the question
-/// it could not ask from inside the turn.
+/// Two cases, and the screen answers both: the prop offers more than one
+/// thing, which is a question the walk key could not ask, or it offers
+/// one it refuses, which is an explanation the walk key could not give.
+/// A prop that offered one thing and did it is not here at all, because
+/// the bump became the interaction.
 pub fn open_on_crowded_bump(
     mut bumped: MessageReader<Bumped>,
     view: Res<OffersView>,
@@ -126,7 +128,10 @@ pub fn open_on_crowded_bump(
         if !props.contains(ev.into) {
             continue;
         }
-        if view.rows.iter().filter(|r| r.prop == ev.into && r.open()).count() < 2 {
+        let rows = view.rows.iter().filter(|r| r.prop == ev.into).count();
+        let open = view.rows.iter().filter(|r| r.prop == ev.into && r.open()).count();
+        // Nothing to say, or the bump already did the one thing on offer.
+        if rows == 0 || (rows == 1 && open == 1) {
             continue;
         }
         menu.selected = 0;
@@ -283,6 +288,51 @@ mod tests {
         assert!(modals.is_open(offers_modal(modals)), "the question is asked");
         let view = stage.app.world().resource::<OffersView>();
         assert_eq!(view.rows.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(), vec!["strip workbench", "tip workbench"]);
+    }
+
+    /// Walking into something locked used to do nothing at all: the one
+    /// offer was refused, so the bump came to nothing and said nothing,
+    /// and the player was left pressing a direction at a crate. Now the
+    /// screen opens and says what it wants.
+    #[test]
+    fn walking_into_something_locked_says_what_it_wants() {
+        let mut stage = Stage::new_with(OffersPanel::new(Rect::new(8, 4, 40, 8)), |app| {
+            app.add_plugins(PropsPlugin);
+            app.insert_resource(Seed(TEST_SEED));
+            let tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("cutter")]).expect("one tag");
+            let props = rl_rules::prop::load(
+                r#"#![enable(implicit_some)]
+                [
+                    (name: "armory locker", glyph: '&', color: (r: 1, g: 2, b: 3), blocks: true,
+                     container: (contents: [], locked: "cutter"), offers: [(verb: "open", time: 300)]),
+                ]"#,
+                &rl_rules::Names::new().tags(&tags),
+            )
+            .expect("the props load");
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.props = props;
+            registries.tags = tags;
+        });
+        let registries = stage.app.world().resource::<Registries>().clone();
+        let locker = {
+            let id = registries.props.expect("armory locker");
+            let at = stage.at.offset(1, 0);
+            let mut commands = stage.app.world_mut().commands();
+            spawn_prop(&mut commands, &registries, id, at, MapId::SURFACE)
+        };
+        stage.app.world_mut().flush();
+        stage.app.world_mut().entity_mut(locker).insert(Stocked);
+        stage.tick();
+        stage.tick();
+
+        let player = stage.player;
+        stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
+        stage.tick();
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "walking into it says something rather than nothing");
+        let view = stage.app.world().resource::<OffersView>();
+        let row = view.rows.iter().find(|r| r.prop == locker).expect("the locker is listed");
+        assert_eq!(row.refused.as_deref(), Some("needs a cutter"), "and says what it wants");
     }
 
     /// Down and Enter take the second of them, and nothing is guessed at.
