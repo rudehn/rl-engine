@@ -37,8 +37,8 @@ done < <(grep -rnoE '\]\(([^)]+\.png)\)' "$src" --include='*.md' | sed -E 's/:[0
 
 # Every chapter is reachable from the table of contents, and every entry in
 # the table of contents is a chapter.
-listed=$(grep -oE '\(([0-9a-z-]+\.md)\)' "$src/SUMMARY.md" | tr -d '()' | sort -u)
-present=$(cd "$src" && ls ./*.md | sed 's|^\./||' | grep -v '^SUMMARY.md$' | sort -u)
+listed=$(grep -oE '\(([0-9a-z/-]+\.md)\)' "$src/SUMMARY.md" | tr -d '()' | sort -u)
+present=$(cd "$src" && find . -name '*.md' | sed 's|^\./||' | grep -v '^SUMMARY.md$' | sort -u)
 for page in $present; do
   grep -qx "$page" <<<"$listed" || note "SUMMARY.md does not list $page"
 done
@@ -53,17 +53,18 @@ done
 while IFS= read -r hit; do
   file=${hit%%:*}
   rest=${hit#*:}
-  page=${rest#*:}
-  page=${page##*/}
+  page=${rest#*docs/guide/src/}
   [[ -f "$src/$page" ]] || note "$file: names no such chapter: $page"
-done < <(grep -rnoE 'docs/guide/src/[0-9a-z-]+\.md' crates examples templates scripts docs/*.md README.md AGENTS.md --include='*.rs' --include='*.md' --include='*.sh' 2>/dev/null)
+done < <(grep -rnoE 'docs/guide/src/[0-9a-z/-]+\.md' crates examples templates scripts docs/*.md README.md AGENTS.md --include='*.rs' --include='*.md' --include='*.sh' 2>/dev/null)
 
-# Every link from one chapter to another.
+# Every link from one chapter to another, resolved from the page that
+# holds it: a page in systems/ reaches a chapter with ../ and a sibling
+# with neither.
 while IFS= read -r hit; do
   page=${hit%%:*}
   target=${hit#*:}
-  [[ -f "$src/$target" ]] || note "$page: links to a missing chapter: $target"
-done < <(grep -rnoE '\]\(([0-9a-z-]+\.md)\)' "$src" --include='*.md' | sed -E 's/:[0-9]+:\]\(/:/; s/\)$//')
+  [[ -f "$(dirname "$page")/$target" ]] || note "$page: links to a missing chapter: $target"
+done < <(grep -rnoE '\]\(([0-9a-z/.-]+\.md)\)' "$src" --include='*.md' | sed -E 's/:[0-9]+:\]\(/:/; s/\)$//')
 
 # Every line of a Rust snippet a chapter writes out by hand rather than
 # includes is a line of an example's source. A copied line is the one kind
