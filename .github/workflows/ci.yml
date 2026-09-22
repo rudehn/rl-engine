@@ -41,6 +41,8 @@ jobs:
         run: scripts/check-guide.sh
       - name: the inventory keeps up with the code
         run: scripts/check-overview.sh
+      - name: the system reference keeps up with the code
+        run: python3 scripts/check-systems.py
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: tests

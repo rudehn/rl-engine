@@ -8,6 +8,9 @@ The guide is the only part of this folder that is published as a website; everyt
 - **[The guide](guide/src/introduction.md)**, nine chapters that build a small roguelike called Warren, each one playable in the browser.
   Read it as a website at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/), which has a sidebar and search, or as markdown from the link above.
   Every chapter's code is a runnable binary in `examples/tutorial/src/bin`, compiled by CI, so the code in the guide is code that works.
+- **[The system reference](guide/src/systems/)**, one page per system: what it is, how to turn it on, what the engine decides and what your game decides.
+  It is part of the same book as the guide and is read at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/) or as markdown from the link above.
+  The guide teaches by building Warren; the reference is what you read once you know what you are looking for.
 
 ## What the engine has
 
