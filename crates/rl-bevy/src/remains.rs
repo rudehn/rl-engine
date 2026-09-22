@@ -125,7 +125,25 @@ pub fn name_as_remains(world: &mut World, entity: Entity) {
 /// comes off with them, which is what keeps
 /// [`bury_the_dead`](crate::combat::bury_the_dead) from despawning it at
 /// the end of the frame.
-pub type WasLiving = (Dead, Actor, Blocks, Health, Mind, Perception, crate::components::Viewshed);
+///
+/// What it noticed and what it heard come off too, and that is not
+/// tidiness: a watcher is anything that carries `Notice` and is not
+/// `Dead`, and remains are not `Dead` by design, so a body left with its
+/// `Notice` went on watching the player, who stayed marked as seen with
+/// every enemy on the deck dead.
+pub type WasLiving = (
+    Dead,
+    Actor,
+    Blocks,
+    Health,
+    Mind,
+    Perception,
+    crate::components::Viewshed,
+    crate::stealth::Notice,
+    crate::stealth::Aware,
+    crate::noise::Hearing,
+    crate::noise::Heard,
+);
 
 /// Keeps the dead that leave remains, and takes the life off them.
 ///
@@ -283,6 +301,37 @@ mod tests {
         app.world_mut().write_message(DamageEvent { target: dead, hit });
         app.update();
         assert!(app.world().get_entity(dead).is_ok(), "the remains survived a blow aimed at them");
+    }
+
+    /// A body watches nobody. A watcher is anything that carries
+    /// `Notice` and is not `Dead`, and remains are not `Dead` on purpose,
+    /// so a body left with what it noticed went on seeing the player: a
+    /// deck with every droid dead still read as a deck the commando was
+    /// seen on.
+    #[test]
+    fn remains_watch_nobody_and_hear_nothing() {
+        let (mut app, start, sides) = arena();
+        app.add_plugins(crate::stealth::StealthPlugin);
+        let player = app
+            .world_mut()
+            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours), crate::stealth::Stealth::default()))
+            .id();
+        let watcher = victim(&mut app, start.offset(2, 0), sides, true);
+        app.world_mut().entity_mut(watcher).insert((crate::stealth::Notice::default(), crate::noise::Hearing(rl_rules::ai::HearingStats::default())));
+        app.update();
+        app.update();
+
+        {
+            let world = app.world_mut();
+            let mut watchers = world.query_filtered::<Entity, (With<crate::stealth::Notice>, Without<Dead>)>();
+            assert!(watchers.iter(world).any(|e| e == watcher), "it watches while it lives");
+        }
+        kill(&mut app, watcher, sides);
+        let world = app.world_mut();
+        let mut watchers = world.query_filtered::<Entity, (With<crate::stealth::Notice>, Without<Dead>)>();
+        assert!(!watchers.iter(world).any(|e| e == watcher), "and watches nobody once it is a body");
+        assert!(app.world().get::<crate::noise::Hearing>(watcher).is_none(), "nor hears anything");
+        let _ = player;
     }
 
     /// The engine keeps the entity rather than spawning one, so whatever
