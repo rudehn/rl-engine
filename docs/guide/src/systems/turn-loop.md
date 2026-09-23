@@ -5,7 +5,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/components.rs
-     fingerprint: 7c8ef5b7 -->
+     fingerprint: c313a7ed -->
 
 # The turn loop
 
@@ -19,6 +19,7 @@ What a turn caused is answered inside the same pass, and what is worth watching 
 `CorePlugin` is the loop, and it is the one plugin every game adds.
 It creates the `Turn`, `NewRun` and `EndRun` schedules, chains `EngineSet` across `Update` and `TurnSet` across a pass, and puts `run_turns` in `EngineSet::Turns`.
 It registers the actions that need nothing else: `Step`, `Wait`, `Bump`, `Swap`, `GoThrough`, `Open` and `Close`.
+It sets `Turn` to run on one thread, because a pass is dozens of small systems dealt once per actor turn rather than once per frame, and the multi-threaded executor's per-system handoff cost more than the systems it was handing off.
 It declares `needs::<WorldMap>`, so a game that never builds a map is told so, by name, the moment play begins rather than by an empty screen.
 A game's own action is registered with `app.add_action::<A>()`, which adds `Intent<A>` as a message and one sweeper that refuses an intent no resolver claimed.
 Cues and the hold are in `CorePlugin` too, and stay inert until a plugin that draws them calls `TurnHold::watch`.
@@ -82,6 +83,7 @@ What an action costs is the game's number; what happens to the clock once that n
 Anything that reacts to what a turn caused belongs in `TurnSet::React`, inside the pass and before the next actor acts, not in the drawing phase: a drink that heals, a bite that poisons, the loot the dead leave.
 A system that scans the world every frame is not a reaction and belongs in `PresentSet::Narrate`, because `React` runs once a pass and one frame may hold hundreds.
 Systems in a pass run several times a frame, so a system that must run once a frame says so by being in `EngineSet::Input` or a `PresentSet` layer instead.
+Which executor a pass runs on is the engine's default and not its decision: a game whose own system in the pass is heavy enough to be worth a thread puts the multi-threaded one back with `app.edit_schedule(Turn, ..)`.
 The engine owns who is dealt a turn, when, and what is done with an action that nobody resolved; the game owns what actions exist beyond the few above, what each costs, and who is allowed to try it.
 A game orders its systems into `TurnSet` and `ResolveSet`, never after another crate's system function.
 
