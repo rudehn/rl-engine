@@ -41,7 +41,7 @@
 - [What you see]()
   - [Rendering](systems/rendering.md)
   - [Panels](systems/panels.md)
-  - [Controls, modals and cursors]()
+  - [Controls, modals and cursors](systems/controls.md)
   - [Narration]()
 - [What persists]()
   - [Saving and the morgue]()

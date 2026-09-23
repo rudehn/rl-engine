@@ -31,8 +31,18 @@ note() {
 prose() {
 	awk '/^```/ { fence = !fence; next } /^<!-- documents:/ { manifest = 1 } manifest { if (/-->/) manifest = 0; next } !fence && $0 !~ /^<!-- include:/' "$page"
 }
-! prose | grep -qiE '\b(powerful|simply|just|robust|seamless|leverage|delve|comprehensive|elegant|straightforward)\b' \
+! prose | grep -qiE '\b(powerful|simply|just|robust|seamless|leverage|comprehensive|elegant|straightforward)\b' \
 	|| note "$page: a word from the ban list. Say what it does instead."
+# `delve` was on the list above until 2026-09-22, when it stopped a page saying
+# which of the five games in `examples/` does a thing, one of them being named
+# Delve. Banning a word the repository uses as a proper noun is the rule working
+# against the reference, and the filler was never the word: it is the phrase,
+# "let us delve into". So the phrase is what is banned, in each of its forms, and
+# the game is an ordinary word a page may write like any other name.
+# Joined into one line first, because the house writes one sentence per line and
+# the two words can still fall either side of a wrap.
+! prose | tr '\n' ' ' | grep -qiE '(delve|delves|delving|delved)[[:space:]]+into' \
+	|| note "$page: \"delve into\". It is filler; say what is being looked at instead."
 # The budget is what the page says, not how long the file is. Counting file
 # lines made the manifest and the quoted anchor compete with the writing, so a
 # page that correctly guarded thirteen files and quoted a real system paid for
