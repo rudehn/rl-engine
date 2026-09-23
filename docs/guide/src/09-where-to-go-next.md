@@ -61,7 +61,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
   The envelope is versioned and refuses a mismatch instead of guessing, entities are remapped on the way back in, and `SavePlugin` keeps the save a turn behind the run so a closed window saves.
   It forgets the save when the run ends.
 - **Worked example** Corsair's `save.rs`: four kinds and four resources, in about four hundred lines.
-- **Reference** [Saving and the morgue](systems/saving.md).
+- **Reference** [Saving and the ending screen](systems/saving.md).
 
 ## The run's beginning and end
 
@@ -70,8 +70,8 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** a start system in `NewRun`, and whatever your game keeps of a run that the engine does not, forgotten in `EndRun`.
 - **You get** the engine running your start again after every `Restart`, on a fresh seed or the same one, with the old run torn down first.
   `RunOver` ends a run, from the player's death unless `CombatRules` say otherwise, or from any condition of your own.
-  `GameMenuPanel` opens over the ending and offers the next run, and `Morgue` writes the run down.
-- **Reference** [The turn loop](systems/turn-loop.md) for the schedules, and [Saving and the morgue](systems/saving.md) for what is filed at the end.
+  `GameMenuPanel` opens over the ending and offers the next run, under whatever your game pushed onto `EndingView` about what the run came to.
+- **Reference** [The turn loop](systems/turn-loop.md) for the schedules, and [Saving and the ending screen](systems/saving.md) for what is kept and what is shown at the end.
 
 ## A narrator
 

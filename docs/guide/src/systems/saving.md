@@ -1,23 +1,23 @@
 <!-- documents:
-     plugins: SavePlugin, UnloadPlugin
+     plugins: SavePlugin, UnloadPlugin, EndingViewPlugin
      files: crates/rl-save/src/run.rs
             crates/rl-save/src/engine.rs
             crates/rl-save/src/backend.rs
             crates/rl-save/src/unload.rs
             crates/rl-save/src/versioned.rs
             crates/rl-save/src/remap.rs
-            crates/rl-save/src/morgue.rs
+            crates/rl-ui/src/view/ending.rs
             crates/rl-ui/src/game_menu.rs
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
-     fingerprint: f72459dd -->
+     fingerprint: f561dbed -->
 
-# Saving and the morgue
+# Saving and the ending screen
 
 A save is a run written down as text, and the engine writes most of it.
 A game says only what each kind of thing it spawns is, in its own words; where that thing stands, what it carries, what it wears and what is on it are the engine's, and so are the clock, the queue, the map's edits and what the player has seen.
-The morgue is the other half of an ending: the file a finished run leaves behind, written once and never read back into a game.
-Both go to storage through one trait, so a game in a browser and a game on a desktop differ in how two resources were built and nowhere else.
+The end of a run is the other half, and the one state a save is never continued into: the slot is deleted, and what the run was about is drawn on the screen the run ends on rather than filed anywhere.
+What is saved reaches storage through one trait, so a game in a browser and a game on a desktop differ in how one resource was built and nowhere else.
 
 ## Turning it on
 
@@ -25,8 +25,9 @@ Both go to storage through one trait, so a game in a browser and a game on a des
 It declares `needs::<Saves>`, the backend, with a hint naming `Saves::platform_default("my-game")`; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`, and deletes the slot in the `EndRun` schedule and on entering `EngineState::Over`.
 It registers no key: saving reads the whole world, so a game's save key is its own exclusive system and calls `save_run`.
 `UnloadPlugin` is the other half and is added on its own, needing the same `Saves`: it writes whatever is stashed on the frame the app is told to exit, which is the frame a native window's close button produces, and in a browser it also installs a listener for the page being hidden or unloaded.
-A game that wants a morgue inserts a `Morgue` and adds no plugin, because `GameMenuPanel` is what files one and a game with no menu files what it likes when it likes.
-Nothing here is on by default, and a game that registers no kinds and adds neither plugin never reaches storage at all.
+`EndingViewPlugin` is the third, and it is not a save at all: it holds what a game wants said on the screen a run ends on, needs `UiPlugin`, and is added by `GameMenuPanel` itself, so a game drawing its ending with the engine's menu adds nothing.
+A game that wants the sections under a screen of its own adds the plugin alone and reads the view.
+Nothing here is on by default, and a game that registers no kinds and adds neither save plugin never reaches storage at all.
 
 ## The model
 
@@ -50,9 +51,11 @@ Two numbers are matched, both exactly: `SaveSlot::version`, which a game bumps w
 `save_run` encodes the world, writes it to the slot and stashes it; `load_run` reads the slot back, answering `None` when nothing was saved there and a `SaveError` when what is there is not something this build reads.
 `Stash` is the last encoding the game made, behind an `Arc<Mutex<_>>` so a handler running outside the app holds the same one: `stash` replaces it, `clear` forgets it, `pending` says which slot is waiting, and `flush` writes it and keeps it, since a browser may send both of its unload events.
 `refresh_stash` re-encodes once per whole turn while playing rather than once a frame, so a window closed on a run loses at most the turn in hand, and `forget_save` deletes the slot and clears the stash together.
-`Morgue` is where a run's record is filed, over a `SaveBackend` of its own, holding the game's `title` and the sections a game pushes with `section` and the filing takes with `take_sections`.
-`Morgue::platform_default(name, title)` chooses that backend the way `Saves` chooses its own, a `morgue` folder of text files beside the executable or browser storage keyed under `name:morgue`, which is the second of the two resources a platform decides.
-`Obituary` is the file: a title, the seed, the turn, a one-line `outcome`, the game's `epitaph` and headed sections in order, with `slot` naming the file after the title, the seed and the turn so two runs never share one, and `render` giving the plain text.
+`Ending` is what the engine knows of an end, inserted on the frame the run is over and gone when the next one begins: the `outcome`, the run's seed, the whole turn it ended on, and the game's `epitaph`.
+`EndingView` is what the engine cannot know: `sections`, a `Vec` of an `EndingSection`'s `heading` and `body`, pushed with `EndingView::section` in `ViewSet::Annotate` the way a facet is pushed onto a row.
+`collect_ending` empties it in `ViewSet::Collect`, so a game pushes on every frame it wants the rows rather than once, and a run begun again shows nothing until something pushes again.
+`draw_game_menu` reads both: the epitaph wrapped, the seed and the turn on one line, then each section's heading with the lines of its body under it, clipped to the rectangle the menu was given, so a section longer than the screen is cut rather than scrolled.
+`describe_sheet` turns a `SheetView` into the lines a game pushes when what the player was made of is one of the things it wants said.
 
 ## Using it
 
@@ -100,6 +103,23 @@ pub fn register(app: &mut App) {
 }
 ```
 
+What a run was about is a section pushed every frame, like any other view: Heist counts the coin in the thief's bag, which is still there to count whether the thief walked out with it or died on the stairs.
+
+<!-- include: ../../../../examples/heist/src/main.rs:take -->
+```rust,no_run
+/// The take, on the screen the run ends on however it ended.
+///
+/// Pushed every frame in `ViewSet::Annotate` rather than once on
+/// `RunOver`, because `EndingView` is a view and is cleared and refilled
+/// like every other one. The bag is still there to count after the run
+/// ends, so the number does not have to be captured at the moment of
+/// death.
+fn show_the_take(mut view: ResMut<EndingView>, player: Query<Option<&Inventory>, With<Player>>, coins: Query<&Stack, With<Coin>>) {
+    let Ok(bag) = player.single() else { return };
+    view.section("The take", format!("{} in coin", take_of(bag, &coins)));
+}
+```
+
 ## The line
 
 With the plugin added and nothing else registered, the engine saves the clock and the queue, the run's seed, the surface's edits and every built place, what the player has explored and the sites it has found, the fire and the gas on every map, and what each actor has spent on abilities.
@@ -111,8 +131,9 @@ The seed is the one thing the save writes down and does not put back, and it is 
 What it does not guarantee is that a run replayed from its start would arrive at the saved state, because a save is a position and not a record of the moves: every stream [Seeds and determinism](seeds.md) describes has been drawn from by the time the save is written, and a continued run draws from those streams afresh.
 A save that does not fit is refused rather than repaired: either version failing to match is an error, and so is a save holding a kind or a resource this build does not register.
 The one thing the load repairs on its own is content that has gone missing, and only for props: a prop whose definition this build has lost comes back as an empty entity with a warning rather than failing the whole save.
-The morgue is for the run that cannot be continued: the slot is deleted when the run ends, so the obituary is the only thing left of it, written for the player to read, keep or paste into a bug report.
-Nothing in `rl-save` decides when a run is over or reads the log; `GameMenuPanel` composes the obituary on the frame the run ends, out of the `Ending`, the message log and the sheet, and files it with whatever a game pushed through `Morgue::section`.
+What is left of a run that cannot be continued is a screen and not a file: the slot is deleted when the run ends, and the ending is drawn for as long as the player looks at it.
+The outcome, the seed and the turn are the engine's, since it kept them; every heading and every body is the game's, because only the game knows whether a run is measured in coin, in decks cleared or in what the player was made of.
+Nothing in `rl-save` decides when a run is over, and nothing in `rl-ui` writes a byte to storage.
 When the stash is refreshed is the engine's, and so is when the slot is deleted, because `SavePlugin` schedules `forget_save` itself; what a game decides is when a run is written down, which is the `save_run` behind its own key.
 So a game that clears the stash has cleared what the way out would have written, which is what makes a death final rather than a suggestion.
 
@@ -123,4 +144,6 @@ What that buys is that each game's save walk was deleted rather than shared out:
 `backend.rs` is the only file that knows where bytes go, which is why a browser is one implementation of a four-method trait rather than a second path through the crate.
 `versioned.rs` and `remap.rs` are plain functions over plain data, `remap.rs`'s `Entity` aside, so the version policy and the density and stability of a `SaveId` are tested as properties with no `App` anywhere near them.
 This is also the one tier 2 crate `scripts/check-tiers.sh --wasm` builds, because the two wasm-only pieces are invisible to a native build and would otherwise rot unseen.
-`Morgue` is here rather than in `rl-ui` because filing is storage; what an ending says is `rl-ui`'s, and the two meet at a single `file` call.
+The ending is in `rl-ui` because it is a view, a collector and a presenter like every other screen, and nowhere near `rl-save`.
+It was a `Morgue` there until 2026-09-23: the same sections, rendered and written to a file that nothing read while the game ran, which is how a presenter came to do file I/O and how a UI crate came to depend on the save crate for one screen.
+Showing them instead of storing them cost the page a paragraph and `rl-ui` a dependency.

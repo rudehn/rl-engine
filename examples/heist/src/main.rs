@@ -394,6 +394,7 @@ fn resolve_escapes(
     }
 }
 
+// ANCHOR: take
 /// The take, on the screen the run ends on however it ended.
 ///
 /// Pushed every frame in `ViewSet::Annotate` rather than once on
@@ -405,6 +406,7 @@ fn show_the_take(mut view: ResMut<EndingView>, player: Query<Option<&Inventory>,
     let Ok(bag) = player.single() else { return };
     view.section("The take", format!("{} in coin", take_of(bag, &coins)));
 }
+// ANCHOR_END: take
 
 /// The player, and only while it holds the turn.
 type PlayerHolding = (With<Player>, With<MyTurn>);
