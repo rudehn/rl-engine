@@ -13,6 +13,7 @@ It is not one.
 `docs/design/lighting.md` section 5 says fuel and a light source on an item are the game's to save with its item state, as `Enchant` already is, and `docs/design/noise.md` says `Heard` and `Aware` are lost on load on purpose, with the note that should either become worth saving the two go into `EngineSave` together.
 The item is struck, and what is left of it is the one line in section 3 about `Burning`.
 The reading it rested on is worth keeping as a caution: the save's coverage is legible only from three design docs, and nothing in `crates/rl-save/` states the rule it follows.
+Both citations above are to design notes, and the notes have since been measured against the code and found wrong; read "The design notes no longer describe the code" in section 5 before trusting either as an authority.
 
 The sections below are thematic.
 "The order" is the order to work in, and every open item is in it.
@@ -167,6 +168,11 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 - **Guide chapters for the second half.**
   Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is the 1,280-line `examples/delve/src/main.rs`.
   Four chapters in the guide's style: lights out, being noticed, an ability in RON, saving the run.
+- **The design notes no longer describe the code.**
+  Six were mined for the system reference on 2026-09-21 and 2026-09-22 and every one was wrong in a structural claim rather than a detail: `docs/design/minds.md`, `remains.md`, `fields.md`, `noise.md`, `stealth.md` and `props.md` each name a type, a field or a mechanism that has moved or never existed, and two contradict themselves between a section and their own account of what the build changed.
+  The pages in `docs/guide/src/systems/` are the accurate description now, and each one's manifest is checked against the files it documents by `scripts/check-systems.py`, which is the thing a note has no equivalent of.
+  What a note is still right about is why a subsystem is shaped as it is; the fix is a line at the top of each saying the reference supersedes its model, and the decision about deleting them is `docs/PLAN.md`'s.
+
 - **One picture of the frame.**
   `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.
 - **Doc comments at `turn.rs` density.**

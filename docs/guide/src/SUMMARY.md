@@ -24,7 +24,7 @@
   - [Grids and tiles]()
   - [Map generation]()
   - [Places and streaming]()
-  - [Props]()
+  - [Props](systems/props.md)
 - [What acts]()
   - [Abilities]()
   - [Combat and loadout]()

@@ -157,6 +157,7 @@ pub struct ChargeReport<'w> {
     tell: MessageWriter<'w, Tell>,
 }
 
+// ANCHOR: charge
 /// Answers the `charge` verb: reports the fact the tracker counts, says
 /// so, and leaves the console reading as spent.
 ///
@@ -189,6 +190,7 @@ pub fn answer_charge(
         report.tell.write(Tell::new("You set the charge. The reactor stirs.", Tones::GOOD));
     }
 }
+// ANCHOR_END: charge
 
 /// Reacts to the tracker's own report of a charge quest finishing: never
 /// a mere `Progress`, and never a quest that is not one of the four
