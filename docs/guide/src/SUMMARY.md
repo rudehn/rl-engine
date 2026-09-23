@@ -23,7 +23,7 @@
 - [The world]()
   - [Grids and tiles](systems/grids.md)
   - [Map generation](systems/mapgen.md)
-  - [Places and streaming]()
+  - [Places and streaming](systems/places.md)
   - [Props](systems/props.md)
 - [What acts]()
   - [Abilities](systems/abilities.md)

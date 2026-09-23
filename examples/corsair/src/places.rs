@@ -148,6 +148,7 @@ pub fn stair_glyph(ch: char) -> Glyph {
     Glyph::new(ch, Color::srgb(0.9, 0.9, 0.6)).on_layer(1)
 }
 
+// ANCHOR: entrances
 /// Regions whose cave mouth has been placed.
 #[derive(Resource, Default)]
 pub struct Entrances(pub std::collections::BTreeSet<Point>);
@@ -163,6 +164,7 @@ pub fn mark_entrances(mut commands: Commands, mut loaded: MessageReader<ChunkLoa
         commands.spawn((Stairway, Position(at), Transition { to: Destination::Place { map: cave_id(site, 0), arrive: Arrive::Entry } }, stair_glyph('>')));
     }
 }
+// ANCHOR_END: entrances
 
 /// What populating a level needs.
 #[derive(bevy::ecs::system::SystemParam)]
