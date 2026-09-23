@@ -40,7 +40,7 @@
   - [Statuses]()
 - [What you see]()
   - [Rendering]()
-  - [Panels]()
+  - [Panels](systems/panels.md)
   - [Controls, modals and cursors]()
   - [Narration]()
 - [What persists]()
