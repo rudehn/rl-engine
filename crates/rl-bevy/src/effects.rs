@@ -1,5 +1,7 @@
-//! The effects the engine ships: what an ability can do with the subsystems
-//! the engine owns.
+//! [`Effects`], the list an ability an actor knows, a prop's trigger or
+//! offer, and a thing in the bag that is used up each carry, and the
+//! effects the engine ships to fill one: what such a list can do with the
+//! subsystems the engine owns.
 //!
 //! [`Harm`] and [`Mend`] ask combat's damage pipeline, [`Inflict`] and
 //! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move

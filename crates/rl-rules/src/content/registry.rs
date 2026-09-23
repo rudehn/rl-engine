@@ -97,7 +97,9 @@ impl<T> Registry<T> {
     /// The definition behind `id`.
     ///
     /// # Panics
-    /// Panics if `id` did not come from this registry.
+    /// Panics if `id` is past the end. A same-typed id from another
+    /// registry usually is not, and reads as the wrong definition rather
+    /// than panicking, so an id travels with the registry it came from.
     pub fn get(&self, id: Id<T>) -> &T {
         &self.defs[id.index()]
     }

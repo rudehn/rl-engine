@@ -61,8 +61,8 @@ pub trait SaveBackend {
 /// Saves as files in a directory, one per slot.
 pub struct FileBackend {
     dir: std::path::PathBuf,
-    /// What a slot's file ends in: `save.ron` for a save, `txt` for a
-    /// morgue file someone will open in an editor.
+    /// What a slot's file ends in: `save.ron` unless a game asked for
+    /// something else.
     extension: String,
 }
 

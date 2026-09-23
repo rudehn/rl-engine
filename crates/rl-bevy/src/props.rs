@@ -16,8 +16,10 @@
 //! spawned here carries its [`PropKind`], and whoever draws dresses it,
 //! exactly as a tile is described once as a tile and once as a look.
 //!
-//! This slice is the prop and nothing more: offers, containers, triggers
-//! and hiding come next, and `docs/design/props.md` is the whole design.
+//! Offers and the interactions that answer them, containers that stock and
+//! empty, triggers that land an effect list, and hiding that a turn in
+//! sight rolls away are all here. `docs/design/props.md` is the whole
+//! design.
 
 use bevy::prelude::*;
 use rl_core::{Id, Interner, Point, geometry};
@@ -541,9 +543,9 @@ pub struct Triggered {
 /// them must be in before the first prop is read.
 ///
 /// The lists themselves are the engine's own
-/// [`Effects`](crate::effects::Effects), the same type an ability and a
-/// used item carry: what a trap lands and what a spell lands differ in
-/// when and on whom, never in how.
+/// [`Effects`], the same type an ability and a used item carry: what a
+/// trap lands and what a spell lands differ in when and on whom, never in
+/// how.
 #[derive(Resource, Default)]
 pub struct PropEffects {
     /// Per prop id, what its trigger lands.
@@ -611,10 +613,10 @@ type Trap<'w, 's> = Query<'w, 's, (Entity, &'static PropKind, Option<&'static On
 
 /// Springs what was stepped on.
 ///
-/// Reads [`Stepped`], which the move resolver writes for every step it
-/// lets through, so anything that walks sets off a plate: the player, a
-/// droid, a rat. Whether it could see the plate never comes into it, which
-/// is the point of a hidden one.
+/// Reads [`Stepped`](crate::turn::Stepped), which the move resolver writes
+/// for every step it lets through, so anything that walks sets off a
+/// plate: the player, a droid, a rat. Whether it could see the plate never
+/// comes into it, which is the point of a hidden one.
 pub fn spring_on_entered(
     mut commands: Commands,
     mut steps: MessageReader<crate::turn::Stepped>,

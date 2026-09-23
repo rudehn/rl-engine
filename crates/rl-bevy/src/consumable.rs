@@ -61,7 +61,9 @@ impl OnUse {
 /// The same ladder [`Cost::Charge`](rl_rules::ability::Cost) walks, and for
 /// the same reason: it is what makes a potion a potion and a wand a wand
 /// without either having to say which it is. Absent, the thing survives
-/// being used, which is what a tool is.
+/// being used, which is what a tool is. Only [`land_uses`] spends it, so
+/// one with no [`OnUse`] survives too: the pair makes a consumable, not
+/// this marker alone.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Consumable;
 

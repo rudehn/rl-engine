@@ -4,7 +4,7 @@
             crates/rl-rules/src/content/registry.rs
             crates/rl-rules/src/names.rs
             crates/rl-core/src/id.rs
-     fingerprint: 94095564 -->
+     fingerprint: dee0f7c1 -->
 
 # Registries and content
 

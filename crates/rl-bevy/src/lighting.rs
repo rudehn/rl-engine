@@ -1,10 +1,11 @@
 //! Light over the loaded window, and the gate it puts on sight.
 //!
-//! Opt-in: a game that inserts a [`Lighting`] resource gets a light field
-//! rebuilt whenever a source moves, changes or burns out, and every
-//! viewshed is then cut down to what is lit, within an actor's
-//! [`DarkSight`], or adjacent. A game that inserts none sees exactly what
-//! it saw before, at no cost.
+//! Opt-in by adding [`LightingPlugin`], which inserts a dark [`Lighting`]
+//! for the game to write its ambient into. The field is then rebuilt
+//! whenever a source moves, changes or burns out, and every viewshed is
+//! cut down to what is lit, within an actor's [`DarkSight`], or adjacent.
+//! A game that leaves the plugin out sees exactly what it saw before, at
+//! no cost.
 //!
 //! One component, [`LightSource`], serves every kind of thing that glows.
 //! On an entity that takes no turns it is a fixture and lives in the

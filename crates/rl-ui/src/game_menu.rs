@@ -4,11 +4,10 @@
 //! Two screens that are one. While playing, the menu key opens it over the
 //! map with a way back into the run. When the run is over, the engine
 //! opens it itself with no way back, under the game's own words for the
-//! ending, the seed and the turn, and where the morgue file went. Both
-//! offer a new run on a fresh seed, the same seed again, and quitting, and
-//! each of those is one message: [`Restart`], or `AppExit`. Nothing here
-//! knows how a game starts; the game's start runs again in
-//! [`NewRun`] the way it ran the first time.
+//! ending, the seed and the turn. Both offer a new run on a fresh seed,
+//! the same seed again, and quitting, and each of those is one message:
+//! [`Restart`], or `AppExit`. Nothing here knows how a game starts; the
+//! game's start runs again in [`NewRun`] the way it ran the first time.
 //!
 //! The ending screen shows the game's own words as well as the engine's:
 //! whatever sections a game pushed onto [`EndingView`] in

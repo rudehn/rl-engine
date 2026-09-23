@@ -10,7 +10,7 @@
             crates/rl-ui/src/game_menu.rs
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
-     fingerprint: f561dbed -->
+     fingerprint: 409dfce1 -->
 
 # Saving and the ending screen
 
