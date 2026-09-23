@@ -140,7 +140,7 @@ impl Effect for Harm {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in &landing.targets {
             let amount = self.roll.roll_at_least(&mut **world.rng, 0);
-            world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, amount) });
+            world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, amount)));
         }
     }
 
@@ -180,7 +180,7 @@ impl Effect for Mend {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in &landing.targets {
             let amount = self.roll.roll_at_least(&mut **world.rng, 0);
-            world.damage.write(DamageEvent { target: *target, hit: Hit::by(landing.user, self.kind, -amount) });
+            world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, -amount)));
         }
     }
 

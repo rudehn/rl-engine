@@ -23,7 +23,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, MeleeAdjacent, SearchLastKnown, Shadow, ShootAtRange, Wander};
+use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, Keep, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
@@ -182,7 +182,7 @@ impl Roster {
                 brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
             }
             brain = match d.shadow {
-                Some(s) => brain.then(Shadow { keep_within: s.keep_within, no_closer_than: s.no_closer_than }).then(Hover),
+                Some(s) => brain.then(Keep::enemies(s.keep_within, s.no_closer_than)).then(Hover),
                 None => brain.then(Hunt),
             };
             brains.push(Arc::new(brain.then(SearchLastKnown).then(Wander { chance_pct: 30 })));
@@ -292,7 +292,7 @@ mod tests {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         let shooter = at(&app, player);
         let kind = app.world().resource::<Registries>().damage_kinds.expect("energy");
-        app.world_mut().write_message(DamageEvent { target, hit: rl_engine::rl_rules::Hit::by(player, kind, 1) });
+        app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::by(player, kind, 1)));
         app.update();
         assert_eq!(heard(&app, far), Some(shooter), "it heard the shot, where it was fired from");
     }

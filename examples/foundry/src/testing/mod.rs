@@ -163,7 +163,7 @@ pub fn fire_at_a_target(app: &mut App, shooter: Entity, shots: usize) -> Vec<Str
 pub fn hit(app: &mut App, target: Entity, kind: &str, amount: i32) {
     let registries = app.world().resource::<Registries>().clone();
     let kind = registries.damage_kinds.expect(kind);
-    app.world_mut().write_message(DamageDealt { target, hit: Hit::from_source(None, kind, amount), dealt: amount });
+    app.world_mut().write_message(DamageDealt { target, hit: Hit::from_source(None, kind, amount), dealt: amount, reach: Reach::default() });
     app.update();
 }
 

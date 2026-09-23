@@ -297,6 +297,22 @@ pub struct DamageEvent {
     pub target: Entity,
     /// The hit.
     pub hit: Hit<Entity>,
+    /// How it got there, for whoever narrates it. Nothing in the pipeline
+    /// reads it.
+    pub reach: Reach,
+}
+
+impl DamageEvent {
+    /// Damage that did not travel as a weapon: an ability, a status, a
+    /// fire. [`Reach::Effect`], which is what most damage is.
+    pub fn new(target: Entity, hit: Hit<Entity>) -> Self {
+        Self { target, hit, reach: Reach::Effect }
+    }
+
+    /// The same, arriving by `reach`.
+    pub fn arriving(target: Entity, hit: Hit<Entity>, reach: Reach) -> Self {
+        Self { target, hit, reach }
+    }
 }
 
 /// That an attack found something to strike with, and what: written once
@@ -319,6 +335,27 @@ pub struct Struck {
     pub ranged: bool,
 }
 
+/// How damage reached whoever took it, for whoever says what happened.
+///
+/// Closed, like the narrator's own `Phrase` and for the same reason: it
+/// enumerates the ways the engine itself delivers damage, and a game that
+/// invents a fifth is writing its own words for it anyway. What reads it is
+/// narration; nothing in the damage pipeline branches on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Reach {
+    /// A blow struck in reach.
+    Melee,
+    /// A shot down a line of fire.
+    Shot,
+    /// Something thrown.
+    Thrown,
+    /// Anything that did not travel as a weapon: an ability, a status
+    /// ticking, a fire. The default, because most damage is not a weapon
+    /// and a subsystem that says nothing means this.
+    #[default]
+    Effect,
+}
+
 /// Damage that actually landed, after mitigation, for narration and
 /// on-hit reactions. Zero means the hit was fully stopped; negative healed.
 #[derive(Message, Debug, Clone, Copy)]
@@ -329,6 +366,9 @@ pub struct DamageDealt {
     pub hit: Hit<Entity>,
     /// What health lost.
     pub dealt: i32,
+    /// How it got there, carried through from the [`DamageEvent`] so a
+    /// narrator can tell a shot from a blow.
+    pub reach: Reach,
 }
 
 /// An actor's health reached zero. A non-player is taken out of the
@@ -532,6 +572,9 @@ pub struct Shown<'w> {
 #[derive(Debug, Clone)]
 pub struct ShotLanding {
     target: Entity,
+    /// Whether it flew or was struck in reach, kept so the landing a pass
+    /// later narrates as what it was.
+    reach: Reach,
     hits: Vec<Hit<Entity>>,
 }
 
@@ -608,7 +651,7 @@ pub fn resolve_attacks(
         // missed, and the pipeline would read a negative one as a heal.
         let mut hits = vec![Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))];
         hits.extend(loadout.strikes(actor).into_iter().map(|(kind, dice)| Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))));
-        let shot = ShotLanding { target, hits };
+        let shot = ShotLanding { target, reach: if ranged { Reach::Shot } else { Reach::Melee }, hits };
         match (look, ranged) {
             (Some(look), true) => {
                 let to = Anchor::on(target, target_pos.0);
@@ -646,8 +689,8 @@ pub fn land_shots(
 
 /// Every hit an attack carries, down the damage pipeline.
 fn land(shot: ShotLanding, damage: &mut MessageWriter<DamageEvent>) {
-    let target = shot.target;
-    damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent { target, hit }));
+    let (target, reach) = (shot.target, shot.reach);
+    damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent::arriving(target, hit, reach)));
 }
 
 /// Where a shot from `from` at `to` flies within `range`: the cells it
@@ -692,7 +735,7 @@ pub fn apply_damage(
         let stage_refs: Vec<&dyn DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
         let amount = rl_rules::resolve(&ev.hit, &defender, resist.map(|r| &r.0).unwrap_or(&none), &registries.damage_kinds, &stage_refs);
         health.current = (health.current - amount).min(health.max);
-        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount });
+        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount, reach: ev.reach });
         if health.current <= 0 {
             deaths.write(DeathEvent { entity: ev.target, at: pos.0, credit: ev.hit.credit, was_player: is_player });
         }
@@ -982,7 +1025,7 @@ mod tests {
         let other = app.world_mut().spawn(Position(start.offset(0, 3))).id();
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        app.world_mut().write_message(DamageEvent { target, hit: Hit::by(other, kind, 99) });
+        app.world_mut().write_message(DamageEvent::new(target, Hit::by(other, kind, 99)));
         app.world_mut().resource_mut::<TurnHold>().release();
         app.update();
         let dealt: Vec<(Option<Entity>, i32)> = app.world().resource::<Seen>().dealt.iter().map(|d| (d.hit.credit, d.dealt)).collect();

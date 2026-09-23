@@ -1418,7 +1418,7 @@ mod traps {
             put(&mut deck, "fuel barrel", at)
         };
         let kind = deck.app.world().resource::<Registries>().damage_kinds.expect("kinetic");
-        deck.app.world_mut().write_message(DamageEvent { target: barrel, hit: rl_rules::Hit::from_source(None, kind, 99) });
+        deck.app.world_mut().write_message(DamageEvent::new(barrel, rl_rules::Hit::from_source(None, kind, 99)));
         deck.app.update();
         deck.app.update();
         assert!(deck.app.world().get_entity(barrel).is_err(), "the barrel is gone");

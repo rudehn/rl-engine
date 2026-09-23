@@ -464,7 +464,7 @@ mod tests {
         assert!(!field.aware().knows(field.player));
         let (watcher, player) = (field.watcher, field.player);
         let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
-        field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, 1), dealt: 1 });
+        field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, 1), dealt: 1, reach: crate::combat::Reach::Melee });
         field.wait();
         assert!(field.aware().knows(player), "struck, so it knows where from");
         field.wait();

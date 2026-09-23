@@ -25,29 +25,28 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 
 | # | Item | Section | Impact | Effort |
 |---|------|---------|--------|--------|
-| 1 | `Follow` and `Shadow` are one tactic | 4 | medium | medium |
-| 2 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
-| 3 | Corsair's tests play a different game from its binary | 3 | medium | medium |
-| 4 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
-| 5 | `OnMap` as a required component | 4 | medium | medium |
-| 7 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 8 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 9 | What the save holds is stated where the save is | 7 | medium | medium |
-| 10 | Anyone travels | 3 | medium | high |
-| 11 | Movement profiles that change costs | 3 | medium | high |
-| 12 | The narrator hears what registers itself | 7 | medium | high |
-| 13 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 14 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 15 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 16 | Admission scans its waiting actors linearly | 4 | low | low |
-| 17 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 18 | A `Burning` entity comes back unlit | 3 | low | low |
-| 19 | A shot is narrated as a blow | 3 | low | low |
-| 20 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 21 | A place for a miss | 3 | low | low |
-| 22 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 23 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 24 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 1 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
+| 2 | Corsair's tests play a different game from its binary | 3 | medium | medium |
+| 3 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
+| 4 | `OnMap` as a required component | 4 | medium | medium |
+| 5 | Light is recast once a frame, not once a turn | 3 | medium | medium |
+| 6 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 7 | What the save holds is stated where the save is | 7 | medium | medium |
+| 8 | Anyone travels | 3 | medium | high |
+| 9 | Movement profiles that change costs | 3 | medium | high |
+| 10 | The narrator hears what registers itself | 7 | medium | high |
+| 11 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 12 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 13 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 14 | Admission scans its waiting actors linearly | 4 | low | low |
+| 15 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 16 | A `Burning` entity comes back unlit | 3 | low | low |
+| 17 | A shot is narrated as a blow | 3 | low | low |
+| 18 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 19 | A place for a miss | 3 | low | low |
+| 20 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -60,13 +59,13 @@ Why the order that is left, in three moves:
    Eight items opened there; the benches closed or struck seven of them and one line fixed the eighth.
    The turn loop's ceiling was schedule dispatch, and everything else that was supposed to be a ceiling measured small: the perceive scans, the veil's epoch, the closed screens' collectors, the terminal's entity count.
    What is left in section 8 is one cache that thrashes and two cheap cleanups, none of them urgent.
-2. **So start at item 1 and work down the middle band, 1 to 10.**
+2. **So start at item 1 and work down the middle band, 1 to 9.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-3. **Then 11 to 13**, the high-effort ones, of which only the narrator's registry is structural.
+3. **Then 10 to 12**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
 
-Items 14 to 22 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 23 waits on a game that actually wants the tactics it would add, and item 24 waits on a second game asking for it.
+Items 13 to 21 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 22 waits on a game that actually wants the tactics it would add, and item 23 waits on a second game asking for it.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
@@ -118,9 +117,6 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 4. Simplify
 
-- **`Follow` and `Shadow` are one tactic.**
-  `crates/rl-rules/src/ai/tactics.rs` gives them an identical close-the-gap block, the field descent then `[toward, toward.rotate_cw(), toward.rotate_ccw()]` filtered on chebyshev, and `Shadow`'s own doc calls it "the enemy-facing twin of `Follow`".
-  One tactic parameterised by the roster it keeps station on, allies or enemies, is the same behaviour in half the code, and it closes the corner-cutting item above for `Follow` for free, since `Shadow` already checks `squeezes`.
 - **What the save holds is stated where the save is.**
   `EntityState` in `crates/rl-save/src/run.rs` is a fixed field list, and `EngineSave` in `engine.rs` has grown one `#[serde(default)]` per subsystem, so the natural reading is that a subsystem is saved when somebody remembered to add it.
   That reading is wrong, and the review that filed it fell for it: the engine draws a real line, per-instance state on content a *game* authors is the game's to save through `Saveable`, and the engine saves what it owns itself.

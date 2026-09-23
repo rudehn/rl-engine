@@ -204,7 +204,7 @@ fn land(
         // Floored where it is rolled, as a blow is: a throw that rolls
         // below nothing has missed, not healed.
         let amount = dice.roll_at_least(&mut **rng, 0);
-        damage.write(DamageEvent { target, hit: Hit::by(actor, kind, amount) });
+        damage.write(DamageEvent::arriving(target, Hit::by(actor, kind, amount), crate::combat::Reach::Thrown));
     }
     events.write(ItemEvent::Thrown { actor, item, at: Position(rests), struck });
 }
@@ -387,7 +387,7 @@ mod tests {
         let mark = rig.mark(2);
         let purse = rig.app.world_mut().spawn(Item).id();
         rig.app.world_mut().entity_mut(mark).insert(Inventory { items: vec![purse] });
-        rig.app.world_mut().write_message(DamageEvent { target: mark, hit: Hit::by(rig.player, rig.sides.kind, 99) });
+        rig.app.world_mut().write_message(DamageEvent::new(mark, Hit::by(rig.player, rig.sides.kind, 99)));
         rig.app.world_mut().write_message(Intent::new(rig.player, crate::turn::Wait));
         rig.app.update();
         assert_eq!(rig.app.world().get::<Position>(purse).map(|p| p.0), Some(rig.start.offset(2, 0)), "it lies where its carrier fell");

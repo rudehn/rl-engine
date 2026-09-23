@@ -89,9 +89,9 @@ Decision, Nate, 2026-09-16: `Health` is two fields, `current` and `max`.
 
 The tactics never see a `DijkstraMap`.
 `TacticCtx` offers `step_toward(goals)` and `step_away_from(goals)`, which return the first steppable descent, so the map stays window-local and the per-call `shift_map` allocation is gone.
-`Hunt` asks toward every enemy it sees, `FleeWhenHurt` away from them, `SearchLastKnown` toward `last_known`, `Scavenge` toward the item, and `Follow` toward every ally, so a whole faction descends one flood rather than one per monster.
+`Hunt` asks toward every enemy it sees, `FleeWhenHurt` away from them, `SearchLastKnown` toward `last_known`, `Scavenge` toward the item, and `Keep` toward every one of whichever roster it keeps station on, so a whole faction descends one flood rather than one per monster.
 
-`Follow { keep_within, no_closer_than }` is what a companion is.
+`Keep::allies(keep_within, no_closer_than)` is what a companion is, and `Keep::enemies(..)` a spotter: one tactic, since the only thing that ever differed between the two was the roster it read.
 A companion cannot yet take the stairs; `WarpRequest` and `GoThrough` remain the player's, and `docs/TODO.md` tracks "anyone travels".
 
 ## 4. Order of work
@@ -102,7 +102,7 @@ Each stage green and committed on its own, with `docs/OVERVIEW.md`, the changelo
 2. Pre-work: sort the notice subjects before rolling, break `Snapshot::sort` ties on identity, and add a seeded-run fingerprint tripwire over minds, combat and stealth, labelled as such, so the re-baseline in stage 6 is a red test rather than a bug report.
 3. Slice 1, the perceive stage.
 4. Slice 2, `add_choice`, with a section in guide chapter 9 for the first worked example of a mind choosing a game's action.
-5. Slice 5, fields toward any goal, and `Follow`.
+5. Slice 5, fields toward any goal, and keeping station on allies.
 6. Slices 3 and 4 together, since both re-baseline every seeded outcome: own viewsheds, stealth and minds without combat, their own streams, and the retuned content, with one changelog line saying replays recorded before it will not replay.
 
 ## 5. Risks

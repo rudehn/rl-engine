@@ -131,120 +131,112 @@ impl<A: Copy> Tactic<A> for SearchLastKnown {
     }
 }
 
-/// Keep up with the allies in sight: a companion, an escort, a pack.
-///
-/// Fires when the nearest ally is further than `keep_within`, and steps
-/// down a field toward every ally in sight; or when one is closer than
-/// `no_closer_than`, and steps away, so a companion does not stand on the
-/// cell you want. In between it returns `None` and the next tactic has the
-/// turn. Above [`Wander`] and usually below [`MeleeAdjacent`], so it fights
-/// what reaches it and otherwise stays with you.
-#[derive(Debug, Clone, Copy)]
-pub struct Follow {
-    /// How far it lets the nearest ally get before it closes.
-    pub keep_within: i32,
-    /// How near it lets the nearest ally come before it gives way.
-    pub no_closer_than: i32,
+/// Whose company a mind keeps station on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Station {
+    /// Its allies: a companion, an escort, a pack that stays together.
+    Allies,
+    /// Its enemies: a spotter that calls out where you are, a skirmisher
+    /// that stays out of reach, a hound that bays and never bites.
+    Enemies,
 }
 
-impl Default for Follow {
-    /// Within three, never nearer than one.
-    fn default() -> Self {
-        Self { keep_within: 3, no_closer_than: 1 }
-    }
-}
-
-impl<A: Copy> Tactic<A> for Follow {
-    fn name(&self) -> &'static str {
-        "follow"
-    }
-    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
-        let me = ctx.snapshot.me.pos;
-        let nearest = ctx.snapshot.allies.first()?;
-        let distance = geometry::chebyshev(me, nearest.pos);
-        let allies: Vec<Point> = ctx.snapshot.allies.iter().map(|a| a.pos).collect();
-        if distance > self.keep_within {
-            if let Some(step) = ctx.step_toward(&allies) {
-                return Some(Decision::Step(step));
-            }
-            let toward = Direction::between(me, nearest.pos)?;
-            for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
-                let step = me + d.offset();
-                if steps_to(ctx.can_step, me, step) && geometry::chebyshev(step, nearest.pos) < distance {
-                    return Some(Decision::Step(step));
-                }
-            }
-            return None;
-        }
-        if distance < self.no_closer_than {
-            return ctx.step_away_from(&allies).map(Decision::Step);
-        }
-        None
-    }
-}
-
-/// Keep the enemies in sight at arm's length: a spotter that calls out
-/// where you are, a skirmisher that stays out of reach, a hound that bays
-/// and never bites.
+/// Keep station on somebody: close the gap when it is wider than
+/// `keep_within`, back off when it is narrower than `no_closer_than`, and
+/// leave the band between to the next tactic.
 ///
-/// The enemy-facing twin of [`Follow`]. Fires when the nearest enemy is
-/// further than `keep_within`, and steps down a field toward every enemy
-/// in sight; or when one is nearer than `no_closer_than`, and steps away
-/// from them. In between it returns `None` and the next tactic has the
-/// turn: a shot for a skirmisher, [`Hover`] for a spotter. Above anything
-/// that closes in, such as [`Hunt`], which would spend the turn undoing the
-/// distance this keeps.
+/// One tactic for both sides of the same behaviour. It was two, `Follow`
+/// toward the allies and `Shadow` toward the enemies, with the same
+/// close-the-gap block written twice; the only thing that ever differed was
+/// the roster it read, so that is the only thing it takes.
 ///
-/// With nobody in sight it keeps the same distance from where an enemy was
-/// last seen, for a mind with [`Wits::SEARCHES`]: backing round a corner
-/// loses sight of the enemy, and without this a [`SearchLastKnown`] below
-/// it would walk straight back to the spot it just backed away from. It
-/// closes only to `keep_within` of the spot, so it looks round the corner
-/// rather than stepping up to it.
+/// Where it goes in a brain depends on which station it keeps. Toward
+/// allies: above [`Wander`] and usually below [`MeleeAdjacent`], so a
+/// companion fights what reaches it and otherwise stays with you. Toward
+/// enemies: above anything that closes in, such as [`Hunt`], which would
+/// spend the turn undoing the distance this keeps, with a shot or a
+/// [`Hover`] under it for the band it leaves alone.
 ///
-/// A step never lengthens the gap to the nearest enemy while closing it,
-/// nor shortens it while backing out: a field that leads round a pillar by
-/// way of the enemy is the way to it, not the way to keep it at a distance,
-/// so a step the field offers that does either is passed over. Backing out
-/// of sight of an enemy it can see is a last resort: a step away that keeps
-/// a clear line to it comes first.
+/// With nobody in sight it keeps station on where an enemy was last seen,
+/// for a mind with [`Wits::SEARCHES`]: backing round a corner loses sight of
+/// the enemy, and without this a [`SearchLastKnown`] below it would walk
+/// straight back to the spot it just backed away from. It closes only to
+/// `keep_within` of the spot, so it looks round the corner rather than
+/// stepping up to it. An ally is never lost this way, since a roster of
+/// allies is what is in sight and nothing remembers an ally that left.
+///
+/// A step never lengthens the gap while closing it, nor shortens it while
+/// backing out: a field that leads round a pillar by way of the one it is
+/// keeping station on is the way *to* it, not the way to keep a distance, so
+/// a step the field offers that does either is passed over. Backing out of
+/// sight is a last resort: a step away that keeps a clear line comes first,
+/// which is what a spotter wants and what keeps a companion where you can
+/// see it.
 ///
 /// Cornered, with every step away taken or walled, it has nowhere to back
 /// off to and returns `None`; the next tactic decides, and a [`Hover`]
-/// beneath it stands its ground at whatever gap it has until the enemy
-/// moves. That is the tactic's limit: getting past an enemy that stands in
-/// the only way out is a fight, and a shadow does not start one.
+/// beneath it stands its ground at whatever gap it has until the other
+/// moves. That is the tactic's limit: getting past somebody who stands in
+/// the only way out is a fight, and keeping station does not start one.
 #[derive(Debug, Clone, Copy)]
-pub struct Shadow {
-    /// How far it lets the nearest enemy get before it closes.
+pub struct Keep {
+    /// Whose company it keeps.
+    pub on: Station,
+    /// How far it lets the nearest of them get before it closes.
     pub keep_within: i32,
-    /// How near it lets the nearest enemy come before it backs off.
+    /// How near it lets the nearest of them come before it backs off.
     pub no_closer_than: i32,
 }
 
-impl Default for Shadow {
-    /// Within five, never nearer than three.
-    fn default() -> Self {
-        Self { keep_within: 5, no_closer_than: 3 }
+impl Keep {
+    /// Station on the allies: what a companion is.
+    pub fn allies(keep_within: i32, no_closer_than: i32) -> Self {
+        Self { on: Station::Allies, keep_within, no_closer_than }
+    }
+
+    /// Station on the enemies: what a spotter or a skirmisher is.
+    pub fn enemies(keep_within: i32, no_closer_than: i32) -> Self {
+        Self { on: Station::Enemies, keep_within, no_closer_than }
+    }
+
+    /// Who it is keeping station on: the nearest of them, every one of them
+    /// for the field to flood from, and whether the nearest is somebody it
+    /// can see rather than somewhere it remembers.
+    fn watching<A: Copy>(&self, ctx: &TacticCtx<'_, A>) -> Option<(Point, Vec<Point>, bool)> {
+        match self.on {
+            Station::Allies => {
+                let nearest = ctx.snapshot.allies.first()?;
+                Some((nearest.pos, ctx.snapshot.allies.iter().map(|a| a.pos).collect(), true))
+            }
+            Station::Enemies => match ctx.snapshot.nearest_enemy() {
+                Some(enemy) => Some((enemy.pos, ctx.snapshot.enemies.iter().map(|e| e.pos).collect(), true)),
+                None if ctx.snapshot.wits.has(Wits::SEARCHES) => {
+                    let spot = ctx.snapshot.last_known?;
+                    Some((spot, vec![spot], false))
+                }
+                None => None,
+            },
+        }
     }
 }
 
-impl<A: Copy> Tactic<A> for Shadow {
+impl<A: Copy> Tactic<A> for Keep {
+    /// The two names this behaviour has always had, because a log that says
+    /// `shadow` says more about what happened than one that says `keep`.
     fn name(&self) -> &'static str {
-        "shadow"
+        match self.on {
+            Station::Allies => "follow",
+            Station::Enemies => "shadow",
+        }
     }
+
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let me = ctx.snapshot.me.pos;
-        let (nearest, marks, in_sight) = match ctx.snapshot.nearest_enemy() {
-            Some(enemy) => (enemy.pos, ctx.snapshot.enemies.iter().map(|e| e.pos).collect::<Vec<_>>(), true),
-            None if ctx.snapshot.wits.has(Wits::SEARCHES) => {
-                let spot = ctx.snapshot.last_known?;
-                (spot, vec![spot], false)
-            }
-            None => return None,
-        };
+        let (nearest, marks, in_sight) = self.watching(ctx)?;
         let gap = geometry::chebyshev(me, nearest);
         if gap > self.keep_within {
+            // Closing: the field's way first, and never a step that widens
+            // the gap to the one being closed on.
             let closing = |p: Point| geometry::chebyshev(p, nearest) <= gap;
             if let Some(step) = ctx.fields.descents_toward(&marks, me).into_iter().find(|p| (ctx.can_step)(*p) && closing(*p)) {
                 return Some(Decision::Step(step));
@@ -261,10 +253,10 @@ impl<A: Copy> Tactic<A> for Shadow {
         if gap >= self.no_closer_than {
             return None;
         }
-        // Steps that widen the gap before steps that only hold it, the
-        // field's way first within each, then every direction straightest
-        // first; and within each, one that keeps the enemy in a clear line
-        // before one that does not.
+        // Backing off. Steps that widen the gap before steps that only hold
+        // it, the field's way first within each, then every direction
+        // straightest first; and within each, one that keeps a clear line to
+        // the other before one that does not.
         let field = ctx.fields.descents_away(&marks, me);
         let straight = Direction::between(nearest, me)?;
         let (cw, ccw) = (straight.rotate_cw(), straight.rotate_ccw());
@@ -299,8 +291,8 @@ fn squeezes(can_step: &dyn Fn(Point) -> bool, from: Point, to: Point) -> bool {
 /// `can_step` alone. Asking `can_step` alone is how a mind came to spend
 /// turn after turn deciding on a diagonal the resolver refused: nothing
 /// told it the step had not happened, so it decided the same way again on
-/// its next turn, and a droid could stand and shuffle at a doorway for as
-/// long as its target stayed where it was.
+/// its next turn, and a droid could shuffle at a doorway for as long as its
+/// target stayed where it was.
 ///
 /// It is stricter than the resolver by a hair, and deliberately so: the
 /// resolver's corner rule reads terrain alone, while `can_step` also
@@ -315,7 +307,7 @@ fn steps_to(can_step: &dyn Fn(Point) -> bool, from: Point, to: Point) -> bool {
 /// Hold still while there is something to keep an eye on: an enemy in
 /// sight, or where one was last seen for a mind with [`Wits::SEARCHES`].
 ///
-/// What a spotter does in the band [`Shadow`] leaves to the next tactic:
+/// What a spotter does in the band [`Keep`] leaves to the next tactic:
 /// below it and above anything that closes in or drifts, so the turns at
 /// the distance it keeps are spent watching, not hunting the gap shut or
 /// wandering out of it. With nothing to watch it passes, and whatever is
@@ -840,11 +832,11 @@ mod tests {
 
         let mut following = Snapshot::alone(view(1, me.x, me.y, 10));
         following.allies.push(view(3, 9, 9, 10));
-        cases.push(("follow", Brain::new().then(Follow::default()), following));
+        cases.push(("follow", Brain::new().then(Keep::allies(3, 1)), following));
 
         let mut spotting = Snapshot::alone(view(1, me.x, me.y, 10));
         spotting.enemies.push(view(2, 9, 9, 10));
-        cases.push(("shadow", Brain::new().then(Shadow::default()), spotting));
+        cases.push(("shadow", Brain::new().then(Keep::enemies(5, 3)), spotting));
 
         let mut crowded = Snapshot::alone(view(1, me.x, me.y, 10));
         crowded.others.push(view(4, 4, 4, 10));
@@ -1291,10 +1283,10 @@ mod tests {
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
     }
 
-    /// Shadow's answer for one actor at `me` and one enemy at `foe` on open
+    /// A station-keeper's answer for one actor at `me` and one enemy at `foe` on open
     /// floor, in sight or only remembered there, with `blocked` cells
     /// nobody can step on or shoot through.
-    fn shadow_of(tactic: Shadow, me: Point, foe: Point, blocked: &[Point], in_sight: bool) -> Option<Decision<u32>> {
+    fn shadow_of(tactic: Keep, me: Point, foe: Point, blocked: &[Point], in_sight: bool) -> Option<Decision<u32>> {
         let (t, r) = open();
         let view_t = t.view(&r);
         let can_step = |p: Point| !blocked.contains(&p) && p != foe && view_t.is_walkable(p);
@@ -1311,7 +1303,7 @@ mod tests {
         tactic.evaluate(&mut ctx)
     }
 
-    fn shadow(tactic: Shadow, me: Point, foe: Point, blocked: &[Point]) -> Option<Decision<u32>> {
+    fn shadow(tactic: Keep, me: Point, foe: Point, blocked: &[Point]) -> Option<Decision<u32>> {
         shadow_of(tactic, me, foe, blocked, true)
     }
 
@@ -1326,7 +1318,7 @@ mod tests {
     /// trail has nothing to keep its distance from.
     #[test]
     fn a_shadow_that_has_lost_sight_keeps_its_distance_from_where_the_enemy_was_last_seen() {
-        let keep = Shadow { keep_within: 5, no_closer_than: 3 };
+        let keep = Keep::enemies(5, 3);
         let seen = Point::new(2, 5);
         let gap = |d: Option<Decision<u32>>| match d {
             Some(Decision::Step(p)) => geometry::chebyshev(p, seen),
@@ -1346,11 +1338,51 @@ mod tests {
         assert_eq!(keep.evaluate(&mut ctx), None, "a mindless thing does not remember where");
     }
 
+    /// The same tactic, the other station: a companion closes on the one it
+    /// follows, gives way when crowded, and leaves the band between alone.
+    ///
+    /// Giving way is what the consolidation changed for allies: the old
+    /// `Follow` stepped down a field away and took whatever it offered, and
+    /// this never takes a step that brings it nearer, which is the rule the
+    /// enemy-facing half always had.
+    #[test]
+    fn a_companion_closes_gives_way_when_crowded_and_never_gives_way_nearer() {
+        let keep = Keep::allies(3, 2);
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(4);
+        let mate = Point::new(5, 5);
+        let decide = |me: Point, rng: &mut StdRng| {
+            let mut snapshot = Snapshot::alone(view(1, me.x, me.y, 10));
+            snapshot.allies.push(view(3, mate.x, mate.y, 10));
+            let mut fields = Given::over(&view_t);
+            let mut ctx = TacticCtx { snapshot: &snapshot, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng };
+            keep.evaluate(&mut ctx)
+        };
+        let gap = |d: Option<Decision<u32>>| match d {
+            Some(Decision::Step(p)) => geometry::chebyshev(p, mate),
+            other => panic!("expected a step, got {other:?}"),
+        };
+
+        assert_eq!(gap(decide(Point::new(10, 5), &mut rng)), 4, "five off, it closes a step");
+        assert_eq!(gap(decide(Point::new(6, 5), &mut rng)), 2, "beside it, it gives way a step");
+        for x in 7..=8 {
+            assert_eq!(decide(Point::new(x, 5), &mut rng), None, "{} off is inside the band", x - 5);
+        }
+
+        let mut lonely = Snapshot::alone(view(1, 9, 5, 10));
+        lonely.enemies.push(view(2, 5, 5, 10));
+        let mut fields = Given::over(&view_t);
+        let mut ctx = TacticCtx { snapshot: &lonely, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        assert_eq!(keep.evaluate(&mut ctx), None, "an enemy is not company: with no ally in sight there is nobody to follow");
+    }
+
     /// A spotter closes on an enemy too far off, backs away from one too
     /// near, and in between leaves the turn to whatever comes after it.
     #[test]
     fn a_shadow_closes_on_a_far_enemy_backs_off_a_near_one_and_leaves_the_band_between_to_the_next_tactic() {
-        let keep = Shadow { keep_within: 5, no_closer_than: 3 };
+        let keep = Keep::enemies(5, 3);
         let foe = Point::new(2, 5);
         let gap = |d: Option<Decision<u32>>| match d {
             Some(Decision::Step(p)) => geometry::chebyshev(p, foe),
@@ -1377,7 +1409,7 @@ mod tests {
     /// can see whenever a step away allows it.
     #[test]
     fn a_shadow_step_never_shortens_a_gap_it_is_backing_out_of_nor_lengthens_one_it_is_closing_over_a_range_of_seeds() {
-        let tactic = Shadow { keep_within: 5, no_closer_than: 3 };
+        let tactic = Keep::enemies(5, 3);
         let around = |p: Point| Direction::ALL.into_iter().map(move |d| p + d.offset());
         for seed in 0..400u64 {
             let mut rng = StdRng::seed_from_u64(seed);
