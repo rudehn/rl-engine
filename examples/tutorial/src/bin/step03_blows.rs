@@ -120,6 +120,7 @@ fn start(
 ) {
     let warren = Warren::new(seed.0);
 
+    // ANCHOR: combat
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick")]).unwrap();
@@ -130,6 +131,7 @@ fn start(
     // What a hit passes through on its way to the target. One stage here;
     // resistances, a shield, a critical rule would each be another.
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
+    // ANCHOR_END: combat
     commands.insert_resource(Rats {
         // Asked in order, first that answers wins: bite what is next to
         // you, run when badly hurt, chase what you can see, else mill about.

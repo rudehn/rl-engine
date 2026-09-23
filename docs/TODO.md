@@ -55,7 +55,8 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 27 | `Rooms` can run out of attempts on a small map | 3 | low | low |
 | 28 | A place for a miss | 3 | low | low |
 | 29 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 30 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 30 | `HalveIfBlocked` can never fire | 3 | low | low |
+| 31 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -73,7 +74,7 @@ Why the order that is left, in four moves:
 4. **Then 18**, the one structural inversion still worth its cost, and 19.
    Both are high effort, and neither is urgent.
 
-Items 20 to 29 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 30 waits on a game that actually wants the tactics it would add.
+Items 20 to 30 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 31 waits on a game that actually wants the tactics it would add.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
@@ -110,6 +111,13 @@ The five items that opened this section were built in the six stages of `docs/de
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.
 - **A place for a miss.**
   Accuracy is deliberately absent (`docs/design/abilities.md`, "Accuracy does not exist"); the combat docs should say how a game adds a miss as a `DamageStage`, with an example.
+- **`HalveIfBlocked` can never fire.**
+  The engine builds a `Defender` in exactly two places and both hardcode the flag: `apply_damage` at `crates/rl-bevy/src/combat.rs:659` and `expected_damage` at `crates/rl-rules/src/forecast.rs:70`, each `blocked: false`.
+  Every other construction is a test in `crates/rl-rules/src/damage.rs`, so nothing outside the tests ever sets it true.
+  `HalveIfBlocked` is a publicly exported `DamageStage` all the same, and a game that puts it in its `DamageStages` gets no block, no roll, no component to add and no warning that the stage is inert; it is reachable only by a caller driving `resolve` itself.
+  `docs/guide/src/systems/combat.md` says that out loud and gives the workaround, rolling the block inside a stage of the game's own, which is correct and is why this is an engine gap rather than a documentation one.
+  Either the stage goes, or `Defender` gains a way to be filled: a component `apply_damage` reads, or a seam that lets one stage set the flag for a later one.
+  Found on 2026-09-22 while writing that page.
 - **A shot is narrated as a blow.**
   The phrasebook has one `HitsYou` for a blow and a shot alike, so a droid firing from across a dark room reads as "The line droid hits you for 4", named even when the player cannot see it.
   `DamageEvent` or `Struck` already knows whether an attack was ranged; a `ShootsYou` phrase, and "something" for an attacker out of sight, would say what happened.

@@ -27,7 +27,7 @@
   - [Props](systems/props.md)
 - [What acts]()
   - [Abilities](systems/abilities.md)
-  - [Combat and loadout]()
+  - [Combat and loadout](systems/combat.md)
   - [Items and equipment]()
   - [Minds](systems/minds.md)
 - [What it perceives]()
