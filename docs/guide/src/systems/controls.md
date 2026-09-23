@@ -12,7 +12,7 @@
             crates/rl-bevy/src/replay.rs
             crates/rl-bevy/src/seed.rs
             crates/rl-bevy/src/testing.rs
-     fingerprint: 6d9234d1 -->
+     fingerprint: b29234a0 -->
 
 # Controls, modals and cursors
 
@@ -29,7 +29,8 @@ It clears `Modals`'s frame flags in `First`, runs `forget_keys_on_focus_change` 
 `ControlsPanel` takes the `Rect` it draws in, declares the `controls` modal, reads its keys in `EngineSet::Input`, draws the hint in `PresentSet::Chrome` and the screen in `PresentSet::Overlay`.
 Its `finish` declares `depends_on::<UiPlugin>` and adds its own control last, so a game's groups are listed before the engine's.
 `GameMenuPanel` takes a `Rect` that is the most it may occupy rather than the size it will be, declares the `menu` modal, and draws in `PresentSet::Overlay`.
-Its keys run before `EngineSet::Input` and outside the engine's sets, because those sets stop once the run is over and the menu is the screen the run ends on; `OnEnter(EngineState::Over)` is where it opens itself and files the obituary, when the game inserted a `Morgue` for it to file one in.
+Its keys run before `EngineSet::Input` and outside the engine's sets, because those sets stop once the run is over and the menu is the screen the run ends on; `OnEnter(EngineState::Over)` is where it opens itself, with no way back into the run.
+It adds the view that screen's words are drawn from behind it, the way any presenter adds its own, so a game has somewhere to push what it wants the ending to say; [Saving and the ending screen](saving.md) is the page for that.
 `InteractKey` is opt-in beside the panels, so a game with no props adds nothing and the key does not exist; its `finish` declares `depends_on::<UiPlugin>` and `depends_on::<PropsPlugin>` and declares its key under the screens heading.
 `ReplayPlugin` adds a recorder when it is given a path and a player when it is given a recording, and `ReplayPlugin::from_env` reads `RL_RECORD` and `RL_REPLAY` for both.
 `KeyScriptPlugin` is a test's keyboard and lives in `rl-bevy`: it presses in `PreUpdate` after Bevy's input has been cleared, and adds Bevy's `InputPlugin` if the app has none.
