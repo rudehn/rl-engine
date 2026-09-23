@@ -37,7 +37,16 @@ done < <(grep -rnoE '\]\(([^)]+\.png)\)' "$src" --include='*.md' | sed -E 's/:[0
 
 # Every chapter is reachable from the table of contents, and every entry in
 # the table of contents is a chapter.
-listed=$(grep -oE '\(([0-9a-z/-]+\.md)\)' "$src/SUMMARY.md" | tr -d '()' | sort -u)
+#
+# The three path patterns below share one character class, and it is wider
+# than the names in the guide today. A class of `[0-9a-z/-]` matched every
+# page there was, so a page named with an underscore or a capital was not
+# listed as unlisted: it was not looked for at all, and the check passed by
+# not running. That is the same silence a narrow pattern kept about pages in
+# a subdirectory until it was widened, so the class is wide enough to name
+# anything a page could be called and the checks fail loudly instead.
+path='[0-9A-Za-z._/-]'
+listed=$(grep -oE "\(($path+\.md)\)" "$src/SUMMARY.md" | tr -d '()' | sort -u)
 present=$(cd "$src" && find . -name '*.md' | sed 's|^\./||' | grep -v '^SUMMARY.md$' | sort -u)
 for page in $present; do
   grep -qx "$page" <<<"$listed" || note "SUMMARY.md does not list $page"
@@ -55,7 +64,7 @@ while IFS= read -r hit; do
   rest=${hit#*:}
   page=${rest#*docs/guide/src/}
   [[ -f "$src/$page" ]] || note "$file: names no such chapter: $page"
-done < <(grep -rnoE 'docs/guide/src/[0-9a-z/-]+\.md' crates examples templates scripts docs/*.md README.md AGENTS.md --include='*.rs' --include='*.md' --include='*.sh' 2>/dev/null)
+done < <(grep -rnoE "docs/guide/src/$path+\.md" crates examples templates scripts docs/*.md README.md AGENTS.md --include='*.rs' --include='*.md' --include='*.sh' 2>/dev/null)
 
 # Every link from one chapter to another, resolved from the page that
 # holds it: a page in systems/ reaches a chapter with ../ and a sibling
@@ -64,7 +73,7 @@ while IFS= read -r hit; do
   page=${hit%%:*}
   target=${hit#*:}
   [[ -f "$(dirname "$page")/$target" ]] || note "$page: links to a missing chapter: $target"
-done < <(grep -rnoE '\]\(([0-9a-z/.-]+\.md)\)' "$src" --include='*.md' | sed -E 's/:[0-9]+:\]\(/:/; s/\)$//')
+done < <(grep -rnoE "\]\(($path+\.md)\)" "$src" --include='*.md' | sed -E 's/:[0-9]+:\]\(/:/; s/\)$//')
 
 # Every line of a Rust snippet a chapter writes out by hand rather than
 # includes is a line of an example's source. A copied line is the one kind

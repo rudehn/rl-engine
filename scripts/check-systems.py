@@ -66,6 +66,12 @@ def manifest(page: pathlib.Path) -> dict[str, list[str]]:
             raise Broken(f"{page}: the manifest has no `{field}:`.")
     if len(fields["fingerprint"]) != 1:
         raise Broken(f"{page}: `fingerprint:` takes one value, not {len(fields['fingerprint'])}.")
+    # A file named twice was hashed twice and blessed without a word. It is
+    # harmless and invisible, which is the worst pair for a copy-paste to be
+    # in, on the one list the reference is trying to keep honest.
+    twice = sorted({f for f in fields["files"] if fields["files"].count(f) > 1})
+    if twice:
+        raise Broken(f"{page}: lists {', '.join(twice)} twice. A page documents a file once, and the second naming is a copy-paste.")
     return fields
 
 
@@ -103,7 +109,18 @@ def bless(name: str) -> int:
     if not page.is_file():
         print(f"no such page: {page}", file=sys.stderr)
         return 1
-    fields = manifest(page)
+    try:
+        fields = manifest(page)
+    except Broken as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    # The same guard `main` uses, and the same wording. A manifest naming a
+    # file that has moved is exactly the state `--bless` is reached for, so
+    # it is the one call that must not answer with a Python traceback.
+    missing = [f for f in fields["files"] if not pathlib.Path(f).is_file()]
+    if missing:
+        print(f"{page}: documents files that are not there: {', '.join(missing)}", file=sys.stderr)
+        return 1
     fresh = fingerprint(fields["files"])
     text = page.read_text()
     page.write_text(re.sub(r"fingerprint: [0-9a-f]+", f"fingerprint: {fresh}", text, count=1))
