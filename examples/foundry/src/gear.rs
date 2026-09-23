@@ -263,6 +263,7 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));
     }
+    // ANCHOR: use
     // An ability it lends, for the things that are aimed or wait on a
     // cooldown: the engine turns a use of the item into a use of that.
     if !d.grants.is_empty() {
@@ -277,6 +278,7 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
             e.insert(Charges::full(uses));
         }
     }
+    // ANCHOR_END: use
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
     }
