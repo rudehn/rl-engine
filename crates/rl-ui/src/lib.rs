@@ -108,7 +108,7 @@ pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInpu
 pub use cursor::{CursorKeys, CursorStyle, Steer, mark};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighted, Sighting};
-pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, game_menu_modal};
+pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, describe_sheet, game_menu_modal};
 pub use interact::{InteractKey, InteractKeys};
 pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog, Span};
@@ -123,9 +123,9 @@ pub use panel::{
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
-    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin,
-    InventoryView, InventoryViewPlugin, ItemRow, Lent, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
-    VitalsViewPlugin, target_modal,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, EndingSection, EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin,
+    InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, Lent, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin,
+    TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
 };
 
 use bevy::prelude::*;
@@ -266,9 +266,9 @@ pub mod prelude {
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{
-        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView,
-        InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
-        VitalsViewPlugin, target_modal,
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, EndingSection, EndingView, GearView, GearViewPlugin, InspectView,
+        InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView,
+        TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};
 }

@@ -40,7 +40,7 @@ use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
 use crate::content::{Content, PORT};
 use crate::items::{Armory, ItemKind};
-use rl_engine::rl_save::{Morgue, SaveableState, Saves, UnloadPlugin};
+use rl_engine::rl_save::{SaveableState, Saves, UnloadPlugin};
 
 /// Terminal size in cells.
 const COLS: i32 = 100;
@@ -175,7 +175,6 @@ fn main() -> AppExit {
         // Corsair keeps its own words for its statuses, since venom reads as
         // poisoned, so those three phrases are silenced.
         .add_plugins(NarratorPlugin::default().silence(Phrase::YouAreAfflicted).silence(Phrase::YouAreNoLonger).silence(Phrase::YourAfflictionPasses))
-        .insert_resource(Morgue::platform_default("corsair", "Corsair"))
         // `c` shuts a door here, so the sheet is on `@`.
         .insert_resource(SheetKeys { toggle: Chord::shift(KeyCode::Digit2), close: KeyCode::Escape })
         .insert_resource(Seed(seed))

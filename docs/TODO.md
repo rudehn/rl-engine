@@ -29,25 +29,23 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 2 | Corsair's tests play a different game from its binary | 3 | medium | medium |
 | 3 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
 | 4 | `OnMap` as a required component | 4 | medium | medium |
-| 5 | The obituary is filed by a presenter | 4 | medium | medium |
-| 6 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 7 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 8 | What the save holds is stated where the save is | 7 | medium | medium |
-| 9 | Anyone travels | 3 | medium | high |
-| 10 | Movement profiles that change costs | 3 | medium | high |
-| 11 | The narrator hears what registers itself | 7 | medium | high |
-| 12 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 13 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 14 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 15 | Admission scans its waiting actors linearly | 4 | low | low |
-| 16 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 17 | A `Burning` entity comes back unlit | 3 | low | low |
-| 18 | A shot is narrated as a blow | 3 | low | low |
-| 19 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 20 | A place for a miss | 3 | low | low |
-| 21 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 22 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 23 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 5 | Light is recast once a frame, not once a turn | 3 | medium | medium |
+| 6 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 7 | What the save holds is stated where the save is | 7 | medium | medium |
+| 8 | Anyone travels | 3 | medium | high |
+| 9 | Movement profiles that change costs | 3 | medium | high |
+| 10 | The narrator hears what registers itself | 7 | medium | high |
+| 11 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 12 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 13 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 14 | Admission scans its waiting actors linearly | 4 | low | low |
+| 15 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 16 | A `Burning` entity comes back unlit | 3 | low | low |
+| 17 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 18 | A place for a miss | 3 | low | low |
+| 19 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 20 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 21 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -60,13 +58,13 @@ Why the order that is left, in three moves:
    Eight items opened there; the benches closed or struck seven of them and one line fixed the eighth.
    The turn loop's ceiling was schedule dispatch, and everything else that was supposed to be a ceiling measured small: the perceive scans, the veil's epoch, the closed screens' collectors, the terminal's entity count.
    What is left in section 8 is one cache that thrashes and two cheap cleanups, none of them urgent.
-2. **So start at item 1 and work down the middle band, 1 to 9.**
+2. **So start at item 1 and work down the middle band, 1 to 8.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-3. **Then 10 to 12**, the high-effort ones, of which only the narrator's registry is structural.
+3. **Then 9 to 11**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
 
-Items 13 to 21 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 22 waits on a game that actually wants the tactics it would add, and item 23 waits on a second game asking for it.
+Items 12 to 19 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 20 waits on a game that actually wants the tactics it would add, and item 21 waits on a second game asking for it.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
@@ -99,9 +97,6 @@ The five items that opened this section were built in the six stages of `docs/de
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.
 - **A place for a miss.**
   Accuracy is deliberately absent (`docs/design/abilities.md`, "Accuracy does not exist"); the combat docs should say how a game adds a miss as a `DamageStage`, with an example.
-- **A shot is narrated as a blow.**
-  The phrasebook has one `HitsYou` for a blow and a shot alike, so a droid firing from across a dark room reads as "The line droid hits you for 4", named even when the player cannot see it.
-  `DamageEvent` or `Struck` already knows whether an attack was ranged; a `ShootsYou` phrase, and "something" for an attacker out of sight, would say what happened.
 - **Light is recast once a frame, not once a turn.**
   `update_lighting` runs in `EngineSet::Light`, after every `Turn` pass the frame ran, so a droid acting in the same frame the player switches a lamp off still sees by the old light, for one turn.
   Foundry's lamp shows it; recasting the dynamic layer inside the turn loop, when a source was added or removed, would close it.
@@ -117,84 +112,6 @@ The five items that opened this section were built in the six stages of `docs/de
   A fingerprint tripwire per game over a few seeds' maps, labelled as such, would make the next such change a deliberate re-baseline.
 
 ## 4. Simplify
-
-- **The obituary is filed by a presenter.**
-  `GameMenuPanel` queries `Morgue`, composes the obituary and writes it to disk (`crates/rl-ui/src/game_menu.rs`), which is the one-system-that-queries-and-draws that `crates/rl-ui/src/lib.rs` forbids, and it is the only reason `rl-ui` depends on `rl-save` at all.
-  Every game that wants a log panel therefore compiles the save crate, and on wasm `web-sys` and `wasm-bindgen` with it.
-  Pushing the obituary's sections in as plain data, the way every other panel is fed, cuts the dependency and restores the rule.
-- **`Thinking` splits its context from its snapshot.**
-  `crates/rl-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.
-  Splitting the two deletes that pattern from six call sites in five crates' worth of subsystems.
-- **Split `crates/rl-bevy/src/ability.rs`.**
-  At 1,562 lines it holds the state components, the effect registry, the gate, payment, `Offered`, the `Known` refresh, airborne landings and cue emission.
-  State, registry and resolver submodules, and named `SystemParam`s in place of the four-tuple aliases `Spender` and `Bearing` that `gate` and `pay` destructure by position.
-- **`TargetView` holds the enum it keeps reconstructing.**
-  `ability`, `throwing` and `firing` are three fields for one sum type, and `Pointing::of` rebuilds it every frame (`crates/rl-ui/src/view/target.rs`).
-  Store `Option<Pointing>`, and open `Pointing` so a game can aim something of its own through the shared cursor: a direction to dig, someone to talk to.
-- **`OnMap` as a required component.**
-  `on.map(|m| m.0).unwrap_or(MapId::SURFACE)` is written in turn, items, minds, places, status and both games, and tutorial step 1 has to explain why a delve's first floor is map one.
-  Require `OnMap` on `Position` and the `Option` disappears everywhere.
-
-- **Admission scans its waiting actors linearly.**
-  `admit_new_actors` (`crates/rl-bevy/src/turn.rs`) checks each waiting actor against the fresh list and the `arriving` list with a linear scan, so admission is quadratic in the number waiting, and it runs every pass.
-  Harmless while only the player ever waits, and briefly; a game that parks a crowd on maps nobody has visited would pay for it.
-  A `BTreeSet` of what has been seen makes it linear.
-- **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
-  The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
-  Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
-
-- **The resolvers in `ResolveSet::Act` are unordered, and every game's ambiguity test pays for it.**
-  Nine systems resolve in that set and nearly all of them write `DamageEvent`, `Position`, `Stack`, `Occupancy` and the cue queue, with nothing declaring an order between them.
-  It is safe: `Resolution::claim` spends one actor's one turn once a pass, so in the pass one resolver did something every other resolver found nobody to resolve for, and their relative order is unobservable.
-  What it costs is that the safety has to be restated per pair and per game: twenty of the forty entries in `examples/foundry/src/plugin/ambiguity.rs` say only that, the count is quadratic in resolvers, and the second game to grow the same test pays it again from scratch.
-  Note that the engine already ordered the part of that set where order *is* observable: `LandSet` chains abilities, throws and shots, because several landings can land in one pass and the first hit to take a target to nothing is credited with the kill.
-  The fix is the same shape: an `ActSet` in `CorePlugin`, chained, one slot per resolver family and a `Game` slot at the end, as `DecideSet` already does, with each plugin putting its resolver in its own slot.
-  It costs no parallelism now that the `Turn` schedule is single-threaded, and the order between mutually exclusive resolvers is arbitrary, which `LandSet`'s own doc already concedes for landings.
-  What it loses is a forcing function: today a new resolver fails Foundry's test and somebody has to write down why it is safe, which is how `consumable::land_uses` was audited the day it was added; under a chain it slots in silently, and a resolver that quietly does not claim gets no prompt.
-  Worth doing when either a resolver appears that genuinely can co-occur with another in one pass, or a second game grows an ambiguity test; not worth doing for tidiness alone.
-  Rejected while writing this down: declaring the resolvers `ambiguous_with` each other once in the engine. It would silence every game's entries without inventing an order, but it suppresses rather than states, and it would hide the pair that one day really does conflict.
-
-## 5. Documentation
-
-The plugin table landed on 2026-09-21, with `scripts/check-overview.sh` behind it; the plan's progress log says what the review that prompted it found.
-The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
-
-- **Guide chapters for the second half.**
-  Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is the 1,280-line `examples/delve/src/main.rs`.
-  Four chapters in the guide's style: lights out, being noticed, an ability in RON, saving the run.
-- **One picture of the frame.**
-  `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.
-- **Doc comments at `turn.rs` density.**
-  Many carry the history of how they came to be.
-  That belongs in the plan's progress log; the comment says what and why-not.
-- **A start helper.**
-  A game begins with seven incantations: the plugin group, the seed, the tiles, their appearance, `WorldMap::new(tables)`, `PlaceRulesRes`, a warp, and then the state flip to `Playing`.
-  One `start_in_place(player, map)` command could take the last two, and the tutorial's chapter 1 shrinks with it.
-- **Split the delve's `main.rs`** into input, narration and content modules the way Corsair is, so the second worked example reads at the same grain as the first.
-
-## 6. Publish it
-
-- **The name is taken.**
-  `rl-core` is a token-bucket rate limiter on crates.io at 1.22.0, so the foundation crate cannot keep its name, and the `rl-` family cannot keep its prefix without one odd crate out.
-  Checked as whole families, with the base name and `-core` and `-grid` all free: `roguelike`, `dungeoneer`, `torchlit`, `runedeep`, `vaults`, `morgue`; taken: `rogue`, `delver`, `warren`, `gloom`, `crawl`.
-  The shape to copy is bracket-lib's, where one word is both the facade crate and the prefix for the parts.
-  Renaming reaches 297 references across 153 files and the public path `rl_engine::rl_core::Rect` that the guide teaches, so it is a decision to make before the first release rather than after it.
-  Reserve the rest of the family the same day; nothing stops someone taking `rl-grid` tomorrow.
-- **What blocks `cargo publish` is version requirements, not metadata.**
-  Every publishable crate already carries a licence, description, repository, homepage, five keywords, categories and an MSRV, the examples and the tutorial are `publish = false`, and both licence files sit at the root.
-  What stops a publish is 51 path dependencies with no version requirement, and they all flow through one `[workspace.dependencies]` table, so it is eleven lines.
-  Ten of the eleven crates have no readme, so their crates.io pages would render empty, and `rl-engine`'s `readme = "../../README.md"` points outside its own package, which `cargo package` refuses.
-  Publish in tier order, waiting for the index between each, and dry-run every crate first; `cargo-release` or `release-plz` does the ordering and is worth adopting before the first release rather than after.
-- **Nothing should go out while the API moves this fast.**
-  77 commits touched crate sources in the 30 days to 2026-09-17, changing about 2,100 lines of public declarations; `CHANGELOG.md` records them, but a release every few days is not a kindness to anyone depending on it.
-  Publish the five Bevy-free crates first, since their APIs are the most settled and the most reusable on their own, and keep the Bevy layer on a git dependency until it stops moving.
-
-## 7. Open the seams the subsystems have to reach through
-
-The minds' perceive stage is the engine's best seam: `crates/rl-bevy/src/minds.rs` says "a subsystem added later adds a contributor and edits nothing here", and it is true, with fire, stealth, items, props, abilities and noise each pushing in from their own module and `minds.rs` naming none of them.
-The engine's two other cross-cutting concerns work the opposite way.
-Each is a closed list in a crate the subsystem does not own, and each has to be edited by hand when anything new lands.
-The run's teardown was a third, and stopped being one on 2026-09-22, when `ResetsOnNewRun` turned `clear_run`'s hand-written list into a registry; that is the shape the two below would take.
 
 - **What the save holds is stated where the save is.**
   `EntityState` in `crates/rl-save/src/run.rs` is a fixed field list, and `EngineSave` in `engine.rs` has grown one `#[serde(default)]` per subsystem, so the natural reading is that a subsystem is saved when somebody remembered to add it.

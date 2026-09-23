@@ -53,7 +53,7 @@ pub use ability::{
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
-    RangedAttack, Resists, Strikes, Struck, line_of_fire, shot,
+    RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{Consumable, ConsumablesPlugin, OnUse};
@@ -112,7 +112,7 @@ pub mod prelude {
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
-        RangedAttack, Resists, Strikes, Struck, line_of_fire, shot,
+        RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{Consumable, ConsumablesPlugin, OnUse};

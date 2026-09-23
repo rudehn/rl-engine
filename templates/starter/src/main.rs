@@ -67,7 +67,6 @@ fn main() -> AppExit {
             GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12))
                 .died("The dark closes over you."),
         ))
-        .insert_resource(Morgue::platform_default(TITLE, TITLE))
         .add_plugins((
             VitalsPanel::new(Rect::new(0, 0, COLS - 12, 1)),
             LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),

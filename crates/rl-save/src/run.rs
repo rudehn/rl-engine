@@ -819,7 +819,7 @@ mod tests {
         let ada = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), LeavesRemains)).id();
         play(&mut app);
         let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
-        app.world_mut().write_message(DamageEvent { target: ada, hit: rl_rules::Hit::by(me, kind, 99) });
+        app.world_mut().write_message(DamageEvent::new(ada, rl_rules::Hit::by(me, kind, 99)));
         app.update();
         app.update();
         let since = app.world().get::<Remains>(ada).expect("Ada is remains").since;

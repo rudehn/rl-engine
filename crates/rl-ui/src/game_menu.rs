@@ -10,12 +10,15 @@
 //! knows how a game starts; the game's start runs again in
 //! [`NewRun`] the way it ran the first time.
 //!
-//! On the frame the run ends the menu also files the obituary, when the
-//! game inserted a [`Morgue`]: the header from the [`Ending`], what the
-//! player was from the character sheet if there is one, the last lines of
-//! the log, and whatever sections the game pushed in reaction to
-//! [`RunOver`]. A game that wants no file inserts no
-//! morgue.
+//! The ending screen shows the game's own words as well as the engine's:
+//! whatever sections a game pushed onto [`EndingView`] in
+//! `ViewSet::Annotate`, each under its heading, clipped to the rectangle
+//! the game gave the menu.
+//!
+//! It used to write them to a file instead, through a `Morgue` in
+//! `rl-save`, composed and filed by this presenter. Nothing read the file
+//! in play, a presenter has no business doing file I/O, and it was the one
+//! reason `rl-ui` depended on `rl-save` at all.
 
 use crate::modal::AddModal;
 use bevy::prelude::*;
@@ -23,14 +26,12 @@ use rl_bevy::prelude::*;
 use rl_bevy::{Ending, Outcome, Restart, world_is_shown};
 use rl_core::{Direction, Rect};
 use rl_render::{Cell, Terminal};
-use rl_save::{Morgue, Obituary};
 
 use crate::controls::{AddControls, ControlInput, EngineKey, key_name};
-use crate::log::MessageLog;
 use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
-use crate::view::SheetView;
+use crate::view::{EndingView, SheetView};
 
 /// The name the menu's modal is declared under.
 pub const GAME_MENU_MODAL: &str = "menu";
@@ -107,8 +108,8 @@ impl MenuItem {
 
 /// The menu, and the screen a run ends on.
 ///
-/// Declares the `menu` modal. Adds nothing else: a game that wants a morgue
-/// inserts a [`Morgue`], and one that wants the sheet in it adds the sheet.
+/// Declares the `menu` modal and adds [`EndingViewPlugin`](crate::EndingViewPlugin),
+/// so a game has somewhere to push what it wants the ending screen to say.
 pub struct GameMenuPanel(MenuLayout);
 
 impl GameMenuPanel {
@@ -145,6 +146,7 @@ impl Plugin for GameMenuPanel {
         app.insert_resource(self.0.clone()).init_resource::<GameMenu>().init_resource::<MenuKeys>();
         // Before the game's input and outside the engine's sets, since the
         // sets do not run once the run is over and the menu must.
+        app.add_plugins(crate::view::EndingViewPlugin);
         app.add_systems(Update, menu_keys.before(EngineSet::Input).run_if(world_is_shown))
             .add_systems(Update, draw_game_menu.in_set(PresentSet::Overlay))
             .add_systems(OnEnter(EngineState::Over), run_ended);
@@ -216,54 +218,34 @@ pub fn menu_keys(
     }
 }
 
-/// What the ending is composed from.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Remains<'w, 's> {
-    ending: Option<Res<'w, Ending>>,
-    morgue: Option<ResMut<'w, Morgue>>,
-    log: Res<'w, MessageLog>,
-    sheet: Option<Res<'w, SheetView>>,
-    names: Query<'w, 's, &'static Name>,
-}
-
-/// Opens the menu over the ending and files the obituary, when there is a
-/// morgue to file it in.
-pub fn run_ended(mut modals: ResMut<Modals>, mut menu: ResMut<GameMenu>, mut remains: Remains) {
+/// Opens the menu over the ending, with no way back into the run.
+///
+/// Composing and filing an obituary used to happen here too. It does not
+/// any more: what a game wants said goes on [`EndingView`] and is drawn,
+/// which is a presenter's business, and nothing is written to disk.
+pub fn run_ended(mut modals: ResMut<Modals>, mut menu: ResMut<GameMenu>) {
     let modal = game_menu_modal(&modals);
     modals.close_all();
     modals.open(modal);
     menu.selected = 0;
-    let (Some(ending), Some(morgue)) = (remains.ending.as_deref(), remains.morgue.as_deref_mut()) else { return };
-    let outcome = match ending.outcome {
-        Outcome::Died { by: Some(by) } => match remains.names.get(by) {
-            Ok(name) => format!("Killed by the {}", name.as_str()),
-            Err(_) => "Killed".to_string(),
-        },
-        Outcome::Died { by: None } => "Died".to_string(),
-        Outcome::Won => "Won".to_string(),
-        Outcome::Abandoned => "Abandoned".to_string(),
-    };
-    let mut obituary = Obituary::new(morgue.title(), ending.seed, ending.turn, outcome);
-    obituary.epitaph = ending.epitaph.clone();
-    if let Some(sheet) = remains.sheet.as_deref() {
-        obituary = obituary.section("Character", describe_sheet(sheet));
-    }
-    // The last things that happened, oldest first, with their turns.
-    let mut last: Vec<String> = remains.log.recent(30).map(|e| format!("[turn {}] {}", e.turn, e.display())).collect();
-    last.reverse();
-    if !last.is_empty() {
-        obituary = obituary.section("Last words", last.join("\n"));
-    }
-    for (heading, body) in morgue.take_sections() {
-        obituary = obituary.section(heading, body);
-    }
-    if let Err(e) = morgue.file(&obituary) {
-        error!("the morgue file could not be written: {e}");
-    }
 }
 
 /// The sheet as lines of text: what the player was made of.
-fn describe_sheet(sheet: &SheetView) -> String {
+///
+/// The ending screen no longer adds this by itself, because a game that
+/// wants it can say so and one that does not should not pay for it. A game
+/// that does pushes it as a section:
+///
+/// ```
+/// # use bevy::prelude::*;
+/// # use rl_ui::{EndingView, SheetView, describe_sheet};
+/// fn what_you_were(mut ending: ResMut<EndingView>, sheet: Option<Res<SheetView>>) {
+///     if let Some(sheet) = sheet {
+///         ending.section("Character", describe_sheet(&sheet));
+///     }
+/// }
+/// ```
+pub fn describe_sheet(sheet: &SheetView) -> String {
     let mut lines = Vec::new();
     if !sheet.label.is_empty() {
         lines.push(sheet.label.clone());
@@ -299,7 +281,7 @@ pub struct MenuScreen<'w> {
     modals: Res<'w, Modals>,
     state: Res<'w, State<EngineState>>,
     ending: Option<Res<'w, Ending>>,
-    morgue: Option<Res<'w, Morgue>>,
+    view: Res<'w, EndingView>,
     keys: ControlInput<'w>,
     palette: Res<'w, Palette>,
 }
@@ -307,7 +289,7 @@ pub struct MenuScreen<'w> {
 /// Paints the menu while it is open: the ending, if there is one, and the
 /// choices under it.
 pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
-    let MenuScreen { layout, menu, modals, state, ending, morgue, keys, palette } = &screen;
+    let MenuScreen { layout, menu, modals, state, ending, view, keys, palette } = &screen;
     if !modals.is_open(game_menu_modal(modals)) {
         return;
     }
@@ -335,8 +317,16 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
             words.extend(wrap(&ending.epitaph, width).into_iter().map(|line| (line, Tones::TEXT)));
         }
         words.push((clip(&format!("Seed {}, turn {}.", ending.seed.0, ending.turn), width), Tones::MUTED));
-        if let Some(slot) = morgue.as_deref().and_then(|m| m.last()) {
-            words.push((clip(&format!("Written to the morgue as {slot}."), width), Tones::MUTED));
+        // Then whatever the game had to say, each section under its own
+        // heading. Clipped by the rectangle like everything else here: the
+        // menu is drawn only as far down as its rows reach, and a game that
+        // wants more room gives it a taller one.
+        for section in &view.sections {
+            words.push((String::new(), Tones::MUTED));
+            words.push((clip(&section.heading, width), Tones::TITLE));
+            for line in section.body.lines() {
+                words.extend(wrap(line, width).into_iter().map(|line| (line, Tones::TEXT)));
+            }
         }
         words.push((String::new(), Tones::MUTED));
     }
@@ -371,14 +361,11 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
 mod tests {
     use super::*;
     use crate::harness::Stage;
+    use crate::log::MessageLog;
     use rl_core::DiceRoll;
-    use rl_save::MemoryBackend;
 
     fn staged() -> Stage {
-        let mut stage = Stage::new_with((GameMenuPanel::new(Rect::new(0, 0, 40, 12)), crate::SheetViewPlugin), |app| {
-            app.insert_resource(Morgue::new(MemoryBackend::default(), "Test"));
-        })
-        .screen(40, 12);
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 40, 12)), crate::SheetViewPlugin)).screen(40, 12);
         stage.tick();
         stage
     }
@@ -453,14 +440,17 @@ mod tests {
         assert_eq!(stage.app.world_mut().resource_mut::<Messages<AppExit>>().drain().count(), 1, "quit");
     }
 
+    /// A game's own word on the run, pushed the way a facet is.
+    fn note_the_haul(mut view: ResMut<EndingView>) {
+        view.section("The haul", "nine bones");
+    }
+
     /// The player's death ends the run: the menu opens by itself under the
-    /// game's words with no way back, and the morgue holds the run.
+    /// game's words with no way back, and the game's sections are on it.
     #[test]
-    fn the_players_death_opens_the_ending_and_files_the_morgue() {
-        let mut stage = Stage::new_with((GameMenuPanel::new(Rect::new(0, 0, 44, 14)).died("You are dead."), crate::SheetViewPlugin), |app| {
-            app.insert_resource(Morgue::new(MemoryBackend::default(), "Test Game"));
-        })
-        .screen(44, 14);
+    fn the_players_death_opens_the_ending_and_shows_what_the_game_had_to_say() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
+        stage.app.add_systems(Update, note_the_haul.in_set(crate::ViewSet::Annotate));
         let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
         stage.app.world_mut().get_mut::<Health>(player).unwrap().current = 1;
         let ogre = stage
@@ -479,22 +469,19 @@ mod tests {
         stage.tick();
         stage.app.world_mut().resource_mut::<MessageLog>().bad("You feel a chill.", 0);
         // The harness has no minds, so the ogre's blow is written for it.
-        stage.app.world_mut().write_message(DamageEvent { target: player, hit: rl_rules::Hit::by(ogre, kind, 30) });
+        stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(ogre, kind, 30)));
         stage.app.world_mut().write_message(Intent::new(player, Wait));
         for _ in 0..4 {
             stage.tick();
         }
         assert_eq!(*stage.app.world().resource::<State<EngineState>>().get(), EngineState::Over);
         assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
-        let body: Vec<String> = (1..13).map(|y| inside(&stage, y)).collect();
+        let body: Vec<String> = (1..19).map(|y| inside(&stage, y)).collect();
         assert!(body.iter().any(|l| l.starts_with("Seed 5, turn ")), "{body:?}");
-        assert!(body.iter().any(|l| l.starts_with("Written to the morgue as test-game-5-tu")), "clipped to the frame: {body:?}");
+        assert!(body.contains(&"The haul".to_string()), "the game's heading is on the screen: {body:?}");
+        assert!(body.contains(&"nine bones".to_string()), "and its words under it: {body:?}");
         assert!(body.contains(&"A new run".to_string()) && !body.contains(&"Back to the run".to_string()), "no way back: {body:?}");
-        let morgue = stage.app.world().resource::<Morgue>();
-        let text = morgue.read(morgue.last().unwrap()).unwrap().unwrap();
-        assert!(text.contains("Killed by the ogre on turn"), "{text}");
-        assert!(text.contains("Character\n---------\nyou\nhealth"), "{text}");
-        assert!(text.contains("You feel a chill."), "the last words: {text}");
+        assert!(body.iter().all(|l| !l.contains("morgue")), "nothing is written anywhere: {body:?}");
         stage.press(KeyCode::Escape);
         assert!(stage.app.world().resource::<Modals>().any_open(), "escape does not leave an ending");
     }

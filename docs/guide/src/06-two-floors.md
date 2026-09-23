@@ -199,7 +199,7 @@ fn leave(player: Query<(&Position, Option<&OnMap>), With<Player>>, ways: Query<(
 ```
 
 A victory condition is a component and an `if`.
-`RunOver::won()` ends the run the way the player's death does: the menu opens over the last frame with Warren's words above it, and the morgue file says `Won`.
+`RunOver::won()` ends the run the way the player's death does: the menu opens over the last frame with Warren's words above it, and no way back into it.
 
 It runs inside the turn, so the run ends on the step that reached the daylight rather than a frame later.
 [Where to go next](09-where-to-go-next.md) points at the quest system, which is this with the objectives in a file.

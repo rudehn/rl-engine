@@ -22,7 +22,6 @@ rl-bevy.workspace = true
 bevy.workspace = true
 rl-rules.workspace = true
 rl-render.workspace = true
-rl-save.workspace = true
 
 [dev-dependencies]
 # A view test needs a real map to see across, and a real map needs the

@@ -132,7 +132,6 @@ fn main() -> AppExit {
         // words, offering a new run or the same seed again; the morgue writes
         // the run down beside the executable.
         .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
-        .insert_resource(Morgue::platform_default("warren", "Warren"))
         .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
         // at most one intent, however many passes the turn loop then runs.

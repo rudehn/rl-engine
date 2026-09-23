@@ -259,7 +259,7 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         let hit = Hit::from_source(None, sides.kind, 99);
-        app.world_mut().write_message(DamageEvent { target: who, hit });
+        app.world_mut().write_message(DamageEvent::new(who, hit));
         app.update();
         app.update();
     }
@@ -298,7 +298,7 @@ mod tests {
         // A second blow on the same entity finds no defender, so no second
         // death is written and the remains are still there.
         let hit = Hit::from_source(None, sides.kind, 99);
-        app.world_mut().write_message(DamageEvent { target: dead, hit });
+        app.world_mut().write_message(DamageEvent::new(dead, hit));
         app.update();
         assert!(app.world().get_entity(dead).is_ok(), "the remains survived a blow aimed at them");
     }

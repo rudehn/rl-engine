@@ -36,7 +36,6 @@ fn main() -> AppExit {
         .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
         // Escape opens the menu, and the run's end opens it by itself.
         .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
-        .insert_resource(Morgue::platform_default("warren", "Warren"))
         .add_systems(NewRun, start)
         // A floor fills the first time it is entered, inside the turn.
         .add_systems(Turn, populate.in_set(TurnSet::React))
@@ -158,7 +157,7 @@ Take a rat's `Name` off and the log says `something`.
 ## Ending the run
 
 When the player dies the engine writes `RunOver`, leaves `EngineState::Playing`, and `GameMenuPanel` opens by itself under the words Warren gave it, offering a new run or the same seed again.
-`Morgue` writes the run down when it ends.
+The screen it opens says the outcome, the seed and the turn; a game with more to say pushes a section onto `EndingView` and the screen draws it.
 
 ## Try it
 
