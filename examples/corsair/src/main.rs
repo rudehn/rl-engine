@@ -405,6 +405,7 @@ fn spawn_fresh_player(world: &mut World, spawn: rl_engine::rl_core::Point) {
     world.get_mut::<Equipped>(player).expect("slots").equip(cutlass, &shape).expect("the slots exist");
 }
 
+// ANCHOR: portals
 /// Asks the engine to move the player to a discovered site when the
 /// overworld asks, from wherever the player is, a cave included.
 fn honour_portals(
@@ -423,6 +424,7 @@ fn honour_portals(
         log.push("The portal takes you.", Tones::NOTICE, turns.turn_number());
     }
 }
+// ANCHOR_END: portals
 
 #[derive(Default)]
 struct Discovered(usize);

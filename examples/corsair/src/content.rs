@@ -97,6 +97,7 @@ impl Content {
         TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 
+    // ANCHOR: bands
     pub fn band_appearance(&self) -> BandAppearance {
         let mut look = BandAppearance::new();
         look.set(SEA, Cell::new('~', Color::srgb(0.2, 0.35, 0.7)).on(Color::srgb(0.03, 0.08, 0.2)));
@@ -111,6 +112,7 @@ impl Content {
         look.set(VOLCANO, Cell::new('^', Color::srgb(0.95, 0.95, 1.0)));
         look
     }
+    // ANCHOR_END: bands
 }
 
 /// The band for a set of facts, whether they are a region's or one tile's.

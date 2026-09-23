@@ -57,7 +57,8 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 29 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
 | 30 | `HalveIfBlocked` can never fire | 3 | low | low |
 | 31 | Two engine types are named for a theme word | 4 | low | low |
-| 32 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 32 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
+| 33 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -75,7 +76,7 @@ Why the order that is left, in four moves:
 4. **Then 18**, the one structural inversion still worth its cost, and 19.
    Both are high effort, and neither is urgent.
 
-Items 20 to 31 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 32 waits on a game that actually wants the tactics it would add.
+Items 20 to 32 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 33 waits on a game that actually wants the tactics it would add.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
@@ -138,6 +139,13 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Corsair, Delve and Heist have no map fingerprint tests.**
   A change to their maps goes unnoticed: the Foundry branch changed Corsair's cave maps and Delve's heart floor, and nothing in either game noticed.
   A fingerprint tripwire per game over a few seeds' maps, labelled as such, would make the next such change a deliberate re-baseline.
+
+- **`OverworldPlugin` declares one requirement and needs four.**
+  It calls `needs::<OverworldLayout>` and nothing else (`crates/rl-overworld/src/lib.rs`), but `draw_overworld`'s `Whereabouts` takes `Res<WorldRes>`, `Res<WorldMap>` and `Res<Knowledge>` without an `Option` between them, and `handle_keys` takes `Res<Knowledge>` and `ResMut<Modals>` the same way.
+  A game that adds the screen without `StreamingPlugin`, and so without a `WorldRes`, gets a system Bevy skips rather than the combined, loud report at the start of play that `AGENTS.md` promises and that `check_requirements` exists to give.
+  Three `needs::<_>` calls with hints, `WorldRes` naming `StreamingPlugin` as where one comes from, would put the screen back under the house rule.
+  The same gap read from the other side is the module doc at `crates/rl-overworld/src/lib.rs:4-5`, which says the screen "reads the [`WorldRes`] and [`Knowledge`] and writes a [`PortalRequest`]" and leaves out `WorldMap`, the player's `Position` and `Modals`; it should list what the systems actually take once the declarations do.
+  Found on 2026-09-22 while writing `docs/guide/src/systems/overworld.md`.
 
 ## 4. Simplify
 
