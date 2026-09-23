@@ -35,7 +35,7 @@
   - [Noise]()
   - [Stealth]()
 - [What it leaves behind]()
-  - [Fire and gas]()
+  - [Fire and gas](systems/fields.md)
   - [Remains]()
   - [Statuses]()
 - [What you see]()
