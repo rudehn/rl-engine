@@ -29,7 +29,7 @@
   - [Abilities]()
   - [Combat and loadout]()
   - [Items and equipment]()
-  - [Minds]()
+  - [Minds](systems/minds.md)
 - [What it perceives]()
   - [Sight and lighting](systems/sight.md)
   - [Noise]()

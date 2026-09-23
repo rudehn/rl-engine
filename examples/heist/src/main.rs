@@ -185,6 +185,7 @@ struct Watch {
 }
 
 impl Watch {
+    // ANCHOR: watch
     fn load(names: &Names, faction: FactionId) -> Self {
         let defs: Registry<WatchDef> = names.load(WATCH_RON).unwrap_or_else(|e| panic!("assets/watch.ron: {e}"));
         let mut table = BandedTable::default();
@@ -223,6 +224,7 @@ impl Watch {
             ))
             .id()
     }
+    // ANCHOR_END: watch
 }
 
 /// Coin, the score.
