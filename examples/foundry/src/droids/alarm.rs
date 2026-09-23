@@ -39,12 +39,14 @@ pub const ALARM_LOUDNESS: i32 = 80;
 /// and says only what the pulse is.
 pub const PULSE: Look = Look { glyph: '!', color: rl_engine::rl_grid::Rgb::new(255, 51, 38) };
 
+// ANCHOR: noise_rules
 /// How loud the engine's own actions are on a deck. A blow or a shot
 /// carries ten steps, so a firefight draws the droids in earshot; steps,
 /// doors and a thrown thing landing make no sound worth hearing over the
 /// machinery, and a shut bulkhead takes three steps off anything that
 /// passes it.
 pub const NOISE: NoiseRules = NoiseRules { step: 0, strike: 10, door: 0, landing: 0, door_muffle: 3 };
+// ANCHOR_END: noise_rules
 
 /// Marks a monster that sounds the deck's alarm for as long as it knows
 /// where the commando is, through [`shout_alarm`], and says so in the log
@@ -67,6 +69,7 @@ pub fn sound_alarm(mut noticed: MessageReader<Noticed>, alarmed: Query<(), With<
     }
 }
 
+// ANCHOR: shout
 /// Shouts the alarm for every action an [`Alarm`] carrier finishes while it
 /// knows where the player is: a [`MakeNoise`] of [`ALARM_SOUND`] where it
 /// stands, as loud as [`ALARM_LOUDNESS`], and a [`PULSE`] on it when the
@@ -100,6 +103,7 @@ pub fn shout_alarm(
         cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE) } });
     }
 }
+// ANCHOR_END: shout
 
 #[cfg(test)]
 mod tests {

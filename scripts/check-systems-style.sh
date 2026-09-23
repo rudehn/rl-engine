@@ -14,8 +14,6 @@ note() {
 	failed=1
 }
 
-lines=$(wc -l < "$page")
-[ "$lines" -le 125 ] || note "$page: $lines lines. A page past 120 is a system that wants splitting."
 # An unbalanced fence or an unterminated manifest would leave `prose` reading
 # the rest of the page as quoted code, which is to say checking nothing, so
 # the shape of the page is settled before anything is read out of it.
@@ -35,6 +33,14 @@ prose() {
 }
 ! prose | grep -qiE '\b(powerful|simply|just|robust|seamless|leverage|delve|comprehensive|elegant|straightforward)\b' \
 	|| note "$page: a word from the ban list. Say what it does instead."
+# The budget is what the page says, not how long the file is. Counting file
+# lines made the manifest and the quoted anchor compete with the writing, so a
+# page that correctly guarded thirteen files and quoted a real system paid for
+# both out of its prose, which is the one thing the budget exists to protect.
+# Measured over `prose` for that reason: the manifest, the include markers and
+# the fenced code are all excluded, and only the page's own sentences count.
+written=$(prose | grep -c .)
+[ "$written" -le 80 ] || note "$page: $written lines of prose. Past 80 the page is describing a system that wants splitting, whatever the file length."
 # A page carries two comments and no others: the manifest `check-systems.py`
 # reads, and one `include:` marker per snippet. Anything else is a line of the
 # skeleton that was written around instead of answered. Matching `<!-- [a-z]`

@@ -80,7 +80,7 @@ Corsair is the full set: vitals, gear, nearby with a game facet for what an enem
 The reference is published; the design notes are not.
 
 Six parts, fixed, in this order: one paragraph saying what the system is, then `Turning it on`, `The model`, `Using it`, `The line`, `Where it lives`.
-`The line` says what the engine decides and what the game decides, and it is the section a reader arrives for, so it is never the section cut to fit the 120-line cap.
+`The line` says what the engine decides and what the game decides, and it is the section a reader arrives for, so it is never the section cut to fit the budget.
 `The model` names the public surface and is written from the type definitions and the system bodies; a design note is read for `The line` only, because a design note records what was intended and the code records what is.
 `Using it` opens with one sentence naming what the snippet is an instance of, then the snippet; a second anchor only when turning the system on takes a step the first does not show.
 `Where it lives` says what the crate split buys, such as what can be tested without an `App`, rather than which file holds what, which the manifest at the top of the page already answers.
@@ -90,4 +90,7 @@ Every code block is an `expand-guide.py` include of a real anchor in `examples/`
 A page carries no invented code, and the only comments it carries are the manifest and one `include:` marker per snippet.
 The manifest's `files:` lists every source file the page makes a claim about, not only the crate the plugin lives in, because the fingerprint guards exactly what it lists and a page describing a tier 1 type from a tier 2 facade otherwise goes stale without anything noticing.
 `registries.md` is the page that found this: a resource of eight fields in `rl-bevy` over the `Registry` and `Names` in `rl-rules` that `The model` is really about.
+The budget is eighty lines of prose, counted by `scripts/check-systems-style.sh` over the page's own sentences: the manifest, the `include:` markers and the fenced code are all excluded, so guarding one more file or quoting a longer anchor never costs the page a sentence.
+It was a cap on file length until 2026-09-22, when the two rules were measured against each other and the pages pressed hardest against it turned out to have the least writing in them, `noise.md` at one line under the limit with 48 lines of prose against `fields.md` comfortable at 94 with 50.
+A page may therefore run to any length its manifest and its anchors need; reinstating a length cap would bring the perverse case back, so do not.
 Run `scripts/check-systems-style.sh <page>` before committing, and `python3 scripts/check-systems.py --bless <system>` after confirming the page against code that moved.

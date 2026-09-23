@@ -32,7 +32,7 @@
   - [Minds](systems/minds.md)
 - [What it perceives]()
   - [Sight and lighting](systems/sight.md)
-  - [Noise]()
+  - [Noise](systems/noise.md)
   - [Stealth]()
 - [What it leaves behind]()
   - [Fire and gas](systems/fields.md)
