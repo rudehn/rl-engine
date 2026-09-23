@@ -13,7 +13,7 @@
             crates/rl-rules/src/events/ledger.rs
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
-     fingerprint: 5d040329 -->
+     fingerprint: 6dcb705e -->
 
 # Statuses
 
@@ -44,6 +44,7 @@ The definition is never deserialized as it stands, because its ids index registr
 `Statuses::tick` collects what every status deals into a `TickReport`, then takes a turn off each and strips the modifiers of whatever ran out.
 `tick_statuses` runs it once per `TurnEnd` and only for actors on the current map, so a monster on a floor nobody is standing on does not burn down while the player is elsewhere.
 Its damage becomes a `DamageEvent` carrying `Hit::from_status`, which names the status and credits whoever applied it but leaves `attacker` empty, so a poison tick cannot set off the riders a blow would.
+That event is built with `DamageEvent::new`, so its `Reach` is `Effect` and rides through to `DamageDealt` as one: a game hanging a rule off a blow can tell a blow from a tick without reading `status` at all.
 A negative `ticks` amount mends through the same pipeline, which is the whole of what makes regeneration a status like poison.
 `StatBlock` is the `Stats` underneath: a per-actor base for whichever stats the game overrode, and a flat list of `Modifier`s each carrying a `Source`.
 `Stats::value` is base plus every `Add`, then every `MulPct` compounded, then `AtLeast` and `AtMost`, then the definition's own `min` and `max`.
