@@ -9,10 +9,11 @@
             crates/rl-bevy/src/items.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/ability.rs
+            crates/rl-bevy/src/effects.rs
             crates/rl-render/src/map_view.rs
             crates/rl-ui/src/interact.rs
             crates/rl-save/src/run.rs
-     fingerprint: 7da41678 -->
+     fingerprint: adb4d61d -->
 
 # Props
 
@@ -51,8 +52,9 @@ Answering one means spawning that many of what it names, wherever the game spawn
 `close_emptied_containers` marks a container `Emptied` only when its definition gives an opened look, so a crate that cannot show it is done goes on offering and the screen says it is empty.
 `TriggerDef` is an `on` of `Entered` or `Destroyed`, a `fires` count and effects; `Fired(u32)` is how often this one has gone off, on the prop rather than in the definition, since a definition is shared by every plate of its kind.
 `spring_on_entered` reads `Stepped`, which the move resolver writes for every step it lets through, so anything that walks springs a plate; `spring_on_destroyed` reads `DeathEvent`, which a prop with `Health` raises like anything else.
-Both land through `Landing`, the shape [Abilities](abilities.md) hands an effect, whose `ability` is `None` for a trap, and both write `Triggered { prop, on, by, at }` for what no effect can say.
-`build_prop_effects` builds every prop's effects once on the first frame, after the last game-registered effect is in, and says loudly what would not build, because a trap that silently does nothing is the worst kind of trap.
+Both land through `Effects::land_on`, the shared list [Abilities](abilities.md) describes, so a trap rolls each chance and reads each argument exactly as a spell does and lands on the one cell it went off in, with no ability on the `Landing` for anything to draw.
+Both also write `Triggered { prop, on, by, at }` for what no effect can say.
+`build_prop_effects` builds every trigger and every offer once on the first frame, after the last game-registered effect is in, and reports every spec that would not build with the prop's name and which list it was in, because a trap that silently does nothing is the worst kind of trap.
 `Hidden { spot }` is a prop nobody has spotted: the map view and a mind's contributor both skip one, which is a query filter rather than a second drawing path, and `spot_hidden_props` rolls `spot` percent a turn for the player alone while it is in sight, writing `Spotted` and taking the component off.
 `perceive_props` puts what the mind holding the turn can see into `Snapshot::props` as a `PropView` of which entity, where, and whose side, so a mind that walks to wrecks and a mind that walks to crates read one list.
 
