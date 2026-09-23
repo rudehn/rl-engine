@@ -12,7 +12,7 @@
             crates/rl-grid/src/dijkstra.rs
             crates/rl-grid/src/region.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: f4127ec3 -->
+     fingerprint: 23e1c876 -->
 
 # Grids and tiles
 

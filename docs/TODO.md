@@ -173,6 +173,14 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
   The pages in `docs/guide/src/systems/` are the accurate description now, and each one's manifest is checked against the files it documents by `scripts/check-systems.py`, which is the thing a note has no equivalent of.
   What a note is still right about is why a subsystem is shaped as it is; the fix is a line at the top of each saying the reference supersedes its model, and the decision about deleting them is `docs/PLAN.md`'s.
 
+- **The worked example teaches an XOR where the rule says `derive`.**
+  `docs/guide/src/systems/mapgen.md` spends four sentences of `The line` on a pass's stream coming from `RunSeed::derive`, which `AGENTS.md` names as the mechanism, and the snippet directly above it derives a floor's seed with `RunSeed(self.seed.0 ^ (depth as u64) << 32)` at `examples/tutorial/src/bin/step06_descent.rs:135`.
+  `examples/corsair/src/places.rs` does the same with an XOR of its own.
+  Both are still derived from the run's seed, so neither breaks the rule about constants or entropy, and the choice of index is the caller's; what is wrong is that the example a reader copies is not the mechanism the page and the guide both name.
+  Changing either line changes every map those seeds generate and may disturb fingerprint tests, so it is its own slice rather than a correction to the page.
+  Recorded in the same breath: A*'s insertion-order tie-break was documented at `crates/rl-grid/src/astar.rs:10` with no test behind it until 2026-09-22, when writing `systems/grids.md` turned up the claim that ties are pinned by tests and only the flood half was.
+  Other documented properties may be unpinned the same way, and a page that claims one is the occasion to check.
+
 - **One picture of the frame.**
   `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.
 - **Doc comments at `turn.rs` density.**

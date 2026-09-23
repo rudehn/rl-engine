@@ -22,7 +22,7 @@
   - [Seeds and determinism](systems/seeds.md)
 - [The world]()
   - [Grids and tiles](systems/grids.md)
-  - [Map generation]()
+  - [Map generation](systems/mapgen.md)
   - [Places and streaming]()
   - [Props](systems/props.md)
 - [What acts]()
