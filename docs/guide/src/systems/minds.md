@@ -14,7 +14,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
-     fingerprint: 13040b4d -->
+     fingerprint: a0fa5a21 -->
 
 # Minds
 
@@ -49,7 +49,9 @@ The four phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in si
 `decide_minds` sorts the snapshot once, there and nowhere else, so the order the contributors ran in cannot reach a tactic.
 `TacticCtx` then offers `step_toward` and `step_away_from` over `FlowFields`, keyed by the goal cells, the movement class, whether the walker opens doors and which way it is going, stamped with the map's cost epoch and capped at `FIELD_CACHE`: fifty hunters after one player cost one flood.
 It also offers `can_step`, which refuses an occupied cell and any cell marked a hazard, `blocks_shot`, the predicate the ability resolver uses, and the turn's stream.
-The shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Follow`, `Shadow`, `Hover`, `Wander`, `GiveWay`, `UseAbility`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
+`can_step` answers whether a cell may be stood on and says nothing about the way in, so a tactic that picks a neighbour for itself rather than taking one a field offered pairs it with the resolver's corner rule: a diagonal that squeezes between two cells the actor cannot stand on is refused silently, and a mind deciding on one would decide the same way again on every turn until something moved.
+The twelve shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Keep`, `Hover`, `Wander`, `GiveWay`, `UseAbility`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
+`Keep` is one tactic for both sides of keeping station, parameterised by the roster it reads: `Keep::allies(keep_within, no_closer_than)` is what a companion is and `Keep::enemies(..)` what a spotter or a skirmisher is, each closing past the first distance, backing off inside the second and leaving the band between to the next tactic, and it reports itself as `follow` or `shadow`, because a trace that says `shadow` says more about what a probe did than one that says `keep`.
 `app.add_choice::<A>()` registers an action that is also a `Choice` and routes every `MindChose` carrying an `A` into its `Intent` in `DecideSet::Game`, and `Snapshot::add_sense` with `sense::<T>()` carries a game's own knowledge in by type, one per type.
 
 ## Using it
