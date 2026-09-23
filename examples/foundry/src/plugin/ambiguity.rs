@@ -43,7 +43,7 @@ fn id<M>(system: impl IntoSystem<(), (), M>) -> TypeId {
 /// one of them meets, for a failure to read by.
 fn names() -> Vec<(&'static str, TypeId)> {
     use crate::*;
-    use rl_engine::rl_bevy::{ability, combat, items, minds, props as engine_props, remains, stealth, throwing};
+    use rl_engine::rl_bevy::{ability, combat, consumable, items, minds, props as engine_props, remains, stealth, throwing};
     vec![
         ("run::start", id(run::start)),
         ("heat::vent_heat", id(heat::vent_heat)),
@@ -103,6 +103,7 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("engine minds::perceive_roster", id(minds::perceive_roster)),
         ("engine stealth::filter_unnoticed", id(stealth::filter_unnoticed)),
         ("engine items::perceive_belongings", id(items::perceive_belongings)),
+        ("engine consumable::land_uses", id(consumable::land_uses)),
         ("engine combat::perceive_reach", id(combat::perceive_reach)),
     ]
 }
@@ -151,6 +152,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("PropKind", c.component_id::<rl_engine::rl_bevy::PropKind>()),
         ("Occupancy", c.component_id::<rl_engine::rl_bevy::turn::Occupancy>()),
         ("Stack", c.component_id::<rl_engine::rl_bevy::Stack>()),
+        ("Charges", c.component_id::<rl_engine::rl_bevy::Charges>()),
         ("Messages<ItemEvent>", c.component_id::<Messages<rl_engine::rl_bevy::ItemEvent>>()),
         ("Messages<Triggered>", c.component_id::<Messages<rl_engine::rl_bevy::Triggered>>()),
     ];
@@ -162,11 +164,27 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
 /// pair needs any more.
 fn allowed(world: &World) -> Vec<Allowed> {
     use crate::*;
-    use rl_engine::rl_bevy::{ability, combat, items, props as engine_props, stealth, throwing};
+    use rl_engine::rl_bevy::{ability, combat, consumable, items, props as engine_props, stealth, throwing};
     let ids = ids(world);
     let on = |names: &[&str]| -> Vec<ComponentId> { names.iter().map(|n| ids.iter().find(|(name, _)| name == n).expect("named in ids").1).collect() };
     let pair = |a, b, what: &[&str], why| Allowed { a: Some(a), b: Some(b), on: on(what), why };
     let claims = ["Acting", "Messages<ActionDone>", "Messages<ActionRefused>"];
+    // What landing a used thing's effects touches: the same world an
+    // ability's effects touch, plus what spending the thing itself costs.
+    let used = [
+        "Occupancy",
+        "Messages<Cued>",
+        "Messages<DamageEvent>",
+        "Messages<Afflict>",
+        "Messages<Cure>",
+        "Messages<ItemEvent>",
+        "Position",
+        "Viewshed",
+        "AbilityRng",
+        "Inventory",
+        "Stack",
+        "Charges",
+    ];
     let allowed = vec![
         Allowed { a: None, b: None, on: on(&claims), why: "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass" },
         pair(
@@ -243,6 +261,34 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &[&claims[..], &["Messages<ItemEvent>", "Inventory"]].concat(),
             "one action a pass: taking out of a crate and picking up are never resolved in the same one",
         ),
+        // A used thing lands what it does in the pass the use was resolved
+        // in, and by the same invariant that is a pass no other action was
+        // resolved in: `resolve_items` claimed the turn for the use, so
+        // every other resolver here found nobody to resolve for.
+        pair(id(consumable::land_uses), id(combat::resolve_attacks), &used, "one action a pass: a use and a blow are never resolved in the same one"),
+        pair(id(consumable::land_uses), id(throwing::resolve_throws), &used, "one action a pass: a use and a throw are never resolved in the same one"),
+        pair(
+            id(consumable::land_uses),
+            id(ability::resolve_abilities),
+            &used,
+            "one action a pass: a use and an ability are never resolved in the same one, and a thing that is used is never a thing that lends one",
+        ),
+        pair(
+            id(consumable::land_uses),
+            id(engine_props::resolve_interactions),
+            &used,
+            "one action a pass: a use and an interaction with a prop are never resolved in the same one",
+        ),
+        pair(
+            id(consumable::land_uses),
+            id(engine_props::resolve_takes),
+            &used,
+            "one action a pass: a use and taking out of a crate are never resolved in the same one",
+        ),
+        // And what flies lands in a pass that dealt nobody a turn, so never
+        // in the pass a use spent one.
+        pair(id(consumable::land_uses), id(combat::land_shots), &used, "a shot lands in a pass that dealt nobody a turn, and a use is a turn spent"),
+        pair(id(consumable::land_uses), id(throwing::land_throws), &used, "a throw lands in a pass that dealt nobody a turn, and a use is a turn spent"),
         // What lands only ever lands in a pass that dealt nobody a turn,
         // since nothing is dealt while it flies, so never beside an
         // interaction, which is an action somebody spent a turn on.

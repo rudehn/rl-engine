@@ -50,6 +50,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 23 | A place for a miss | 3 | low | low |
 | 24 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
 | 25 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 26 | Corsair's rum is an ability, and should be a use | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -153,6 +154,11 @@ The five items that opened this section were built in the six stages of `docs/de
 - **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
   The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
   Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
+
+- **Corsair's rum is an ability, and should be a use.**
+  A bottle of rum `Grants` the `swig` it is drunk through, with `costs: [Charge(1)]` spending the bottle, which is the shape Foundry's medical pair had before `OnUse` existed: nothing about a swig is aimed or waits on a cooldown, and carrying a bottle puts an entry on the abilities screen.
+  `docs/design/items.md` section 1 is the line it falls on the wrong side of, and Corsair is the second game that would prove the seam.
+  The move is `on_use` in `items.ron`, the `Consumable` marker on the spawn, and `swig` out of `abilities.ron`; watch for the enchantment path, since Corsair's items carry an `ItemKind` and a rolled name that Foundry's do not.
 
 ## 5. Documentation
 

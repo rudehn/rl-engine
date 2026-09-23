@@ -13,10 +13,13 @@
 //! behaviour yet; this module only attaches them to the weapons whose
 //! entry names one, so later work on either does not touch the loader.
 
+use std::sync::Arc;
+
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Id};
 use rl_engine::rl_render::Glyph;
+use rl_engine::rl_rules::EffectSpec;
 use rl_engine::rl_rules::ability::AbilityDef;
 use rl_engine::rl_rules::{BandedEntry, BandedTable, DamageKind, EquipShape, NameRef, Named, Registry, Resistances, SlotDef, TagDef, TagId};
 use serde::Deserialize;
@@ -50,11 +53,22 @@ pub struct ItemDef {
     /// drops that ask by tag rather than by name.
     #[serde(default)]
     pub tags: Vec<NameRef<TagDef>>,
-    /// Abilities it lends whoever carries it, which is how a medical item
-    /// works: using the item is using what it lends, and the engine
-    /// spends the item for an ability that costs a charge.
+    /// Abilities it lends whoever carries it: a thing that is aimed, or
+    /// waits on a cooldown, or spends a pool, is an ability, and using the
+    /// item is using what it lends. What simply happens to whoever used it
+    /// is `on_use` instead.
     #[serde(default)]
     pub grants: Vec<NameRef<AbilityDef>>,
+    /// What using it lands on whoever used it, where they stand: a stim's
+    /// mend, a medkit's gel. Anything here makes it a thing that is used
+    /// and spent, never an ability the commando knows.
+    #[serde(default)]
+    pub on_use: Vec<EffectSpec>,
+    /// How many uses it holds, for a thing that counts its own rather than
+    /// being spent one item at a time. Absent, a use takes one off the
+    /// stack and the last one takes the item with it.
+    #[serde(default)]
+    pub uses: Option<u16>,
     /// Flat armor while worn.
     #[serde(default)]
     pub armor: i32,
@@ -113,13 +127,23 @@ impl Named for ItemDef {
 pub struct WornDarkSight(pub i32);
 
 /// The item definitions and the table of what lies on which deck.
-#[derive(Debug, Clone)]
+///
+/// `Clone` but not `Debug`: what an item lands when it is used is a list of
+/// boxed effects, shared by handle, and a trait object has nothing to print.
+#[derive(Clone)]
 pub struct Armory {
     /// The item definitions, by id.
     pub defs: Registry<ItemDef>,
     /// What can be found on a deck, drawn by band, where the band is the
     /// deck number.
     pub table: BandedTable<Id<ItemDef>>,
+    /// What using each definition lands, built once and shared by every
+    /// item spawned from it, `None` for the ones that are not used at all.
+    ///
+    /// Built here rather than per item because an effect is a boxed trait
+    /// object read out of RON: parsing a medkit's gel once a medkit is
+    /// parsing it for every medkit on ten decks.
+    on_use: Vec<Option<Arc<Effects>>>,
 }
 
 /// One item's own shape, checked against nothing but itself: whether its
@@ -139,6 +163,12 @@ fn validate_def(d: &ItemDef, _: &Registry<ItemDef>) -> Result<(), String> {
     if d.heat.is_some() && d.ammo.is_some() {
         return Err("a weapon cannot run on both heat and ammo".into());
     }
+    if d.uses.is_some() && d.on_use.is_empty() {
+        return Err("uses without on_use: a thing that counts uses has to do something with them".into());
+    }
+    if !d.on_use.is_empty() && !d.grants.is_empty() {
+        return Err("on_use and grants: a thing is used for what it does itself or for the ability it lends, not both".into());
+    }
     Ok(())
 }
 
@@ -150,16 +180,55 @@ impl Armory {
     /// `abilities` is here for `grants`, so an item that names an ability
     /// nobody loaded is caught while the file is read rather than by a
     /// medkit that quietly does nothing in the middle of a run.
-    pub fn load(registries: &Registries, abilities: &Abilities) -> Self {
-        let defs: Registry<ItemDef> = registries.names().with("ability", abilities.defs()).load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+    pub fn load(registries: &Registries, abilities: &Abilities, kinds: &EffectKinds) -> Self {
+        let names = registries.names();
+        let defs: Registry<ItemDef> = names.clone().with("ability", abilities.defs()).load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(validate_def).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         let mut table = BandedTable::default();
+        let mut on_use = Vec::new();
+        let mut errors = Vec::new();
         for (id, d) in defs.iter() {
             if let Some((lo, hi, w)) = d.spawn {
                 table.push(BandedEntry::new(id).bands(lo, hi).weight(w));
             }
+            on_use.push(match d.on_use.is_empty() {
+                true => None,
+                false => match Effects::build(&d.on_use, kinds, &names) {
+                    Ok(effects) => Some(Arc::new(effects)),
+                    Err(mine) => {
+                        errors.extend(mine.into_iter().map(|e| format!("{}: on_use: {e}", d.name)));
+                        None
+                    }
+                },
+            });
         }
-        Self { defs, table }
+        assert!(errors.is_empty(), "assets/items.ron: {}", errors.join("; "));
+        Self { defs, table, on_use }
+    }
+}
+
+/// The three tables an armory is read against, for the systems that spawn
+/// items: what items exist, what abilities one may lend, and what kinds of
+/// effect a used one may land.
+///
+/// One parameter rather than three, because every system that spawns an
+/// item wants all three and none of them wants any of the three alone.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Content<'w> {
+    registries: Res<'w, Registries>,
+    abilities: Res<'w, Abilities>,
+    kinds: Res<'w, EffectKinds>,
+}
+
+impl Content<'_> {
+    /// The armory, read fresh from `items.ron`.
+    pub fn armory(&self) -> Armory {
+        Armory::load(&self.registries, &self.abilities, &self.kinds)
+    }
+
+    /// The registries, for whatever else a spawn needs them for.
+    pub fn registries(&self) -> &Registries {
+        &self.registries
     }
 }
 
@@ -194,11 +263,19 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));
     }
-    // What using it does, for anything that is used rather than worn or
-    // wielded: the engine turns a use of the item into a use of what it
-    // lends, and spends the item for it.
+    // An ability it lends, for the things that are aimed or wait on a
+    // cooldown: the engine turns a use of the item into a use of that.
     if !d.grants.is_empty() {
         e.insert(Grants(d.grants.iter().map(|g| g.id()).collect()));
+    }
+    // Or what it does itself, which is what a medical item does: the
+    // engine lands it on whoever used it and spends the item for it. The
+    // list is the armory's, shared by every copy.
+    if let Some(effects) = armory.on_use.get(id.index()).and_then(|e| e.clone()) {
+        e.insert((OnUse(effects), Consumable));
+        if let Some(uses) = d.uses {
+            e.insert(Charges::full(uses));
+        }
     }
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
@@ -249,7 +326,7 @@ mod tests {
     /// system of its own.
     fn spawn_two(app: &mut App, a: &str, b: &str) -> (Entity, Entity) {
         let registries = app.world().resource::<Registries>().clone();
-        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+        let armory = crate::testing::armory_of(app);
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
         let ea = spawn_item(&mut commands, &armory, armory.defs.expect(a), &registries);
@@ -265,7 +342,7 @@ mod tests {
         app.update();
         app.update();
         let registries = app.world().resource::<Registries>().clone();
-        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+        let armory = crate::testing::armory_of(app);
         let id = armory.defs.expect(name);
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
@@ -287,7 +364,7 @@ mod tests {
     #[test]
     fn every_item_loads_and_every_spawn_band_on_the_first_three_decks_has_something() {
         let r = crate::content::registries();
-        let armory = Armory::load(&r, &crate::testing::abilities(&r));
+        let armory = crate::testing::armory(&r);
         assert_eq!(armory.defs.len(), 16, "twelve things to carry, a slug, a keycard, a stim and a medkit");
         assert!(armory.table.gaps(1..=3).is_empty(), "a deck with nothing to find");
     }
@@ -369,6 +446,8 @@ mod tests {
             also: Vec::new(),
             tags: Vec::new(),
             grants: Vec::new(),
+            on_use: Vec::new(),
+            uses: None,
             armor: 0,
             resists: Vec::new(),
             melee: None,
@@ -413,7 +492,7 @@ mod tests {
     /// Puts `count` of `name` in the player's bag and returns the stack.
     fn carry(app: &mut App, player: Entity, name: &str, count: u32) -> Entity {
         let registries = app.world().resource::<Registries>().clone();
-        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+        let armory = crate::testing::armory_of(app);
         let id = armory.defs.expect(name);
         let item = {
             let mut queue = CommandQueue::default();
@@ -452,6 +531,22 @@ mod tests {
         let gained = health(&app, player) - before;
         assert!((7..=13).contains(&gained), "2d4+5 closed at once, not {gained}");
         assert_eq!(app.world().get::<Stack>(stim).map(|s| s.count), Some(1), "one shot off the stack, spent using it");
+    }
+
+    /// A thing in the bag is not something the commando knows how to do.
+    ///
+    /// The stim and the medkit were abilities for a day, granted by the item
+    /// that carried them, and the abilities screen listed both beside the
+    /// one thing the commando had actually been taught. What a used thing
+    /// does is on the thing now, so `Known` is what the run has learned and
+    /// nothing else.
+    #[test]
+    fn carrying_the_medical_pair_teaches_the_commando_nothing() {
+        let (mut app, player) = alone_and_wounded(6, 10);
+        carry(&mut app, player, "stim", 1);
+        app.update();
+        assert!(app.world().get::<Known>(player).is_none_or(|k| k.iter().count() == 0), "a stim in the bag is not an ability");
+        assert!(!crate::testing::knows(&app, player, "stims"), "and the upgrade's own is still unlearned");
     }
 
     /// A medkit is worth twice a stim and pays it two a turn over ten,
@@ -509,7 +604,7 @@ mod tests {
     #[test]
     fn a_weapon_naming_both_heat_and_ammo_fails_to_validate() {
         let r = crate::content::registries();
-        let armory = Armory::load(&r, &crate::testing::abilities(&r));
+        let armory = crate::testing::armory(&r);
         let mut d = blank_def("double economy");
         d.heat = Some((10, 10));
         d.ammo = Some(rl_engine::rl_core::Id::from_raw(0).into());

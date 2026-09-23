@@ -1,16 +1,16 @@
 // Foundry's abilities: what a commando calls on besides a weapon.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:        unique; `stims` is granted by the first upgrade, and
-//                `field stims` and `med gel` by the items that carry them
-//                (`items.ron` grants them), which is what `Charge(1)` spends
+//   name:        unique; `stims` is granted by the first upgrade. What a medical item
+//                does is not here: an item that is used and spent carries its own
+//                `on_use` effects in `items.ron`, and only what is aimed or waits on a
+//                cooldown belongs in this file
 //   description: optional; what it is, in a sentence, for the list on `a`
 //   look:        optional; (glyph:, color: (r:, g:, b:))
 //   aim:         Foe (default) | Ally | SelfOnly | Ground | Anyone
 //   mode:        Own | Adjacent | Bolt(range:) | Ball(range:, radius:) | Beam(range:) | Cone(length:)
 //   costs:       optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n),
-//                where Charge is spent from the item that lends the ability: one
-//                off its stack, and the last one takes the item with it
+//                where Charge is spent from the item that lends the ability
 //   time:        optional; hundredths of a step the turn costs (default 100)
 //   cooldown:    optional; hundredths before it may be used again (default 0)
 //   effects:     each (kind:, chance:, args:); kind is one the engine ships:
@@ -25,30 +25,5 @@
         mode: Own,
         cooldown: 2000,
         effects: [(kind: "Mend", args: (kind: "care", roll: "2d4+4"))],
-    ),
-    // The stim in the pack, as against the dispenser the upgrade implants:
-    // the same drug, one shot of it, gone when it is used. No cooldown,
-    // because the stack is the limit.
-    (
-        name: "field stims",
-        description: "A field shot of the same stimulants. It closes a wound at once, and the shot is spent.",
-        look: (glyph: '+', color: (r: 140, g: 230, b: 160)),
-        aim: SelfOnly,
-        mode: Own,
-        costs: [Charge(1)],
-        effects: [(kind: "Mend", args: (kind: "care", roll: "2d4+5"))],
-    ),
-    // Twice a stim's worth, paid two a turn over ten, which is ten turns
-    // of a deck the commando has to live through to collect it. `mending`
-    // refreshes rather than stacks, so a second medkit is a longer
-    // recovery and never a faster one.
-    (
-        name: "med gel",
-        description: "A medkit's gel, worked into the wound. It mends two a turn for ten turns, and a second kit starts the ten again.",
-        look: (glyph: '+', color: (r: 200, g: 240, b: 210)),
-        aim: SelfOnly,
-        mode: Own,
-        costs: [Charge(1)],
-        effects: [(kind: "Inflict", args: (status: "mending", turns: 10))],
     ),
 ]

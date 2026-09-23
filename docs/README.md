@@ -22,6 +22,7 @@ These are the reasoning; the overview is the list.
 
 - [abilities.md](design/abilities.md), what an actor can spend a turn on, as data.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
+- [items.md](design/items.md), what a thing does: the three carriers of an effect list, and which one a use belongs to.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
 - [minds.md](design/minds.md), how a non-player decides.
 - [noise.md](design/noise.md), what a sound is and who hears it.

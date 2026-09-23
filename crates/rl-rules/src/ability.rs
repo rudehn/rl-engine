@@ -208,6 +208,31 @@ impl Clone for EffectSpec {
     }
 }
 
+/// How an effect is written in any content file: `(kind: "Harm", chance:
+/// 50, args: (..))`, with the chance certain and the arguments empty unless
+/// given.
+///
+/// Deserialized here rather than by each file's own mirror of it, because
+/// abilities are not the only thing that lands effects: a prop's trigger, an
+/// offer it answers and a game's own item that is used all read the same
+/// three fields, and a game whose item file grew an `on_use` list should not
+/// have to write this struct again to read one.
+///
+/// The arguments stay unparsed text: which effect they belong to is known
+/// here, what it wants of them is not, and the layer that registered the
+/// effect reads them at load. What this does check is the chance, since 120
+/// per cent is a typo wherever it appears.
+impl<'de> Deserialize<'de> for EffectSpec {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let a = EffectRon::deserialize(deserializer)?;
+        if a.chance > 100 {
+            return Err(serde::de::Error::custom(format!("effect {:?} has a chance of {}, above 100", a.kind, a.chance)));
+        }
+        let args = parse_args(a.args.get_ron()).map_err(serde::de::Error::custom)?;
+        Ok(Self { kind: a.kind, chance: a.chance, args })
+    }
+}
+
 /// An ability, as the engine reads it.
 #[derive(Debug, Clone)]
 pub struct AbilityDef {

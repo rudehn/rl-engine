@@ -22,7 +22,6 @@
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
-use rand::Rng;
 use rand::rngs::StdRng;
 use rl_core::{Point, RunSeed, SeedDomain};
 use rl_grid::{Footprint, footprint};
@@ -472,18 +471,12 @@ impl AddEffect for App {
     }
 }
 
-/// One effect of one ability, built.
-struct Built {
-    chance: u8,
-    effect: Box<dyn Effect>,
-}
-
 /// The abilities a game registered, with their effects built.
 #[derive(Resource)]
 pub struct Abilities {
     defs: Registry<AbilityDef>,
     /// Parallel to `defs` by id index.
-    built: Vec<Vec<Built>>,
+    built: Vec<crate::effects::Effects>,
 }
 
 impl Abilities {
@@ -505,20 +498,13 @@ impl Abilities {
         let mut errors = Vec::new();
         let mut built = Vec::new();
         for (_, def) in defs.iter() {
-            let mut mine = Vec::new();
-            for spec in &def.effects {
-                match kinds.0.get(&spec.kind) {
-                    None => {
-                        let known: Vec<&str> = kinds.names().collect();
-                        errors.push(format!("{}: no effect is registered as {:?}; registered: {}", def.name, spec.kind, known.join(", ")));
-                    }
-                    Some(build) => match build(&spec.args, names) {
-                        Ok(effect) => mine.push(Built { chance: spec.chance, effect }),
-                        Err(e) => errors.push(format!("{}: effect {:?}: {e}", def.name, spec.kind)),
-                    },
+            match crate::effects::Effects::build(&def.effects, kinds, names) {
+                Ok(effects) => built.push(effects),
+                Err(mine) => {
+                    errors.extend(mine.into_iter().map(|e| format!("{}: {e}", def.name)));
+                    built.push(crate::effects::Effects::default());
                 }
             }
-            built.push(mine);
         }
         if !errors.is_empty() {
             return Err(rl_rules::ContentError::Invalid(errors));
@@ -540,19 +526,7 @@ impl Abilities {
     /// with its chance in front when it is not certain: what a menu lists
     /// under an ability.
     pub fn describe(&self, id: AbilityId, registries: &crate::registries::Registries) -> Vec<String> {
-        self.built[id.index()]
-            .iter()
-            .filter_map(|b| {
-                let what = b.effect.describe(registries);
-                if what.is_empty() {
-                    None
-                } else if b.chance >= 100 {
-                    Some(what)
-                } else {
-                    Some(format!("{}% chance of {what}", b.chance))
-                }
-            })
-            .collect()
+        self.built[id.index()].describe(registries)
     }
 
     /// The id named `name`, if there is one.
@@ -790,12 +764,7 @@ fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>
     if let Some(burst) = burst_of(&landing, world) {
         world.cues.write(Cued { actor: user, cue: burst });
     }
-    for built in &abilities.built[id.index()] {
-        if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
-            continue;
-        }
-        built.effect.apply(&landing, world);
-    }
+    abilities.built[id.index()].land(&landing, world);
     events.write(AbilityEvent::Used { user, ability: id, aim: landing.aim, targets: landing.targets });
 }
 

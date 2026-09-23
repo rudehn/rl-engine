@@ -51,8 +51,7 @@ pub fn items_at_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
     let map = app.world().resource::<WorldMap>().current();
     let deck = crate::decks::deck_of(map);
     let seed = *app.world().resource::<Seed>();
-    let registries = app.world().resource::<Registries>().clone();
-    let armory = crate::gear::Armory::load(&registries, app.world().resource::<Abilities>());
+    let armory = crate::testing::armory_of(app);
     let positions: Vec<Point> = {
         let world = app.world_mut();
         // `OnMap` too, not just `Item`: an earlier deck's own scatter is

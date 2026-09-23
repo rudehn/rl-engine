@@ -4,8 +4,6 @@ use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 
-use crate::gear::Armory;
-
 /// Spawns two hand blasters, puts them in the player's bag and equips
 /// both one after the other through the engine's own `Equip` intent, so
 /// the first lands in the main hand and the second, finding it taken,
@@ -18,7 +16,7 @@ pub fn dual_blasters(app: &mut App) -> (Entity, Entity, Entity) {
     app.update();
     app.update();
     let registries = app.world().resource::<Registries>().clone();
-    let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+    let armory = crate::testing::armory_of(app);
     let id = armory.defs.expect("hand blaster");
     let player = empty_handed(app);
     let mut equip_one = || {
@@ -45,7 +43,7 @@ pub fn slug_pistol_with(app: &mut App, slugs: u32) -> (Entity, Entity) {
     app.update();
     app.update();
     let registries = app.world().resource::<Registries>().clone();
-    let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+    let armory = crate::testing::armory_of(app);
     let player = empty_handed(app);
     if slugs > 0 {
         give_slugs(app, player, slugs);
@@ -69,7 +67,7 @@ pub fn dual_slug_pistols_with(app: &mut App, slugs: u32) -> (Entity, Entity, Ent
     app.update();
     app.update();
     let registries = app.world().resource::<Registries>().clone();
-    let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+    let armory = crate::testing::armory_of(app);
     let id = armory.defs.expect("slug pistol");
     let player = empty_handed(app);
     if slugs > 0 {
@@ -113,7 +111,7 @@ pub fn empty_handed(app: &mut App) -> Entity {
 /// that reacts to a real pickup treats this the same way.
 pub fn give_slugs(app: &mut App, actor: Entity, count: u32) {
     let registries = app.world().resource::<Registries>().clone();
-    let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+    let armory = crate::testing::armory_of(app);
     let id = armory.defs.expect("slug");
     let mut queue = CommandQueue::default();
     let mut commands = Commands::new(&mut queue, app.world_mut());

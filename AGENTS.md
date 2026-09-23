@@ -51,8 +51,8 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 crates/<name>/src/lib.rs   module-level //! docs name every public item
 crates/<name>/benches/     criterion, on realistic maps, only for hot paths
 docs/PLAN.md               the design and milestones
-docs/design/               how one subsystem works, and why: abilities, fields, lighting,
-                           minds, noise, props, remains, stealth, ui
+docs/design/               how one subsystem works, and why: abilities, fields, items,
+                           lighting, minds, noise, props, remains, stealth, ui
 docs/guide/                the mdBook; every chapter quotes examples/tutorial
 docs/reviews/              the evidence
 scripts/check-tiers.sh     the tier boundary check
@@ -60,7 +60,7 @@ scripts/check-guide.sh     the guide's includes, images and contents
 scripts/check-overview.sh  the inventory names every plugin, design doc and example
 ```
 
-The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, items and equipment, places and streaming, saving and the morgue, registries and content loading, and the controls, modals and cursors.
+The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, equipment and what a worn thing lends, places and streaming, saving and the morgue, registries and content loading, and the controls, modals and cursors.
 Each is documented in its crate's module docs and in the overview; what is missing is the page that says why it is shaped that way.
 Writing one is a welcome slice, not a prerequisite for touching the code.
 

@@ -17,6 +17,7 @@ pub mod ability;
 pub mod bump;
 pub mod combat;
 pub mod components;
+pub mod consumable;
 pub mod cue;
 pub mod doors;
 pub mod effects;
@@ -55,9 +56,10 @@ pub use combat::{
     RangedAttack, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+pub use consumable::{Consumable, ConsumablesPlugin, OnUse};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
-pub use effects::{AddEngineEffects, Cleanse, Emit, Harm, Ignite, Inflict, Mend, Pull, Shove, Teleport};
+pub use effects::{AddEngineEffects, Cleanse, Effects, Emit, Harm, Ignite, Inflict, Mend, Pull, Shove, Teleport};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::{MapFields, SavedField};
 pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
@@ -113,9 +115,10 @@ pub mod prelude {
         RangedAttack, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
+    pub use crate::consumable::{Consumable, ConsumablesPlugin, OnUse};
     pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent, Open};
-    pub use crate::effects::AddEngineEffects;
+    pub use crate::effects::{AddEngineEffects, Effects};
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
     pub use crate::fov::FovPlugin;

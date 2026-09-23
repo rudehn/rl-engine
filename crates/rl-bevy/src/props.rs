@@ -26,6 +26,7 @@ use rl_rules::prop::PropId;
 
 use crate::combat::Health;
 use crate::components::{Blocks, MyTurn, Position};
+use crate::effects::Effects;
 use crate::items::{Inventory, Tagged};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
@@ -324,8 +325,10 @@ pub fn resolve_interactions(
         if let (Some(effects), Ok(kind)) = (effects.as_deref(), props.get(intent.action.prop)) {
             let which = registries.props.get(kind.0).offers.iter().position(|o| verbs.get(&o.verb) == Some(intent.action.verb));
             let at = world.position(intent.action.prop).unwrap_or_default();
-            if let Some(which) = which {
-                land(effects.offer(kind.0, which), intent.action.prop, at, vec![intent.actor], &mut world);
+            if let Some(which) = which
+                && let Some(effects) = effects.offer(kind.0, which)
+            {
+                effects.land_on(intent.action.prop, at, vec![intent.actor], &mut world);
             }
         }
         done.write(Interacted { actor: intent.actor, prop: intent.action.prop, verb: intent.action.verb });
@@ -531,34 +534,33 @@ pub struct Triggered {
     pub at: Point,
 }
 
-/// One effect of a prop, built from what its definition said.
-struct BuiltEffect {
-    chance: u8,
-    effect: Box<dyn crate::ability::Effect>,
-}
-
 /// Every prop's effects, built once from the registry.
 ///
 /// Built on the first frame rather than in the plugin, because a game
 /// registers its own effects while the app is being built and the last of
 /// them must be in before the first prop is read.
+///
+/// The lists themselves are the engine's own
+/// [`Effects`](crate::effects::Effects), the same type an ability and a
+/// used item carry: what a trap lands and what a spell lands differ in
+/// when and on whom, never in how.
 #[derive(Resource, Default)]
 pub struct PropEffects {
     /// Per prop id, what its trigger lands.
-    triggers: Vec<Vec<BuiltEffect>>,
+    triggers: Vec<Effects>,
     /// Per prop id, per offer, what taking it up lands.
-    offers: Vec<Vec<Vec<BuiltEffect>>>,
+    offers: Vec<Vec<Effects>>,
 }
 
 impl PropEffects {
-    /// What `prop`'s trigger lands.
-    fn trigger(&self, prop: PropId) -> &[BuiltEffect] {
-        self.triggers.get(prop.index()).map(|e| e.as_slice()).unwrap_or_default()
+    /// What `prop`'s trigger lands, if it was built at all.
+    fn trigger(&self, prop: PropId) -> Option<&Effects> {
+        self.triggers.get(prop.index())
     }
 
-    /// What the `which`th offer of `prop` lands.
-    fn offer(&self, prop: PropId, which: usize) -> &[BuiltEffect] {
-        self.offers.get(prop.index()).and_then(|o| o.get(which)).map(|e| e.as_slice()).unwrap_or_default()
+    /// What the `which`th offer of `prop` lands, if it was built at all.
+    fn offer(&self, prop: PropId, which: usize) -> Option<&Effects> {
+        self.offers.get(prop.index()).and_then(|o| o.get(which))
     }
 }
 
@@ -583,15 +585,12 @@ pub fn build_prop_effects(
     let mut effects = PropEffects::default();
     let mut errors = Vec::new();
     for (_, def) in registries.props.iter() {
-        let mut build = |specs: &[rl_rules::EffectSpec], what: &str| {
-            let mut out = Vec::new();
-            for spec in specs {
-                match kinds.build(&spec.kind, &spec.args, &names) {
-                    Ok(effect) => out.push(BuiltEffect { chance: spec.chance, effect }),
-                    Err(e) => errors.push(format!("{} {what}: {e}", def.name)),
-                }
+        let mut build = |specs: &[rl_rules::EffectSpec], what: &str| match Effects::build(specs, kinds, &names) {
+            Ok(effects) => effects,
+            Err(mine) => {
+                errors.extend(mine.into_iter().map(|e| format!("{} {what}: {e}", def.name)));
+                Effects::default()
             }
-            out
         };
         effects.triggers.push(def.trigger.as_ref().map(|t| build(&t.effects, "trigger")).unwrap_or_default());
         effects.offers.push(def.offers.iter().map(|o| build(&o.effects, &format!("offer {:?}", o.verb))).collect());
@@ -600,18 +599,6 @@ pub fn build_prop_effects(
         error!("props.ron: {e}");
     }
     commands.insert_resource(effects);
-}
-
-/// Lands `effects` on whoever is at `at`, as `prop` setting them off.
-fn land(effects: &[BuiltEffect], prop: Entity, at: Point, targets: Vec<Entity>, world: &mut crate::ability::EffectWorld<'_, '_>) {
-    use rand::Rng;
-    let landing = crate::ability::Landing { user: prop, ability: None, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets };
-    for built in effects {
-        if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
-            continue;
-        }
-        built.effect.apply(&landing, world);
-    }
 }
 
 /// A prop that may go off, and how often it already has.
@@ -650,7 +637,9 @@ pub fn spring_on_entered(
                 continue;
             }
             commands.entity(prop).insert(Fired(count + 1));
-            land(effects.trigger(kind.0), prop, step.to, vec![step.actor], &mut world);
+            if let Some(effects) = effects.trigger(kind.0) {
+                effects.land_on(prop, step.to, vec![step.actor], &mut world);
+            }
             fired.write(Triggered { prop, on: TriggerOn::Entered, by: Some(step.actor), at: step.to });
         }
     }
@@ -675,7 +664,9 @@ pub fn spring_on_destroyed(
         if !def.trigger.as_ref().is_some_and(|t| t.on == TriggerOn::Destroyed) {
             continue;
         }
-        land(effects.trigger(kind.0), death.entity, death.at, Vec::new(), &mut world);
+        if let Some(effects) = effects.trigger(kind.0) {
+            effects.land_on(death.entity, death.at, Vec::new(), &mut world);
+        }
         fired.write(Triggered { prop: death.entity, on: TriggerOn::Destroyed, by: death.credit, at: death.at });
     }
 }

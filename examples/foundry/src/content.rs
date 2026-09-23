@@ -214,7 +214,7 @@ mod tests {
         let flies = |name: &str| table.iter().find(|(n, _)| *n == name).and_then(|(_, look)| *look);
         let mut app = crate::testing::headless(RunSeed(1));
         let registries = app.world().resource::<Registries>().clone();
-        let armory = crate::gear::Armory::load(&registries, app.world().resource::<Abilities>());
+        let armory = crate::testing::armory_of(&app);
         let roster = crate::droids::Roster::load(&registries);
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());

@@ -18,7 +18,7 @@ use rl_engine::rl_core::{Direction, Point, geometry};
 use std::collections::BTreeSet;
 
 use crate::decks::deck_of;
-use crate::gear::{Armory, spawn_item};
+use crate::gear::spawn_item;
 
 const PROPS_RON: &str = include_str!("../assets/props.ron");
 
@@ -199,11 +199,10 @@ pub fn place_on_arrival(mut commands: Commands, mut entered: MessageReader<Place
 pub fn fill_containers(
     mut commands: Commands,
     mut asks: MessageReader<FillContainer>,
-    registries: Res<Registries>,
-    abilities: Res<Abilities>,
+    content: crate::gear::Content,
     mut bags: Query<&mut Inventory, With<Container>>,
 ) {
-    let armory = Armory::load(&registries, &abilities);
+    let (armory, registries) = (content.armory(), content.registries());
     for ask in asks.read() {
         let Some(id) = armory.defs.id(&ask.item) else {
             warn!("props.ron asks for {:?}, which the armory has no definition for", ask.item);
@@ -211,7 +210,7 @@ pub fn fill_containers(
         };
         let mut items = Vec::new();
         for _ in 0..ask.count {
-            items.push(spawn_item(&mut commands, &armory, id, &registries));
+            items.push(spawn_item(&mut commands, &armory, id, registries));
         }
         if let Ok(mut bag) = bags.get_mut(ask.prop) {
             bag.items.extend(items);
@@ -335,7 +334,7 @@ mod tests {
             spawn_prop(&mut commands, &registries, id, at.offset(1, 0), here)
         };
         app.world_mut().flush();
-        let armory = Armory::load(&registries, app.world().resource::<Abilities>());
+        let armory = crate::testing::armory_of(&app);
         let card = {
             let id = armory.defs.id("keycard").expect("the armory has keycards");
             let mut commands = app.world_mut().commands();

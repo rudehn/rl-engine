@@ -17,7 +17,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddSound, AddVerb, PropSet, PropsPlugin, RemainsPlugin};
+use rl_engine::rl_bevy::{AddSound, AddVerb, ConsumablesPlugin, PropSet, PropsPlugin, RemainsPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, ViewSet};
 
 /// Foundry's own systems: the run's start, and every reaction a task
@@ -32,6 +32,10 @@ impl Plugin for FoundryPlugin {
         // Foundry says where one stands, what goes in a container, and that
         // a wreck is worth opening.
         app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
+        // What a stim and a medkit do when they are used. Its own plugin,
+        // because a use is not an ability: nothing here is aimed, nothing
+        // waits on a cooldown, and nothing shows on the abilities screen.
+        app.add_plugins(ConsumablesPlugin);
 
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
         app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));

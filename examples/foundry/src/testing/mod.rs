@@ -87,9 +87,29 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
 /// nothing else: it declares what `add_engine_effects` declares, which is
 /// what `main.rs` gives the real load.
 pub fn abilities(registries: &Registries) -> Abilities {
+    crate::upgrades::load_abilities(&effect_kinds(), registries)
+}
+
+/// The effect kinds a Foundry app has, for the same tests: whatever
+/// `add_engine_effects` declares, which is what `main.rs` gives the real
+/// load. The throwaway `App` is there for that and nothing else.
+pub fn effect_kinds() -> EffectKinds {
     let mut app = App::new();
     app.add_engine_effects();
-    crate::upgrades::load_abilities(app.world().resource::<EffectKinds>(), registries)
+    std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
+}
+
+/// The armory, for a test that has an `App`: the same three tables the
+/// running game loads it from.
+pub fn armory_of(app: &App) -> crate::gear::Armory {
+    let world = app.world();
+    crate::gear::Armory::load(world.resource::<Registries>(), world.resource::<Abilities>(), world.resource::<EffectKinds>())
+}
+
+/// The armory, for a test that has `Registries` and no `App` at all: the
+/// abilities and the effect kinds are built on the spot.
+pub fn armory(registries: &Registries) -> crate::gear::Armory {
+    crate::gear::Armory::load(registries, &abilities(registries), &effect_kinds())
 }
 
 /// `Struck` messages copied out as they are written, the way the engine's
