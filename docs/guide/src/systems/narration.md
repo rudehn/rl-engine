@@ -4,8 +4,9 @@
             crates/rl-ui/src/log.rs
             crates/rl-ui/src/tone.rs
             crates/rl-ui/src/lib.rs
+            crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 26737ffd -->
+     fingerprint: 0cf88113 -->
 
 # Narration
 
@@ -25,12 +26,16 @@ A game changes a phrase, silences one or asks for the unseen to be spoken by bui
 ## The model
 
 `NarrationView` is the rows a pass produced, oldest first, spoken and cleared once a frame.
-A `Said` is one thing that happened as the narrator reads it: its `words`, a `who`, a `whom` and a `what`, a `named` for a registry's word, a `detail`, an `amount`, an `at`, whether it was `seen`, and the `turn`.
+A `Said` is one thing that happened as the narrator reads it: its `words`, a `who`, a `whom` and a `what`, a `named` for a registry's word, a `detail`, an `amount`, an `at`, whether it was `seen`, whether the doer was `who_seen`, and the `turn`.
 `Words` is either a `Phrase`, one of the engine's own events, or `Own { text, tone }`, a game's line already worded.
 Two kinds rather than a phrase a game may add to, because `Phrase` enumerates what the engine raises and nothing else, and a game's line needs no entry in a table, only a place in the order.
-`Phrase` is closed for the same reason, and it is split by perspective: `YouHit`, `HitsYou` and `OthersFight` are three entries with three tones, so no grammar and no branch on who did it lives in the engine.
+`Phrase` is closed for the same reason, and it is split by perspective and by how the damage arrived: `YouHit`, `HitsYou` and `OthersFight` for a blow, `YouShoot`, `ShootsYou` and `OthersShoot` for a shot, each of the six with a twin for the one that got through nothing, so no grammar and no branch on who did it lives in the engine.
+What tells a shot from a blow is `Reach`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: only `Shot` is worded as one, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a bolt or a poison is already narrated by whatever cast or inflicted it.
 `called` is what `who`, `whom` and `what` were called when the row was made, filled in by the collector, because a row is made inside the pass and spoken after it and things change in between: what dies becomes remains and is renamed, what is thrown merges into a stack.
 `seen` is whether the player saw it, which is either that it happened to the player or that it happened where the player can see, and `Phrasebook::speak_unseen` decides whether an unseen row is spoken at all.
+`who_seen` is the narrower fact beside it, whether the doer's own cell was in the player's sight, and `render` takes as an argument whether to honour it, since what to do about an unseen doer is the presenter's setting rather than the row's business.
+A doer that may not be named is `UNSEEN`, the one word `something`, and `speak` names it anyway while `speak_unseen` is on, because a game that asked for the unseen to be narrated asked for it named.
+The two were one field until a shot out of an unlit room named the shooter, a thing the player had never laid eyes on: being shot from the dark is always worth telling you, which is what `seen` answers, and that answer is not permission to say who fired.
 `Tell` is a game's own line told in its place among what the turns did: a template, a tone, and up to three entities for its placeholders, with `by`, `to` and `about` to name them.
 It is written from inside a pass, usually in `TurnSet::React`, and the collector reads it with that pass's events and after them, so it lands in the log below what it answers and above whatever the next actor does.
 A line written outside the turns, the one a run opens with or a key refused before any turn is spent, has no pass to wait for and goes to the `MessageLog` directly.
@@ -81,7 +86,7 @@ The order is the part worth taking, and it is the part a game cannot easily get 
 A collector in the drawing phase sees a whole frame's buffers at once and cannot know which blow followed which cast, which is the bug this exists to make impossible.
 Within a pass the order is by kind and it is deliberate: a use before the blows it landed, blows before the deaths they caused, and a game's `Tell`s last, since they answer what the pass did.
 The one exception is a notice by whoever holds the turn, which is read first, because that was rolled as the actor looked round before it did anything; a notice by anyone else came of what the turn did and keeps its place after the blows.
-What the engine decides about a row is what it can know: who, to whom, with what, how much, where, and whether the player was in a position to see it.
+What the engine decides about a row is what it can know: who, to whom, with what, how much, where, whether the player was in a position to see it, and whether whoever did it was in sight to be named.
 What it cannot know is a game's line, so `Tell` carries no tone the engine picked and is always spoken: the game chose to say it, so whether the player saw who it names is the game's to have weighed.
 Between the two sits `ViewSet::Annotate`, where a game may edit or remove rows before they are spoken, and behind both sits the view itself, which a game may read and speak in its own words with no presenter at all.
 What the engine does not get is grammar: no pluralisation of a verb, no agreement, no articles worked out from a name, and no second language.
