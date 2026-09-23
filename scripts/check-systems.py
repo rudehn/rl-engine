@@ -10,9 +10,10 @@ Three checks, in the order a failure is cheapest to fix:
   2. every listed file is unchanged since the page was last confirmed,
   3. every `impl Plugin for X` in `crates/` is claimed by exactly one page.
 
-Check 3 is a warning until the reference covers every system, because a
-check that fails on every build is a check somebody comments out. The
-commit that finishes the last page turns COVERAGE_IS_FATAL on.
+Check 3 was a warning while the reference was incomplete, because a check
+that fails on every build is a check somebody comments out. It went fatal
+in the commit that wrote the last page: every system has one now, so a
+plugin that lands with no page fails the build.
 
 What none of them can check is whether a sentence is true. Check 2 is the
 nearest thing there is: it cannot read the page, but it can say that the
@@ -29,9 +30,9 @@ import sys
 SYSTEMS = pathlib.Path("docs/guide/src/systems")
 CRATES = pathlib.Path("crates")
 
-# Coverage is advisory until every system has a page. Task 12 of the plan
-# that introduced this flips it, in the commit that writes the last one.
-COVERAGE_IS_FATAL = False
+# Every system has a page, so a plugin that lands without one fails the
+# build. This went True in the commit that wrote the last page.
+COVERAGE_IS_FATAL = True
 
 MANIFEST = re.compile(r"<!-- documents:\n(?P<body>.*?)-->", re.S)
 FIELDS = ("plugins", "files", "fingerprint")

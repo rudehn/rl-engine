@@ -272,6 +272,7 @@ The window opens above the others without taking focus, and the screen must be u
 [**docs/**](docs/) is the index of all of it. The short version:
 
 - **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable chapters, from a map on screen to an action of your own. Start here, at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/) for the sidebar and the search. Every chapter is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
+- **[The systems reference](docs/guide/src/systems/)** is the same book's page per subsystem, checked against the code it documents: what it is, its plugins, and where to read the source.
 - [**docs/OVERVIEW.md**](docs/OVERVIEW.md) is the inventory of what exists and what is not built yet, kept current, with a table of every plugin and every panel.
 - [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for abilities, fire and gas, lighting, minds, noise, props, remains, stealth and the UI.
 - [**docs/PLAN.md**](docs/PLAN.md) is the design: what was decided, why, and which milestone each piece lands in.
