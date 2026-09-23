@@ -51,6 +51,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 24 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
 | 25 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | 26 | Corsair's rum is an ability, and should be a use | 4 | low | low |
+| 27 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -154,6 +155,17 @@ The five items that opened this section were built in the six stages of `docs/de
 - **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
   The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
   Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
+
+- **The resolvers in `ResolveSet::Act` are unordered, and every game's ambiguity test pays for it.**
+  Nine systems resolve in that set and nearly all of them write `DamageEvent`, `Position`, `Stack`, `Occupancy` and the cue queue, with nothing declaring an order between them.
+  It is safe: `Resolution::claim` spends one actor's one turn once a pass, so in the pass one resolver did something every other resolver found nobody to resolve for, and their relative order is unobservable.
+  What it costs is that the safety has to be restated per pair and per game: twenty of the forty entries in `examples/foundry/src/plugin/ambiguity.rs` say only that, the count is quadratic in resolvers, and the second game to grow the same test pays it again from scratch.
+  Note that the engine already ordered the part of that set where order *is* observable: `LandSet` chains abilities, throws and shots, because several landings can land in one pass and the first hit to take a target to nothing is credited with the kill.
+  The fix is the same shape: an `ActSet` in `CorePlugin`, chained, one slot per resolver family and a `Game` slot at the end, as `DecideSet` already does, with each plugin putting its resolver in its own slot.
+  It costs no parallelism now that the `Turn` schedule is single-threaded, and the order between mutually exclusive resolvers is arbitrary, which `LandSet`'s own doc already concedes for landings.
+  What it loses is a forcing function: today a new resolver fails Foundry's test and somebody has to write down why it is safe, which is how `consumable::land_uses` was audited the day it was added; under a chain it slots in silently, and a resolver that quietly does not claim gets no prompt.
+  Worth doing when either a resolver appears that genuinely can co-occur with another in one pass, or a second game grows an ambiguity test; not worth doing for tidiness alone.
+  Rejected while writing this down: declaring the resolvers `ambiguous_with` each other once in the engine. It would silence every game's entries without inventing an order, but it suppresses rather than states, and it would hide the pair that one day really does conflict.
 
 - **Corsair's rum is an ability, and should be a use.**
   A bottle of rum `Grants` the `swig` it is drunk through, with `costs: [Charge(1)]` spending the bottle, which is the shape Foundry's medical pair had before `OnUse` existed: nothing about a swig is aimed or waits on a cooldown, and carrying a bottle puts an entry on the abilities screen.
