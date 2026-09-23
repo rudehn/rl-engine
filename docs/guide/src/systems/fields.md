@@ -54,7 +54,7 @@ Gas at or above its `veils_at` is written into the map's veil with `set_veil`, a
 
 ## Using it
 
-Gases are content, and a game names them in `Registries::gases` with the five fields the engine acts on: two rates, a threshold, whether it catches, and what breathing it does.
+Gases are content, and a game names them in `Registries::gases` with the five fields the engine acts on: two rates, a threshold, whether it catches, and what breathing it does; Delve names two.
 
 <!-- include: ../../../../examples/delve/src/main.rs:gases -->
 ```rust,no_run
@@ -67,7 +67,7 @@ Gases are content, and a game names them in `Registries::gases` with the five fi
     .unwrap();
 ```
 
-Fire takes one resource before play begins, saying what its flames do beyond burning.
+Fire takes one resource before play begins, saying what its flames do beyond burning, and Delve's is one line.
 
 <!-- include: ../../../../examples/delve/src/main.rs:fire_rules -->
 ```rust,no_run

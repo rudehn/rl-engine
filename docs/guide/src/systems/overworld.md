@@ -29,7 +29,7 @@ The screen reads `WorldRes`, `WorldMap` and `Knowledge`, so it belongs to a game
 ## The model
 
 `OverworldScreen` is all the state the screen keeps, one `selected`, an index into the discovered-site list.
-Whether the screen is open is deliberately not in it: that is on the shared `Modals` stack `controls.md` describes, which is what stops this screen and a game's own from both believing they own the arrow keys.
+Whether the screen is open is deliberately not in it: that is on the shared `Modals` stack [Controls, modals and cursors](controls.md) describes, which is what stops this screen and a game's own from both believing they own the arrow keys.
 `overworld_modal(&modals)` is its `ModalId` and panics when the plugin was not added, and `overworld_open` is the run condition a game gates its own input on.
 `OverworldKeys` is `toggle`, `close`, `prev`, `next` and `go`, defaulting to `m`, escape, the two horizontal arrows and enter.
 `handle_keys` toggles the screen only while it is top of the stack or nothing at all is open, so the map key does not open the map from inside an inventory, and it reads every other key only while the screen is top.
@@ -96,13 +96,13 @@ The table of how each band looks is the part of turning the screen on that the p
 The overworld is for looking: a picture of the world graph at region scale, and a list of the places the player has found in it.
 It is not travel, not a second map and not a record of anything.
 It writes no `Position`, switches no map and asks for no chunk; the one thing it writes is a `PortalRequest`, and a game that reads no such message is left with a screen that draws and does nothing.
-That is the seam with places and streaming: `places.md` owns which map is current, which window of regions is loaded and what a warp does, and the overworld reads the outcome rather than taking any part in it.
+That is the seam with places and streaming: [Places and streaming](places.md) owns which map is current, which window of regions is loaded and what a warp does, and the overworld reads the outcome rather than taking any part in it.
 The regions the screen draws are the same regions the window is measured in, and drawing one neither loads it nor keeps it loaded, since a band, a river and a road belong to the world graph and are known without generating a tile.
 So the screen shows the whole world while the game holds a few regions of it, which is the reason to have it at all.
 The engine decides which keys the screen answers, that it answers them only while it is the top modal, and that choosing a site is a request rather than a move.
 The game decides what a band looks like, what a site is, what a portal costs, whether it is refused, and whether there is a portal to ask for.
 The fog is the engine's, but it is filled by sight rather than by this screen: a region is touched when a revealer sees a tile in it and a site is discovered the same way, so the map is a record of where the player has been rather than something handed out at the start.
-Colours here are a `Color` in a resource rather than a `ToneId` in a palette, unlike the widgets `panels.md` covers, because this is a screen of its own and not a widget a game composes; a game that wants other colours replaces `OverworldStyle`.
+Colours here are a `Color` in a resource rather than a `ToneId` in a palette, unlike the widgets [Panels](panels.md) covers, because this is a screen of its own and not a widget a game composes; a game that wants other colours replaces `OverworldStyle`.
 
 ## Where it lives
 
