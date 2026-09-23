@@ -1,9 +1,11 @@
 // Corsair's abilities: what a pirate calls on besides a cutlass.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:        unique; the player knows broadside, grapnel and plunder of itself and the swig
-//                from any bottle of rum it carries (`items.ron` grants it), `1` to `4` aim what
-//                is known in this order, and a monster names the ones it knows in `monsters.ron`
+//   name:        unique; the player knows broadside, grapnel and plunder of itself, `1` to `4`
+//                aim what is known in this order, and a monster names the ones it knows in
+//                `monsters.ron`. What a bottle of rum does is not here: a thing that is used
+//                and spent carries its own `on_use` effects in `items.ron`, and only what is
+//                aimed or waits on a cooldown belongs in this file
 //   description: optional; what it is, in a sentence, for the list on `a`
 //   look:        optional; (glyph:, color: (r:, g:, b:)), what flies and bursts when it
 //                is used; without one the renderer's plain look is drawn
@@ -14,8 +16,8 @@
 //   requires:  optional; Has(status) | Lacks(status) | Wielding(tag) |
 //              InSlot(slot, tag) | Above(stat, n)
 //   costs:     optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n),
-//              where Charge is spent from the item that grants the ability, the bottle
-//              for the swig, and a tag is one from `items.ron`, "powder" or "rum"
+//              where Charge is spent from the item that grants the ability and a tag is
+//              one from `items.ron`, "powder" or "rum"
 //   time:      optional; hundredths of a step the turn costs (default 100)
 //   cooldown:  optional; hundredths before it may be used again, from the
 //              moment of use (default 0)
@@ -43,20 +45,6 @@
         mode: Bolt(range: 7),
         cooldown: 300,
         effects: [(kind: "Pull", args: (cells: 3))],
-    ),
-    (
-        name: "swig",
-        description: "A pull of rum. It closes a wound, clears the venom and the bleeding, and puts heart in you for a while. Costs the bottle.",
-        look: (glyph: '!', color: (r: 230, g: 170, b: 60)),
-        aim: SelfOnly,
-        mode: Own,
-        costs: [Charge(1)],
-        effects: [
-            (kind: "Mend", args: (kind: "care", roll: "2d4")),
-            (kind: "Cleanse", args: (status: "bleeding")),
-            (kind: "Cleanse", args: (status: "venom")),
-            (kind: "Inflict", args: (status: "hearty", turns: 10)),
-        ],
     ),
     (
         name: "plunder",

@@ -8,9 +8,11 @@
 //! item spawned with them is described for free, in the registries' names,
 //! and a game says nothing twice.
 //!
-//! What an item does when used is the ability it [`Grants`], described in
-//! the ability's own words and counted in its charges, when the game
-//! inserted [`Abilities`]. Anything else an item means is a [`Facet`] the
+//! What an item does when used is one of two things, and the row carries
+//! both: the ability it [`Grants`], described in the ability's own words and
+//! counted in its charges when the game inserted [`Abilities`], or its own
+//! [`OnUse`] effects, described in theirs. The first is aimed and known; the
+//! second simply happens. Anything else an item means is a [`Facet`] the
 //! game pushes in [`ViewSet::Annotate`](crate::ViewSet), and the panel
 //! prints it under the row.
 
@@ -73,6 +75,14 @@ pub struct ItemRow {
     pub shot: Option<Strike>,
     /// The extra rolls every hit carries while it is worn.
     pub strikes: Vec<Strike>,
+    /// What using it does, one line per effect that has something to say,
+    /// for a thing that is used rather than one that lends an ability.
+    /// Empty for everything else, which is most of a bag, and empty too for
+    /// a thing whose effects say nothing of themselves.
+    pub used: Vec<String>,
+    /// Whether it does anything at all when used, which is not the same as
+    /// having something to say about it.
+    pub uses_something: bool,
     /// What it does to registered stats while worn, by the stat's name.
     pub bestows: Vec<(String, Op)>,
     /// What it counts as, by the tags' registered names.
@@ -93,6 +103,16 @@ impl ItemRow {
     /// Whether it can be put on.
     pub fn wearable(&self) -> bool {
         !self.goes_on.is_empty()
+    }
+
+    /// Whether using it does something of its own, as against lending an
+    /// ability, which [`lends`](Self::lends) carries.
+    ///
+    /// A thing whose effects all keep quiet about themselves is still used:
+    /// the row reads it off the component, not off the description, so a
+    /// game that wrote a terse effect does not lose the key that uses it.
+    pub fn usable(&self) -> bool {
+        self.uses_something
     }
 }
 
@@ -139,8 +159,9 @@ type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
-/// What an item does when used: what it lends, and how many times.
-type Lends = (Option<&'static Grants>, Option<&'static Charges>);
+/// What an item does when used: what it lends, what it does itself, and
+/// how many times either.
+type Lends = (Option<&'static Grants>, Option<&'static OnUse>, Option<&'static Charges>);
 
 /// Fills [`InventoryView`] from the player's bag.
 pub fn collect_inventory(
@@ -160,7 +181,8 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (grants, charges))) = items.get(item) else {
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (grants, on_use, charges))) = items.get(item)
+        else {
             continue;
         };
         let slot = worn.and_then(|w| w.slot_of(item));
@@ -181,8 +203,17 @@ pub fn collect_inventory(
                 .collect(),
             _ => Vec::new(),
         };
+        // What it does itself, in the effects' own words: the same lines the
+        // ability list shows under an ability, since they are the same
+        // effects described by the same code.
+        let used = match (on_use, registries) {
+            (Some(on_use), Some(registries)) => on_use.0.describe(registries),
+            _ => Vec::new(),
+        };
         view.rows.push(ItemRow {
             entity: item,
+            used,
+            uses_something: on_use.is_some(),
             label: name.map(|n| n.as_str().to_string()).unwrap_or_default(),
             glyph: glyph.copied(),
             count: stack.map_or(1, |s| s.count),

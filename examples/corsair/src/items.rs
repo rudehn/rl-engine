@@ -53,6 +53,10 @@ pub struct ItemDef {
     pub thrown: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
     #[serde(default)]
     pub grants: Vec<NameRef<AbilityDef>>,
+    /// What using it lands on whoever drank it, where they stand, for a
+    /// thing that is used and spent rather than one that lends an ability.
+    #[serde(default)]
+    pub on_use: Vec<rl_engine::rl_rules::EffectSpec>,
     #[serde(default)]
     pub stack: bool,
     #[serde(default)]
@@ -98,6 +102,9 @@ pub struct Armory {
     pub fist: DamageKindId,
     shapes: Vec<Option<EquipShape>>,
     item_tags: Vec<Vec<TagId>>,
+    /// What using each definition lands, built once and shared by every item
+    /// spawned from it: a boxed effect is no cheaper to parse twice.
+    on_use: Vec<Option<std::sync::Arc<Effects>>>,
     table: BandedTable<Id<ItemDef>>,
     seed: RunSeed,
     home: Point,
@@ -107,7 +114,7 @@ pub struct Armory {
 impl Armory {
     /// Loads the items and their affixes against `registries` and the
     /// abilities a bottle lends; panics with every problem listed.
-    pub fn load(seed: RunSeed, home: Point, registries: &Registries, abilities: &Abilities) -> Self {
+    pub fn load(seed: RunSeed, home: Point, registries: &Registries, abilities: &Abilities, kinds: &EffectKinds) -> Self {
         let defs: Registry<ItemDef> = registries.names().with("ability", abilities.defs()).load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(|d, _| {
             if d.ranged.as_ref().is_some_and(|(range, _, _)| *range < 2) {
@@ -132,7 +139,19 @@ impl Armory {
         let mut shapes = Vec::new();
         let mut item_tags = Vec::new();
         let mut table = BandedTable::default();
+        let mut on_use = Vec::new();
+        let mut broken = Vec::new();
         for (id, d) in defs.iter() {
+            on_use.push(match d.on_use.is_empty() {
+                true => None,
+                false => match Effects::build(&d.on_use, kinds, &registries.names()) {
+                    Ok(effects) => Some(std::sync::Arc::new(effects)),
+                    Err(each) => {
+                        broken.extend(each.into_iter().map(|e| format!("{}: on_use: {e}", d.name)));
+                        None
+                    }
+                },
+            });
             item_tags.push(d.tags.iter().map(|t| t.id()).collect::<Vec<_>>());
             shapes.push(d.slot.map(|s| {
                 let mut shape = EquipShape::in_slot(s.id());
@@ -145,6 +164,7 @@ impl Armory {
                 table.push(BandedEntry::new(id).bands(lo, hi).weight(w));
             }
         }
+        assert!(broken.is_empty(), "assets/items.ron: {}", broken.join("; "));
         Self {
             armor_stat: registries.stats.expect("armor"),
             weapon_tag: registries.tags.expect("weapon"),
@@ -155,6 +175,7 @@ impl Armory {
             affixes,
             shapes,
             item_tags,
+            on_use,
             table,
             seed,
             home,
@@ -247,9 +268,13 @@ impl Armory {
         if !tags.is_empty() {
             e.insert(Tagged(tags.to_vec()));
         }
-        // What using it does: the ability it lends, spent from the stack.
+        // What using it does: the ability it lends, spent from the stack, or
+        // what it does itself, which is what a bottle does.
         if !d.grants.is_empty() {
             e.insert(Grants(d.grants.iter().map(|g| g.id()).collect()));
+        }
+        if let Some(effects) = self.on_use.get(id.index()).and_then(|e| e.clone()) {
+            e.insert((OnUse(effects), Consumable));
         }
         if let Some(shape) = self.shape(id) {
             let rule = self.rule(id);

@@ -24,6 +24,7 @@ pub fn headless(seed: RunSeed, resume: bool, dir: &std::path::Path) -> App {
         StreamingPlugin,
         FactsPlugin,
         AbilitiesPlugin,
+        ConsumablesPlugin,
     ));
     app.add_engine_effects().add_effect::<crate::abilities::Plunder>();
     app.insert_resource(Seed(seed))

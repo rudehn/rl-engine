@@ -7,7 +7,8 @@
 //! using are the engine's own item actions, so the screen writes their
 //! intents itself; throwing opens the targeting cursor through
 //! [`AimThrow`], the way a game's throw key would. A game binds nothing.
-//! Using an item that lends an ability uses the ability: on the spot when
+//! Using an item that does something itself uses it where it stands, and
+//! using one that lends an ability uses the ability: on the spot when
 //! it needs no aim, through the targeting cursor by [`AimAt`] when it does.
 //! Nothing else is used from here; an item a game answers itself from
 //! [`ItemEvent::Used`] is used by the game's own key, since the bag cannot
@@ -240,19 +241,20 @@ pub fn inventory_keys(
         intents.drops.write(Intent::new(user, DropItem(item)));
         true
     } else if binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm) {
-        // Only what lends an ability is used from here: using anything else
-        // spent a turn on nothing, and the footer never offers it.
-        match row.lends.first() {
+        // What lends an ability, or what does something itself. Anything
+        // else is not used from here: it would spend a turn on nothing, and
+        // the footer never offers it.
+        match (row.lends.first(), row.usable()) {
             // An aimed ability wants the cursor; the bag closes for it.
-            Some(lent) if lent.aimed => {
+            (Some(lent), _) if lent.aimed => {
                 intents.aims.write(AimAt { user, ability: lent.ability });
                 true
             }
-            Some(_) => {
+            (Some(_), _) | (None, true) => {
                 intents.uses.write(Intent::new(user, UseItem(item)));
                 true
             }
-            None => false,
+            (None, false) => false,
         }
     } else if binds.throw.just_pressed(input) && row.throw_range.is_some() {
         // The bag closes and the targeting cursor opens in its place.
@@ -282,7 +284,7 @@ fn hints(row: Option<&ItemRow>, binds: &InventoryKeys, confirm: String, close: S
             keys.push(format!("{} wear", binds.wear.label()));
         }
         keys.push(format!("{} drop", binds.drop.label()));
-        if !row.lends.is_empty() {
+        if !row.lends.is_empty() || row.usable() {
             keys.push(format!("{confirm} use"));
         }
         if row.throw_range.is_some() {
@@ -330,6 +332,9 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         say(format!("worn on the {}", row.slot_name), Tones::MUTED);
     } else if row.wearable() {
         say(format!("goes on the {}", row.goes_on.join(" or the ")), Tones::MUTED);
+    }
+    for what in &row.used {
+        say(format!("use: {what}"), Tones::TEXT);
     }
     for lent in &row.lends {
         say(format!("use: {}", lent.name), Tones::TEXT);
@@ -611,5 +616,41 @@ mod tests {
         stage.press(KeyCode::KeyU);
         let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
         assert_eq!(uses, vec![potions], "one that needs no aim is used where the player stands");
+    }
+
+    /// A thing that does something itself is offered and described from its
+    /// own effects, with no ability anywhere: no registry, no `Known`, and
+    /// the same `use:` line the ability path writes, because both ask the
+    /// same list what it does.
+    #[test]
+    fn a_thing_that_does_something_itself_is_offered_and_described_from_its_own_effects() {
+        let mut stage = Stage::new_with(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"), |app| {
+            app.add_engine_effects();
+        })
+        .screen(52, 14);
+        let player = stage.player;
+        let effects = {
+            let specs = vec![rl_rules::EffectSpec {
+                kind: "Mend".into(),
+                chance: 100,
+                args: rl_rules::ability::parse_args(r#"(kind: "kinetic", roll: "5")"#).expect("the args parse"),
+            }];
+            let registries = stage.app.world().resource::<Registries>().clone();
+            let kinds = stage.app.world().resource::<EffectKinds>();
+            rl_bevy::Effects::build(&specs, kinds, &registries.names()).expect("the mend builds")
+        };
+        let poultice =
+            stage.app.world_mut().spawn((Item, Name::new("poultice"), OnUse(std::sync::Arc::new(effects)), Consumable, Stack { key: 1, count: 2 })).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![poultice] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert_eq!(inside(&stage, 1), "2 poultices");
+        assert_eq!(inside(&stage, 3), "use: mends 5 kinetic", "described by what it does, in the registries' names");
+        assert!(stage.app.world().resource::<InventoryView>().rows[0].usable(), "and the row knows it is used");
+
+        stage.press(KeyCode::KeyU);
+        let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
+        assert_eq!(uses, vec![poultice], "and the use key uses it, with no ability to lend it");
     }
 }

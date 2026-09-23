@@ -175,7 +175,7 @@ It has islands from the world graph, ports with huts, a bestiary and an armory i
 Loot lies on the sand and in the pockets of the dead, with affixes and enchant levels from RON.
 A pistol shoots along a clear line of fire, venom and bleeding tick by the turn, and rum cures them.
 Smugglers' caves under the coves lead down to a treasure vault, and a ledger of tasks from RON ends in a victory.
-A broadside that spends powder, a grapnel that hauls a foe in, a swig of rum, and a shakedown that spills a purse at a foe's feet are abilities in `assets/abilities.ron`; the last is the one effect Corsair adds to the engine's seven, in `src/abilities.rs`, and cutthroats throw the grapnel back.
+A broadside that spends powder, a grapnel that hauls a foe in, and a shakedown that spills a purse at a foe's feet are abilities in `assets/abilities.ron`, while a pull of rum is what the bottle itself does, in `assets/items.ron`; the last is the one effect Corsair adds to the engine's seven, in `src/abilities.rs`, and cutthroats throw the grapnel back.
 In the caves the smugglers have to notice a quiet player instead of seeing it at once, and the rail down the right marks which of them has.
 A message log, a sea chest to equip from, and a world map with a portal picker round it out.
 A game on this engine looks like that.
@@ -186,7 +186,7 @@ cargo run -p corsair -- --continue   # resume the saved run
 cargo run -p corsair -- --balance    # the spawn table's threat by band
 ```
 
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `e` to put on what is underfoot, `c` to shut a door, `>` `<` or Enter to use a cave mouth or stairs, `f` to aim the pistol, `r` to aim a throwing knife, `1` to `4` to aim a broadside, a grapnel, a swig or a shakedown, `a` to list them, `x` to look, `tab` to pick out what is in sight, `p` for the ship's log, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `@` for the ship's articles, Escape for the menu, `S` to save, `q` to save and quit, and `?` for all of them on one screen.
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `e` to put on what is underfoot, `c` to shut a door, `>` `<` or Enter to use a cave mouth or stairs, `f` to aim the pistol, `r` to aim a throwing knife, `1` to `3` to aim a broadside, a grapnel or a shakedown, `u` in the sea chest to drink a bottle, `a` to list them, `x` to look, `tab` to pick out what is in sight, `p` for the ship's log, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `@` for the ship's articles, Escape for the menu, `S` to save, `q` to save and quit, and `?` for all of them on one screen.
 
 ### The Hollow Whale, a dungeon delve
 

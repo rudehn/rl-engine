@@ -40,7 +40,7 @@ Before this slice, `ability.rs` had a private `Built { chance, effect }` with a 
 A third carrier would have been a third copy.
 
 `Effects` is that list, once: built from `&[EffectSpec]` against the registered kinds, reporting every spec that would not build rather than the first, and landed either onto a full `Landing` (an ability, which knows its own footprint and flight) or onto one cell through `land_on` (a prop or a used thing, which has neither).
-`describe` moved with it, so a screen can say what a list does without knowing what carries it.
+`describe` moved with it, so a screen can say what a list does without knowing what carries it: the bag screen's `use:` line is now written the same way for an ability's description and for a used thing's effects, and `ItemRow::usable` is what the use key and the footer ask instead of "does it lend an ability".
 
 Two consequences worth stating:
 

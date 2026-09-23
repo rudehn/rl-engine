@@ -135,6 +135,8 @@ fn main() -> AppExit {
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("Corsair", COLS, ROWS).font(FONT).map(screen.map))
         .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin))
+        // What a bottle of rum does when it is drunk.
+        .add_plugins(ConsumablesPlugin)
         // The engine's seven effects, and the one Corsair adds.
         .add_engine_effects()
         .add_effect::<abilities::Plunder>()
@@ -157,7 +159,7 @@ fn main() -> AppExit {
             TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
             AbilityPanel::new(screen.abilities).title("What you can call on").called("abilities"),
             // The sea chest: the bag, run by the engine end to end. `i` opens
-            // it, and a bottle is described by the swig it lends.
+            // it, and a bottle is described by what a pull of it does.
             InventoryPanel::new(screen.chest).title("Sea chest").called("sea chest").empty("Nothing but lint."),
             // Every key `input::declare_controls` and the engine's screens
             // declare, on one screen, with the hint that opens it in the

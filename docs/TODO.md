@@ -48,8 +48,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 21 | A place for a miss | 3 | low | low |
 | 22 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
 | 23 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 24 | Corsair's rum is an ability, and should be a use | 4 | low | low |
-| 25 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 24 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -68,7 +67,7 @@ Why the order that is left, in three moves:
 3. **Then 11 to 13**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
 
-Items 14 to 23 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 24 waits on a game that actually wants the tactics it would add, and items 25 and 26 wait on a second game asking for them.
+Items 14 to 22 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 23 waits on a game that actually wants the tactics it would add, and item 24 waits on a second game asking for it.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
@@ -158,11 +157,6 @@ The five items that opened this section were built in the six stages of `docs/de
   What it loses is a forcing function: today a new resolver fails Foundry's test and somebody has to write down why it is safe, which is how `consumable::land_uses` was audited the day it was added; under a chain it slots in silently, and a resolver that quietly does not claim gets no prompt.
   Worth doing when either a resolver appears that genuinely can co-occur with another in one pass, or a second game grows an ambiguity test; not worth doing for tidiness alone.
   Rejected while writing this down: declaring the resolvers `ambiguous_with` each other once in the engine. It would silence every game's entries without inventing an order, but it suppresses rather than states, and it would hide the pair that one day really does conflict.
-
-- **Corsair's rum is an ability, and should be a use.**
-  A bottle of rum `Grants` the `swig` it is drunk through, with `costs: [Charge(1)]` spending the bottle, which is the shape Foundry's medical pair had before `OnUse` existed: nothing about a swig is aimed or waits on a cooldown, and carrying a bottle puts an entry on the abilities screen.
-  `docs/design/items.md` section 1 is the line it falls on the wrong side of, and Corsair is the second game that would prove the seam.
-  The move is `on_use` in `items.ron`, the `Consumable` marker on the spawn, and `swig` out of `abilities.ron`; watch for the enchantment path, since Corsair's items carry an `ItemKind` and a rolled name that Foundry's do not.
 
 ## 5. Documentation
 
