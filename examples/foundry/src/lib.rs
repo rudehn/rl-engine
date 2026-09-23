@@ -23,4 +23,5 @@ pub mod plugin;
 pub mod props;
 pub mod run;
 pub mod testing;
+pub mod title;
 pub mod upgrades;

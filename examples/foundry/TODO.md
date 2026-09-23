@@ -1,3 +1,3 @@
 light + stealth
 enemies killing each other
-Main menu (new game, continue)
+Continue on the main menu: needs a save, which Foundry has none of (the title screen and new game are in)

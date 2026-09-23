@@ -36,6 +36,10 @@ impl Plugin for FoundryPlugin {
         // because a use is not an ability: nothing here is aimed, nothing
         // waits on a cooldown, and nothing shows on the abilities screen.
         app.add_plugins(ConsumablesPlugin);
+        // The screen before there is a world: it holds `run::start` back
+        // until the player picks a run, and paints the terminal itself
+        // while it does.
+        app.add_plugins(crate::title::TitlePlugin);
 
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
         app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));

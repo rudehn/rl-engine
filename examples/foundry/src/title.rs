@@ -1,0 +1,599 @@
+//! The title screen: the foundry's floor, seen from the gantry the
+//! commando drops in on, and what the player may do about it.
+//!
+//! Foundry's own screen, not the engine's. The engine owns the menu a run
+//! is paused and ended on (`GameMenuPanel`), which is a list over a world
+//! that already exists; this is the one before there is a world at all, so
+//! it draws the whole terminal itself and holds the run back until the
+//! player asks for it.
+//!
+//! **How it holds the run back.** The engine runs `NewRun` at startup, and
+//! Foundry's `run::start` is in it. While [`Title::up`] is true that system
+//! returns at once, so no `WorldMap` is inserted, the engine's state stays
+//! `Idle` and nothing else runs either. Picking a run lowers the flag and
+//! runs `NewRun` again, which is the same door the engine's own restart
+//! uses. Nothing in the engine had to learn what a title screen is.
+//!
+//! **The art.** Hand-drawn, stamped in layers back to front: the far wall
+//! and its machine towers, the furnace and its glow, the gantry the scene
+//! is watched from, the conveyor and what is on it, then the title and the
+//! menu over all of it. `art` holds the stamps and `paint` the order, so a
+//! change to the picture is a change to one const. Three things move, and
+//! only three, because a title screen that never settles is tiring to look
+//! at: the furnace breathes, its sparks rise, and the line carries chassis
+//! to the right.
+
+use bevy::prelude::*;
+use rl_engine::rl_bevy::EngineState;
+use rl_engine::rl_bevy::plugin::{EngineSet, NewRun};
+use rl_engine::rl_render::{Cell, Terminal};
+use rl_engine::rl_ui::{Palette, Tones};
+
+/// The title screen's state: whether it is up, and the row picked out.
+///
+/// Up at startup and down for the rest of the process: a run that ends
+/// goes to the engine's own end-of-run menu, which offers another run
+/// directly, so coming back here would be a second way to say the same
+/// thing.
+#[derive(Resource, Debug, Clone)]
+pub struct Title {
+    /// Whether the screen is up and holding the run back.
+    pub up: bool,
+    /// Which row is picked out.
+    pub picked: usize,
+}
+
+impl Default for Title {
+    fn default() -> Self {
+        Self { up: true, picked: 0 }
+    }
+}
+
+/// What the title screen offers.
+///
+/// No "continue": Foundry keeps no save yet, and a row that cannot work is
+/// worse than a row that is not there. When it does, it goes here and
+/// `pick` gains one arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Choice {
+    /// Drop in: a fresh seed, deck one.
+    NewRun,
+    /// Leave.
+    Quit,
+}
+
+impl Choice {
+    /// Every row, in the order they are drawn.
+    pub fn all() -> [Choice; 2] {
+        [Choice::NewRun, Choice::Quit]
+    }
+
+    /// What the row says, and the line under it.
+    fn label(self) -> (&'static str, &'static str) {
+        match self {
+            Choice::NewRun => ("Drop in", "a fresh seed, deck one, four charges to set"),
+            Choice::Quit => ("Walk away", "the foundry keeps running without you"),
+        }
+    }
+}
+
+/// Foundry's title screen: the picture, the keys and the hold on the run.
+pub struct TitlePlugin;
+
+impl Plugin for TitlePlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<Title>()
+            // Before the engine's input phase, and both of them before it:
+            // that phase holds the exclusive key handlers, which conflict
+            // with everything in the schedule they are not ordered against.
+            // Outside every play-gated set, because the whole point of this
+            // screen is the time before a run exists.
+            //
+            // The drawing wants a terminal, which a headless run has not
+            // got: the keys and the hold on the run are what a test drives,
+            // and the picture is what a window shows.
+            .add_systems(Update, (read_title_keys, draw_title.run_if(resource_exists::<Terminal>)).chain().before(EngineSet::Input).run_if(title_is_up));
+    }
+}
+
+/// Whether the title screen is up, for the systems that only run while it
+/// is.
+pub fn title_is_up(title: Option<Res<Title>>, state: Res<State<EngineState>>) -> bool {
+    title.is_some_and(|t| t.up) && *state.get() == EngineState::Idle
+}
+
+/// Moves the picked row, and answers Enter.
+///
+/// An ordinary system, not an exclusive one: starting the run means running
+/// the `NewRun` schedule, which wants the whole world, and a system that
+/// takes the whole world conflicts with every other system in its schedule.
+/// The world work is queued as a command instead, which runs with exclusive
+/// access at the next sync point in the same frame.
+pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>, mut commands: Commands, mut exit: MessageWriter<AppExit>) {
+    let up = keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyK);
+    let down = keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyJ);
+    let take = keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter) || keys.just_pressed(KeyCode::Space);
+    let leave = keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::KeyQ);
+    let rows = Choice::all().len();
+    if up {
+        title.picked = (title.picked + rows - 1) % rows;
+    }
+    if down {
+        title.picked = (title.picked + 1) % rows;
+    }
+    if leave {
+        exit.write(AppExit::Success);
+        return;
+    }
+    if !take {
+        return;
+    }
+    match Choice::all()[title.picked.min(rows - 1)] {
+        Choice::NewRun => {
+            title.up = false;
+            commands.queue(begin);
+        }
+        Choice::Quit => {
+            exit.write(AppExit::Success);
+        }
+    }
+}
+
+/// Starts the run the player asked for.
+///
+/// `NewRun` rather than a `Restart`: a restart tears a run down and waits
+/// for the state to come round to idle, and there is no run to tear down
+/// yet. This is the same schedule the engine runs at startup and for every
+/// restart after, so Foundry's own start is written once and runs the same
+/// way whoever asked for it.
+fn begin(world: &mut World) {
+    world.run_schedule(NewRun);
+}
+
+/// Paints the whole terminal: the scene, the title, the menu.
+pub fn draw_title(mut terminal: ResMut<Terminal>, title: Res<Title>, palette: Res<Palette>, time: Res<Time>) {
+    let t = time.elapsed_secs();
+    paint(&mut terminal, t);
+    paint_title(&mut terminal, t);
+    paint_menu(&mut terminal, &title, &palette);
+}
+
+/// The colours the picture is drawn in.
+///
+/// Its own palette rather than the interned tones, because these are the
+/// scene's own: ember, steel, the cyan of a sensor. The menu over it reads
+/// the game's `Palette` like every other panel, so a game that repaints
+/// its tones repaints the words and not the picture.
+mod ink {
+    use bevy::prelude::Color;
+
+    /// The far wall, behind everything.
+    pub const DARK: Color = Color::srgb(0.10, 0.10, 0.13);
+    /// Machine towers and the gantry: cold steel in shadow.
+    pub const STEEL: Color = Color::srgb(0.28, 0.30, 0.35);
+    /// What the furnace lights: the near edges of the works.
+    pub const LIT_STEEL: Color = Color::srgb(0.46, 0.42, 0.40);
+    /// Pipes and rails, a shade warmer than the steel.
+    pub const PIPE: Color = Color::srgb(0.36, 0.33, 0.30);
+    /// The furnace's own mouth.
+    pub const EMBER: Color = Color::srgb(1.00, 0.55, 0.15);
+    /// Deeper in the furnace, and the coals under it.
+    pub const EMBER_DEEP: Color = Color::srgb(0.85, 0.28, 0.08);
+    /// A spark off the line, and the welder's flash.
+    pub const SPARK: Color = Color::srgb(1.00, 0.85, 0.45);
+    /// Ceiling lamps.
+    pub const LAMP: Color = Color::srgb(0.95, 0.88, 0.60);
+    /// A droid's sensor, and the light of a live panel.
+    pub const SENSOR: Color = Color::srgb(0.45, 0.80, 0.95);
+    /// The chassis on the line.
+    pub const CHASSIS: Color = Color::srgb(0.62, 0.58, 0.48);
+    /// The commando on the gantry.
+    pub const COMMANDO: Color = Color::srgb(0.85, 0.92, 0.85);
+}
+
+/// The stamps the scene is drawn from, back to front.
+mod art {
+    /// A machine tower along the far wall: ten wide, nine tall.
+    pub const TOWER: [&str; 9] = [" ┌──────┐ ", " │▄▄  ▄▄│ ", " │      │ ", "┌┴──────┴┐", "│ ░░  ░░ │", "│ ░░  ░░ │", "│ ░░  ░░ │", "└─┬────┬─┘", "  ┴    ┴  "];
+
+    /// A taller, narrower tower, to break the skyline up.
+    pub const STACK: [&str; 11] = [
+        "  ╔════╗  ",
+        "  ║ ▄▄ ║  ",
+        "  ║    ║  ",
+        "┌─╫────╫─┐",
+        "│ ║ ░░ ║ │",
+        "│ ║ ░░ ║ │",
+        "│ ╚════╝ │",
+        "│  ░░░░  │",
+        "│  ░░░░  │",
+        "└──┬──┬──┘",
+        "   ┴  ┴   ",
+    ];
+
+    /// The blast furnace: twenty-one wide, nine tall, its mouth left blank
+    /// for the glow to fill.
+    pub const FURNACE: [&str; 9] = [
+        "   ╔═════════════╗   ",
+        "   ║ ▀▀▀▀▀▀▀▀▀▀▀ ║   ",
+        "  ╔╝             ╚╗  ",
+        "  ║  ▄▄▄▄▄▄▄▄▄▄▄  ║  ",
+        "  ║ │           │ ║  ",
+        "  ║ │           │ ║  ",
+        "  ║ │           │ ║  ",
+        "  ╚═╧═══════════╧═╝  ",
+        "                     ",
+    ];
+
+    /// The furnace's chimney, which breaks the crane's rail and vents its
+    /// sparks past the gantry.
+    pub const CHIMNEY: [&str; 3] = ["╔════╗", "║    ║", "║    ║"];
+
+    /// The crane's trolley, hung off the rail above the works.
+    pub const TROLLEY: [&str; 5] = ["┌───┐", "│ ▓ │", "└─┬─┘", "  ╎  ", "  ∪  "];
+
+    /// A welding arm over the line.
+    pub const ARM: [&str; 4] = ["┌──┐", "│╱ │", "╰╮ │", " ╰╯ "];
+
+    /// A chassis riding the line: half a droid, and not yet awake.
+    pub const CHASSIS: [&str; 2] = ["┌──┐", "╘══╛"];
+}
+
+/// Stamps `lines` at `(x, y)`, leaving spaces transparent so a later stamp
+/// shows what is behind it.
+fn stamp(terminal: &mut Terminal, x: i32, y: i32, lines: &[&str], fg: Color) {
+    for (row, line) in lines.iter().enumerate() {
+        for (col, glyph) in line.chars().enumerate() {
+            if glyph == ' ' {
+                continue;
+            }
+            terminal.set(x + col as i32, y + row as i32, Cell::new(glyph, fg));
+        }
+    }
+}
+
+/// The same, but opaque: a space paints the dark rather than letting what
+/// is behind show through.
+///
+/// What every solid thing in the scene wants. A furnace drawn transparently
+/// has a machine tower standing inside it, which is how the first draft of
+/// this screen looked.
+fn stamp_over(terminal: &mut Terminal, x: i32, y: i32, lines: &[&str], fg: Color) {
+    for (row, line) in lines.iter().enumerate() {
+        for (col, glyph) in line.chars().enumerate() {
+            let cell = if glyph == ' ' { Cell::new(' ', ink::DARK) } else { Cell::new(glyph, fg) };
+            terminal.set(x + col as i32, y + row as i32, cell);
+        }
+    }
+}
+
+/// Fills a band of rows with one cell, which is how the far wall and the
+/// dark under the floor are laid in.
+fn wash(terminal: &mut Terminal, from: i32, to: i32, glyph: char, fg: Color) {
+    for y in from..=to {
+        for x in 0..terminal.width() {
+            terminal.set(x, y, Cell::new(glyph, fg));
+        }
+    }
+}
+
+/// A number from 0 to 1 that depends on nothing but its inputs.
+///
+/// The scene's dice: which cell has a spark, how hot this corner of the
+/// mouth is. A hash rather than a stream, because the title screen is
+/// outside a run and has no seed to draw from, and a picture that flickers
+/// the same way every time the game is opened is the point.
+fn hashed(a: i32, b: i32) -> f32 {
+    let mut h = (a as u32).wrapping_mul(0x9E37_79B9) ^ (b as u32).wrapping_mul(0x85EB_CA6B);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0xC2B2_AE35);
+    h ^= h >> 16;
+    (h % 1000) as f32 / 1000.0
+}
+
+/// Every row the scene is laid out from, top to bottom, so nothing is
+/// placed by counting on the screen.
+mod rows {
+    /// The ceiling run of pipe.
+    pub const PIPE: i32 = 0;
+    /// Where the lamps hang off it.
+    pub const LAMP: i32 = 1;
+    /// The top row of the title, which is six tall.
+    pub const TITLE: i32 = 4;
+    /// The line under the title.
+    pub const TAGLINE: i32 = 11;
+    /// The furnace's chimney, which the crane's rail passes behind.
+    pub const CHIMNEY: i32 = 12;
+    /// The crane's rail, over the works.
+    pub const CRANE: i32 = 13;
+    /// The top of the machine towers and of the furnace.
+    pub const TOWER: i32 = 15;
+    /// The top of a welding arm.
+    pub const ARM: i32 = 20;
+    /// The chassis riding the line.
+    pub const CHASSIS: i32 = 24;
+    /// The belt's rollers, with its frame a row under.
+    pub const BELT: i32 = 26;
+    /// The gantry's rail, its posts, and its grating, a clear row below the
+    /// belt so the two do not read as one machine.
+    pub const RAIL: i32 = 29;
+    /// The first row of the menu, three below the grating so its rule has a
+    /// clear row of its own.
+    pub const MENU: i32 = 34;
+}
+
+/// Where the furnace stands, and how wide it is.
+const FURNACE_X: i32 = 4;
+/// Where the towers stand, and which of the two they are: clear of the
+/// furnace, and of the arms between them. `true` is the tall stack, which
+/// starts two rows higher.
+const TOWERS: [(i32, bool); 3] = [(30, false), (56, true), (82, false)];
+/// Where the welding arms hang: in the spans the towers leave, and clear of
+/// the crane's trolley.
+const ARMS: [i32; 2] = [46, 76];
+/// Where the crane's trolley sits on its rail.
+const TROLLEY_X: i32 = 68;
+
+/// Paints the scene: the wall, the towers, the furnace, the crane, the
+/// line, the gantry, the lamps.
+fn paint(terminal: &mut Terminal, t: f32) {
+    let w = terminal.width();
+    wash(terminal, 0, terminal.height() - 1, ' ', ink::DARK);
+
+    // The crane's rail first, edge to edge, so the towers and the furnace
+    // are drawn over it and it reads as passing behind them.
+    for x in 0..w {
+        terminal.set(x, rows::CRANE, Cell::new('═', ink::PIPE));
+    }
+
+    // The far wall's towers, opaque, with a few lit windows each.
+    for (x, tall) in TOWERS {
+        match tall {
+            true => stamp_over(terminal, x, rows::TOWER - 2, &art::STACK, ink::STEEL),
+            false => stamp_over(terminal, x, rows::TOWER, &art::TOWER, ink::STEEL),
+        }
+    }
+    for (x, tall) in TOWERS {
+        let top = if tall { rows::TOWER - 2 } else { rows::TOWER };
+        for dy in 4..9 {
+            for dx in [2, 3, 6, 7] {
+                if terminal.get(x + dx, top + dy).is_some_and(|c| c.glyph == '░') && hashed(x + dx, dy) > 0.5 {
+                    terminal.set(x + dx, top + dy, Cell::new('░', ink::SENSOR));
+                }
+            }
+        }
+    }
+    terminal.set(TROLLEY_X + 2, rows::CRANE, Cell::new('╤', ink::PIPE));
+    stamp_over(terminal, TROLLEY_X, rows::CRANE + 1, &art::TROLLEY, ink::PIPE);
+
+    // The furnace, and the mouth breathing inside it.
+    stamp_over(terminal, FURNACE_X, rows::TOWER, &art::FURNACE, ink::LIT_STEEL);
+    let breath = (t * 0.7).sin() * 0.5 + 0.5;
+    for row in 0..3 {
+        for col in 0..11 {
+            let (x, y) = (FURNACE_X + 5 + col, rows::TOWER + 4 + row);
+            let heat = hashed(x, y) * 0.55 + breath * 0.45;
+            let glyph = match heat {
+                h if h > 0.74 => '▓',
+                h if h > 0.42 => '▒',
+                _ => '░',
+            };
+            terminal.set(x, y, Cell::new(glyph, if heat > 0.62 { ink::EMBER } else { ink::EMBER_DEEP }));
+        }
+    }
+    // Coals spilling from under the mouth, steady, and the light they throw
+    // on the floor of the works.
+    for col in 0..15 {
+        let x = FURNACE_X + 3 + col;
+        if hashed(x, 91) > 0.35 {
+            terminal.set(x, rows::TOWER + 8, Cell::new('░', ink::EMBER_DEEP));
+        }
+    }
+    // The chimney, over the crown and through the crane's rail, and the
+    // sparks going up its bore: they start where the brick ends and go out
+    // above the gantry, so none of them is ever drawn inside the furnace.
+    let chimney = FURNACE_X + 8;
+    stamp_over(terminal, chimney, rows::CHIMNEY, &art::CHIMNEY, ink::LIT_STEEL);
+    for i in 0..8 {
+        let drift = ((t * 4.0 + i as f32 * 1.9) % 7.0).floor() as i32;
+        let x = chimney + 1 + (hashed(i, 7) * 4.0) as i32;
+        let y = rows::TOWER - 1 - drift;
+        // Inside the bore only: a spark drawn on the stack's own rim reads
+        // as a chip out of the brick.
+        if y > rows::CHIMNEY {
+            let glyph = match drift {
+                0..=1 => '*',
+                2..=4 => '.',
+                _ => '\u{00b7}',
+            };
+            terminal.set(x, y, Cell::new(glyph, ink::SPARK));
+        }
+    }
+
+    // The line: the arms over it, the chassis riding right, the belt under.
+    for x in ARMS {
+        // A short hanger, so the arm is held by something without a wire
+        // drawn through every tower between it and the ceiling.
+        for y in rows::ARM - 2..rows::ARM {
+            terminal.set(x + 1, y, Cell::new('╎', ink::PIPE));
+        }
+        stamp_over(terminal, x, rows::ARM, &art::ARM, ink::LIT_STEEL);
+    }
+    let riding: Vec<i32> = (0..4).map(|i| ((t * 5.0) as i32 + i * 26) % (w + 8) - 4).collect();
+    for (i, x) in riding.iter().copied().enumerate() {
+        stamp_over(terminal, x, rows::CHASSIS, &art::CHASSIS, ink::CHASSIS);
+        if i % 2 == 0 {
+            terminal.set(x + 1, rows::CHASSIS, Cell::new('o', ink::SENSOR));
+        }
+    }
+    for x in 0..w {
+        let roller = if (x + (t * 4.0) as i32) % 4 == 0 { '·' } else { '─' };
+        terminal.set(x, rows::BELT, Cell::new(roller, ink::PIPE));
+        terminal.set(x, rows::BELT + 1, Cell::new('═', ink::STEEL));
+    }
+    // The weld, which fires on what is under it rather than on air: an arm
+    // strikes while a chassis is passing beneath it, and the spark lands on
+    // the chassis.
+    for x in ARMS {
+        let under = riding.iter().any(|c| (*c..*c + 4).contains(&(x + 1)));
+        if under && hashed(x, (t * 4.0) as i32) > 0.35 {
+            terminal.set(x + 1, rows::ARM + 3, Cell::new('▼', ink::SPARK));
+            terminal.set(x + 1, rows::CHASSIS, Cell::new('*', ink::SPARK));
+            terminal.set(x + 2, rows::CHASSIS + 1, Cell::new('·', ink::SPARK));
+        }
+    }
+
+    // The gantry the commando stands on, and the dark under it.
+    for x in 0..w {
+        terminal.set(x, rows::RAIL, Cell::new('─', ink::LIT_STEEL));
+        // Grating, not a wall: a bar every fourth cell over a lighter weave,
+        // so the works show through the walkway the way they would.
+        let grate = if x % 4 == 0 { '╫' } else { '▒' };
+        terminal.set(x, rows::RAIL + 2, Cell::new(grate, ink::STEEL));
+    }
+    let me = w / 2 - 17;
+    for x in (0..w).step_by(6) {
+        if x != me {
+            terminal.set(x, rows::RAIL + 1, Cell::new('│', ink::STEEL));
+        }
+    }
+    wash(terminal, rows::RAIL + 3, terminal.height() - 1, ' ', ink::DARK);
+    // The commando, leaning on the rail, looking down into the works.
+    terminal.set(me, rows::RAIL + 1, Cell::new('@', ink::COMMANDO));
+
+    // The ceiling: one run of pipe, lamps off it, and what they throw.
+    for x in 0..w {
+        terminal.set(x, rows::PIPE, Cell::new('═', ink::PIPE));
+    }
+    for x in (8..w - 8).step_by(17) {
+        terminal.set(x, rows::LAMP, Cell::new('╤', ink::PIPE));
+        terminal.set(x, rows::LAMP + 1, Cell::new('▄', ink::LAMP));
+        // What the lamp throws: a short cone, brightest under the housing.
+        for dx in -2..=2 {
+            let glyph = if dx == 0 { '░' } else { '·' };
+            terminal.set(x + dx, rows::LAMP + 2, Cell::new(glyph, ink::LAMP.with_alpha(0.3)));
+        }
+    }
+}
+
+/// Stamps FOUNDRY across the top, over the wall and under the pipes.
+fn paint_title(terminal: &mut Terminal, t: f32) {
+    const WORD: [&str; 7] = ["F", "O", "U", "N", "D", "R", "Y"];
+    let letters: Vec<[&str; 6]> = WORD.iter().map(|l| letter(l)).collect();
+    let width: i32 = letters.iter().map(|l| l[0].chars().count() as i32 + 1).sum::<i32>() - 1;
+    let mut x = (terminal.width() - width) / 2;
+    let y = rows::TITLE;
+    for letter in &letters {
+        // The word is lit from the furnace below it: the lower rows warmer
+        // than the upper, and the whole of it breathing with the mouth.
+        let breath = (t * 0.7).sin() * 0.06;
+        for (row, line) in letter.iter().enumerate() {
+            let warmth = row as f32 / 5.0;
+            let fg = Color::srgb(0.72 + warmth * 0.28 + breath, 0.70 + warmth * 0.12 + breath, 0.68 - warmth * 0.42);
+            stamp(terminal, x, y + row as i32, &[line], fg);
+        }
+        x += letter[0].chars().count() as i32 + 1;
+    }
+}
+
+/// One letter of the title, six rows tall.
+fn letter(which: &str) -> [&'static str; 6] {
+    match which {
+        "F" => ["██████", "██    ", "█████ ", "██    ", "██    ", "██    "],
+        "O" => [" █████ ", "██   ██", "██   ██", "██   ██", "██   ██", " █████ "],
+        "U" => ["██   ██", "██   ██", "██   ██", "██   ██", "██   ██", " █████ "],
+        "N" => ["██   ██", "███  ██", "██ █ ██", "██  ███", "██   ██", "██   ██"],
+        "D" => ["██████ ", "██   ██", "██   ██", "██   ██", "██   ██", "██████ "],
+        "R" => ["██████ ", "██   ██", "██████ ", "██  ██ ", "██   ██", "██   ██"],
+        "Y" => ["██   ██", " ██ ██ ", "  ███  ", "   ██  ", "   ██  ", "   ██  "],
+        _ => ["", "", "", "", "", ""],
+    }
+}
+
+/// The tagline, the rows, and the keys under them.
+fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
+    let w = terminal.width();
+    let centre = |text: &str| (w - text.chars().count() as i32) / 2;
+
+    let tagline = "Ten decks of it, and four charges to set on the way down.";
+    terminal.print(centre(tagline), rows::TAGLINE, tagline, palette.get(Tones::MUTED));
+
+    let rule: String = "─".repeat(34);
+    terminal.print(centre(&rule), rows::MENU - 2, &rule, palette.get(Tones::MUTED));
+
+    let mut y = rows::MENU;
+    for (i, choice) in Choice::all().into_iter().enumerate() {
+        let (label, under) = choice.label();
+        let picked = i == title.picked;
+        let (tone, mark) = if picked { (Tones::SELECT, '>') } else { (Tones::TEXT, ' ') };
+        let row = format!("{mark} {label}");
+        let x = centre(&row);
+        terminal.print(x, y, &row, palette.get(tone));
+        if picked {
+            terminal.print(centre(under), y + 1, under, palette.get(Tones::MUTED));
+        }
+        y += 3;
+    }
+
+    let keys = "\u{2191}\u{2193} choose \u{2022} enter take it up \u{2022} q walk away";
+    terminal.print(centre(keys), terminal.height() - 1, keys, palette.get(Tones::MUTED));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rl_engine::rl_bevy::{Player, WorldMap};
+
+    /// The title screen holds the run back: the engine ran `NewRun` at
+    /// startup and Foundry's start did nothing, so there is no world and
+    /// nothing is being dealt turns.
+    #[test]
+    fn the_title_screen_holds_the_run_back_until_it_is_asked() {
+        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(3));
+        // The harness puts the screen down for every other test; this one is
+        // about the screen, so it goes back up before anything runs.
+        app.insert_resource(Title::default());
+        app.update();
+        app.update();
+        assert!(app.world().resource::<Title>().up, "the screen is up to begin with");
+        assert!(!app.world().contains_resource::<WorldMap>(), "and no deck was built behind it");
+        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Idle, "so the engine is idle");
+        let mut players = app.world_mut().query_filtered::<Entity, With<Player>>();
+        assert!(players.iter(app.world()).next().is_none(), "and there is no commando yet");
+    }
+
+    /// Taking up the offer starts the run the ordinary way: the same
+    /// `NewRun` the engine runs for a restart, so everything Foundry sets up
+    /// is set up exactly once.
+    #[test]
+    fn taking_up_the_offer_starts_the_run() {
+        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(3));
+        app.insert_resource(Title::default());
+        app.update();
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Enter);
+        app.update();
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        app.update();
+
+        assert!(!app.world().resource::<Title>().up, "the screen is down");
+        assert!(app.world().contains_resource::<WorldMap>(), "the first deck is built");
+        let mut players = app.world_mut().query_filtered::<Entity, With<Player>>();
+        assert_eq!(players.iter(app.world()).count(), 1, "one commando, dropped in once");
+    }
+
+    /// Prints the title screen as the player sees it, for eyeballing the
+    /// art: `cargo test -p foundry title_screen -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn title_screen() {
+        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
+        let palette = Palette::default();
+        paint(&mut terminal, 0.4);
+        paint_title(&mut terminal, 0.4);
+        paint_menu(&mut terminal, &Title::default(), &palette);
+        for y in 0..terminal.height() {
+            let row: String = (0..terminal.width()).map(|x| terminal.get(x, y).map(|c| c.glyph).unwrap_or(' ')).collect();
+            println!("{row}");
+        }
+    }
+}

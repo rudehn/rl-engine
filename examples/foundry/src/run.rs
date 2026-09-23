@@ -29,7 +29,22 @@ pub struct StartDeck(pub u32);
 /// Reads the registries from a resource rather than building them itself:
 /// `main.rs` inserts them before the run starts, the way its content is
 /// loaded before anything else runs.
-pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries>, first: Option<Res<StartDeck>>, mut begin: Begin) {
+pub fn start(
+    mut commands: Commands,
+    seed: Res<Seed>,
+    registries: Res<Registries>,
+    first: Option<Res<StartDeck>>,
+    title: Option<Res<crate::title::Title>>,
+    mut begin: Begin,
+) {
+    // Nothing until the player asks for it. The engine runs `NewRun` at
+    // startup, and with the title screen up this is where that first run
+    // stops: no `WorldMap` is inserted, so the engine stays idle and the
+    // screen has the terminal to itself. Picking a run lowers the flag and
+    // runs `NewRun` again.
+    if title.is_some_and(|t| t.up) {
+        return;
+    }
     let foundry = Foundry::new(seed.0);
     commands.insert_resource(crate::light::LampTile(foundry.lamp()));
     commands.insert_resource(foundry.appearance());

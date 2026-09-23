@@ -42,6 +42,11 @@ use rl_engine::rl_ui::{NarratorPlugin, UiPlugin};
 pub fn headless(seed: RunSeed) -> App {
     let mut app = headless_without_foundry(seed);
     app.add_plugins(crate::plugin::FoundryPlugin);
+    // A test plays a run, not the title screen: the screen is put down
+    // before the first update, so `run::start` builds the deck exactly as
+    // it does for a player who has already picked. A test of the screen
+    // itself puts it back up.
+    app.insert_resource(crate::title::Title { up: false, picked: 0 });
     app
 }
 

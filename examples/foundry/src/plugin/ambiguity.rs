@@ -66,6 +66,8 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("mission::offer_the_pick", id(mission::offer_the_pick)),
         ("upgrades::react_uplink", id(upgrades::react_uplink)),
         ("upgrades::choice_keys", id(upgrades::choice_keys)),
+        ("title::read_title_keys", id(title::read_title_keys)),
+        ("title::draw_title", id(title::draw_title)),
         ("light::toggle_lamp", id(light::toggle_lamp)),
         ("input::player_input", id(input::player_input)),
         ("lifts::link_decks", id(lifts::link_decks)),
@@ -154,6 +156,8 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Stack", c.component_id::<rl_engine::rl_bevy::Stack>()),
         ("Charges", c.component_id::<rl_engine::rl_bevy::Charges>()),
         ("Messages<ItemEvent>", c.component_id::<Messages<rl_engine::rl_bevy::ItemEvent>>()),
+        ("Messages<AppExit>", c.component_id::<Messages<AppExit>>()),
+        ("ButtonInput<KeyCode>", c.component_id::<ButtonInput<KeyCode>>()),
         ("Messages<Triggered>", c.component_id::<Messages<rl_engine::rl_bevy::Triggered>>()),
     ];
     found.into_iter().map(|(name, id)| (name, id.unwrap_or_else(|| panic!("{name} is registered once every schedule is built")))).collect()
@@ -163,6 +167,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
 /// its reason. A pair not here fails the test, and so does an entry no
 /// pair needs any more.
 fn allowed(world: &World) -> Vec<Allowed> {
+    use crate::title;
     use crate::*;
     use rl_engine::rl_bevy::{ability, combat, consumable, items, props as engine_props, stealth, throwing};
     let ids = ids(world);
@@ -261,6 +266,26 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &[&claims[..], &["Messages<ItemEvent>", "Inventory"]].concat(),
             "one action a pass: taking out of a crate and picking up are never resolved in the same one",
         ),
+        // The title screen's keys, against everything else that reads or
+        // clears a key or asks to close.
+        //
+        // Two ways to leave, first: this screen's own key before a run
+        // exists, and the engine's menu inside one. Neither is up while the
+        // other is, and a game told twice to close still closes.
+        //
+        // And the engine forgets what was held when the window loses focus,
+        // which writes `ButtonInput`. Unordered against this reader, the
+        // worst an inversion costs is one menu row moved, or one run begun,
+        // on the single frame the window was leaving; the key it acts on was
+        // really pressed either way. Ordering it would mean naming another
+        // crate's system from a game, which is the one thing this repository
+        // does not do.
+        Allowed {
+            a: Some(id(title::read_title_keys)),
+            b: None,
+            on: on(&["Messages<AppExit>", "ButtonInput<KeyCode>"]),
+            why: "the title screen is up only before a run, the menu only inside one, and a key forgotten as the window leaves is a key this screen may act on or not with nothing riding on it",
+        },
         // A used thing lands what it does in the pass the use was resolved
         // in, and by the same invariant that is a pass no other action was
         // resolved in: `resolve_items` claimed the turn for the use, so

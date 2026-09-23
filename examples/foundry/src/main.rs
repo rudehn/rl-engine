@@ -121,7 +121,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // Every key `input::declare_controls` and the engine's screens
         // declare, with the hint that opens it in the rail's last row.
         ControlsPanel::new(screen.controls).hint(screen.hint),
-        GameMenuPanel::new(screen.menu).title("Foundry").died("The foundry keeps you.").won("The first charge is set."),
+        GameMenuPanel::new(screen.menu).title("Foundry").died("The foundry keeps you.").won("The core is charged, and you are on the lift."),
         ChoicePanel(screen.choice),
     ));
 }

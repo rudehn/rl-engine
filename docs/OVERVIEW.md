@@ -312,7 +312,7 @@ The commando carries a `Stealth` with no skill, which makes it a subject a droid
 The decks below the first are dark, and the commando's shoulder lamp is the stealth trade: `L` switches it off, and then, away from the stores' wall lamps, a droid without radar has to be beside you to see you.
 A charge set on the reactor console on decks three, six and nine, or on the core on deck ten, is a fact the quest tracker counts, and each charge's pick offers whatever of the three upgrades the run has not already taken.
 Healing is found, not given: a stim closes a wound at once and a medkit mends two a turn for ten turns, and neither is a system Foundry wrote. Each is an item that names the ability it lends in `items.ron`, and an ability that costs `Charge(1)`, so the engine turns using the item into using what it lends, spends one off the stack for it, and mends or inflicts `mending` from the ability's own effects.
-It is a library with a thin binary, so every system is in one `FoundryPlugin` that the window and the headless tests both add, and `tests/fingerprint.rs` pins a scripted run.
+A run starts from a title screen of Foundry's own, `TitlePlugin`: the works drawn in the terminal with the furnace breathing, sparks up the chimney and chassis riding the line, over which it offers to drop in or walk away. It is the screen before there is a world, so it holds `run::start` back while it is up and paints the whole terminal itself; the engine's own `GameMenuPanel` is still what pauses a run and ends one. It is a library with a thin binary, so every system is in one `FoundryPlugin` that the window and the headless tests both add, and `tests/fingerprint.rs` pins a scripted run.
 
 ## Not built yet
 
