@@ -4,7 +4,9 @@ A release is a tag, `v` and the workspace version.
 The starter template pins the release it was written against, and a game made from it moves to a newer one by changing that tag and reading here what moved.
 Pushing a tag publishes its release page from its section here, through `scripts/release-notes.sh`.
 
-## Unreleased
+## 0.3.0
+
+A page for every system, a screen for the run's end, and a line drawn between an ability and a thing in the bag: one release, 2026-09-23.
 
 - Lighting's own module doc had told a game to opt in by inserting a `Lighting` resource, which is how the subsystem worked before it was a plugin and is the reverse of the rule the engine states everywhere else: whether a system runs is decided by whether its plugin was added.
   `LightingPlugin` inserts `Lighting::dark()` itself, and a game that followed the doc and inserted the resource without adding the plugin got the worst pair available, a gate on every viewshed and no field cast to fill it, so the world went dark and nothing said why.

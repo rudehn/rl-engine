@@ -48,7 +48,7 @@ From there:
 
 ## Where to go next
 
-The [guide](https://github.com/rudehn/rl-engine/tree/v0.2.0/docs/guide/src) builds a roguelike one chapter at a time, and each chapter is something to add here:
+The [guide](https://github.com/rudehn/rl-engine/tree/v0.3.0/docs/guide/src) builds a roguelike one chapter at a time, and each chapter is something to add here:
 
 - things to pick up and use, chapter 6;
 - stairs and more floors, chapter 7;

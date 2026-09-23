@@ -42,7 +42,7 @@ The quickest start is the template: one file that runs on the first build.
 
 ```sh
 cargo install cargo-generate
-cargo generate --git https://github.com/rudehn/rl-engine --tag v0.2.0 templates/starter --name my-game
+cargo generate --git https://github.com/rudehn/rl-engine --tag v0.3.0 templates/starter --name my-game
 cd my-game
 cargo run
 ```
@@ -73,7 +73,7 @@ The `rl-engine` crate is the facade that re-exports every other crate, and `rl_e
 
 ```toml
 [dependencies]
-rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v0.2.0" }
+rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
 bevy = "0.19"
 ```
 
@@ -97,7 +97,7 @@ A tool or a server that needs no window can depend on a single tier-1 crate, suc
 
 ```toml
 [dependencies]
-rl-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.2.0" }
+rl-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
 ```
 
 This builds a dungeon floor from a seed, computes what is visible from the start, and finds the path to the exit, all without Bevy.
