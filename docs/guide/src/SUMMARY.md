@@ -33,7 +33,7 @@
 - [What it perceives]()
   - [Sight and lighting](systems/sight.md)
   - [Noise](systems/noise.md)
-  - [Stealth]()
+  - [Stealth](systems/stealth.md)
 - [What it leaves behind]()
   - [Fire and gas](systems/fields.md)
   - [Remains](systems/remains.md)

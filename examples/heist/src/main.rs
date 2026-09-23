@@ -617,6 +617,7 @@ struct Say<'w> {
     log: ResMut<'w, MessageLog>,
 }
 
+// ANCHOR: alarm
 /// A watchman who spots you shouts, and a hound bays: a noise of the
 /// game's own at the watcher, which everyone in earshot comes to.
 fn raise_alarm(
@@ -637,6 +638,7 @@ fn raise_alarm(
         }
     }
 }
+// ANCHOR_END: alarm
 
 /// What the house heard, told to the thief: a pebble's clatter, and
 /// whether anything turned to look; and a shout, when anyone was near
