@@ -36,7 +36,7 @@
   - [Stealth]()
 - [What it leaves behind]()
   - [Fire and gas](systems/fields.md)
-  - [Remains]()
+  - [Remains](systems/remains.md)
   - [Statuses]()
 - [What you see]()
   - [Rendering]()
