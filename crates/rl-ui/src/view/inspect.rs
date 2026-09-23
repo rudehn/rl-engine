@@ -237,28 +237,33 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let (my_health, my_speed, my_resists) = mine;
     let (their_health, their_speed, their_resists) = subject;
     let (Some(my_health), Some(their_health)) = (my_health, their_health) else { return };
-    let my_strikes = duelists.loadout.blows(me);
-    let their_strikes = duelists.loadout.blows(entity);
-    // The forecast counts one blow as the melee weapon's own charge, the
-    // same cost `resolve_attacks` spends the turn on; unarmed or with
-    // nothing wielded, `None` reads as the ordinary cost, same as a real
-    // blow would.
-    let asker = Combatant {
-        health: my_health.current,
-        armor: duelists.loadout.armor(me),
-        speed: my_speed.map(|s| s.0).unwrap_or(100),
-        blow_cost: duelists.loadout.melee(me).and_then(|m| m.cost),
-        resists: my_resists.map(|r| &r.0).unwrap_or(&none),
-        strikes: &my_strikes,
-    };
-    let other = Combatant {
-        health: their_health.current,
-        armor: duelists.loadout.armor(entity),
-        speed: their_speed.map(|s| s.0).unwrap_or(100),
-        blow_cost: duelists.loadout.melee(entity).and_then(|m| m.cost),
-        resists: their_resists.map(|r| &r.0).unwrap_or(&none),
-        strikes: &their_strikes,
-    };
+    // Both of what each side can do, and the gap between them; the
+    // forecast picks the melee rolls or the shot from that, by the rule
+    // `resolve_attacks` uses, so a droid that only shoots is forecast as
+    // dangerous across the room and harmless once you are on top of it.
+    // The cost goes with whichever it picked, the same charge the resolver
+    // would spend the turn on.
+    let (my_blows, my_shots) = (duelists.loadout.blows(me), duelists.loadout.shots(me));
+    let (their_blows, their_shots) = (duelists.loadout.blows(entity), duelists.loadout.shots(entity));
+    let my_arms = duelists.loadout.arms(me, &my_blows, &my_shots);
+    let their_arms = duelists.loadout.arms(entity, &their_blows, &their_shots);
+    let apart = geometry::chebyshev(origin.0, pos.0);
+    let asker = Combatant::armed(
+        my_health.current,
+        duelists.loadout.armor(me),
+        my_speed.map(|s| s.0).unwrap_or(100),
+        my_resists.map(|r| &r.0).unwrap_or(&none),
+        &my_arms,
+        apart,
+    );
+    let other = Combatant::armed(
+        their_health.current,
+        duelists.loadout.armor(entity),
+        their_speed.map(|s| s.0).unwrap_or(100),
+        their_resists.map(|r| &r.0).unwrap_or(&none),
+        &their_arms,
+        apart,
+    );
     let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = duelists.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
     view.duel = Some(duel(&asker, &other, &duelists.registries.damage_kinds, &stages));
 }
@@ -471,5 +476,35 @@ mod tests {
         // The weakling's own blow is untouched by the player's weapon, so
         // its side of the duel does not move.
         assert_eq!(quicker.turns_to_fall, ordinary.turns_to_fall, "the weakling's own cost never changed");
+    }
+
+    /// A droid that only shoots, inspected from across the room and then
+    /// from beside it.
+    ///
+    /// Before this, the forecast read only melee rolls, so a gunner with no
+    /// blade was forecast as unable to hurt anything at any distance, and
+    /// the panel said "easy" about the thing that was about to kill you.
+    #[test]
+    fn a_subject_that_only_shoots_is_forecast_as_dangerous_at_range_and_harmless_beside_you() {
+        let read = |away: i32| {
+            let mut stage = Stage::new(InspectViewPlugin);
+            stage.tick();
+            let gunner = stage.actor("gunner", 'g', away, 0);
+            // Nothing but a gun: no melee at all, the case the bug hid.
+            let (kind, world) = (stage.kind, stage.app.world_mut());
+            world.entity_mut(gunner).remove::<MeleeAttack>().insert(RangedAttack { kind, dice: rl_core::DiceRoll::flat(5), range: 8, cost: None, look: None });
+            stage.tick();
+            stage.press(CursorKeys::default().look);
+            stage.app.world().resource::<InspectView>().duel.expect("a duel against something that fights")
+        };
+
+        let far = read(5);
+        assert!(far.turns_to_fall.is_some(), "across the room its shot reaches, and the forecast must say so");
+        assert_eq!(far.outlook, Outlook::Deadly, "five a shot against a player who cannot answer at that range");
+
+        let near = read(1);
+        assert_eq!(near.turns_to_fall, None, "beside it the gun is no use, which is the rule `resolve_attacks` plays by");
+        assert!(near.turns_to_fell.is_some(), "and the player's own blade reaches");
+        assert_eq!(near.outlook, Outlook::Easy);
     }
 }

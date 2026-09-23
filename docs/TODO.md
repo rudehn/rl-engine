@@ -32,25 +32,24 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 5 | `OnMap` as a required component | 4 | medium | medium |
 | 6 | The obituary is filed by a presenter | 4 | medium | medium |
 | 7 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 8 | A ranged fighter is under-forecast | 3 | medium | medium |
-| 9 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 10 | What the save holds is stated where the save is | 7 | medium | medium |
-| 11 | Anyone travels | 3 | medium | high |
-| 12 | Movement profiles that change costs | 3 | medium | high |
-| 13 | The narrator hears what registers itself | 7 | medium | high |
-| 14 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 15 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 16 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 17 | Admission scans its waiting actors linearly | 4 | low | low |
-| 18 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 19 | A `Burning` entity comes back unlit | 3 | low | low |
-| 20 | A shot is narrated as a blow | 3 | low | low |
-| 21 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 22 | A place for a miss | 3 | low | low |
-| 23 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 24 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 25 | Corsair's rum is an ability, and should be a use | 4 | low | low |
-| 26 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 8 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 9 | What the save holds is stated where the save is | 7 | medium | medium |
+| 10 | Anyone travels | 3 | medium | high |
+| 11 | Movement profiles that change costs | 3 | medium | high |
+| 12 | The narrator hears what registers itself | 7 | medium | high |
+| 13 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 14 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 15 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 16 | Admission scans its waiting actors linearly | 4 | low | low |
+| 17 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 18 | A `Burning` entity comes back unlit | 3 | low | low |
+| 19 | A shot is narrated as a blow | 3 | low | low |
+| 20 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 21 | A place for a miss | 3 | low | low |
+| 22 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 23 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 24 | Corsair's rum is an ability, and should be a use | 4 | low | low |
+| 25 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -108,9 +107,6 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Light is recast once a frame, not once a turn.**
   `update_lighting` runs in `EngineSet::Light`, after every `Turn` pass the frame ran, so a droid acting in the same frame the player switches a lamp off still sees by the old light, for one turn.
   Foundry's lamp shows it; recasting the dynamic layer inside the turn loop, when a source was added or removed, would close it.
-- **A ranged fighter is under-forecast.**
-  `rl_rules::forecast::Combatant::strikes` is filled from `Loadout::blows`, the melee roll plus extra strikes; a `RangedAttack`'s dice never enter the forecast, so a combatant that only shoots reads as unable to hurt anything.
-  A fix needs the ranged roll and `RangedAttack::cost` fed into `Combatant` for whichever side of the pair is not adjacent to the other, so the forecast picks melee or ranged per pair instead of assuming melee always applies.
 - **`Rooms` can run out of attempts on a small map.**
   Asked for three rooms sized 8 to 10 on a 40x30 map, it fails roughly one seed in sixty inside its default thirty attempts.
   Whether that is a tuning problem, a default `attempts` too low for the room sizes it is asked to fit, or a limit the pass should just document is not yet decided.

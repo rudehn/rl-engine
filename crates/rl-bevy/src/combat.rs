@@ -465,6 +465,37 @@ impl Loadout<'_, '_> {
         all.extend(self.strikes(who));
         all
     }
+
+    /// Every roll one shot by `who` lands, the shot itself first: what a
+    /// forecast takes for a pair that is not adjacent. Empty for something
+    /// with nothing to shoot.
+    ///
+    /// The ranged twin of [`blows`](Self::blows), and the extra strikes are
+    /// in both because `resolve_attacks` adds them to a shot exactly as it
+    /// adds them to a blow.
+    pub fn shots(&self, who: Entity) -> Vec<(DamageKindId, DiceRoll)> {
+        let Some(shot) = self.ranged(who) else { return Vec::new() };
+        let mut all = vec![(shot.kind, shot.dice)];
+        all.extend(self.strikes(who));
+        all
+    }
+
+    /// What `who` can do to something at any distance, for
+    /// [`rl_rules::forecast`]: both sets of rolls, both costs and the
+    /// shot's reach, with the choice left to the distance.
+    ///
+    /// Takes the two `Vec`s the caller already built, because `Arms`
+    /// borrows them and a forecast is recomputed every frame.
+    pub fn arms<'a>(&self, who: Entity, blows: &'a [(DamageKindId, DiceRoll)], shots: &'a [(DamageKindId, DiceRoll)]) -> rl_rules::forecast::Arms<'a> {
+        let shot = self.ranged(who);
+        rl_rules::forecast::Arms {
+            melee: blows,
+            melee_cost: self.melee(who).and_then(|m| m.cost),
+            ranged: shots,
+            ranged_cost: shot.and_then(|r| r.cost),
+            range: shot.map_or(0, |r| r.range),
+        }
+    }
 }
 
 /// Strike an actor: adjacent with a melee weapon, at range with a ranged

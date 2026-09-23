@@ -12,16 +12,19 @@
 //! knows what a combatant is called, either; the caller fills a
 //! [`Combatant`] from whatever its components are.
 //!
-//! [`Combatant::strikes`] is filled from the melee roll and any extra
-//! strikes, `Loadout::blows` in `rl-bevy`; a `RangedAttack`'s own dice never
-//! enter it, and [`Combatant::blow_cost`] is read from the same actor's
-//! melee weapon. This is a melee-only forecast: a combatant that only
-//! shoots is under-forecast, since none of its blows are counted. Widening
-//! it to ranged fights needs the pair's distance, since a melee combatant
-//! forecasts a blow it cannot land at range and a ranged one forecasts
-//! nothing at all when adjacent, so `Combatant` would need the ranged roll
-//! and cost alongside the melee ones, chosen by the caller once it knows
-//! whether the pair is adjacent.
+//! A fight is fought at a distance, so the forecast is too. [`Arms`] holds
+//! both of what an actor can do with a turn, the melee rolls and the shot,
+//! and [`Arms::at`] picks between them by the same rule the resolver uses:
+//! adjacent is the melee weapon, anything further is the shot if it reaches
+//! that far, and nothing at all otherwise. So a combatant that only shoots
+//! forecasts its shot at range and nothing when you close on it, and one
+//! that only swings forecasts nothing until you are beside it, which is
+//! what each of them can really do.
+//!
+//! The distance is the caller's to supply, since only the caller knows
+//! where the two stand. [`Combatant::armed`] is the constructor that takes
+//! [`Arms`] and a distance; [`Combatant`] itself still holds one set of
+//! rolls and one cost, already chosen.
 
 use rl_core::DiceRoll;
 use rl_core::turn::BASE_ACTION_COST;
@@ -56,6 +59,66 @@ impl Combatant<'_> {
     /// A combatant that neither strikes nor resists anything.
     pub fn unarmed(health: i32, armor: i32, speed: u32, resists: &Resistances) -> Combatant<'_> {
         Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[] }
+    }
+
+    /// A combatant fighting whatever `arms` gives it at `distance`.
+    ///
+    /// The one place the melee-or-shot choice is made for a forecast, so a
+    /// panel cannot pick differently from the resolver.
+    pub fn armed<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
+        let (strikes, blow_cost) = arms.at(distance);
+        Combatant { health, armor, speed, blow_cost, resists, strikes }
+    }
+}
+
+/// Everything one actor can do to another with a turn, before the distance
+/// between them decides which of it applies.
+///
+/// Both halves are every roll one attack lands, the weapon's own first and
+/// then whatever else the actor strikes with, which is `Loadout::blows` and
+/// `Loadout::shots` in `rl-bevy`. Empty means it cannot attack that way at
+/// all, which is a real answer and not a missing one: most monsters have no
+/// shot and a turret has no swing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Arms<'a> {
+    /// Every roll one melee blow lands.
+    pub melee: &'a [(DamageKindId, DiceRoll)],
+    /// What one melee blow costs, `None` for the ordinary turn.
+    pub melee_cost: Option<u32>,
+    /// Every roll one shot lands.
+    pub ranged: &'a [(DamageKindId, DiceRoll)],
+    /// What one shot costs, `None` for the ordinary turn.
+    pub ranged_cost: Option<u32>,
+    /// The furthest cell the shot reaches. Zero with no shot.
+    pub range: i32,
+}
+
+impl<'a> Arms<'a> {
+    /// Nothing: an actor that cannot attack at any distance.
+    pub fn none() -> Arms<'a> {
+        Arms::default()
+    }
+
+    /// What these arms fight with at `distance`, and what one of those
+    /// costs.
+    ///
+    /// The engine's own rule, from `resolve_attacks`: a target one cell
+    /// away in any of the eight directions is struck with the melee
+    /// weapon, and anything further is shot at if the shot reaches. A
+    /// distance of zero is an actor measuring itself, which nothing
+    /// attacks, so it reads as adjacent and gets the melee answer.
+    ///
+    /// Not checked here: whether the line of fire is clear. That needs the
+    /// map, and a forecast that a wall may yet block is still the right
+    /// forecast for the fight the two would have.
+    pub fn at(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
+        if distance <= 1 {
+            (self.melee, self.melee_cost)
+        } else if distance <= self.range {
+            (self.ranged, self.ranged_cost)
+        } else {
+            (&[], None)
+        }
     }
 }
 
@@ -292,5 +355,54 @@ mod tests {
         assert_eq!(duel::<u32>(&strong, &weak, &kinds, &stages).outlook, Outlook::Easy);
         assert_eq!(duel::<u32>(&weak, &strong, &kinds, &stages).outlook, Outlook::Deadly);
         assert_eq!(duel::<u32>(&strong, &strong, &kinds, &stages).outlook, Outlook::Even);
+    }
+
+    /// The rule a fight is fought by, without an `App`: a blow when you are
+    /// beside it, a shot when you are not, and nothing beyond its reach.
+    #[test]
+    fn arms_pick_the_blow_when_adjacent_the_shot_when_not_and_nothing_out_of_range() {
+        let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
+        let kind = kinds.expect("kinetic");
+        let melee = [(kind, DiceRoll::flat(3))];
+        let ranged = [(kind, DiceRoll::flat(7))];
+        let arms = Arms { melee: &melee, melee_cost: Some(50), ranged: &ranged, ranged_cost: Some(200), range: 6 };
+
+        assert_eq!(arms.at(1), (&melee[..], Some(50)), "beside it, the blow");
+        assert_eq!(arms.at(0), (&melee[..], Some(50)), "and a thing measured against itself reads as adjacent");
+        assert_eq!(arms.at(2), (&ranged[..], Some(200)), "a step further, the shot");
+        assert_eq!(arms.at(6), (&ranged[..], Some(200)), "out to its reach");
+        assert_eq!(arms.at(7), (&[][..], None), "and past that, nothing");
+    }
+
+    /// A gunner and a brawler, forecast at both distances. The bug this
+    /// closes: the gunner read as unable to hurt anything at any distance,
+    /// because only the melee rolls were ever counted.
+    #[test]
+    fn a_combatant_that_only_shoots_is_forecast_at_range_and_a_brawler_only_up_close() {
+        let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
+        let kind = kinds.expect("kinetic");
+        let none = Resistances::new();
+        let stages: [&dyn DamageStage<u32>; 0] = [];
+
+        let shot = [(kind, DiceRoll::flat(5))];
+        let gunner = Arms { melee: &[], melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
+        let swing = [(kind, DiceRoll::flat(5))];
+        let brawler = Arms { melee: &swing, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
+
+        fn at<'a>(arms: &Arms<'a>, none: &'a Resistances, d: i32) -> Combatant<'a> {
+            Combatant::armed(20, 0, 100, none, arms, d)
+        }
+
+        // Across the room: the gunner fells, the brawler never reaches.
+        let far = duel(&at(&gunner, &none, 5), &at(&brawler, &none, 5), &kinds, &stages);
+        assert_eq!(far.turns_to_fell, Some(4), "five a shot into twenty health");
+        assert_eq!(far.turns_to_fall, None, "the brawler cannot touch it from there");
+        assert_eq!(far.outlook, Outlook::Easy);
+
+        // Beside it, exactly the other way round.
+        let near = duel(&at(&gunner, &none, 1), &at(&brawler, &none, 1), &kinds, &stages);
+        assert_eq!(near.turns_to_fell, None, "adjacent, the gun is no use");
+        assert_eq!(near.turns_to_fall, Some(4), "and the brawler is swinging");
+        assert_eq!(near.outlook, Outlook::Deadly);
     }
 }
