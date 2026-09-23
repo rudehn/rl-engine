@@ -5,7 +5,6 @@
             crates/rl-bevy/src/ability.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/props.rs
-            crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/status.rs
             crates/rl-bevy/src/turn.rs
             crates/rl-rules/src/ability.rs
@@ -16,7 +15,7 @@
             crates/rl-ui/src/view/container.rs
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
-     fingerprint: 4b3e0466 -->
+     fingerprint: befc63e5 -->
 
 # Items and equipment
 

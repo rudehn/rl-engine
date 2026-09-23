@@ -8,10 +8,9 @@
             crates/rl-render/src/particles.rs
             crates/rl-render/src/capture.rs
             crates/rl-bevy/src/cue.rs
-            crates/rl-bevy/src/plugin.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: 87ddcd4e -->
+     fingerprint: 7d69415c -->
 
 # Rendering
 

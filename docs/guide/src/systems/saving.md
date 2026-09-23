@@ -9,9 +9,8 @@
             crates/rl-save/src/morgue.rs
             crates/rl-ui/src/game_menu.rs
             crates/rl-bevy/src/state.rs
-            crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/world.rs
-     fingerprint: 7b0de961 -->
+     fingerprint: f72459dd -->
 
 # Saving and the morgue
 

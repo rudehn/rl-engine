@@ -7,7 +7,6 @@
             crates/rl-bevy/src/ability.rs
             crates/rl-bevy/src/effects.rs
             crates/rl-bevy/src/throwing.rs
-            crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/items.rs
             crates/rl-bevy/src/props.rs
@@ -15,7 +14,7 @@
             crates/rl-bevy/src/gas.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: ec9b6091 -->
+     fingerprint: 4f6b6fdd -->
 
 # Abilities
 

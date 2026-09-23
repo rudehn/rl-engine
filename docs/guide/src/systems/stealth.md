@@ -3,14 +3,13 @@
      files: crates/rl-rules/src/ai/awareness.rs
             crates/rl-rules/src/ai/tactics.rs
             crates/rl-bevy/src/stealth.rs
-            crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/minds.rs
             crates/rl-bevy/src/noise.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/components.rs
             crates/rl-bevy/src/lighting.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 97ef2a48 -->
+     fingerprint: 26442577 -->
 
 # Stealth
 

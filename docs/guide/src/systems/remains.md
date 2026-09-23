@@ -5,10 +5,9 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/stealth.rs
             crates/rl-bevy/src/noise.rs
-            crates/rl-bevy/src/plugin.rs
             crates/rl-rules/src/ai/snapshot.rs
             crates/rl-save/src/run.rs
-     fingerprint: 800bbc73 -->
+     fingerprint: 0e12d7b8 -->
 
 # Remains
 
