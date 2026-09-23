@@ -45,6 +45,7 @@ pub fn player_grants(abilities: &Abilities) -> Grants {
     Grants(PLAYER_KNOWS.iter().map(|n| abilities.expect(n)).collect())
 }
 
+// ANCHOR: plunder
 /// Shake a foe down: whatever is in its purse spills onto the ground at its
 /// feet, to be picked up like any other loot.
 ///
@@ -85,6 +86,7 @@ impl FromArgs for Plunder {
         Ok(Plunder)
     }
 }
+// ANCHOR_END: plunder
 
 /// `1` to `4` aim the abilities the player knows, in order, from the map or
 /// from the list the engine's menu shows on `a`.

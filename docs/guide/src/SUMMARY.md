@@ -26,7 +26,7 @@
   - [Places and streaming]()
   - [Props](systems/props.md)
 - [What acts]()
-  - [Abilities]()
+  - [Abilities](systems/abilities.md)
   - [Combat and loadout]()
   - [Items and equipment]()
   - [Minds](systems/minds.md)
