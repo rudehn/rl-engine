@@ -13,7 +13,7 @@
             crates/rl-bevy/src/items.rs
             crates/rl-ui/src/view/nearby.rs
             crates/rl-ui/src/panel/nearby.rs
-     fingerprint: 1b8ff1a2 -->
+     fingerprint: 5eb55167 -->
 
 # Noise
 
@@ -111,7 +111,7 @@ pub const NOISE: NoiseRules = NoiseRules { step: 0, strike: 10, door: 0, landing
 The engine decides how far a sound carries and who it reaches; a game decides what is worth making a sound about, and how loud.
 A listener is told a place, and the engine tells it nothing about what happened there: `sound` and `maker` ride along for a game's own reactions and the engine reads neither, except to spare a listener its own.
 Hearing and stealth are two levers that never read each other: `Stealth::quiet` is how hard you are to see and `Footfall` is how loud you are to walk, and all hearing does for noticing is bring a monster close, where the notice roll is likely to land.
-Following a sound is `SearchLastKnown`, so a mind whose `Wits` do not hold `SEARCHES` hears the sound and does nothing with it, and a mind with no such tactic in its brain does nothing with it either.
+What follows a sound is a tactic reading `last_known`: `SearchLastKnown` walks to the place, `Keep::enemies` keeps station on it once nothing is in sight and `Hover` holds while it is remembered, each of them only for a mind whose `Wits` hold `SEARCHES`, so a mind without the wit, or with none of those tactics in its brain, hears the sound and does nothing with it.
 Nothing here persists between turns: a noise never outlives the pass it was made in, so there is no field to step and nothing to save, and `Heard` is lost on load the way awareness is, which is a monster on its way to look at a sound forgetting it.
 A game that adds the plugin and authors no `Hearing` anywhere hears nothing at all, which is the right way round and the likely first report.
 What the player reads off it is `Alert::Searching` on a nearby row, which is exactly this: something on its way to a noise that has not seen you, named in the game's own words through `AlertWords`.
