@@ -9,7 +9,7 @@
             crates/rl-bevy/src/components.rs
             crates/rl-bevy/src/lighting.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 26442577 -->
+     fingerprint: db214c66 -->
 
 # Stealth
 
@@ -20,8 +20,8 @@ What an observer knows is per observer and per subject, so a monster may be unaw
 
 ## Turning it on
 
-`StealthPlugin` adds three systems and nothing else: `update_awareness` in `DecideSet::Notice`, before a mind decides; `filter_unnoticed` in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; and `wake_on_damage` in `TurnSet::React`, where a turn's consequences land.
-It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on, and `add_stream::<StealthRng>`, so a tactic added to a brain or a blow struck elsewhere cannot shift which turn a guard spots you on.
+`StealthPlugin` adds three systems, and the message and the stream they need, and nothing else: `update_awareness` in `DecideSet::Notice`, before a mind decides; `filter_unnoticed` in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; and `wake_on_damage` in `TurnSet::React`, where a turn's consequences land.
+It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on, and the stream is `StealthRng`, so a tactic added to a brain or a blow struck elsewhere cannot shift which turn a guard spots you on.
 Both sides have to be authored before anything changes: a `Notice` absent means the observer sees on sight, which is the behaviour before stealth existed, and a `Stealth` absent means the subject never hides.
 That is the right way round, and it is why "I added the plugin and nothing happened" is the likely first report.
 The plugin is opt-in per game and the components are opt-in per spawn, so a game may carry it and still have places where nothing hides.
@@ -114,5 +114,5 @@ What the player reads off it is `Alert::Hunting` on a nearby row, and hunting ou
 `rl-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the two stat blocks, the three functions over them and the state machine, with the caller doing the rolling and the caller deciding what lit means.
 That is what lets the properties be proved rather than watched: that light widens the certain radius by exactly its bonus and by nothing else, that `quiet` narrows it and the floor of one holds against any stack of gear, and that `lost` returns to `Unaware` on exactly the turn the memory passes while a sighting in between resets the count.
 Both stat blocks are serde-ready, so an observer's attention and a subject's quiet are written in a bestiary file rather than in Rust.
-`rl-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, the stream, the three systems and the two system parameters that answer whether stealth is running and who is watching.
+`rl-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, the stream, the three systems and the system parameters that answer whether stealth is running and who is watching.
 `Watchers` lives there rather than in a panel because the vitals strip and the nearby rail must read the same answer the minds act on, and the bug that put it there was a strip reading hidden while a cutthroat cut the player down.
