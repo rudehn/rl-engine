@@ -21,7 +21,7 @@
   - [Registries and content](systems/registries.md)
   - [Seeds and determinism](systems/seeds.md)
 - [The world]()
-  - [Grids and tiles]()
+  - [Grids and tiles](systems/grids.md)
   - [Map generation]()
   - [Places and streaming]()
   - [Props](systems/props.md)
