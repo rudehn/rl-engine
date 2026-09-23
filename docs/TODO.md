@@ -25,36 +25,36 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 
 | # | Item | Section | Impact | Effort |
 |---|------|---------|--------|--------|
-| 1 | Straight-line fallbacks can cut a corner | 3 | medium | medium |
-| 2 | `Follow` and `Shadow` are one tactic | 4 | medium | medium |
-| 3 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
-| 4 | Corsair's tests play a different game from its binary | 3 | medium | medium |
-| 5 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
-| 6 | `OnMap` as a required component | 4 | medium | medium |
-| 7 | The obituary is filed by a presenter | 4 | medium | medium |
-| 8 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 9 | A ranged fighter is under-forecast | 3 | medium | medium |
-| 10 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 11 | What the save holds is stated where the save is | 7 | medium | medium |
-| 12 | Anyone travels | 3 | medium | high |
-| 13 | Movement profiles that change costs | 3 | medium | high |
-| 14 | The narrator hears what registers itself | 7 | medium | high |
-| 15 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 16 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 17 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 18 | Admission scans its waiting actors linearly | 4 | low | low |
-| 19 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 20 | A `Burning` entity comes back unlit | 3 | low | low |
-| 21 | A shot is narrated as a blow | 3 | low | low |
-| 22 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 23 | A place for a miss | 3 | low | low |
-| 24 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 25 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 26 | Corsair's rum is an ability, and should be a use | 4 | low | low |
-| 27 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 1 | `Follow` and `Shadow` are one tactic | 4 | medium | medium |
+| 2 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
+| 3 | Corsair's tests play a different game from its binary | 3 | medium | medium |
+| 4 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
+| 5 | `OnMap` as a required component | 4 | medium | medium |
+| 6 | The obituary is filed by a presenter | 4 | medium | medium |
+| 7 | Light is recast once a frame, not once a turn | 3 | medium | medium |
+| 8 | A ranged fighter is under-forecast | 3 | medium | medium |
+| 9 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 10 | What the save holds is stated where the save is | 7 | medium | medium |
+| 11 | Anyone travels | 3 | medium | high |
+| 12 | Movement profiles that change costs | 3 | medium | high |
+| 13 | The narrator hears what registers itself | 7 | medium | high |
+| 14 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 15 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 16 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 17 | Admission scans its waiting actors linearly | 4 | low | low |
+| 18 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 19 | A `Burning` entity comes back unlit | 3 | low | low |
+| 20 | A shot is narrated as a blow | 3 | low | low |
+| 21 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 22 | A place for a miss | 3 | low | low |
+| 23 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 24 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 25 | Corsair's rum is an ability, and should be a use | 4 | low | low |
+| 26 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
+The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 
 Why the order that is left, in three moves:
@@ -63,13 +63,13 @@ Why the order that is left, in three moves:
    Eight items opened there; the benches closed or struck seven of them and one line fixed the eighth.
    The turn loop's ceiling was schedule dispatch, and everything else that was supposed to be a ceiling measured small: the perceive scans, the veil's epoch, the closed screens' collectors, the terminal's entity count.
    What is left in section 8 is one cache that thrashes and two cheap cleanups, none of them urgent.
-2. **So start at item 1 and work down the middle band, 1 to 11.**
+2. **So start at item 1 and work down the middle band, 1 to 10.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-3. **Then 12 to 14**, the high-effort ones, of which only the narrator's registry is structural.
+3. **Then 11 to 13**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
 
-Items 15 to 24 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 25 waits on a game that actually wants the tactics it would add.
+Items 14 to 23 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 24 waits on a game that actually wants the tactics it would add, and items 25 and 26 wait on a second game asking for them.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
@@ -94,10 +94,6 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Every game's log lines said inside a turn go through `Tell`.**
   Corsair, the tutorial, Delve and Heist still push lines straight to `MessageLog` from systems in `TurnSet::React` (the tutorial's "You eat the crust. It helps.", Corsair's portal and discovery lines, the heist's), against the narrator's module doc, so a line can land above the event it answers.
   Each should write a `Tell` instead, and the guide chapters that quote the tutorial move with it; Foundry did this on 2026-09-18.
-- **Straight-line fallbacks can cut a corner the move resolver refuses.**
-  `Hunt`, `SearchLastKnown`, `Follow`, `FleeWhenHurt`, `GiveWay` and `Wander` try diagonal steps checked only by `can_step`, and `corner_ok` in `crates/rl-bevy/src/turn.rs` refuses a diagonal between two unwalkable cells, so a mind can spend turn after turn on a step that never happens.
-  `Shadow` checks it with `squeezes`; the others should too, with the fingerprints that move re-baselined.
-
 - **Movement profiles that change costs.**
   `FlowFields::ensure` keys the cache by `MovementProfile` but builds every map with `PathRules::default()`, so a swimmer and a walker see the same map and the sailing profile the plan's river section promised is not wired.
   `TileProps` needs a per-profile walkability mask, and the flood needs to read it.
