@@ -1,8 +1,9 @@
 <!-- documents:
      plugins: none
      files: crates/rl-bevy/src/seed.rs
+            crates/rl-bevy/src/replay.rs
             crates/rl-core/src/seed.rs
-     fingerprint: 30a67b69 -->
+     fingerprint: 8cb0ed09 -->
 
 # Seeds and determinism
 
@@ -14,7 +15,8 @@ Determinism is promised within one build of a game, not across engine versions.
 ## Turning it on
 
 There is no plugin here either.
-`Seed(RunSeed(n))` is a resource the game inserts before play begins, and `Seed::from_args` reads `--seed N` from the command line off wasm, refusing a value that is not a whole number by name.
+`Seed(RunSeed(n))` is a resource the game inserts before play begins, and `Seed::from_args` is the reading of it off wasm, in three steps.
+The seed of the recording `RL_REPLAY` names comes first, whatever the command line says, because a replay is the run it was recorded from and a replay on a fresh seed drifts on its first key; then `--seed N` from the command line, refusing a value that is not a whole number by name; then a fresh seed.
 A plugin that rolls calls `app.add_stream::<S>("PluginName")` in its own `build`, which declares `needs::<Seed>` with that plugin named, so a game that forgot the seed is told which subsystem wanted it.
 `CombatPlugin`, `AbilitiesPlugin`, `MindsPlugin`, `PropsPlugin` and `StealthPlugin` each do this, and two plugins asking for the same stream get one deriving system between them.
 A game that adds none of those still inserts a `Seed` if anything of its own draws, because `Seed::stream` is a method on the resource.

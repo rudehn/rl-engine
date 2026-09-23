@@ -56,7 +56,8 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 28 | A place for a miss | 3 | low | low |
 | 29 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
 | 30 | `HalveIfBlocked` can never fire | 3 | low | low |
-| 31 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 31 | Two engine types are named for a theme word | 4 | low | low |
+| 32 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -74,7 +75,7 @@ Why the order that is left, in four moves:
 4. **Then 18**, the one structural inversion still worth its cost, and 19.
    Both are high effort, and neither is urgent.
 
-Items 20 to 30 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 31 waits on a game that actually wants the tactics it would add.
+Items 20 to 31 are cleanups worth taking whenever their file is open for another reason rather than scheduling, and item 32 waits on a game that actually wants the tactics it would add.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 
 ## 1. Own the loops the games keep rewriting
@@ -167,6 +168,13 @@ The five items that opened this section were built in the six stages of `docs/de
 - **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
   The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
   Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
+- **Two engine types are named for a theme word.**
+  `crates/rl-ui/src/narrate.rs:376` declares `type Weapons<'w, 's>`, the query for items that strike or shoot when wielded, which the collector reads to tell a wield from a wearing; `crates/rl-bevy/src/combat.rs:510` declares `struct Weapon`, the attack one blow is made with as `Loadout` chose it.
+  `crates/rl-ui/src/lib.rs` states the rule the first one breaks two files away in the same crate, under "Rules": "No engine type, doc or constant says weapon, spell or monster", and `AGENTS.md` forbids the vocabulary outright.
+  Both are private and both behave correctly, so nothing is wrong at runtime; what is wrong is that the crate that states the rule is a crate that breaks it, and a reader who meets the type before the rule learns the wrong lesson.
+  A sweep of `crates/` for declarations found these two and nothing else outside test modules, so it is two renames: the engine's own words are to hand, since the phrases either side of the narrator's call site are `YouWield` and `YouWear` and the local it fills is already `wielded`, and combat's struct is what `Loadout` returns.
+  The same words do appear in doc comments across several crates, as illustration of what the engine refuses to model. That is settled practice rather than part of this item, and treating it as part of it would make the item the whole codebase.
+  Found on 2026-09-22 while writing `docs/guide/src/systems/narration.md`.
 
 ## 5. Documentation
 
@@ -188,6 +196,13 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
   Changing either line changes every map those seeds generate and may disturb fingerprint tests, so it is its own slice rather than a correction to the page.
   Recorded in the same breath: A*'s insertion-order tie-break was documented at `crates/rl-grid/src/astar.rs:10` with no test behind it until 2026-09-22, when writing `systems/grids.md` turned up the claim that ties are pinned by tests and only the flood half was.
   Other documented properties may be unpinned the same way, and a page that claims one is the occasion to check.
+
+- **Two snippets in the reference name no game.**
+  Every page in `docs/guide/src/systems/` that quotes an example attributes it, "Warren's floor", "Foundry's probe", "Corsair's `Plunder`", "The tutorial's lantern".
+  `docs/guide/src/systems/fields.md` is the exception: both of its `Using it` snippets come from `examples/delve/src/main.rs` and its two lead-in sentences name no game, so a reader of the published book meets two unattributed blocks, the include marker that names the path being hidden in the rendered page.
+  The cause was `scripts/check-systems-style.sh`, which banned the word the game is named for until 2026-09-22; `statuses.md` had gone the other way and written "the caves below", which is now "Delve's caves".
+  Neither of the two sentences takes a name without being rewritten, since both are general statements of what the snippet is an instance of rather than sentences about a game, so it is a small rewrite of another page's prose rather than a correction, and it waits for whoever is next in that file.
+  Found on 2026-09-22 while lifting the ban.
 
 - **One picture of the frame.**
   `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.

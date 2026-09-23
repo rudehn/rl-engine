@@ -42,7 +42,7 @@
   - [Rendering](systems/rendering.md)
   - [Panels](systems/panels.md)
   - [Controls, modals and cursors](systems/controls.md)
-  - [Narration]()
+  - [Narration](systems/narration.md)
 - [What persists]()
   - [Saving and the morgue]()
   - [The overworld]()

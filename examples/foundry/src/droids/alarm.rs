@@ -58,6 +58,7 @@ pub const NOISE: NoiseRules = NoiseRules { step: 0, strike: 10, door: 0, landing
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Alarm;
 
+// ANCHOR: tell
 /// Says in the log that a probe sounds the alarm, for every [`Noticed`]
 /// whose observer carries [`Alarm`]: once on the flip from unaware, which
 /// is when the engine writes one, and not on every shout after.
@@ -68,6 +69,7 @@ pub fn sound_alarm(mut noticed: MessageReader<Noticed>, alarmed: Query<(), With<
         }
     }
 }
+// ANCHOR_END: tell
 
 // ANCHOR: shout
 /// Shouts the alarm for every action an [`Alarm`] carrier finishes while it
