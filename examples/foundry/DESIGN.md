@@ -354,7 +354,7 @@ One pick of three at each charge, four in a run, kept for the run.
 ## Losing
 
 Permadeath: a dead commando ends the run, and nothing carries over to the next.
-The run ends on a summary through the engine's morgue (**exists** in its general form): the seed, the deepest deck reached, the charges set, the killer, and the build.
+The run ends on a summary on the engine's ending screen (**exists** in its general form, and draws the outcome, the seed and the turn itself; Foundry pushes none of its own sections onto `EndingView` yet): the deepest deck reached, the charges set, the killer, and the build.
 A run is deterministic from its seed, so a summary can be shared and the run replayed.
 
 ## Art

@@ -168,7 +168,7 @@ fn main() -> AppExit {
             // Every number the captain is made of, and what moved each.
             SheetPanel::new(screen.sheet).titled("Ship's articles"),
             // Escape: a new run, the same seed again, or quit; and the screen
-            // the run ends on, where the morgue file is named.
+            // the run ends on.
             GameMenuPanel::new(screen.menu).title("Corsair").died("The sea takes you.").won("The sea is yours."),
         ))
         // The engine narrates the fight, the doors and what changes hands;

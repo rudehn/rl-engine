@@ -1136,8 +1136,8 @@ mod tests {
     }
 
     /// Standing at the window on the top floor and climbing out ends the
-    /// run won, with the coin carried as the score, in the words and the
-    /// morgue file both; anywhere else the same key is refused for free.
+    /// run won, with the coin carried as the score in the epitaph the
+    /// ending screen shows; anywhere else the same key is refused for free.
     #[test]
     fn climbing_out_of_the_window_wins_with_the_take_as_the_score() {
         let (mut app, player, _) = settled(7);

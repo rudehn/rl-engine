@@ -5,8 +5,8 @@
 //! [`load`] turns `assets/quests.ron` into a [`Quests`] and the one
 //! [`Facts`] kind it counts, the way `examples/corsair/src/quests.rs`
 //! does for its own, larger vocabulary; Foundry's objective vocabulary is
-//! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants
-//! [`Console`] on the `R` mark of any deck that reports one, beside the
+//! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants the
+//! reactor console on the `R` mark of any deck that reports one, beside the
 //! loot `loot::scatter_on_arrival` plants on the same arrival
 
 use bevy::prelude::*;

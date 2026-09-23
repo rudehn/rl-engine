@@ -1,12 +1,10 @@
-//! The way back out: how deep the run has been, and the lift it ends on.
+//! The way back up: how deep the run has been.
 //!
-//! Four things that only exist because the run goes back up, and that are
-//! meaningless apart. [`Deepest`] is the run's depth memory, which is what
-//! the climb's population is drawn at rather than the deck's own band.
-//! [`LiftOut`] is the lift on deck one the commando came down on, planted
-//! with no `Transition`, so the engine refuses a `GoThrough` on it and
-//! leaves the player its turn; [`answer_the_lift_out`] is the game
-//! answering that refusal, which is the whole of the run's victory.
+//! [`Deepest`] is the run's depth memory, which is what the climb's
+//! population is drawn at rather than the deck's own band, and
+//! [`remember_depth`] raises it on each arrival. Nothing here ends the
+//! run: the lift out on deck one that would win it is not built, so
+//! Foundry has no victory, only death.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;

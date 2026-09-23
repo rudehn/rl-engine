@@ -60,8 +60,7 @@ fn main() -> AppExit {
         // one hint that opens it at the right of the status row.
         // The engine narrates blows, deaths and what is picked up, naming
         // things in their own colours; the menu on Escape offers a new run,
-        // the same seed again, or quitting, and opens by itself when you die;
-        // the morgue writes each run down beside the executable.
+        // the same seed again, or quitting, and opens by itself when you die.
         .add_plugins((
             NarratorPlugin::default(),
             GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12))

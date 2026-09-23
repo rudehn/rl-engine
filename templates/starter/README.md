@@ -17,7 +17,7 @@ All of it is in `src/main.rs`, in the order it happens.
 - **A floor of rooms**, generated from the run's seed by a map-generation chain the engine runs the first time the floor is entered.
 - **Sight and light.** The floor is dark. You see by the torch you carry and the braziers in the halls, and remember what you have seen.
 - **Goblins** that wander, notice you by sight, sooner when you stand in light, and hunt where they last saw you.
-- **Combat.** Walk into a goblin to strike it; armor takes its share of every blow. The engine narrates the fight, names things in their own colours, and writes each run down in a morgue file when it ends.
+- **Combat.** Walk into a goblin to strike it; armor takes its share of every blow. The engine narrates the fight, names things in their own colours, and ends each run on a screen that says how it went.
 - **Stealth.** Put your torch out with `t` and a goblin has to be close to notice you, but you are nearly blind too.
 - **Panels**: your health and the keys along the top, the log along the bottom, and a look cursor on `x` that forecasts a fight.
 - **Tests** that run the game with no window: a property over forty-eight seeds, and two that play keys through the real input.

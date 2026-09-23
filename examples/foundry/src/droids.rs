@@ -105,7 +105,7 @@ impl Named for MonsterDef {
 }
 
 /// The distance a kind keeps from what it has in sight, as `monsters.ron`
-/// writes it: the engine's [`Shadow`] by its two fields.
+/// writes it: the engine's [`Keep::enemies`] by its two fields.
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct ShadowDef {
     /// How far it lets the nearest enemy get before it closes.

@@ -8,9 +8,9 @@
 //   objectives: a list of (text, on, need)
 //     on:       what it counts: ChargeSet(deck)
 //     need:     Total(n) counts matching facts
-//   victory:    optional; finishing this wins the run. No charge wins it: the run is won
-//               by reaching deck one's lift out with the core charge set, which `climb.rs`
-//               answers, so every task here is false.
+//   victory:    optional; finishing this wins the run. No charge wins it, and nothing
+//               else does either: the lift out on deck one that would end the run is
+//               not built, so every task here is false.
 #![enable(implicit_some)]
 [
     (

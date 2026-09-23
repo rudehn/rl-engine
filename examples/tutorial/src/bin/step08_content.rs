@@ -76,8 +76,7 @@ fn main() -> AppExit {
         // does to you is a bite.
         .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
         // Escape opens the menu. The run's end opens it by itself, under these
-        // words, offering a new run or the same seed again; the morgue writes
-        // the run down beside the executable.
+        // words, offering a new run or the same seed again.
         .add_plugins(GameMenuPanel::new(Rect::new(COLS / 2 - 20, 8, 40, 12)).died("The warren keeps you."))
         .add_systems(NewRun, start)
         // Once a frame, before the turns: whatever the player pressed becomes
