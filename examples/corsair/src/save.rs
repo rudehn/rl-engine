@@ -42,6 +42,7 @@ pub const VERSION: u32 = 3;
 /// The slot every run saves to.
 pub const SLOT: &str = "corsair";
 
+// ANCHOR: register
 /// What the save is made of: the plugin that keeps it, the four kinds, and
 /// the four resources.
 pub fn register(app: &mut App) {
@@ -58,6 +59,7 @@ pub fn register(app: &mut App) {
         .save_state::<Entrances>()
         .save_state::<Quests>();
 }
+// ANCHOR_END: register
 
 /// The player, as a kind the save can name. The engine gives it back its
 /// place, its health, its bag, its gear and its statuses; what a fresh
@@ -155,6 +157,7 @@ impl Saveable for MonsterKind {
     }
 }
 
+// ANCHOR: kind
 /// A stairway or a cave mouth: the engine knows where it leads, Corsair
 /// only how it is drawn.
 #[derive(Component, Debug, Clone, Copy)]
@@ -171,6 +174,7 @@ impl Saveable for Stairway {
         world.spawn((Stairway, crate::places::stair_glyph(*glyph))).id()
     }
 }
+// ANCHOR_END: kind
 
 impl SaveableState for Entrances {
     type Saved = Vec<Point>;

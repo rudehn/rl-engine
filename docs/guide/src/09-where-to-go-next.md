@@ -1,6 +1,7 @@
 # Where to go next
 
 Warren is a complete roguelike in about 450 lines and uses maybe a third of the engine.
+The Systems pages are the reference for the rest, one per system, and each teaser below links to the page that covers it.
 
 ## Lighting
 
@@ -10,6 +11,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
   `Fuel` reports `LightEvent::BurntOut`.
 - **Worked examples** `heist`, where wall lamps are the only light, snuffing one is how you cross a room, and the watch light them again.
   `delve` below the Maw: a brand that can be smothered, a torch to set down, and `v` to see the light as digits.
+- **Reference** [Sight and lighting](systems/sight.md).
 - **Design** [`docs/design/lighting.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/lighting.md).
 
 ## Stealth
@@ -20,6 +22,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
   A monster that has not noticed you does not act on you, one that loses you searches where it last saw you, and `Watchers` answers who is watching whom for the panels.
 - **Worked examples** `heist`: a thief the watch have to notice, a pebble that draws them to the wrong corner, and a shout that brings the rest.
   `delve` is built around it and Corsair's caves use it.
+- **Reference** [Stealth](systems/stealth.md).
 - **Design** [`docs/design/stealth.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/stealth.md).
 
 ## Abilities
@@ -30,6 +33,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You get** a key that writes `AimAt`, a cursor the engine opens, a preview of what the shot would cover, and the turn spent.
   An item that `Grants` an ability lends it to whoever carries it, and a `Charge` cost is spent from the item, so a potion is a line of RON.
 - **Worked examples** `delve` has five, `corsair` four, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
+- **Reference** [Abilities](systems/abilities.md).
 - **Design** [`docs/design/abilities.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/abilities.md).
 
 ## Statuses, stats and gear
@@ -39,6 +43,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You get** afflictions ticked by the turn through the damage pipeline, with stacking rules and cures; a stat block with a modifier accumulator; an equipment slot graph with displacement; and an affix model of prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
   `Loadout` sums the gear at the blow and `fold_gear` keeps the stats current, so nothing is ever copied onto the wearer.
 - **Worked example** `corsair` uses all of it.
+- **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, and [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`.
 
 ## Quests
 
@@ -46,6 +51,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You supply** facts with a kind, a subject, an object and an amount, and objectives over them.
 - **You get** `Quests` with prerequisite chains and a victory flag, and `Counters`, a ledger of named tallies.
   It is the grown-up version of [chapter 6](06-two-floors.md)'s `if the king died`.
+- **Reference** [Statuses](systems/statuses.md), where `FactsPlugin` sits beside the statuses it shares a page with.
 
 ## Saving
 
@@ -55,6 +61,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
   The envelope is versioned and refuses a mismatch instead of guessing, entities are remapped on the way back in, and `SavePlugin` keeps the save a turn behind the run so a closed window saves.
   It forgets the save when the run ends.
 - **Worked example** Corsair's `save.rs`: four kinds and four resources, in about four hundred lines.
+- **Reference** [Saving and the morgue](systems/saving.md).
 
 ## The run's beginning and end
 
@@ -64,6 +71,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You get** the engine running your start again after every `Restart`, on a fresh seed or the same one, with the old run torn down first.
   `RunOver` ends a run, from the player's death unless `CombatRules` say otherwise, or from any condition of your own.
   `GameMenuPanel` opens over the ending and offers the next run, and `Morgue` writes the run down.
+- **Reference** [The turn loop](systems/turn-loop.md) for the schedules, and [Saving and the morgue](systems/saving.md) for what is filed at the end.
 
 ## A narrator
 
@@ -72,6 +80,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You get** every engine event spoken, split by who did what to whom, with names in the colours of the things they name.
   Reword a phrase, silence one, or read the `NarrationView` and say it your own way.
   A line of your own told from inside a turn is a `Tell`, written in `TurnSet::React`, and the narrator speaks it after what it answers and before whatever the next actor does.
+- **Reference** [Narration](systems/narration.md).
 
 ## A world above the dungeon
 
@@ -80,6 +89,7 @@ Warren is a complete roguelike in about 450 lines and uses maybe a third of the 
 - **You get** FBM noise, elevation banding, priority-flood hydrology, climate, scored site placement and a road router, streamed around the player with a seam hash so chunk edges agree, keeping your edits across unload and reload.
   `rl-overworld` draws it with a portal picker.
 - **Worked example** `corsair`.
+- **Reference** [Places and streaming](systems/places.md) for the two kinds of map and the streaming, and [The overworld](systems/overworld.md) for the screen over them.
 
 ## Balance
 
@@ -110,6 +120,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 - **The forecast** in the look cursor is not the panel's arithmetic. `rl_rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
 
 `examples/tutorial/src/bin/step10_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and [`docs/design/ui.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/ui.md) is why it is shaped that way.
+[Panels](systems/panels.md) is the reference for the split and for every view the engine ships, and [Controls, modals and cursors](systems/controls.md) for the declaration, the stack and the cursor.
 
 ## Testing without a window
 

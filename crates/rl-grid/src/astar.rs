@@ -255,6 +255,30 @@ mod tests {
         assert!(astar.find_within(&view, p(0, 0), p(39, 0), PathRules::default(), 3900).is_some());
     }
 
+    /// A goal one east and two south is reached at 241 either way: the
+    /// diagonal then a step, or a step then the diagonal. The tie is broken
+    /// by which frontier cell was discovered first, and neighbours are
+    /// pushed in [`Direction::ALL`] order, so the diagonal wins wherever on
+    /// the grid the query is made. Breaking ties by the cell's flat index
+    /// instead would pick the other route every time, so this is what pins
+    /// the insertion counter in `find_within`.
+    #[test]
+    fn a_tie_between_two_equally_cheap_routes_goes_to_the_one_discovered_first() {
+        use rl_core::Grid2D;
+        let (t, r) = parse(&[".........", ".........", ".........", ".........", ".........", ".........", ".........", ".........", "........."]);
+        let view = t.view(&r);
+        let mut astar = AStar::new();
+        for start in t.bounds().cells() {
+            let goal = start.offset(1, 2);
+            if !view.in_bounds(goal) {
+                continue;
+            }
+            let path = astar.find(&view, start, goal, PathRules::default()).unwrap();
+            assert_eq!(path.cost, 241, "the two routes are only a tie if both cost 241, from {start:?}");
+            assert_eq!(path.steps, vec![start.offset(1, 1), goal], "the diagonal is discovered first, from {start:?}");
+        }
+    }
+
     #[test]
     fn buffers_are_reused_across_searches_and_sizes() {
         let (a, ra) = parse(&["...", "...", "..."]);

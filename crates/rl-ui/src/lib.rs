@@ -123,9 +123,10 @@ pub use panel::{
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
-    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, EndingSection, EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin,
-    InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, Lent, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin,
-    TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, ContainerView, ContainerViewPlugin, EndingSection, EndingView, EndingViewPlugin,
+    GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, Lent, NearbyView, NearbyViewPlugin,
+    OfferRow, OffersView, OffersViewPlugin, OpenContainer, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin,
+    target_modal,
 };
 
 use bevy::prelude::*;
@@ -266,9 +267,9 @@ pub mod prelude {
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{
-        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, EndingSection, EndingView, GearView, GearViewPlugin, InspectView,
-        InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, Row, SheetView, SheetViewPlugin, TargetView,
-        TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimThrow, Bar, ContainerView, ContainerViewPlugin, EndingSection, EndingView, GearView,
+        GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, OfferRow, OffersView,
+        OffersViewPlugin, OpenContainer, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};
 }

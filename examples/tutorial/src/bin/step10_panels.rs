@@ -124,10 +124,12 @@ fn main() -> AppExit {
         // ordering after a collector function.
         .add_systems(Update, (note_bag_and_floor, note_what_a_rat_is_doing).in_set(ViewSet::Annotate))
         // ANCHOR_END: panels
+        // ANCHOR: narrator
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat
         // does to you is a bite.
         .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
+        // ANCHOR_END: narrator
         // Escape opens the menu. The run's end opens it by itself, under these
         // words, offering a new run or the same seed again; the morgue writes
         // the run down beside the executable.

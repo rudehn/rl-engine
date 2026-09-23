@@ -188,6 +188,7 @@ pub struct Outcomes<'w, 's> {
 /// Turns the frame's outcomes into facts.
 pub fn report_facts(mut out: Outcomes, mut happened: MessageWriter<Happened>, mut last_region: Local<Option<Point>>) {
     let facts = &out.facts;
+    // ANCHOR: killed
     let mut report = |f: Fact| happened.write(Happened(f));
     for d in out.deaths.read() {
         if let Ok((kind, faction)) = out.monsters.get(d.entity) {
@@ -195,6 +196,7 @@ pub fn report_facts(mut out: Outcomes, mut happened: MessageWriter<Happened>, mu
             report(Fact::new(facts.killed_faction).about(faction.0.raw() as u64));
         }
     }
+    // ANCHOR_END: killed
     let carried: BTreeMap<u64, i64> = out
         .player
         .single()

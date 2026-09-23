@@ -156,12 +156,15 @@ fn registries() -> Registries {
         DamageKind::new("care").unarmored(),
     ])
     .unwrap();
+    // ANCHOR: statuses
     let fire = damage_kinds.expect("fire");
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
         StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
     ])
     .unwrap();
+    // ANCHOR_END: statuses
+    // ANCHOR: gases
     let gases = Registry::from_defs(vec![
         // What burning flesh gives off: thick enough to hide in while it hangs.
         GasDef::new("smoke").spread(55).fade(9).veils_at(70),
@@ -169,6 +172,7 @@ fn registries() -> Registries {
         GasDef::new("reek").spread(35).fade(12).burns().inflicts(60, statuses.expect("dazed"), 1),
     ])
     .unwrap();
+    // ANCHOR_END: gases
     Registries {
         factions: Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("whale")]).unwrap(),
         stats: Registry::from_defs(vec![StatDef::new("mana", 30)]).unwrap(),
@@ -320,8 +324,10 @@ fn start(
     commands.insert_resource(Beasts { defs, table, brains, bite: registries.damage_kinds.expect("bite"), whale: whale_side });
     commands.insert_resource(combat);
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
+    // ANCHOR: fire_rules
     // Standing in fire scorches, and burning flesh smokes.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
+    // ANCHOR_END: fire_rules
     commands.insert_resource(whale.appearance());
     commands.insert_resource(WorldMap::new(whale.tiles().tables()));
     commands.insert_resource(Bile(whale.bile()));

@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""The system reference, checked against the code it documents.
+
+    scripts/check-systems.py              fail if a page is behind its code
+    scripts/check-systems.py --bless NAME confirm systems/NAME.md again
+
+Three checks, in the order a failure is cheapest to fix:
+
+  1. every page's manifest names files that are there,
+  2. every listed file is unchanged since the page was last confirmed,
+  3. every `impl Plugin for X` in `crates/` is claimed by exactly one page.
+
+Check 3 was a warning while the reference was incomplete, because a check
+that fails on every build is a check somebody comments out. It went fatal
+in the commit that wrote the last page: every system has one now, so a
+plugin that lands with no page fails the build.
+
+What none of them can check is whether a sentence is true. Check 2 is the
+nearest thing there is: it cannot read the page, but it can say that the
+code the page describes has moved and that nobody has re-read the page
+since. That is the failure the other two cannot see, and the one that
+makes a reference worse than no reference.
+"""
+
+import hashlib
+import pathlib
+import re
+import sys
+
+SYSTEMS = pathlib.Path("docs/guide/src/systems")
+CRATES = pathlib.Path("crates")
+
+# Every system has a page, so a plugin that lands without one fails the
+# build. This went True in the commit that wrote the last page.
+COVERAGE_IS_FATAL = True
+
+MANIFEST = re.compile(r"<!-- documents:\n(?P<body>.*?)-->", re.S)
+FIELDS = ("plugins", "files", "fingerprint")
+
+
+class Broken(Exception):
+    """A page's manifest is missing, malformed, or names nothing."""
+
+
+def manifest(page: pathlib.Path) -> dict[str, list[str]]:
+    """The `documents:` block at the top of `page`.
+
+    Every field is a whitespace or comma separated list, so a field can
+    run over several lines and a path with no spaces needs no quoting.
+    """
+    found = MANIFEST.search(page.read_text())
+    if not found:
+        raise Broken(f"{page}: no `documents:` block. Every system page declares what it documents.")
+    fields: dict[str, list[str]] = {}
+    key = None
+    for line in found.group("body").splitlines():
+        head, sep, rest = line.strip().partition(":")
+        if sep and head in FIELDS:
+            key, line = head, rest
+            fields.setdefault(key, [])
+        if key is None:
+            raise Broken(f"{page}: `{line.strip()}` is before any of {', '.join(FIELDS)}.")
+        fields[key].extend(word for word in line.replace(",", " ").split() if word)
+    for field in FIELDS:
+        if not fields.get(field):
+            raise Broken(f"{page}: the manifest has no `{field}:`.")
+    if len(fields["fingerprint"]) != 1:
+        raise Broken(f"{page}: `fingerprint:` takes one value, not {len(fields['fingerprint'])}.")
+    # A file named twice was hashed twice and blessed without a word. It is
+    # harmless and invisible, which is the worst pair for a copy-paste to be
+    # in, on the one list the reference is trying to keep honest.
+    twice = sorted({f for f in fields["files"] if fields["files"].count(f) > 1})
+    if twice:
+        raise Broken(f"{page}: lists {', '.join(twice)} twice. A page documents a file once, and the second naming is a copy-paste.")
+    return fields
+
+
+def fingerprint(paths: list[str]) -> str:
+    """A hash of the files a page documents, in the order it lists them."""
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(pathlib.Path(path).read_bytes())
+    return digest.hexdigest()[:8]
+
+
+def pages() -> list[pathlib.Path]:
+    """Every system page, in reading order."""
+    return sorted(p for p in SYSTEMS.glob("*.md") if not p.name.startswith("_"))
+
+
+PLUGIN = re.compile(r"impl Plugin for ([A-Za-z0-9_]+)")
+
+
+def plugins_in_code() -> set[str]:
+    """Every plugin the workspace defines.
+
+    A plugin is the engine's unit of opt-in, so a plugin no page claims is
+    a subsystem a game can switch on and cannot read about.
+    """
+    found: set[str] = set()
+    for source in CRATES.rglob("*.rs"):
+        found.update(PLUGIN.findall(source.read_text()))
+    return found
+
+
+def bless(name: str) -> int:
+    """Write today's fingerprint into one page, and say what it covered."""
+    page = SYSTEMS / f"{name}.md"
+    if not page.is_file():
+        print(f"no such page: {page}", file=sys.stderr)
+        return 1
+    try:
+        fields = manifest(page)
+    except Broken as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    # The same guard `main` uses, and the same wording. A manifest naming a
+    # file that has moved is exactly the state `--bless` is reached for, so
+    # it is the one call that must not answer with a Python traceback.
+    missing = [f for f in fields["files"] if not pathlib.Path(f).is_file()]
+    if missing:
+        print(f"{page}: documents files that are not there: {', '.join(missing)}", file=sys.stderr)
+        return 1
+    fresh = fingerprint(fields["files"])
+    text = page.read_text()
+    page.write_text(re.sub(r"fingerprint: [0-9a-f]+", f"fingerprint: {fresh}", text, count=1))
+    print(f"{page}: confirmed against {', '.join(fields['files'])}")
+    return 0
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    if "--bless" in argv:
+        rest = argv[argv.index("--bless") + 1 :]
+        if not rest:
+            print(
+                "--bless takes the name of one page, so that confirming a page is a\n"
+                "thing somebody did to it rather than a thing that happened to all of them.",
+                file=sys.stderr,
+            )
+            return 1
+        return bless(rest[0])
+
+    problems = []
+    for page in pages():
+        try:
+            fields = manifest(page)
+        except Broken as e:
+            problems.append(str(e))
+            continue
+        missing = [f for f in fields["files"] if not pathlib.Path(f).is_file()]
+        if missing:
+            problems.append(f"{page}: documents files that are not there: {', '.join(missing)}")
+            continue
+        fresh = fingerprint(fields["files"])
+        if fresh != fields["fingerprint"][0]:
+            problems.append(
+                f"{page}: the code it documents has changed since the page was last confirmed.\n"
+                f"    It documents: {', '.join(fields['files'])}\n"
+                f"    Re-read the page. If it is still true:  scripts/check-systems.py --bless {page.stem}\n"
+                f"    If it is not, fix the page first."
+            )
+
+    claimed: dict[str, list[pathlib.Path]] = {}
+    for page in pages():
+        try:
+            fields = manifest(page)
+        except Broken:
+            continue  # already reported above
+        for plugin in fields["plugins"]:
+            # `plugins: none` is how a page whose subsystem defines no plugin
+            # says so out loud, rather than by leaving the field empty.
+            if plugin == "none":
+                continue
+            claimed.setdefault(plugin, []).append(page)
+
+    coverage = []
+    for plugin in sorted(plugins_in_code() - set(claimed)):
+        coverage.append(f"no page documents `{plugin}`. A plugin a game can switch on is one it can read about.")
+    for plugin, holders in sorted(claimed.items()):
+        if len(holders) > 1:
+            coverage.append(f"`{plugin}` is claimed by {' and '.join(p.name for p in holders)}. One page owns a plugin.")
+        if plugin not in plugins_in_code():
+            coverage.append(f"{holders[0]}: claims `{plugin}`, which no crate defines.")
+
+    if coverage and COVERAGE_IS_FATAL:
+        problems.extend(coverage)
+    elif coverage:
+        print(f"  {len(coverage)} system(s) not yet documented, which is expected until the reference is finished.", file=sys.stderr)
+
+    for problem in problems:
+        print(f"  {problem}", file=sys.stderr)
+    if problems:
+        print("\nthe system reference is behind the code", file=sys.stderr)
+        return 1
+    print(f"the system reference is current across {len(pages())} page(s)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

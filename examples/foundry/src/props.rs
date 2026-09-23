@@ -262,6 +262,7 @@ pub fn spend_the_keycard(
     }
 }
 
+// ANCHOR: wreck
 /// Makes a droid's remains a wreck: something to go through.
 ///
 /// The engine kept the dead droid and named it from the remains
@@ -277,6 +278,7 @@ pub fn wreck_the_dead(mut commands: Commands, mut left: MessageReader<RemainsLef
         commands.entity(ev.entity).remove::<Glyph>().insert(PropKind(id));
     }
 }
+// ANCHOR_END: wreck
 
 #[cfg(test)]
 mod tests {

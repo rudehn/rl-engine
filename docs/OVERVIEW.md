@@ -272,6 +272,8 @@ Which is why the view plugins are named here: a game that writes its own present
 
 `docs/guide` is an mdBook that builds a small roguelike, Warren, in nine chapters, each playable in the browser: a map on screen and walking, sight and memory, blows and the log, things to carry and minds, a knack, two floors, content in RON, an action of the game's own, and where to go next.
 Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter's code is compiled by CI and can be played on its own; the chapters quote the sources through mdBook anchors rather than restating them, and `scripts/check-guide.sh` fails the build if an anchor, an image or a table-of-contents entry stops resolving.
+The same book's `docs/guide/src/systems` is a reference page per subsystem, twenty-three of them, for reading once the chapters have taught how the pieces fit rather than while learning them.
+Each page names its plugins and the files it documents in a manifest `scripts/check-systems.py` checks against the code, and the check fails the build, not just warns, when a plugin lands with no page or a page falls behind the source it names.
 
 ## The dungeon: the Hollow Whale
 

@@ -111,10 +111,12 @@ fn add_panels(app: &mut App, screen: &Screen) {
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back").cursor(CursorStyle::ticks()),
         AbilityPanel::new(screen.abilities).title("Abilities").called("abilities"),
+        // ANCHOR: bags
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but dust."),
         // What is inside a crate or a wreck, opened by walking into it or
         // by the key that does what is here.
         ContainerPanel::new(screen.chest).empty("Stripped already."),
+        // ANCHOR_END: bags
         // What can be done here, when walking into it would be a guess.
         OffersPanel::new(screen.here).title("Here"),
         InteractKey,

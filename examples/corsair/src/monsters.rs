@@ -143,6 +143,7 @@ impl Bestiary {
         self.spawned = regions.into_iter().collect();
     }
 
+    // ANCHOR: underground
     /// Spawns one `id` standing at `p` on the current map, underground, where
     /// whatever carries a lantern has it lit.
     pub fn spawn_underground(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
@@ -157,6 +158,7 @@ impl Bestiary {
         }
         e
     }
+    // ANCHOR_END: underground
 
     /// Spawns one `id` standing at `p` on the current map.
     pub fn spawn(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
