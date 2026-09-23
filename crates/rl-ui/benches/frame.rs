@@ -252,5 +252,87 @@ fn relight_spread(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, still, relight, relight_spread, collectors);
+/// How many terminal cells actually change from one frame to the next.
+///
+/// Printed rather than timed, because the cost this decides lives in
+/// Bevy's text pipeline and needs a window: `flush_terminal` writes one
+/// `Text2d` per changed glyph, and each write is a text re-layout. The
+/// instanced-renderer argument rests on this number and nobody had it.
+///
+/// Four readings: a still frame and a walking frame, each unlit and lit,
+/// because the lit map gives every cell its own shade of its tile and is
+/// the case the argument is really about.
+fn cell_churn(c: &mut Criterion) {
+    /// Cells that differ at all, and cells whose *glyph* differs.
+    ///
+    /// The split matters because `flush_terminal` only rewrites the
+    /// `Text2d` string when the character changed, which is the expensive
+    /// half; a colour-only change writes `TextColor` and lays out nothing.
+    fn changed(a: &Terminal, b: &Terminal) -> (usize, usize) {
+        let (mut any, mut glyphs) = (0, 0);
+        for y in 0..a.height() {
+            for x in 0..a.width() {
+                let (before, after) = (a.get(x, y), b.get(x, y));
+                if before != after {
+                    any += 1;
+                    if before.map(|c| c.glyph) != after.map(|c| c.glyph) {
+                        glyphs += 1;
+                    }
+                }
+            }
+        }
+        (any, glyphs)
+    }
+
+    for (lit, flicker, name) in [(false, false, "unlit"), (true, false, "lit_steady"), (true, true, "lit_flickering")] {
+        let (mut app, player) = drawing(16, lit, Panels::Always);
+        if flicker {
+            // A torch, not a lamp: `flicker` becomes a `waver` channel the
+            // renderer dips on a noise over the frame clock, so every lit
+            // cell can change colour from one animation step to the next.
+            app.world_mut().entity_mut(player).insert(rl_bevy::lighting::LightSource::new(200, 10, Rgb::new(255, 200, 120)).flickering(200));
+        }
+        // The animation clock is quantised to twelve steps a second and is
+        // driven by the real clock, so a frame has to actually wait or
+        // nothing ever wavers. Sleeping is the only honest way to make the
+        // waver move; `Time::advance_by` is overwritten by `TimePlugin`.
+        let step = std::time::Duration::from_millis(100);
+        let cells = (SCREEN.width * SCREEN.height) as usize;
+        let home = app.world().get::<Position>(player).expect("somewhere").0;
+
+        // Still: two frames with nothing moved but the clock.
+        std::thread::sleep(step);
+        app.update();
+        let before = app.world().resource::<Terminal>().clone();
+        std::thread::sleep(step);
+        app.update();
+        let (still, still_glyphs) = changed(&before, app.world().resource::<Terminal>());
+
+        // Walking: the player moved a cell, by hand, so the map scrolls or
+        // the lamp moves without the loop's own noise.
+        let mut walked = 0;
+        let mut walked_glyphs = 0;
+        let mut samples = 0;
+        for i in 0..8 {
+            let to = if i % 2 == 0 { home.offset(1, 0) } else { home };
+            let before = app.world().resource::<Terminal>().clone();
+            app.world_mut().get_mut::<Position>(player).expect("somewhere").0 = to;
+            std::thread::sleep(step);
+            app.update();
+            let (any, glyphs) = changed(&before, app.world().resource::<Terminal>());
+            walked += any;
+            walked_glyphs += glyphs;
+            samples += 1;
+        }
+        let (walking, walking_glyphs) = (walked / samples, walked_glyphs / samples);
+        println!(
+            "CELL CHURN {name}: {cells} cells | still: {still} changed ({:.1}%), {still_glyphs} of them a new glyph | stepping: {walking} changed ({:.1}%), {walking_glyphs} a new glyph",
+            100.0 * still as f64 / cells as f64,
+            100.0 * walking as f64 / cells as f64
+        );
+    }
+    let _ = c;
+}
+
+criterion_group!(benches, cell_churn, still, relight, relight_spread, collectors);
 criterion_main!(benches);

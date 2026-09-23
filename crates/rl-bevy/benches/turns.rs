@@ -144,5 +144,114 @@ fn crowded_floor(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, turn_loop, crowded_floor);
+/// What a veiling gas costs a turn.
+///
+/// `step_gases` rewrites the map's veil on every whole turn, and any
+/// change to it moves `WorldMap::opacity_epoch`. Two readers treat that
+/// epoch as "everything is invalid": every viewshed recasts, and
+/// `update_lighting` rebuilds both light layers from every emitter, which
+/// is the one path the bounded invalidation added the same day does not
+/// narrow.
+///
+/// Three builds, same crowd: no gas plugin at all, the plugin with no gas
+/// in the air, and a vent filling the room with smoke thick enough to
+/// veil. The gap between the last two is the epoch.
+fn smoke(c: &mut Criterion) {
+    use rl_rules::{GasDef, Registry};
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Air {
+        None,
+        Clear,
+        /// Thick gas that never veils: the diffusion, with no epoch bump.
+        Thick,
+        Smoky,
+    }
+
+    fn built(air: Air, lit: bool) -> (App, Entity) {
+        let crowd = 32;
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((
+            rl_bevy::fov::FovPlugin,
+            rl_bevy::world::StreamingPlugin,
+            rl_bevy::combat::CombatPlugin,
+            rl_bevy::minds::MindsPlugin,
+            rl_bevy::items::ItemsPlugin,
+            rl_bevy::status::StatusPlugin,
+        ));
+        if lit {
+            app.add_plugins(rl_bevy::lighting::LightingPlugin);
+        }
+        if air != Air::None {
+            app.add_plugins(rl_bevy::gas::GasPlugin);
+        }
+        let start = testing::surface(&mut app);
+        let sides = testing::two_sides(&mut app);
+        let def = match air {
+            Air::Thick => GasDef::new("smoke").spread(60).fade(1),
+            _ => GasDef::new("smoke").spread(60).fade(1).veils_at(40),
+        };
+        let gases = Registry::from_defs(vec![def]).expect("one gas");
+        let smoke = gases.expect("smoke");
+        app.world_mut().resource_mut::<Registries>().gases = gases;
+
+        let player = app
+            .world_mut()
+            .spawn((
+                (Actor, Player, Blocks, Position(start), Viewshed::new(12), RevealsMap),
+                (Health::full(1_000_000), Faction(sides.ours), MeleeAttack::new(sides.kind, DiceRoll::flat(1))),
+            ))
+            .id();
+        if lit {
+            app.world_mut().entity_mut(player).insert(rl_bevy::lighting::LightSource::new(200, 10, rl_grid::Rgb::new(255, 220, 160)));
+        }
+        if air == Air::Smoky || air == Air::Thick {
+            // Four vents around the player, so the cloud is large, moves
+            // every turn and never settles.
+            for (dx, dy) in [(4, 0), (-4, 0), (0, 4), (0, -4)] {
+                app.world_mut().spawn((Position(start.offset(dx, dy)), rl_bevy::gas::Vents { gas: smoke, amount: 200 }));
+            }
+        }
+        let brain = std::sync::Arc::new(rl_rules::Brain::new().then(rl_rules::ai::tactics::Wander { chance_pct: 0 }));
+        let mut placed = 0;
+        let mut radius: i32 = 6;
+        while placed < crowd {
+            for dx in -radius..=radius {
+                for dy in -radius..=radius {
+                    if placed >= crowd || (dx.abs() != radius && dy.abs() != radius) {
+                        continue;
+                    }
+                    app.world_mut().spawn((
+                        (Actor, Blocks, Position(start.offset(dx, dy)), Viewshed::new(10)),
+                        (Health::full(1_000), Faction(sides.theirs), Perception(10), Mind(brain.clone())),
+                    ));
+                    placed += 1;
+                }
+            }
+            radius += 1;
+        }
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..12 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        (app, player)
+    }
+
+    let mut group = c.benchmark_group("one_player_turn_in_smoke");
+    for lit in [false, true] {
+        for (air, name) in [(Air::None, "no_gas_plugin"), (Air::Clear, "clear_air"), (Air::Thick, "thick_gas_no_veil"), (Air::Smoky, "thick_smoke_veiling")] {
+            let label = format!("{}/{name}", if lit { "lit" } else { "unlit" });
+            group.bench_function(BenchmarkId::from_parameter(label), |b| {
+                let (mut app, player) = built(air, lit);
+                b.iter(|| one_player_turn(black_box(&mut app), player));
+            });
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(benches, turn_loop, crowded_floor, smoke);
 criterion_main!(benches);
