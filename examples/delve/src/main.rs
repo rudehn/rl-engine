@@ -83,7 +83,6 @@ fn main() -> AppExit {
         // The engine narrates the fight and the knacks; the one phrase the
         // delve rewords is the brand going out.
         .add_plugins(NarratorPlugin::default().phrase(Phrase::YourLightGoesOut, "Your brand gutters and goes out.", Tones::BAD))
-        .insert_resource(Morgue::platform_default("delve", "The Hollow Whale"))
         .add_systems(Update, (note_floor, show_pools).in_set(ViewSet::Annotate))
         .add_systems(NewRun, start)
         // A screen that is up owns the keys: the knack keys decide that for

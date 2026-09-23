@@ -16,6 +16,7 @@
 
 pub mod ability;
 pub mod container;
+pub mod ending;
 pub mod gear;
 pub mod inspect;
 pub mod inventory;
@@ -26,6 +27,7 @@ pub mod target;
 pub mod vitals;
 
 pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
+pub use ending::{EndingSection, EndingView, EndingViewPlugin};
 pub use gear::{GearSlot, GearView, GearViewPlugin};
 pub use inspect::{InspectView, InspectViewPlugin};
 pub use inventory::{InventoryView, InventoryViewPlugin, ItemRow, Lent};

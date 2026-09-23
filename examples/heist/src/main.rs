@@ -37,7 +37,6 @@ use rl_engine::rl_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wan
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{Choice, Tactic, TacticCtx};
-use rl_engine::rl_save::Morgue;
 use serde::Deserialize;
 
 use crate::floors::{FLOORS, House, floor_of, map_of, name_of};
@@ -76,7 +75,6 @@ fn main() -> AppExit {
             GameMenuPanel::new(screen.menu).title("The Counting House").died("The watch have you.").won("Over the roofs and away."),
         ))
         .add_plugins(NarratorPlugin::default().phrase(Phrase::NoticesYou, "{Who} has seen you!", Tones::BAD))
-        .insert_resource(Morgue::platform_default("heist", "The Counting House"))
         .insert_resource(Lighting::dark())
         .add_systems(NewRun, start)
         .add_systems(Update, (tend_lantern, snuff, pick_up, throw, toggle_overlay, player_input).chain().run_if(no_modal).in_set(EngineSet::Input))
@@ -92,7 +90,7 @@ fn main() -> AppExit {
         // What this turn caused, answered inside it: a floor fills on
         // arrival, and a watchman who sees you shouts.
         .add_systems(Turn, (populate_floor, raise_alarm).in_set(TurnSet::React))
-        .add_systems(Update, file_the_take.in_set(PresentSet::Narrate))
+        .add_systems(Update, show_the_take.in_set(ViewSet::Annotate))
         // After the narrator, so the pebble clatters after it is thrown.
         .add_systems(Update, (narrate_the_house, narrate_what_the_thief_hears).after(ViewSet::Speak).in_set(PresentSet::Narrate));
     declare_controls(&mut app);
@@ -394,17 +392,16 @@ fn resolve_escapes(
     }
 }
 
-/// The take, written into the morgue file however the run ended.
-fn file_the_take(
-    mut over: MessageReader<RunOver>,
-    mut morgue: ResMut<Morgue>,
-    player: Query<Option<&Inventory>, With<Player>>,
-    coins: Query<&Stack, With<Coin>>,
-) {
-    for _ in over.read() {
-        let take = player.single().ok().map(|bag| take_of(bag, &coins)).unwrap_or(0);
-        morgue.section("The take", format!("{take} in coin"));
-    }
+/// The take, on the screen the run ends on however it ended.
+///
+/// Pushed every frame in `ViewSet::Annotate` rather than once on
+/// `RunOver`, because `EndingView` is a view and is cleared and refilled
+/// like every other one. The bag is still there to count after the run
+/// ends, so the number does not have to be captured at the moment of
+/// death.
+fn show_the_take(mut view: ResMut<EndingView>, player: Query<Option<&Inventory>, With<Player>>, coins: Query<&Stack, With<Coin>>) {
+    let Ok(bag) = player.single() else { return };
+    view.section("The take", format!("{} in coin", take_of(bag, &coins)));
 }
 
 /// The player, and only while it holds the turn.

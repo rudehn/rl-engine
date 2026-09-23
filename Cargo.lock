@@ -4314,7 +4314,6 @@ dependencies = [
  "rl-mapgen",
  "rl-render",
  "rl-rules",
- "rl-save",
  "rl-world",
 ]
 

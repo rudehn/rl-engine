@@ -99,5 +99,5 @@ The field defaults, so a save written before this exists still loads.
 ## 8. What is not here
 
 - **Burning.** Remains burn if the game marked them `Flammable`, through the fire rules that already exist. The engine adds no flammability of its own, because whether a body burns is a fact about bodies in that world.
-- **Remains of the player.** The player is left whole for the game, which may still want to draw it, read its health or file its obituary.
+- **Remains of the player.** The player is left whole for the game, which may still want to draw it, read its health or say something about it on the screen the run ends on.
 - **Bones files, or anything across runs.** Out of scope: nothing here outlives a save.
