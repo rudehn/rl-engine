@@ -9,7 +9,7 @@
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/faction.rs
             crates/rl-rules/src/forecast.rs
-     fingerprint: 40165155 -->
+     fingerprint: c9e301fa -->
 
 # Combat and loadout
 
@@ -42,7 +42,9 @@ All four sit on an actor or on an item, and that is the whole of how gear fights
 `Loadout` is the one answer to what an entity fights with, in three layers: the actor's own components, the same components on every item in its `Equipped` slots in slot order, and the value of the stat `CombatRules` names.
 A worn blow or shot replaces the actor's own, since a cutlass is swung in place of a fist, while armor and extra strikes add up.
 `armor`, `melee`, `ranged` and `strikes` are the sums; `melee_with` and `ranged_with` also say which worn item it came from; `blows` is the melee roll followed by the strikes, which is every roll one blow lands.
-The attack resolver strikes with it, `apply_damage` defends with it, and `blows` is what a `Combatant` is filled from, so what a panel says a fight will cost is worked out from the numbers the fight uses.
+The attack resolver strikes with it, `apply_damage` defends with it, and `blows` and its ranged twin `shots` are what a forecast is filled from, so what a panel says a fight will cost is worked out from the numbers the fight uses.
+`Loadout::arms` packs both of those, both costs and the shot's reach into a `forecast::Arms`, and `Combatant::armed` reads it at the distance the caller passes: one cell away is the melee rolls, further is the shot while the shot reaches, and past its reach is nothing at all.
+That is the rule `resolve_attacks` picks by, kept in one place, so an actor carrying only a gun forecasts as dangerous across the room and harmless once you are beside it rather than as harmless everywhere.
 `resolve_attacks` picks melee when the two are adjacent and otherwise a shot filtered by `line_of_fire`; an attack with nothing that reaches still spends an ordinary turn, since what was spent was the aim.
 It writes `Struck` before any damage, naming the worn item the attack came from, because what a weapon does to itself happens at the trigger rather than at the target.
 Every roll is floored at zero where it is rolled, so a weapon with a bad bonus that rolls low has missed rather than healed.
@@ -50,6 +52,7 @@ An attack with a `Look` is seen: a shot cues a `Cue::Flight` and a blow a `Cue::
 `land_shots` then drops them on a target still standing, so one killed while the shot flew is missed rather than hurt twice.
 `shot` is where a projectile goes and `line_of_fire` is that call landing on the cell it was pointed at; a targeting preview draws the same call, so what the player is shown and what the resolver decides cannot disagree.
 A `DamageEvent` carries a `Hit`, which separates `attacker`, who triggers on-hit riders, from `credit`, who gets the kill, so a poison tick credits whoever applied it without recursing its own riders; `critical` and `status` are there for the stages and narrators that care.
+It also carries a `Reach`, which is how the damage got there: `DamageEvent::new` is `Effect`, what did not travel as a weapon, and `arriving` names `Melee`, `Shot` or `Thrown` instead, carried through to `DamageDealt` for whoever puts it into words and read by nothing in the pipeline.
 `apply_damage` builds a `Defender` from the target's `Loadout`, runs `resolve` over the game's `DamageStages`, takes the result off health capped at `max`, and writes `DamageDealt` and, at zero, `DeathEvent`.
 A `DamageKind` is a name and whether armor applies to it, and `Resistances` is a percentage per kind: 100 is immunity, a negative number is vulnerability, and above 100 absorbs the hit into healing.
 The engine ships three stages, `SubtractArmor`, `ApplyResistance` and `HalveIfBlocked`, and the default list holds the first alone.
@@ -78,6 +81,7 @@ What a game hands combat is two registries and two rules, which is the whole of 
 ## The line
 
 The engine decides whether a blow is in reach, whether a shot has a line, what it is struck with, what it costs, what it rolls, the order the stages run in, what comes off health and who died.
+Which of an actor's two attacks a forecast counts is the engine's for the same reason: a panel hands over both sets of rolls and how far apart the two stand, and `Arms::at` picks, so what a screen says about a fight and what the resolver does in it cannot drift apart.
 The game decides what a damage kind is and whether armor applies to it, who hates whom, what mitigates a hit, and what a hit or a death is worth beyond health reaching zero.
 `DamageStages` is a list of boxed `DamageStage`s, so there is no enum of mitigations and no `Custom` arm: a game's critical rule sits in the list beside `SubtractArmor` and `resolve` cannot tell them apart.
 `Defender::blocked` is never set by the engine, which builds one with `blocked: false` every time, so `HalveIfBlocked` is for a caller that fills its own and a game that blocks rolls the block inside a stage of its own.
@@ -94,6 +98,7 @@ Arithmetic that is really about the rules lives in `rl-rules`, and what that buy
 `rl-rules` is tier 1 and has no Bevy in it: `damage.rs` is `Hit`, `Defender`, the `DamageStage` trait and a `resolve` that is a fold over stages, all of it tested against ids made out of thin air.
 `faction.rs` is the dense matrix, which is a table and an index rather than anything that needs a world.
 `forecast.rs` is where the split earns its keep: `expected_damage` calls the same `resolve` with the average roll in place of a real one and through the game's own stages, so a panel that says a fight is deadly got the word from the arithmetic the fight will use.
-It is melee-only and says so: a `Combatant` carries one roll and one cost and they are the melee ones, so widening it means carrying the ranged pair as well and having the caller choose between them once it knows whether the two stand adjacent.
+`Arms` is what a fight fought at a distance costs it: both sets of rolls, both costs and the shot's reach, with `Arms::at` the one place the choice between them is made and `Combatant` still one set already chosen.
+The distance is an argument because only the caller knows where the two stand, and the one thing `Arms::at` will not check is whether the line of fire is clear, since a forecast a wall may yet block is still the right forecast for the fight the two would have.
 `rl-bevy` is tier 2 and owns everything that touches the world: `combat.rs` is the components, `Loadout`, the resolver, the pipeline runner and the deaths, in one file because a blow is one decision and not six.
 `bump.rs` is beside it rather than inside it, since a walk key that comes to a blow is the turn loop's redirection and works the same in a game with doors and no foes.
