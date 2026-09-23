@@ -292,7 +292,7 @@ mod tests {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         let shooter = at(&app, player);
         let kind = app.world().resource::<Registries>().damage_kinds.expect("energy");
-        app.world_mut().write_message(DamageEvent { target, hit: rl_engine::rl_rules::Hit::by(player, kind, 1) });
+        app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::by(player, kind, 1)));
         app.update();
         assert_eq!(heard(&app, far), Some(shooter), "it heard the shot, where it was fired from");
     }

@@ -662,7 +662,7 @@ mod tests {
         let healer = field.app.world_mut().spawn(Position(start.offset(0, 2))).id();
         let kind = rl_rules::damage::DamageKindId::from_raw(0);
         for hit in [rl_rules::Hit::by(player, kind, 3), rl_rules::Hit::by(player, kind, 0), rl_rules::Hit::by(healer, kind, -4)] {
-            field.app.world_mut().write_message(DamageEvent { target: listener, hit });
+            field.app.world_mut().write_message(DamageEvent::new(listener, hit));
         }
         field.wait();
         let told = &field.app.world().resource::<Told>().0;

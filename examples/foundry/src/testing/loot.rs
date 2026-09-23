@@ -170,7 +170,7 @@ pub fn kill_with_a_guaranteed_drop(app: &mut App, item: &str) -> Point {
     queue.apply(app.world_mut());
     app.insert_resource(roster);
     let kinetic = registries.damage_kinds.expect("kinetic");
-    app.world_mut().write_message(DamageEvent { target: monster, hit: Hit::by(player, kinetic, 999) });
+    app.world_mut().write_message(DamageEvent::new(monster, Hit::by(player, kinetic, 999)));
     app.update();
     pos.0
 }

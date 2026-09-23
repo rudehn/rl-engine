@@ -30,24 +30,23 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 3 | Corsair's tests play a different game from its binary | 3 | medium | medium |
 | 4 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
 | 5 | `OnMap` as a required component | 4 | medium | medium |
-| 7 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 8 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 9 | What the save holds is stated where the save is | 7 | medium | medium |
-| 10 | Anyone travels | 3 | medium | high |
-| 11 | Movement profiles that change costs | 3 | medium | high |
-| 12 | The narrator hears what registers itself | 7 | medium | high |
-| 13 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 14 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 15 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 16 | Admission scans its waiting actors linearly | 4 | low | low |
-| 17 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 18 | A `Burning` entity comes back unlit | 3 | low | low |
-| 19 | A shot is narrated as a blow | 3 | low | low |
-| 20 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 21 | A place for a miss | 3 | low | low |
-| 22 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 23 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 24 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 6 | Light is recast once a frame, not once a turn | 3 | medium | medium |
+| 7 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 8 | What the save holds is stated where the save is | 7 | medium | medium |
+| 9 | Anyone travels | 3 | medium | high |
+| 10 | Movement profiles that change costs | 3 | medium | high |
+| 11 | The narrator hears what registers itself | 7 | medium | high |
+| 12 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 13 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 14 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 15 | Admission scans its waiting actors linearly | 4 | low | low |
+| 16 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 17 | A `Burning` entity comes back unlit | 3 | low | low |
+| 18 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 19 | A place for a miss | 3 | low | low |
+| 20 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -99,9 +98,6 @@ The five items that opened this section were built in the six stages of `docs/de
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.
 - **A place for a miss.**
   Accuracy is deliberately absent (`docs/design/abilities.md`, "Accuracy does not exist"); the combat docs should say how a game adds a miss as a `DamageStage`, with an example.
-- **A shot is narrated as a blow.**
-  The phrasebook has one `HitsYou` for a blow and a shot alike, so a droid firing from across a dark room reads as "The line droid hits you for 4", named even when the player cannot see it.
-  `DamageEvent` or `Struck` already knows whether an attack was ranged; a `ShootsYou` phrase, and "something" for an attacker out of sight, would say what happened.
 - **Light is recast once a frame, not once a turn.**
   `update_lighting` runs in `EngineSet::Light`, after every `Turn` pass the frame ran, so a droid acting in the same frame the player switches a lamp off still sees by the old light, for one turn.
   Foundry's lamp shows it; recasting the dynamic layer inside the turn loop, when a source was added or removed, would close it.

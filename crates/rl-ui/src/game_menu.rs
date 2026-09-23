@@ -469,7 +469,7 @@ mod tests {
         stage.tick();
         stage.app.world_mut().resource_mut::<MessageLog>().bad("You feel a chill.", 0);
         // The harness has no minds, so the ogre's blow is written for it.
-        stage.app.world_mut().write_message(DamageEvent { target: player, hit: rl_rules::Hit::by(ogre, kind, 30) });
+        stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(ogre, kind, 30)));
         stage.app.world_mut().write_message(Intent::new(player, Wait));
         for _ in 0..4 {
             stage.tick();
