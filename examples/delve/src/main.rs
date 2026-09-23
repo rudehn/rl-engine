@@ -157,12 +157,14 @@ fn registries() -> Registries {
         DamageKind::new("care").unarmored(),
     ])
     .unwrap();
+    // ANCHOR: statuses
     let fire = damage_kinds.expect("fire");
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
         StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
     ])
     .unwrap();
+    // ANCHOR_END: statuses
     // ANCHOR: gases
     let gases = Registry::from_defs(vec![
         // What burning flesh gives off: thick enough to hide in while it hangs.

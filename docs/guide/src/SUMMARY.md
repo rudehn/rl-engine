@@ -37,7 +37,7 @@
 - [What it leaves behind]()
   - [Fire and gas](systems/fields.md)
   - [Remains](systems/remains.md)
-  - [Statuses]()
+  - [Statuses](systems/statuses.md)
 - [What you see]()
   - [Rendering]()
   - [Panels](systems/panels.md)
