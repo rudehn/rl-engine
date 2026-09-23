@@ -1160,11 +1160,11 @@ mod tests {
     }
 
     /// A companion keeps up with the player and gives way when it is
-    /// underfoot: `Follow` asks for the way toward its allies and the
+    /// underfoot: a companion asks for the way toward its allies and the
     /// engine builds it, so a game with a companion writes no pathing.
     #[test]
     fn a_companion_follows_the_player_and_keeps_out_from_underfoot() {
-        use rl_rules::ai::tactics::Follow;
+        use rl_rules::ai::tactics::Keep;
         let (mut app, start, _) = arena();
         let us = rl_rules::FactionId::from_raw(0);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
@@ -1177,7 +1177,7 @@ mod tests {
                 Health::full(10),
                 Faction(us),
                 Perception(10),
-                Mind(Arc::new(Brain::new().then(Follow { keep_within: 2, no_closer_than: 1 }))),
+                Mind(Arc::new(Brain::new().then(Keep::allies(2, 1)))),
             ))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
