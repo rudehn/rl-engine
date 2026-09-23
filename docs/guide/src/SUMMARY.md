@@ -39,7 +39,7 @@
   - [Remains](systems/remains.md)
   - [Statuses](systems/statuses.md)
 - [What you see]()
-  - [Rendering]()
+  - [Rendering](systems/rendering.md)
   - [Panels](systems/panels.md)
   - [Controls, modals and cursors]()
   - [Narration]()
