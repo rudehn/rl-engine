@@ -12,7 +12,7 @@
 //! [`FieldAppearance`]: a flame over every burning cell with embers rising
 //! off it, and the ground tinted by the densest gas on it, thick enough to
 //! hide behind drawn as a haze that grows heavier the thicker it is. What
-//! is drawn is what [`ShownFields`](crate::fields::ShownFields) shows,
+//! is drawn is what [`ShownFields`] shows,
 //! blended in and stirred, rather than the fields as they stand. Only on
 //! tiles in sight; memory holds no smoke.
 
