@@ -53,7 +53,7 @@ pub use combat::{
     MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use consumable::{AddSpending, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, remove_spent};
+pub use consumable::{AddSpending, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
@@ -81,8 +81,8 @@ pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
 pub use plugin::{
-    CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, Requirements, ResetsOnNewRun,
-    ResolveSet, RunResets, Turn, TurnSet, clear_run, depends_on,
+    CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, Requirements,
+    ResetsOnNewRun, ResolveSet, RunResets, Turn, TurnSet, clear_run, depends_on,
 };
 pub use props::{
     AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet,
@@ -136,8 +136,8 @@ pub mod prelude {
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };
     pub use crate::plugin::{
-        CleanupSet, CorePlugin, DecideSet, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, ResetsOnNewRun, ResolveSet,
-        Turn, TurnSet, depends_on,
+        CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, ResetsOnNewRun,
+        ResolveSet, Turn, TurnSet, depends_on,
     };
     pub use crate::props::{
         AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Spotted,

@@ -38,7 +38,7 @@ use crate::heat::Stowed;
 
 /// What finishing the first objective may give, one of three, kept for the
 /// run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Upgrade {
     /// An ability that patches you up.
     Stims,

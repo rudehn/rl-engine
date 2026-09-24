@@ -2,9 +2,10 @@
 //!
 //! [`Deepest`] is the run's depth memory, which is what the climb's
 //! population is drawn at rather than the deck's own band, and
-//! [`remember_depth`] raises it on each arrival. Nothing here ends the
-//! run: the lift out on deck one that would win it is not built, so
-//! Foundry has no victory, only death.
+//! [`remember_depth`] raises it on each arrival. The climb ends at the
+//! lift out on deck one, which `lifts::ride_out` answers: riding it once
+//! the core is charged finishes the mission's last quest, and that wins
+//! the run.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;

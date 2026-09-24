@@ -926,7 +926,7 @@ impl Plugin for CombatPlugin {
             // In `Last`, after everything that reads the frame's deaths has
             // run, which is the promise that the dead linger until the frame
             // ends, kept without naming any of those systems.
-            .add_systems(Last, bury_the_dead);
+            .add_systems(Last, bury_the_dead.in_set(crate::plugin::EndOfFrame::Bury));
     }
 
     fn finish(&self, app: &mut App) {

@@ -241,9 +241,9 @@ impl Plugin for ConsumablesPlugin {
             .add_systems(Turn, spend_charges.in_set(ResolveSet::Triggers).after(crate::effects::land_triggers))
             .add_systems(Turn, recharge_charges.in_set(TurnSet::React))
             .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove))
-            // Before a restart tears the run down, so what the last pass
-            // spent goes with the run it was spent in.
-            .add_systems(Last, bury_spent.before(crate::plugin::restart_runs));
+            // With the dead, before a restart tears the run down, so what
+            // the last pass spent goes with the run it was spent in.
+            .add_systems(Last, bury_spent.in_set(crate::plugin::EndOfFrame::Bury));
     }
 
     fn finish(&self, app: &mut App) {

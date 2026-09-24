@@ -64,6 +64,18 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("mission::spawn_console_on_arrival", id(mission::spawn_console_on_arrival)),
         ("mission::answer_charge", id(mission::answer_charge)),
         ("mission::offer_the_pick", id(mission::offer_the_pick)),
+        ("mission::answer_victory", id(mission::answer_victory)),
+        ("lifts::ride_out", id(lifts::ride_out)),
+        ("run::resume", id(run::resume)),
+        ("save::load_armory", id(save::load_armory)),
+        ("title::look_for_save", id(title::look_for_save)),
+        ("engine save::refresh_stash", id(rl_engine::rl_save::run::refresh_stash)),
+        ("engine save::save_on_arrival", id(rl_engine::rl_save::save_on_arrival)),
+        ("engine save::flush_on_exit", id(rl_engine::rl_save::unload::flush_on_exit)),
+        ("engine save::forget_save", id(rl_engine::rl_save::forget_save)),
+        ("engine combat::bury_the_dead", id(rl_engine::rl_bevy::combat::bury_the_dead)),
+        ("engine consumable::bury_spent", id(rl_engine::rl_bevy::bury_spent)),
+        ("engine plugin::restart_runs", id(rl_engine::rl_bevy::plugin::restart_runs)),
         ("upgrades::react_uplink", id(upgrades::react_uplink)),
         ("upgrades::choice_keys", id(upgrades::choice_keys)),
         ("title::read_title_keys", id(title::read_title_keys)),
@@ -132,6 +144,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
     let c = world.components();
     let found = [
         ("MessageLog", c.component_id::<MessageLog>()),
+        ("Messages<Happened>", c.component_id::<Messages<rl_engine::rl_bevy::Happened>>()),
         ("GearView", c.component_id::<GearView>()),
         ("Facets", c.component_id::<Facets>()),
         ("Modals", c.component_id::<Modals>()),
@@ -344,7 +357,15 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &["Inventory"],
             "a crate's bag and a commando's are never the same bag, and only a commando wields",
         ),
-        // Every line a pass leaves is its own.
+        // Every line a pass leaves is its own, and so is every fact: the
+        // lift out answers a refused step through it, the console a charge
+        // set, and one pass holds one of the player's actions, never both.
+        Allowed {
+            a: Some(id(lifts::ride_out)),
+            b: None,
+            on: on(&["Messages<Tell>", "Messages<Happened>"]),
+            why: "every reaction writes its own line and its own fact for the pass; the narrator speaks the lines after it and the tracker counts the facts in any order, so two that answer different things say nothing by their order",
+        },
         Allowed {
             a: Some(id(mission::answer_charge)),
             b: None,

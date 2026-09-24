@@ -4,9 +4,11 @@
 //! A deck's builder reports an entry and a farthest exit; this puts a lift
 //! up on the entry and a lift down on the exit the first time the deck is
 //! entered, the way delve's stairs are laid, so the way on is always as
-//! far from where the commando arrived as the deck allows. Deck one has no
-//! lift up, since the slice has nothing above it, and the last deck has no
-//! lift down, since the slice has nothing below it.
+//! far from where the commando arrived as the deck allows. The last deck
+//! has no lift down, since there is nothing below it, and deck one has no
+//! lift up: it has the [`LiftOut`] instead, where the commando came in,
+//! which leads nowhere the engine could take anyone and is answered by
+//! [`ride_out`].
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -15,7 +17,20 @@ use crate::decks::{DECKS, deck_of, map_of};
 
 /// What a lift is drawn in: the hatch's amber, so a way on reads as part
 /// of the same machinery as a door.
-const LIFT: Color = Color::srgb(0.95, 0.8, 0.35);
+pub const LIFT: Color = Color::srgb(0.95, 0.8, 0.35);
+
+/// A lift between decks, or the lift out: what a save writes down as a
+/// lift and draws again as one.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Lift;
+
+/// The lift out on deck one, where the commando came in.
+///
+/// Carries no `Transition`: there is nowhere in the foundry it leads, so
+/// the engine refuses a `GoThrough` on it and gives the turn back, and
+/// [`ride_out`] answers the refusal with the mission's own words.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct LiftOut;
 
 /// What the log says on entering `deck`: its name, and what its light
 /// means for the commando.
@@ -49,11 +64,66 @@ pub fn link_decks(mut commands: Commands, mut entered: MessageReader<PlaceEntere
         }
         if deck > 1 {
             let up = Transition { to: Destination::Place { map: map_of(deck - 1), arrive: Arrive::Exit } };
-            commands.spawn((Position(ev.entry), OnMap(ev.map), up, Name::new("lift up"), Glyph::new('<', LIFT).on_layer(1)));
+            commands.spawn((Position(ev.entry), OnMap(ev.map), Lift, up, Name::new("lift up"), Glyph::new('<', LIFT).on_layer(1)));
+        } else {
+            // The way out, where the commando came in.
+            commands.spawn((Position(ev.entry), OnMap(ev.map), Lift, LiftOut, Name::new("lift out"), Glyph::new('<', LIFT).on_layer(1)));
         }
         if let Some(exit) = ev.exit.filter(|_| deck < DECKS) {
             let down = Transition { to: Destination::Place { map: map_of(deck + 1), arrive: Arrive::Entry } };
-            commands.spawn((Position(exit), OnMap(ev.map), down, Name::new("lift down"), Glyph::new('>', LIFT).on_layer(1)));
+            commands.spawn((Position(exit), OnMap(ev.map), Lift, down, Name::new("lift down"), Glyph::new('>', LIFT).on_layer(1)));
+        }
+    }
+}
+
+/// The player, where it stands, for [`ride_out`].
+type Rider<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Player>>;
+
+/// What riding the lift out answers with: a line when the core is not
+/// charged, and the fact the last quest counts when it is.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Mission<'w> {
+    quests: Res<'w, Quests>,
+    facts: Res<'w, crate::mission::Facts>,
+    happened: MessageWriter<'w, Happened>,
+    tell: MessageWriter<'w, Tell>,
+}
+
+impl Mission<'_> {
+    fn answer(&mut self) {
+        let core = self.quests.defs.expect(crate::mission::CORE_QUEST);
+        if self.quests.tracker.state(core) == QuestState::Done {
+            self.happened.write(Happened(Fact::new(self.facts.lift_out)));
+        } else {
+            self.tell.write(Tell::new("The lift will not move until the core is charged.", Tones::MUTED));
+        }
+    }
+}
+
+/// Answers a `GoThrough` on the lift out, which the engine has already
+/// refused and given the turn back for.
+///
+/// Before the core is charged it says so; after, it reports the fact the
+/// last quest counts, and finishing that quest is what wins. Reads the
+/// pass's own `Intent<GoThrough>` beside the refusal, because a refusal
+/// does not say what was refused, and the player may stand on the lift out
+/// when something else of theirs is refused.
+pub fn ride_out(
+    mut refused: MessageReader<ActionRefused>,
+    mut going: MessageReader<Intent<GoThrough>>,
+    rider: Rider,
+    outs: Query<(&Position, Option<&OnMap>), With<LiftOut>>,
+    mut mission: Mission,
+) {
+    let asked: Vec<Entity> = going.read().map(|i| i.actor).collect();
+    for r in refused.read() {
+        let Ok((me, at, on)) = rider.get(r.actor) else { continue };
+        if !asked.contains(&me) {
+            continue;
+        }
+        let map = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+        if outs.iter().any(|(p, m)| p.0 == at.0 && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == map) {
+            mission.answer();
         }
     }
 }
@@ -102,5 +172,92 @@ mod tests {
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let at = |line: &str| lines.iter().position(|l| l.starts_with(line)).unwrap_or_else(|| panic!("{line:?} not in {lines:#?}"));
         assert!(at("Deck 1:") < at("Press ? for the controls."), "{lines:#?}");
+    }
+}
+
+#[cfg(test)]
+mod lift_out {
+    use rl_engine::rl_bevy::{Ending, Outcome};
+    use rl_engine::rl_core::{Direction, RunSeed};
+
+    use super::*;
+    use crate::mission::Facts;
+
+    fn me(app: &mut App) -> Entity {
+        app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap()
+    }
+
+    fn go_through(app: &mut App) {
+        let player = me(app);
+        app.world_mut().write_message(Intent::new(player, GoThrough));
+        crate::testing::settle(app);
+    }
+
+    fn said(app: &App, line: &str) -> bool {
+        app.world().resource::<MessageLog>().iter().any(|e| e.text == line)
+    }
+
+    /// Sets every charge, the way the consoles report them.
+    fn charge_everything(app: &mut App) {
+        let kind = app.world().resource::<Facts>().charge_set;
+        for deck in [3u64, 6, 9, 10] {
+            app.world_mut().write_message(Happened(Fact::new(kind).about(deck)));
+            app.update();
+        }
+    }
+
+    #[test]
+    fn the_lift_out_stands_where_the_commando_came_in() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::settle(&mut app);
+        let player = me(&mut app);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let outs: Vec<Point> = app.world_mut().query_filtered::<&Position, With<LiftOut>>().iter(app.world()).map(|p| p.0).collect();
+        assert_eq!(outs, [at], "one lift out, under the commando's feet at the start");
+    }
+
+    #[test]
+    fn before_the_core_the_lift_out_refuses_with_a_line_and_costs_no_turn() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::settle(&mut app);
+        let before = crate::testing::clock(&app);
+        go_through(&mut app);
+        assert!(said(&app, "The lift will not move until the core is charged."));
+        assert_eq!(crate::testing::clock(&app), before, "no turn spent");
+        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Playing, "and the run goes on");
+    }
+
+    #[test]
+    fn after_the_core_the_lift_out_wins_the_run() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::settle(&mut app);
+        charge_everything(&mut app);
+        go_through(&mut app);
+        crate::testing::settle(&mut app);
+        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Over, "the run is over");
+        assert!(app.world().get_resource::<Ending>().is_some_and(|e| matches!(e.outcome, Outcome::Won)), "and won");
+    }
+
+    /// Only the lift out answers: going through open floor beside it is the
+    /// engine's refusal and nothing more.
+    #[test]
+    fn going_through_open_floor_is_the_engines_refusal_alone() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::settle(&mut app);
+        let player = me(&mut app);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let dir = Direction::ALL
+            .into_iter()
+            .find(|d| {
+                let (dx, dy) = d.delta();
+                let p = at.offset(dx, dy);
+                app.world().resource::<WorldMap>().is_walkable(p) && !app.world().resource::<Occupancy>().is_occupied(p)
+            })
+            .expect("somewhere to step");
+        app.world_mut().write_message(Intent::new(player, Step(dir)));
+        crate::testing::settle(&mut app);
+        assert_ne!(app.world().get::<Position>(player).unwrap().0, at, "stepped off the lift");
+        go_through(&mut app);
+        assert!(!said(&app, "The lift will not move until the core is charged."), "only the lift out answers");
     }
 }

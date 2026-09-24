@@ -10,7 +10,8 @@
             crates/rl-ui/src/game_menu.rs
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
-     fingerprint: 3bd8e9e3 -->
+            crates/rl-bevy/src/plugin.rs
+     fingerprint: b3123c19 -->
 
 # Saving and the ending screen
 
@@ -22,9 +23,10 @@ What is saved reaches storage through one trait, so a game in a browser and a ga
 ## Turning it on
 
 `SavePlugin::new(slot)` is the loop around a save, and `.version(n)` is the number every save is matched against.
-It declares `needs::<Saves>`, the backend, with a hint naming `Saves::platform_default("my-game")`; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`, and deletes the slot in the `EndRun` schedule and on entering `EngineState::Over`.
+It declares `needs::<Saves>`, the backend, with a hint naming `Saves::platform_default("my-game")`; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`'s `EndOfFrame::Save` stage, and deletes the slot in the `EndRun` schedule and on entering `EngineState::Over`.
+`.on_arrival()` also writes the slot through `save_on_arrival` on any frame the player arrived somewhere while playing, so each place entered is a save point; it runs in the same stage, which comes before the dead are buried and a restart tears the run down, so it never writes a world with no run in it.
 It registers no key: saving reads the whole world, so a game's save key is its own exclusive system and calls `save_run`.
-`UnloadPlugin` is the other half and is added on its own, needing the same `Saves`: it writes whatever is stashed on the frame the app is told to exit, which is the frame a native window's close button produces, and in a browser it also installs a listener for the page being hidden or unloaded.
+`UnloadPlugin` is the other half and is added on its own, needing the same `Saves`: it writes whatever is stashed on the frame the app is told to exit, after the stash was refreshed, which is the frame a native window's close button produces, and in a browser it also installs a listener for the page being hidden or unloaded.
 `EndingViewPlugin` is the third, and it is not a save at all: it holds what a game wants said on the screen a run ends on, needs `UiPlugin`, and is added by `GameMenuPanel` itself, so a game drawing its ending with the engine's menu adds nothing.
 A game that wants the sections under a screen of its own adds the plugin alone and reads the view.
 Nothing here is on by default, and a game that registers no kinds and adds neither save plugin never reaches storage at all.
@@ -33,9 +35,10 @@ Nothing here is on by default, and a game that registers no kinds and adds neith
 
 `Saveable` is the one trait a game writes, implemented on the component that marks a kind: `capture` writes an entity down as `Self::Saved`, and `restore` spawns one again from that, nowhere, carrying nothing, at full health.
 Neither says anything about position, health, bags, slots, stacks, statuses, remains or where a transition leads, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
+Remains are saved as whatever they were, and a prop kind a game laid on a body afterwards is part of what `EntityState` records of the remains, which is why `PropKind` answers false to `Saveable::TAKES_REMAINS`; a capture that finds one entity claimed by two kinds is refused with both named, since restoring it would spawn the thing twice.
 `SaveableState` is the same bargain for a resource a game keeps of a run, with `capture` and `restore` on the resource itself, which must already exist when the save is restored.
 `AddSaveable::save_kind::<K>` and `save_state::<R>` register both into `SaveRegistry`, filing each under the last segment of its type name and panicking at build time when two would share one.
-`PropKind` and `Quests` are the two the engine implements for itself, since it read those definitions out of a file and can read them again; `SavePlugin` registers the first, and a game with a quest tracker adds `save_state::<Quests>()`.
+`PropKind`, `Quests` and `Counters` are the three the engine implements for itself, since it read those definitions out of a file or built them from facts it owns; `SavePlugin` registers the first, and a game with a quest tracker or a fact ledger adds `save_state::<Quests>()` or `save_state::<Counters>()`.
 `RunSave` is the result: a `format`, the `EngineSave`, a `KindSave` per kind holding each entry's own RON, the `EntityState` of each, and the game's resources by name.
 `RunSave::capture` walks the kinds in registration order and each kind's living entities still in play in spawn order, leaving out the dead and the spent the frame keeps only so the log can name them, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources and whose `Seed` the game has already inserted.
 `RunSave::state::<R>` reads one resource out of a save before anything is restored, for the part of a start that runs before the world exists, and `count_of` and `turn` are for a line in the log.
@@ -134,7 +137,7 @@ The one thing the load repairs on its own is content that has gone missing, and 
 What is left of a run that cannot be continued is a screen and not a file: the slot is deleted when the run ends, and the ending is drawn for as long as the player looks at it.
 The outcome, the seed and the turn are the engine's, since it kept them; every heading and every body is the game's, because only the game knows whether a run is measured in coin, in decks cleared or in what the player was made of.
 Nothing in `rl-save` decides when a run is over, and nothing in `rl-ui` writes a byte to storage.
-When the stash is refreshed is the engine's, and so is when the slot is deleted, because `SavePlugin` schedules `forget_save` itself; what a game decides is when a run is written down, which is the `save_run` behind its own key.
+When the stash is refreshed is the engine's, and so is when the slot is deleted, because `SavePlugin` schedules `forget_save` itself; what a game decides is when else a run is written down: on arrival, by asking for it, and whenever the `save_run` behind a key of its own is pressed.
 So a game that clears the stash has cleared what the way out would have written, which is what makes a death final rather than a suggestion.
 
 ## Where it lives

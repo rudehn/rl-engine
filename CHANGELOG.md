@@ -6,6 +6,14 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Foundry can be won: the lift out on deck one, where the commando came in, refuses to move until the core is charged, and riding it after finishes the mission's fifth quest, "The way out", which ends the run won.
+- Foundry saves: on the way out and on every deck arrival, with Continue on its title screen taken whenever there is a run to continue, and New Game asking "Abandon the run in progress?" before abandoning one. Death and a win delete the save.
+
+- `SavePlugin::on_arrival()`: the slot is also written on every frame the player arrived somewhere while playing, so each place entered is a save point and a crash loses at most the place in hand. Off unless asked; nothing changes for a game that does not call it.
+- `Counters` is saved by the engine, as `Quests` is: a game with a fact ledger adds `save_state::<Counters>()`.
+- Remains a game dressed as a prop are saved as what they were, with the prop kind recorded as part of the remains and put back when they are laid down again; before, the body was written down twice, once as its own kind and once as the prop, and came back as two things. `Saveable::TAKES_REMAINS`, true unless a kind says otherwise, is how `PropKind` stays off remains. A capture that finds one entity claimed by two kinds is now refused with an error naming both, rather than written.
+- `Last` is ordered: `EndOfFrame::Save`, then `EndOfFrame::Bury`, then `EndOfFrame::Restart`. The stash, the arrival save and the write on exit are in the first, the burial of the dead and the spent in the second, and `restart_runs` in the third, so nothing is saved of a world a restart tore down. A game that ordered its own `Last` system against `restart_runs` or `bury_the_dead` orders it against the set instead.
+
 - Effects are a subsystem of their own, `EffectsPlugin`, which abilities, props and items use as peers, and what a prop or an item does is its `Triggers`.
   An item never lends an ability now: it is used where its user stands, thrown and landed, or worn and fired, and each of those is a moment a trigger answers.
   `docs/design/effects.md` is the reasoning and `docs/guide/src/systems/effects.md` the reference.

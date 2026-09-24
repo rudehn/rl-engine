@@ -6,11 +6,10 @@
 //   text:       the brief, shown under the title
 //   after:      optional; names of objectives that must be done before this one opens
 //   objectives: a list of (text, on, need)
-//     on:       what it counts: ChargeSet(deck)
+//     on:       what it counts: ChargeSet(deck) | LiftOut
 //     need:     Total(n) counts matching facts
-//   victory:    optional; finishing this wins the run. No charge wins it, and nothing
-//               else does either: the lift out on deck one that would end the run is
-//               not built, so every task here is false.
+//   victory:    optional; finishing this wins the run: the last task, riding the lift
+//               out on deck one once the core is charged
 #![enable(implicit_some)]
 [
     (
@@ -39,5 +38,13 @@
         text: "The tenth deck. Set the last charge, then climb all ten decks back to the lift you came down on.",
         after: ["third_charge"],
         objectives: [(text: "Set a charge on the core", on: ChargeSet(10), need: Total(1))],
+    ),
+    (
+        name: "lift_out",
+        title: "The way out",
+        text: "The core is charged. Climb back to the lift you came down on, on the first deck, and ride it out.",
+        after: ["core_charge"],
+        objectives: [(text: "Ride the lift out on deck one", on: LiftOut, need: Total(1))],
+        victory: true,
     ),
 ]

@@ -6,6 +6,7 @@
 //! the same way `testing::headless` does, through the crate the `tests/`
 //! directory links against.
 
+use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
@@ -21,30 +22,23 @@ use crate::droids::Roster;
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct StartDeck(pub u32);
 
-/// Builds the foundry's decks and combat rules, loads the roster every
-/// deck spawns from, spawns the commando with its lamp lit and nothing
-/// else, and warps it onto deck one, or onto [`StartDeck`]'s. Runs once,
-/// in [`NewRun`].
+/// The player, as a kind the save can name.
 ///
-/// Reads the registries from a resource rather than building them itself:
-/// `main.rs` inserts them before the run starts, the way its content is
-/// loaded before anything else runs.
-pub fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    registries: Res<Registries>,
-    first: Option<Res<StartDeck>>,
-    title: Option<Res<crate::title::Title>>,
-    mut begin: Begin,
-) {
-    // Nothing until the player asks for it. The engine runs `NewRun` at
-    // startup, and with the title screen up this is where that first run
-    // stops: no `WorldMap` is inserted, so the engine stays idle and the
-    // screen has the terminal to itself. Picking a run lowers the flag and
-    // runs `NewRun` again.
-    if title.is_some_and(|t| t.up) {
-        return;
-    }
+/// A marker rather than the engine's `Player`, because a save names each
+/// kind by its own component and restores it through that component's own
+/// account of it; the engine's marker is every game's.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Commando;
+
+/// Asks the next `NewRun` to continue the saved run rather than begin one.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct Resume;
+
+/// Everything a run stands on that is the same however it began: the
+/// decks, the combat rules and the damage pipeline, the dark, the fire,
+/// the roster, the loot stream. Shared by [`start`] and [`resume`], so a
+/// continued run is built on exactly the foundry a fresh one is.
+pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     let foundry = Foundry::new(seed.0);
     commands.insert_resource(crate::light::LampTile(foundry.lamp()));
     commands.insert_resource(foundry.appearance());
@@ -62,17 +56,26 @@ pub fn start(
     // Standing in fire scorches, and whatever burns smokes: an incendiary
     // is a fire and a screen at once.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
-    commands.insert_resource(Roster::load(&registries));
+    commands.insert_resource(Roster::load(registries));
     // Seeded once, here, and never again: `Drops` is a resource a kill's
     // roll keeps advancing, not a stream `Seed::stream` is asked for
-    // fresh on every event the way `scatter_on_arrival`'s own is.
+    // fresh on every event the way `scatter_on_arrival`'s own is. A
+    // continued run derives it again from the saved seed, as the engine
+    // does its own streams.
     commands.insert_resource(crate::loot::Drops(seed.stream(b"foundry.drops", 0)));
+    commands.insert_resource(PlaceRulesRes(Box::new(foundry)));
+}
 
+/// Spawns the commando with its lamp lit and nothing else, nowhere yet:
+/// the warp onto a deck puts it somewhere, and a continued run's save
+/// does.
+pub fn spawn_commando(commands: &mut Commands, registries: &Registries) -> Entity {
+    let commando = registries.factions.expect("commando");
     let kinetic = registries.damage_kinds.expect("kinetic");
     let player = commands
         .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(20), RevealsMap),
-            (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, &registries)), crate::light::SHOULDER_LAMP),
+            (Actor, Player, Commando, Blocks, Position(Point::ZERO), Viewshed::new(20), RevealsMap),
+            (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, registries)), crate::light::SHOULDER_LAMP),
             (MeleeAttack::new(kinetic, DiceRoll::new(1, 3)), Name::new("you"), Glyph::new('@', Color::WHITE).on_layer(10)),
             // Noticeable, not sneaky: no skill at hiding, but a subject a
             // droid has to notice rather than one it sees the instant it
@@ -92,12 +95,123 @@ pub fn start(
     // arsenal, which is why nothing on deck one shoots back and a pistol
     // lies somewhere on it most runs.
     commands.entity(player).insert((Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len()))));
+    player
+}
 
-    commands.insert_resource(PlaceRulesRes(Box::new(foundry)));
+/// Builds the foundry, spawns the commando and warps it onto deck one, or
+/// onto [`StartDeck`]'s. Runs once, in [`NewRun`].
+///
+/// Reads the registries from a resource rather than building them itself:
+/// `main.rs` inserts them before the run starts, the way its content is
+/// loaded before anything else runs.
+pub fn start(
+    mut commands: Commands,
+    seed: Res<Seed>,
+    registries: Res<Registries>,
+    first: Option<Res<StartDeck>>,
+    title: Option<Res<crate::title::Title>>,
+    resume: Option<Res<Resume>>,
+    mut begin: Begin,
+) {
+    // Nothing until the player asks for it. The engine runs `NewRun` at
+    // startup, and with the title screen up this is where that first run
+    // stops: no `WorldMap` is inserted, so the engine stays idle and the
+    // screen has the terminal to itself. Picking a run lowers the flag and
+    // runs `NewRun` again. A continued run is [`resume`]'s.
+    if title.is_some_and(|t| t.up) || resume.is_some() {
+        return;
+    }
+    prepare(&mut commands, &seed, &registries);
+    let player = spawn_commando(&mut commands, &registries);
     let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
     begin.log.notice(format!("Seed {}. The drop ship is gone. The reactor is three decks down.", seed.0.0), 0);
     begin.warps.write(WarpRequest::into_place(player, map_of(deck)));
     begin.next.set(EngineState::Playing);
+}
+
+/// Continues the saved run: the foundry built again from the saved seed,
+/// the run restored into it, and what the run did to the commando put
+/// back once the engine has given it back its gear.
+///
+/// After [`start`] and `mission::start` in `NewRun`, so the resources a
+/// restore writes into exist. A save that cannot be read is logged and a
+/// fresh run begins instead: the title offers Continue only for a save it
+/// could read, so this is a save that went bad in between.
+pub fn resume(world: &mut World) {
+    if world.remove_resource::<Resume>().is_none() {
+        return;
+    }
+    let saved = match rl_engine::rl_save::load_run(world) {
+        Ok(Some(saved)) => saved,
+        Ok(None) | Err(_) => {
+            error!("there is no save that can be continued; beginning a new run");
+            if let Err(e) = world.run_system_once(start) {
+                error!("the new run could not begin: {e}");
+            }
+            return;
+        }
+    };
+    let seed = Seed(saved.engine.seed);
+    world.insert_resource(seed);
+    let registries = world.resource::<Registries>().clone();
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    prepare(&mut Commands::new(&mut queue, world), &seed, &registries);
+    queue.apply(world);
+    // A save that restores only in part is worse than none: the run it
+    // leaves is neither the one saved nor a fresh one. So a failure tears
+    // down what it got to, and a new run begins, as for a save that could
+    // not be read at all.
+    let restored = saved.restore(world);
+    let player = world.query_filtered::<Entity, With<Player>>().single(world).ok();
+    let (Ok(()), Some(player)) = (restored, player) else {
+        error!("the save could not be restored; beginning a new run");
+        rl_engine::rl_bevy::plugin::clear_run(world);
+        if let Err(e) = world.run_system_once(start) {
+            error!("the new run could not begin: {e}");
+        }
+        return;
+    };
+    // What the run did to the commando is its upgrades, given again to a
+    // commando that has none, now that its gear is back on: the uplink's
+    // tile of reach is given to the gun it wears the way it was the first
+    // time, rather than saved on the gun and given twice.
+    let taken = world.resource::<crate::upgrades::Taken>().clone();
+    for upgrade in taken.0.iter().copied() {
+        crate::upgrades::apply(upgrade, player, world);
+    }
+    // The wall lamps, which are the decks' own and not the run's, hung
+    // again on every deck built, as each first arrival hung them.
+    let lamp = world.resource::<crate::light::LampTile>().0;
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    {
+        let map = world.resource::<WorldMap>();
+        let mut commands = Commands::new(&mut queue, world);
+        for deck in 1..=crate::decks::DECKS {
+            crate::light::hang_lamps(&mut commands, map, map_of(deck), lamp);
+        }
+    }
+    queue.apply(world);
+    // A charge set whose pick was still waiting when the run was saved:
+    // a pick is not a turn, so the save may have caught the charge and not
+    // the choice, and the choice is offered again rather than lost.
+    let quests = world.resource::<Quests>();
+    let charged = crate::mission::CHARGE_QUESTS.iter().filter(|name| quests.tracker.state(quests.defs.expect(name)) == QuestState::Done).count();
+    if charged > taken.0.len() {
+        let offered = world.run_system_once(
+            |mut modals: ResMut<Modals>,
+             mut screen: ResMut<crate::upgrades::ChoiceScreen>,
+             mut choosing: ResMut<crate::upgrades::Choosing>,
+             taken: Res<crate::upgrades::Taken>| {
+                crate::upgrades::offer(&mut modals, &mut screen, &mut choosing, &taken);
+            },
+        );
+        if let Err(e) = offered {
+            error!("the waiting pick could not be offered again: {e}");
+        }
+    }
+    let deck = crate::decks::deck_of(world.get::<OnMap>(player).map_or(MapId::SURFACE, |m| m.0));
+    world.resource_mut::<MessageLog>().notice(format!("Continuing on deck {deck}."), saved.turn());
+    world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
 }
 
 /// What starting a run writes beyond the world itself: the log's first

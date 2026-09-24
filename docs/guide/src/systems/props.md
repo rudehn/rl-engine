@@ -14,7 +14,7 @@
             crates/rl-render/src/map_view.rs
             crates/rl-ui/src/interact.rs
             crates/rl-save/src/run.rs
-     fingerprint: f1e35fec -->
+     fingerprint: 7bf4e21f -->
 
 # Props
 
@@ -111,6 +111,7 @@ A prop that blocks sight is not here: field of view reads the map's tiles and th
 Doors stay tiles, because a door has no state of its own to remember and props are for things that remember something.
 A prop with no `Name` is reported once and loudly: nothing can list it or look at it, which is a spawn bug every time and never a choice.
 Saving is the engine's, and the first save kind that is: `SavePlugin` registers `PropKind` itself, so a game that saves gets an emptied crate still empty, a sprung trap still sprung and a spotted plate still spotted, without writing a line for it.
+A body a game dressed as a prop is not saved as a prop but as what it was, its prop kind kept with its remains, so the one entity is never written down twice.
 Where a prop stands and what a container holds are saved as any entity's are; what is written down beyond that is which definition it is, by name, and the part that is this prop's own history rather than its kind's.
 
 ## Where it lives

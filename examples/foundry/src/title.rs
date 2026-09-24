@@ -41,20 +41,58 @@ pub struct Title {
     pub up: bool,
     /// Which row is picked out.
     pub picked: usize,
+    /// What the save slot held when the screen came up.
+    pub save: SaveOnDisk,
+    /// The question New Game asks over a save, while it is asked: `Some`
+    /// with whether Yes is picked out.
+    pub confirm: Option<bool>,
 }
 
 impl Default for Title {
-    /// Up, with the first row that can be taken picked out.
+    /// Up, with no save looked for yet and the first row that can be taken
+    /// picked out.
     fn default() -> Self {
-        Self { up: true, picked: Choice::all().iter().position(|c| c.available()).unwrap_or(0) }
+        Self { up: true, picked: first_available(SaveOnDisk::None), save: SaveOnDisk::None, confirm: None }
     }
+}
+
+/// What the save slot holds, for the title screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveOnDisk {
+    /// Nothing: there is no run to continue.
+    None,
+    /// A run this build can read and continue.
+    Readable,
+    /// Something this build cannot read, of another version or damaged: it
+    /// cannot be continued, and New Game offers to clear it.
+    Unreadable,
+}
+
+/// The first row that can be taken with `save` in the slot.
+fn first_available(save: SaveOnDisk) -> usize {
+    Choice::all().iter().position(|c| c.available(save)).unwrap_or(0)
+}
+
+/// Looks in the save slot as the screen comes up, and picks Continue out
+/// when there is a run to continue.
+pub fn look_for_save(world: &mut World) {
+    let save = match rl_engine::rl_save::load_run(world) {
+        Ok(Some(_)) => SaveOnDisk::Readable,
+        Ok(None) => SaveOnDisk::None,
+        Err(e) => {
+            warn!("the saved run cannot be read: {e}");
+            SaveOnDisk::Unreadable
+        }
+    };
+    let mut title = world.resource_mut::<Title>();
+    title.save = save;
+    title.picked = first_available(save);
 }
 
 /// What the title screen offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Choice {
-    /// Carry on a saved run. Drawn and never taken: Foundry keeps no save
-    /// yet, and the row says where one will be picked up once it does.
+    /// Carry on the saved run, when there is one this build can read.
     Continue,
     /// A fresh seed, deck one.
     NewGame,
@@ -77,22 +115,22 @@ impl Choice {
         }
     }
 
-    /// Whether the row can be picked at all: every row but `Continue`,
-    /// until there is a save to continue.
-    fn available(self) -> bool {
-        self != Choice::Continue
+    /// Whether the row can be picked with `save` in the slot: every row
+    /// but `Continue`, which needs a run this build can read.
+    fn available(self, save: SaveOnDisk) -> bool {
+        self != Choice::Continue || save == SaveOnDisk::Readable
     }
 }
 
 /// The next row from `from` toward `dir`, one way or the other, wrapping
 /// round and passing over any row that cannot be picked.
-fn step(from: usize, dir: isize) -> usize {
+fn step(from: usize, dir: isize, save: SaveOnDisk) -> usize {
     let rows = Choice::all();
     let n = rows.len() as isize;
     let mut at = from as isize;
     loop {
         at = (at + dir).rem_euclid(n);
-        if rows[at as usize].available() {
+        if rows[at as usize].available(save) {
             return at as usize;
         }
     }
@@ -104,6 +142,11 @@ pub struct TitlePlugin;
 impl Plugin for TitlePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Title>()
+            // What the slot holds, looked at once as the screen comes up,
+            // before the first key is read: in `PreStartup`, so it is done
+            // before the engine begins its first run in `Startup`, and after
+            // the save's armory is loaded beside it.
+            .add_systems(PreStartup, look_for_save.after(crate::save::load_armory))
             // Before the engine's input phase, and both of them before it:
             // that phase holds the exclusive key handlers, which conflict
             // with everything in the schedule they are not ordered against.
@@ -133,14 +176,30 @@ pub fn title_is_up(title: Option<Res<Title>>, state: Res<State<EngineState>>) ->
 pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>, mut commands: Commands, mut exit: MessageWriter<AppExit>) {
     let up = keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyK);
     let down = keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyJ);
+    let across = keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::ArrowRight);
     let take = keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter) || keys.just_pressed(KeyCode::Space);
     let leave = keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::KeyQ);
+    // The question over New Game has the keys while it is asked: any
+    // direction moves between its two answers, Escape is No, and No, taken,
+    // puts the question away with New Game still picked out.
+    if let Some(yes) = title.confirm {
+        if up || down || across {
+            title.confirm = Some(!yes);
+        } else if leave || (take && !yes) {
+            title.confirm = None;
+        } else if take {
+            title.confirm = None;
+            title.up = false;
+            commands.queue(abandon_and_begin);
+        }
+        return;
+    }
     let rows = Choice::all().len();
     if up {
-        title.picked = step(title.picked, -1);
+        title.picked = step(title.picked, -1, title.save);
     }
     if down {
-        title.picked = step(title.picked, 1);
+        title.picked = step(title.picked, 1, title.save);
     }
     if leave {
         exit.write(AppExit::Success);
@@ -150,7 +209,16 @@ pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>
         return;
     }
     match Choice::all()[title.picked.min(rows - 1)] {
-        Choice::Continue => {}
+        Choice::Continue => {
+            title.up = false;
+            commands.insert_resource(crate::run::Resume);
+            commands.queue(begin);
+        }
+        // Over a save, even one this build cannot read, New Game asks
+        // first: a run abandoned by a slip of the key is gone for good.
+        Choice::NewGame if title.save != SaveOnDisk::None => {
+            title.confirm = Some(false);
+        }
         Choice::NewGame => {
             title.up = false;
             commands.queue(begin);
@@ -159,6 +227,12 @@ pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>
             exit.write(AppExit::Success);
         }
     }
+}
+
+/// Deletes the saved run the player chose to abandon, then starts a new one.
+fn abandon_and_begin(world: &mut World) {
+    crate::save::abandon(world);
+    begin(world);
 }
 
 /// Starts the run the player asked for.
@@ -544,6 +618,25 @@ fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
     let rule: String = "─".repeat(34);
     terminal.print(centre(&rule), rows::MENU - 2, &rule, palette.get(Tones::MUTED));
 
+    // The question over New Game stands where the menu stood while it is
+    // asked: one line, and its two answers under it, the picked one marked
+    // and in the title's warm tone as a picked row is.
+    if let Some(yes) = title.confirm {
+        let question = "Abandon the run in progress?";
+        terminal.print(centre(question), rows::MENU, question, palette.get(Tones::TEXT));
+        let answers = [("No", !yes), ("Yes", yes)];
+        let width = "> No    > Yes".chars().count() as i32;
+        let mut x = (w - width) / 2;
+        for (word, picked) in answers {
+            let mark = if picked { '>' } else { ' ' };
+            let tone = if picked { Tones::TITLE } else { Tones::TEXT };
+            let text = format!("{mark} {word}");
+            terminal.print(x, rows::MENU + 2, &text, palette.get(tone));
+            x += text.chars().count() as i32 + 4;
+        }
+        return;
+    }
+
     // Every row is centred on the same column, the mark's two cells
     // included, so the words line up and do not jump as the cursor moves.
     let x = centre(&format!("> {}", Choice::all().map(Choice::label).iter().max_by_key(|l| l.len()).unwrap()));
@@ -553,7 +646,7 @@ fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
         // the plain row and the dim one alike; `SELECT` is a background,
         // and as a foreground it read darker than the row that cannot be
         // picked.
-        let tone = match (picked, choice.available()) {
+        let tone = match (picked, choice.available(title.save)) {
             (true, _) => Tones::TITLE,
             (false, true) => Tones::TEXT,
             (false, false) => Tones::MUTED,
@@ -605,6 +698,127 @@ mod tests {
         assert_eq!(players.iter(app.world()).count(), 1, "one commando, dropped in once");
     }
 
+    /// The text of a run saved on arriving on `deck`, played in an app of
+    /// its own.
+    fn a_save_on(deck: u32) -> String {
+        use rl_engine::rl_save::SaveBackend as _;
+        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(5));
+        crate::testing::arrive_on(&mut app, deck);
+        crate::testing::settle(&mut app);
+        app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).unwrap().expect("arriving wrote it")
+    }
+
+    /// The title up, with `save` in the slot before anything ran.
+    fn title_over(save: Option<&str>) -> App {
+        use rl_engine::rl_save::SaveBackend as _;
+        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(6));
+        app.insert_resource(Title::default());
+        if let Some(text) = save {
+            app.world().resource::<rl_engine::rl_save::Saves>().persist(crate::save::SLOT, text).unwrap();
+        }
+        app.update();
+        app
+    }
+
+    /// Presses `key` for one frame and lets it go, so the same key pressed
+    /// again is a new press.
+    fn key(app: &mut App, key: KeyCode) {
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
+        app.update();
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.release(key);
+        input.clear();
+        app.update();
+    }
+
+    fn slot_holds_a_save(app: &App) -> bool {
+        use rl_engine::rl_save::SaveBackend as _;
+        app.world().resource::<rl_engine::rl_save::Saves>().exists(crate::save::SLOT)
+    }
+
+    fn deck(app: &mut App) -> u32 {
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).expect("a commando");
+        crate::decks::deck_of(app.world().get::<rl_engine::rl_bevy::OnMap>(me).map_or(rl_engine::rl_bevy::MapId::SURFACE, |m| m.0))
+    }
+
+    /// Continue is taken only when the slot holds a save this build can
+    /// read, and then it is the row picked out to begin with.
+    #[test]
+    fn continue_is_offered_only_with_a_readable_save() {
+        let none = title_over(None);
+        assert_eq!(none.world().resource::<Title>().save, SaveOnDisk::None);
+        let damaged = title_over(Some("not a save"));
+        assert_eq!(damaged.world().resource::<Title>().save, SaveOnDisk::Unreadable);
+        for app in [&none, &damaged] {
+            let title = app.world().resource::<Title>();
+            assert_eq!(Choice::all()[title.picked], Choice::NewGame, "New Game is picked out");
+            let mut at = title.picked;
+            for _ in 0..6 {
+                at = step(at, 1, title.save);
+                assert_ne!(Choice::all()[at], Choice::Continue, "and the cursor never lands on Continue");
+            }
+        }
+        let readable = title_over(Some(&a_save_on(2)));
+        let title = readable.world().resource::<Title>();
+        assert_eq!(title.save, SaveOnDisk::Readable);
+        assert_eq!(Choice::all()[title.picked], Choice::Continue, "Continue is picked out");
+    }
+
+    /// Continue picks the run up where it was left.
+    #[test]
+    fn continue_resumes_the_saved_run() {
+        let mut app = title_over(Some(&a_save_on(2)));
+        key(&mut app, KeyCode::Enter);
+        crate::testing::settle(&mut app);
+        assert!(!app.world().resource::<Title>().up, "the screen is down");
+        assert_eq!(deck(&mut app), 2, "on the deck it was left on");
+        let continuing = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().any(|e| e.text == "Continuing on deck 2.");
+        assert!(continuing, "and the log says so");
+    }
+
+    /// New Game over a save asks first, and No keeps the save and the
+    /// screen as they were.
+    #[test]
+    fn new_game_over_a_save_asks_and_no_keeps_it() {
+        let mut app = title_over(Some(&a_save_on(2)));
+        key(&mut app, KeyCode::ArrowDown);
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.world().resource::<Title>().confirm, Some(false), "it asks, with No picked out");
+        key(&mut app, KeyCode::Enter);
+        let title = app.world().resource::<Title>();
+        assert_eq!(title.confirm, None, "the question is gone");
+        assert!(title.up, "and the screen is still up");
+        assert_eq!(Choice::all()[title.picked], Choice::NewGame, "with New Game picked out");
+        assert!(slot_holds_a_save(&app), "and the save is kept");
+    }
+
+    /// Yes abandons the saved run and starts a fresh one on deck one.
+    #[test]
+    fn new_game_over_a_save_and_yes_starts_fresh() {
+        let mut app = title_over(Some(&a_save_on(2)));
+        key(&mut app, KeyCode::ArrowDown);
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::ArrowUp);
+        assert_eq!(app.world().resource::<Title>().confirm, Some(true), "Yes picked out");
+        key(&mut app, KeyCode::Enter);
+        crate::testing::settle(&mut app);
+        assert!(!app.world().resource::<Title>().up, "the screen is down");
+        assert_eq!(deck(&mut app), 1, "a fresh run, on deck one");
+    }
+
+    /// A save this build cannot read leaves Continue dim, and New Game
+    /// still asks, so it can always be cleared from the menu.
+    #[test]
+    fn a_damaged_save_leaves_continue_dim_and_new_game_clears_it() {
+        let mut app = title_over(Some("not a save"));
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.world().resource::<Title>().confirm, Some(false), "New Game asks");
+        key(&mut app, KeyCode::ArrowUp);
+        key(&mut app, KeyCode::Enter);
+        crate::testing::settle(&mut app);
+        assert_eq!(deck(&mut app), 1, "a fresh run");
+    }
+
     /// Every row of the terminal, as text.
     fn screen(terminal: &Terminal) -> Vec<String> {
         (0..terminal.height()).map(|y| (0..terminal.width()).map(|x| terminal.get(x, y).map_or(' ', |c| c.glyph)).collect()).collect()
@@ -630,11 +844,11 @@ mod tests {
         assert_eq!(Choice::all()[title.picked], Choice::NewGame, "the cursor starts on New Game");
         let mut seen = Vec::new();
         for _ in 0..6 {
-            title.picked = step(title.picked, 1);
+            title.picked = step(title.picked, 1, title.save);
             seen.push(Choice::all()[title.picked]);
         }
         for _ in 0..6 {
-            title.picked = step(title.picked, -1);
+            title.picked = step(title.picked, -1, title.save);
             seen.push(Choice::all()[title.picked]);
         }
         assert!(!seen.contains(&Choice::Continue), "{seen:?}");
@@ -649,6 +863,20 @@ mod tests {
         let y = rows.iter().position(|r| r.trim() == "> New Game").expect("New Game is drawn picked") as i32;
         let x = rows[y as usize].find('N').unwrap() as i32;
         assert_eq!(terminal.get(x, y).unwrap().fg, palette.get(Tones::TITLE), "while the picked row stands out");
+    }
+
+    /// While New Game's question is asked it stands where the menu stood:
+    /// the question, and its two answers under it with the picked one
+    /// marked.
+    #[test]
+    fn the_question_over_new_game_stands_where_the_menu_stood() {
+        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
+        let palette = Palette::default();
+        let title = Title { confirm: Some(false), save: SaveOnDisk::Readable, ..Title::default() };
+        paint_menu(&mut terminal, &title, &palette);
+        let rows = screen(&terminal);
+        let menu: Vec<&str> = rows[rows::MENU as usize..].iter().map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
+        assert_eq!(menu, vec!["Abandon the run in progress?", "> No      Yes"], "{rows:#?}");
     }
 
     /// Exit leaves, the same as it always did.

@@ -9,7 +9,7 @@
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/faction.rs
             crates/rl-rules/src/forecast.rs
-     fingerprint: 4dbfcde8 -->
+     fingerprint: 7b323c50 -->
 
 # Combat and loadout
 
@@ -24,7 +24,7 @@ Above that line everything is the game's: who hates whom, what a kind of damage 
 It takes `CombatRng`, a stream of its own derived from the run's seed, so a game never inserts one and a weapon added late cannot shift the rolls of a run that was going fine.
 It registers `Attack` as an action, `DamageEvent`, `DamageDealt`, `DeathEvent` and `Struck` as messages, `ShotLanding` as something that can be in the air, and `DamageStages` as a resource whose default is `SubtractArmor` alone.
 Its systems are `perceive_reach` in `PerceiveSet::Annotate`, `land_shots` in `LandSet::Shot` chained ahead of `resolve_attacks` in `ResolveSet::Act`, `apply_damage` in `ResolveSet::Damage`, `end_run_on_player_death` in `TurnSet::React` and `process_deaths` in `CleanupSet::Remove`.
-`bury_the_dead` is the exception and runs in `Last`, which is how the dead are promised to linger until the frame ends without naming one of the systems that has to see them go.
+`bury_the_dead` is the exception and runs in `Last`'s `EndOfFrame::Bury`, after the run is saved and before a restart, which is how the dead are promised to linger until the frame ends without naming one of the systems that has to see them go.
 `Resists` is a component rather than a requirement, so an actor with none meets an empty ladder and a game with no resistances pays nothing.
 Nothing here decides who strikes whom: minds choose for monsters, `Bump` turns a walk key into an `Attack` when a foe is in the way, and an ability's damage arrives as the same `DamageEvent` a sword's does.
 `CorePlugin` registers `Intent<Attack>` itself so that a bump into a foe runs in a game with no combat at all, and `add_action::<Attack>` adds the sweeper that refuses one nobody resolved.

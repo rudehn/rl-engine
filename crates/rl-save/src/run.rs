@@ -22,14 +22,17 @@
 //! entries in the kind's own RON, the engine's state on each, and the
 //! game's resources. [`SavePlugin`] owns the loop around it: the stash kept
 //! a turn behind the run so a closed window saves, and the slot deleted
-//! when the run ends, so nothing is resumed past its end. A game's save key
-//! calls [`save_run`], and its start calls [`load_run`] and
-//! [`RunSave::restore`].
+//! when the run ends, so nothing is resumed past its end, and, when asked
+//! with [`SavePlugin::on_arrival`], the slot written by [`save_on_arrival`]
+//! every time the player arrives somewhere. A game's save key calls
+//! [`save_run`], and its start calls [`load_run`] and [`RunSave::restore`].
+//! The engine's own resources are saved by the engine: [`Quests`] and
+//! [`Counters`] each implement [`SaveableState`].
 
 use bevy::prelude::*;
 use rl_bevy::{
-    Afflict, Afflicted, Dead, Emptied, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap, Position, PropKind, Quests, Registries,
-    Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
+    Afflict, Afflicted, Counters, Dead, Emptied, EndOfFrame, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap, PlaceEntered,
+    Position, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
 };
 use rl_core::Point;
 use rl_rules::Equipment;
@@ -63,6 +66,13 @@ pub trait Saveable: Component + Sized {
     /// `world.commands()` and `world.flush()`, or straight into the world;
     /// either way the entity exists when this returns.
     fn restore(world: &mut World, saved: &Self::Saved) -> Entity;
+
+    /// Whether remains carrying `Self` are saved as `Self`. True for what a
+    /// thing is, which its remains still are; false for what is laid on
+    /// remains after the death, such as the prop kind a game dresses a
+    /// body in, which the engine records as part of the remains instead,
+    /// so the one entity is never written down as two kinds.
+    const TAKES_REMAINS: bool = true;
 }
 
 /// A resource a game keeps of a run, as the save sees it.
@@ -97,6 +107,10 @@ pub trait SaveableState: Resource<Mutability = bevy::ecs::component::Mutable> {
 /// what a container holds, are [`EntityState`]'s like everything else.
 impl Saveable for PropKind {
     type Saved = SavedProp;
+
+    // A body a game dressed as a prop is saved as whatever it was, and its
+    // prop kind with the remains.
+    const TAKES_REMAINS: bool = false;
 
     fn capture(world: &World, entity: Entity) -> SavedProp {
         let e = world.entity(entity);
@@ -169,6 +183,20 @@ pub struct SavedProp {
     /// The chance of spotting it, while it is still unspotted.
     #[serde(default)]
     pub hidden: Option<u8>,
+}
+
+/// The fact ledger is the engine's, so its saving is too: a game with a
+/// [`Counters`] adds `save_state::<Counters>()` and nothing more.
+impl SaveableState for Counters {
+    type Saved = rl_rules::Ledger;
+
+    fn capture(&self) -> rl_rules::Ledger {
+        self.0.clone()
+    }
+
+    fn restore(&mut self, saved: rl_rules::Ledger) {
+        self.0 = saved;
+    }
 }
 
 /// The quest tracker is the engine's, so its saving is too: a game with a
@@ -249,8 +277,11 @@ struct StateEntry {
 /// bytes for the same run whatever order the archetypes are in. The dead
 /// and the spent are kept to the end of their frame only so the log can
 /// name them, and are gone by the next.
-fn collect<K: Component>(world: &mut World) -> Vec<Entity> {
+fn collect<K: Saveable>(world: &mut World) -> Vec<Entity> {
     let mut found: Vec<Entity> = world.query_filtered::<Entity, (With<K>, Without<Dead>, Without<rl_bevy::Spent>)>().iter(world).collect();
+    if !K::TAKES_REMAINS {
+        found.retain(|e| world.get::<Remains>(*e).is_none());
+    }
     found.sort_by_key(|e| (e.index(), *e));
     found
 }
@@ -316,6 +347,11 @@ pub struct EntityState {
     /// dead.
     #[serde(default)]
     pub remains: Option<(u32, Option<SaveId>)>,
+    /// The prop kind the remains were dressed as, by registered name: what
+    /// a game made of a body after the death, which a kind that saves what
+    /// the thing was knows nothing of.
+    #[serde(default)]
+    pub remains_as: Option<String>,
 }
 
 impl EntityState {
@@ -340,7 +376,11 @@ impl EntityState {
             _ => Vec::new(),
         };
         let remains = e.get::<Remains>().map(|r| (r.since, r.credit.map(|c| remap.save_id(c))));
-        Self { at, health, bag, worn, statuses, stack: e.get::<Stack>().map(|s| s.count), transition: e.get::<Transition>().copied(), remains }
+        let remains_as = match (remains, e.get::<PropKind>(), registries) {
+            (Some(_), Some(kind), Some(registries)) => Some(registries.props.name(kind.0).to_string()),
+            _ => None,
+        };
+        Self { at, health, bag, worn, statuses, stack: e.get::<Stack>().map(|s| s.count), transition: e.get::<Transition>().copied(), remains, remains_as }
     }
 
     /// Puts this back on `entity`, the other entities through `remap`.
@@ -399,6 +439,12 @@ impl EntityState {
             // And named as what is left of what it was, from the one place
             // the wording lives: a game's record says what it was.
             rl_bevy::remains::name_as_remains(world, entity);
+            // Then dressed as the prop the game made of it, which it was
+            // saved as part of the remains rather than as a second kind.
+            let dressed = self.remains_as.as_deref().and_then(|name| world.get_resource::<Registries>()?.props.id(name));
+            if let (Some(kind), Ok(mut target)) = (dressed, world.get_entity_mut(entity)) {
+                target.insert(PropKind(kind));
+            }
         }
         // By request, so each status installs its modifiers the way it did
         // the first time. Only where statuses are resolved at all.
@@ -455,9 +501,16 @@ impl RunSave {
     fn capture_with(world: &mut World, registry: &SaveRegistry) -> Result<Self, SaveError> {
         let mut remap = EntityRemap::new();
         let mut kinds = Vec::new();
+        // Which kind wrote each entity down: one entity written as two
+        // would be spawned twice on the way back, the second overwriting
+        // the first's place in every bag and slot, so it is refused here.
+        let mut claimed: std::collections::BTreeMap<Entity, &str> = std::collections::BTreeMap::new();
         for kind in &registry.kinds {
             let mut entries = Vec::new();
             for entity in (kind.collect)(world) {
+                if let Some(first) = claimed.insert(entity, kind.label) {
+                    return Err(SaveError::Encode(format!("an entity is saved both as {first} and as {}; give it one kind", kind.label)));
+                }
                 entries.push((remap.save_id(entity), (kind.capture)(world, entity)?));
             }
             kinds.push(KindSave { kind: kind.label.to_string(), entries });
@@ -551,23 +604,35 @@ pub struct SaveSlot {
 ///
 /// Needs [`Saves`], the backend. Keeps the [`Stash`] a turn behind the run
 /// so a window closed on it saves, and deletes the slot when the run ends
-/// or is given up, so nothing is continued past its end. Registers no key:
-/// a game's save key calls [`save_run`].
+/// or is given up, so nothing is continued past its end. With
+/// [`on_arrival`](Self::on_arrival) it also writes the slot whenever the
+/// player arrives somewhere. Registers no key: a game's save key calls
+/// [`save_run`].
 pub struct SavePlugin {
     slot: String,
     version: u32,
+    on_arrival: bool,
 }
 
 impl SavePlugin {
     /// Saves to `slot`, at version one.
     pub fn new(slot: impl Into<String>) -> Self {
-        Self { slot: slot.into(), version: 1 }
+        Self { slot: slot.into(), version: 1, on_arrival: false }
     }
 
     /// The game's version of its saved shapes. Bump it, and say why next to
     /// the call, when an old save would parse wrongly.
     pub fn version(mut self, version: u32) -> Self {
         self.version = version;
+        self
+    }
+
+    /// Also writes the run to the slot on every frame in which the player
+    /// arrived somewhere, so each place entered is a save point and a
+    /// crash loses at most the place in hand. Off unless asked: a game
+    /// without places, or one that saves on a key, is unchanged.
+    pub fn on_arrival(mut self) -> Self {
+        self.on_arrival = true;
         self
     }
 }
@@ -579,9 +644,50 @@ impl Plugin for SavePlugin {
             .init_resource::<Stash>()
             .insert_resource(SaveSlot { slot: self.slot.clone(), version: self.version })
             .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as `Saves::platform_default(\"my-game\")`")
-            .add_systems(Last, refresh_stash)
+            // Exclusive, so it conflicts with everything else in `Last`; the
+            // engine's own are ordered against it by `EndOfFrame`, and what
+            // is left unordered is Bevy's bookkeeping, the frame count and
+            // the like, which reads nothing a save writes.
+            .add_systems(Last, refresh_stash.in_set(EndOfFrame::Save).ambiguous_with_all())
             .add_systems(EndRun, forget_save)
             .add_systems(OnEnter(EngineState::Over), forget_save);
+        if self.on_arrival {
+            // Exclusive too, and ambiguous with Bevy's bookkeeping for the
+            // same reason as the stash.
+            app.init_resource::<ArrivedThisFrame>()
+                .add_systems(Last, (note_arrivals, save_on_arrival.ambiguous_with_all()).chain().in_set(EndOfFrame::Save).before(refresh_stash));
+        }
+    }
+}
+
+/// Whether the frame held an arrival, for [`save_on_arrival`].
+#[derive(Resource, Default)]
+struct ArrivedThisFrame(bool);
+
+/// Notes an arrival: a reader of its own rather than a cursor inside the
+/// exclusive system that writes the save, so the message is read the way
+/// every other reader reads it.
+fn note_arrivals(mut entered: MessageReader<PlaceEntered>, mut arrived: ResMut<ArrivedThisFrame>) {
+    arrived.0 |= entered.read().count() > 0;
+}
+
+/// Writes the run once for a frame that held an arrival, while playing.
+///
+/// At the end of the frame, in [`EndOfFrame::Save`], because by then the
+/// warp and whatever the place was filled with have all landed, and before
+/// a restart could tear the run down. Not once the run is over: the end
+/// deleted the save, and writing it back would let the run be continued
+/// past it. A save that fails is logged and the run goes on, as a stash
+/// that fails is.
+pub fn save_on_arrival(world: &mut World) {
+    if !std::mem::take(&mut world.resource_mut::<ArrivedThisFrame>().0) {
+        return;
+    }
+    if *world.resource::<State<EngineState>>().get() != EngineState::Playing {
+        return;
+    }
+    if let Err(e) = save_run(world) {
+        error!("the run could not be saved on arrival: {e}");
     }
 }
 
@@ -719,6 +825,10 @@ mod tests {
     }
 
     fn game(saves: Saves) -> (App, Point) {
+        game_with(saves, SavePlugin::new("run").version(3))
+    }
+
+    fn game_with(saves: Saves, plugin: SavePlugin) -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
         app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin));
         let start = rl_bevy::testing::surface(&mut app);
@@ -729,7 +839,7 @@ mod tests {
             registries.statuses = rl_rules::Registry::from_defs(vec![StatusDef::new("dazed")]).unwrap();
         }
         app.insert_resource(saves).insert_resource(Seed(RunSeed(9))).init_resource::<Stocked>();
-        app.add_plugins(SavePlugin::new("run").version(3)).save_kind::<Thing>().save_kind::<Person>().save_kind::<You>().save_state::<Stocked>();
+        app.add_plugins(plugin).save_kind::<Thing>().save_kind::<Person>().save_kind::<You>().save_state::<Stocked>();
         app.finish();
         app.cleanup();
         (app, start)
@@ -812,6 +922,50 @@ mod tests {
             .filter_map(|item| w.get::<Stack>(item).map(|s| s.count))
             .collect();
         assert_eq!(held, vec![5], "and the crate still holds the coins it held");
+    }
+
+    /// Remains a game dressed as a prop of its own come back as that
+    /// prop and as what they were, once: saved as their own kind, with the
+    /// prop kind part of what the engine records of the remains.
+    #[test]
+    fn remains_dressed_as_a_prop_come_back_as_that_prop_and_only_once() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let props = rl_rules::prop::load(r#"[(name: "wreck", glyph: '%', color: (r: 1, g: 2, b: 3))]"#, &rl_rules::Names::new()).expect("the props load");
+        app.world_mut().resource_mut::<Registries>().props = props;
+        let wreck = app.world().resource::<Registries>().props.expect("wreck");
+        let me = app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30))).id();
+        let ada = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), LeavesRemains)).id();
+        play(&mut app);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        app.world_mut().write_message(DamageEvent::new(ada, rl_rules::Hit::by(me, kind, 99)));
+        app.update();
+        app.update();
+        // What a game does with what is left: a prop of its own.
+        app.world_mut().entity_mut(ada).insert(PropKind(wreck));
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        back.world_mut().resource_mut::<Registries>().props = app.world().resource::<Registries>().props.clone();
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let dressed: Vec<(bool, bool)> = w.query::<(Has<Remains>, Has<Person>, &PropKind)>().iter(w).map(|(r, p, _)| (r, p)).collect();
+        assert_eq!(dressed, vec![(true, true)], "one wreck, and it is still Ada's remains");
+    }
+
+    /// A save that would write one entity down as two kinds is refused,
+    /// not written: restoring it would spawn the thing twice.
+    #[test]
+    fn an_entity_two_kinds_claim_is_refused_rather_than_saved_twice() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        app.world_mut().spawn((Person("both".into()), Thing { def: "ring".into(), notches: 0 }));
+        play(&mut app);
+        let err = save_run(app.world_mut()).expect_err("two kinds, one entity");
+        assert!(err.to_string().contains("Person") && err.to_string().contains("Thing"), "names both kinds: {err}");
+        assert!(!backend.exists("run"), "and nothing was written");
     }
 
     /// A body saved is a body continued: the game writes down a person,
@@ -932,6 +1086,56 @@ mod tests {
         assert!(matches!(load_run(app.world()), Err(SaveError::Version { found: 2, expected: 3 })));
         backend.persist("run", &text.replacen("format: 1", "format: 9", 1)).unwrap();
         assert!(matches!(load_run(app.world()), Err(SaveError::Version { found: 9, expected: 1 })));
+    }
+
+    /// An arrival somewhere while playing, as a warp into a place reports it.
+    fn arrive(app: &mut App, at: Point) {
+        app.world_mut().write_message(rl_bevy::PlaceEntered { map: rl_bevy::MapId::SURFACE, first: true, entry: at, exit: None });
+        app.update();
+    }
+
+    /// With `on_arrival()`, arriving somewhere writes the run, so each place
+    /// entered is a save point; without it, and once the run is over,
+    /// nothing is written.
+    #[test]
+    fn a_run_is_saved_on_arrival_when_asked_and_not_otherwise() {
+        for asked in [true, false] {
+            let backend = std::sync::Arc::new(MemoryBackend::default());
+            let plugin = SavePlugin::new("run").version(3);
+            let (mut app, start) = game_with(Saves(backend.clone()), if asked { plugin.on_arrival() } else { plugin });
+            app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+            play(&mut app);
+            assert!(!backend.exists("run"), "asked: {asked}: nothing written before an arrival");
+            arrive(&mut app, start);
+            assert_eq!(backend.exists("run"), asked, "asked: {asked}");
+        }
+    }
+
+    /// An arrival after the run ended writes nothing: the end deleted the
+    /// save, and writing it back would let the run be continued past it.
+    #[test]
+    fn an_arrival_after_the_run_is_over_writes_nothing() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game_with(Saves(backend.clone()), SavePlugin::new("run").version(3).on_arrival());
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        play(&mut app);
+        app.world_mut().write_message(RunOver::died(None));
+        app.update();
+        app.update();
+        arrive(&mut app, start);
+        assert!(!backend.exists("run"));
+    }
+
+    /// The fact ledger is the engine's, so its saving is too.
+    #[test]
+    fn counters_come_back_as_they_were_counted() {
+        let counters = rl_rules::Registry::from_defs(vec![rl_rules::CounterDef::new("kills")]).unwrap();
+        let mut ledger = rl_rules::Ledger::new(&counters);
+        ledger.add(counters.expect("kills"), 3);
+        let saved = rl_bevy::Counters(ledger.clone()).capture();
+        let mut fresh = rl_bevy::Counters(rl_rules::Ledger::default());
+        fresh.restore(saved);
+        assert_eq!(fresh.0, ledger);
     }
 
     /// The stash follows the run a turn at a time, and the run's end

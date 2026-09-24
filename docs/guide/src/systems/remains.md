@@ -7,7 +7,7 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-rules/src/ai/snapshot.rs
             crates/rl-save/src/run.rs
-     fingerprint: 2b1276bf -->
+     fingerprint: 2207c3cc -->
 
 # Remains
 
@@ -40,6 +40,7 @@ The position is put back because `process_deaths` took it off with the turn and 
 `RemainsNaming` is a template with `{what}` standing for whatever the actor was called, and `name_as_remains` applies it, once at the death and again when a save lays a body back down.
 A body is seen by a mind as a `PropView` in `Snapshot::props`, filled by `perceive_props` in `PerceiveSet::Annotate`, carrying which entity it is, where it lies and whose it was, and nothing else.
 `EntityState::remains` is how a save holds it: the whole of it is optional, so a save written before remains existed still loads, and the `SaveId` inside it is optional again, since a death nobody was credited with is still a death.
+`EntityState::remains_as` holds the prop kind a game dressed the body in afterwards, by name, and it is put back on the body as it is laid down, so a wreck comes back a wreck without the game's own record of what the thing was having to know it died.
 
 ## Using it
 
