@@ -176,13 +176,13 @@ pub struct Duelists<'w, 's> {
 }
 
 /// What a side of a duel is made of, apart from what its [`Loadout`] says.
-type Fighter = (Option<&'static Health>, Option<&'static Speed>, Option<&'static Resists>);
+type Fighter = (Option<&'static Health>, Option<&'static Speed>);
 
 /// Fills [`InspectView`] from whatever the cursor is over.
 ///
-/// The forecast's armor and blows come from each side's [`Loadout`], so a
-/// jerkin the subject wears and a blade the player wields count in the
-/// panel exactly as they will in the fight.
+/// The forecast's armor, resistances and blows come from each side's
+/// [`Loadout`], so a jerkin the subject wears and a blade the player wields
+/// count in the panel exactly as they will in the fight.
 pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
@@ -217,7 +217,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let count = duelists.stacks.get(entity).map_or(1, |s| s.count);
     let mut row = Row::new(entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();
-    if let Some(((health, _, _), _)) = theirs {
+    if let Some(((health, _), _)) = theirs {
         row.health = health.map(|h| (h.current, h.max));
     }
     if let (Some(mine_f), Some((_, Some(theirs_f)))) = (my_faction, theirs) {
@@ -233,9 +233,9 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         return;
     }
     let Some((subject, _)) = theirs else { return };
-    let none = rl_rules::Resistances::new();
-    let (my_health, my_speed, my_resists) = mine;
-    let (their_health, their_speed, their_resists) = subject;
+    let (my_health, my_speed) = mine;
+    let (their_health, their_speed) = subject;
+    let (my_resists, their_resists) = (duelists.loadout.resistances(me), duelists.loadout.resistances(entity));
     let (Some(my_health), Some(their_health)) = (my_health, their_health) else { return };
     // Both of what each side can do, and the gap between them; the
     // forecast picks the melee rolls or the shot from that, by the rule
@@ -248,22 +248,9 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let my_arms = duelists.loadout.arms(me, &my_blows, &my_shots);
     let their_arms = duelists.loadout.arms(entity, &their_blows, &their_shots);
     let apart = geometry::chebyshev(origin.0, pos.0);
-    let asker = Combatant::armed(
-        my_health.current,
-        duelists.loadout.armor(me),
-        my_speed.map(|s| s.0).unwrap_or(100),
-        my_resists.map(|r| &r.0).unwrap_or(&none),
-        &my_arms,
-        apart,
-    );
-    let other = Combatant::armed(
-        their_health.current,
-        duelists.loadout.armor(entity),
-        their_speed.map(|s| s.0).unwrap_or(100),
-        their_resists.map(|r| &r.0).unwrap_or(&none),
-        &their_arms,
-        apart,
-    );
+    let asker = Combatant::armed(my_health.current, duelists.loadout.armor(me), my_speed.map(|s| s.0).unwrap_or(100), &my_resists, &my_arms, apart);
+    let other =
+        Combatant::armed(their_health.current, duelists.loadout.armor(entity), their_speed.map(|s| s.0).unwrap_or(100), &their_resists, &their_arms, apart);
     let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = duelists.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
     view.duel = Some(duel(&asker, &other, &duelists.registries.damage_kinds, &stages));
 }

@@ -28,12 +28,13 @@ pub struct Binds {
     pub pick_up: ControlId,
     /// Fire what is wielded, through the targeting cursor.
     pub fire: ControlId,
-    /// Throw the first thing carried that can be thrown.
+    /// Open the pack on the first thing in it that can be thrown.
     pub throw: ControlId,
-    /// Set a charge on the console beside you.
     /// Switch the shoulder lamp off or on; read by
     /// [`light::toggle_lamp`](crate::light::toggle_lamp).
     pub lamp: ControlId,
+    /// Open the cheat menu; read by [`cheats`](crate::cheats).
+    pub cheats: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
@@ -47,21 +48,22 @@ pub fn declare_controls(app: &mut App) {
         wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
         pick_up: app.add_control("Act", "pick up what is here", [KeyCode::KeyG, KeyCode::Comma]),
         fire: app.add_control("Act", "fire at the nearest droid", KeyCode::KeyF),
-        throw: app.add_control("Act", "throw a blade", KeyCode::KeyT),
+        throw: app.add_control("Act", "throw something from the pack", KeyCode::KeyT),
         lamp: app.add_control("Act", "switch the lamp off, or on", Chord::shift(KeyCode::KeyL)),
+        cheats: app.add_control("Debug", "the cheat menu", KeyCode::Backslash),
     };
     app.insert_resource(binds);
 }
 
 /// The player while it holds the turn.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position, &'static Inventory, Option<&'static OnMap>), (With<Player>, With<MyTurn>)>;
+type PlayerTurn<'w, 's> = Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>;
 
 /// What every key here reads before it asks for anything.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Keyboard<'w, 's> {
     keys: ControlInput<'w>,
     binds: Res<'w, Binds>,
-    modals: Res<'w, Modals>,
+    modals: ResMut<'w, Modals>,
     turns: Res<'w, Turns>,
     log: ResMut<'w, MessageLog>,
     player: PlayerTurn<'w, 's>,
@@ -75,13 +77,19 @@ pub struct PlayerIntents<'w> {
     transits: MessageWriter<'w, Intent<GoThrough>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     fires: MessageWriter<'w, AimFire>,
-    throws: MessageWriter<'w, AimThrow>,
 }
 
-/// Everything on the deck `f`, `t` and `e` look for.
+/// The pack's screen, which `t` opens: absent from a test that draws no
+/// screens, where `t` has nothing to open.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Pack<'w> {
+    view: Option<Res<'w, InventoryView>>,
+    menu: Option<ResMut<'w, InventoryMenu>>,
+}
+
+/// Everything on the deck `f` looks for.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Reach<'w, 's> {
-    missiles: Query<'w, 's, (), With<Throwable>>,
     loadout: Loadout<'w, 's>,
     idle: Query<'w, 's, (&'static Name, Option<&'static Heat>, Has<Dry>)>,
     worn: Query<'w, 's, &'static Equipped>,
@@ -91,16 +99,18 @@ pub struct Reach<'w, 's> {
 /// and nothing at all while a screen is up: the stack is empty or the
 /// world does not have the keys.
 ///
-/// `f` and `t` open the engine's targeting cursor, which starts on the
-/// nearest foe in sight, cycles the rest with Tab, previews the line and
-/// acts on confirm; `e` sets a charge only beside a console that has not
-/// had one, and otherwise says so without spending the turn, since a
-/// mistyped key should not cost a life.
-pub fn player_input(mut kb: Keyboard, reach: Reach, mut intents: PlayerIntents) {
+/// `f` opens the engine's targeting cursor, which starts on the nearest
+/// foe in sight, cycles the rest with Tab, previews the line and acts on
+/// confirm. `t` opens the pack on the first thing in it that can be
+/// thrown, rather than throwing it: which of several is meant is the
+/// player's to pick, and the pack's own `t` sends the row picked out to
+/// the same cursor. A key with nothing to do says so without spending the
+/// turn, since a mistyped key should not cost a life.
+pub fn player_input(mut kb: Keyboard, reach: Reach, mut pack: Pack, mut intents: PlayerIntents) {
     if kb.modals.any_open() {
         return;
     }
-    let Ok((me, _at, bag, _on)) = kb.player.single() else { return };
+    let Ok(me) = kb.player.single() else { return };
     let now = kb.turns.turn_number();
     let (keys, binds) = (&kb.keys, *kb.binds);
     if let Some(dir) = keys.direction(binds.walk) {
@@ -122,9 +132,12 @@ pub fn player_input(mut kb: Keyboard, reach: Reach, mut intents: PlayerIntents) 
             kb.log.muted(why_not(&worn, &reach), now);
         }
     } else if keys.just_pressed(binds.throw) {
-        match bag.items.iter().copied().find(|item| reach.missiles.contains(*item)) {
-            Some(item) => {
-                intents.throws.write(AimThrow { user: me, item });
+        let (Some(view), Some(menu)) = (pack.view.as_deref(), pack.menu.as_deref_mut()) else { return };
+        match view.rows.iter().position(|row| row.throw_range.is_some()) {
+            Some(row) => {
+                menu.selected = row;
+                let bag = inventory_modal(&kb.modals);
+                kb.modals.open(bag);
             }
             None => kb.log.muted("You have nothing to throw.", now),
         }
@@ -177,19 +190,6 @@ mod tests {
         crate::testing::slug_pistol_with(&mut app, 0);
         press(&mut app, KeyCode::KeyF);
         assert!(said(&app, "Your slug pistol is out of ammunition."));
-    }
-
-    #[test]
-    fn t_with_a_monoblade_in_the_pack_asks_the_cursor_to_throw_it() {
-        let mut app = crate::testing::headless(RunSeed(5));
-        app.add_plugins(KeyScriptPlugin);
-        crate::testing::settle(&mut app);
-        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        let blade = crate::testing::equip_new(&mut app, me, "monoblade");
-        app.world_mut().resource_mut::<Messages<AimThrow>>().clear();
-        press(&mut app, KeyCode::KeyT);
-        let asked: Vec<Entity> = app.world_mut().resource_mut::<Messages<AimThrow>>().drain().map(|a| a.item).collect();
-        assert_eq!(asked, vec![blade]);
     }
 
     /// The whole pick path through the real keys: walking into the

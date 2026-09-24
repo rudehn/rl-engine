@@ -18,7 +18,22 @@ use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, Turn, TurnSet};
 use rl_engine::rl_bevy::{AddSound, AddVerb, ConsumablesPlugin, PropSet, PropsPlugin, RemainsPlugin};
-use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, ViewSet};
+use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
+
+/// The narrator as Foundry words it, for `main.rs` and
+/// `testing::headless` both, so a test reads the log the player reads.
+///
+/// What the commando calls on is named as a thing, the stims, never as a
+/// spell with a proper name, so a use takes an article: "You use the
+/// stims", where the engine's own wording would read "You use stims". No
+/// droid uses an ability, so only the commando's lines are reworded.
+pub fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default()
+        .phrase(Phrase::YouUse, "You use the {named}.", Tones::TEXT)
+        .phrase(Phrase::YouUseOn, "You use the {named} on {whom}.", Tones::TEXT)
+        .phrase(Phrase::YouUseOnMany, "You use the {named}, catching {n}.", Tones::TEXT)
+        .phrase(Phrase::YouCannotUse, "You cannot use the {named}: {detail}.", Tones::BAD)
+}
 
 /// Foundry's own systems: the run's start, and every reaction a task
 /// after this one adds.
@@ -191,7 +206,28 @@ impl Plugin for FoundryPlugin {
         // headless test with no cursor press the keys all the same.
         crate::input::declare_controls(app);
         app.add_message::<AimFire>().add_message::<AimThrow>();
-        app.add_systems(Update, (crate::upgrades::choice_keys, crate::light::toggle_lamp, crate::input::player_input).chain().in_set(EngineSet::Input));
+        // The cheat screens first of all: a key one of them takes is never
+        // also a pick, the lamp or a step. The search before the menu and
+        // the menu before opening it, so the key that opens the search is
+        // not typed into it and the key that closes the menu does not open
+        // it again. The two toggles' upkeep last, so one takes hold the
+        // frame it is pressed.
+        app.add_plugins(crate::cheats::CheatsPlugin);
+        app.add_systems(
+            Update,
+            (
+                crate::cheats::search_keys,
+                crate::cheats::menu_keys,
+                crate::cheats::open_cheats,
+                crate::upgrades::choice_keys,
+                crate::light::toggle_lamp,
+                crate::input::player_input,
+                crate::cheats::keep_godmode,
+                crate::cheats::reveal_the_deck,
+            )
+                .chain()
+                .in_set(EngineSet::Input),
+        );
         // The lifts between decks, laid on first arrival beside everything
         // else a deck fills with, and the line the log gives each deck.
         // First of Foundry's lines in a pass, for the order of the log.

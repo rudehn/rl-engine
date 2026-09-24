@@ -128,6 +128,10 @@ pub struct TacticCtx<'a, A: Copy> {
     /// The same predicate the ability resolver uses, so what a tactic
     /// thinks an ability will cover is what it does cover.
     pub blocks_shot: &'a dyn Fn(Point) -> bool,
+    /// Whether `p` stops a burst: a wall, and never somebody standing,
+    /// whom a burst catches rather than stops at. The same predicate the
+    /// ability resolver bursts by.
+    pub blocks_burst: &'a dyn Fn(Point) -> bool,
     /// The tiles a shape may be resolved within.
     pub bounds: Rect,
     /// This actor's stream for the turn.

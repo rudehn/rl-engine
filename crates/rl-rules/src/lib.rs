@@ -16,7 +16,9 @@
 //!   caller's to say.
 //! - [`ability`]: what an actor can spend a turn on besides a step and a
 //!   swing, as data: a shape, costs, requirements and a list of effects
-//!   the layer above resolves.
+//!   the layer above resolves. [`EffectSpec`] is one effect as any content
+//!   file writes it, and [`TriggerSpec`] with its [`Area`] one trigger, the
+//!   moment a prop or a thing answers and where its effects land.
 //! - [`prop`]: what stands on a map that is neither an actor nor an item,
 //!   as data: a look, what it offers, what it holds, what sets it off and
 //!   how hard it is to spot.
@@ -55,7 +57,7 @@ pub mod prop;
 pub mod stats;
 pub mod status;
 
-pub use ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, blocked, read_args};
+pub use ability::{AbilityDef, AbilityId, Aim, Area, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, TriggerSpec, blocked, read_args};
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
 pub use ai::{
     ActorView, Awareness, Brain, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense, Snapshot,
@@ -71,13 +73,13 @@ pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
 pub use gas::{Breath, GasDef, GasId};
 pub use names::{NameRef, Names};
-pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, TriggerDef, TriggerOn};
+pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, blocked, read_args};
+    pub use crate::ability::{AbilityDef, AbilityId, Aim, Area, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, TriggerSpec, blocked, read_args};
     pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
     pub use crate::ai::tactics;
     pub use crate::ai::{
@@ -96,7 +98,7 @@ pub mod prelude {
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
     pub use crate::gas::{Breath, GasDef, GasId};
     pub use crate::names::{NameRef, Names};
-    pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, TriggerDef, TriggerOn};
+    pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 }

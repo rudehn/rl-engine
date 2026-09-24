@@ -69,6 +69,18 @@ pub struct Armor(pub i32);
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Resists(pub Resistances);
 
+/// Takes no harm: every hit on it lands as nothing, after the stages, and a
+/// heal still heals.
+///
+/// A component rather than a stage, because a stage sees the hit and not
+/// whom it lands on, and rather than a resistance of a hundred percent,
+/// because resistances add up and past a hundred they heal. For a dummy a
+/// tutorial wants struck, an escort a scene keeps alive, or a debug mode.
+/// The hit is still reported, with nothing dealt, so whatever narrates it
+/// says it had no effect rather than saying nothing.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Invulnerable;
+
 /// Which side an actor is on.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Faction(pub rl_rules::FactionId);
@@ -389,7 +401,7 @@ pub struct DeathEvent {
 }
 
 /// A defender as the damage system sees it.
-type DefenderData = (&'static mut Health, &'static Position, Option<&'static Resists>, Has<Player>);
+type DefenderData = (&'static mut Health, &'static Position, Has<Player>, Has<Invulnerable>);
 
 /// The combat components an actor or an item may carry, as a query asks
 /// for them.
@@ -401,12 +413,12 @@ type WornRef<'a> = (Entity, Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&
 
 /// What an actor fights with, summed at the moment it matters.
 ///
-/// Three layers, added together: the actor's own [`Armor`],
+/// Three layers, added together: the actor's own [`Armor`], [`Resists`],
 /// [`MeleeAttack`], [`RangedAttack`] and [`Strikes`]; the same components
 /// on every item in its [`Equipped`] slots, in slot order; and the value of
 /// the stats [`CombatRules`] names, read off its [`StatBlock`]. A worn
 /// blow or shot replaces the actor's own, since a cutlass is swung in
-/// place of a fist; armor and extra strikes add up.
+/// place of a fist; armor, resistances and extra strikes add up.
 ///
 /// The one answer to the question. The attack resolver strikes with it,
 /// [`apply_damage`] defends with it, and the inspect forecast and the
@@ -423,6 +435,8 @@ pub struct Loadout<'w, 's> {
     own: Query<'w, 's, Gear>,
     worn: Query<'w, 's, Gear, With<Item>>,
     equipped: Query<'w, 's, &'static Equipped>,
+    resists: Query<'w, 's, &'static Resists>,
+    spent: Query<'w, 's, &'static crate::consumable::Consumable>,
     stats: Query<'w, 's, &'static StatBlock>,
     rules: Option<Res<'w, CombatRules>>,
     registries: Option<Res<'w, Registries>>,
@@ -436,6 +450,14 @@ impl Loadout<'_, '_> {
             let (armor, melee, ranged, strikes) = self.worn.get(item).ok()?;
             Some((item, armor, melee, ranged, strikes))
         })
+    }
+
+    /// Whether `item` has a charge to attack with: anything that counts no
+    /// charges does, and an empty wand does not, so the shot it would fire
+    /// is never offered to the player or to a mind. Its armor and what it
+    /// resists still count: it is empty, not gone.
+    fn charged(&self, item: Entity) -> bool {
+        !self.spent.get(item).is_ok_and(|c| c.is_empty())
     }
 
     /// The value of the stat `pick` names on `who`, or zero when the game
@@ -455,10 +477,23 @@ impl Loadout<'_, '_> {
         own + worn + self.stat(who, |r| r.armor)
     }
 
+    /// What `who` resists: its own [`Resists`] and every worn item's, added
+    /// kind by kind, so a suit that resists a tenth of a bolt resists it for
+    /// whoever wears it, and stops the moment it is taken off.
+    pub fn resistances(&self, who: Entity) -> Resistances {
+        let mut total = self.resists.get(who).map(|r| r.0.clone()).unwrap_or_default();
+        for (item, ..) in self.worn(who) {
+            if let Ok(worn) = self.resists.get(item) {
+                total.plus(&worn.0);
+            }
+        }
+        total
+    }
+
     /// The blow `who` strikes, as [`Loadout::melee`], with the worn item it
     /// comes from, or `None` when it is `who`'s own.
     pub fn melee_with(&self, who: Entity) -> Option<(Option<Entity>, MeleeAttack)> {
-        let wielded = self.worn(who).find_map(|(item, _, melee, ..)| melee.copied().map(|m| (Some(item), m)));
+        let wielded = self.worn(who).filter(|(item, ..)| self.charged(*item)).find_map(|(item, _, melee, ..)| melee.copied().map(|m| (Some(item), m)));
         let (from, base) = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, melee, ..)| melee.copied()).map(|m| (None, m)))?;
         let bonus = self.stat(who, |r| r.attack);
         Some((from, MeleeAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base }))
@@ -474,7 +509,7 @@ impl Loadout<'_, '_> {
     /// The shot `who` fires, as [`Loadout::ranged`], with the worn item it
     /// comes from, or `None` when it is `who`'s own.
     pub fn ranged_with(&self, who: Entity) -> Option<(Option<Entity>, RangedAttack)> {
-        let wielded = self.worn(who).find_map(|(item, _, _, ranged, _)| ranged.copied().map(|r| (Some(item), r)));
+        let wielded = self.worn(who).filter(|(item, ..)| self.charged(*item)).find_map(|(item, _, _, ranged, _)| ranged.copied().map(|r| (Some(item), r)));
         let (from, base) = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, _, ranged, _)| ranged.copied()).map(|r| (None, r)))?;
         let bonus = self.stat(who, |r| r.attack);
         Some((from, RangedAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base }))
@@ -553,6 +588,9 @@ pub struct Arena<'w, 's> {
     targets: Query<'w, 's, &'static Position, With<Health>>,
     loadout: Loadout<'w, 's>,
     struck: MessageWriter<'w, Struck>,
+    fired: MessageWriter<'w, crate::effects::Fired>,
+    /// What a worn thing does when its attack strikes, for the shot to carry.
+    carried: Query<'w, 's, &'static crate::effects::Triggers>,
 }
 
 /// What an attack is seen as, and the shots in the air while it is.
@@ -572,6 +610,15 @@ pub struct Shown<'w> {
 #[derive(Debug, Clone)]
 pub struct ShotLanding {
     target: Entity,
+    /// Who made the attack.
+    attacker: Entity,
+    /// The worn item it was made with, whose `hit` triggers land on the
+    /// target; `None` for a fist or a claw.
+    with: Option<Entity>,
+    /// That item's triggers, taken as it fired: a thing its last charge
+    /// spent is gone before a watched shot lands, and what its hits carry
+    /// lands all the same.
+    carried: Option<crate::effects::Triggers>,
     /// Whether it flew or was struck in reach, kept so the landing a pass
     /// later narrates as what it was.
     reach: Reach,
@@ -617,7 +664,7 @@ pub fn resolve_attacks(
     mut arena: Arena,
     shown: Shown,
 ) {
-    let Arena { map, occupancy, attackers, targets, loadout, struck } = &mut arena;
+    let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried } = &mut arena;
     let Shown { mut cues, mut hold, mut airborne } = shown;
     for intent in intents.read() {
         let (actor, target) = (intent.actor, intent.action.0);
@@ -647,17 +694,23 @@ pub fn resolve_attacks(
         };
         resolution.done(actor, cost.unwrap_or(rl_core::turn::BASE_ACTION_COST));
         struck.write(Struck { attacker: actor, target, with: from, ranged });
+        // What the weapon does when it is used, whatever it strikes: a
+        // wand's charge, a trigger on firing.
+        if let Some(item) = from {
+            fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::FIRE, by: Some(actor), at: pos.0 });
+        }
         // Floored where it is rolled: a blow that rolls below zero has
         // missed, and the pipeline would read a negative one as a heal.
         let mut hits = vec![Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))];
         hits.extend(loadout.strikes(actor).into_iter().map(|(kind, dice)| Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))));
-        let shot = ShotLanding { target, reach: if ranged { Reach::Shot } else { Reach::Melee }, hits };
+        let carried = from.and_then(|item| carried.get(item).ok()).filter(|t| t.on(crate::effects::Moments::HIT).next().is_some()).cloned();
+        let shot = ShotLanding { target, attacker: actor, with: from, carried, reach: if ranged { Reach::Shot } else { Reach::Melee }, hits };
         match (look, ranged) {
             (Some(look), true) => {
                 let to = Anchor::on(target, target_pos.0);
                 cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Given(look) } });
                 let Some(shot) = airborne.launched(&mut hold, shot) else { continue };
-                land(shot, &mut damage);
+                land(shot, target_pos.0, &mut damage, fired);
                 continue;
             }
             (Some(look), false) => {
@@ -665,8 +718,18 @@ pub fn resolve_attacks(
             }
             (None, _) => {}
         }
-        land(shot, &mut damage);
+        land(shot, target_pos.0, &mut damage, fired);
     }
+}
+
+/// What a shot landing writes: its hits, the moment it struck, and a
+/// remnant for a thing gone before it arrived.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Arriving<'w, 's> {
+    damage: MessageWriter<'w, DamageEvent>,
+    fired: MessageWriter<'w, crate::effects::Fired>,
+    commands: Commands<'w, 's>,
+    present: Query<'w, 's, (), With<crate::effects::Triggers>>,
 }
 
 /// Lands every shot in the air, on the first pass after its flight has
@@ -677,20 +740,35 @@ pub fn land_shots(
     mut airborne: ResMut<Airborne<ShotLanding>>,
     mut hold: ResMut<TurnHold>,
     mut turns: ResMut<Turns>,
-    alive: Query<(), (With<Health>, Without<Dead>)>,
-    mut damage: MessageWriter<DamageEvent>,
+    alive: Query<&Position, (With<Health>, Without<Dead>)>,
+    mut arriving: Arriving,
 ) {
-    for shot in airborne.landing(&mut hold, &mut turns) {
-        if alive.contains(shot.target) {
-            land(shot, &mut damage);
+    for mut shot in airborne.landing(&mut hold, &mut turns) {
+        let Ok(at) = alive.get(shot.target) else { continue };
+        // A thing spent to nothing by firing is gone by now: what its hits
+        // carry lands from a remnant in its place, as the shooter's doing.
+        if let Some(item) = shot.with
+            && !arriving.present.contains(item)
+        {
+            if let Some(triggers) = shot.carried.take() {
+                let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
+                arriving.commands.spawn((triggers, remnant));
+            }
+            shot.with = None;
         }
+        land(shot, at.0, &mut arriving.damage, &mut arriving.fired);
     }
 }
 
-/// Every hit an attack carries, down the damage pipeline.
-fn land(shot: ShotLanding, damage: &mut MessageWriter<DamageEvent>) {
+/// Every hit an attack carries, down the damage pipeline, and the `hit`
+/// moment on the worn item it came from, at the cell the target stands on
+/// as it lands, so a trigger that bursts bursts where the shot arrived.
+fn land(shot: ShotLanding, at: Point, damage: &mut MessageWriter<DamageEvent>, fired: &mut MessageWriter<crate::effects::Fired>) {
     let (target, reach) = (shot.target, shot.reach);
     damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent::arriving(target, hit, reach)));
+    if let Some(item) = shot.with {
+        fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at });
+    }
 }
 
 /// Where a shot from `from` at `to` flies within `range`: the cells it
@@ -701,9 +779,14 @@ fn land(shot: ShotLanding, damage: &mut MessageWriter<DamageEvent>) {
 /// landing on `to`, and a targeting preview draws this same call, so what
 /// the player is shown and what the resolver decides cannot disagree.
 pub fn shot(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> rl_grid::Footprint {
-    rl_grid::footprint(rl_grid::TargetMode::Bolt { range }, from, to, map.window_tiles(), |p| {
-        p != to && (map.blocks_projectiles(p) || occupancy.is_occupied(p))
-    })
+    rl_grid::footprint(
+        rl_grid::TargetMode::Bolt { range },
+        from,
+        to,
+        map.window_tiles(),
+        |p| p != to && (map.blocks_projectiles(p) || occupancy.is_occupied(p)),
+        |_| false,
+    )
 }
 
 /// Whether a shot from `from` reaches `to` within `range`: nothing that
@@ -714,8 +797,9 @@ pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Poin
 
 /// Runs the damage stages and applies what is left to health.
 ///
-/// The armor a blow meets is the target's [`Loadout`]: its own, what it
-/// wears, and the armor stat.
+/// The armor and the resistances a blow meets are the target's
+/// [`Loadout`]: its own, what it wears, and the armor stat. An [`Invulnerable`] target keeps whatever
+/// heals it and nothing that harms it.
 pub fn apply_damage(
     mut events: MessageReader<DamageEvent>,
     mut dealt: MessageWriter<DamageDealt>,
@@ -726,14 +810,15 @@ pub fn apply_damage(
     mut targets: Query<DefenderData>,
 ) {
     for ev in events.read() {
-        let Ok((mut health, pos, resist, is_player)) = targets.get_mut(ev.target) else { continue };
+        let Ok((mut health, pos, is_player, invulnerable)) = targets.get_mut(ev.target) else { continue };
         if health.current <= 0 {
             continue;
         }
         let defender = Defender { armor: loadout.armor(ev.target), blocked: false };
-        let none = Resistances::new();
+        let resists = loadout.resistances(ev.target);
         let stage_refs: Vec<&dyn DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
-        let amount = rl_rules::resolve(&ev.hit, &defender, resist.map(|r| &r.0).unwrap_or(&none), &registries.damage_kinds, &stage_refs);
+        let amount = rl_rules::resolve(&ev.hit, &defender, &resists, &registries.damage_kinds, &stage_refs);
+        let amount = if invulnerable { amount.min(0) } else { amount };
         health.current = (health.current - amount).min(health.max);
         dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount, reach: ev.reach });
         if health.current <= 0 {
@@ -822,6 +907,10 @@ impl Plugin for CombatPlugin {
         app.add_message::<DamageEvent>()
             .add_message::<DamageDealt>()
             .add_message::<DeathEvent>()
+            // What an attack made with a worn thing reports, for its `fire`
+            // and `hit` triggers. A game may fight and have no effects, and
+            // then the queue simply stays empty.
+            .add_message::<crate::effects::Fired>()
             .add_message::<Struck>()
             .init_resource::<DamageStages>()
             .add_airborne::<ShotLanding>()
@@ -830,7 +919,7 @@ impl Plugin for CombatPlugin {
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
-            .add_systems(Turn, (land_shots.in_set(crate::plugin::LandSet::Shot), resolve_attacks).chain().in_set(ResolveSet::Act))
+            .add_systems(Turn, (land_shots.in_set(crate::plugin::LandSet::Shot), resolve_attacks.in_set(ResolveSet::Act)).chain())
             .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
             .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))
             .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))
@@ -1401,6 +1490,120 @@ mod tests {
         heard.0.extend(events.read().copied());
     }
 
+    /// A gunman holding one gun in the main hand, and a target three cells
+    /// east with twenty health and no armor. The gun deals `roll` and
+    /// carries `consumable` and the triggers `triggers` names, if any.
+    fn gunman(roll: i32, consumable: Option<crate::consumable::Consumable>, triggers: Option<&str>) -> (App, Entity, Entity, Entity) {
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::consumable::ConsumablesPlugin, crate::world::StreamingPlugin));
+        crate::effects::AddEngineEffects::add_engine_effects(&mut app);
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let hand = SlotId::from_raw(0);
+        let gun = app
+            .world_mut()
+            .spawn((crate::items::Item, RangedAttack::new(sides.kind, DiceRoll::flat(roll), 6), crate::items::Wearable(EquipShape::in_slot(hand))))
+            .id();
+        if let Some(c) = consumable {
+            app.world_mut().entity_mut(gun).insert(c);
+        }
+        if let Some(text) = triggers {
+            let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new().load_list(text).expect("the triggers parse");
+            let world = app.world();
+            let registries = world.resource::<Registries>();
+            let built = crate::effects::Triggers::build(
+                &specs,
+                &[],
+                world.resource::<crate::effects::Moments>(),
+                world.resource::<crate::effects::EffectKinds>(),
+                &registries.names(),
+            )
+            .expect("the triggers build");
+            app.world_mut().entity_mut(gun).insert(built);
+        }
+        let mut equipment = Equipment::with_slot_count(1);
+        equipment.equip(gun, &EquipShape::in_slot(hand)).unwrap();
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                crate::items::Inventory { items: vec![gun] },
+                Equipped(equipment),
+            ))
+            .id();
+        let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(20), Faction(sides.theirs))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, player, gun, target)
+    }
+
+    fn shoot(app: &mut App, player: Entity, target: Entity) {
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.update();
+    }
+
+    #[test]
+    fn a_wand_spends_a_charge_for_every_shot_fired() {
+        let wand = crate::consumable::Consumable::new(3, crate::consumable::WhenEmpty::Kept);
+        let (mut app, player, gun, target) = gunman(1, Some(wand), None);
+        shoot(&mut app, player, target);
+        assert_eq!(app.world().get::<crate::consumable::Consumable>(gun).map(|c| c.left), Some(2), "one shot, one charge");
+    }
+
+    /// A hit trigger lands on whoever the shot struck, where they stand:
+    /// a gun that deals nothing itself still hurts through what its hits
+    /// carry.
+    #[test]
+    fn a_hit_trigger_lands_on_the_struck_actor_where_it_stands() {
+        let (mut app, player, _, target) = gunman(0, None, Some(r#"[(on: "hit", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#));
+        shoot(&mut app, player, target);
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 17);
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "and not on the shooter");
+    }
+
+    /// The last charge of a thing spent to nothing still does what its
+    /// hits carry when the shot is watched: firing spends it, and it is
+    /// gone before the shot lands a pass later, so what it would have done
+    /// travels with the shot rather than being looked for on it.
+    #[test]
+    fn the_last_shot_of_a_spent_gun_still_lands_its_hit_trigger_when_watched() {
+        let once = crate::consumable::Consumable::new(1, crate::consumable::WhenEmpty::Destroyed);
+        let (mut app, player, gun, target) = gunman(0, Some(once), Some(r#"[(on: "hit", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#));
+        let kind = app.world().get::<RangedAttack>(gun).unwrap().kind;
+        app.world_mut().entity_mut(gun).insert(RangedAttack::new(kind, DiceRoll::flat(0), 6).looking(LOOK));
+        app.world_mut().resource_mut::<TurnHold>().watch();
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        assert!(app.world().resource::<TurnHold>().in_flight(), "the shot is in the air");
+        assert!(app.world().get_entity(gun).is_err(), "and the gun, its one charge spent, is gone");
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        app.update();
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 17, "what its hit carried landed all the same");
+    }
+
+    /// An empty wand has no shot, so neither the player nor a mind that
+    /// asks the loadout ever chooses one.
+    #[test]
+    fn an_empty_kept_wand_offers_no_shot_so_nothing_ever_chooses_one() {
+        let empty = crate::consumable::Consumable { left: 0, ..crate::consumable::Consumable::new(3, crate::consumable::WhenEmpty::Kept) };
+        let (mut app, player, _, target) = gunman(5, Some(empty), None);
+        let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let loadout = state.get(app.world()).expect("every input is optional");
+        assert!(loadout.ranged(player).is_none(), "nothing to fire");
+        shoot(&mut app, player, target);
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 20, "and nothing was fired");
+    }
+
     /// Sends one melee attack from a player adjacent to a target, worn or
     /// bare-handed, and returns the single [`Struck`] written for it.
     ///
@@ -1505,6 +1708,29 @@ mod tests {
         let (struck, first, _second) = struck_by_two_guns();
         assert!(struck.ranged);
         assert_eq!(struck.with, Some(first));
+    }
+
+    /// An invulnerable actor is hit and takes nothing, and the hit is still
+    /// reported, with nothing dealt, so a log says it had no effect; a heal
+    /// still heals, since what it stops is harm.
+    #[test]
+    fn an_invulnerable_actor_takes_no_harm_and_is_still_healed() {
+        let (mut app, start, blunt) = arena();
+        let who = app.world_mut().spawn((Actor, Blocks, Position(start), Health { current: 10, max: 30 }, Invulnerable)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, 999)));
+        app.update();
+        assert_eq!(app.world().get::<Health>(who).unwrap().current, 10, "nothing taken off, and not killed");
+        let dealt: Vec<i32> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().map(|d| d.dealt).collect();
+        assert_eq!(dealt, vec![0], "the hit is reported, with nothing dealt");
+        app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, -5)));
+        app.update();
+        assert_eq!(app.world().get::<Health>(who).unwrap().current, 15, "a heal lands in full");
+        app.world_mut().entity_mut(who).remove::<Invulnerable>();
+        app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, 4)));
+        app.update();
+        assert_eq!(app.world().get::<Health>(who).unwrap().current, 11, "and without it, a hit hurts again");
     }
 
     #[test]

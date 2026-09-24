@@ -11,9 +11,10 @@
 //! belongs to the Bevy layer, and what any of it means belongs to the
 //! game.
 //!
-//! Two things are deliberately left as names rather than resolved to ids.
-//! A verb is a string until the engine interns it, the way a sound is,
-//! because the id only exists once there is a run. A container's contents
+//! Three things are deliberately left as names rather than resolved to
+//! ids. A verb and a trigger's moment are strings until the engine interns
+//! them, the way a sound is, because the id only exists once there is a
+//! run. A container's contents
 //! are item names because items are a game's own registry and only the
 //! game can spawn one; the engine rolls the counts and asks.
 
@@ -22,7 +23,7 @@ use rl_grid::Rgb;
 use serde::Deserialize;
 
 use crate::TagId;
-use crate::ability::{EffectSpec, RawValue, parse_args};
+use crate::ability::{EffectSpec, RawValue, TriggerSpec, parse_args};
 use crate::content::{ContentError, Named, Registry};
 use crate::names::Names;
 
@@ -44,8 +45,10 @@ pub struct PropDef {
     pub offers: Vec<OfferDef>,
     /// What it holds, when it holds anything.
     pub container: Option<ContainerDef>,
-    /// What it does to whoever sets it off.
-    pub trigger: Option<TriggerDef>,
+    /// What it does at the moments it answers: somebody stepping on it,
+    /// its being broken, or a moment a game reports, written as any trigger
+    /// is and resolved against the moments the Bevy layer interns.
+    pub triggers: Vec<TriggerSpec>,
     /// How hard it is to spot. `None` for a prop in plain sight.
     pub hidden: Option<HiddenDef>,
 }
@@ -120,27 +123,6 @@ pub struct ContentRoll {
     pub max: u32,
 }
 
-/// What sets a prop off, and what happens when it does.
-#[derive(Debug, Clone)]
-pub struct TriggerDef {
-    /// What sets it off.
-    pub on: TriggerOn,
-    /// How many times it may go off. One for a pressure plate, more for a
-    /// line that keeps leaking.
-    pub fires: u32,
-    /// What lands, in order.
-    pub effects: Vec<EffectSpec>,
-}
-
-/// What sets a trigger off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-pub enum TriggerOn {
-    /// Somebody stepped onto its cell.
-    Entered,
-    /// It was broken.
-    Destroyed,
-}
-
 /// How hard a prop is to spot, for one that is not in plain sight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HiddenDef {
@@ -195,12 +177,11 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
                 opened: c.opened,
             }
         });
-        let trigger = a.trigger.as_ref().map(|t| {
-            if t.fires == 0 {
+        for t in &a.triggers {
+            if t.fires == Some(0) {
                 errors.push(format!("{}: a trigger that fires no times never fires; leave it out instead", a.name));
             }
-            TriggerDef { on: t.on, fires: t.fires, effects: read_effects(&a.name, &t.effects, &mut errors) }
-        });
+        }
         if let Some(h) = a.hidden
             && h.spot > 100
         {
@@ -216,7 +197,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
             health: a.health,
             offers,
             container,
-            trigger,
+            triggers: a.triggers.clone(),
             hidden: a.hidden.map(|h| HiddenDef { spot: h.spot }),
         });
     }
@@ -251,7 +232,12 @@ fn read_effects(what: &str, authored: &[EffectRon], errors: &mut Vec<String>) ->
 }
 
 /// A prop as authored, before its names are resolved.
+///
+/// Unknown fields are refused: a misspelt or renamed one would otherwise
+/// load as a prop without it, and a plate whose trigger was dropped that
+/// way is a trap that silently does nothing.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Authored {
     name: String,
     glyph: char,
@@ -267,7 +253,7 @@ struct Authored {
     #[serde(default)]
     container: Option<ContainerRon>,
     #[serde(default)]
-    trigger: Option<TriggerRon>,
+    triggers: Vec<TriggerSpec>,
     #[serde(default)]
     hidden: Option<HiddenRon>,
 }
@@ -304,15 +290,6 @@ struct ContainerRon {
 #[derive(Debug, Deserialize)]
 struct ContentRon(String, u32, u32);
 
-#[derive(Debug, Deserialize)]
-struct TriggerRon {
-    on: TriggerOn,
-    #[serde(default = "once")]
-    fires: u32,
-    #[serde(default)]
-    effects: Vec<EffectRon>,
-}
-
 #[derive(Debug, Clone, Copy, Deserialize)]
 struct HiddenRon {
     spot: u8,
@@ -333,10 +310,6 @@ fn one() -> i32 {
 
 fn one_step() -> u32 {
     rl_core::turn::BASE_ACTION_COST
-}
-
-fn once() -> u32 {
-    1
 }
 
 fn hundred() -> u8 {
@@ -374,7 +347,7 @@ mod tests {
                  offers: [(verb: "open", time: 300)]),
                 (name: "fuel-line plate", glyph: '^', color: (r: 230, g: 140, b: 51),
                  hidden: (spot: 40),
-                 trigger: (on: Entered, fires: 1, effects: [(kind: "Emit", args: (gas: "fuel vapour", amount: 90))])),
+                 triggers: [(on: "entered", fires: 1, effects: [(kind: "Emit", args: (gas: "fuel vapour", amount: 90))])]),
                 (name: "reactor console", glyph: '%', color: (r: 89, g: 217, b: 230), blocks: true,
                  offers: [(verb: "charge", time: 300)]),
             ]"#,
@@ -395,12 +368,32 @@ mod tests {
         let plate = props.get(props.expect("fuel-line plate"));
         assert!(!plate.blocks, "a plate nobody wrote as blocking does not block");
         assert_eq!(plate.hidden.map(|h| h.spot), Some(40));
-        let trigger = plate.trigger.as_ref().expect("it fires");
-        assert_eq!((trigger.on, trigger.fires, trigger.effects.len()), (TriggerOn::Entered, 1, 1));
+        let trigger = plate.triggers.first().expect("it fires");
+        assert_eq!((trigger.on.as_str(), trigger.fires, trigger.effects.as_ref().map(Vec::len)), ("entered", Some(1), Some(1)));
 
         let console = props.get(props.expect("reactor console"));
         assert!(console.offers[0].effects.is_empty(), "a verb only the game answers carries nothing");
         assert_eq!(console.offers[0].verb, "charge");
+    }
+
+    /// A props file written for 0.3.0, with `trigger:` where `triggers:`
+    /// now goes, is refused naming the field, rather than loading a plate
+    /// with no trigger at all, which is a trap that silently does nothing.
+    #[test]
+    fn a_leftover_trigger_field_is_refused_rather_than_loading_a_plate_that_does_nothing() {
+        let tags = tags();
+        let names = Names::new().tags(&tags);
+        let err = load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "old plate", glyph: '^', color: (r: 1, g: 2, b: 3),
+                 trigger: (on: Entered, fires: 1, effects: [])),
+            ]"#,
+            &names,
+        )
+        .expect_err("an old field is refused");
+        let said = format!("{err}");
+        assert!(said.contains("trigger") && said.contains("triggers"), "names the field and the one it became: {said}");
     }
 
     /// One load, every complaint: a file with five mistakes names five,
@@ -416,7 +409,7 @@ mod tests {
                  container: (contents: [("slug", 9, 4)], locked: "skeleton key")),
                 (name: "bad plate", glyph: '^', color: (r: 1, g: 2, b: 3),
                  hidden: (spot: 140),
-                 trigger: (on: Entered, fires: 0)),
+                 triggers: [(on: "entered", fires: 0, effects: [])]),
                 (name: "bad lever", glyph: '\\', color: (r: 1, g: 2, b: 3),
                  offers: [(verb: "pull", time: 0)]),
             ]"#,

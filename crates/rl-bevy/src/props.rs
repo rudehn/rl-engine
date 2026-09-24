@@ -28,11 +28,12 @@ use rl_rules::prop::PropId;
 
 use crate::combat::Health;
 use crate::components::{Blocks, MyTurn, Position};
-use crate::effects::Effects;
+use crate::effects::{Effects, Fired, LandsAsItself, Moments, Remnant, Triggers};
 use crate::items::{Inventory, Tagged};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::turn::{Action, Intent, Resolution};
+use crate::world::WorldMap;
 
 /// A thing on the map that is not an actor and not an item.
 ///
@@ -311,7 +312,7 @@ pub fn resolve_interactions(
     mut done: MessageWriter<Interacted>,
     mut resolution: Resolution,
     what: Answering,
-    mut world: crate::ability::EffectWorld,
+    mut world: crate::effects::EffectWorld,
 ) {
     let Answering { offered, effects, registries, verbs, props } = &what;
     for intent in intents.read() {
@@ -330,7 +331,7 @@ pub fn resolve_interactions(
             if let Some(which) = which
                 && let Some(effects) = effects.offer(kind.0, which)
             {
-                effects.land_on(intent.action.prop, at, vec![intent.actor], &mut world);
+                effects.land_on(crate::effects::Source::Offer(intent.action.prop), intent.action.prop, at, vec![intent.actor], &mut world);
             }
         }
         done.write(Interacted { actor: intent.actor, prop: intent.action.prop, verb: intent.action.verb });
@@ -505,97 +506,71 @@ pub fn close_emptied_containers(mut commands: Commands, registries: Res<Registri
     }
 }
 
-/// What sets a prop off, and what it does when it does.
-///
-/// Read from the definition; how many times it has gone off is
-/// [`Fired`], on the prop.
-pub use rl_rules::prop::TriggerOn;
-
-/// How many times a prop's trigger has gone off.
-///
-/// On the prop rather than counted down in its definition, because a
-/// definition is shared by every crate of its kind and this is one
-/// crate's history. Saved, so a sprung trap stays sprung.
-#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Fired(pub u32);
-
-/// A prop's trigger went off.
-///
-/// For a game whose trap does something no effect can say. The effects
-/// the definition carried have already landed.
-#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Triggered {
-    /// Which prop.
-    pub prop: Entity,
-    /// What set it off.
-    pub on: TriggerOn,
-    /// Who set it off, when anyone did: the one who stepped on it, or
-    /// whoever broke it, if the blow was credited.
-    pub by: Option<Entity>,
-    /// Where it was.
-    pub at: Point,
-}
-
-/// Every prop's effects, built once from the registry.
+/// Every prop's effects, built once from the registry: what each offer
+/// lands, and each kind's [`Triggers`], which [`arm_props`] copies onto
+/// every prop of that kind.
 ///
 /// Built on the first frame rather than in the plugin, because a game
-/// registers its own effects while the app is being built and the last of
-/// them must be in before the first prop is read.
-///
-/// The lists themselves are the engine's own
-/// [`Effects`], the same type an ability and a used item carry: what a
-/// trap lands and what a spell lands differ in when and on whom, never in
-/// how.
+/// registers its own effects and moments while the app is being built and
+/// the last of them must be in before the first prop is read.
 #[derive(Resource, Default)]
 pub struct PropEffects {
-    /// Per prop id, what its trigger lands.
-    triggers: Vec<Effects>,
+    /// Per prop id, its triggers, shared by every prop of the kind.
+    triggers: Vec<Triggers>,
     /// Per prop id, per offer, what taking it up lands.
     offers: Vec<Vec<Effects>>,
 }
 
 impl PropEffects {
-    /// What `prop`'s trigger lands, if it was built at all.
-    fn trigger(&self, prop: PropId) -> Option<&Effects> {
-        self.triggers.get(prop.index())
-    }
-
     /// What the `which`th offer of `prop` lands, if it was built at all.
     fn offer(&self, prop: PropId, which: usize) -> Option<&Effects> {
         self.offers.get(prop.index()).and_then(|o| o.get(which))
     }
 }
 
-/// Builds every prop's effects, once, and says loudly what would not
-/// build.
+/// Builds every prop's effects and triggers, once, and says loudly what
+/// would not build.
 ///
-/// A definition naming an effect nobody registered is a content mistake
-/// that would otherwise be a trap that silently does nothing, which is
-/// the worst kind of trap.
+/// A definition naming an effect or a moment nobody registered is a content
+/// mistake that would otherwise be a trap that silently does nothing, which
+/// is the worst kind of trap. A trap whose triggers would not build is left
+/// unarmed rather than half armed.
 pub fn build_prop_effects(
     mut commands: Commands,
     built: Option<Res<PropEffects>>,
     registries: Res<Registries>,
-    kinds: Option<Res<crate::ability::EffectKinds>>,
+    kinds: Option<Res<crate::effects::EffectKinds>>,
+    moments: Option<Res<crate::effects::Moments>>,
 ) {
     if built.is_some() {
         return;
     }
     let names = registries.names();
-    let empty = crate::ability::EffectKinds::default();
-    let kinds = kinds.as_deref().unwrap_or(&empty);
+    let (no_kinds, no_moments) = (crate::effects::EffectKinds::default(), crate::effects::Moments::default());
+    let kinds = kinds.as_deref().unwrap_or(&no_kinds);
+    let moments = moments.as_deref().unwrap_or(&no_moments);
     let mut effects = PropEffects::default();
     let mut errors = Vec::new();
     for (_, def) in registries.props.iter() {
-        let mut build = |specs: &[rl_rules::EffectSpec], what: &str| match Effects::build(specs, kinds, &names) {
-            Ok(effects) => effects,
+        let triggers = match Triggers::build(&def.triggers, &[], moments, kinds, &names) {
+            Ok(t) => t,
             Err(mine) => {
-                errors.extend(mine.into_iter().map(|e| format!("{} {what}: {e}", def.name)));
-                Effects::default()
+                errors.extend(mine.into_iter().map(|e| format!("{} triggers: {e}", def.name)));
+                Triggers::default()
             }
         };
-        effects.triggers.push(def.trigger.as_ref().map(|t| build(&t.effects, "trigger")).unwrap_or_default());
-        effects.offers.push(def.offers.iter().map(|o| build(&o.effects, &format!("offer {:?}", o.verb))).collect());
+        effects.triggers.push(triggers);
+        let mut offers = Vec::new();
+        for o in &def.offers {
+            offers.push(match Effects::build(&o.effects, kinds, &names) {
+                Ok(e) => e,
+                Err(mine) => {
+                    errors.extend(mine.into_iter().map(|e| format!("{} offer {:?}: {e}", def.name, o.verb)));
+                    Effects::default()
+                }
+            });
+        }
+        effects.offers.push(offers);
     }
     for e in &errors {
         error!("props.ron: {e}");
@@ -603,73 +578,76 @@ pub fn build_prop_effects(
     commands.insert_resource(effects);
 }
 
-/// A prop that may go off, and how often it already has.
+/// A restored prop's own firings, waiting for its triggers.
 ///
-/// Without its `Position`: where it stands is read through
-/// [`EffectWorld`](crate::ability::EffectWorld), which holds every
-/// position mutably so an effect can move what it lands on, and two
-/// systems cannot hold the same component both ways.
-type Trap<'w, 's> = Query<'w, 's, (Entity, &'static PropKind, Option<&'static OnMap>, Option<&'static Fired>), With<Prop>>;
+/// A save brings a prop back before anything has built its kind's
+/// triggers, so what it had left to fire is kept here and put onto them by
+/// [`arm_props`] the moment it is armed.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct PendingFires(pub Vec<Option<u32>>);
 
-/// Springs what was stepped on.
+/// Props not yet given their triggers.
+type Unarmed<'w, 's> = Query<'w, 's, (Entity, &'static PropKind, Option<&'static PendingFires>), (With<Prop>, Without<Triggers>)>;
+
+/// Props with triggers, where they stand.
+type Armed<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), (With<Prop>, With<Triggers>)>;
+
+/// Puts each new prop's triggers on it, from its kind's.
+///
+/// Every copy shares its kind's effect lists and keeps its own count of
+/// times left to fire, so springing one cable spends nothing of another.
+/// A kind with none is armed with an empty list, which answers nothing and
+/// keeps this from looking at the prop again.
+pub fn arm_props(mut commands: Commands, built: Option<Res<PropEffects>>, fresh: Unarmed) {
+    let Some(built) = built else { return };
+    for (prop, kind, pending) in &fresh {
+        let mut triggers = built.triggers.get(kind.0.index()).cloned().unwrap_or_default();
+        if let Some(PendingFires(fires)) = pending {
+            for (trigger, left) in triggers.0.iter_mut().zip(fires) {
+                trigger.fires = *left;
+            }
+        }
+        // A prop's triggers are its own doing, whoever set them off.
+        commands.entity(prop).insert((triggers, LandsAsItself)).remove::<PendingFires>();
+    }
+}
+
+/// Reports the `entered` moment on every armed prop a step lands on.
 ///
 /// Reads [`Stepped`](crate::turn::Stepped), which the move resolver writes
 /// for every step it lets through, so anything that walks sets off a
 /// plate: the player, a droid, a rat. Whether it could see the plate never
 /// comes into it, which is the point of a hidden one.
-pub fn spring_on_entered(
-    mut commands: Commands,
-    mut steps: MessageReader<crate::turn::Stepped>,
-    mut fired: MessageWriter<Triggered>,
-    registries: Res<Registries>,
-    effects: Option<Res<PropEffects>>,
-    traps: Trap,
-    mut world: crate::ability::EffectWorld,
-) {
-    let Some(effects) = effects else { return };
+pub fn report_entered(mut steps: MessageReader<crate::turn::Stepped>, props: Armed, map: Res<WorldMap>, mut fired: MessageWriter<Fired>) {
+    let here = map.current();
     for step in steps.read() {
-        for (prop, kind, _, already) in &traps {
-            if world.position(prop) != Some(step.to) {
-                continue;
+        for (prop, at, on) in &props {
+            if at.0 == step.to && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here {
+                fired.write(Fired { on: prop, moment: Moments::ENTERED, by: Some(step.actor), at: step.to });
             }
-            let def = registries.props.get(kind.0);
-            let Some(trigger) = def.trigger.as_ref().filter(|t| t.on == TriggerOn::Entered) else { continue };
-            let count = already.copied().unwrap_or_default().0;
-            if count >= trigger.fires {
-                continue;
-            }
-            commands.entity(prop).insert(Fired(count + 1));
-            if let Some(effects) = effects.trigger(kind.0) {
-                effects.land_on(prop, step.to, vec![step.actor], &mut world);
-            }
-            fired.write(Triggered { prop, on: TriggerOn::Entered, by: Some(step.actor), at: step.to });
         }
     }
 }
 
-/// Springs what was broken.
+/// Reports the `destroyed` moment for every armed prop that was broken.
 ///
-/// A prop with health is killed like anything else, and its death is read
-/// here before the frame ends, which is what lets a barrel burst.
-pub fn spring_on_destroyed(
-    mut deaths: MessageReader<crate::combat::DeathEvent>,
-    mut fired: MessageWriter<Triggered>,
-    registries: Res<Registries>,
-    effects: Option<Res<PropEffects>>,
-    kinds: Query<&PropKind, With<Prop>>,
-    mut world: crate::ability::EffectWorld,
-) {
-    let Some(effects) = effects else { return };
+/// A death is only known once damage has been applied, so this is read in
+/// [`TurnSet::React`](crate::plugin::TurnSet::React) and lands the pass
+/// after. The prop itself is despawned at the end of the frame, which may
+/// be before then, so what it does goes on a [`Remnant`] that carries its
+/// triggers and its name, is reported in its place, and is despawned once
+/// they land. A prop with nothing to do when broken leaves none.
+pub fn report_destroyed(mut commands: Commands, mut deaths: MessageReader<crate::combat::DeathEvent>, props: Query<(&Triggers, Option<&Name>), With<Prop>>) {
     for death in deaths.read() {
-        let Ok(kind) = kinds.get(death.entity) else { continue };
-        let def = registries.props.get(kind.0);
-        if !def.trigger.as_ref().is_some_and(|t| t.on == TriggerOn::Destroyed) {
+        let Ok((triggers, name)) = props.get(death.entity) else { continue };
+        if triggers.on(Moments::DESTROYED).next().is_none() {
             continue;
         }
-        if let Some(effects) = effects.trigger(kind.0) {
-            effects.land_on(death.entity, death.at, Vec::new(), &mut world);
+        let remnant = Remnant { moment: Moments::DESTROYED, by: death.credit, at: death.at };
+        let mut carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself));
+        if let Some(name) = name {
+            carrier.insert(name.clone());
         }
-        fired.write(Triggered { prop: death.entity, on: TriggerOn::Destroyed, by: death.credit, at: death.at });
     }
 }
 
@@ -819,32 +797,23 @@ impl Plugin for PropsPlugin {
         use crate::plugin::{DecideSet, Needs, Reads, ResolveSet, Turn};
         use crate::seed::AddStream;
         use crate::turn::AddAction;
+        crate::effects::ensure(app);
         app.needs::<Registries>("PropsPlugin", "`Registries`, with `props` loaded from a `props.ron`")
             .init_resource::<Verbs>()
             .init_resource::<OfferedHere>()
             .add_message::<Interacted>()
             .add_action::<Interact>()
             .add_message::<FillContainer>()
-            .add_message::<Triggered>()
             .add_message::<Spotted>()
-            // What props read and write that belongs to plugins a game may
-            // have left out: taking out of a container says so in items'
-            // own words, a trap lands effects that harm, afflict, cure and
-            // are worth seeing, and a prop that bursts hears its own death.
-            // A game may have props without items, combat or statuses, and
-            // then these queues simply stay empty.
+            // What props read that belongs to plugins a game may have left
+            // out: taking out of a container says so in items' own words,
+            // and a prop that bursts hears its own death. A game may have
+            // props without items or combat, and then these queues simply
+            // stay empty. What an effect writes is `EffectsPlugin`'s.
             .reads::<crate::items::ItemEvent>()
-            .reads::<crate::combat::DamageEvent>()
             .reads::<crate::combat::DeathEvent>()
-            .reads::<crate::status::Afflict>()
-            .reads::<crate::status::Cure>()
-            .reads::<crate::cue::Cued>()
             .add_action::<Take>()
             .add_stream::<PropRng>("PropsPlugin")
-            // The stream effects roll their own dice from. A trap lands the
-            // same effects an ability does, so it wants the same stream;
-            // asking for it twice adds nothing.
-            .add_stream::<crate::ability::AbilityRng>("PropsPlugin")
             // In `EngineSet::Stream`, where the world is brought in: a prop
             // is put down as a place is built, and stocking it, building
             // its effects and reporting a bare one are all of that phase
@@ -865,10 +834,17 @@ impl Plugin for PropsPlugin {
             // Outside the turn loop: a container is stocked the frame it is
             // put down, which is while a place is being built and before
             // anyone holds a turn.
-            .add_systems(Update, (build_prop_effects, stock_containers).chain().in_set(PropSet::Stock))
+            .add_systems(Update, (build_prop_effects, arm_props, stock_containers).chain().in_set(PropSet::Stock))
             .add_systems(Turn, spot_hidden_props.in_set(DecideSet::Notice))
             .add_systems(Turn, perceive_props.in_set(crate::plugin::PerceiveSet::Annotate))
-            .add_systems(Turn, (spring_on_entered, spring_on_destroyed).in_set(crate::plugin::TurnSet::React));
+            // Armed again at the start of every pass, for a prop a reaction put
+            // down mid-frame and a step reached before the next frame's stock.
+            .add_systems(Turn, arm_props.in_set(crate::plugin::TurnSet::Schedule))
+            // At the end of the travel it reads, after every step, swap and
+            // warp, so every action in the pass is ordered after it and a
+            // plate's report is in before `ResolveSet::Triggers` lands it.
+            .add_systems(Turn, report_entered.in_set(ResolveSet::Travel).after(crate::places::resolve_warps))
+            .add_systems(Turn, report_destroyed.in_set(crate::plugin::TurnSet::React));
     }
 
     fn finish(&self, app: &mut App) {
@@ -1268,15 +1244,15 @@ mod traps {
     const PROPS: &str = r#"#![enable(implicit_some)]
         [
             (name: "pressure plate", glyph: '^', color: (r: 230, g: 140, b: 51),
-             trigger: (on: Entered, fires: 1, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])),
+             triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]),
             (name: "coolant leak", glyph: '~', color: (r: 150, g: 200, b: 210),
-             trigger: (on: Entered, fires: 3, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "1"))])),
+             triggers: [(on: "entered", fires: 3, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "1"))])]),
             (name: "hidden plate", glyph: '^', color: (r: 230, g: 140, b: 51), hidden: (spot: 100),
-             trigger: (on: Entered, fires: 1, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "2"))])),
+             triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "2"))])]),
             (name: "fuel barrel", glyph: '0', color: (r: 200, g: 120, b: 60), blocks: true, health: 3,
-             trigger: (on: Destroyed, fires: 1, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "5"))])),
+             triggers: [(on: "destroyed", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "5"))])]),
             (name: "silent plate", glyph: '^', color: (r: 100, g: 100, b: 100),
-             trigger: (on: Entered, fires: 1, effects: [(kind: "Nonesuch", args: ())])),
+             triggers: [(on: "entered", fires: 1, effects: [(kind: "Nonesuch", args: ())])]),
         ]"#;
 
     struct Deck {
@@ -1327,6 +1303,24 @@ mod traps {
         deck.app.world().get::<Health>(deck.player).map(|h| h.current).unwrap_or_default()
     }
 
+    /// How many more times `prop`'s first trigger may go off.
+    fn fires_left(deck: &Deck, prop: Entity) -> Option<u32> {
+        deck.app.world().get::<crate::effects::Triggers>(prop).and_then(|t| t.0.first()).and_then(|t| t.fires)
+    }
+
+    /// Every moment reported, copied out as it is written.
+    #[derive(Resource, Default)]
+    struct Reports(Vec<crate::effects::Fired>);
+
+    fn keep(mut fired: MessageReader<crate::effects::Fired>, mut reports: ResMut<Reports>) {
+        reports.0.extend(fired.read().copied());
+    }
+
+    fn breaks(deck: &mut Deck, prop: Entity) {
+        let kind = deck.app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        deck.app.world_mut().write_message(DamageEvent::new(prop, rl_rules::Hit::from_source(None, kind, 99)));
+    }
+
     /// A trap is data: the definition names an effect the engine already
     /// has, and nothing in Rust knows what a pressure plate is.
     #[test]
@@ -1338,13 +1332,12 @@ mod traps {
         };
         walk(&mut deck, rl_core::Direction::East);
         assert_eq!(health(&deck), 17, "the plate landed its effect on the one who stepped on it");
-        assert_eq!(deck.app.world().get::<Fired>(plate), Some(&Fired(1)), "and remembers it went off");
+        assert_eq!(fires_left(&deck, plate), Some(0), "and has none left");
 
         // Off and back on: a plate that fires once does not fire again.
         walk(&mut deck, rl_core::Direction::West);
         walk(&mut deck, rl_core::Direction::East);
         assert_eq!(health(&deck), 17, "a sprung plate is spent");
-        assert_eq!(deck.app.world().get::<Fired>(plate), Some(&Fired(1)));
     }
 
     /// `fires` is a count, not a flag: a leak keeps leaking until it has
@@ -1360,7 +1353,7 @@ mod traps {
             walk(&mut deck, rl_core::Direction::East);
             walk(&mut deck, rl_core::Direction::West);
         }
-        assert_eq!(deck.app.world().get::<Fired>(leak), Some(&Fired(3)), "three times, however often it was walked over");
+        assert_eq!(fires_left(&deck, leak), Some(0), "three times, however often it was walked over");
         assert_eq!(health(&deck), 17, "and three points of harm");
     }
 
@@ -1410,24 +1403,158 @@ mod traps {
         assert!(deck.app.world().get::<Hidden>(never).is_some(), "five turns of looking at it and still unseen");
     }
 
-    /// A prop with health dies like anything else, and what it does when
-    /// it dies is one more trigger.
+    /// A plate harms in the pass the step was taken: the step, the report,
+    /// the landing and the damage are all one pass.
     #[test]
-    fn a_barrel_bursts_when_it_is_broken() {
+    fn a_plate_harms_whoever_steps_on_it_in_the_pass_they_stepped() {
+        let mut deck = deck();
+        {
+            let at = deck.at.offset(1, 0);
+            put(&mut deck, "pressure plate", at);
+        }
+        let player = deck.player;
+        deck.app.world_mut().write_message(Intent::new(player, Step(rl_core::Direction::East)));
+        deck.app.world_mut().run_schedule(crate::plugin::Turn);
+        assert_eq!(health(&deck), 17, "harmed in the one pass");
+    }
+
+    /// A prop with health dies like anything else, and what it does when
+    /// it dies is one more trigger, which bursts on whoever stands in its
+    /// radius, the player beside it included.
+    #[test]
+    fn a_barrel_bursts_on_everyone_in_its_radius_when_it_is_broken() {
         let mut deck = deck();
         let barrel = {
             let at = deck.at.offset(1, 0);
             put(&mut deck, "fuel barrel", at)
         };
-        let kind = deck.app.world().resource::<Registries>().damage_kinds.expect("kinetic");
-        deck.app.world_mut().write_message(DamageEvent::new(barrel, rl_rules::Hit::from_source(None, kind, 99)));
+        breaks(&mut deck, barrel);
         deck.app.update();
         deck.app.update();
         assert!(deck.app.world().get_entity(barrel).is_err(), "the barrel is gone");
-        // The burst harms whoever was under its footprint, which is the cell
-        // it stood on; the player stood beside it, so nothing was hit here,
-        // and what matters is that the trigger fired at all.
-        assert_eq!(health(&deck), 20);
+        assert_eq!(health(&deck), 15, "and its burst caught the player beside it");
+    }
+
+    /// A barrel that bursts into another sets it off once, a pass later,
+    /// and never inside its own pass.
+    #[test]
+    fn a_chain_of_barrels_goes_off_one_after_another_and_each_once() {
+        let mut deck = deck();
+        let first = {
+            let at = deck.at.offset(3, 0);
+            put(&mut deck, "fuel barrel", at)
+        };
+        let second = {
+            let at = deck.at.offset(4, 0);
+            put(&mut deck, "fuel barrel", at)
+        };
+        deck.app.init_resource::<Reports>().add_systems(bevy::app::PostUpdate, keep);
+        breaks(&mut deck, first);
+        let player = deck.player;
+        for _ in 0..4 {
+            deck.app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
+            deck.app.update();
+        }
+        let bursts = deck.app.world().resource::<Reports>().0.iter().filter(|f| f.moment == crate::effects::Moments::DESTROYED).count();
+        assert_eq!(bursts, 2, "each barrel went off once");
+        assert!(deck.app.world().get_entity(second).is_err(), "the second was broken by the first");
+        assert_eq!(health(&deck), 20, "and the player, three cells off, was never in either burst");
+    }
+
+    /// Every hit written, copied out as it is written.
+    #[derive(Resource, Default)]
+    struct Hits(Vec<DamageEvent>);
+
+    fn keep_hits(mut damage: MessageReader<DamageEvent>, mut hits: ResMut<Hits>) {
+        hits.0.extend(damage.read().cloned());
+    }
+
+    /// A trap strikes as itself. Whoever stepped on it set it off, and is
+    /// named on the report, but the harm is the plate's: credited to the
+    /// one who stepped on it, the log would read that you hurt yourself,
+    /// and a droid a plate killed would have killed itself.
+    #[test]
+    fn a_plate_strikes_as_itself_and_not_as_whoever_stepped_on_it() {
+        let mut deck = deck();
+        let plate = {
+            let at = deck.at.offset(1, 0);
+            put(&mut deck, "pressure plate", at)
+        };
+        deck.app.init_resource::<Hits>().add_systems(bevy::app::PostUpdate, keep_hits);
+        deck.app.init_resource::<Reports>().add_systems(bevy::app::PostUpdate, keep);
+        walk(&mut deck, rl_core::Direction::East);
+        let hits = &deck.app.world().resource::<Hits>().0;
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert_eq!((hits[0].hit.attacker, hits[0].hit.credit), (Some(plate), Some(plate)), "the plate struck, and is credited");
+        let stepped = deck.app.world().resource::<Reports>().0.iter().find(|f| f.moment == crate::effects::Moments::ENTERED).map(|f| f.by);
+        assert_eq!(stepped, Some(Some(deck.player)), "and the report still says who stepped on it");
+    }
+
+    /// A barrel broken just before the loop stops to show something still
+    /// bursts when it runs again. What it does when broken lands the pass
+    /// after, and a message would not outlive a long enough hold; the
+    /// remnant that carries it does.
+    #[test]
+    fn a_barrel_broken_before_the_loop_is_held_still_bursts_when_it_runs_again() {
+        let mut deck = deck();
+        let barrel = {
+            let at = deck.at.offset(1, 0);
+            put(&mut deck, "fuel barrel", at)
+        };
+        breaks(&mut deck, barrel);
+        deck.app.update();
+        assert_eq!(health(&deck), 20, "broken, and not yet burst");
+        {
+            let mut hold = deck.app.world_mut().resource_mut::<crate::cue::TurnHold>();
+            hold.watch();
+            hold.hold();
+        }
+        for _ in 0..4 {
+            deck.app.update();
+            // What a windowed frame's message update does, which the
+            // headless app does not: a message nobody reads for two frames
+            // is gone.
+            deck.app.world_mut().resource_mut::<Messages<crate::effects::Fired>>().update();
+        }
+        assert_eq!(health(&deck), 20, "nothing moves while the loop is held");
+        deck.app.world_mut().resource_mut::<crate::cue::TurnHold>().release();
+        deck.app.update();
+        assert_eq!(health(&deck), 15, "and the burst lands as soon as it runs");
+        let remnants = deck.app.world_mut().query::<&crate::effects::Remnant>().iter(deck.app.world()).count();
+        assert_eq!(remnants, 0, "and what carried it is gone");
+    }
+
+    /// Adding the effects plugin by hand, after a plugin that already
+    /// added it, is harmless: the order a game lists its plugins in never
+    /// matters, and the trap lands once.
+    #[test]
+    fn effects_added_by_hand_after_props_is_harmless_and_a_trap_lands_once() {
+        let mut deck = {
+            let mut app = headless_app();
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, PropsPlugin, crate::effects::EffectsPlugin, crate::world::StreamingPlugin));
+            app.add_engine_effects();
+            let at = crate::testing::surface(&mut app);
+            let sides = crate::testing::two_sides(&mut app);
+            let props = {
+                let registries = app.world().resource::<Registries>().clone();
+                rl_rules::prop::load(PROPS, &registries.names()).expect("the props load")
+            };
+            app.world_mut().resource_mut::<Registries>().props = props;
+            let player = app
+                .world_mut()
+                .spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::SURFACE), Health::full(20), crate::combat::Faction(sides.ours)))
+                .id();
+            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+            app.update();
+            app.update();
+            Deck { app, player, at }
+        };
+        {
+            let at = deck.at.offset(1, 0);
+            put(&mut deck, "pressure plate", at);
+        }
+        walk(&mut deck, rl_core::Direction::East);
+        assert_eq!(health(&deck), 17, "harmed once, not once per copy of the plugin");
     }
 
     /// A trap naming an effect nobody registered would otherwise be a trap
@@ -1441,6 +1568,6 @@ mod traps {
         };
         walk(&mut deck, rl_core::Direction::East);
         assert_eq!(health(&deck), 20, "nothing landed");
-        assert_eq!(deck.app.world().get::<Fired>(plate), Some(&Fired(1)), "though the trigger did go off");
+        assert!(deck.app.world().get::<crate::effects::Triggers>(plate).is_none_or(|t| t.0.is_empty()), "a trigger that would not build arms nothing");
     }
 }

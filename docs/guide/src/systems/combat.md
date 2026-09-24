@@ -9,7 +9,7 @@
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/faction.rs
             crates/rl-rules/src/forecast.rs
-     fingerprint: c9e301fa -->
+     fingerprint: 4dbfcde8 -->
 
 # Combat and loadout
 
@@ -40,20 +40,24 @@ Both are built by `new` and narrowed by `costing` and `looking`, so a field only
 `Armor` is flat damage removed and `Strikes` is a list of extra rolls every hit carries, a flaming blade's fire or a venomed edge's poison.
 All four sit on an actor or on an item, and that is the whole of how gear fights: a jerkin is an item with `Armor(1)` and nothing copies the 1 onto whoever puts it on.
 `Loadout` is the one answer to what an entity fights with, in three layers: the actor's own components, the same components on every item in its `Equipped` slots in slot order, and the value of the stat `CombatRules` names.
-A worn blow or shot replaces the actor's own, since a cutlass is swung in place of a fist, while armor and extra strikes add up.
-`armor`, `melee`, `ranged` and `strikes` are the sums; `melee_with` and `ranged_with` also say which worn item it came from; `blows` is the melee roll followed by the strikes, which is every roll one blow lands.
+A worn blow or shot replaces the actor's own, since a cutlass is swung in place of a fist, while armor, resistances and extra strikes add up.
+A worn thing whose `Consumable` is empty lends no blow or shot, so a spent wand is not fired and its wearer falls back on what is left.
+`armor`, `resistances`, `melee`, `ranged` and `strikes` are the sums; `melee_with` and `ranged_with` also say which worn item it came from; `blows` is the melee roll followed by the strikes, which is every roll one blow lands.
 The attack resolver strikes with it, `apply_damage` defends with it, and `blows` and its ranged twin `shots` are what a forecast is filled from, so what a panel says a fight will cost is worked out from the numbers the fight uses.
 `Loadout::arms` packs both of those, both costs and the shot's reach into a `forecast::Arms`, and `Combatant::armed` reads it at the distance the caller passes: one cell away is the melee rolls, further is the shot while the shot reaches, and past its reach is nothing at all.
 That is the rule `resolve_attacks` picks by, kept in one place, so an actor carrying only a gun forecasts as dangerous across the room and harmless once you are beside it rather than as harmless everywhere.
 `resolve_attacks` picks melee when the two are adjacent and otherwise a shot filtered by `line_of_fire`; an attack with nothing that reaches still spends an ordinary turn, since what was spent was the aim.
 It writes `Struck` before any damage, naming the worn item the attack came from, because what a weapon does to itself happens at the trigger rather than at the target.
+For a worn item it also reports the `fire` moment at the attacker's cell, and the `hit` moment at the target's cell when the blow or shot lands, so a wand's charge is spent and its effects land through [Effects](effects.md) without combat knowing what either is.
+A shot takes its item's triggers with it as it is fired, so a watched shot from a thing its last charge spent still lands what its hits carry, from a remnant in its place.
 Every roll is floored at zero where it is rolled, so a weapon with a bad bonus that rolls low has missed rather than healed.
 An attack with a `Look` is seen: a shot cues a `Cue::Flight` and a blow a `Cue::Burst`, and while something watches the cues a shot's hits wait in `Airborne<ShotLanding>` until the flight has been seen.
 `land_shots` then drops them on a target still standing, so one killed while the shot flew is missed rather than hurt twice.
 `shot` is where a projectile goes and `line_of_fire` is that call landing on the cell it was pointed at; a targeting preview draws the same call, so what the player is shown and what the resolver decides cannot disagree.
 A `DamageEvent` carries a `Hit`, which separates `attacker`, who triggers on-hit riders, from `credit`, who gets the kill, so a poison tick credits whoever applied it without recursing its own riders; `critical` and `status` are there for the stages and narrators that care.
 It also carries a `Reach`, which is how the damage got there: `DamageEvent::new` is `Effect`, what did not travel as a weapon, and `arriving` names `Melee`, `Shot` or `Thrown` instead, carried through to `DamageDealt` for whoever puts it into words and read by nothing in the pipeline.
-`apply_damage` builds a `Defender` from the target's `Loadout`, runs `resolve` over the game's `DamageStages`, takes the result off health capped at `max`, and writes `DamageDealt` and, at zero, `DeathEvent`.
+`apply_damage` builds a `Defender` and the resistances from the target's `Loadout`, runs `resolve` over the game's `DamageStages`, takes the result off health capped at `max`, and writes `DamageDealt` and, at zero, `DeathEvent`.
+An `Invulnerable` target keeps a heal and takes no harm: the hit is still written to `DamageDealt`, with nothing dealt, so a narrator says it had no effect rather than saying nothing.
 A `DamageKind` is a name and whether armor applies to it, and `Resistances` is a percentage per kind: 100 is immunity, a negative number is vulnerability, and above 100 absorbs the hit into healing.
 The engine ships three stages, `SubtractArmor`, `ApplyResistance` and `HalveIfBlocked`, and the default list holds the first alone.
 A negative amount is a mend and goes down the same stages, which is why resistance scales a heal and immunity means nothing can patch the defender up.

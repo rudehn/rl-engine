@@ -8,6 +8,7 @@
 //! `FOUNDRY_START=3` starts the run on deck three instead of deck one.
 
 use bevy::prelude::*;
+use foundry::cheats::CheatPanel;
 use foundry::plugin::FoundryPlugin;
 use foundry::run::StartDeck;
 use foundry::upgrades::ChoicePanel;
@@ -40,6 +41,8 @@ struct Screen {
     controls: Rect,
     menu: Rect,
     choice: Rect,
+    cheats: Rect,
+    search: Rect,
     chest: Rect,
     here: Rect,
 }
@@ -62,8 +65,10 @@ impl Screen {
             hint,
             inspect: Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10),
             target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
-            // One ability, a rule, and what it does.
-            abilities: centred(42, 3, 12),
+            // Stims and the four grenades, a rule, and what the one picked
+            // out does: how it is aimed, what it costs and every effect, which
+            // for an incendiary is two.
+            abilities: centred(56, 3, 18),
             // The pack's rows, a rule, and what the row picked out is worth.
             pack: centred(56, 3, 16),
             controls: map.inflate(-2),
@@ -73,6 +78,10 @@ impl Screen {
             menu: centred(44, 6, 12),
             // Three upgrades, a blank row, and what the one picked out does.
             choice: centred(60, 8, 7),
+            // Six cheats, a blank row, and what the one picked out does.
+            cheats: centred(56, 6, 10),
+            // A page of the armory, and the keys along the bottom.
+            search: centred(56, 6, 18),
             // What is in the crate, and the keys that take it.
             chest: centred(46, 6, 14),
             // What can be done here, when here is more than one thing.
@@ -125,6 +134,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
         ControlsPanel::new(screen.controls).hint(screen.hint),
         GameMenuPanel::new(screen.menu).title("Foundry").died("The foundry keeps you.").won("The core is charged, and you are on the lift."),
         ChoicePanel(screen.choice),
+        CheatPanel { menu: screen.cheats, search: screen.search },
     ));
 }
 
@@ -144,9 +154,13 @@ fn main() -> AppExit {
     let mut app = App::new();
     app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map))
         .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
+        // Fire and smoke, for the grenades: each registers the effect its
+        // grenade names, `Ignite` and `Emit`, before the abilities load.
+        .add_plugins((FirePlugin, GasPlugin))
         .add_plugins(NoisePlugin::new(foundry::droids::NOISE))
-        .add_plugins(NarratorPlugin::default())
-        // The engine's own effects: `Mend`, for `stims`.
+        .add_plugins(foundry::plugin::narrator())
+        // The engine's own effects: `Mend`, for `stims`, and `Harm` for
+        // the grenades.
         .add_engine_effects()
         .insert_resource(foundry::content::registries())
         .insert_resource(Seed(seed))
@@ -166,8 +180,9 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::KeyScriptPlugin;
+    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
     use rl_engine::rl_render::{MapViewPlugin, Terminal};
+    use rl_engine::rl_ui::{InventoryMenu, InventoryView, inventory_modal};
 
     use super::*;
 
@@ -242,6 +257,29 @@ mod tests {
         let lines = lines(&app);
         let at = |what: &str| lines.iter().position(|l| l.contains(what)).unwrap_or_else(|| panic!("{what:?} not in {lines:#?}"));
         assert!(at("The probe droid notices you.") < at("The probe droid sounds an alarm."), "{lines:#?}");
+    }
+
+    /// `t` is the pack, opened on the first thing in it that flies:
+    /// which of several is meant is the player's to pick, and the pack's
+    /// own `t` throws the row picked out.
+    #[test]
+    fn t_opens_the_pack_on_what_can_be_thrown_and_t_again_throws_it() {
+        let mut app = on_screen(RunSeed(5));
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let blade = foundry::testing::equip_new(&mut app, me, "monoblade");
+        app.update();
+        app.world_mut().resource_mut::<Messages<AimThrow>>().clear();
+
+        press(&mut app, KeyCode::KeyT);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_top(inventory_modal(modals)), "the pack is up");
+        let picked = app.world().resource::<InventoryMenu>().selected;
+        assert_eq!(app.world().resource::<InventoryView>().rows[picked].entity, blade, "on the blade");
+        assert!(app.world_mut().resource_mut::<Messages<AimThrow>>().drain().next().is_none(), "and nothing is thrown yet");
+
+        press(&mut app, KeyCode::KeyT);
+        let asked: Vec<Entity> = app.world_mut().resource_mut::<Messages<AimThrow>>().drain().map(|a| a.item).collect();
+        assert_eq!(asked, vec![blade]);
     }
 
     #[test]

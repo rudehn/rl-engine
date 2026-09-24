@@ -116,8 +116,8 @@ Both halves of that, the commando's guns and the enemies', are handed out a deck
 | 4-6 | Cones and fire at close range: welder droids, salvager arc throwers | Rifles, scatterguns, the arc thrower |
 | 7-9 | The tracker's rifle, which outranges the lamp: the first thing that shoots out of dark it can see and the commando cannot | The heavy repeater and the ion lance |
 
-Decks 1-3 of that table **exist**: the line droid has no gun, the guns' spawn bands start where the table says, and on deck 1 the only one findable is the slug pistol, which at its weight lies on about two decks in five.
-The trooper droid is the one piece still **planned**, so nothing shoots on deck 2 yet.
+Decks 1-3 of that table **exist**: the line droid has no gun, the trooper droid shoots from deck 2 at four tiles, the guns' spawn bands start where the table says, and on deck 1 the only one findable is the slug pistol, which at its weight lies on about two decks in five.
+Of the finds further down, the slug rifle (decks 4 on) and the heavy repeater (decks 7 on) **exist**; the rest are **planned**, and so is every shooter below deck 3.
 
 The line droid keeps the foundry's lines running and fights with the clamp it does that with, which suits a worker droid better than the bolt it used to carry.
 What shoots on the way down is what the foundry was built to make: the trooper chassis, walking off the end of the line it was assembled on.
@@ -147,9 +147,9 @@ Whoever hears it comes to where the probe stood, and still has to notice the com
 Scenery and static hazards, placed when a deck is built; nothing gets worse over time.
 
 - **Coolant spills:** cryo underfoot; they feed coolant rats.
-- **Live cables:** arc damage on the tile and beside it, to anything standing there.
+- **Live cables:** electricity on the tile and beside it, to anything standing there. A hidden cable that shocks whoever steps on it **exists**, as a prop from deck 2 down; the arc beside it is **planned**.
 - **Collapsed sections:** rubble that blocks movement and sight, cutting a deck's rooms into a different shape.
-- **Fires:** burning wreckage and fuel, using the engine's `FirePlugin`.
+- **Fires:** burning wreckage and fuel, using the engine's `FirePlugin`, which the incendiary grenade already uses.
 - **Vents:** some vent gas on a cycle of their own, using the engine's `GasPlugin` and `Vents`. Coolant vapour (assembly, reactor ring) is cold and thick enough to hide in, and chills whoever breathes it. Fuel vapour (fabrication) burns, and sits beside furnaces and fires. The commando cannot pass through a vent.
 
 ### Reinforcements (planned)
@@ -214,12 +214,13 @@ No identification: sci-fi gear comes with a spec sheet.
 No weight: the pack has a fixed number of slots, and ammunition stacks.
 No currency: nothing is bought or sold.
 
-Damage types are **kinetic**, **energy**, **ion**, **arc**, **cryo** and **thermal**, and each hazard deals one of them, so a resist is also a way across the map.
+Damage types are **kinetic**, **energy**, **ion**, **electricity**, **cryo** and **thermal**, and each hazard deals one of them, so a resist is also a way across the map.
+All but cryo **exist**, and the damage table they are read through is played: a chassis takes half of kinetic and double of ion, and flesh a quarter less of energy and a quarter of ion.
 
-Ion and arc are separate, and they are not the same idea:
+Ion and electricity are separate, and they are not the same idea:
 
 - **Ion** is the anti-machine type. It jams a droid's radar as it does today (**exists**), and it tells against a chassis, but it does little to flesh, so an ion weapon is dead weight against salvagers, hunters and critters.
-- **Arc** is raw electricity: live cables, a capacitor let go, a salvager's cable gun. It hurts whatever it touches, chassis or flesh, and it is what most of the foundry's own wiring deals.
+- **Electricity** is raw current: live cables, a capacitor let go, a salvager's cable gun. It hurts whatever it touches, chassis or flesh, plate conducts it rather than stopping it, and it is what most of the foundry's own wiring deals.
 
 That split is what makes gear choice a real one.
 A commando carrying only ion walks the droid decks safely and meets the salvage crew with nothing.
@@ -234,11 +235,11 @@ A commando carrying only ion walks the droid decks safely and meets the salvage 
 | Blaster carbine | Rifle, two hands | Energy | Heat | exists |
 | Ion pistol | Pistol, jams radar | Ion | Heat | exists |
 | Slug pistol | Pistol | Kinetic | Slugs | exists |
-| Slug rifle | Rifle, two hands | Kinetic | Slugs | planned |
+| Slug rifle | Rifle, two hands, reaches past the lamp | Kinetic | Slugs | exists |
 | Scattergun | Cone | Kinetic | Slugs | planned |
-| Heavy repeater | Rifle, two hands, fast heat | Energy | Heat | planned |
+| Heavy repeater | Rifle, two hands, two shots a step | Energy | Heat | exists |
 | Ion lance | Beam, jams radar | Ion | Heat | planned |
-| Arc thrower | Cone, salvager-made | Arc | Fuel cells | planned |
+| Arc thrower | Cone, salvager-made | Electricity | Fuel cells | planned |
 | Coolant sprayer | Cone | Cryo | Coolant cells | planned |
 | Cutting torch | Melee | Thermal | Fuel cells | planned |
 
@@ -252,7 +253,7 @@ A commando carrying only ion walks the droid decks safely and meets the salvage 
 | Composite plate | Torso | Two points, and it resists energy | exists |
 | Combat gauntlets | Arms | A point of armor | exists |
 | Armored greaves | Legs | A point of armor | exists |
-| Insulated suit | Torso | Resists arc, so live cables and a salvager's arc thrower both tell less | planned |
+| Insulated suit | Torso | Resists electricity, so live cables and a salvager's arc thrower both tell less | planned |
 | Cryo liner | Torso | Resists cryo, for the coolant decks | planned |
 | Thermal cloak | Torso | Resists thermal, for fabrication's fires and welders | planned |
 | Shielded plate | Torso | Resists ion, and worth taking only off a deck the droids hold | planned |
@@ -266,7 +267,7 @@ Shielded plate makes the point sharpest, since ion is what the droids deal and n
 Worn in an implant slot, each granting an ability or a sense.
 
 - **Optic implant:** dark sight, without the helmet.
-- **Arc capacitor:** grants arc discharge.
+- **Arc capacitor:** grants arc discharge, an electricity burst.
 - **Reflex implant:** grants dash.
 - **Dermal plating:** armor that takes no other slot.
 
@@ -286,12 +287,12 @@ None of it is identified and none of it is bought: a spec sheet comes with the t
 | Stim | Medical | Seven to thirteen, closed at once, for the commando who did not pick the Stims upgrade | exists |
 | Burn dressing | Medical | Puts out a burning commando, and heals a little of what the fire took | planned |
 | Thermal wrap | Medical | Clears the chill coolant vapour leaves, and holds off the next one for a while | planned |
-| Frag grenade | Grenade | A kinetic burst; the one that works on everything and excels at nothing | planned |
-| Incendiary grenade | Grenade | Thermal, and it leaves what it lands on burning | planned |
+| Frag grenade | Grenade | A kinetic burst; the one that works on everything and excels at nothing | exists |
+| Incendiary grenade | Grenade | Thermal, and it leaves what it lands on burning | exists |
 | Cryo grenade | Grenade | Cryo, and it chills whatever is caught in it | planned |
-| Ion grenade | Grenade | Jams every radar in the burst, so a pack of droids goes blind at once | planned |
-| Arc grenade | Grenade | Arc, and it shorts what it lands on: a droid stalls, a panel goes dark | planned |
-| Smoke grenade | Grenade | A gas cloud that hides whatever stands in it, the commando included | planned |
+| Ion grenade | Grenade | Jams every radar in the burst, so a pack of droids goes blind at once | exists |
+| Arc grenade | Grenade | Electricity, and it shorts what it lands on: a droid stalls, a panel goes dark | planned |
+| Smoke grenade | Grenade | A gas cloud that hides whatever stands in it, the commando included | exists |
 | Flare | Light | Thrown; lights a room for a while, and pulls lamp moths to it instead of to the lamp | planned |
 | Chem light | Light | Dropped; a dim landmark that lasts the deck, draws nothing and lights nothing worth seeing by | planned |
 | Noisemaker | Noise | Thrown; makes a shot's worth of noise where it lands, and what searches goes there rather than here | planned |
@@ -308,9 +309,11 @@ The heat sink cartridge is what makes a single energy weapon viable at all, sinc
 The noisemaker and the radar decoy are the Ghost's answer to a deck that hunts by sound and by radar, and they are the reason the build is not only about the lamp.
 The cable spool and the breaching charge exist so that a deck's shape is negotiable: a route down that the map did not offer, bought with noise.
 
-**Engine pressure:** a throw today strikes whoever it reaches, so most of this list has nowhere to land.
-What is missing is a thrown thing that arrives on a tile and leaves something behind on it: a burst, a gas, a light, a noise, a decoy a radar reads as an actor.
-Two more follow from that: a light that belongs to an item and keeps burning where it was dropped, and a noise made by a thing rather than by an action, since a noisemaker is loud and the commando throwing it is not.
+A grenade is a throwable item with a land trigger, a burst where it comes to rest, and one charge that the landing spends (**exists**).
+So a burst, a fire and a gas already land on a tile, and the cryo grenade is content once cryo and a chill status are.
+Every grenade is thrown from the pack: `t` opens it on the first thing that can be thrown, and `t` again throws the row picked out, a grenade or a blade alike.
+
+**Engine pressure:** what is still missing is a thrown thing that stays where it lands and goes on doing something: a light that belongs to an item and keeps burning where it was dropped, a noise made by a thing rather than by an action, since a noisemaker is loud and the commando throwing it is not, and a decoy a radar reads as an actor.
 The cable spool and the breaching charge want the last one, a warp or a dug tile the game asks for at a place of its choosing.
 
 ## Challenge
@@ -348,7 +351,7 @@ One pick of three at each charge, four in a run, kept for the run.
 | Dampers | Strikes and shots make less noise | Ghost | planned |
 | Shaded lamp | The lamp lights less but still shows the way | Ghost | planned |
 | Blast packing | Grenades land wider | Demolitionist | planned |
-| Hazard seals | Resist cryo, arc and thermal a little | Demolitionist, Bruiser | planned |
+| Hazard seals | Resist cryo, electricity and thermal a little | Demolitionist, Bruiser | planned |
 | Hydraulics | Melee hits harder | Bruiser, Ghost | planned |
 
 ## Losing
@@ -363,14 +366,16 @@ ASCII only, on a 100 by 40 grid, with colour doing the work (**exists**).
 
 - **Colour by faction:** droids in steel grey and tan, salvagers in rust orange, bounty hunters in a hard white on red, critters muted.
 - **Letter case by weight:** `d` a line droid, `D` a heavy droid; lowercase is light, uppercase is heavy.
-- **Hazards in their damage type's colour:** arc blue-white, ion pale blue, cryo pale cyan, thermal orange-red.
+- **Hazards in their damage type's colour:** electricity blue-white, ion pale blue, cryo pale cyan, thermal orange-red.
 - **Light and gas:** memory and darkness shading, flickering flames, and gas drawn as a haze where it hides what is behind it, all from the engine.
 
 ## Technical
 
 Rust, on Bevy, on `rl-engine`: this crate is a worked example of the engine and depends on nothing a game could not.
-It uses the engine's turn clock, minds, combat, lighting, noise, stealth, abilities, quests, loot tables and panels, and will use gas, fire and remains as they arrive.
+It uses the engine's turn clock, minds, combat, lighting, noise, stealth, abilities, quests, loot tables, panels, remains, fire and gas.
 Content is RON in `assets/`, each file headed by the full option space.
+What a thing is and where it turns up are separate files: `monsters.ron` and `items.ron` say what each kind is, and `monster_spawns.ron` and `item_spawns.ron` say on which decks, how often, and in what numbers, a row per band.
+`\` opens a cheat menu for testing a deck without playing the ones above it: reveal the map, heal, godmode, the lift down or up, and a search that puts any item in the pack.
 The screen is cut once in `src/main.rs`: the map, a log along the bottom, and a rail of vitals, gear and what is nearby.
 
 ## Enemies
@@ -383,12 +388,12 @@ A monster's kind is content in `assets/monsters.ron`; its faction, wits, sight, 
 | --- | --- | --- | --- | --- |
 | Line droid | `d` | Clamp arm, melee only, groups grow with depth | Assembly, fabrication | exists |
 | Probe droid | `p` | Radar, keeps its distance and sounds the alarm | Assembly, fabrication | exists |
-| Trooper droid | `t` | A finished chassis off the line: shoots at four tiles, drops its blaster | Assembly from deck 2, fabrication | planned |
+| Trooper droid | `t` | A finished chassis off the line: shoots at four tiles, drops its blaster | Assembly from deck 2, fabrication | exists |
 | Heavy droid | `D` | Armored, hits hard, slow, shoots at six | Assembly from deck 3, fabrication, reactor ring | exists |
 | Repair drone | `u` | Rebuilds droid wrecks | Fabrication onward | planned |
 | Welder droid | `w` | Thermal melee, sets fires | Fabrication | planned |
 | Coolant droid | `k` | Cryo cone, walks through vapour | Reactor ring | planned |
-| Warden | `W` | Heavy, arc, radar | Reactor ring, core | planned |
+| Warden | `W` | Heavy, electricity, radar | Reactor ring, core | planned |
 
 ### Salvagers
 
@@ -416,8 +421,8 @@ They appear from the reactor ring down, and anywhere on the climb.
 | Kind | Glyph | Role | Status |
 | --- | --- | --- | --- |
 | Coolant rat | `r` | Drinks spills, flees when hurt | exists, feeding planned |
-| Scrap crab | `c` | Carries off loot and parts | planned |
-| Lamp moth | `m` | Swarms toward light | planned |
+| Scrap crab | `c` | Carries off loot and parts | exists, carrying planned |
+| Lamp moth | `m` | Swarms toward light | exists, swarming planned |
 
 ## Abilities
 
@@ -429,10 +434,10 @@ Abilities run on cooldowns only; there is no energy pool, since heat and ammunit
 | Stims | Stims upgrade | Heals, twenty-turn cooldown | exists |
 | Field stims | Stim | Closes a wound at once, and the shot is spent | exists |
 | Med gel | Medkit | Two a turn for ten turns, and the kit is spent | exists |
-| Arc discharge | Arc capacitor | Arc burst on everything adjacent, chassis or flesh | planned |
+| Arc discharge | Arc capacitor | Electricity burst on everything adjacent, chassis or flesh | planned |
 | Dash | Reflex implant | Several tiles in a straight line, one turn | planned |
 | Overclock | Upgrade | A few shots that add no heat | planned |
-| Grenades | Consumable | Thrown, by type (see [Items](#tools-and-oddments-planned)) | planned |
+| Grenades | Consumable | Thrown, by type (see [Items](#tools-and-oddments-planned)) | frag, incendiary, ion and smoke exist |
 
 ## Other ideas
 
@@ -447,3 +452,20 @@ Undecided design, not tasks.
   It would make them read as people rather than as stat blocks, but a log that narrates itself is a log nobody reads, so the budget and the triggers want deciding before a single line is written.
 - Starting kits to choose from.
 - A score.
+
+### Props
+
+Things for the decks beyond the crate, the locker, the console and the live cable, ordered by how much they need that does not exist yet, least first.
+
+- **Fuel drum:** breaks into a thermal burst and sets what is around it burning; data alone today.
+- **Crushed conveyor:** derailed track laid in lines across a bay, blocking movement but not sight, so it is a lane to shoot across and not walk across, with half-built chassis on it to search as wreckage.
+- **Parts bin:** a searchable pile of severed optics and limbs named after the deck's own droids, so it says who lives here before they are met, and scrap crabs forage from it.
+- **Coolant drum:** breaks into coolant vapour that hides and chills whoever is in it; waits on cryo and a chill status.
+- **Coolant line:** overhead piping over a placed spill that feeds coolant rats, and breaking it floods the corridor with vapour; waits on cryo.
+- **Control terminal:** wired to one machine nearby, and a hack of a few turns reprograms it, darkens the room or overloads a dock, while a glitched one fails and sounds a klaxon; no text to read.
+- **Charging dock:** a faulty wall alcove where the commando can vent an energy weapon to zero heat for a jolt of electricity, a hurt droid goes to recharge, and breaking it arcs into whatever is docked; waits on minds using a prop's offers.
+- **Mag plate:** a striped floor plate that holds anything metal stepping on it, droids always and the commando only in plate, and hacked it pulls every metal thing within two tiles onto it once; waits on a status that refuses a step but not an action, and a trigger that picks whom it lands on.
+- **Cutting rig:** a ceiling laser whose red wire marks a line across a room, firing thermal along the whole line at whatever crosses it, then going dark for a few turns to recharge; waits on a line-shaped trigger area and a light carried by a prop.
+- **Assembly arm:** a malfunctioning manipulator that sweeps a telegraphed strip of cells on a cycle, crushing and shoving droid and commando alike, and hacked strikes anything but the commando; waits on a strip-shaped area, a cycle moment and a trigger that picks whom it lands on.
+- **Furnace and slag chute:** the furnace blocks and glows, the chute destroys outright whatever is shoved into it, and the scrap heap beside it gives slugs or cells to a loud search; waits on forced movement counting as entering a cell, a commando with a shove, and noise made by a thing.
+- **Hanging load:** a half-built mech on an overhead hoist that drops when the hoist is broken or hacked, crushing a small burst, leaving rubble and waking the deck; waits on an effect that changes a tile.

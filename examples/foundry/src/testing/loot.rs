@@ -156,10 +156,11 @@ pub fn kill_with_a_guaranteed_drop(app: &mut App, item: &str) -> Point {
     let ron = format!(
         "[(name: \"test target\", glyph: 'x', color: (1.0, 1.0, 1.0), hp: 10, armor: 0, \
          profile: \"chassis\", faction: \"droids\", wits: \"mindless\", perception: 1, \
-         melee: (roll: \"1d1\", kind: \"kinetic\"), speed: 100, flee_at: 0, spawn: [(1, 99, 1, 1, 1)], \
+         melee: (roll: \"1d1\", kind: \"kinetic\"), speed: 100, flee_at: 0, \
          drops: [(\"{item}\", 100)])]"
     );
-    let roster = crate::droids::Roster::from_ron(&ron, &registries);
+    // No spawn rows: it is put down here by hand, and never drawn.
+    let roster = crate::droids::Roster::from_ron(&ron, "[]", &registries);
     let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
     let pos = app.world().get::<Position>(player).copied().expect("the player stands somewhere");
     let map = app.world().resource::<WorldMap>().current();

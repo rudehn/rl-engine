@@ -13,7 +13,7 @@
 //   requires:  optional; Has(status) | Lacks(status) | Wielding(tag) |
 //              InSlot(slot, tag) | Above(stat, n); the slots are "main hand" and
 //              "off hand", the one tag is "shield"
-//   costs:     optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n);
+//   costs:     optional; Pool(stat, n) | Health(n) | Item(tag, n);
 //              the one pool is "mana"
 //   time:      optional; hundredths of a step the turn costs (default 100)
 //   cooldown:  optional; hundredths before it may be used again, from the

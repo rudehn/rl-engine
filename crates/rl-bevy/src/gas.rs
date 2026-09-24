@@ -217,7 +217,7 @@ pub struct GasPlugin;
 
 impl Plugin for GasPlugin {
     fn build(&self, app: &mut App) {
-        use crate::ability::AddEffect;
+        use crate::effects::AddEffect;
         use crate::plugin::{FieldSet, Needs, ResetsOnNewRun, Turn};
         app.init_resource::<Gases>()
             .reset_on_new_run::<Gases>()

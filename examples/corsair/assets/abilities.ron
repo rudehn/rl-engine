@@ -4,7 +4,7 @@
 //   name:        unique; the player knows broadside, grapnel and plunder of itself, `1` to `4`
 //                aim what is known in this order, and a monster names the ones it knows in
 //                `monsters.ron`. What a bottle of rum does is not here: a thing that is used
-//                and spent carries its own `on_use` effects in `items.ron`, and only what is
+//                and spent carries its own `use` trigger in `items.ron`, and only what is
 //                aimed or waits on a cooldown belongs in this file
 //   description: optional; what it is, in a sentence, for the list on `a`
 //   look:        optional; (glyph:, color: (r:, g:, b:)), what flies and bursts when it
@@ -15,8 +15,7 @@
 //   sight:     optional; whether the aim must be a cell the user can see (default true)
 //   requires:  optional; Has(status) | Lacks(status) | Wielding(tag) |
 //              InSlot(slot, tag) | Above(stat, n)
-//   costs:     optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n),
-//              where Charge is spent from the item that grants the ability and a tag is
+//   costs:     optional; Pool(stat, n) | Health(n) | Item(tag, n), where a tag is
 //              one from `items.ron`, "powder" or "rum"
 //   time:      optional; hundredths of a step the turn costs (default 100)
 //   cooldown:  optional; hundredths before it may be used again, from the

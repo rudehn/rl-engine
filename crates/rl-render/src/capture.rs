@@ -14,11 +14,12 @@
 //! Without `RL_CAPTURE` the plugin does nothing.
 //!
 //! Keys are separated by spaces. A letter is its key and a capital letter
-//! is that key with shift; `.` `,` `>` `<` `/` `?` and the symbols over the
-//! digits on a US layout, `!` to `)`, are what they look like;
-//! `up`, `down`, `left`, `right`, `enter`, `esc`, `tab` and `space` name
-//! the rest; `x*4` repeats a key. So `RL_CAPTURE_KEYS="l*5 L ."` walks east
-//! five times, presses shift and L, then waits.
+//! is that key with shift; `.` `,` `>` `<` `/` `?` `\` `-` and the symbols
+//! over the digits on a US layout, `!` to `)`, are what they look like;
+//! `up`, `down`, `left`, `right`, `enter`, `esc`, `tab`, `space` and
+//! `backspace` name the rest; `x*4` repeats a key. So
+//! `RL_CAPTURE_KEYS="l*5 L ."` walks east five times, presses shift and L,
+//! then waits.
 //!
 //! Only the game's own frame is read, never the screen. [`prepare`] opens a
 //! capture's window above the others without taking focus, so a capture
@@ -156,6 +157,7 @@ fn chord(key: &str) -> Option<Vec<KeyCode>> {
         "esc" => Some(KeyCode::Escape),
         "tab" => Some(KeyCode::Tab),
         "space" => Some(KeyCode::Space),
+        "backspace" => Some(KeyCode::Backspace),
         _ => None,
     };
     if let Some(k) = named {
@@ -168,6 +170,8 @@ fn chord(key: &str) -> Option<Vec<KeyCode>> {
         '.' => vec![KeyCode::Period],
         ',' => vec![KeyCode::Comma],
         '/' => vec![KeyCode::Slash],
+        '\\' => vec![KeyCode::Backslash],
+        '-' => vec![KeyCode::Minus],
         '>' => vec![shift, KeyCode::Period],
         '<' => vec![shift, KeyCode::Comma],
         '?' => vec![shift, KeyCode::Slash],
@@ -298,6 +302,11 @@ mod tests {
         assert_eq!(keys[4], vec![KeyCode::Period]);
         assert_eq!(keys[5], vec![KeyCode::ShiftLeft, KeyCode::Period]);
         assert_eq!(keys[6], vec![KeyCode::ArrowUp]);
+        assert_eq!(
+            parse_keys("\\ - backspace").unwrap(),
+            vec![vec![KeyCode::Backslash], vec![KeyCode::Minus], vec![KeyCode::Backspace]],
+            "what a cheat screen and a search box need"
+        );
         assert!(parse_keys("ctrl").is_err());
         assert!(parse_keys("l*x").is_err());
     }

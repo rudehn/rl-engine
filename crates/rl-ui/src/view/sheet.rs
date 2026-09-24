@@ -174,15 +174,15 @@ type Made = (
     Option<&'static Armor>,
     Option<&'static Speed>,
     Option<&'static StatBlock>,
-    Option<&'static Resists>,
 );
 /// What the player carries and suffers.
 type Armed = (Option<&'static Afflicted>, Option<&'static Equipped>);
 
 /// Fills [`SheetView`] from the player.
 ///
-/// Armor and the strikes come from the player's [`Loadout`], so the sheet
-/// shows what a worn blade adds without the game copying it anywhere.
+/// Armor, resistances and the strikes come from the player's [`Loadout`],
+/// so the sheet shows what a worn blade adds without the game copying it
+/// anywhere.
 pub fn collect_sheet(
     mut view: ResMut<SheetView>,
     registries: Res<Registries>,
@@ -191,7 +191,7 @@ pub fn collect_sheet(
     names: Query<&Name>,
 ) {
     *view = SheetView::default();
-    let Ok(((entity, name, glyph, health, armor, speed, stats, resists), (afflicted, worn))) = player.single() else { return };
+    let Ok(((entity, name, glyph, health, armor, speed, stats), (afflicted, worn))) = player.single() else { return };
     view.entity = Some(entity);
     view.label = name.map(|n| n.as_str().to_string()).unwrap_or_default();
     view.glyph = glyph.copied();
@@ -217,12 +217,11 @@ pub fn collect_sheet(
             });
         }
     }
-    if let Some(resists) = resists {
-        for (kind, def) in registries.damage_kinds.iter() {
-            let pct = resists.get(kind);
-            if pct != 0 {
-                view.resists.push(ResistLine { kind, name: def.name.clone(), pct });
-            }
+    let resists = loadout.resistances(entity);
+    for (kind, def) in registries.damage_kinds.iter() {
+        let pct = resists.get(kind);
+        if pct != 0 {
+            view.resists.push(ResistLine { kind, name: def.name.clone(), pct });
         }
     }
     let kind_name = |kind: DamageKindId| registries.damage_kinds.name(kind).to_string();
@@ -351,7 +350,11 @@ mod tests {
         let blade = stage
             .app
             .world_mut()
-            .spawn((Item, Name::new("a blade"), Armor(2), MeleeAttack::new(kind, DiceRoll::new(2, 6)), Bestows(vec![(might, Op::Add(5))])))
+            .spawn((Item, Name::new("a blade"), Armor(2), MeleeAttack::new(kind, DiceRoll::new(2, 6)), Bestows(vec![(might, Op::Add(5))]), {
+                let mut warded = rl_rules::Resistances::new();
+                warded.set(kind, 10);
+                Resists(warded)
+            }))
             .id();
         let mut worn = Equipped(rl_rules::Equipment::with_slot_count(2));
         worn.equip(blade, &rl_rules::EquipShape::in_slot(hand)).expect("the slot exists");
@@ -364,6 +367,7 @@ mod tests {
         let lines: Vec<(&str, Option<&str>)> = view.worn.iter().map(|w| (w.name.as_str(), w.item.as_deref())).collect();
         assert_eq!(lines, vec![("hand", Some("a blade")), ("head", None)]);
         assert_eq!(view.armor, Some(2), "the blade's armor, on a player with none of its own");
+        assert_eq!(view.resists.iter().map(|r| (r.name.as_str(), r.pct)).collect::<Vec<_>>(), vec![("kinetic", 25 + 10)], "the player's own and the blade's");
         assert_eq!(view.strikes[0].dice, DiceRoll::new(2, 6), "the blade is the blow, not the fist");
         let line = view.stat("might").expect("registered");
         assert_eq!(line.value, 10 + 2 + 5);

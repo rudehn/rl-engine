@@ -22,6 +22,7 @@ use rl_rules::damage::DamageKindId;
 use crate::combat::{CombatRng, DamageEvent, Dead, Health};
 use crate::components::{MyTurn, Position};
 use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
+use crate::effects::{Fired, Moments};
 use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack};
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
@@ -75,7 +76,7 @@ pub struct Flight {
 /// way.
 pub fn flight(map: &WorldMap, occupancy: &Occupancy, from: Point, at: Point, range: i32) -> Flight {
     let stops = |p: Point| p != from && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
-    let Footprint { path, landing, .. } = footprint(TargetMode::Bolt { range }, from, at, map.window_tiles(), stops);
+    let Footprint { path, landing, .. } = footprint(TargetMode::Bolt { range }, from, at, map.window_tiles(), stops, |_| false);
     let Some(end) = landing else { return Flight { path, struck: None, rests: from } };
     let struck = occupancy.first_at(end);
     // A wall is not somewhere to lie: it falls in the last open cell.
@@ -117,8 +118,7 @@ pub fn resolve_throws(
     mut intents: MessageReader<Intent<Throw>>,
     mut resolution: Resolution,
     launch: Launch,
-    mut damage: MessageWriter<DamageEvent>,
-    mut events: MessageWriter<ItemEvent>,
+    mut reports: ThrowReports,
 ) {
     let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut hold, mut airborne } = launch;
     for intent in intents.read() {
@@ -150,7 +150,7 @@ pub fn resolve_throws(
                 if let Some(mut worn) = worn
                     && worn.unequip(item)
                 {
-                    events.write(ItemEvent::Unequipped { actor, item });
+                    reports.events.write(ItemEvent::Unequipped { actor, item });
                 }
                 item
             }
@@ -166,36 +166,40 @@ pub fn resolve_throws(
         // knife is in the air until its flight has been seen, and lies
         // nowhere until it comes down.
         let Some(landing) = airborne.launched(&mut hold, landing) else { continue };
-        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut damage, &mut events);
+        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut reports);
     }
+}
+
+/// What a throw reports: the blow it strikes, the item's own event, and
+/// the `land` moment for whatever its triggers do where it comes down.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ThrowReports<'w> {
+    damage: MessageWriter<'w, DamageEvent>,
+    events: MessageWriter<'w, ItemEvent>,
+    fired: MessageWriter<'w, Fired>,
 }
 
 /// Lands every throw in the air, on the first pass after its flight has
 /// been seen. Landing counts as progress, so the loop goes on to deal the
 /// next turn.
-pub fn land_throws(
-    mut commands: Commands,
-    launch: Launch,
-    mut damage: MessageWriter<DamageEvent>,
-    mut events: MessageWriter<ItemEvent>,
-    mut turns: ResMut<crate::turn::Turns>,
-) {
+pub fn land_throws(mut commands: Commands, launch: Launch, mut reports: ThrowReports, mut turns: ResMut<crate::turn::Turns>) {
     let Launch { map, mut rng, alive, mut hold, mut airborne, .. } = launch;
     for landing in airborne.landing(&mut hold, &mut turns) {
-        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut damage, &mut events);
+        land(landing, map.current(), &mut commands, &mut rng, &alive, &mut reports);
     }
 }
 
-/// Where the thrown thing comes down: on the ground where it rests, and
-/// into whoever it struck.
+/// Where the thrown thing comes down: on the ground where it rests, into
+/// whoever it struck, and as the `land` moment. A consumable one is spent
+/// by that moment and gone before anyone could pick it up; anything else
+/// lies where it came to rest.
 fn land(
     landing: ThrowLanding,
     map: MapId,
     commands: &mut Commands,
     rng: &mut CombatRng,
     alive: &Query<(), (With<Health>, Without<Dead>)>,
-    damage: &mut MessageWriter<DamageEvent>,
-    events: &mut MessageWriter<ItemEvent>,
+    reports: &mut ThrowReports,
 ) {
     let ThrowLanding { actor, item, rests, struck, strike } = landing;
     commands.entity(item).insert((Position(rests), OnMap(map)));
@@ -204,9 +208,10 @@ fn land(
         // Floored where it is rolled, as a blow is: a throw that rolls
         // below nothing has missed, not healed.
         let amount = dice.roll_at_least(&mut **rng, 0);
-        damage.write(DamageEvent::arriving(target, Hit::by(actor, kind, amount), crate::combat::Reach::Thrown));
+        reports.damage.write(DamageEvent::arriving(target, Hit::by(actor, kind, amount), crate::combat::Reach::Thrown));
     }
-    events.write(ItemEvent::Thrown { actor, item, at: Position(rests), struck });
+    reports.events.write(ItemEvent::Thrown { actor, item, at: Position(rests), struck });
+    reports.fired.write(Fired { on: item, moment: Moments::LAND, by: Some(actor), at: rests });
 }
 
 /// Throwing: [`Throw`], resolved beside every other action, down combat's
@@ -223,8 +228,11 @@ impl Plugin for ThrowingPlugin {
         use crate::plugin::{ResolveSet, Turn};
         use crate::turn::AddAction;
         app.add_airborne::<ThrowLanding>()
+            // What a landing reports, for the triggers it sets off. A game may
+            // throw and have no effects, and then the queue simply stays empty.
+            .add_message::<Fired>()
             .add_action::<Throw>()
-            .add_systems(Turn, (land_throws.in_set(crate::plugin::LandSet::Throw), resolve_throws).chain().in_set(ResolveSet::Act));
+            .add_systems(Turn, (land_throws.in_set(crate::plugin::LandSet::Throw), resolve_throws.in_set(ResolveSet::Act)).chain());
     }
 
     fn finish(&self, app: &mut App) {
@@ -254,7 +262,15 @@ mod tests {
     impl Rig {
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, ItemsPlugin, ThrowingPlugin, crate::world::StreamingPlugin));
+            app.add_plugins((
+                crate::fov::FovPlugin,
+                CombatPlugin,
+                ItemsPlugin,
+                ThrowingPlugin,
+                crate::consumable::ConsumablesPlugin,
+                crate::world::StreamingPlugin,
+            ));
+            crate::effects::AddEngineEffects::add_engine_effects(&mut app);
             let start = crate::testing::surface(&mut app);
             let sides = crate::testing::two_sides(&mut app);
             let player = app
@@ -273,6 +289,39 @@ mod tests {
             let stack = self.app.world_mut().spawn((Item, knife, Stack { key: 1, count }, Name::new("knife"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
             stack
+        }
+
+        /// A stack of `count` grenades in the player's bag: thrown rather
+        /// than struck with, one charge each, gone when spent, and a burst
+        /// of four where one comes down.
+        fn grenades(&mut self, count: u32) -> Entity {
+            let triggers = {
+                let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new()
+                    .load_list(r#"[(on: "land", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
+                    .expect("the trigger parses");
+                let world = self.app.world();
+                let registries = world.resource::<crate::registries::Registries>();
+                crate::effects::Triggers::build(
+                    &specs,
+                    &[],
+                    world.resource::<crate::effects::Moments>(),
+                    world.resource::<crate::effects::EffectKinds>(),
+                    &registries.names(),
+                )
+                .expect("the trigger builds")
+            };
+            let spent = crate::consumable::Consumable::new(1, crate::consumable::WhenEmpty::Destroyed);
+            let stack =
+                self.app.world_mut().spawn((Item, Throwable { range: 6, strike: None }, spent, triggers, Stack { key: 2, count }, Name::new("grenade"))).id();
+            self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
+            stack
+        }
+
+        /// Every item lying on `at`.
+        fn lying_at(&mut self, at: Point) -> Vec<Entity> {
+            let world = self.app.world_mut();
+            let mut q = world.query_filtered::<(Entity, &Position), With<Item>>();
+            q.iter(world).filter(|(_, p)| p.0 == at).map(|(e, _)| e).collect()
         }
 
         /// Someone to throw at, `dx` east of the player.
@@ -298,6 +347,34 @@ mod tests {
         fn now(&self) -> u32 {
             self.app.world().resource::<Turns>().now()
         }
+    }
+
+    /// A grenade bursts where it comes down and is gone, not left lying
+    /// there to be picked up again.
+    #[test]
+    fn a_thrown_consumable_lands_its_trigger_where_it_comes_down_and_is_gone() {
+        let mut rig = Rig::new();
+        let target = rig.mark(3);
+        let grenade = rig.grenades(1);
+        rig.throw(grenade, 3);
+        rig.app.update();
+        assert_eq!(rig.hp(target), 16, "the burst landed on whoever stood there");
+        assert!(rig.app.world().get_entity(grenade).is_err(), "and the grenade is spent");
+        let at = rig.start.offset(3, 0);
+        assert!(rig.lying_at(at).is_empty(), "nothing lies where it burst");
+    }
+
+    /// Throwing one of a stack spends that one: the rest stay in the bag,
+    /// one fewer, and not two.
+    #[test]
+    fn throwing_one_of_a_stack_spends_that_one_and_leaves_the_rest_in_the_bag() {
+        let mut rig = Rig::new();
+        let grenades = rig.grenades(3);
+        rig.throw(grenades, 3);
+        rig.app.update();
+        assert_eq!(rig.app.world().get::<Stack>(grenades).map(|s| s.count), Some(2), "one thrown, two left");
+        let at = rig.start.offset(3, 0);
+        assert!(rig.lying_at(at).is_empty(), "and the one thrown is gone");
     }
 
     /// With something watching, a knife that has left the hand lies

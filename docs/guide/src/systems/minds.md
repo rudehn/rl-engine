@@ -14,7 +14,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
-     fingerprint: 2f07fb49 -->
+     fingerprint: 66fefa19 -->
 
 # Minds
 
@@ -48,7 +48,7 @@ An `ActorView` holds `health` and `faction` as options, so a civilian in a game 
 The four phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in sight into the three lists by the faction matrix, `Filter` is where stealth drops the hiders the mind has not noticed and offers what it lost, and `Annotate` is where combat says how far its own shot carries, items what it carries and sees lying about, abilities what it may use, props what stands about, fire where not to step and hearing where a sound came from.
 `decide_minds` sorts the snapshot once, there and nowhere else, so the order the contributors ran in cannot reach a tactic.
 `TacticCtx` then offers `step_toward` and `step_away_from` over `FlowFields`, keyed by the goal cells, the movement class, whether the walker opens doors and which way it is going, stamped with the map's cost epoch and capped at `FIELD_CACHE`: fifty hunters after one player cost one flood.
-It also offers `can_step`, which refuses an occupied cell and any cell marked a hazard, `blocks_shot`, the predicate the ability resolver uses, and the turn's stream.
+It also offers `can_step`, which refuses an occupied cell and any cell marked a hazard, `blocks_shot` and `blocks_burst`, the two predicates the ability resolver flies and bursts by, and the turn's stream.
 `can_step` answers whether a cell may be stood on and says nothing about the way in, so a tactic that picks a neighbour for itself rather than taking one a field offered pairs it with the resolver's corner rule: a diagonal that squeezes between two cells the actor cannot stand on is refused silently, and a mind deciding on one would decide the same way again on every turn until something moved.
 The twelve shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Keep`, `Hover`, `Wander`, `GiveWay`, `UseAbility`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
 `Keep` is one tactic for both sides of keeping station, parameterised by the roster it reads: `Keep::allies(keep_within, no_closer_than)` is what a companion is and `Keep::enemies(..)` what a spotter or a skirmisher is, each closing past the first distance, backing off inside the second and leaving the band between to the next tactic, and it reports itself as `follow` or `shadow`, because a trace that says `shadow` says more about what a probe did than one that says `keep`.

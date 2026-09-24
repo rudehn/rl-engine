@@ -318,6 +318,40 @@ mod tests {
         }
     }
 
+    /// A live cable is electricity, and plate is no insulation: a commando
+    /// in more armor than the cable's whole roll is hurt by it all the
+    /// same. Only a resist, which the design keeps for an insulated suit,
+    /// takes any of it off.
+    #[test]
+    fn a_live_cable_shocks_a_commando_through_any_amount_of_plate() {
+        let mut app = crate::testing::headless(RunSeed(11));
+        crate::testing::arrive_on(&mut app, 1);
+        let registries = app.world().resource::<Registries>().clone();
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let others: Vec<Entity> = app.world_mut().query_filtered::<Entity, (With<Actor>, Without<Player>)>().iter(app.world()).collect();
+        for other in others {
+            app.world_mut().entity_mut(other).despawn();
+        }
+        let at = app.world().get::<Position>(player).expect("the commando stands somewhere").0;
+        let floor = app.world().resource::<WorldMap>().tile(at).expect("the commando's own tile is loaded");
+        app.world_mut().resource_mut::<WorldMap>().set_tile(at.offset(1, 0), floor);
+        let cable = registries.props.expect("live cable");
+        let map = app.world().resource::<WorldMap>().current();
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, app.world_mut());
+        spawn_prop(&mut commands, &registries, cable, at.offset(1, 0), map);
+        queue.apply(app.world_mut());
+        // More than the cable's `1d4` could ever get through.
+        app.world_mut().entity_mut(player).insert(Armor(10));
+        let before = app.world().get::<Health>(player).unwrap().current;
+
+        app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
+        crate::testing::settle(&mut app);
+
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, at.offset(1, 0), "stepped onto the cable");
+        assert!(app.world().get::<Health>(player).unwrap().current < before, "and was shocked through ten points of plate");
+    }
+
     /// A keycard opens one locker and is gone: the engine decides the
     /// locker may be opened, and Foundry takes the card for it.
     #[test]

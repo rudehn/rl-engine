@@ -109,6 +109,8 @@ A container whose definition gives no opened look keeps its offer and the modal 
 
 ## 4. Triggers
 
+Since 2026-09-23 a prop's triggers are the `Triggers` an item carries, owned by `EffectsPlugin`: `on` is a moment by name from an open registry, `entered` or `destroyed` for a prop, each with an `Area`, the prop reports the moment as `Fired`, and `land_triggers` lands it; `docs/design/effects.md` has the timing and why. What follows is the design as it was first built.
+
 `Trigger { on, fires, effects }`, where `on` is `Entered` or `Destroyed` and `fires` is how many times it may go off, once for a pressure plate and more for a leaking line.
 
 `Entered` is the pressure plate, read from `Stepped`, which the move resolver already writes for every step it lets through.

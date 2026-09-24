@@ -9,7 +9,7 @@
 //! Effects are types, not a list, for the reason actions are: the engine
 //! ships one per subsystem it owns, in [`effects`](crate::effects), and a
 //! game registers its own with
-//! [`AddEffect::add_effect`]. There is no enum of effect kinds, no
+//! [`AddEffect::add_effect`](crate::effects::AddEffect::add_effect). There is no enum of effect kinds, no
 //! `Custom { id }`, and no list anywhere for a new one to be added to. An
 //! effect a game writes reaches the world through [`EffectWorld`], which
 //! hands out the engine's own requests and, for anything the engine never
@@ -19,22 +19,22 @@
 //! countdowns, so a save that restores the clock restores every cooldown
 //! with it and nothing has to be ticked.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
-use rand::rngs::StdRng;
-use rl_core::{Point, RunSeed, SeedDomain};
+use rl_core::Point;
 use rl_grid::{Footprint, footprint};
-use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, RawValue, Usable, aim_blocked, blocked};
+use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, Usable, aim_blocked, blocked};
 use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
 use crate::combat::{CombatRules, Dead, Faction, Health};
-use crate::components::{Blocks, MyTurn, Position, Viewshed};
+use crate::components::MyTurn;
 use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
-use crate::items::{Equipped, Inventory, Item, Stack, Tagged, UseItem};
+use crate::effects::{EffectKinds, EffectWorld, Landing, Source};
+use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
-use crate::status::{Afflict, Afflicted, Cure, StatBlock};
+use crate::status::{Afflicted, StatBlock};
 use crate::turn::{Action, AddAction, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
 
@@ -53,14 +53,14 @@ pub struct Use {
 }
 impl Action for Use {}
 
-/// What an actor can use, and what lent it.
+/// What an actor can use.
 ///
-/// A map rather than a list: two wands granting the same ability is one
-/// entry, and the source is what a charge is spent from. Rebuilt rather
-/// than edited by [`refresh_known`], so an unequipped wand takes its
-/// ability with it and nothing has to remember that it did.
+/// A set rather than a list: an ability granted twice is known once.
+/// Rebuilt rather than edited by [`refresh_known`], from the actor's own
+/// [`Grants`], so a grant taken away takes its ability with it and nothing
+/// has to remember that it did.
 #[derive(Component, Debug, Clone, Default)]
-pub struct Known(BTreeMap<AbilityId, Option<Entity>>);
+pub struct Known(BTreeSet<AbilityId>);
 
 impl Known {
     /// An actor that knows nothing.
@@ -68,11 +68,9 @@ impl Known {
         Self::default()
     }
 
-    /// Records `ability`, lent by `source` if something lent it. A second
-    /// grant of the same ability keeps the first source, so an ability
-    /// known innately is not made to depend on a wand.
-    pub fn learn(&mut self, ability: AbilityId, source: Option<Entity>) {
-        self.0.entry(ability).or_insert(source);
+    /// Records `ability`.
+    pub fn learn(&mut self, ability: AbilityId) {
+        self.0.insert(ability);
     }
 
     /// Forgets everything.
@@ -82,17 +80,12 @@ impl Known {
 
     /// Whether `ability` is known.
     pub fn has(&self, ability: AbilityId) -> bool {
-        self.0.contains_key(&ability)
-    }
-
-    /// What lent `ability`, if anything did.
-    pub fn source_of(&self, ability: AbilityId) -> Option<Entity> {
-        self.0.get(&ability).copied().flatten()
+        self.0.contains(&ability)
     }
 
     /// Every ability known, in id order.
-    pub fn iter(&self) -> impl Iterator<Item = (AbilityId, Option<Entity>)> + '_ {
-        self.0.iter().map(|(a, s)| (*a, *s))
+    pub fn iter(&self) -> impl Iterator<Item = AbilityId> + '_ {
+        self.0.iter().copied()
     }
 
     /// How many.
@@ -177,43 +170,14 @@ impl Cooldowns {
     }
 }
 
-/// The abilities an actor knows of itself, or an item lends whoever holds
-/// it.
+/// The abilities an actor knows of itself.
 ///
-/// On an item it lends while the item is carried, worn or not: a wand in
-/// the bag is a wand. An ability that should work only while its item is
-/// worn says so with [`Requirement::Wielding`](rl_rules::ability::Requirement),
-/// which is what the requirement is for.
-///
-/// This is also how a consumable is written. A potion is an item that
-/// grants an ability costing [`Cost::Charge`]: the ability's effects are
-/// what drinking does, and the charge is spent from the potion, so a
-/// potion is a line of RON and no game writes a use system. Using the item
-/// itself, through [`UseItem`], comes to using what it grants.
+/// On the actor, never on an item: an item does what its triggers say and
+/// lends nothing, so what an actor knows reads as what it is and has
+/// learned. An upgrade that teaches something pushes onto this. [`Known`]
+/// is rebuilt from it every pass.
 #[derive(Component, Debug, Clone, Default)]
 pub struct Grants(pub Vec<AbilityId>);
-
-/// Uses left in whatever carries this.
-///
-/// On the item that granted the ability, not on the actor, so two wands
-/// are two pools of charges and a used-up one is still a wand. An item
-/// with no `Charges` is spent whole by a [`Cost::Charge`]: one off its
-/// [`Stack`], or the item itself, despawned. That is what makes a potion a
-/// potion and a wand a wand, and nothing else has to say which is which.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Charges {
-    /// How many are left.
-    pub left: u16,
-    /// How many it holds when full.
-    pub max: u16,
-}
-
-impl Charges {
-    /// A full complement of `max`.
-    pub fn full(max: u16) -> Self {
-        Self { left: max, max }
-    }
-}
 
 /// What happened when an ability was used.
 #[derive(Message, Debug, Clone)]
@@ -238,237 +202,6 @@ pub enum AbilityEvent {
         /// Why not.
         why: Vec<Blocked>,
     },
-}
-
-/// The stream abilities roll from.
-///
-/// Its own domain, so adding an ability does not shift the combat stream
-/// and change every monster's rolls in a run that was going fine. Derived
-/// from the run's [`Seed`](crate::seed::Seed) by [`AbilitiesPlugin`].
-#[derive(Resource, Deref, DerefMut)]
-pub struct AbilityRng(pub StdRng);
-
-impl crate::seed::Stream for AbilityRng {
-    fn for_run(seed: RunSeed) -> Self {
-        Self(seed.rng(SeedDomain::new(b"ability"), 0))
-    }
-}
-
-/// One use, resolved: where it went and what was under it.
-#[derive(Debug, Clone)]
-pub struct Landing {
-    /// Who used it. A prop that sprang a trap is as much a user as an
-    /// actor that spent a turn.
-    pub user: Entity,
-    /// Which ability, when an ability is what landed. `None` for effects
-    /// landed by something else the engine owns, a prop's trigger or an
-    /// offer it answered, which have no ability and draw no ability's
-    /// look.
-    pub ability: Option<AbilityId>,
-    /// Where the user stood.
-    pub origin: Point,
-    /// Where it was pointed.
-    pub aim: Point,
-    /// Every cell it covers.
-    pub cells: Vec<Point>,
-    /// The cells a projectile flew through, landing included.
-    pub path: Vec<Point>,
-    /// Where a projectile stopped, if the shape had one.
-    pub landed_at: Option<Point>,
-    /// Everyone under the footprint the ability's [`Aim`] wanted there.
-    /// An effect that means to hit whoever is standing in the fire reads
-    /// this; one that means to change the ground reads `cells`.
-    pub targets: Vec<Entity>,
-}
-
-/// What an effect may do to the world.
-///
-/// Requests, not changes: an effect asks for damage, a status or a move,
-/// and the systems that already own those answer. That is what keeps an
-/// ability's damage going through the same mitigation a sword's does.
-/// `commands` is the escape hatch, and it is a real one: an effect a game
-/// writes can do anything a system can, including write its own messages.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct EffectWorld<'w, 's> {
-    /// Anything the engine did not think of.
-    pub commands: Commands<'w, 's>,
-    /// Damage, through the pipeline that mitigates it.
-    pub damage: MessageWriter<'w, crate::combat::DamageEvent>,
-    /// A status on.
-    pub afflict: MessageWriter<'w, Afflict>,
-    /// A status off.
-    pub cure: MessageWriter<'w, Cure>,
-    /// The ability stream, for an effect that rolls.
-    pub rng: ResMut<'w, AbilityRng>,
-    /// What is worth seeing, for whatever draws. The flight and the burst
-    /// of the use itself are cued before any effect runs, so a cue an
-    /// effect adds plays after them.
-    pub cues: MessageWriter<'w, Cued>,
-    actors: Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>)>,
-    occupancy: ResMut<'w, Occupancy>,
-    map: Res<'w, WorldMap>,
-}
-
-impl EffectWorld<'_, '_> {
-    /// Where `e` is, if it is anywhere.
-    pub fn position(&self, e: Entity) -> Option<Point> {
-        self.actors.get(e).ok().map(|(p, _, _)| p.0)
-    }
-
-    /// Whether `who` can see the cell `p`, or `None` when it carries no
-    /// viewshed and the question cannot be asked of it.
-    ///
-    /// Most non-players carry none: the minds read the player's viewshed
-    /// as the oracle, since lines of sight are symmetric. So a monster is
-    /// not held to a sight requirement it has no way to answer, and the
-    /// tactic that chose the aim is trusted instead.
-    ///
-    /// Asked here rather than through a query of its own because this one
-    /// already holds every viewshed, and two queries over the same
-    /// component, one of them writing, is a system Bevy refuses to run.
-    pub fn sight_of(&self, who: Entity, p: Point) -> Option<bool> {
-        let (_, viewshed, _) = self.actors.get(who).ok()?;
-        Some(viewshed?.can_see(p))
-    }
-
-    /// Whether `p` is somewhere an actor could stand right now.
-    pub fn is_free(&self, p: Point) -> bool {
-        self.map.is_walkable(p) && !self.occupancy.is_occupied(p)
-    }
-
-    /// Puts `e` on `p`, keeping the occupancy index and its sight
-    /// straight. False when the cell will not take it.
-    pub fn place(&mut self, e: Entity, p: Point) -> bool {
-        if !self.is_free(p) {
-            return false;
-        }
-        let Ok((mut pos, viewshed, blocks)) = self.actors.get_mut(e) else { return false };
-        let from = pos.0;
-        if from == p {
-            return true;
-        }
-        if blocks {
-            self.occupancy.relocate(e, from, p);
-        }
-        pos.0 = p;
-        if let Some(mut v) = viewshed {
-            v.dirty = true;
-        }
-        true
-    }
-
-    /// Slides `e` up to `cells` steps along the line from `from` to `to`,
-    /// stopping at the last cell it can stand on. Returns where it ended.
-    ///
-    /// A push and a pull are the same walk with the ends swapped, so both
-    /// stop at a wall rather than through it.
-    pub fn slide(&mut self, e: Entity, from: Point, to: Point, cells: i32) -> Point {
-        let (dx, dy) = ((to.x - from.x).signum(), (to.y - from.y).signum());
-        if dx == 0 && dy == 0 {
-            return from;
-        }
-        let mut at = from;
-        for _ in 0..cells.max(0) {
-            let next = at.offset(dx, dy);
-            if !self.is_free(next) {
-                break;
-            }
-            at = next;
-        }
-        if at != from {
-            self.place(e, at);
-        }
-        at
-    }
-}
-
-/// One thing an ability does when it lands.
-///
-/// A type per effect, registered with [`AddEffect::add_effect`], parsing
-/// its own arguments out of the RON the ability named it with. The engine
-/// ships one per subsystem it owns; a game's own sit beside them and the
-/// resolver cannot tell the difference.
-pub trait Effect: Send + Sync + 'static {
-    /// What this does to `landing`.
-    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>);
-
-    /// What this does, in a few words for a menu, with every id named
-    /// through `registries`: `3d6 fire`, `scorched for 4 turns`. Empty
-    /// means the menu says nothing about it, which is the default so an
-    /// effect a game writes in a hurry still loads.
-    fn describe(&self, registries: &crate::registries::Registries) -> String {
-        let _ = registries;
-        String::new()
-    }
-}
-
-/// An effect that knows how to build itself out of an ability's RON.
-///
-/// Separate from [`Effect`] so the trait a game writes stays object-safe
-/// and the constructor can fail with a message naming what was wrong.
-pub trait FromArgs: Effect + Sized {
-    /// The name abilities call this effect by in RON.
-    const KIND: &'static str;
-
-    /// Builds one from the arguments, resolving any names through `names`.
-    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String>;
-}
-
-/// How an effect is built, once its name has been matched.
-type Builder = fn(&RawValue, &Names<'_>) -> Result<Box<dyn Effect>, String>;
-
-/// Every effect kind a game has registered.
-///
-/// Filled while the app is built and read once, when abilities load, so an
-/// unknown effect name is a startup failure naming the ability rather than
-/// a surprise the first time someone presses the key.
-#[derive(Resource, Default)]
-pub struct EffectKinds(BTreeMap<String, Builder>);
-
-impl EffectKinds {
-    /// Registers `E` under its own name.
-    pub fn declare<E: FromArgs>(&mut self) {
-        self.0.insert(E::KIND.to_string(), |args, names| E::from_args(args, names).map(|e| Box::new(e) as Box<dyn Effect>));
-    }
-
-    /// Whether `kind` is registered.
-    pub fn has(&self, kind: &str) -> bool {
-        self.0.contains_key(kind)
-    }
-
-    /// Every registered name, in order, for an error that lists them.
-    pub fn names(&self) -> impl Iterator<Item = &str> {
-        self.0.keys().map(|s| s.as_str())
-    }
-
-    /// Builds the effect registered as `kind` from its own arguments.
-    ///
-    /// For whatever holds effects as content and is not an ability: a
-    /// prop's trigger, an offer it answers. The error names what was
-    /// wrong, or lists what is registered when the kind is not.
-    pub fn build(&self, kind: &str, args: &RawValue, names: &Names<'_>) -> Result<Box<dyn Effect>, String> {
-        match self.0.get(kind) {
-            Some(build) => build(args, names),
-            None => {
-                let known: Vec<&str> = self.names().collect();
-                Err(format!("no effect is registered as {kind:?}; registered: {}", known.join(", ")))
-            }
-        }
-    }
-}
-
-/// Registers an effect with the engine.
-pub trait AddEffect {
-    /// Registers `E` so abilities may name it in their RON.
-    fn add_effect<E: FromArgs>(&mut self) -> &mut Self;
-}
-
-impl AddEffect for App {
-    fn add_effect<E: FromArgs>(&mut self) -> &mut Self {
-        self.init_resource::<EffectKinds>();
-        self.world_mut().resource_mut::<EffectKinds>().declare::<E>();
-        self
-    }
 }
 
 /// The abilities a game registered, with their effects built.
@@ -551,9 +284,7 @@ type Bearing = (Option<&'static Inventory>, Option<&'static Equipped>, Option<&'
 pub struct UserState<'w, 's> {
     users: Query<'w, 's, Spender, With<MyTurn>>,
     gear: Query<'w, 's, Bearing>,
-    charges: Query<'w, 's, &'static mut Charges>,
     tagged: Query<'w, 's, (Option<&'static Tagged>, Option<&'static mut Stack>)>,
-    items: Query<'w, 's, (), With<Item>>,
     registries: Res<'w, Registries>,
     commands: Commands<'w, 's>,
 }
@@ -628,7 +359,7 @@ impl Bystanders<'_, '_> {
     pub fn land(&self, aimed: Aimed<'_>, map: &WorldMap, occupancy: &Occupancy) -> Landed {
         let Aimed { user, ability, def, origin, aim, sees_aim } = aimed;
         let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
-        let Footprint { cells, path, landing } = footprint(def.mode, origin, aim, map.window_tiles(), stops);
+        let Footprint { cells, path, landing } = footprint(def.mode, origin, aim, map.window_tiles(), stops, |p| map.blocks_projectiles(p));
         let mut refused = aim_blocked(def, &cells, sees_aim);
         // A projectile that stopped short of where it was pointed, at its
         // range or on whatever stood in the way, is refused rather than
@@ -651,7 +382,7 @@ impl Bystanders<'_, '_> {
                 }
             }
         }
-        Landed { landing: Landing { user, ability: Some(ability), origin, aim, cells, path, landed_at: landing, targets }, refused }
+        Landed { landing: Landing { user, source: Source::Ability(ability), origin, aim, cells, path, landed_at: landing, targets }, refused }
     }
 }
 
@@ -691,7 +422,6 @@ pub fn resolve_abilities(
         if !known.has(id) {
             continue;
         }
-        let source = known.source_of(id);
         if !resolution.claim(user) {
             continue;
         }
@@ -702,9 +432,9 @@ pub fn resolve_abilities(
         };
         let aim = if def.aim.needs_cursor() { intent.action.aim } else { origin };
         let aimed = Aimed { user, ability: id, def, origin, aim, sees_aim: world.sight_of(user, aim) };
-        let Landed { landing, refused } = bystanders.land(aimed, &world.map, &world.occupancy);
+        let Landed { landing, refused } = bystanders.land(aimed, world.map(), world.occupancy());
 
-        let mut why = gate(user, id, def, source, &state, now);
+        let mut why = gate(user, id, def, &state, now);
         why.extend(refused);
         if !why.is_empty() {
             events.write(AbilityEvent::Refused { user, ability: id, why });
@@ -712,7 +442,7 @@ pub fn resolve_abilities(
             continue;
         }
 
-        pay(user, def, source, &mut state);
+        pay(user, def, &mut state);
         if def.cooldown > 0
             && let Ok((_, _, Some(mut cooldowns), _)) = state.users.get_mut(user)
         {
@@ -760,7 +490,7 @@ pub fn land_abilities(
 /// Lands a use: the burst over the footprint, the effects, and the report.
 fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>, events: &mut MessageWriter<AbilityEvent>) {
     let user = landing.user;
-    let Some(id) = landing.ability else { return };
+    let Some(id) = landing.ability() else { return };
     if let Some(burst) = burst_of(&landing, world) {
         world.cues.write(Cued { actor: user, cue: burst });
     }
@@ -778,7 +508,7 @@ fn anchor_of(landing: &Landing, world: &EffectWorld<'_, '_>, cell: Point) -> Anc
 /// The flight to where a projectile stopped, for a shape that has one.
 fn flight_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
     let stop = landing.landed_at.filter(|stop| *stop != landing.origin)?;
-    Some(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor_of(landing, world, stop), look: LookOf::Ability(landing.ability?) })
+    Some(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor_of(landing, world, stop), look: LookOf::Ability(landing.ability()?) })
 }
 
 /// The burst over the footprint, for a shape that covers anything.
@@ -786,11 +516,11 @@ fn burst_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
     if landing.cells.is_empty() {
         return None;
     }
-    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability?) })
+    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability()?) })
 }
 
 /// Every reason `def` may not be used by `user` right now.
-fn gate(user: Entity, id: AbilityId, def: &AbilityDef, source: Option<Entity>, state: &UserState<'_, '_>, now: u32) -> Vec<Blocked> {
+fn gate(user: Entity, id: AbilityId, def: &AbilityDef, state: &UserState<'_, '_>, now: u32) -> Vec<Blocked> {
     // The caller has already found this actor holding a turn.
     let Ok((_, pools, cooldowns, health)) = state.users.get(user) else { return Vec::new() };
     let (inventory, equipped, afflicted, block) = state.gear.get(user).unwrap_or((None, None, None, None));
@@ -818,45 +548,12 @@ fn gate(user: Entity, id: AbilityId, def: &AbilityDef, source: Option<Entity>, s
     let items = |tag: TagId| count_tagged(inventory, tag, state);
     let purse = Purse {
         pool: &pool,
-        charges: source.map(|e| charges_of(e, state)),
         // No health component means nothing to spend it from, and a cost
         // in health should refuse rather than silently succeed.
         health: health.map(|h| h.current).unwrap_or(0),
         items: &items,
     };
     blocked(def, &gates, &purse, now, cooldowns.map(|c| c.ready_at(id)).unwrap_or(0))
-}
-
-/// What a charge costs `source` from: its [`Charges`] when it counts them,
-/// else its stack, else itself, which is one use.
-fn charges_of(source: Entity, state: &UserState<'_, '_>) -> u16 {
-    if let Ok(charges) = state.charges.get(source) {
-        return charges.left;
-    }
-    match state.tagged.get(source) {
-        Ok((_, Some(stack))) => stack.count.min(u32::from(u16::MAX)) as u16,
-        _ => 1,
-    }
-}
-
-/// Spends `amount` charges from `source`, by the same rule
-/// [`charges_of`] counts them: off its [`Charges`], else off its stack,
-/// else the item itself, and an item spent to nothing is despawned.
-fn spend_charges(source: Entity, amount: u16, state: &mut UserState<'_, '_>) {
-    if let Ok(mut charges) = state.charges.get_mut(source) {
-        charges.left = charges.left.saturating_sub(amount);
-        return;
-    }
-    let left = match state.tagged.get_mut(source) {
-        Ok((_, Some(mut stack))) => {
-            stack.count = stack.count.saturating_sub(u32::from(amount));
-            stack.count
-        }
-        _ => 0,
-    };
-    if left == 0 && state.items.contains(source) {
-        state.commands.entity(source).despawn();
-    }
 }
 
 /// How many items carrying `tag` are in `inventory`, stacks counted.
@@ -877,7 +574,7 @@ fn count_tagged(inventory: Option<&Inventory>, tag: TagId, state: &UserState<'_,
 ///
 /// Called only once the gate has passed, so every cost here is affordable
 /// and the all-or-nothing rule holds without a second check.
-fn pay(user: Entity, def: &AbilityDef, source: Option<Entity>, state: &mut UserState<'_, '_>) {
+fn pay(user: Entity, def: &AbilityDef, state: &mut UserState<'_, '_>) {
     let carried: Vec<Entity> = state.gear.get(user).ok().and_then(|(i, _, _, _)| i).map(|i| i.items.clone()).unwrap_or_default();
     for cost in &def.costs {
         match *cost {
@@ -889,11 +586,6 @@ fn pay(user: Entity, def: &AbilityDef, source: Option<Entity>, state: &mut UserS
             Cost::Health { amount } => {
                 if let Ok((_, _, _, Some(mut health))) = state.users.get_mut(user) {
                     health.current -= amount;
-                }
-            }
-            Cost::Charge { amount } => {
-                if let Some(source) = source {
-                    spend_charges(source, amount, state);
                 }
             }
             Cost::Item { tag, count } => spend_tagged(&carried, tag, count, state),
@@ -997,9 +689,9 @@ pub fn offer_abilities(mut offered: ResMut<Offered>, abilities: Res<Abilities>, 
     let Ok((known, _, _, _)) = state.users.get(actor) else { return };
     offered.actor = Some(actor);
     let now = turns.now();
-    for (id, source) in known.iter() {
+    for id in known.iter() {
         let def = abilities.get(id);
-        let why = gate(actor, id, def, source, &state, now);
+        let why = gate(actor, id, def, &state, now);
         if why.is_empty() {
             offered.usable.push(Usable { ability: id, aim: def.aim, mode: def.mode });
         } else {
@@ -1019,62 +711,16 @@ pub fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered:
     }
 }
 
-/// An actor as [`refresh_known`] reads it: what it knows, what it is
-/// granted of itself, and what it wears and carries.
-type Learner = (&'static mut Known, Option<&'static Grants>, Option<&'static Equipped>, Option<&'static Inventory>);
-
-/// Rebuilds every actor's [`Known`] from what it is, wears and carries.
+/// Rebuilds every actor's [`Known`] from its own [`Grants`].
 ///
-/// Rebuilt rather than edited, the way gear modifiers are: a wand put down
-/// takes its ability with it and nothing has to remember that it did. An
-/// actor's own [`Grants`] come first, so a wand lending an ability the
-/// actor already knows does not make it depend on the wand; then what is
-/// worn, then the rest of the bag, so a charge is spent from what is in
-/// hand before what is in the pack.
-pub fn refresh_known(mut actors: Query<Learner>, lent: Query<&Grants, Without<Known>>) {
-    for (mut known, innate, equipped, carried) in &mut actors {
+/// Rebuilt rather than edited, the way gear modifiers are: a grant taken
+/// away takes its ability with it and nothing has to remember that it did.
+pub fn refresh_known(mut actors: Query<(&mut Known, Option<&Grants>)>) {
+    for (mut known, grants) in &mut actors {
         known.clear();
-        for ability in innate.map(|g| g.0.as_slice()).unwrap_or(&[]) {
-            known.learn(*ability, None);
+        for ability in grants.map(|g| g.0.as_slice()).unwrap_or(&[]) {
+            known.learn(*ability);
         }
-        let worn = equipped.into_iter().flat_map(|e| e.0.worn().map(|(_, item)| item));
-        let bag = carried.into_iter().flat_map(|bag| bag.items.iter().copied());
-        for item in worn.chain(bag) {
-            let Ok(grants) = lent.get(item) else { continue };
-            for ability in &grants.0 {
-                known.learn(*ability, Some(item));
-            }
-        }
-    }
-}
-
-/// Turns using an item that lends an ability into using that ability.
-///
-/// An alternate action, in the shape of [`Bump`](crate::bump::Bump): read
-/// in [`ResolveSet::Redirect`], it writes a [`Use`] of the first ability
-/// the item grants, aimed at the user's own cell, and claims nothing, so
-/// the ability resolver gates, pays and lands it as if the ability had
-/// been called on by name, with the charge spent from the item. The item
-/// resolver leaves such a use alone. An aimed ability used this way lands
-/// on the user's feet and is refused; a screen that offers the item opens
-/// the targeting cursor on it instead, through
-/// [`Known::source_of`]. A use of an item that grants nothing is the
-/// game's, reported as [`ItemEvent::Used`](crate::items::ItemEvent::Used)
-/// as before.
-pub fn redirect_item_uses(
-    mut intents: MessageReader<Intent<UseItem>>,
-    lends: Query<&Grants, With<Item>>,
-    carriers: Query<(&Position, &Inventory), With<MyTurn>>,
-    mut uses: MessageWriter<Intent<Use>>,
-) {
-    for intent in intents.read() {
-        let Ok((pos, bag)) = carriers.get(intent.actor) else { continue };
-        let item = intent.action.0;
-        if !bag.contains(item) {
-            continue;
-        }
-        let Some(ability) = lends.get(item).ok().and_then(|g| g.0.first().copied()) else { continue };
-        uses.write(Intent::new(intent.actor, Use { ability, aim: pos.0 }));
     }
 }
 
@@ -1084,7 +730,7 @@ pub fn redirect_item_uses(
 /// Needs [`Abilities`], [`Registries`] and the run's [`Seed`](crate::seed::Seed)
 /// before play begins, and combat, since an ability's damage goes down the same
 /// pipeline a sword's does. Register every effect an ability file names
-/// with [`AddEffect::add_effect`] while the app is built, then build
+/// with [`AddEffect::add_effect`](crate::effects::AddEffect::add_effect) while the app is built, then build
 /// [`Abilities`] from the loaded definitions.
 ///
 /// The engine's own effects are not registered here: they live in
@@ -1103,33 +749,21 @@ impl Plugin for AbilitiesPlugin {
     fn build(&self, app: &mut App) {
         use crate::components::Actor;
         use crate::plugin::{Needs, ResetsOnNewRun};
-        use crate::seed::AddStream;
+        crate::effects::ensure(app);
         app.register_required_components::<Actor, Known>();
         app.register_required_components::<Actor, Pools>();
         app.register_required_components::<Actor, Cooldowns>();
-        app.init_resource::<EffectKinds>()
-            .init_resource::<Offered>()
+        app.init_resource::<Offered>()
             .reset_on_new_run::<Offered>()
             .add_airborne::<Landing>()
             .add_message::<AbilityEvent>()
-            // `EffectWorld` writes these, so they are this plugin's to
-            // register: a writer for a message nobody registered fails the
-            // system at startup, and a game with abilities should not have
-            // to add the status or combat plugins to find that out. Fire,
-            // gas and items already register shared messages the same way,
-            // and registering one twice is harmless.
-            .add_message::<crate::status::Afflict>()
-            .add_message::<crate::status::Cure>()
-            .add_message::<crate::combat::DamageEvent>()
             .add_action::<Use>()
             .needs::<Abilities>("AbilitiesPlugin", "`Abilities::load(ron, &EffectKinds, &names)`, the game's abilities with their effects built")
-            .add_stream::<AbilityRng>("AbilitiesPlugin")
             .needs::<Registries>("AbilitiesPlugin", "`Registries`, with the stats an ability's costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
             .add_systems(Turn, perceive_abilities.in_set(crate::plugin::PerceiveSet::Annotate))
-            .add_systems(Turn, redirect_item_uses.in_set(ResolveSet::Redirect))
             // What has landed, then what is cast this pass.
-            .add_systems(Turn, (land_abilities.in_set(crate::plugin::LandSet::Ability), resolve_abilities).chain().in_set(ResolveSet::Act))
+            .add_systems(Turn, (land_abilities.in_set(crate::plugin::LandSet::Ability), resolve_abilities.in_set(ResolveSet::Act)).chain())
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
     }
 
@@ -1145,9 +779,12 @@ mod tests {
     use super::*;
     use crate::combat::{CombatRules, DamageDealt, Faction};
     use crate::components::{Actor, Player, RevealsMap};
-    use crate::effects::AddEngineEffects;
+    use crate::components::{Blocks, Position, Viewshed};
+    use crate::effects::{AddEffect, AddEngineEffects, Effect, FromArgs};
+    use crate::items::Item;
     use rl_core::{Direction, RunSeed};
     use rl_grid::TileId;
+    use rl_rules::ability::RawValue;
     use rl_rules::content::Registry;
     use rl_rules::faction::FactionDef;
     use rl_rules::{DamageKind, SlotDef, StatDef, StatusDef, TagDef};
@@ -1227,7 +864,6 @@ mod tests {
         name: "quaff",
         aim: SelfOnly,
         mode: Own,
-        costs: [Charge(1)],
         effects: [(kind: "Mend", args: (kind: "fire", roll: "5"))],
     ),
 ]"#;
@@ -1663,44 +1299,19 @@ mod tests {
         assert_eq!(refusals, 0, "it was never offered, so it never asked");
     }
 
-    /// A potion is an item that grants an ability costing a charge: using
-    /// the item uses the ability, the charge comes off the stack, the last
-    /// one takes the bottle with it, and a wand that counts its charges is
-    /// still a wand at zero.
+    /// What an actor knows is what it is, never what it carries: a thing in
+    /// the bag with `Grants` on it teaches nothing, worn or not.
     #[test]
-    fn using_an_item_that_grants_an_ability_uses_it_and_spends_the_item() {
+    fn an_actor_knows_its_own_grants_and_nothing_its_bag_carries() {
         let (mut app, start) = app();
         let quaff = ability(&app, "quaff");
-        let me = caster(&mut app, start, 0, &[]);
-        let potions = app.world_mut().spawn((Item, Grants(vec![quaff]), Stack { key: 1, count: 2 })).id();
-        let wand = app.world_mut().spawn((Item, Grants(vec![quaff]), Charges::full(1))).id();
-        app.world_mut().get_mut::<Inventory>(me).unwrap().items = vec![potions, wand];
-        app.world_mut().get_mut::<Health>(me).unwrap().current = 10;
+        let bolt = ability(&app, "bolt");
+        let me = caster(&mut app, start, 0, &[bolt]);
+        let charm = app.world_mut().spawn((Item, Grants(vec![quaff]))).id();
+        app.world_mut().get_mut::<Inventory>(me).unwrap().items = vec![charm];
         settle(&mut app);
-        assert!(app.world().get::<Known>(me).unwrap().has(quaff), "carried, not worn, and known");
-        assert_eq!(app.world().get::<Known>(me).unwrap().source_of(quaff), Some(potions), "spent from the first thing in the bag that lends it");
-
-        app.world_mut().write_message(Intent::new(me, UseItem(potions)));
-        app.update();
-        assert_eq!(hp(&app, me), 15, "drunk");
-        assert_eq!(app.world().get::<Stack>(potions).map(|s| s.count), Some(1), "one off the stack");
-        assert_eq!(app.world().resource::<Turns>().now(), 100, "for the ability's time");
-        assert!(app.world_mut().resource_mut::<Messages<crate::items::ItemEvent>>().drain().next().is_none(), "and nothing for the game to answer");
-
-        app.world_mut().write_message(Intent::new(me, UseItem(potions)));
-        app.update();
-        assert_eq!(hp(&app, me), 20);
-        assert!(app.world().get_entity(potions).is_err(), "the last one took the bottle");
-        assert_eq!(app.world().get::<Inventory>(me).unwrap().items, vec![wand], "and the bag forgot it");
-        assert_eq!(app.world().get::<Known>(me).unwrap().source_of(quaff), Some(wand), "the wand lends it now");
-
-        app.world_mut().write_message(Intent::new(me, Use { ability: quaff, aim: start }));
-        app.update();
-        assert_eq!(hp(&app, me), 25);
-        assert_eq!(app.world().get::<Charges>(wand).copied(), Some(Charges { left: 0, max: 1 }), "a wand at zero is still a wand");
-        let clock = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(me, UseItem(wand)));
-        app.update();
-        assert_eq!((hp(&app, me), app.world().resource::<Turns>().now()), (25, clock), "and an empty one is refused for free");
+        let known = app.world().get::<Known>(me).unwrap();
+        assert!(known.has(bolt), "its own grant");
+        assert!(!known.has(quaff), "and nothing the charm in its bag carries");
     }
 }

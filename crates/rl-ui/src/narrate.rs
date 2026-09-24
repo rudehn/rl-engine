@@ -128,6 +128,10 @@ pub enum Phrase {
     YouThrow,
     /// Someone else did.
     Throws,
+    /// You used a thing that does something when used: drank it, lit it.
+    YouUseThing,
+    /// Someone else did.
+    UsesThing,
     /// You opened a door.
     YouOpen,
     /// You closed one.
@@ -416,6 +420,9 @@ pub struct Witness<'w, 's> {
     weapons: Weapons<'w, 's>,
     holding: Query<'w, 's, (), With<MyTurn>>,
     props: Query<'w, 's, (), With<rl_bevy::Prop>>,
+    /// What a thing does at its moments, to tell a use the engine landed
+    /// from one the game answers itself.
+    does: Query<'w, 's, &'static rl_bevy::Triggers>,
     /// What things are called while the pass is still running.
     names: Query<'w, 's, (Option<&'static Name>, Option<&'static Stack>)>,
 }
@@ -423,6 +430,13 @@ pub struct Witness<'w, 's> {
 impl Witness<'_, '_> {
     fn is_you(&self, e: Entity) -> bool {
         self.player.single().is_ok_and(|(me, _, _)| me == e)
+    }
+
+    /// Whether using `e` did something the engine landed: it carries a
+    /// `use` trigger. A thing without one is the game's to answer, in its
+    /// own words, since the engine cannot know what eating a crust means.
+    fn used_to_effect(&self, e: Entity) -> bool {
+        self.does.get(e).is_ok_and(|t| t.on(rl_bevy::Moments::USE).next().is_some())
     }
 
     /// Whether `e` is a prop rather than something that was alive: a
@@ -475,6 +489,14 @@ impl Witness<'_, '_> {
         let e = e?;
         let (name, stack) = self.names.get(e).ok()?;
         Some(rl_core::noun::counted(name?.as_str(), stack.map_or(1, |s| s.count)))
+    }
+
+    /// The same for one of a thing, whatever its stack holds: a use takes
+    /// one, and by the time the row is made the stack already counts one
+    /// fewer.
+    fn called_one(&self, e: Option<Entity>) -> Option<String> {
+        let (name, _) = self.names.get(e?).ok()?;
+        Some(rl_core::noun::counted(name?.as_str(), 1))
     }
 
     fn status_name(&self, id: rl_rules::StatusId) -> String {
@@ -579,7 +601,11 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
             }
             ItemEvent::Unequipped { actor, item } => (actor, item, if witness.is_you(actor) { Phrase::YouTakeOff } else { Phrase::TakesOff }),
             ItemEvent::Thrown { actor, item, .. } => (actor, item, if witness.is_you(actor) { Phrase::YouThrow } else { Phrase::Throws }),
-            // What using an item means is the game's, and so are the words.
+            // A use the engine landed is said; what using anything else
+            // means is the game's, and so are the words.
+            ItemEvent::Used { actor, item } if witness.used_to_effect(item) => {
+                (actor, item, if witness.is_you(actor) { Phrase::YouUseThing } else { Phrase::UsesThing })
+            }
             ItemEvent::Used { .. } => continue,
         };
         let mut said = say(phrase, Some(actor), None);
@@ -702,7 +728,12 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
     // the time the row is spoken the dead have been renamed as remains
     // and a thrown thing has merged into a stack.
     for said in first.iter_mut().chain(rows.iter_mut()) {
-        said.called = [witness.called_actor(said.who), witness.called_actor(said.whom), witness.called_thing(said.what)];
+        let thing = if matches!(said.phrase(), Some(Phrase::YouUseThing | Phrase::UsesThing)) {
+            witness.called_one(said.what)
+        } else {
+            witness.called_thing(said.what)
+        };
+        said.called = [witness.called_actor(said.who), witness.called_actor(said.whom), thing];
     }
     view.rows.extend(first);
     view.rows.extend(rows);
@@ -734,7 +765,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 58] = [
+        let table: [(Phrase, &str, ToneId); 60] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -771,6 +802,8 @@ impl Default for Phrasebook {
             (TakesOff, "{Who} takes off {what}.", Tones::MUTED),
             (YouThrow, "You throw {what}.", Tones::TEXT),
             (Throws, "{Who} throws {what}.", Tones::NOTICE),
+            (YouUseThing, "You use {what}.", Tones::TEXT),
+            (UsesThing, "{Who} uses {what}.", Tones::NOTICE),
             (YouOpen, "You open the door.", Tones::MUTED),
             (YouClose, "You close the door.", Tones::MUTED),
             (OpensDoor, "{Who} opens a door.", Tones::NOTICE),
@@ -1212,6 +1245,61 @@ mod tests {
         for d in dealt.read() {
             tell.write(Tell::new("Struck: {whom}.", Tones::MUTED).to(d.target));
         }
+    }
+
+    /// A stage with consumables and throwing, and `triggers` built for a
+    /// thing to carry.
+    fn with_things(triggers: &str) -> (Stage, rl_bevy::Triggers) {
+        let stage = Stage::new_with((NarratorPlugin::default(), rl_bevy::ConsumablesPlugin, rl_bevy::ThrowingPlugin), |app| {
+            app.add_engine_effects();
+        });
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new().load_list(triggers).expect("the triggers parse");
+        let built = {
+            let world = stage.app.world();
+            let registries = world.resource::<Registries>().clone();
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<rl_bevy::EffectKinds>(), &registries.names())
+                .expect("the triggers build")
+        };
+        (stage, built)
+    }
+
+    /// Using a thing that does something is said, as one of it, whether it
+    /// was the last of its stack and is gone by the end of the pass or one
+    /// of three and two are left.
+    #[test]
+    fn using_a_thing_says_so_as_one_of_it_last_of_its_stack_or_not() {
+        let (mut stage, triggers) = with_things(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))])]"#);
+        let player = stage.player;
+        let last = stage.app.world_mut().spawn((Item, Name::new("stim"), triggers.clone(), Consumable::new(1, WhenEmpty::Destroyed))).id();
+        let three =
+            stage.app.world_mut().spawn((Item, Name::new("ration"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Stack { key: 2, count: 3 })).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![last, three] });
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, UseItem(last)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, UseItem(three)));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You use"]), ["You use a stim.", "You use a ration."]);
+        assert!(stage.app.world().get_entity(last).is_err(), "the last stim is gone");
+    }
+
+    /// A thing thrown and spent where it lands, a grenade, is named as
+    /// what it was, not as something nobody could make out.
+    #[test]
+    fn a_thing_spent_where_it_lands_is_named_when_it_is_thrown() {
+        let (mut stage, triggers) = with_things(r#"[(on: "land", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))])]"#);
+        let player = stage.player;
+        let grenade = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("frag grenade"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Throwable { range: 6, strike: None }))
+            .id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![grenade] });
+        stage.tick();
+        let at = stage.at.offset(3, 0);
+        stage.app.world_mut().write_message(Intent::new(player, Throw { item: grenade, at }));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You throw"]), ["You throw a frag grenade."]);
     }
 
     /// The lines a test cares about, oldest first.

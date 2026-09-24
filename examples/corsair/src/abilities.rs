@@ -107,7 +107,7 @@ pub fn ability_keys(
     }
     let Ok((user, known)) = player.single() else { return };
     if let Some(slot) = keys.which(binds.call_on)
-        && let Some((ability, _)) = known.iter().nth(slot)
+        && let Some(ability) = known.iter().nth(slot)
     {
         modals.close_one(list);
         aims.write(AimAt { user, ability });

@@ -564,9 +564,17 @@ pub fn decide_minds(
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
+    let blocks_burst = |p: Point| map.blocks_projectiles(p);
     let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors };
-    let mut ctx =
-        TacticCtx { snapshot: &snapshot, fields: &mut walking, can_step: &can_step, blocks_shot: &blocks_shot, bounds: map.window_tiles(), rng: &mut rng.0 };
+    let mut ctx = TacticCtx {
+        snapshot: &snapshot,
+        fields: &mut walking,
+        can_step: &can_step,
+        blocks_shot: &blocks_shot,
+        blocks_burst: &blocks_burst,
+        bounds: map.window_tiles(),
+        rng: &mut rng.0,
+    };
     let (decision, _which) = mind.0.decide(&mut ctx);
     if !acting.claim_decision(thinker) {
         return;

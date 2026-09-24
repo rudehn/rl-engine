@@ -37,7 +37,10 @@ use crate::places::Entrances;
 // v2: the engine's knowledge keeps its own bucket size and records the
 //     surface regions seen, rather than taking the world's region size.
 // v3: the engine walks the world by kind; Corsair writes only these.
-pub const VERSION: u32 = 3;
+// v4: the engine saves what a thing has left of its charges and its
+//     triggers' firings, and a prop its firings per trigger, in place of
+//     the charges an item that lent an ability counted.
+pub const VERSION: u32 = 4;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "corsair";

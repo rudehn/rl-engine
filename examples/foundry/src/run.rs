@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::damage::SubtractArmor;
+use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor};
 
 use crate::content::{Profile, resistances};
 use crate::decks::{Foundry, map_of};
@@ -53,8 +53,15 @@ pub fn start(
     let (commando, droids, vermin) = (registries.factions.expect("commando"), registries.factions.expect("droids"), registries.factions.expect("vermin"));
     let combat = CombatRules::new(&registries.factions).hostile(commando, droids).hostile(commando, vermin).hostile(droids, vermin);
     commands.insert_resource(combat);
-    commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
+    // Resistance first, then plate: the damage table in `content.rs` is
+    // what makes ion undo a chassis and barely touch flesh, and the
+    // engine's default list is armor alone, which would leave it written
+    // down and never played.
+    commands.insert_resource(DamageStages(vec![Box::new(ApplyResistance), Box::new(SubtractArmor)]));
     commands.insert_resource(Lighting::dark());
+    // Standing in fire scorches, and whatever burns smokes: an incendiary
+    // is a fire and a screen at once.
+    commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
     commands.insert_resource(Roster::load(&registries));
     // Seeded once, here, and never again: `Drops` is a resource a kill's
     // roll keeps advancing, not a stream `Seed::stream` is asked for

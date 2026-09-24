@@ -70,6 +70,11 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("title::draw_title", id(title::draw_title)),
         ("light::toggle_lamp", id(light::toggle_lamp)),
         ("input::player_input", id(input::player_input)),
+        ("cheats::search_keys", id(cheats::search_keys)),
+        ("cheats::menu_keys", id(cheats::menu_keys)),
+        ("cheats::open_cheats", id(cheats::open_cheats)),
+        ("cheats::keep_godmode", id(cheats::keep_godmode)),
+        ("cheats::reveal_the_deck", id(cheats::reveal_the_deck)),
         ("lifts::link_decks", id(lifts::link_decks)),
         ("light::set_ambient", id(light::set_ambient)),
         ("light::light_the_lamps", id(light::light_the_lamps)),
@@ -91,8 +96,10 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("engine props::offer_here", id(engine_props::offer_here)),
         ("engine props::resolve_interactions", id(engine_props::resolve_interactions)),
         ("engine props::resolve_takes", id(engine_props::resolve_takes)),
-        ("engine props::spring_on_entered", id(engine_props::spring_on_entered)),
-        ("engine props::spring_on_destroyed", id(engine_props::spring_on_destroyed)),
+        ("engine props::report_entered", id(engine_props::report_entered)),
+        ("engine props::report_destroyed", id(engine_props::report_destroyed)),
+        ("engine props::arm_props", id(engine_props::arm_props)),
+        ("engine effects::land_triggers", id(rl_engine::rl_bevy::land_triggers)),
         ("engine props::close_emptied_containers", id(engine_props::close_emptied_containers)),
         ("engine props::stock_containers", id(engine_props::stock_containers)),
         ("engine props::build_prop_effects", id(engine_props::build_prop_effects)),
@@ -105,7 +112,8 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("engine minds::perceive_roster", id(minds::perceive_roster)),
         ("engine stealth::filter_unnoticed", id(stealth::filter_unnoticed)),
         ("engine items::perceive_belongings", id(items::perceive_belongings)),
-        ("engine consumable::land_uses", id(consumable::land_uses)),
+        ("engine consumable::spend_charges", id(consumable::spend_charges)),
+        ("engine consumable::recharge_charges", id(consumable::recharge_charges)),
         ("engine combat::perceive_reach", id(combat::perceive_reach)),
     ]
 }
@@ -148,17 +156,18 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Messages<Cure>", c.component_id::<Messages<rl_engine::rl_bevy::Cure>>()),
         ("Messages<FillContainer>", c.component_id::<Messages<rl_engine::rl_bevy::FillContainer>>()),
         ("Messages<Interacted>", c.component_id::<Messages<rl_engine::rl_bevy::Interacted>>()),
-        ("AbilityRng", c.component_id::<rl_engine::rl_bevy::AbilityRng>()),
+        ("EffectRng", c.component_id::<rl_engine::rl_bevy::EffectRng>()),
         ("Viewshed", c.component_id::<rl_engine::rl_bevy::Viewshed>()),
         ("Equipped", c.component_id::<rl_engine::rl_bevy::Equipped>()),
         ("PropKind", c.component_id::<rl_engine::rl_bevy::PropKind>()),
         ("Occupancy", c.component_id::<rl_engine::rl_bevy::turn::Occupancy>()),
         ("Stack", c.component_id::<rl_engine::rl_bevy::Stack>()),
-        ("Charges", c.component_id::<rl_engine::rl_bevy::Charges>()),
+        ("Consumable", c.component_id::<rl_engine::rl_bevy::Consumable>()),
+        ("Triggers", c.component_id::<rl_engine::rl_bevy::Triggers>()),
         ("Messages<ItemEvent>", c.component_id::<Messages<rl_engine::rl_bevy::ItemEvent>>()),
         ("Messages<AppExit>", c.component_id::<Messages<AppExit>>()),
         ("ButtonInput<KeyCode>", c.component_id::<ButtonInput<KeyCode>>()),
-        ("Messages<Triggered>", c.component_id::<Messages<rl_engine::rl_bevy::Triggered>>()),
+        ("Messages<Fired>", c.component_id::<Messages<rl_engine::rl_bevy::Fired>>()),
     ];
     found.into_iter().map(|(name, id)| (name, id.unwrap_or_else(|| panic!("{name} is registered once every schedule is built")))).collect()
 }
@@ -169,27 +178,11 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
 fn allowed(world: &World) -> Vec<Allowed> {
     use crate::title;
     use crate::*;
-    use rl_engine::rl_bevy::{ability, combat, consumable, items, props as engine_props, stealth, throwing};
+    use rl_engine::rl_bevy::{ability, combat, items, props as engine_props, stealth, throwing};
     let ids = ids(world);
     let on = |names: &[&str]| -> Vec<ComponentId> { names.iter().map(|n| ids.iter().find(|(name, _)| name == n).expect("named in ids").1).collect() };
     let pair = |a, b, what: &[&str], why| Allowed { a: Some(a), b: Some(b), on: on(what), why };
     let claims = ["Acting", "Messages<ActionDone>", "Messages<ActionRefused>"];
-    // What landing a used thing's effects touches: the same world an
-    // ability's effects touch, plus what spending the thing itself costs.
-    let used = [
-        "Occupancy",
-        "Messages<Cued>",
-        "Messages<DamageEvent>",
-        "Messages<Afflict>",
-        "Messages<Cure>",
-        "Messages<ItemEvent>",
-        "Position",
-        "Viewshed",
-        "AbilityRng",
-        "Inventory",
-        "Stack",
-        "Charges",
-    ];
     let allowed = vec![
         Allowed { a: None, b: None, on: on(&claims), why: "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass" },
         pair(
@@ -222,12 +215,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
         ),
         pair(
             id(engine_props::resolve_interactions),
-            id(combat::resolve_attacks),
-            &[&claims[..], &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position"]].concat(),
-            "one action a pass: an interaction and a blow are never resolved in the same one",
-        ),
-        pair(
-            id(engine_props::resolve_interactions),
             id(throwing::resolve_throws),
             &[&claims[..], &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position"]].concat(),
             "one action a pass: an interaction and a throw are never resolved in the same one",
@@ -237,7 +224,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
             id(ability::resolve_abilities),
             &[
                 &claims[..],
-                &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "AbilityRng"],
+                &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "EffectRng"],
             ]
             .concat(),
             "one action a pass: an interaction and an ability are never resolved in the same one",
@@ -286,41 +273,13 @@ fn allowed(world: &World) -> Vec<Allowed> {
             on: on(&["Messages<AppExit>", "ButtonInput<KeyCode>"]),
             why: "the title screen is up only before a run, the menu only inside one, and a key forgotten as the window leaves is a key this screen may act on or not with nothing riding on it",
         },
-        // A used thing lands what it does in the pass the use was resolved
-        // in, and by the same invariant that is a pass no other action was
-        // resolved in: `resolve_items` claimed the turn for the use, so
-        // every other resolver here found nobody to resolve for.
-        pair(id(consumable::land_uses), id(combat::resolve_attacks), &used, "one action a pass: a use and a blow are never resolved in the same one"),
-        pair(id(consumable::land_uses), id(throwing::resolve_throws), &used, "one action a pass: a use and a throw are never resolved in the same one"),
-        pair(
-            id(consumable::land_uses),
-            id(ability::resolve_abilities),
-            &used,
-            "one action a pass: a use and an ability are never resolved in the same one, and a thing that is used is never a thing that lends one",
-        ),
-        pair(
-            id(consumable::land_uses),
-            id(engine_props::resolve_interactions),
-            &used,
-            "one action a pass: a use and an interaction with a prop are never resolved in the same one",
-        ),
-        pair(
-            id(consumable::land_uses),
-            id(engine_props::resolve_takes),
-            &used,
-            "one action a pass: a use and taking out of a crate are never resolved in the same one",
-        ),
-        // And what flies lands in a pass that dealt nobody a turn, so never
-        // in the pass a use spent one.
-        pair(id(consumable::land_uses), id(combat::land_shots), &used, "a shot lands in a pass that dealt nobody a turn, and a use is a turn spent"),
-        pair(id(consumable::land_uses), id(throwing::land_throws), &used, "a throw lands in a pass that dealt nobody a turn, and a use is a turn spent"),
         // What lands only ever lands in a pass that dealt nobody a turn,
         // since nothing is dealt while it flies, so never beside an
         // interaction, which is an action somebody spent a turn on.
         pair(
             id(engine_props::resolve_interactions),
             id(ability::land_abilities),
-            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "AbilityRng"],
+            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "EffectRng"],
             "an ability lands in a pass no interaction is resolved in",
         ),
         pair(
@@ -332,7 +291,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_interactions),
             id(combat::land_shots),
-            &["Messages<DamageEvent>"],
+            &["Messages<DamageEvent>", "Position"],
             "a shot lands in a pass no interaction is resolved in",
         ),
         pair(id(engine_props::resolve_takes), id(ability::land_abilities), &["Position"], "an ability lands in a pass nothing is taken in"),
@@ -346,70 +305,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
         // trap in `props.ron` lands `Harm` and nothing that moves anyone or
         // jams anything, so a trap never changes what a probe reads or
         // afflicts what an ion hit would.
-        pair(
-            id(engine_props::spring_on_entered),
-            id(engine_props::spring_on_destroyed),
-            &[
-                "Occupancy",
-                "Messages<Cued>",
-                "Messages<DamageEvent>",
-                "Messages<Afflict>",
-                "Messages<Cure>",
-                "Messages<Triggered>",
-                "Position",
-                "Viewshed",
-                "AbilityRng",
-            ],
-            "one action a pass: a step and a blow are never the same action, so at most one of these fires in a pass",
-        ),
-        pair(
-            id(engine_props::spring_on_entered),
-            id(droids::shout_alarm),
-            &["Messages<Cued>", "Position", "Viewshed"],
-            "Foundry's traps only harm: none moves anyone, so no cell a probe reads changes under it",
-        ),
-        pair(
-            id(engine_props::spring_on_destroyed),
-            id(droids::shout_alarm),
-            &["Messages<Cued>", "Position", "Viewshed"],
-            "Foundry's traps only harm: none moves anyone, so no cell a probe reads changes under it",
-        ),
-        pair(
-            id(engine_props::spring_on_entered),
-            id(droids::jam_sensors),
-            &["Messages<Afflict>"],
-            "Foundry's traps deal energy, never ion, so no trap jams a radar in the pass one is jammed",
-        ),
-        pair(
-            id(engine_props::spring_on_destroyed),
-            id(droids::jam_sensors),
-            &["Messages<Afflict>"],
-            "Foundry's traps deal energy, never ion, so no trap jams a radar in the pass one is jammed",
-        ),
-        pair(
-            id(engine_props::spring_on_entered),
-            id(stealth::wake_on_damage),
-            &["Position"],
-            "a trap harms whoever stepped on it and moves nobody, so where a woken droid saw them does not change under it",
-        ),
-        pair(
-            id(engine_props::spring_on_destroyed),
-            id(stealth::wake_on_damage),
-            &["Position"],
-            "a bursting prop moves nobody, so where a woken droid saw them does not change under it",
-        ),
-        pair(
-            id(engine_props::spring_on_entered),
-            id(loot::scatter_on_arrival),
-            &["Position"],
-            "a deck is first entered by a warp and not by a step, so no plate springs in the pass its loot is scattered in",
-        ),
-        pair(
-            id(engine_props::spring_on_destroyed),
-            id(loot::scatter_on_arrival),
-            &["Position"],
-            "a deck's loot is scattered in the pass it is first entered, which broke nothing",
-        ),
         // The keycard is taken in the same pass the locker it opened was
         // opened in, which is a pass nothing else spent a slug or fired in.
         pair(
@@ -430,7 +325,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &["Inventory"],
             "a crate's bag and a commando's are never the same bag, and only a commando carries a card",
         ),
-        pair(id(props::spend_the_keycard), id(ability::refresh_known), &["Inventory"], "Known is rebuilt every pass, and a keycard lends nothing"),
         Allowed {
             a: Some(id(props::spend_the_keycard)),
             b: None,
@@ -457,8 +351,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
             on: on(&["Messages<Tell>"]),
             why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
         },
-        pair(id(ability::refresh_known), id(ammo::spend_ammo), &["Inventory"], "Known is rebuilt every pass, and a slug grants nothing"),
-        pair(id(ability::refresh_known), id(ammo::sync_ammo), &["Inventory"], "Known is rebuilt every pass, and a slug grants nothing"),
     ];
     allowed
 }

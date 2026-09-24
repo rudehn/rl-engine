@@ -28,8 +28,8 @@
 
 use bevy::prelude::*;
 use rl_bevy::{
-    Afflict, Afflicted, Dead, Emptied, EndRun, EngineState, Equipped, Fired, Health, Hidden, Inventory, MapId, Needs, OnMap, Position, PropKind, Quests,
-    Registries, Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
+    Afflict, Afflicted, Dead, Emptied, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap, Position, PropKind, Quests, Registries,
+    Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
 };
 use rl_core::Point;
 use rl_rules::Equipment;
@@ -92,7 +92,7 @@ pub trait SaveableState: Resource<Mutability = bevy::ecs::component::Mutable> {
 ///
 /// What is written down is which definition it is, by name, and the part
 /// of it that is this prop's own history rather than its kind's: how often
-/// its trigger has gone off, whether it has been stocked, whether it has
+/// its triggers have left to fire, whether it has been stocked, whether it has
 /// been emptied, and whether it is still unspotted. Where it stands, and
 /// what a container holds, are [`EntityState`]'s like everything else.
 impl Saveable for PropKind {
@@ -106,7 +106,7 @@ impl Saveable for PropKind {
             .unwrap_or_default();
         SavedProp {
             name,
-            fired: e.get::<Fired>().map(|f| f.0).unwrap_or_default(),
+            fires: e.get::<rl_bevy::Triggers>().map(|t| t.0.iter().map(|t| t.fires).collect()).unwrap_or_default(),
             stocked: e.contains::<Stocked>(),
             emptied: e.contains::<Emptied>(),
             hidden: e.get::<Hidden>().map(|h| h.spot),
@@ -124,9 +124,11 @@ impl Saveable for PropKind {
             rl_bevy::spawn_prop(&mut commands, &registries, id, Point::ZERO, MapId::SURFACE)
         };
         world.flush();
+        // Its own firings wait for its triggers, which are armed from its
+        // kind's once they are built, and a load can come first.
         let mut e = world.entity_mut(prop);
-        if saved.fired > 0 {
-            e.insert(Fired(saved.fired));
+        if !saved.fires.is_empty() {
+            e.insert(rl_bevy::PendingFires(saved.fires.clone()));
         }
         if saved.stocked {
             e.insert(Stocked);
@@ -154,9 +156,10 @@ impl Saveable for PropKind {
 pub struct SavedProp {
     /// Which definition, by name.
     pub name: String,
-    /// How often its trigger has gone off.
+    /// Each of its triggers' firings left, in list order; `None` for a
+    /// trigger that fires every time. Empty for a prop with no triggers.
     #[serde(default)]
-    pub fired: u32,
+    pub fires: Vec<Option<u32>>,
     /// Whether what it holds has already been asked for.
     #[serde(default)]
     pub stocked: bool,
@@ -715,7 +718,7 @@ mod tests {
 
     fn game(saves: Saves) -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, RemainsPlugin));
+        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin));
         let start = rl_bevy::testing::surface(&mut app);
         rl_bevy::testing::two_sides(&mut app);
         {
@@ -746,11 +749,12 @@ mod tests {
                 (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true,
                  container: (contents: [("coin", 1, 1)]), offers: [(verb: "open", time: 200)]),
                 (name: "pressure plate", glyph: '^', color: (r: 230, g: 140, b: 51),
-                 hidden: (spot: 40), trigger: (on: Entered, fires: 2)),
+                 hidden: (spot: 40), triggers: [(on: "entered", fires: 2, effects: [(kind: "Teleport")])]),
             ]"#;
 
         let backend = std::sync::Arc::new(MemoryBackend::default());
         let (mut app, start) = game(Saves(backend.clone()));
+        rl_bevy::AddEngineEffects::add_engine_effects(&mut app);
         let props = rl_rules::prop::load(PROPS, &rl_rules::Names::new()).expect("the props load");
         app.world_mut().resource_mut::<Registries>().props = props.clone();
         let (crate_id, plate_id) = (props.expect("supply crate"), props.expect("pressure plate"));
@@ -767,13 +771,15 @@ mod tests {
         app.world_mut().flush();
         // `Stocked` here is the test's own saved resource, so the prop's is named in full.
         app.world_mut().entity_mut(chest).insert((Inventory { items: vec![coin] }, rl_bevy::Stocked));
-        // One of the plate's two firings spent, and the player has found it.
-        app.world_mut().entity_mut(plate).insert(Fired(1)).remove::<Hidden>();
         app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
         play(&mut app);
+        // One of the plate's two firings spent, and the player has found it.
+        app.world_mut().get_mut::<rl_bevy::Triggers>(plate).expect("the plate is armed").0[0].fires = Some(1);
+        app.world_mut().entity_mut(plate).remove::<Hidden>();
         save_run(app.world_mut()).unwrap();
 
         let (mut back, _) = game(Saves(backend));
+        rl_bevy::AddEngineEffects::add_engine_effects(&mut back);
         back.world_mut().resource_mut::<Registries>().props = props;
         let save = load_run(back.world()).unwrap().expect("a save");
         assert_eq!(save.count_of::<PropKind>(), 2, "both props were written down, by the engine");
@@ -782,19 +788,18 @@ mod tests {
 
         let w = back.world_mut();
         let mut found: Vec<(String, Point, u32, bool)> = w
-            .query::<(&PropKind, &Position, Option<&Fired>, Option<&Hidden>)>()
+            .query::<(&PropKind, &Position, Option<&rl_bevy::Triggers>, Option<&Hidden>)>()
             .iter(w)
-            .map(|(kind, at, fired, hidden)| {
-                let name = "".to_string();
-                let _ = name;
-                (w.resource::<Registries>().props.name(kind.0).to_string(), at.0, fired.map(|f| f.0).unwrap_or_default(), hidden.is_some())
+            .map(|(kind, at, triggers, hidden)| {
+                let left = triggers.and_then(|t| t.0.first()).and_then(|t| t.fires).unwrap_or_default();
+                (w.resource::<Registries>().props.name(kind.0).to_string(), at.0, left, hidden.is_some())
             })
             .collect();
         found.sort();
         assert_eq!(
             found,
             vec![("pressure plate".to_string(), start.offset(0, 1), 1, false), ("supply crate".to_string(), start.offset(1, 0), 0, false)],
-            "each prop is back where it stood, with its own history: one firing spent, and no longer hidden"
+            "each prop is back where it stood, with its own history: one firing left of two, and no longer hidden"
         );
 
         let w = back.world_mut();

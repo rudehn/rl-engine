@@ -76,6 +76,17 @@ impl Resistances {
         self.set(kind, cur + pct);
     }
 
+    /// Adds every one of `other`'s to these, kind by kind: what a wearer
+    /// resists is its own and its gear's together.
+    pub fn plus(&mut self, other: &Resistances) {
+        if self.pct.len() < other.pct.len() {
+            self.pct.resize(other.pct.len(), 0);
+        }
+        for (mine, theirs) in self.pct.iter_mut().zip(&other.pct) {
+            *mine += theirs;
+        }
+    }
+
     /// The resistance to `kind`.
     pub fn get(&self, kind: DamageKindId) -> i32 {
         self.pct.get(kind.index()).copied().unwrap_or(0)

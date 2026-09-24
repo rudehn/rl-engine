@@ -69,6 +69,7 @@ Why the order that is left, in three moves:
 
 Items 12 to 19 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 20 waits on a game that actually wants the tactics it would add, and item 21 waits on a second game asking for it.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
+Section 9 is low priority and deliberately outside the order.
 
 ## 1. Own the loops the games keep rewriting
 
@@ -110,6 +111,16 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Corsair's tests play a different game from its binary.**
   Corsair's binary runs `honour_portals`, `populate_places`, `drop_loot` and `inflict_on_hit`, and its test harness adds none of the four, so no Corsair test exercises them.
   One plugin that both the binary and the harness add, as Foundry's `FoundryPlugin` is, would close the gap for good.
+- **A mind cannot use a thing from its bag.**
+  A monster could once drink a potion only by using the ability the potion lent, and items stopped lending abilities on 2026-09-23 (`docs/design/effects.md`).
+  Throwing a grenade is `ThrowAtRange` and firing a wand is `ShootAtRange` through `Loadout`, as before, but nothing writes `UseItem` for a mind.
+  A tactic that uses a thing with a `use` trigger when hurt, read from `Snapshot` the way `ThrowAtRange` reads `missiles`, is the missing piece; no game does it today.
+- **A shot has no shape.**
+  `RangedAttack` strikes one target, so a scattergun's cone and a lance's beam cannot be written, and a `hit` trigger lands where the one target stands.
+  A shape on the shot, from the targeting module abilities already use, is a combat change; `hit` triggers need nothing new once it exists.
+- **`on_equip`.**
+  Effects land once and wearing is a standing state, which is why `docs/design/items.md` section 6 defers it; a cursed plate that bites when put on is a real case and would be one more moment, reported by the items resolver on `Equip`.
+  It waits for a game that wants it.
 - **Corsair, Delve and Heist have no map fingerprint tests.**
   A change to their maps goes unnoticed: the Foundry branch changed Corsair's cave maps and Delve's heart floor, and nothing in either game noticed.
   A fingerprint tripwire per game over a few seeds' maps, labelled as such, would make the next such change a deliberate re-baseline.
@@ -285,6 +296,33 @@ What is left below is measured unless it says otherwise.
 - **`WorldMap::tile` walks a `BTreeMap` per call.**
   `active_place()` does a lookup on every `tile`, `is_walkable` and `is_opaque`, and `draw_map` asks two or three times per cell per frame.
   Caching the active place behind the switch would take thousands of lookups a frame down to none.
+
+## 9. Low priority, and not soon
+
+Left over from the item triggers slice on 2026-09-23, found by its review and judged not worth a change yet.
+None of them is in the order above and none is scheduled: take one when its file is open for another reason, or when a game runs into it.
+
+- **Refilling charges keep their clock in a `Local`.**
+  `recharge_charges` in `crates/rl-bevy/src/consumable.rs` remembers the last clock reading it saw, so loading a save with a later clock in the same process after some play credits the whole gap and refills every wand at once.
+  Nothing uses `recharge` yet; the reference reading belongs to the run, reset when one starts or is loaded.
+- **An empty kept thing still lands its `land` trigger when thrown, and throwing a charged wand spends a charge.**
+  Throwing reports `land` whatever the thing holds, and `land` spends.
+  Whether an empty wand thrown should do anything, and whether throwing a wand should cost it a charge, are rulings to make when a game has a wand worth throwing.
+- **An item with shared `effects` and no triggers is accepted silently.**
+  `Triggers::build` checks each trigger and says nothing of an `effects` list no trigger delivers, which is as much a typo as a trigger with nothing to land.
+- **A negative `Burst` radius is not refused.**
+  It covers nothing, silently; the loaders should refuse it by name.
+- **A user that does not block movement is not a target of its own `use`.**
+  `land_triggers` finds targets through `Occupancy`, which indexes only what `Blocks`; the old `land_uses` named the user outright.
+  Every actor that uses things today blocks, so nothing loses a mend.
+- **The chain-of-barrels test does not assert the two bursts land a pass apart.**
+  `a_chain_of_barrels_goes_off_one_after_another_and_each_once` counts two reports; the design guarantees the pass between them and the test would not notice it go.
+- **No test throws a thing that has both a `use` and a `land` trigger.**
+  Throwing only ever reports `land`, so the gap is small; a potion that is drunk or thrown is the case to pin.
+- **No test that merging a stack keeps the receiving stack's `left`.**
+  The spec's testing section asks for one.
+- **The gear panel shows nothing for an empty single-charge kept thing, where the bag says it is empty.**
+  `collect_gear` shows charges only for a thing that holds more than one.
 
 ## Tracked elsewhere
 

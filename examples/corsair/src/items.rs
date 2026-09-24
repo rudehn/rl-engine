@@ -5,10 +5,10 @@
 //! and reads what an item does off the item itself: a spawned cutlass
 //! carries the `MeleeAttack` it is swung with, a jerkin its `Armor`, an
 //! affix what it `Bestows` on a stat, each with the rolled enchant already
-//! in it, and a bottle of rum the `swig` it `Grants`, so what a drink does
-//! is a line of `abilities.ron` and nothing here. Everything that gives an
-//! item meaning is here or in the files: the slot names, the numbers, the
-//! words in the log.
+//! in it, and a bottle of rum the `Triggers` its `use` lands and the
+//! `Consumable` a drink spends, so what a drink does is a line of
+//! `items.ron` and nothing here. Everything that gives an item meaning is
+//! here or in the files: the slot names, the numbers, the words in the log.
 
 use std::collections::BTreeSet;
 
@@ -17,11 +17,10 @@ use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
 use rl_engine::rl_render::Glyph;
-use rl_engine::rl_rules::ability::AbilityDef;
 use rl_engine::rl_rules::damage::DamageKind;
 use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, NameRef, SlotDef, SlotId, StatId, TagDef, TagId, affix, roll_affixes};
-use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
+use rl_engine::rl_rules::{BandedEntry, BandedTable, EffectSpec, Named, Registry, TriggerSpec};
 use serde::Deserialize;
 
 use crate::content::PORT;
@@ -49,18 +48,42 @@ pub struct ItemDef {
     pub kind: Option<NameRef<DamageKind>>,
     #[serde(default)]
     pub ranged: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
+    /// How far it flies when thrown, and the blow it strikes whoever it
+    /// hits; absent, it is not thrown.
     #[serde(default)]
-    pub thrown: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
+    pub throw: Option<ThrowDef>,
+    /// What the thing holds, landed by any of its triggers that names no
+    /// list of its own.
     #[serde(default)]
-    pub grants: Vec<NameRef<AbilityDef>>,
-    /// What using it lands on whoever drank it, where they stand, for a
-    /// thing that is used and spent rather than one that lends an ability.
+    pub effects: Vec<EffectSpec>,
+    /// What it does at its moments: a bottle's `use`.
     #[serde(default)]
-    pub on_use: Vec<rl_engine::rl_rules::EffectSpec>,
+    pub triggers: Vec<TriggerSpec>,
+    /// What a use costs it; absent, nothing.
+    #[serde(default)]
+    pub consumable: Option<ConsumableDef>,
     #[serde(default)]
     pub stack: bool,
     #[serde(default)]
     pub spawn: Option<(i32, i32, u32)>,
+}
+
+/// A throw as `items.ron` writes it.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ThrowDef {
+    /// The furthest cell it reaches.
+    pub range: i32,
+    /// The roll and damage kind it strikes whoever it hits with.
+    pub strike: (DiceRoll, NameRef<DamageKind>),
+}
+
+/// A thing's charges as `items.ron` writes them.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ConsumableDef {
+    /// What a fresh unit holds.
+    pub charges: u16,
+    /// What happens at the last.
+    pub when_empty: WhenEmpty,
 }
 
 impl Named for ItemDef {
@@ -102,9 +125,10 @@ pub struct Armory {
     pub fist: DamageKindId,
     shapes: Vec<Option<EquipShape>>,
     item_tags: Vec<Vec<TagId>>,
-    /// What using each definition lands, built once and shared by every item
-    /// spawned from it: a boxed effect is no cheaper to parse twice.
-    on_use: Vec<Option<std::sync::Arc<Effects>>>,
+    /// What each definition does at its moments, built once and shared by
+    /// every item spawned from it: a boxed effect is no cheaper to parse
+    /// twice.
+    triggers: Vec<Triggers>,
     table: BandedTable<Id<ItemDef>>,
     seed: RunSeed,
     home: Point,
@@ -112,16 +136,20 @@ pub struct Armory {
 }
 
 impl Armory {
-    /// Loads the items and their affixes against `registries` and the
-    /// abilities a bottle lends; panics with every problem listed.
-    pub fn load(seed: RunSeed, home: Point, registries: &Registries, abilities: &Abilities, kinds: &EffectKinds) -> Self {
-        let defs: Registry<ItemDef> = registries.names().with("ability", abilities.defs()).load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+    /// Loads the items and their affixes against `registries`, and builds
+    /// each item's triggers against the effect `kinds` and `moments`;
+    /// panics with every problem listed.
+    pub fn load(seed: RunSeed, home: Point, registries: &Registries, kinds: &EffectKinds, moments: &Moments) -> Self {
+        let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(|d, _| {
             if d.ranged.as_ref().is_some_and(|(range, _, _)| *range < 2) {
                 return Err("a ranged weapon reaches at least 2".into());
             }
-            if d.thrown.as_ref().is_some_and(|(range, _, _)| *range < 2) {
+            if d.throw.is_some_and(|t| t.range < 2) {
                 return Err("a thrown item reaches at least 2".into());
+            }
+            if d.consumable.is_some_and(|c| c.charges == 0) {
+                return Err("a consumable with no charges is spent before it is found".into());
             }
             if d.slot.is_none() && !d.also.is_empty() {
                 return Err("also without a slot".into());
@@ -139,18 +167,15 @@ impl Armory {
         let mut shapes = Vec::new();
         let mut item_tags = Vec::new();
         let mut table = BandedTable::default();
-        let mut on_use = Vec::new();
+        let mut triggers = Vec::new();
         let mut broken = Vec::new();
         for (id, d) in defs.iter() {
-            on_use.push(match d.on_use.is_empty() {
-                true => None,
-                false => match Effects::build(&d.on_use, kinds, &registries.names()) {
-                    Ok(effects) => Some(std::sync::Arc::new(effects)),
-                    Err(each) => {
-                        broken.extend(each.into_iter().map(|e| format!("{}: on_use: {e}", d.name)));
-                        None
-                    }
-                },
+            triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &registries.names()) {
+                Ok(t) => t,
+                Err(each) => {
+                    broken.extend(each.into_iter().map(|e| format!("{}: {e}", d.name)));
+                    Triggers::default()
+                }
             });
             item_tags.push(d.tags.iter().map(|t| t.id()).collect::<Vec<_>>());
             shapes.push(d.slot.map(|s| {
@@ -175,7 +200,7 @@ impl Armory {
             affixes,
             shapes,
             item_tags,
-            on_use,
+            triggers,
             table,
             seed,
             home,
@@ -268,13 +293,13 @@ impl Armory {
         if !tags.is_empty() {
             e.insert(Tagged(tags.to_vec()));
         }
-        // What using it does: the ability it lends, spent from the stack, or
-        // what it does itself, which is what a bottle does.
-        if !d.grants.is_empty() {
-            e.insert(Grants(d.grants.iter().map(|g| g.id()).collect()));
+        // What it does at its moments, a bottle's use, and what that costs
+        // it: the engine lands the one and spends the other.
+        if let Some(triggers) = self.triggers.get(id.index()).filter(|t| !t.0.is_empty()) {
+            e.insert(triggers.clone());
         }
-        if let Some(effects) = self.on_use.get(id.index()).and_then(|e| e.clone()) {
-            e.insert((OnUse(effects), Consumable));
+        if let Some(c) = d.consumable {
+            e.insert(Consumable::new(c.charges, c.when_empty));
         }
         if let Some(shape) = self.shape(id) {
             let rule = self.rule(id);
@@ -297,8 +322,8 @@ impl Armory {
             }
             e.insert((Wearable(shape.clone()), GearScore(self.gear_score(id, &enchant)), Enchant(enchant)));
         }
-        if let Some((range, dice, kind)) = &d.thrown {
-            e.insert(Throwable { range: *range, strike: Some((kind.id(), *dice)) });
+        if let Some(ThrowDef { range, strike: (dice, kind) }) = d.throw {
+            e.insert(Throwable { range, strike: Some((kind.id(), dice)) });
         }
         if d.stack {
             e.insert(Stack { key: id.raw() as u64, count });
@@ -433,7 +458,7 @@ mod tests {
         assert!(score("buckler", 0) > 0, "a buckler is worth something");
         assert!(score("buckler", 2) > score("buckler", 0), "and more enchanted");
         assert!(score("boarding axe", 0) > score("cutlass", 0), "an axe hits harder than a cutlass");
-        let (range, _, _) = armory.defs.get(armory.defs.expect("throwing knife")).thrown.expect("a knife is thrown");
+        let range = armory.defs.get(armory.defs.expect("throwing knife")).throw.expect("a knife is thrown").range;
         assert!(range >= 2);
     }
 
@@ -537,7 +562,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Drinking the bottle is using the swig it grants: the engine resolves
+    /// Drinking the bottle is its use trigger: the engine resolves
     /// it inside the pass, so the healing lands before the next monster due
     /// this frame strikes, and the bottle is one lighter. At one hit point
     /// that is the difference between a close call and a death.

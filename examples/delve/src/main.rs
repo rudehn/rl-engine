@@ -670,7 +670,7 @@ fn call_on(keys: ControlInput, binds: Res<Binds>, mut modals: ResMut<Modals>, pl
     }
     let Ok((user, known)) = player.single() else { return };
     if let Some(slot) = keys.which(binds.knacks)
-        && let Some((ability, _)) = known.iter().nth(slot)
+        && let Some(ability) = known.iter().nth(slot)
     {
         modals.close_one(list);
         aims.write(AimAt { user, ability });

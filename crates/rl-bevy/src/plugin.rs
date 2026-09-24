@@ -240,7 +240,7 @@ impl Plugin for CorePlugin {
             .configure_sets(Turn, (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate).chain().in_set(DecideSet::Perceive))
             .configure_sets(
                 Turn,
-                (ResolveSet::Redirect, ResolveSet::Travel, ResolveSet::Act, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage)
+                (ResolveSet::Redirect, ResolveSet::Travel, ResolveSet::Act, ResolveSet::Triggers, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage)
                     .chain()
                     .in_set(TurnSet::Resolve),
             )
@@ -374,7 +374,7 @@ fn next_run_seed(previous: RunSeed) -> RunSeed {
 /// What a game keeps of its own is its own to forget, in [`EndRun`].
 pub fn clear_run(world: &mut World) {
     let doomed: Vec<Entity> = world
-        .query_filtered::<Entity, Or<(With<Position>, With<places::OnMap>, With<crate::items::Item>, With<Actor>, With<crate::combat::Dead>)>>()
+        .query_filtered::<Entity, Or<(With<Position>, With<places::OnMap>, With<crate::items::Item>, With<Actor>, With<crate::combat::Dead>, With<crate::effects::Remnant>)>>()
         .iter(world)
         .collect();
     for e in doomed {
@@ -508,13 +508,13 @@ pub enum PerceiveSet {
 
 /// The stages of [`TurnSet::Resolve`], in order.
 ///
-/// Moving first, then every other action, then fire and gas over the map,
-/// then what ticks because a turn passed, then the damage all of it
-/// produced. Fields before the ticks, so a status that fire or gas puts on
-/// whoever stands in it lands and bites on the turn they stood there. Named because the systems
-/// that fill them come from different plugins, which cannot chain
-/// themselves together, and no plugin orders itself after another's
-/// function. One turn is one action whichever set resolves it: the first
+/// Moving first, then every other action, then the triggers those set off,
+/// then fire and gas over the map, then what ticks because a turn passed,
+/// then the damage all of it produced. Fields before the ticks, so a
+/// status that fire or gas puts on whoever stands in it lands and bites on
+/// the turn they stood there. Named because the systems that fill them
+/// come from different plugins, which cannot chain themselves together,
+/// and no plugin orders itself after another's function. One turn is one action whichever set resolves it: the first
 /// resolver to [`claim`](crate::turn::Resolution::claim) an actor spends
 /// its turn.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -529,6 +529,11 @@ pub enum ResolveSet {
     Travel,
     /// Every other action: a strike, a drink, an ability, a game's own.
     Act,
+    /// Every carrier's triggers for the moments reported this pass, after
+    /// the actions that reported them and before fire, gas, statuses and
+    /// damage, so a grenade's fire and a stim's mend resolve in the pass
+    /// that set them off.
+    Triggers,
     /// What spreads over the map because a turn passed: fire, then gas, in
     /// [`FieldSet`] order.
     Fields,

@@ -8,10 +8,10 @@
             crates/rl-bevy/src/fields.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/gas.rs
-            crates/rl-bevy/src/effects.rs
+            crates/rl-bevy/src/effects/engine.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 5df82794 -->
+     fingerprint: 8798c58f -->
 
 # Fire and gas
 
@@ -23,12 +23,12 @@ Both are kept per map, so smoke left hanging in a corridor is hanging there stil
 ## Turning it on
 
 `FirePlugin` inserts `Fire` and steps it in `FieldSet::Fire`; `GasPlugin` inserts `Gases` and steps it in `FieldSet::Gas`.
-Both of those sit inside `ResolveSet::Fields`, after the turn's actions and before what ticks because a turn passed, so a status the flames or a cloud put on whoever stood in them lands and bites on the turn they stood there.
+Both of those sit inside `ResolveSet::Fields`, after the turn's actions and the triggers they set off, and before what ticks because a turn passed, so a status the flames or a cloud put on whoever stood in them lands and bites on the turn they stood there.
 Fire runs before gas, so a fire that burns a vapour away and gives off smoke has that smoke spread on the same turn.
 Each is opt-in on its own, because a game may want smoke and no fire, or fire and nothing in the air.
 `FirePlugin` declares `needs::<FireRules>`, `needs::<Registries>` for which gases burn, and `needs::<Seed>` for the rolls; `GasPlugin` declares `needs::<Registries>` for the gases themselves.
 Both check again as play begins that what the content asks for can happen: fire that inflicts a status wants `StatusPlugin`, fire that smokes wants `GasPlugin`, and a gas that inflicts a status wants `StatusPlugin`, each refused by name rather than left to do nothing.
-Adding `FirePlugin` registers the `Ignite` ability effect, which writes a `Kindle` for every cell of a footprint, and `GasPlugin` registers `Emit`, which writes a `Release`, so an ability reaches either field without knowing there is a field.
+Adding `FirePlugin` registers the `Ignite` effect, which writes a `Kindle` for every cell a landing covers, and `GasPlugin` registers `Emit`, which writes a `Release`, so an ability, a trap or a grenade reaches either field without knowing there is a field.
 Both reset on a new run, and both declare `depends_on::<CorePlugin>`.
 
 ## The model
@@ -91,4 +91,4 @@ Both fields are the engine's to save: each exports the cells that hold something
 `rl-grid` is tier 1 and has no Bevy in it: `field.rs` is `TileField` and the double-buffered step, over which the rule that nothing moves twice in a step is tested on a five-cell grid, and `tile.rs` is where a tile declares how it burns and refuses by name a tile it would leave that nobody registered.
 `rl-rules` is tier 1 too, and holds both rules as functions over a borrowed field: `fire::spread` takes its tinder and its rolls as closures, and `gas::diffuse` takes a `GasDef` and a test for what holds gas.
 Neither needs an `App`, which is why the properties they exist for are proved over seed ranges rather than watched: that a cloud of any shape clears, and that a firebreak holds whatever the rolls.
-`rl-bevy` is tier 2 and owns where it burns: `fields.rs` keeps a field per map and per window, `fire.rs` and `gas.rs` are the two plugins with their components, messages and content checks, `effects.rs` has the two ability effects, and `plugin.rs` fixes the order of `ResolveSet::Fields`.
+`rl-bevy` is tier 2 and owns where it burns: `fields.rs` keeps a field per map and per window, `fire.rs` and `gas.rs` are the two plugins with their components, messages and content checks, the effects module has the two effects that start them, and `plugin.rs` fixes the order of `ResolveSet::Fields`.

@@ -10,7 +10,9 @@
 //! own alike, and every loader reads through it. A game's own definition
 //! type writes a named field as a [`NameRef`], loads its file with
 //! [`Names::load`], and holds ids from then on: no validation pass, no
-//! second lookup at spawn, and no string that could still be wrong.
+//! second lookup at spawn, and no string that could still be wrong. A file
+//! of rows that name content without being content, a spawn table, loads
+//! the same way with [`Names::load_list`].
 
 use std::any::TypeId;
 use std::cell::RefCell;
@@ -178,6 +180,43 @@ impl<'a> Names<'a> {
     /// name of the definition it is in, and every entry that does not parse.
     /// RON's `implicit_some` is on, so an optional field is written bare.
     pub fn load<T: DeserializeOwned + Named>(&self, text: &str) -> Result<Registry<T>, ContentError> {
+        Registry::from_defs(self.parse(text, |def: &T, _| def.name().to_string())?)
+    }
+
+    /// Loads a plain list from RON, resolving every [`NameRef`] in it
+    /// through these names, for rows that name content without being
+    /// content: a spawn table, where one monster has a row per band.
+    ///
+    /// A list rather than a [`Registry`] because a row has no name of its
+    /// own and two rows may name the same thing. Errors are reported as
+    /// [`load`](Self::load) reports them, each prefixed with the row's
+    /// position, counted from one.
+    ///
+    /// ```
+    /// use rl_rules::{DamageKind, NameRef, Names, Registry};
+    ///
+    /// #[derive(serde::Deserialize)]
+    /// struct Weakness {
+    ///     kind: NameRef<DamageKind>,
+    ///     depth: (i32, i32),
+    /// }
+    ///
+    /// let kinds = Registry::from_defs(vec![DamageKind::new("fire")]).unwrap();
+    /// let names = Names::new().damage_kinds(&kinds);
+    /// let rows: Vec<Weakness> = names.load_list(r#"[(kind: "fire", depth: (1, 3)), (kind: "fire", depth: (4, 9))]"#).unwrap();
+    /// assert_eq!(rows.len(), 2);
+    /// assert_eq!(rows[1].kind.id(), kinds.expect("fire"));
+    /// assert_eq!(rows[1].depth, (4, 9));
+    /// ```
+    pub fn load_list<T: DeserializeOwned>(&self, text: &str) -> Result<Vec<T>, ContentError> {
+        self.parse(text, |_: &T, i| format!("entry {i}"))
+    }
+
+    /// Every entry of a RON list, parsed with these names in scope, or
+    /// every problem with them, each prefixed with what `label` calls the
+    /// entry it is in. An entry that does not parse has no value to label,
+    /// so it is named by its position.
+    fn parse<T: DeserializeOwned>(&self, text: &str, label: impl Fn(&T, usize) -> String) -> Result<Vec<T>, ContentError> {
         let options = Options::default().with_default_extension(Extensions::IMPLICIT_SOME);
         let entries: Vec<Box<RawValue>> = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
         let _scope = Scope::enter(self);
@@ -188,7 +227,8 @@ impl<'a> Names<'a> {
             let unknown = Scope::take_unknown();
             match parsed {
                 Ok(def) => {
-                    errors.extend(unknown.into_iter().map(|e| format!("{}: {e}", def.name())));
+                    let at = label(&def, i + 1);
+                    errors.extend(unknown.into_iter().map(|e| format!("{at}: {e}")));
                     defs.push(def);
                 }
                 Err(e) => errors.push(format!("entry {}: {e}", i + 1)),
@@ -197,7 +237,7 @@ impl<'a> Names<'a> {
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Registry::from_defs(defs)
+        Ok(defs)
     }
 
     fn find(&self, kind: TypeId, what: &str, name: &str) -> Result<u32, String> {
@@ -222,9 +262,10 @@ fn short_name<T>() -> &'static str {
 /// is loaded.
 ///
 /// Written as a plain string in RON: `kind: "bite"`. Read only through
-/// [`Names::load`], which knows what registries the names are in, so a
-/// `NameRef` that exists names something that exists. Anywhere else it refuses
-/// to deserialize rather than hold a name nobody checked.
+/// [`Names::load`] or [`Names::load_list`], which know what registries the
+/// names are in, so a `NameRef` that exists names something that exists.
+/// Anywhere else it refuses to deserialize rather than hold a name nobody
+/// checked.
 pub struct NameRef<T>(Id<T>);
 
 impl<T> NameRef<T> {
@@ -438,6 +479,33 @@ mod tests {
         assert!(errs.contains(&"wolf: unknown item \"pelt\"".to_string()), "{errs:#?}");
         assert!(errs.contains(&"crab: unknown faction \"crabs\"".to_string()), "{errs:#?}");
         assert!(errs.iter().any(|e| e.starts_with("entry 4: ")), "an entry that does not parse is named by position: {errs:#?}");
+    }
+
+    /// A row of a table that names things, such as where one turns up.
+    /// No name of its own, so two rows may name the same item.
+    #[derive(Deserialize)]
+    struct Found {
+        item: NameRef<Loot>,
+        depth: (i32, i32),
+    }
+
+    #[test]
+    fn a_list_of_rows_may_name_the_same_thing_twice_and_every_bad_row_is_reported_by_position() {
+        let v = Vocabulary::new();
+        let rows: Vec<Found> =
+            v.names().load_list(r#"[(item: "hide", depth: (1, 3)), (item: "hide", depth: (4, 9)), (item: "tooth", depth: (2, 2))]"#).expect("the file loads");
+        assert_eq!(
+            rows.iter().map(|r| (r.item.id(), r.depth)).collect::<Vec<_>>(),
+            vec![(v.loot.expect("hide"), (1, 3)), (v.loot.expect("hide"), (4, 9)), (v.loot.expect("tooth"), (2, 2)),]
+        );
+        let Err(ContentError::Invalid(errs)) =
+            v.names().load_list::<Found>(r#"[(item: "pelt", depth: (1, 1)), (item: "hide", depth: (1, 1)), (item: "hide")]"#)
+        else {
+            panic!("a file with an unknown name loaded")
+        };
+        assert_eq!(errs.len(), 2, "{errs:#?}");
+        assert!(errs.contains(&"entry 1: unknown item \"pelt\"".to_string()), "{errs:#?}");
+        assert!(errs.iter().any(|e| e.starts_with("entry 3: ")), "{errs:#?}");
     }
 
     #[test]

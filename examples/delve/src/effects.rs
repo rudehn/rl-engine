@@ -44,7 +44,7 @@ impl Effect for Drain {
         // landing this same effect has none to fly.
         if let Some(&target) = landing.targets.first()
             && let Some(at) = world.position(target)
-            && let Some(ability) = landing.ability
+            && let Some(ability) = landing.ability()
         {
             let look = LookOf::Ability(ability);
             world.cues.write(Cued { actor: user, cue: Cue::Flight { from: Anchor::on(target, at), to: Anchor::on(user, landing.origin), look } });

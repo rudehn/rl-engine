@@ -40,6 +40,12 @@ pub fn dual_blasters(app: &mut App) -> (Entity, Entity, Entity) {
 /// finds nothing in it, and dries the pistol on the spot, so the caller
 /// never sees a first shot for free. Returns the player, then the pistol.
 pub fn slug_pistol_with(app: &mut App, slugs: u32) -> (Entity, Entity) {
+    slug_gun_with(app, "slug pistol", slugs)
+}
+
+/// As [`slug_pistol_with`], for whichever gun `name` is that runs on
+/// slugs. Returns the player, then the gun.
+pub fn slug_gun_with(app: &mut App, name: &str, slugs: u32) -> (Entity, Entity) {
     app.update();
     app.update();
     let registries = app.world().resource::<Registries>().clone();
@@ -50,12 +56,12 @@ pub fn slug_pistol_with(app: &mut App, slugs: u32) -> (Entity, Entity) {
     }
     let mut queue = CommandQueue::default();
     let mut commands = Commands::new(&mut queue, app.world_mut());
-    let pistol = crate::gear::spawn_item(&mut commands, &armory, armory.defs.expect("slug pistol"), &registries);
+    let gun = crate::gear::spawn_item(&mut commands, &armory, armory.defs.expect(name), &registries);
     queue.apply(app.world_mut());
-    app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(pistol);
-    app.world_mut().write_message(Intent::new(player, Equip(pistol)));
+    app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(gun);
+    app.world_mut().write_message(Intent::new(player, Equip(gun)));
     app.update();
-    (player, pistol)
+    (player, gun)
 }
 
 /// Spawns two slug pistols, with `slugs` loose slugs already in the bag,

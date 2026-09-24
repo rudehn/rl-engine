@@ -46,20 +46,21 @@ pub mod throwing;
 pub mod turn;
 pub mod world;
 
-pub use ability::{
-    Abilities, AbilitiesPlugin, AbilityEvent, AbilityRng, AddEffect, Aimed, Bystanders, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants,
-    Known, Landed, Landing, Offered, Pools, Use,
-};
+pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use combat::{
-    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
-    RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,
+    MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use consumable::{Consumable, ConsumablesPlugin, OnUse};
+pub use consumable::{AddSpending, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, remove_spent};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
-pub use effects::{AddEngineEffects, Cleanse, Effects, Emit, Harm, Ignite, Inflict, Mend, Pull, Shove, Teleport};
+pub use effects::{
+    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FromArgs, Harm, Ignite,
+    Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers, area_cells, land_triggers,
+    report_remnants,
+};
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::{MapFields, SavedField};
 pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
@@ -84,8 +85,8 @@ pub use plugin::{
     ResolveSet, RunResets, Turn, TurnSet, clear_run, depends_on,
 };
 pub use props::{
-    AddVerb, Container, Emptied, FillContainer, Fired, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropEffects, PropKind, PropRng, PropSet,
-    PropsPlugin, Refused, Spotted, Stocked, Take, TriggerOn, Triggered, Verb, VerbId, Verbs, spawn_prop,
+    AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet,
+    PropsPlugin, Refused, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
 };
 pub use registries::Registries;
 pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
@@ -106,19 +107,19 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 /// those stay at the crate root, and an effect in the prelude was a name
 /// that collided with a game's own `Shove` action.
 pub mod prelude {
-    pub use crate::ability::{
-        Abilities, AbilitiesPlugin, AbilityEvent, AddEffect, Charges, Cooldowns, Effect, EffectKinds, EffectWorld, FromArgs, Grants, Known, Landing, Pools, Use,
-    };
+    pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Use};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::combat::{
-        Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Loadout, MeleeAttack,
-        RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+        Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,
+        MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    pub use crate::consumable::{Consumable, ConsumablesPlugin, OnUse};
+    pub use crate::consumable::{AddSpending, Consumable, ConsumablesPlugin, WhenEmpty};
     pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent, Open};
-    pub use crate::effects::{AddEngineEffects, Effects};
+    pub use crate::effects::{
+        AddEffect, AddEngineEffects, AddMoment, Effect, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, Moments, Triggers,
+    };
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
     pub use crate::fov::FovPlugin;
@@ -139,8 +140,8 @@ pub mod prelude {
         Turn, TurnSet, depends_on,
     };
     pub use crate::props::{
-        AddVerb, Container, Emptied, FillContainer, Fired, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused,
-        Spotted, Take, TriggerOn, Triggered, VerbId, Verbs, spawn_prop,
+        AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Spotted,
+        Take, VerbId, Verbs, spawn_prop,
     };
     pub use crate::registries::Registries;
     pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin};

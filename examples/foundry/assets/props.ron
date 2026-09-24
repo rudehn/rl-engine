@@ -14,7 +14,12 @@
 //              and Foundry adds "charge"; time is hundredths of a step
 //   container: optional; (contents: [(item, min, max)], locked: (needs:),
 //              opened: (glyph:, color:)) - the look it takes once emptied
-//   trigger:   optional; (on: Entered | Destroyed, fires:, effects: [...])
+//   triggers:  optional; [(on:, area:, fires:, effects: [...], look:)], what it does at the moments
+//              it answers: on is "entered" | "destroyed" or a moment the game registers;
+//              area is Here (default) | Burst(radius:), where the effects land around it;
+//              fires is how many times it may go off, every time when left out; effects
+//              are written as in abilities.ron; look is optional, (glyph:, color: (r:, g:, b:))
+//              shown over every cell it lands on, and a trap meant to be unseen has none
 //   hidden:    optional; (spot:) percent a turn to spot it while in sight
 #![enable(implicit_some)]
 [
@@ -43,8 +48,9 @@
 
     // A cable nobody made safe. Unseen until it is spotted, and it does
     // not care whether it was: the trigger is the ground, not the eye.
+    // Electricity, which plate conducts rather than stops.
     (name: "live cable", glyph: '/', color: (r: 140, g: 200, b: 255), hidden: (spot: 35),
-     trigger: (on: Entered, fires: 3, effects: [(kind: "Harm", args: (kind: "energy", roll: "1d4"))])),
+     triggers: [(on: "entered", fires: 3, effects: [(kind: "Harm", args: (kind: "electricity", roll: "1d4"))])]),
 
     // What a droid leaves. Named by the remains template, so this name is
     // only what a wreck nobody died into would be called; stripping one is

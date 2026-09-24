@@ -4,6 +4,9 @@ Status: phases A to F built 2026-09-12.
 Written against `main` at `8662f1c`, with the UI slice (modals, views, panels, the look cursor) in flight.
 It closes the "abilities and targeting" item deferred from M5.
 
+Superseded in part on 2026-09-23: items no longer lend abilities, so `Grants` on items, `Charges` and `Cost::Charge` are gone, and the effect machinery moved out of `ability.rs` into `EffectsPlugin`.
+Where this document puts an ability on a wand or a grenade, read a weapon or a throwable item carrying triggers and a `Consumable`; `docs/design/effects.md` and `docs/design/items.md` are why.
+
 Four things changed on the way from this document to the code, each noted where it happens below: the effect that puts a status on is `Inflict`, not `Afflict`, because `Afflict` is already the request and an effect is not a request; names in an ability file are resolved through [`Names`], the engine's one lookup over whichever registries a game has, which was not in the plan and removed the per-game mirror types the content layer used to need; a cooldown counts from the moment of use rather than the end of it; and the sight requirement is not applied to an actor with no viewshed, since most non-players carry none and the question cannot be asked of them.
 
 Phase D changed four more.

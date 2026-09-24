@@ -146,11 +146,6 @@ pub enum Cost {
         /// How much.
         amount: i32,
     },
-    /// Charges off whatever granted the ability.
-    Charge {
-        /// How many.
-        amount: u16,
-    },
     /// Health, for the abilities that ought to hurt to use.
     Health {
         /// How much.
@@ -231,6 +226,55 @@ impl<'de> Deserialize<'de> for EffectSpec {
         let args = parse_args(a.args.get_ron()).map_err(serde::de::Error::custom)?;
         Ok(Self { kind: a.kind, chance: a.chance, args })
     }
+}
+
+/// Where a trigger's effects land, around the cell its moment happened on.
+///
+/// `Here` is the one cell, which is a stim in the arm or a plate underfoot.
+/// `Burst` is the disc an ability's `Ball` covers once it lands, so a
+/// grenade and a fireball of one radius reach the same cells. Shapes
+/// that need a direction, a cone or a line, have none to take here, since
+/// a moment happens at a cell rather than along an aim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+pub enum Area {
+    /// The cell it happened on.
+    #[default]
+    Here,
+    /// Every cell within `radius` of it.
+    Burst {
+        /// How far it reaches, in cells.
+        radius: i32,
+    },
+}
+
+/// A trigger as a content file writes it: `(on: "land", area: Burst(radius: 1))`,
+/// with `look: (glyph: '*', color: (r: 255, g: 128, b: 0))` to be seen.
+///
+/// Read by any game's file and by the engine's prop loader alike, so a
+/// grenade and a trap are written the same way. `on` stays a word until
+/// the Bevy layer resolves it against the moments registered for the run,
+/// the way an offer's verb does. `effects` is optional because a thing may
+/// say what it contains once and let each trigger deliver it: a trigger
+/// with no list of its own lands its carrier's shared list.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TriggerSpec {
+    /// The moment that sets it off: `use`, `land`, `fire`, `hit`,
+    /// `entered`, `destroyed`, or one a game registered.
+    pub on: String,
+    /// Where its effects land, around where the moment happened.
+    #[serde(default)]
+    pub area: Area,
+    /// How many times it may go off; absent, every time.
+    #[serde(default)]
+    pub fires: Option<u32>,
+    /// What it lands; absent, its carrier's shared list.
+    #[serde(default)]
+    pub effects: Option<Vec<EffectSpec>>,
+    /// What shows over the cells it lands on; absent, nothing does, which
+    /// is right for a trap nobody should see go off and wrong for a
+    /// grenade, where the burst is the point.
+    #[serde(default)]
+    pub look: Option<Look>,
 }
 
 /// An ability, as the engine reads it.
@@ -332,8 +376,6 @@ pub struct Purse<'a> {
     /// Current value of a pool. Not the stat's maximum: the stat says how
     /// large the pool may be, this says what is in it.
     pub pool: &'a dyn Fn(StatId) -> i32,
-    /// Charges left on whatever granted the ability, if it is limited.
-    pub charges: Option<u16>,
     /// Health remaining. A cost may not reduce it below one.
     pub health: i32,
     /// How many items carrying a tag the user has.
@@ -366,9 +408,6 @@ pub fn blocked(def: &AbilityDef, gates: &Gates<'_>, purse: &Purse<'_>, now: u32,
     for c in &def.costs {
         let afford = match *c {
             Cost::Pool { stat, amount } => (purse.pool)(stat) >= amount,
-            // No charges at all means the ability was not granted by
-            // something that counts them, so there is nothing to spend.
-            Cost::Charge { amount } => purse.charges.is_some_and(|have| have >= amount),
             Cost::Health { amount } => purse.health > amount,
             Cost::Item { tag, count } => (purse.items)(tag) >= count,
         };
@@ -460,7 +499,6 @@ struct Authored {
 #[derive(Debug, Deserialize)]
 enum CostRon {
     Pool(String, i32),
-    Charge(u16),
     Health(i32),
     Item(String, u16),
 }
@@ -564,7 +602,6 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<AbilityDef>, Conte
 fn resolve_cost(c: &CostRon, names: &Names<'_>) -> Result<Cost, String> {
     Ok(match c {
         CostRon::Pool(name, amount) => Cost::Pool { stat: names.stat(name)?, amount: *amount },
-        CostRon::Charge(amount) => Cost::Charge { amount: *amount },
         CostRon::Health(amount) => Cost::Health { amount: *amount },
         CostRon::Item(name, count) => Cost::Item { tag: names.tag(name)?, count: *count },
     })
@@ -584,6 +621,21 @@ fn resolve_requirement(r: &RequirementRon, names: &Names<'_>) -> Result<Requirem
 mod tests {
     use super::*;
     use crate::affix::TagDef;
+
+    /// A trigger reads as its moment and nothing else when it takes the
+    /// thing's shared list at its own feet, and as much more as it needs.
+    #[test]
+    fn a_trigger_reads_bare_or_with_an_area_a_fire_count_and_a_list_of_its_own() {
+        let bare: TriggerSpec = ron::from_str(r#"(on: "use")"#).unwrap();
+        assert_eq!((bare.on.as_str(), bare.area, bare.fires), ("use", Area::Here, None));
+        assert!(bare.effects.is_none(), "no list of its own: it takes the shared one");
+        let full: TriggerSpec = Options::default()
+            .with_default_extension(Extensions::IMPLICIT_SOME)
+            .from_str(r#"(on: "land", area: Burst(radius: 2), fires: 3, effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4"))])"#)
+            .unwrap();
+        assert_eq!((full.area, full.fires), (Area::Burst { radius: 2 }, Some(3)));
+        assert_eq!(full.effects.as_ref().map(|e| e[0].kind.as_str()), Some("Harm"));
+    }
     use crate::damage::DamageKind;
     use crate::equip::SlotDef;
     use crate::stats::StatDef;
@@ -705,7 +757,7 @@ mod tests {
     }
 
     fn purse<'a>(pool: &'a dyn Fn(StatId) -> i32, items: &'a dyn Fn(TagId) -> u16) -> Purse<'a> {
-        Purse { pool, charges: Some(2), health: 10, items }
+        Purse { pool, health: 10, items }
     }
 
     /// The gate answers with every reason at once, so a panel can print
@@ -747,27 +799,10 @@ mod tests {
         let gates = Gates { statuses: &empty, worn: &[], stat: &|_| 0 };
         let pool: &dyn Fn(StatId) -> i32 = &|_| 0;
         let items: &dyn Fn(TagId) -> u16 = &|_| 0;
-        let at = |health| blocked(def, &gates, &Purse { pool, charges: None, health, items }, 0, 0);
+        let at = |health| blocked(def, &gates, &Purse { pool, health, items }, 0, 0);
         assert!(at(11).is_empty(), "eleven pays ten and lives");
         assert_eq!(at(10).len(), 1, "ten would leave nothing");
         assert_eq!(at(3).len(), 1);
-    }
-
-    /// An ability granted by nothing that counts charges cannot pay a
-    /// charge, which is different from having run out.
-    #[test]
-    fn a_charge_cost_needs_something_that_counts_charges() {
-        let w = World::new();
-        let r = load(r#"[(name: "flare", mode: Bolt(range: 5), costs: [Charge(1)])]"#, &w.names()).unwrap();
-        let def = r.get(r.expect("flare"));
-        let empty = Statuses::default();
-        let gates = Gates { statuses: &empty, worn: &[], stat: &|_| 0 };
-        let pool: &dyn Fn(StatId) -> i32 = &|_| 0;
-        let items: &dyn Fn(TagId) -> u16 = &|_| 0;
-        let with = |charges| blocked(def, &gates, &Purse { pool, charges, health: 10, items }, 0, 0);
-        assert!(with(Some(1)).is_empty());
-        assert_eq!(with(Some(0)).len(), 1, "out of charges");
-        assert_eq!(with(None).len(), 1, "nothing to spend charges from");
     }
 
     /// What a mind needs from an ability it cannot understand.

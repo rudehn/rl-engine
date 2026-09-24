@@ -44,35 +44,56 @@ pub struct Title {
 }
 
 impl Default for Title {
+    /// Up, with the first row that can be taken picked out.
     fn default() -> Self {
-        Self { up: true, picked: 0 }
+        Self { up: true, picked: Choice::all().iter().position(|c| c.available()).unwrap_or(0) }
     }
 }
 
 /// What the title screen offers.
-///
-/// No "continue": Foundry keeps no save yet, and a row that cannot work is
-/// worse than a row that is not there. When it does, it goes here and
-/// `pick` gains one arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Choice {
-    /// Drop in: a fresh seed, deck one.
-    NewRun,
+    /// Carry on a saved run. Drawn and never taken: Foundry keeps no save
+    /// yet, and the row says where one will be picked up once it does.
+    Continue,
+    /// A fresh seed, deck one.
+    NewGame,
     /// Leave.
-    Quit,
+    Exit,
 }
 
 impl Choice {
     /// Every row, in the order they are drawn.
-    pub fn all() -> [Choice; 2] {
-        [Choice::NewRun, Choice::Quit]
+    pub fn all() -> [Choice; 3] {
+        [Choice::Continue, Choice::NewGame, Choice::Exit]
     }
 
-    /// What the row says, and the line under it.
-    fn label(self) -> (&'static str, &'static str) {
+    /// What the row says.
+    fn label(self) -> &'static str {
         match self {
-            Choice::NewRun => ("Drop in", "a fresh seed, deck one, four charges to set"),
-            Choice::Quit => ("Walk away", "the foundry keeps running without you"),
+            Choice::Continue => "Continue",
+            Choice::NewGame => "New Game",
+            Choice::Exit => "Exit",
+        }
+    }
+
+    /// Whether the row can be picked at all: every row but `Continue`,
+    /// until there is a save to continue.
+    fn available(self) -> bool {
+        self != Choice::Continue
+    }
+}
+
+/// The next row from `from` toward `dir`, one way or the other, wrapping
+/// round and passing over any row that cannot be picked.
+fn step(from: usize, dir: isize) -> usize {
+    let rows = Choice::all();
+    let n = rows.len() as isize;
+    let mut at = from as isize;
+    loop {
+        at = (at + dir).rem_euclid(n);
+        if rows[at as usize].available() {
+            return at as usize;
         }
     }
 }
@@ -116,10 +137,10 @@ pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>
     let leave = keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::KeyQ);
     let rows = Choice::all().len();
     if up {
-        title.picked = (title.picked + rows - 1) % rows;
+        title.picked = step(title.picked, -1);
     }
     if down {
-        title.picked = (title.picked + 1) % rows;
+        title.picked = step(title.picked, 1);
     }
     if leave {
         exit.write(AppExit::Success);
@@ -129,11 +150,12 @@ pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>
         return;
     }
     match Choice::all()[title.picked.min(rows - 1)] {
-        Choice::NewRun => {
+        Choice::Continue => {}
+        Choice::NewGame => {
             title.up = false;
             commands.queue(begin);
         }
-        Choice::Quit => {
+        Choice::Exit => {
             exit.write(AppExit::Success);
         }
     }
@@ -510,7 +532,8 @@ fn letter(which: &str) -> [&'static str; 6] {
     }
 }
 
-/// The tagline, the rows, and the keys under them.
+/// The tagline and the rows: a word each, and nothing under them, since
+/// three words need no gloss and the keys are the ones every menu has.
 fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
     let w = terminal.width();
     let centre = |text: &str| (w - text.chars().count() as i32) / 2;
@@ -521,22 +544,23 @@ fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
     let rule: String = "─".repeat(34);
     terminal.print(centre(&rule), rows::MENU - 2, &rule, palette.get(Tones::MUTED));
 
-    let mut y = rows::MENU;
+    // Every row is centred on the same column, the mark's two cells
+    // included, so the words line up and do not jump as the cursor moves.
+    let x = centre(&format!("> {}", Choice::all().map(Choice::label).iter().max_by_key(|l| l.len()).unwrap()));
     for (i, choice) in Choice::all().into_iter().enumerate() {
-        let (label, under) = choice.label();
         let picked = i == title.picked;
-        let (tone, mark) = if picked { (Tones::SELECT, '>') } else { (Tones::TEXT, ' ') };
-        let row = format!("{mark} {label}");
-        let x = centre(&row);
-        terminal.print(x, y, &row, palette.get(tone));
-        if picked {
-            terminal.print(centre(under), y + 1, under, palette.get(Tones::MUTED));
-        }
-        y += 3;
+        // The picked row in the title's own warm tone, so it stands out from
+        // the plain row and the dim one alike; `SELECT` is a background,
+        // and as a foreground it read darker than the row that cannot be
+        // picked.
+        let tone = match (picked, choice.available()) {
+            (true, _) => Tones::TITLE,
+            (false, true) => Tones::TEXT,
+            (false, false) => Tones::MUTED,
+        };
+        let mark = if picked { '>' } else { ' ' };
+        terminal.print(x, rows::MENU + 2 * i as i32, &format!("{mark} {}", choice.label()), palette.get(tone));
     }
-
-    let keys = "\u{2191}\u{2193} choose \u{2022} enter take it up \u{2022} q walk away";
-    terminal.print(centre(keys), terminal.height() - 1, keys, palette.get(Tones::MUTED));
 }
 
 #[cfg(test)]
@@ -579,6 +603,66 @@ mod tests {
         assert!(app.world().contains_resource::<WorldMap>(), "the first deck is built");
         let mut players = app.world_mut().query_filtered::<Entity, With<Player>>();
         assert_eq!(players.iter(app.world()).count(), 1, "one commando, dropped in once");
+    }
+
+    /// Every row of the terminal, as text.
+    fn screen(terminal: &Terminal) -> Vec<String> {
+        (0..terminal.height()).map(|y| (0..terminal.width()).map(|x| terminal.get(x, y).map_or(' ', |c| c.glyph)).collect()).collect()
+    }
+
+    /// The menu is three words and nothing else: no line under a row saying
+    /// what it does, and no row of keys along the bottom.
+    #[test]
+    fn the_menu_reads_continue_new_game_and_exit_and_nothing_more() {
+        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
+        let palette = Palette::default();
+        paint_menu(&mut terminal, &Title::default(), &palette);
+        let rows = screen(&terminal);
+        let menu: Vec<&str> = rows[rows::MENU as usize..].iter().map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
+        assert_eq!(menu, vec!["Continue", "> New Game", "Exit"], "{rows:#?}");
+    }
+
+    /// Continue is there to say a run can be continued one day, and until
+    /// there is a save it is drawn dim and the cursor steps over it.
+    #[test]
+    fn continue_is_drawn_dim_and_the_cursor_never_lands_on_it() {
+        let mut title = Title::default();
+        assert_eq!(Choice::all()[title.picked], Choice::NewGame, "the cursor starts on New Game");
+        let mut seen = Vec::new();
+        for _ in 0..6 {
+            title.picked = step(title.picked, 1);
+            seen.push(Choice::all()[title.picked]);
+        }
+        for _ in 0..6 {
+            title.picked = step(title.picked, -1);
+            seen.push(Choice::all()[title.picked]);
+        }
+        assert!(!seen.contains(&Choice::Continue), "{seen:?}");
+
+        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
+        let palette = Palette::default();
+        paint_menu(&mut terminal, &Title::default(), &palette);
+        let rows = screen(&terminal);
+        let y = rows.iter().position(|r| r.trim() == "Continue").expect("Continue is drawn") as i32;
+        let x = rows[y as usize].find('C').unwrap() as i32;
+        assert_eq!(terminal.get(x, y).unwrap().fg, palette.get(Tones::MUTED), "and drawn dim");
+        let y = rows.iter().position(|r| r.trim() == "> New Game").expect("New Game is drawn picked") as i32;
+        let x = rows[y as usize].find('N').unwrap() as i32;
+        assert_eq!(terminal.get(x, y).unwrap().fg, palette.get(Tones::TITLE), "while the picked row stands out");
+    }
+
+    /// Exit leaves, the same as it always did.
+    #[test]
+    fn exit_leaves() {
+        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(3));
+        app.insert_resource(Title::default());
+        app.update();
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::ArrowDown);
+        app.update();
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Enter);
+        app.update();
+        assert!(app.should_exit().is_some(), "it asked to exit");
     }
 
     /// Prints the title screen as the player sees it, for eyeballing the

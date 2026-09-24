@@ -24,8 +24,9 @@ One page per subsystem, with the alternatives that were rejected and why.
 These are the reasoning; the overview is the list.
 
 - [abilities.md](design/abilities.md), what an actor can spend a turn on, as data.
+- [effects.md](design/effects.md), what lands and what sets it off: the effects subsystem, its moments and triggers, and what a use costs a thing.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
-- [items.md](design/items.md), what a thing does: the three carriers of an effect list, and which one a use belongs to.
+- [items.md](design/items.md), what a thing does: the three carriers of an effect list, and why an item never lends an ability.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
 - [minds.md](design/minds.md), how a non-player decides.
 - [noise.md](design/noise.md), what a sound is and who hears it.

@@ -1,8 +1,9 @@
-//! What walks the decks: line droids, probe droids, heavy droids and
-//! coolant rats, loaded from `monsters.ron`. A kind that names a shot is
-//! built with its own `RangedAttack`, rather than handed a weapon to
-//! hold, and spawned with a brain that fires it at anything in reach
-//! before ever closing to a punch.
+//! What walks the decks: line, probe, trooper and heavy droids, and the
+//! critters, coolant rats, scrap crabs and lamp moths, loaded from
+//! `monsters.ron`, with where each turns up from `monster_spawns.ron`. A
+//! kind that names a shot is built with its own `RangedAttack`, rather than
+//! handed a weapon to hold, and spawned with a brain that fires it at
+//! anything in reach before ever closing to a punch.
 //!
 //! `alarm` holds a probe's radar reporting to the rest of the deck.
 //! `sensors` holds what an ion hit does to that same radar, and owns
@@ -35,6 +36,8 @@ use crate::content::{MeleeDef, Profile, RangedDef, resistances};
 
 /// The roster file, compiled in so the binary runs from anywhere.
 const MONSTERS_RON: &str = include_str!("../assets/monsters.ron");
+/// Where each kind turns up, compiled in beside it.
+const MONSTER_SPAWNS_RON: &str = include_str!("../assets/monster_spawns.ron");
 
 /// One kind of monster, as authored in `monsters.ron`.
 #[derive(Debug, Clone, Deserialize)]
@@ -90,9 +93,6 @@ pub struct MonsterDef {
     /// firefight draws it.
     #[serde(default)]
     pub hearing: Option<HearingStats>,
-    /// One or more `(min deck, max deck, weight, min group, max group)`
-    /// rows; several let a group grow with depth.
-    pub spawn: Vec<(i32, i32, u32, u32, u32)>,
     /// `(item name, percent chance)`, each rolled on its own death.
     #[serde(default)]
     pub drops: Vec<(String, u32)>,
@@ -102,6 +102,24 @@ impl Named for MonsterDef {
     fn name(&self) -> &str {
         &self.name
     }
+}
+
+/// One row of `monster_spawns.ron`: a kind, the decks it turns up on, how
+/// often, and how many at once.
+///
+/// Its own file rather than a field of [`MonsterDef`], so what a kind is and
+/// where it turns up are read and tuned apart, and a kind can have a row per
+/// band without its definition growing a list of tuples.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct MonsterSpawn {
+    /// Which kind.
+    pub monster: NameRef<MonsterDef>,
+    /// The first and last deck it applies on, both included.
+    pub decks: (i32, i32),
+    /// How often, against every other row that applies on a deck.
+    pub weight: u32,
+    /// The fewest and the most that come together.
+    pub group: (u32, u32),
 }
 
 /// The distance a kind keeps from what it has in sight, as `monsters.ron`
@@ -144,16 +162,16 @@ pub struct Roster {
 }
 
 impl Roster {
-    /// Loads `monsters.ron` against `registries`. Panics with every
-    /// problem the file has, since a broken roster is a game that cannot
-    /// start.
+    /// Loads `monsters.ron` and `monster_spawns.ron` against `registries`.
+    /// Panics with every problem either file has, since a broken roster is a
+    /// game that cannot start.
     pub fn load(registries: &Registries) -> Self {
-        Self::from_ron(MONSTERS_RON, registries)
+        Self::from_ron(MONSTERS_RON, MONSTER_SPAWNS_RON, registries)
     }
 
-    /// As [`load`](Self::load), but from `ron` rather than the compiled-in
-    /// roster, so a test can load a tiny roster of its own, such as one
-    /// monster with a guaranteed drop.
+    /// As [`load`](Self::load), but from `ron` and `spawns` rather than the
+    /// compiled-in files, so a test can load a tiny roster of its own, such
+    /// as one monster with a guaranteed drop.
     ///
     /// Builds the spawn table, and gives every kind a brain from what it
     /// names. [`MeleeAdjacent`] comes first for a kind with a blow, then
@@ -163,14 +181,15 @@ impl Roster {
     /// names `flee_at` above zero. A kind that names `shadow` keeps its
     /// distance with [`Shadow`] and hangs there with [`Hover`] in place of
     /// [`Hunt`], which would close the gap it keeps.
-    pub(crate) fn from_ron(ron: &str, registries: &Registries) -> Self {
+    pub(crate) fn from_ron(ron: &str, spawns: &str, registries: &Registries) -> Self {
         let defs: Registry<MonsterDef> = registries.names().load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
+        let rows: Vec<MonsterSpawn> = registries.names().with("monster", &defs).load_list(spawns).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
         let mut table = BandedTable::default();
+        for row in rows {
+            table.push(BandedEntry::new(row.monster.id()).bands(row.decks.0, row.decks.1).weight(row.weight).group(row.group.0, row.group.1));
+        }
         let mut brains = Vec::new();
-        for (id, d) in defs.iter() {
-            for &(lo, hi, weight, gmin, gmax) in &d.spawn {
-                table.push(BandedEntry::new(id).bands(lo, hi).weight(weight).group(gmin, gmax));
-            }
+        for (_, d) in defs.iter() {
             let mut brain = Brain::new();
             if d.melee.is_some() {
                 brain = brain.then(MeleeAdjacent);
@@ -261,6 +280,31 @@ mod tests {
         assert_eq!(struck.target, player);
     }
 
+    /// The droids' half of the ranged ramp in `DESIGN.md`: nothing on deck
+    /// one shoots, something on deck two does, and it does so from inside
+    /// the six tiles the lamp shows, so the first bolt of a run comes out
+    /// of a droid the commando could already see.
+    #[test]
+    fn nothing_on_deck_one_shoots_and_the_first_shooter_on_deck_two_stands_inside_the_lamp() {
+        let roster = Roster::load(&crate::content::registries());
+        let reach_on = |deck: i32| -> Vec<(String, Option<i32>)> {
+            roster.table.at(deck).map(|row| roster.defs.get(row.item)).map(|d| (d.name.clone(), d.ranged.map(|r| r.range))).collect()
+        };
+        assert!(reach_on(1).iter().all(|(_, r)| r.is_none()), "a shooter on deck one: {:?}", reach_on(1));
+        let shooters: Vec<i32> = reach_on(2).iter().filter_map(|(_, r)| *r).collect();
+        assert!(!shooters.is_empty(), "nothing shoots on deck two: {:?}", reach_on(2));
+        assert!(shooters.iter().all(|r| *r < crate::light::SHOULDER_LAMP.radius), "a deck two shot from outside the lamp: {shooters:?}");
+    }
+
+    #[test]
+    fn a_trooper_four_tiles_off_shoots_rather_than_walking_up_to_strike() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (trooper, player) = crate::testing::droid_facing_player(&mut app, "trooper droid", 4);
+        let struck = crate::testing::run_until_struck(&mut app, trooper, 10);
+        assert!(struck.ranged, "four tiles is its reach: it shoots");
+        assert_eq!(struck.target, player);
+    }
+
     /// The other half of the ranged ramp: assembly's own droids have no
     /// gun to shoot with, so the deck the commando arrives on unarmed is
     /// one it can back away from.
@@ -297,6 +341,24 @@ mod tests {
         assert_eq!(heard(&app, far), Some(shooter), "it heard the shot, where it was fired from");
     }
 
+    /// The damage table is played, not only written down: the same four
+    /// points of ion, down the same pipeline a shot goes down, take eight
+    /// off a chassis and one off the commando's flesh.
+    #[test]
+    fn four_points_of_ion_take_eight_off_a_chassis_and_one_off_the_commando() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let droid = crate::testing::lone_monster(&mut app, "heavy droid");
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let ion = app.world().resource::<Registries>().damage_kinds.expect("ion");
+        let hp = |app: &App, e: Entity| app.world().get::<Health>(e).expect("it has health").current;
+        let (droid_before, player_before) = (hp(&app, droid), hp(&app, player));
+        app.world_mut().write_message(DamageEvent::new(droid, rl_engine::rl_rules::Hit::by(player, ion, 4)));
+        app.world_mut().write_message(DamageEvent::new(player, rl_engine::rl_rules::Hit::by(droid, ion, 4)));
+        app.update();
+        assert_eq!(droid_before - hp(&app, droid), 8, "ion undoes a chassis");
+        assert_eq!(player_before - hp(&app, player), 1, "and barely registers on flesh");
+    }
+
     #[test]
     fn an_ion_hit_blinds_a_probes_radar_for_three_turns_and_a_slug_does_not() {
         let mut app = crate::testing::headless(RunSeed(1));
@@ -318,7 +380,7 @@ mod tests {
         use rl_engine::rl_rules::ai::awareness::{certain_radius, notice_chance};
         let roster = Roster::load(&crate::content::registries());
         let commando = StealthStats::default();
-        for name in ["line droid", "probe droid", "heavy droid"] {
+        for name in ["line droid", "probe droid", "trooper droid", "heavy droid"] {
             let notice = roster.defs.get(roster.defs.expect(name)).notice.expect("every droid names how it notices");
             assert_eq!(certain_radius(&notice, &commando, true), 8, "{name}, lit");
             assert_eq!(certain_radius(&notice, &commando, false), 2, "{name}, unlit");
@@ -326,14 +388,23 @@ mod tests {
         }
     }
 
-    /// Droids have the wits to work a door and rats do not, so a shut door
-    /// stops the vermin and never a droid on the commando's trail. The
+    /// Droids have the wits to work a door and critters do not, so a shut
+    /// door stops the vermin and never a droid on the commando's trail. The
     /// engine's minds open a door for any mind with the wit; this is only
     /// which kinds have it.
     #[test]
-    fn every_droid_opens_doors_and_a_coolant_rat_does_not() {
+    fn every_droid_opens_doors_and_no_critter_does() {
         let roster = Roster::load(&crate::content::registries());
-        for (name, opens) in [("line droid", true), ("probe droid", true), ("heavy droid", true), ("coolant rat", false)] {
+        let doors = [
+            ("line droid", true),
+            ("probe droid", true),
+            ("trooper droid", true),
+            ("heavy droid", true),
+            ("coolant rat", false),
+            ("scrap crab", false),
+            ("lamp moth", false),
+        ];
+        for (name, opens) in doors {
             let wits = roster.defs.get(roster.defs.expect(name)).wits;
             assert_eq!(wits.has(Wits::OPENS_DOORS), opens, "{name}");
         }

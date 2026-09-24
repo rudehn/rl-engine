@@ -1,7 +1,8 @@
 // Foundry's gear: what lies on the decks and what the dead leave behind.
+// Where each thing is found lying about, and how often, is `item_spawns.ron`.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:      unique; spawn tables and drops refer to it; one of it, singular, since the engine
+//   name:      unique; the spawn table and drops refer to it; one of it, singular, since the engine
 //              says a stack as "12 slugs"
 //   glyph:     one character
 //   color:     (r, g, b) in 0..=1
@@ -9,54 +10,79 @@
 //   either:    optional; true for a one-handed weapon that fits either hand, so two can be dual wielded
 //   also:      optional; slots it also claims when worn, for two-handers
 //   tags:      optional; "weapon" | "armor" | "slug" | "keycard"
-//   grants:    optional; abilities from `abilities.ron` the carrier may use while it is in the
-//              bag: for a thing that is aimed, or waits on a cooldown, using the item is using
-//              what it lends. Nothing here uses it yet; the implants will
-//   on_use:    optional; [(kind:, chance:, args:)] landed on whoever used it, where they stand,
-//              written as an ability's effects are in abilities.ron. Anything here makes it a
-//              thing that is used and spent, and never an ability the commando knows
-//   uses:      optional; how many uses it holds, for a thing that counts its own; absent, a use
-//              takes one off the stack and the last one takes the item with it
+//   effects:   optional; [(kind:, chance:, args:)] what the thing holds, written as an
+//              ability's effects are in abilities.ron: landed by any trigger with no list of
+//              its own, so a thing says what it holds once and each trigger delivers it
+//   triggers:  optional; [(on:, area:, fires:, effects:, look:)] what it does at its moments: on is
+//              "use" (used from the pack, lands on the user where they stand) | "land" (a
+//              throw comes to rest) | "fire" (an attack is made with it) | "hit" (that
+//              attack strikes, lands where the target stands); area is Here (default) |
+//              Burst(radius:); fires is how many times it may go off, every time when left
+//              out; effects is its own list, the thing's shared effects when left out; look
+//              is optional, (glyph:, color: (r:, g:, b:)) shown over every cell it lands on
+//   consumable: optional; (charges:, when_empty:, recharge:) what a use, a landing or a shot
+//              costs it: charges a fresh unit holds, Destroyed | Kept at the last, and
+//              recharge, optional, hundredths of a step per charge regained
 //   armor:     optional; flat armor while worn
-//   resists:   optional; [(damage kind, percent removed)] while worn: "kinetic" | "energy" | "ion"
+//   resists:   optional; [(damage kind, percent removed)] while worn: "kinetic" | "energy" |
+//              "ion" | "electricity" | "thermal"
 //   melee:     optional; (roll:, kind:, look:) while wielded, roll as "NdS+B"; look is optional,
 //              (glyph:, color: (r:, g:, b:)) in bytes as in abilities.ron, and a blow bursts on
 //              its target in its colour; absent, a blow shows nothing
 //   ranged:    optional; (range:, roll:, kind:, look:) while wielded; look is optional, the same
 //              shape, and is what a shot flies as; absent, a shot lands unseen
-//   throw:     optional; (range, roll, kind) when thrown; absent, it cannot be thrown
+//   throw:     optional; (range:, strike:) when thrown, strike optional as (roll, kind) for
+//              the blow it deals whoever it hits; absent, it cannot be thrown
 //   cost:      optional; what one blow or shot costs, in hundredths of a step; absent is 100
 //   heat:      optional; (per shot, vent per quiet turn); the weapon locks at 100 until it cools to 0
 //   ammo:      optional; the tag of what one shot spends, as "slug"
 //   dark_sight: optional; tiles seen without light while worn
 //   stack:     optional; whether copies merge into one counted entry
-//   spawn:     optional; (min deck, max deck, weight) for lying on a deck
 #![enable(implicit_some)]
 [
-    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d6+1", kind: "kinetic"), throw: (4, "1d6", "kinetic"), cost: 100, spawn: (1, 10, 3)),
-    (name: "mono-axe", glyph: '/', color: (0.7, 0.75, 0.8), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6+1", kind: "kinetic"), cost: 140, spawn: (2, 10, 2)),
-    (name: "hand blaster", glyph: '}', color: (0.95, 0.4, 0.3), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 5, roll: "1d6", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 80, heat: (15, 20), spawn: (2, 10, 3)),
-    (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 9, roll: "1d8+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 100, heat: (22, 22), spawn: (3, 10, 2)),
-    (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 5, roll: "1d6", kind: "ion", look: (glyph: '~', color: (r: 89, g: 166, b: 255))), cost: 90, heat: (25, 20), spawn: (2, 10, 2)),
-    (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 6, roll: "1d8", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug", spawn: (1, 10, 1)),
-    (name: "slug", glyph: ',', color: (0.7, 0.65, 0.5), tags: ["slug"], stack: true, spawn: (1, 10, 4)),
+    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d6+1", kind: "kinetic"), throw: (range: 4, strike: ("1d6", "kinetic")), cost: 100),
+    (name: "mono-axe", glyph: '/', color: (0.7, 0.75, 0.8), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6+1", kind: "kinetic"), cost: 140),
+    (name: "hand blaster", glyph: '}', color: (0.95, 0.4, 0.3), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 5, roll: "1d6", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 80, heat: (15, 20)),
+    (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 9, roll: "1d8+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 100, heat: (22, 22)),
+    (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 5, roll: "1d6", kind: "ion", look: (glyph: '~', color: (r: 89, g: 166, b: 255))), cost: 90, heat: (25, 20)),
+    (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 6, roll: "1d8", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
+    // The pistol's economy at a rifle's reach: past the lamp, so it kills
+    // what the commando cannot yet see, and dry the moment the bag is.
+    (name: "slug rifle", glyph: '}', color: (0.55, 0.5, 0.4), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 9, roll: "1d10+1", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
+    // Two shots to a step: its five-shot burst is gone in half the time a
+    // carbine's is, and then it is five quiet turns like anything else.
+    (name: "heavy repeater", glyph: '}', color: (1.0, 0.55, 0.3), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 8, roll: "1d8+2", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 50, heat: (20, 20)),
+    (name: "slug", glyph: ',', color: (0.7, 0.65, 0.5), tags: ["slug"], stack: true),
     // What opens an armory locker, and is spent doing it. A droid carries
     // one because the foundry's own machines open its own lockers.
-    (name: "keycard", glyph: '=', color: (0.85, 0.75, 0.3), tags: ["keycard"], stack: true, cost: 60, spawn: (1, 10, 2)),
-    // The medical pair, and what each does written on the thing itself
-    // rather than on an ability the commando is said to know. A stim closes
-    // a wound now; a medkit is worth twice as much and pays it two a turn
-    // over ten, which is ten turns of a deck to live through first. Both
-    // are spent by being used: one off the stack, and the last one takes
-    // the item with it.
-    (name: "stim", glyph: '!', color: (0.55, 0.9, 0.63), stack: true,
-     on_use: [(kind: "Mend", args: (kind: "care", roll: "2d4+5"))], spawn: (1, 10, 4)),
-    (name: "medkit", glyph: '!', color: (0.78, 0.94, 0.82), stack: true,
-     on_use: [(kind: "Inflict", args: (status: "mending", turns: 10))], spawn: (2, 10, 2)),
-    (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), slot: "head", tags: ["armor"], armor: 1, spawn: (1, 10, 2)),
-    (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6, spawn: (2, 10, 1)),
-    (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1, spawn: (1, 10, 3)),
-    (name: "composite plate", glyph: '[', color: (0.9, 0.9, 0.85), slot: "torso", tags: ["armor"], armor: 2, resists: [("energy", 10)], spawn: (2, 10, 2)),
-    (name: "combat gauntlets", glyph: '[', color: (0.7, 0.7, 0.7), slot: "arms", tags: ["armor"], armor: 1, spawn: (1, 10, 2)),
-    (name: "armored greaves", glyph: '[', color: (0.65, 0.65, 0.6), slot: "legs", tags: ["armor"], armor: 1, spawn: (1, 10, 2)),
+    (name: "keycard", glyph: '=', color: (0.85, 0.75, 0.3), tags: ["keycard"], stack: true, cost: 60),
+    // The medical pair, and what each does written on the thing itself as
+    // its use trigger. A stim closes a wound now; a medkit is worth twice
+    // as much and pays it two a turn over ten, which is ten turns of a deck
+    // to live through first. Both are spent by being used: one charge each,
+    // so one off the stack, and the last one takes the item with it.
+    (name: "stim", glyph: '!', color: (0.55, 0.9, 0.63), stack: true, consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "2d4+5"))])]),
+    (name: "medkit", glyph: '!', color: (0.78, 0.94, 0.82), stack: true, consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "mending", turns: 10))])]),
+    // ANCHOR: grenades
+    // The grenades: thrown, and what each does is its land trigger, a
+    // burst where it comes to rest, which spends it there. Plate takes half
+    // a frag burst off a droid; an ion burst undoes a chassis and blinds
+    // every radar in it, and barely touches flesh.
+    (name: "frag grenade", glyph: '*', color: (0.7, 0.72, 0.45), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6"))])]),
+    (name: "smoke grenade", glyph: '*', color: (0.75, 0.75, 0.75), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 160))])]),
+    (name: "ion grenade", glyph: '*', color: (0.4, 0.7, 1.0), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4"))])]),
+    (name: "incendiary grenade", glyph: '*', color: (0.95, 0.45, 0.2), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 110, b: 40)), effects: [(kind: "Harm", args: (kind: "thermal", roll: "2d4")), (kind: "Ignite", args: (turns: 4))])]),
+    // ANCHOR_END: grenades
+    (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), slot: "head", tags: ["armor"], armor: 1),
+    (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6),
+    (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1),
+    (name: "composite plate", glyph: '[', color: (0.9, 0.9, 0.85), slot: "torso", tags: ["armor"], armor: 2, resists: [("energy", 10)]),
+    (name: "combat gauntlets", glyph: '[', color: (0.7, 0.7, 0.7), slot: "arms", tags: ["armor"], armor: 1),
+    (name: "armored greaves", glyph: '[', color: (0.65, 0.65, 0.6), slot: "legs", tags: ["armor"], armor: 1),
 ]

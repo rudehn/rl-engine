@@ -124,7 +124,7 @@ pub fn collect_abilities(
     let Ok((actor, known, cooldowns)) = holders.single() else { return };
     view.entity = Some(actor);
     let now = turns.now();
-    for (id, _) in known.iter() {
+    for id in known.iter() {
         let def = abilities.get(id);
         let ready_at = cooldowns.map(|c| c.ready_at(id)).unwrap_or(0);
         let cooling = ready_at.saturating_sub(now);
@@ -156,7 +156,6 @@ pub fn collect_abilities(
 pub fn phrase_cost(cost: &Cost, registries: &Registries) -> String {
     match cost {
         Cost::Pool { stat, amount } => format!("{amount} {}", registries.stats.name(*stat)),
-        Cost::Charge { amount } => format!("{amount} {}", if *amount == 1 { "charge" } else { "charges" }),
         Cost::Health { amount } => format!("{amount} health"),
         Cost::Item { tag, count } => format!("{count} {}", registries.tags.name(*tag)),
     }

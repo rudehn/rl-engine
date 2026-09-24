@@ -7,7 +7,9 @@
 //! only keep entries whose ids were bound.
 
 use bevy::prelude::*;
-use rl_bevy::{Charges, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, SavedField, Seed, Turns, WorldMap, WorldMapSave};
+use rl_bevy::{
+    Consumable, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, PropKind, SavedField, Seed, Triggers, Turns, WorldMap, WorldMapSave,
+};
 use rl_core::RunSeed;
 use rl_rules::ability::AbilityId;
 use rl_rules::{GasId, StatId};
@@ -34,6 +36,10 @@ pub struct EngineSave {
     /// Empty in a save written before abilities were saved.
     #[serde(default)]
     pub abilities: Vec<(SaveId, AbilityState)>,
+    /// What each saved entity has left of its charges and its triggers'
+    /// firings. Empty in a save written before triggers were saved.
+    #[serde(default)]
+    pub effects: Vec<(SaveId, EffectState)>,
     /// Every burning cell and every cell with gas in it, on every map.
     /// Empty in a game with neither, and in a save written before either.
     #[serde(default)]
@@ -52,17 +58,14 @@ pub struct FieldsSave {
 /// The ability state of one entity, as a save holds it.
 ///
 /// Only what a use spends and sets. What an entity knows is rebuilt every
-/// turn from what it is and wears, and what grants an ability is the game's
-/// content, so neither is here.
+/// turn from what it is, and what grants an ability is the game's content,
+/// so neither is here.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AbilityState {
     /// What was in each pool.
     pub pools: Vec<(StatId, i32)>,
     /// When each ability is ready again, on the saved clock.
     pub cooldowns: Vec<(AbilityId, u32)>,
-    /// Charges left and the most it holds, on something that lends an
-    /// ability.
-    pub charges: Option<(u16, u16)>,
 }
 
 impl AbilityState {
@@ -72,8 +75,7 @@ impl AbilityState {
     fn of(world: &World, entity: Entity) -> Option<Self> {
         let pools: Vec<(StatId, i32)> = world.get::<Pools>(entity).map(|p| p.iter().collect()).unwrap_or_default();
         let cooldowns: Vec<(AbilityId, u32)> = world.get::<Cooldowns>(entity).map(|c| c.iter().collect()).unwrap_or_default();
-        let charges = world.get::<Charges>(entity).map(|c| (c.left, c.max));
-        (!pools.is_empty() || !cooldowns.is_empty() || charges.is_some()).then_some(Self { pools, cooldowns, charges })
+        (!pools.is_empty() || !cooldowns.is_empty()).then_some(Self { pools, cooldowns })
     }
 
     /// Puts this back on `entity`.
@@ -93,8 +95,52 @@ impl AbilityState {
             }
             target.insert(cooldowns);
         }
-        if let Some((left, max)) = self.charges {
-            target.insert(Charges { left, max });
+    }
+}
+
+/// What a thing's charges and triggers have left, as a save holds it.
+///
+/// Only what play changes: the charges left in the unit in hand and the
+/// progress towards the next, and each trigger's firings left. The most a
+/// thing holds, how it refills and what its triggers do are content, and
+/// come back from the definition the game respawns the thing from, so a
+/// save written before a file changed can never bring back a stale maximum.
+/// A prop's firings are saved with the prop itself, by its own kind.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EffectState {
+    /// Charges left and progress to the next, for a consumable.
+    pub consumable: Option<(u16, u32)>,
+    /// Each trigger's firings left, in list order; `None` for every time.
+    pub fires: Vec<Option<u32>>,
+}
+
+impl EffectState {
+    /// What `entity` has, or `None` when it has nothing worth saving: no
+    /// consumable, and no trigger that counts its firings.
+    fn of(world: &World, entity: Entity) -> Option<Self> {
+        let consumable = world.get::<Consumable>(entity).map(|c| (c.left, c.recharge.map_or(0, |r| r.progress)));
+        let fires: Vec<Option<u32>> = match (world.get::<Triggers>(entity), world.get::<PropKind>(entity)) {
+            (Some(triggers), None) if triggers.0.iter().any(|t| t.fires.is_some()) => triggers.0.iter().map(|t| t.fires).collect(),
+            _ => Vec::new(),
+        };
+        (consumable.is_some() || !fires.is_empty()).then_some(Self { consumable, fires })
+    }
+
+    /// Puts this back onto the components the game respawned `entity`
+    /// with. A thing respawned with none has nothing to put it on, and
+    /// charges past a maximum the file has since lowered are cut to it.
+    fn restore(&self, world: &mut World, entity: Entity) {
+        let Ok(mut target) = world.get_entity_mut(entity) else { return };
+        if let (Some((left, progress)), Some(mut c)) = (self.consumable, target.get_mut::<Consumable>()) {
+            c.left = left.min(c.max);
+            if let Some(r) = c.recharge.as_mut() {
+                r.progress = progress;
+            }
+        }
+        if let Some(mut triggers) = target.get_mut::<Triggers>() {
+            for (trigger, fires) in triggers.0.iter_mut().zip(&self.fires) {
+                trigger.fires = *fires;
+            }
         }
     }
 }
@@ -108,6 +154,7 @@ impl EngineSave {
         // The game's own entities, read before the queue hands ids to actors
         // the game never saved and so could never restore.
         let abilities: Vec<(SaveId, AbilityState)> = remap.bound().filter_map(|(id, e)| AbilityState::of(world, e).map(|s| (id, s))).collect();
+        let effects: Vec<(SaveId, EffectState)> = remap.bound().filter_map(|(id, e)| EffectState::of(world, e).map(|s| (id, s))).collect();
         let (now, entries) = world.resource::<Turns>().export();
         // Whoever holds the turn is out of the queue; it goes back at the
         // front of the present so the restored run deals it first.
@@ -117,7 +164,7 @@ impl EngineSave {
             fire: world.get_resource::<Fire>().map(Fire::export).unwrap_or_default(),
             gases: world.get_resource::<Gases>().map(Gases::export).unwrap_or_default(),
         };
-        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities, fields }
+        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities, effects, fields }
     }
 
     /// Restores the engine's state into `world`. The game's entities must
@@ -140,6 +187,11 @@ impl EngineSave {
                 state.restore(world, entity);
             }
         }
+        for (id, state) in &self.effects {
+            if let Some(entity) = remap.entity(*id) {
+                state.restore(world, entity);
+            }
+        }
         let current = self.map.current;
         let mut occupancy = Occupancy::default();
         occupancy.switch(current);
@@ -155,6 +207,7 @@ impl EngineSave {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rl_bevy::Recharge;
     use rl_bevy::prelude::*;
     use rl_core::{Direction, Point};
     use rl_grid::TileId;
@@ -256,24 +309,23 @@ mod tests {
     }
 
     /// What abilities spend is engine state, and the design promised it a
-    /// place in the save beside the clock: pools keep what is in them, a
+    /// place in the save beside the clock: pools keep what is in them, and a
     /// cooldown set before saving is still live at the same clock after
-    /// loading, and a wand keeps the charges it had left.
+    /// loading.
     #[test]
-    fn ability_pools_cooldowns_and_charges_survive_a_round_trip() {
+    fn ability_pools_and_cooldowns_survive_a_round_trip() {
         let (mut app, start) = fresh();
         let mut pools = Pools::new();
         pools.set(rl_core::Id::from_raw(0), 12);
         let mut cooldowns = Cooldowns::new();
         cooldowns.set(rl_core::Id::from_raw(1), 700);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, pools, cooldowns)).id();
-        let wand = app.world_mut().spawn(Charges { left: 2, max: 5 }).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
 
         let mut remap = EntityRemap::new();
-        let (p_id, w_id) = (remap.save_id(player), remap.save_id(wand));
+        let p_id = remap.save_id(player);
         let save = {
             app.insert_resource(Seed(RunSeed(5)));
             EngineSave::capture(app.world_mut(), &mut remap)
@@ -282,10 +334,8 @@ mod tests {
 
         let (mut app2, _) = fresh();
         let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
-        let wand2 = app2.world_mut().spawn_empty().id();
         let mut remap2 = EntityRemap::new();
         remap2.bind(p_id, player2);
-        remap2.bind(w_id, wand2);
         back.restore(app2.world_mut(), &remap2);
 
         let w = app2.world();
@@ -294,6 +344,49 @@ mod tests {
         let ready = w.get::<Cooldowns>(player2).map(|c| c.ready_at(rl_core::Id::from_raw(1)));
         assert_eq!(ready, Some(700), "the cooldown kept its absolute time");
         assert!(ready.is_some_and(|t| t > now), "and is still live at the restored clock, {now}");
-        assert_eq!(w.get::<Charges>(wand2).copied(), Some(Charges { left: 2, max: 5 }), "the wand kept its charges");
+    }
+
+    /// Two triggers, the first limited to three firings and the second to
+    /// none, landing nothing: the shape a save has to carry, whatever they do.
+    fn two_triggers() -> Triggers {
+        let nothing = std::sync::Arc::new(rl_bevy::Effects::default());
+        let one = |fires| rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires, effects: nothing.clone(), look: None };
+        Triggers(vec![one(Some(3)), one(None)])
+    }
+
+    /// A half-recharged wand with a trigger that has fired twice comes back
+    /// as it was. Its maximum and its period come from what the game
+    /// respawned from its definition, never from the save, so a save
+    /// written before the definition changed cannot hold a stale maximum.
+    #[test]
+    fn a_wand_mid_recharge_and_its_spent_firings_come_back_as_they_were() {
+        let (mut app, _) = fresh();
+        let mut triggers = two_triggers();
+        triggers.0[0].fires = Some(1);
+        let wand = app
+            .world_mut()
+            .spawn((Consumable { left: 2, max: 5, when_empty: WhenEmpty::Kept, recharge: Some(Recharge { every: 400, progress: 130 }) }, triggers))
+            .id();
+        let mut remap = EntityRemap::new();
+        let w_id = remap.save_id(wand);
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
+        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        // What the game respawns from the wand's definition: full, with a
+        // maximum of six now, since the file changed between runs.
+        let wand2 = app2.world_mut().spawn((Consumable::new(6, WhenEmpty::Kept).recharging(400), two_triggers())).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(w_id, wand2);
+        back.restore(app2.world_mut(), &remap2);
+
+        let w = app2.world();
+        let c = w.get::<Consumable>(wand2).copied().expect("still a wand");
+        assert_eq!((c.left, c.max, c.recharge.map(|r| r.progress)), (2, 6, Some(130)), "what was spent and counted, over what the definition says");
+        let fires: Vec<Option<u32>> = w.get::<Triggers>(wand2).expect("its triggers").0.iter().map(|t| t.fires).collect();
+        assert_eq!(fires, vec![Some(1), None], "the limited trigger kept its one firing left");
     }
 }

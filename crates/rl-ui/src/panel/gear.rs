@@ -94,7 +94,7 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
         match &slot.item {
             Some(item) => {
                 terminal.print_on(x, y, &item.glyph.ch.to_string(), item.glyph.fg, bg);
-                let runs = labelled(&item.label, &item.facets, room.saturating_sub(2), &palette);
+                let runs = labelled(&item.label, slot.charges, &item.facets, room.saturating_sub(2), &palette);
                 print_rich(&mut terminal, x + 2, y, &runs, palette.get(Tones::TEXT), bg, &palette);
             }
             None => terminal.print_on(x, y, &clip(&layout.empty, room), palette.get(Tones::MUTED), bg),
@@ -103,12 +103,15 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
     }
 }
 
-/// An item's name followed by its facets, each in its own tone, in
-/// `width` cells. The facets are the game's word on the item, a gauge or
-/// a count, so the name gives way first; only when the facets alone
-/// overrun the room is the whole line clipped from the end.
-fn labelled(label: &str, facets: &[Facet], width: usize, palette: &Palette) -> Vec<Segment> {
-    let tail: Vec<Segment> = facets.iter().flat_map(|f| [(" \u{00b7} ".to_string(), None), (f.text.clone(), Some(palette.get(f.tone)))]).collect();
+/// An item's name followed by its charges, muted, and then its facets,
+/// each in its own tone, in `width` cells. The charges and the facets are
+/// the word on the item that matters in a fight, a count or a gauge, so
+/// the name gives way first; only when they alone overrun the room is the
+/// whole line clipped from the end.
+fn labelled(label: &str, charges: Option<(u16, u16)>, facets: &[Facet], width: usize, palette: &Palette) -> Vec<Segment> {
+    let counted = charges.map(|(left, max)| (format!("{left}/{max}"), Some(palette.get(Tones::MUTED))));
+    let words = counted.into_iter().chain(facets.iter().map(|f| (f.text.clone(), Some(palette.get(f.tone)))));
+    let tail: Vec<Segment> = words.flat_map(|w| [(" \u{00b7} ".to_string(), None), w]).collect();
     let tail_width: usize = tail.iter().map(|(r, _)| r.chars().count()).sum();
     let label = if label.chars().count() + tail_width > width && tail_width < width { clip(label, width - tail_width) } else { label.to_string() };
     let runs: Vec<Segment> = std::iter::once((label, None)).chain(tail).collect();
@@ -119,6 +122,8 @@ fn labelled(label: &str, facets: &[Facet], width: usize, palette: &Palette) -> V
 mod tests {
     use super::*;
     use crate::harness::Stage;
+    use rl_bevy::prelude::*;
+    use rl_render::Glyph;
     use rl_rules::{EquipShape, SlotDef};
 
     #[test]
@@ -142,6 +147,29 @@ mod tests {
         assert!(rows[1].starts_with('\u{2500}'), "underlined: {:?}", rows[1]);
         assert_eq!(rows[2], "main hand / rusty blade", "the slot name, the glyph, the item");
         assert_eq!(rows[3], "body      \u{2014}", "and an empty slot is still a line");
+    }
+
+    /// A wand's charges read on its row after its name, muted, the way a
+    /// count is written everywhere else on the rail.
+    #[test]
+    fn a_worn_wands_row_reads_its_charges() {
+        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 40, 6)), |app| {
+            app.world_mut().resource_mut::<Registries>().slots = rl_rules::Registry::from_defs(vec![SlotDef::new("main hand")]).unwrap();
+        });
+        let player = stage.player;
+        let hand = stage.app.world().resource::<Registries>().slots.expect("main hand");
+        let wand = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("wand"), Glyph::new('/', Color::WHITE), Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) }))
+            .id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(wand, &rl_rules::EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+        stage.tick();
+        let row = (0..6).map(|y| stage.row(y)).find(|r| r.contains("main hand")).expect("a row for the hand");
+        assert!(row.trim_end().ends_with("wand \u{00b7} 3/5"), "{row:?}");
     }
 
     /// A facet is the game's word on the item and is kept whole: a long

@@ -6,7 +6,7 @@
             crates/rl-ui/src/lib.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 0cf88113 -->
+     fingerprint: c3667a7f -->
 
 # Narration
 
@@ -32,6 +32,7 @@ Two kinds rather than a phrase a game may add to, because `Phrase` enumerates wh
 `Phrase` is closed for the same reason, and it is split by perspective and by how the damage arrived: `YouHit`, `HitsYou` and `OthersFight` for a blow, `YouShoot`, `ShootsYou` and `OthersShoot` for a shot, each of the six with a twin for the one that got through nothing, so no grammar and no branch on who did it lives in the engine.
 What tells a shot from a blow is `Reach`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: only `Shot` is worded as one, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a bolt or a poison is already narrated by whatever cast or inflicted it.
 `called` is what `who`, `whom` and `what` were called when the row was made, filled in by the collector, because a row is made inside the pass and spoken after it and things change in between: what dies becomes remains and is renamed, what is thrown merges into a stack.
+A use is named as one of the thing, `You use a stim.`, since the stack already counts one fewer, and only a use of a thing with a `use` trigger is said at all: what using anything else means is the game's to say, the way a crust of bread is.
 `seen` is whether the player saw it, which is either that it happened to the player or that it happened where the player can see, and `Phrasebook::speak_unseen` decides whether an unseen row is spoken at all.
 `who_seen` is the narrower fact beside it, whether the doer's own cell was in the player's sight, and `render` takes as an argument whether to honour it, since what to do about an unseen doer is the presenter's setting rather than the row's business.
 A doer that may not be named is `UNSEEN`, the one word `something`, and `speak` names it anyway while `speak_unseen` is on, because a game that asked for the unseen to be narrated asked for it named.

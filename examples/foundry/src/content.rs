@@ -9,6 +9,7 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::DiceRoll;
 use rl_engine::rl_rules::ability::Look;
 use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::gas::GasDef;
 use rl_engine::rl_rules::{DamageKind, NameRef, Registry, Resistances, SlotDef, StatusDef, TagDef};
 use serde::Deserialize;
 
@@ -111,15 +112,16 @@ impl RangedDef {
 /// The resistance table for `profile`, as percentages removed.
 pub fn resistances(profile: Profile, registries: &Registries) -> Resistances {
     let k = &registries.damage_kinds;
-    let (kinetic, energy, ion) = (k.expect("kinetic"), k.expect("energy"), k.expect("ion"));
+    let (kinetic, energy, ion, electricity) = (k.expect("kinetic"), k.expect("energy"), k.expect("ion"), k.expect("electricity"));
     let mut r = Resistances::new();
-    let (a, b, c) = match profile {
-        Profile::Chassis => (50, 0, -100),
-        Profile::Organic => (0, 25, 75),
+    let (a, b, c, d) = match profile {
+        Profile::Chassis => (50, 0, -100, 0),
+        Profile::Organic => (0, 25, 75, 0),
     };
     r.set(kinetic, a);
     r.set(energy, b);
     r.set(ion, c);
+    r.set(electricity, d);
     r
 }
 
@@ -134,6 +136,14 @@ pub fn registries() -> Registries {
         DamageKind::new("energy"),
         // Plate does not stop a charge.
         DamageKind::new("ion").unarmored(),
+        // Raw current: a live cable, a capacitor let go. Plate conducts
+        // it, so only a resist takes any off, and it is not ion: flesh and
+        // chassis take it alike, and it jams nothing.
+        DamageKind::new("electricity").unarmored(),
+        // Fire, and what an incendiary burns with. Unarmored for the reason
+        // electricity is: plate heats through, and a tick of `scorched`
+        // that armor could stop would never tick at all.
+        DamageKind::new("thermal").unarmored(),
         // The kind a `Mend` is dealt as, like Corsair's and Delve's; no
         // profile resists it, so a heal lands in full.
         DamageKind::new("care").unarmored(),
@@ -147,14 +157,22 @@ pub fn registries() -> Registries {
     // rather than mending four a turn, so a pack of them is a longer
     // recovery and never a faster one.
     let care = damage_kinds.expect("care");
+    // Scorched is what standing in fire leaves on whoever stood there, a
+    // point a turn for as long as `run::start`'s `FireRules` says.
+    let thermal = damage_kinds.expect("thermal");
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") },
         StatusDef { badge: Some('+'), ..StatusDef::new("mending").ticks(care, -MEND_PER_TURN) },
+        StatusDef { badge: Some('^'), ..StatusDef::new("scorched").ticks(thermal, 1) },
     ])
     .unwrap();
+    // Smoke is the one gas: what a smoke grenade throws and what anything
+    // burning gives off, thick enough to hide in while it hangs.
+    let gases = Registry::from_defs(vec![GasDef::new("smoke").spread(55).fade(9).veils_at(70)]).unwrap();
     let mut registries = Registries {
         damage_kinds,
         statuses,
+        gases,
         factions: Registry::from_defs(vec![FactionDef::new("commando"), FactionDef::new("droids"), FactionDef::new("vermin")]).unwrap(),
         tags: Registry::from_defs(vec![TagDef::new("weapon"), TagDef::new("armor"), TagDef::new("slug"), TagDef::new("keycard")]).unwrap(),
         slots: Registry::from_defs(vec![
@@ -182,13 +200,18 @@ mod tests {
     fn the_damage_table_is_the_designs_to_the_percent() {
         // Spec section 5: a droid shrugs off half of a slug and takes double
         // from ion; flesh takes a quarter less from a bolt and nearly nothing
-        // from ion. A profile that drifts from this rebalances every fight.
+        // from ion; electricity hurts both alike, which is what keeps it a
+        // different idea from ion. A profile that drifts from this
+        // rebalances every fight.
         let r = registries();
-        let (kinetic, energy, ion) = (r.damage_kinds.expect("kinetic"), r.damage_kinds.expect("energy"), r.damage_kinds.expect("ion"));
-        let chassis = resistances(Profile::Chassis, &r);
-        assert_eq!((chassis.get(kinetic), chassis.get(energy), chassis.get(ion)), (50, 0, -100));
-        let organic = resistances(Profile::Organic, &r);
-        assert_eq!((organic.get(kinetic), organic.get(energy), organic.get(ion)), (0, 25, 75));
+        let k = &r.damage_kinds;
+        let (kinetic, energy, ion, electricity) = (k.expect("kinetic"), k.expect("energy"), k.expect("ion"), k.expect("electricity"));
+        let table = |p| {
+            let t = resistances(p, &r);
+            (t.get(kinetic), t.get(energy), t.get(ion), t.get(electricity))
+        };
+        assert_eq!(table(Profile::Chassis), (50, 0, -100, 0));
+        assert_eq!(table(Profile::Organic), (0, 25, 75, 0));
     }
 
     /// The design's table of what each attack flies as, to the byte: a
@@ -202,13 +225,17 @@ mod tests {
         use rl_engine::rl_core::{Point, RunSeed};
         use rl_engine::rl_grid::Rgb;
         let bolt = Some(('*', Rgb::new(255, 77, 38)));
+        let slug = Some(('o', Rgb::new(242, 204, 115)));
         let table = [
             ("hand blaster", bolt),
             ("blaster carbine", bolt),
             ("ion pistol", Some(('~', Rgb::new(89, 166, 255)))),
-            ("slug pistol", Some(('o', Rgb::new(242, 204, 115)))),
+            ("slug pistol", slug),
+            ("slug rifle", slug),
+            ("heavy repeater", bolt),
             ("line droid", None),
             ("probe droid", None),
+            ("trooper droid", bolt),
             ("heavy droid", bolt),
         ];
         let flies = |name: &str| table.iter().find(|(n, _)| *n == name).and_then(|(_, look)| *look);

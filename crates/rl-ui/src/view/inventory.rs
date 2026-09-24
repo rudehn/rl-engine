@@ -8,40 +8,22 @@
 //! item spawned with them is described for free, in the registries' names,
 //! and a game says nothing twice.
 //!
-//! What an item does when used is one of two things, and the row carries
-//! both: the ability it [`Grants`], described in the ability's own words and
-//! counted in its charges when the game inserted [`Abilities`], or its own
-//! [`OnUse`] effects, described in theirs. The first is aimed and known; the
-//! second simply happens. Anything else an item means is a [`Facet`] the
-//! game pushes in [`ViewSet::Annotate`](crate::ViewSet), and the panel
-//! prints it under the row.
+//! What an item does is its [`Triggers`], one line per effect, each named
+//! by the moment that sets it off: `use: mends 5`, `on landing: 3 kinetic
+//! in a burst of 1`. What a use costs it is its [`Consumable`], counted on the
+//! row when it holds more than one charge. Anything else an item means is a
+//! [`Facet`] the game pushes in [`ViewSet::Annotate`](crate::ViewSet), and
+//! the panel prints it under the row.
 
 use bevy::prelude::*;
+use rl_bevy::MomentId;
 use rl_bevy::prelude::*;
 use rl_render::Glyph;
 use rl_rules::SlotId;
-use rl_rules::ability::AbilityId;
 use rl_rules::stats::Op;
 
 use crate::facet::Facet;
 use crate::view::sheet::Strike;
-
-/// An ability an item lends whoever carries it, as a bag screen reads it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Lent {
-    /// Which.
-    pub ability: AbilityId,
-    /// What the game called it.
-    pub name: String,
-    /// What the game said it is, empty when it said nothing.
-    pub description: String,
-    /// Whether using it needs somewhere to point, so a screen opens the
-    /// targeting cursor rather than using the item on the spot.
-    pub aimed: bool,
-    /// Uses left, for an item that counts them; a stack or a single item
-    /// is its own count.
-    pub charges: Option<u16>,
-}
 
 /// One carried item, as a bag screen reads it.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,21 +57,22 @@ pub struct ItemRow {
     pub shot: Option<Strike>,
     /// The extra rolls every hit carries while it is worn.
     pub strikes: Vec<Strike>,
-    /// What using it does, one line per effect that has something to say,
-    /// for a thing that is used rather than one that lends an ability.
-    /// Empty for everything else, which is most of a bag, and empty too for
-    /// a thing whose effects say nothing of themselves.
+    /// What it does, one line per effect that has something to say, each
+    /// named by the moment that sets it off: `use: mends 5`, `on landing:
+    /// 3 kinetic in a burst of 1`. Empty for most of a bag.
     pub used: Vec<String>,
-    /// Whether it does anything at all when used, which is not the same as
+    /// Whether it has a `use` trigger at all, which is not the same as
     /// having something to say about it.
     pub uses_something: bool,
+    /// Charges left and the most it holds, for a thing that holds more than
+    /// one; a stack of single-charge things is counted by `count` instead.
+    pub charges: Option<(u16, u16)>,
+    /// Whether it is a consumable with nothing left in the unit in hand.
+    pub empty: bool,
     /// What it does to registered stats while worn, by the stat's name.
     pub bestows: Vec<(String, Op)>,
     /// What it counts as, by the tags' registered names.
     pub tags: Vec<String>,
-    /// The abilities it lends, in the order it grants them; using the
-    /// item uses the first.
-    pub lends: Vec<Lent>,
     /// What the game added.
     pub facets: Vec<Facet>,
 }
@@ -105,14 +88,14 @@ impl ItemRow {
         !self.goes_on.is_empty()
     }
 
-    /// Whether using it does something of its own, as against lending an
-    /// ability, which [`lends`](Self::lends) carries.
+    /// Whether the use key does anything to it: a `use` trigger, and a
+    /// charge to spend when it counts them.
     ///
     /// A thing whose effects all keep quiet about themselves is still used:
     /// the row reads it off the component, not off the description, so a
     /// game that wrote a terse effect does not lose the key that uses it.
     pub fn usable(&self) -> bool {
-        self.uses_something
+        self.uses_something && !self.empty
     }
 }
 
@@ -159,61 +142,66 @@ type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
-/// What an item does when used: what it lends, what it does itself, and
-/// how many times either.
-type Lends = (Option<&'static Grants>, Option<&'static OnUse>, Option<&'static Charges>);
+/// What an item does at its moments, and what a use costs it.
+type Does = (Option<&'static Triggers>, Option<&'static Consumable>);
+
+/// How a trigger's lines are introduced on a bag's row: by what the player
+/// does to set it off, in the engine's own moments, and by the moment's
+/// name for one a game registered.
+fn lead_in(moment: MomentId, moments: Option<&Moments>) -> String {
+    match moment {
+        m if m == Moments::USE => "use".to_string(),
+        // Not "thrown": the row already says how far it flies, and the
+        // word twice over reads as two things.
+        m if m == Moments::LAND => "on landing".to_string(),
+        m if m == Moments::HIT => "on a hit".to_string(),
+        m if m == Moments::FIRE => "when fired".to_string(),
+        m => moments.map(|all| all.name(m).to_string()).unwrap_or_default(),
+    }
+}
 
 /// Fills [`InventoryView`] from the player's bag.
 pub fn collect_inventory(
     mut view: ResMut<InventoryView>,
     registries: Option<Res<Registries>>,
-    abilities: Option<Res<Abilities>>,
+    moments: Option<Res<Moments>>,
     player: Query<(Entity, &Inventory, Option<&Equipped>), With<Player>>,
-    items: Query<(Looks, Arms, Lends), With<Item>>,
+    items: Query<(Looks, Arms, Does), With<Item>>,
 ) {
     view.rows.clear();
     view.entity = None;
     let Ok((entity, bag, worn)) = player.single() else { return };
     view.entity = Some(entity);
     let registries = registries.as_deref();
-    let abilities = abilities.as_deref();
+    let moments = moments.as_deref();
     let kind_name = |kind| registries.map(|r| r.damage_kinds.name(kind).to_string()).unwrap_or_default();
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (grants, on_use, charges))) = items.get(item)
-        else {
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable))) = items.get(item) else {
             continue;
         };
         let slot = worn.and_then(|w| w.slot_of(item));
-        let lends = match (grants, abilities) {
-            (Some(grants), Some(abilities)) => grants
-                .0
-                .iter()
-                .map(|id| {
-                    let def = abilities.get(*id);
-                    Lent {
-                        ability: *id,
-                        name: def.name.clone(),
-                        description: def.description.clone(),
-                        aimed: def.aim.needs_cursor(),
-                        charges: charges.map(|c| c.left),
-                    }
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        // What it does itself, in the effects' own words: the same lines the
+        // What it does, in the effects' own words: the same lines the
         // ability list shows under an ability, since they are the same
         // effects described by the same code.
-        let used = match (on_use, registries) {
-            (Some(on_use), Some(registries)) => on_use.0.describe(registries),
-            _ => Vec::new(),
-        };
+        let mut used = Vec::new();
+        if let (Some(triggers), Some(registries)) = (triggers, registries) {
+            for trigger in &triggers.0 {
+                let lead = lead_in(trigger.on, moments);
+                let area = match trigger.area {
+                    rl_rules::Area::Here => String::new(),
+                    rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
+                };
+                used.extend(trigger.effects.describe(registries).into_iter().map(|line| format!("{lead}: {line}{area}")));
+            }
+        }
         view.rows.push(ItemRow {
             entity: item,
             used,
-            uses_something: on_use.is_some(),
+            uses_something: triggers.is_some_and(|t| t.on(Moments::USE).next().is_some()),
+            charges: consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max)),
+            empty: consumable.is_some_and(|c| c.is_empty()),
             label: name.map(|n| n.as_str().to_string()).unwrap_or_default(),
             glyph: glyph.copied(),
             count: stack.map_or(1, |s| s.count),
@@ -230,7 +218,6 @@ pub fn collect_inventory(
                 .map(|b| b.0.iter().map(|(stat, op)| (registries.map(|r| r.stats.name(*stat).to_string()).unwrap_or_default(), *op)).collect())
                 .unwrap_or_default(),
             tags: tagged.map(|t| t.0.iter().map(|tag| registries.map(|r| r.tags.name(*tag).to_string()).unwrap_or_default()).collect()).unwrap_or_default(),
-            lends,
             facets: Vec::new(),
         });
     }

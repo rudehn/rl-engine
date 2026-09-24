@@ -1,6 +1,7 @@
-//! Gear: the six weapons, six pieces of armor and the slugs that arm the
-//! foundry's decks, loaded once from `items.ron` and spawned as items an
-//! actor can find, carry and wear.
+//! Gear: the weapons, the armor, the slugs, the medical pair and the
+//! grenades that arm the foundry's decks, loaded once from `items.ron`,
+//! found where `item_spawns.ron` says, and spawned as items an actor can
+//! find, carry, wear and use.
 //!
 //! An [`ItemDef`] is the file's own vocabulary: everything a game needs
 //! to know about a weapon or a suit of plate, named rather than typed, so
@@ -13,15 +14,12 @@
 //! behaviour yet; this module only attaches them to the weapons whose
 //! entry names one, so later work on either does not touch the loader.
 
-use std::sync::Arc;
-
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{DiceRoll, Id};
 use rl_engine::rl_render::Glyph;
-use rl_engine::rl_rules::EffectSpec;
-use rl_engine::rl_rules::ability::AbilityDef;
 use rl_engine::rl_rules::{BandedEntry, BandedTable, DamageKind, EquipShape, NameRef, Named, Registry, Resistances, SlotDef, TagDef, TagId};
+use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
 use serde::Deserialize;
 
 use crate::ammo::Ammo;
@@ -29,6 +27,7 @@ use crate::content::{MeleeDef, RangedDef};
 use crate::heat::Heat;
 
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
+const ITEM_SPAWNS_RON: &str = include_str!("../assets/item_spawns.ron");
 
 /// One kind of item, as authored in `items.ron`.
 #[derive(Debug, Clone, Deserialize)]
@@ -53,22 +52,17 @@ pub struct ItemDef {
     /// drops that ask by tag rather than by name.
     #[serde(default)]
     pub tags: Vec<NameRef<TagDef>>,
-    /// Abilities it lends whoever carries it: a thing that is aimed, or
-    /// waits on a cooldown, or spends a pool, is an ability, and using the
-    /// item is using what it lends. What simply happens to whoever used it
-    /// is `on_use` instead.
+    /// What the thing holds, landed by any of its triggers that names no
+    /// list of its own: written once, delivered by each.
     #[serde(default)]
-    pub grants: Vec<NameRef<AbilityDef>>,
-    /// What using it lands on whoever used it, where they stand: a stim's
-    /// mend, a medkit's gel. Anything here makes it a thing that is used
-    /// and spent, never an ability the commando knows.
+    pub effects: Vec<EffectSpec>,
+    /// What it does at its moments: used, thrown and landed, fired, hit.
     #[serde(default)]
-    pub on_use: Vec<EffectSpec>,
-    /// How many uses it holds, for a thing that counts its own rather than
-    /// being spent one item at a time. Absent, a use takes one off the
-    /// stack and the last one takes the item with it.
+    pub triggers: Vec<TriggerSpec>,
+    /// What a use, a landing or a shot costs it; absent, nothing, which is
+    /// what a tool is.
     #[serde(default)]
-    pub uses: Option<u16>,
+    pub consumable: Option<ConsumableDef>,
     /// Flat armor while worn.
     #[serde(default)]
     pub armor: i32,
@@ -81,10 +75,10 @@ pub struct ItemDef {
     /// The range, roll and damage kind a shot deals, while wielded.
     #[serde(default)]
     pub ranged: Option<RangedDef>,
-    /// The range, roll and damage kind it strikes with when thrown; absent,
-    /// it cannot be thrown at all.
+    /// How far it flies when thrown, and the blow it strikes whoever it
+    /// hits, if any; absent, it cannot be thrown at all.
     #[serde(default)]
-    pub throw: Option<(i32, DiceRoll, NameRef<DamageKind>)>,
+    pub throw: Option<ThrowDef>,
     /// What one blow or shot costs, in hundredths of a step. Absent is
     /// [`BASE_ACTION_COST`](rl_engine::rl_core::turn::BASE_ACTION_COST).
     #[serde(default)]
@@ -104,15 +98,51 @@ pub struct ItemDef {
     /// each.
     #[serde(default)]
     pub stack: bool,
-    /// `(min deck, max deck, weight)` for lying on a deck.
+}
+
+/// A thing's charges as `items.ron` writes them.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ConsumableDef {
+    /// What a fresh unit holds.
+    pub charges: u16,
+    /// What happens at the last.
+    pub when_empty: WhenEmpty,
+    /// Hundredths of a step per charge regained, for a thing that refills.
     #[serde(default)]
-    pub spawn: Option<(i32, i32, u32)>,
+    pub recharge: Option<u32>,
+}
+
+/// A throw as `items.ron` writes it: how far, and the blow it strikes, if
+/// it strikes at all. A grenade strikes nothing; its land trigger bursts.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ThrowDef {
+    /// The furthest cell it reaches.
+    pub range: i32,
+    /// The roll and damage kind it strikes whoever it hits with.
+    #[serde(default)]
+    pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
 }
 
 impl Named for ItemDef {
     fn name(&self) -> &str {
         &self.name
     }
+}
+
+/// One row of `item_spawns.ron`: an item, the decks it lies about on, and
+/// how often.
+///
+/// Its own file rather than a field of [`ItemDef`], for the reason
+/// [`MonsterSpawn`](crate::droids::MonsterSpawn) is: what a thing is and
+/// where it is found are read and tuned apart.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct ItemSpawn {
+    /// Which item.
+    pub item: NameRef<ItemDef>,
+    /// The first and last deck it applies on, both included.
+    pub decks: (i32, i32),
+    /// How often, against every other row that applies on a deck.
+    pub weight: u32,
 }
 
 /// Grants [`DarkSight`] while worn: the rangefinder helmet's sensor
@@ -137,13 +167,13 @@ pub struct Armory {
     /// What can be found on a deck, drawn by band, where the band is the
     /// deck number.
     pub table: BandedTable<Id<ItemDef>>,
-    /// What using each definition lands, built once and shared by every
-    /// item spawned from it, `None` for the ones that are not used at all.
+    /// Each definition's triggers, built once and shared by every item
+    /// spawned from it.
     ///
     /// Built here rather than per item because an effect is a boxed trait
     /// object read out of RON: parsing a medkit's gel once a medkit is
     /// parsing it for every medkit on ten decks.
-    on_use: Vec<Option<Arc<Effects>>>,
+    triggers: Vec<Triggers>,
 }
 
 /// One item's own shape, checked against nothing but itself: whether its
@@ -163,67 +193,70 @@ fn validate_def(d: &ItemDef, _: &Registry<ItemDef>) -> Result<(), String> {
     if d.heat.is_some() && d.ammo.is_some() {
         return Err("a weapon cannot run on both heat and ammo".into());
     }
-    if d.uses.is_some() && d.on_use.is_empty() {
-        return Err("uses without on_use: a thing that counts uses has to do something with them".into());
+    if d.consumable.is_some_and(|c| c.charges == 0) {
+        return Err("a consumable with no charges is spent before it is found".into());
     }
-    if !d.on_use.is_empty() && !d.grants.is_empty() {
-        return Err("on_use and grants: a thing is used for what it does itself or for the ability it lends, not both".into());
+    if d.throw.is_none() && d.triggers.iter().any(|t| t.on == "land") {
+        return Err("a land trigger on a thing that cannot be thrown never lands".into());
     }
     Ok(())
 }
 
 impl Armory {
-    /// Loads `items.ron` against `registries` and `abilities`, validates
-    /// it, and builds the spawn table; panics with every problem the file
-    /// has, since a broken item file is a game that cannot start.
+    /// Loads `items.ron` against `registries`, validates it, builds every
+    /// item's triggers against the effect `kinds` and `moments` registered
+    /// for the run, and builds the spawn table from `item_spawns.ron`;
+    /// panics with every problem either file has, since a broken item file
+    /// is a game that cannot start.
     ///
-    /// `abilities` is here for `grants`, so an item that names an ability
-    /// nobody loaded is caught while the file is read rather than by a
-    /// medkit that quietly does nothing in the middle of a run.
-    pub fn load(registries: &Registries, abilities: &Abilities, kinds: &EffectKinds) -> Self {
+    /// The triggers are built here rather than when an item is spawned, so
+    /// a grenade naming an effect or a moment nobody registered is caught
+    /// while the file is read rather than by a grenade that quietly does
+    /// nothing in the middle of a run.
+    pub fn load(registries: &Registries, kinds: &EffectKinds, moments: &Moments) -> Self {
         let names = registries.names();
-        let defs: Registry<ItemDef> = names.clone().with("ability", abilities.defs()).load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+        let defs: Registry<ItemDef> = names.load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(validate_def).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
-        let mut table = BandedTable::default();
-        let mut on_use = Vec::new();
+        let rows: Vec<ItemSpawn> = names.clone().with("item", &defs).load_list(ITEM_SPAWNS_RON).unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
+        let table = BandedTable::new(rows.iter().map(|r| BandedEntry::new(r.item.id()).bands(r.decks.0, r.decks.1).weight(r.weight)).collect());
+        // ANCHOR: triggers
+        // Each definition's triggers, built once against the moments and
+        // effect kinds the run registered, and every problem in the file
+        // named at once: a grenade that lands nothing is a typo.
+        let mut triggers = Vec::new();
         let mut errors = Vec::new();
-        for (id, d) in defs.iter() {
-            if let Some((lo, hi, w)) = d.spawn {
-                table.push(BandedEntry::new(id).bands(lo, hi).weight(w));
-            }
-            on_use.push(match d.on_use.is_empty() {
-                true => None,
-                false => match Effects::build(&d.on_use, kinds, &names) {
-                    Ok(effects) => Some(Arc::new(effects)),
-                    Err(mine) => {
-                        errors.extend(mine.into_iter().map(|e| format!("{}: on_use: {e}", d.name)));
-                        None
-                    }
-                },
+        for (_, d) in defs.iter() {
+            triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &names) {
+                Ok(t) => t,
+                Err(mine) => {
+                    errors.extend(mine.into_iter().map(|e| format!("{}: {e}", d.name)));
+                    Triggers::default()
+                }
             });
         }
         assert!(errors.is_empty(), "assets/items.ron: {}", errors.join("; "));
-        Self { defs, table, on_use }
+        // ANCHOR_END: triggers
+        Self { defs, table, triggers }
     }
 }
 
 /// The three tables an armory is read against, for the systems that spawn
-/// items: what items exist, what abilities one may lend, and what kinds of
-/// effect a used one may land.
+/// items: what items exist, what kinds of effect a trigger may land, and
+/// what moments one may answer.
 ///
 /// One parameter rather than three, because every system that spawns an
 /// item wants all three and none of them wants any of the three alone.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Content<'w> {
     registries: Res<'w, Registries>,
-    abilities: Res<'w, Abilities>,
     kinds: Res<'w, EffectKinds>,
+    moments: Res<'w, Moments>,
 }
 
 impl Content<'_> {
     /// The armory, read fresh from `items.ron`.
     pub fn armory(&self) -> Armory {
-        Armory::load(&self.registries, &self.abilities, &self.kinds)
+        Armory::load(&self.registries, &self.kinds, &self.moments)
     }
 
     /// The registries, for whatever else a spawn needs them for.
@@ -264,19 +297,18 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));
     }
     // ANCHOR: use
-    // An ability it lends, for the things that are aimed or wait on a
-    // cooldown: the engine turns a use of the item into a use of that.
-    if !d.grants.is_empty() {
-        e.insert(Grants(d.grants.iter().map(|g| g.id()).collect()));
+    // What it does at its moments, a stim's use and a grenade's landing,
+    // built once by the armory and shared by every copy; the engine lands
+    // them. And what doing it costs the thing, which the engine spends.
+    if let Some(triggers) = armory.triggers.get(id.index()).filter(|t| !t.0.is_empty()) {
+        e.insert(triggers.clone());
     }
-    // Or what it does itself, which is what a medical item does: the
-    // engine lands it on whoever used it and spends the item for it. The
-    // list is the armory's, shared by every copy.
-    if let Some(effects) = armory.on_use.get(id.index()).and_then(|e| e.clone()) {
-        e.insert((OnUse(effects), Consumable));
-        if let Some(uses) = d.uses {
-            e.insert(Charges::full(uses));
-        }
+    if let Some(c) = d.consumable {
+        let charges = Consumable::new(c.charges, c.when_empty);
+        e.insert(match c.recharge {
+            Some(every) => charges.recharging(every),
+            None => charges,
+        });
     }
     // ANCHOR_END: use
     if let Some(shape) = shape_of(d, registries) {
@@ -298,8 +330,8 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     if let Some(ranged) = d.ranged {
         e.insert(RangedAttack { cost: d.cost, ..ranged.attack() });
     }
-    if let Some((range, dice, kind)) = d.throw {
-        e.insert(Throwable { range, strike: Some((kind.id(), dice)) });
+    if let Some(throw) = d.throw {
+        e.insert(Throwable { range: throw.range, strike: throw.strike.map(|(dice, kind)| (kind.id(), dice)) });
     }
     if let Some((per_shot, vent)) = d.heat {
         e.insert(Heat::new(per_shot, vent));
@@ -319,7 +351,7 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
 #[cfg(test)]
 mod tests {
     use bevy::ecs::world::CommandQueue;
-    use rl_engine::rl_core::RunSeed;
+    use rl_engine::rl_core::{Point, RunSeed};
 
     use super::*;
 
@@ -367,7 +399,7 @@ mod tests {
     fn every_item_loads_and_every_spawn_band_on_the_first_three_decks_has_something() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
-        assert_eq!(armory.defs.len(), 16, "twelve things to carry, a slug, a keycard, a stim and a medkit");
+        assert_eq!(armory.defs.len(), 22, "fourteen things to carry, a slug, a keycard, a stim, a medkit and four grenades");
         assert!(armory.table.gaps(1..=3).is_empty(), "a deck with nothing to find");
     }
 
@@ -382,6 +414,65 @@ mod tests {
         assert_eq!((ranged.range, ranged.cost), (9, Some(100)));
         let shape = &world.get::<Wearable>(axe).unwrap().0;
         assert_eq!(shape.slots().count(), 2, "main hand and off hand");
+    }
+
+    /// The slug rifle is the pistol's economy at a rifle's reach: a slug a
+    /// shot and dry on an empty bag, but a line past what the lamp shows,
+    /// so it kills what the commando cannot yet see.
+    #[test]
+    fn a_slug_rifle_spends_a_slug_a_shot_and_reaches_past_the_lamp() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (player, rifle) = crate::testing::slug_gun_with(&mut app, "slug rifle", 2);
+        let reach = app.world().get::<RangedAttack>(rifle).expect("loaded, so it has a shot").range;
+        assert!(reach > crate::light::SHOULDER_LAMP.radius, "{reach} tiles, no further than the lamp");
+        let struck = crate::testing::fire_at_a_target(&mut app, player, 3);
+        assert_eq!(struck.len(), 2, "two slugs, two shots; the third finds nothing to fire");
+        assert!(app.world().get::<RangedAttack>(rifle).is_none(), "dry");
+    }
+
+    /// The heavy repeater runs hot the fast way: its whole burst goes out
+    /// in half the time a carbine's does, and then it is locked like any
+    /// other energy weapon.
+    #[test]
+    fn a_heavy_repeater_gets_its_burst_off_in_half_the_time_a_carbine_takes() {
+        let burst = |name: &str| {
+            let mut app = crate::testing::headless(RunSeed(1));
+            crate::testing::settle(&mut app);
+            let player = crate::testing::empty_handed(&mut app);
+            let gun = crate::testing::equip_new(&mut app, player, name);
+            let before = crate::testing::clock(&app);
+            let mut shots = 0;
+            while app.world().get::<RangedAttack>(gun).is_some() {
+                assert!(shots < 10, "{name} never locked");
+                shots += crate::testing::fire_at_a_target(&mut app, player, 1).len();
+            }
+            (shots, crate::testing::clock(&app) - before)
+        };
+        let (repeater_shots, repeater_time) = burst("heavy repeater");
+        let (carbine_shots, carbine_time) = burst("blaster carbine");
+        assert_eq!(repeater_shots, carbine_shots, "the same five shots before it locks");
+        assert!(repeater_time * 2 <= carbine_time, "{repeater_time} against the carbine's {carbine_time}");
+    }
+
+    /// What a suit resists is resisted by whoever wears it: twenty points
+    /// of energy on a commando in composite plate meet flesh's quarter and
+    /// the plate's tenth together, seven off, and then the plate's two
+    /// points of armor, so eleven land. Nothing is copied onto the wearer
+    /// to make that so, and the tenth leaves with the plate.
+    #[test]
+    fn composite_plate_resists_its_tenth_of_a_bolt_on_top_of_what_flesh_resists() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (player, plate) = wear(&mut app, "composite plate");
+        let energy = app.world().resource::<Registries>().damage_kinds.expect("energy");
+        let bolt = |app: &mut App| {
+            app.world_mut().entity_mut(player).insert(Health::full(100));
+            app.world_mut().write_message(DamageEvent::new(player, rl_engine::rl_rules::Hit::from_source(None, energy, 20)));
+            app.update();
+            100 - health(app, player)
+        };
+        assert_eq!(bolt(&mut app), 20 - 7 - 2, "a quarter and a tenth resisted, then two points of plate");
+        unwear(&mut app, player, plate);
+        assert_eq!(bolt(&mut app), 20 - 5, "and taken off, flesh's quarter alone");
     }
 
     #[test]
@@ -447,9 +538,9 @@ mod tests {
             either: false,
             also: Vec::new(),
             tags: Vec::new(),
-            grants: Vec::new(),
-            on_use: Vec::new(),
-            uses: None,
+            effects: Vec::new(),
+            triggers: Vec::new(),
+            consumable: None,
             armor: 0,
             resists: Vec::new(),
             melee: None,
@@ -460,7 +551,6 @@ mod tests {
             ammo: None,
             dark_sight: None,
             stack: false,
-            spawn: None,
         }
     }
 
@@ -516,9 +606,9 @@ mod tests {
 
     /// A stim closes a wound on the spot and the shot is gone with it.
     ///
-    /// Nothing of Foundry's own runs here: the item lends `field stims`,
-    /// the engine turns using the item into using what it lends, and
-    /// `Charge(1)` takes one off the stack. The roll is `2d4+5`, so the
+    /// Nothing of Foundry's own runs here: the item's `use` trigger lands
+    /// the mend where the commando stands, and its one charge takes one off
+    /// the stack. The roll is `2d4+5`, so the
     /// gain is between seven and thirteen whatever the dice say, which is
     /// what makes ten its midpoint and the medkit's twenty twice it.
     #[test]
@@ -601,6 +691,108 @@ mod tests {
         crate::testing::settle(&mut app);
         crate::testing::pass_turns(&mut app, 2);
         assert_eq!(health(&app, player) - before, one_kit + crate::content::MEND_PER_TURN * 3, "still two a turn with the second kit in, not four");
+    }
+
+    /// Throws one of the grenades `player` carries at `aim`, through the
+    /// engine's own throw action, the way the pack's throw key does.
+    fn throw_grenade(app: &mut App, player: Entity, grenade: Entity, aim: Point) {
+        app.world_mut().write_message(Intent::new(player, Throw { item: grenade, at: aim }));
+        crate::testing::settle(app);
+    }
+
+    /// Every item lying on `at`.
+    fn lying_at(app: &mut App, at: Point) -> Vec<Entity> {
+        let world = app.world_mut();
+        let mut q = world.query_filtered::<(Entity, &Position), With<Item>>();
+        q.iter(world).filter(|(_, p)| p.0 == at).map(|(e, _)| e).collect()
+    }
+
+    fn at(app: &App, e: Entity) -> Point {
+        app.world().get::<Position>(e).expect("it stands somewhere").0
+    }
+
+    /// A frag grenade is thrown and lands like a blast: the droid it is
+    /// thrown at is hurt, the grenade that did it is one fewer in the bag,
+    /// and nothing is left lying where it burst.
+    #[test]
+    fn a_frag_grenade_bursts_on_the_droid_it_is_thrown_at_and_is_spent_doing_it() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 4, 4);
+        let frags = carry(&mut app, player, "frag grenade", 2);
+        let before = health(&app, droid);
+        let aim = at(&app, droid);
+        throw_grenade(&mut app, player, frags, aim);
+        assert!(app.world().get::<Health>(droid).is_none_or(|h| h.current < before), "the blast reached it");
+        assert_eq!(app.world().get::<Stack>(frags).map(|s| s.count), Some(1), "one grenade off the stack");
+        assert!(lying_at(&mut app, aim).is_empty(), "and the one thrown is spent, not lying there");
+    }
+
+    /// An incendiary is a fire the commando starts: the deck plate it lands
+    /// on has nothing to burn, and burns anyway for the turns it names.
+    #[test]
+    fn an_incendiary_leaves_the_deck_it_lands_on_burning() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 4, 4);
+        let grenade = carry(&mut app, player, "incendiary grenade", 1);
+        let aim = at(&app, droid);
+        throw_grenade(&mut app, player, grenade, aim);
+        assert!(app.world().resource::<Fire>().is_burning(aim), "alight where it landed");
+        crate::testing::pass_turns(&mut app, 1);
+        assert!(app.world().resource::<Fire>().is_burning(aim), "and still burning a turn later");
+    }
+
+    /// An ion grenade blinds every radar in the burst at once, not only the
+    /// one it was thrown at.
+    #[test]
+    fn an_ion_grenade_jams_every_radar_in_its_burst() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (first, player) = crate::testing::droid_down_a_lane(&mut app, "probe droid", 4, 4);
+        let beside = at(&app, first).offset(0, 1);
+        let floor = app.world().resource::<WorldMap>().tile(at(&app, first)).expect("the lane is loaded");
+        app.world_mut().resource_mut::<WorldMap>().set_tile(beside, floor);
+        let registries = app.world().resource::<Registries>().clone();
+        let roster = crate::droids::Roster::load(&registries);
+        let map = app.world().resource::<WorldMap>().current();
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, app.world_mut());
+        let second = crate::droids::spawn_monster(&mut commands, &roster, roster.defs.expect("probe droid"), beside, map, &registries);
+        queue.apply(app.world_mut());
+        let grenade = carry(&mut app, player, "ion grenade", 1);
+        for probe in [first, second] {
+            assert!(app.world().get::<DarkSight>(probe).is_some(), "radar up before the throw");
+        }
+        let aim = at(&app, first);
+        throw_grenade(&mut app, player, grenade, aim);
+        for probe in [first, second] {
+            assert_eq!(app.world().get::<DarkSight>(probe), None, "{probe:?} jammed");
+        }
+    }
+
+    /// A smoke grenade does no harm and leaves a cloud thick enough to hide
+    /// in where it lands.
+    #[test]
+    fn a_smoke_grenade_leaves_a_cloud_thick_enough_to_hide_in() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 4, 4);
+        let grenade = carry(&mut app, player, "smoke grenade", 1);
+        let (aim, before) = (at(&app, droid), health(&app, droid));
+        throw_grenade(&mut app, player, grenade, aim);
+        let registries = app.world().resource::<Registries>();
+        let smoke = registries.gases.expect("smoke");
+        let veils_at = registries.gases.get(smoke).veils_at.expect("smoke hides what is behind it");
+        assert!(app.world().resource::<Gases>().at(smoke, aim) >= veils_at, "a cloud where it landed, thick enough to hide in");
+        assert_eq!(health(&app, droid), before, "and nobody hurt by it");
+    }
+
+    /// A stim is used, never thrown: a use trigger, and no throw in the file,
+    /// so the pack offers the one and not the other.
+    #[test]
+    fn a_stim_has_a_use_trigger_and_no_throw() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let stim = armory.defs.get(armory.defs.expect("stim"));
+        assert!(stim.throw.is_none());
+        assert_eq!(stim.triggers.iter().map(|t| t.on.as_str()).collect::<Vec<_>>(), vec!["use"]);
     }
 
     #[test]

@@ -7,10 +7,9 @@
 //! using are the engine's own item actions, so the screen writes their
 //! intents itself; throwing opens the targeting cursor through
 //! [`AimThrow`], the way a game's throw key would. A game binds nothing.
-//! Using an item that does something itself uses it where it stands, and
-//! using one that lends an ability uses the ability: on the spot when
-//! it needs no aim, through the targeting cursor by [`AimAt`] when it does.
-//! Nothing else is used from here; an item a game answers itself from
+//! Using an item with a `use` trigger uses it where it stands; an item is
+//! aimed only by throwing it or firing it, never by using it. Nothing else
+//! is used from here; an item a game answers itself from
 //! [`ItemEvent::Used`] is used by the game's own key, since the bag cannot
 //! know it does anything and a use that did nothing would spend a turn.
 //! The footer offers only the keys that do something to the row picked
@@ -19,8 +18,8 @@
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
 //! to armor or a stat, how far it flies, where it is worn or could be, what
-//! it lends and how many uses are left, and whatever the game pushed onto
-//! it in [`ViewSet::Annotate`](crate::ViewSet).
+//! it does at each of its moments, how many charges are left, and whatever
+//! the game pushed onto it in [`ViewSet::Annotate`](crate::ViewSet).
 //!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
@@ -39,7 +38,7 @@ use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::inventory::{InventoryView, InventoryViewPlugin, ItemRow};
 use crate::view::sheet::Strike;
-use crate::view::target::{AimAt, AimThrow};
+use crate::view::target::AimThrow;
 
 /// The name the bag's modal is declared under.
 pub const INVENTORY_MODAL: &str = "inventory";
@@ -153,8 +152,7 @@ impl Plugin for InventoryPanel {
             .add_message::<Intent<Unequip>>()
             .add_message::<Intent<DropItem>>()
             .add_message::<Intent<UseItem>>()
-            .add_message::<AimThrow>()
-            .add_message::<AimAt>();
+            .add_message::<AimThrow>();
         app.insert_resource(self.0.clone()).init_resource::<InventoryMenu>().init_resource::<InventoryKeys>();
         app.add_systems(Update, inventory_keys.in_set(EngineSet::Input)).add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
     }
@@ -185,7 +183,6 @@ pub struct BagIntents<'w> {
     unequips: MessageWriter<'w, Intent<Unequip>>,
     drops: MessageWriter<'w, Intent<DropItem>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
-    aims: MessageWriter<'w, AimAt>,
     throws: MessageWriter<'w, AimThrow>,
 }
 
@@ -208,7 +205,9 @@ pub fn inventory_keys(
         modals.toggle(modal);
         return;
     }
-    if !modals.is_top(modal) {
+    // Not in the frame it went up: a game may open the bag on a key the
+    // bag reads too, and that press is the game's.
+    if !modals.is_top(modal) || modals.just_opened() {
         return;
     }
     let bindings = keys.bindings();
@@ -241,20 +240,14 @@ pub fn inventory_keys(
         intents.drops.write(Intent::new(user, DropItem(item)));
         true
     } else if binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm) {
-        // What lends an ability, or what does something itself. Anything
+        // What does something when used, with a charge to spend. Anything
         // else is not used from here: it would spend a turn on nothing, and
         // the footer never offers it.
-        match (row.lends.first(), row.usable()) {
-            // An aimed ability wants the cursor; the bag closes for it.
-            (Some(lent), _) if lent.aimed => {
-                intents.aims.write(AimAt { user, ability: lent.ability });
-                true
-            }
-            (Some(_), _) | (None, true) => {
-                intents.uses.write(Intent::new(user, UseItem(item)));
-                true
-            }
-            (None, false) => false,
+        if row.usable() {
+            intents.uses.write(Intent::new(user, UseItem(item)));
+            true
+        } else {
+            false
         }
     } else if binds.throw.just_pressed(input) && row.throw_range.is_some() {
         // The bag closes and the targeting cursor opens in its place.
@@ -284,7 +277,7 @@ fn hints(row: Option<&ItemRow>, binds: &InventoryKeys, confirm: String, close: S
             keys.push(format!("{} wear", binds.wear.label()));
         }
         keys.push(format!("{} drop", binds.drop.label()));
-        if !row.lends.is_empty() || row.usable() {
+        if row.usable() {
             keys.push(format!("{confirm} use"));
         }
         if row.throw_range.is_some() {
@@ -334,18 +327,13 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         say(format!("goes on the {}", row.goes_on.join(" or the ")), Tones::MUTED);
     }
     for what in &row.used {
-        say(format!("use: {what}"), Tones::TEXT);
+        say(what.clone(), Tones::TEXT);
     }
-    for lent in &row.lends {
-        say(format!("use: {}", lent.name), Tones::TEXT);
-        if !lent.description.is_empty() {
-            say(lent.description.clone(), Tones::MUTED);
-        }
-        match lent.charges {
-            Some(1) => say("1 charge left".to_string(), Tones::MUTED),
-            Some(n) => say(format!("{n} charges left"), Tones::MUTED),
-            None => {}
-        }
+    if let Some((left, max)) = row.charges {
+        say(format!("{left}/{max} charges"), Tones::MUTED);
+    }
+    if row.empty {
+        say("empty".to_string(), Tones::MUTED);
     }
     for facet in &row.facets {
         say(facet.text.clone(), facet.tone);
@@ -557,6 +545,37 @@ mod tests {
         assert!(closed(&stage), "and the bag closed for the cursor");
     }
 
+    /// A game that opens the bag on its own key, one the bag also reads,
+    /// opens it and no more: the press that put the screen up is not read
+    /// again inside it, whichever of the two systems runs first.
+    #[test]
+    fn a_game_key_that_opens_the_bag_is_not_also_read_by_it() {
+        let (mut stage, blade, hat, knives) = staged();
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![knives, blade, hat] });
+        stage.app.add_systems(
+            Update,
+            (|keys: Res<ButtonInput<KeyCode>>, mut modals: ResMut<Modals>| {
+                if keys.just_pressed(KeyCode::KeyT) && !modals.any_open() {
+                    let bag = inventory_modal(&modals);
+                    modals.open(bag);
+                }
+            })
+            .in_set(rl_bevy::EngineSet::Input)
+            .before(inventory_keys),
+        );
+        stage.tick();
+
+        stage.press(KeyCode::KeyT);
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(modals.is_top(inventory_modal(modals)), "the bag is up");
+        assert!(stage.app.world_mut().resource_mut::<Messages<AimThrow>>().drain().next().is_none(), "and the knives on its first row are not thrown yet");
+
+        stage.press(KeyCode::KeyT);
+        let thrown: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<AimThrow>>().drain().map(|a| a.item).collect();
+        assert_eq!(thrown, vec![knives], "the second press is the bag's");
+    }
+
     #[test]
     fn an_empty_bag_says_so_in_the_games_words() {
         let (mut stage, _, _, _) = staged();
@@ -566,91 +585,88 @@ mod tests {
         assert_eq!(inside(&stage, 1), "Lint.");
     }
 
-    /// An item that lends an ability is described in the ability's words,
-    /// and using it uses the ability: on the spot for one that needs no
-    /// aim, through the targeting cursor for one that does.
-    #[test]
-    fn an_item_that_lends_an_ability_is_used_through_it_and_an_aimed_one_opens_the_cursor() {
-        let mut stage = Stage::new_with((ThrowingPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag")), |app| {
+    /// A bag whose items carry `triggers`, built the way a game's loader
+    /// builds them, through the registered moments and effect kinds.
+    fn with_triggers(triggers: &str) -> (Stage, rl_bevy::Triggers) {
+        let stage = Stage::new_with((rl_bevy::EffectsPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag")), |app| {
             app.add_engine_effects();
-            let names = Names::new().damage_kinds(&app.world().resource::<Registries>().damage_kinds);
-            let kinds = app.world().resource::<EffectKinds>();
-            let text = r#"#![enable(implicit_some)]
-[
-    (name: "quaff", description: "A swallow. It closes a wound.", aim: SelfOnly, mode: Own, costs: [Charge(1)],
-     effects: [(kind: "Mend", args: (kind: "kinetic", roll: "5"))]),
-    (name: "zap", mode: Bolt(range: 6), costs: [Charge(1)], effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))]),
-]"#;
-            let abilities = Abilities::load(text, kinds, &names).expect("the abilities load");
-            app.insert_resource(abilities);
         })
         .screen(52, 14);
-        let player = stage.player;
-        let (quaff, zap) = {
-            let a = stage.app.world().resource::<Abilities>();
-            (a.expect("quaff"), a.expect("zap"))
+        let specs: Vec<rl_rules::TriggerSpec> = Names::new().load_list(triggers).expect("the triggers parse");
+        let built = {
+            let world = stage.app.world();
+            let registries = world.resource::<Registries>().clone();
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<EffectKinds>(), &registries.names())
+                .expect("the triggers build")
         };
-        let potions = stage.app.world_mut().spawn((Item, Name::new("potion"), Grants(vec![quaff]), Stack { key: 1, count: 2 })).id();
-        let wand = stage.app.world_mut().spawn((Item, Name::new("a wand"), Grants(vec![zap]), Charges::full(3))).id();
-        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![potions, wand] });
-        stage.tick();
-
-        stage.press(KeyCode::KeyI);
-        assert_eq!(inside(&stage, 1), "2 potions");
-        assert_eq!(inside(&stage, 4), "use: quaff", "described as what it lends");
-        assert_eq!(inside(&stage, 5), "A swallow. It closes a wound.", "in the game's words");
-        stage.press(KeyCode::ArrowDown);
-        assert_eq!(inside(&stage, 4), "use: zap");
-        assert_eq!(inside(&stage, 5), "3 charges left", "and counted when it counts");
-
-        stage.press(KeyCode::Enter);
-        let aims: Vec<AimAt> = stage.app.world_mut().resource_mut::<Messages<AimAt>>().drain().collect();
-        assert_eq!(aims, vec![AimAt { user: player, ability: zap }], "an aimed ability opens the cursor");
-        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "rather than using the wand on the spot");
-
-        // The bag closed for the cursor; Escape puts the cursor away too.
-        stage.press(KeyCode::Escape);
-        assert!(!stage.app.world().resource::<Modals>().any_open());
-        stage.press(KeyCode::KeyI);
-        stage.press(KeyCode::ArrowUp);
-        stage.press(KeyCode::KeyU);
-        let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
-        assert_eq!(uses, vec![potions], "one that needs no aim is used where the player stands");
+        (stage, built)
     }
 
-    /// A thing that does something itself is offered and described from its
-    /// own effects, with no ability anywhere: no registry, no `Known`, and
-    /// the same `use:` line the ability path writes, because both ask the
-    /// same list what it does.
+    /// Every line of the bag's detail pane, top to bottom.
+    fn detail(stage: &Stage) -> Vec<String> {
+        (1..13).map(|y| inside(stage, y)).collect()
+    }
+
+    /// A thing with a `use` trigger is offered and described from its own
+    /// effects, with no ability anywhere, and the use key uses it.
     #[test]
-    fn a_thing_that_does_something_itself_is_offered_and_described_from_its_own_effects() {
-        let mut stage = Stage::new_with(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"), |app| {
-            app.add_engine_effects();
-        })
-        .screen(52, 14);
+    fn a_thing_with_a_use_trigger_is_offered_described_and_used() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "5"))])]"#);
         let player = stage.player;
-        let effects = {
-            let specs = vec![rl_rules::EffectSpec {
-                kind: "Mend".into(),
-                chance: 100,
-                args: rl_rules::ability::parse_args(r#"(kind: "kinetic", roll: "5")"#).expect("the args parse"),
-            }];
-            let registries = stage.app.world().resource::<Registries>().clone();
-            let kinds = stage.app.world().resource::<EffectKinds>();
-            rl_bevy::Effects::build(&specs, kinds, &registries.names()).expect("the mend builds")
-        };
         let poultice =
-            stage.app.world_mut().spawn((Item, Name::new("poultice"), OnUse(std::sync::Arc::new(effects)), Consumable, Stack { key: 1, count: 2 })).id();
+            stage.app.world_mut().spawn((Item, Name::new("poultice"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Stack { key: 1, count: 2 })).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![poultice] });
         stage.tick();
 
         stage.press(KeyCode::KeyI);
         assert_eq!(inside(&stage, 1), "2 poultices");
-        assert_eq!(inside(&stage, 3), "use: mends 5 kinetic", "described by what it does, in the registries' names");
+        assert!(detail(&stage).iter().any(|l| l == "use: mends 5 kinetic"), "described by what it does: {:?}", detail(&stage));
         assert!(stage.app.world().resource::<InventoryView>().rows[0].usable(), "and the row knows it is used");
 
         stage.press(KeyCode::KeyU);
         let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
-        assert_eq!(uses, vec![poultice], "and the use key uses it, with no ability to lend it");
+        assert_eq!(uses, vec![poultice], "and the use key uses it");
+    }
+
+    /// A grenade says what it does where it lands, and is thrown rather than
+    /// used: the use key does nothing and the footer does not offer it.
+    #[test]
+    fn a_thrown_thing_reads_what_it_does_where_it_lands_and_offers_no_use() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "land", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#);
+        let player = stage.player;
+        let grenade = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("grenade"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Throwable { range: 6, strike: None }))
+            .id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![grenade] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert!(detail(&stage).iter().any(|l| l == "on landing: 3 kinetic in a burst of 1"), "{:?}", detail(&stage));
+        assert!(!stage.app.world().resource::<InventoryView>().rows[0].usable(), "nothing to use");
+        stage.press(KeyCode::KeyU);
+        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and the use key spends no turn on it");
+    }
+
+    /// A wand counts its charges on its row, and an empty one is not offered
+    /// a use it would be refused.
+    #[test]
+    fn a_wand_counts_its_charges_and_an_empty_one_offers_no_use() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        let player = stage.player;
+        let wand = stage.app.world_mut().spawn((Item, Name::new("wand"), triggers.clone(), Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) })).id();
+        let spent = stage.app.world_mut().spawn((Item, Name::new("dead wand"), triggers, Consumable { left: 0, ..Consumable::new(5, WhenEmpty::Kept) })).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![wand, spent] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert!(detail(&stage).iter().any(|l| l == "3/5 charges"), "{:?}", detail(&stage));
+        stage.press(KeyCode::ArrowDown);
+        assert!(detail(&stage).iter().any(|l| l == "empty"), "{:?}", detail(&stage));
+        let rows = &stage.app.world().resource::<InventoryView>().rows;
+        assert!(rows[0].usable() && !rows[1].usable(), "a live wand is used and a dead one is not");
+        stage.press(KeyCode::KeyU);
+        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "so the use key does nothing on it");
     }
 }

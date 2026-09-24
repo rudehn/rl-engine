@@ -40,7 +40,7 @@ pub use dijkstra::DijkstraMap;
 pub use field::{Around, TileField};
 pub use light::{Emitter, Light, LightField, Rgb};
 pub use spatial::SpatialGrid;
-pub use targeting::{Footprint, TargetMode, clear_shot, footprint};
+pub use targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
 pub use terrain::{CostSource, OpacitySource, Terrain, TerrainView};
 pub use tile::{Burn, Kindling, TileId, TileProps, TileRegistry, TileTables};
 
@@ -54,7 +54,7 @@ pub mod prelude {
     pub use crate::light::{Emitter, Light, LightField, Rgb};
     pub use crate::region;
     pub use crate::spatial::SpatialGrid;
-    pub use crate::targeting::{Footprint, TargetMode, clear_shot, footprint};
+    pub use crate::targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
     pub use crate::terrain::{CostSource, OpacitySource, Terrain, TerrainView};
     pub use crate::tile::{Burn, Kindling, TileId, TileProps, TileRegistry, TileTables};
 }

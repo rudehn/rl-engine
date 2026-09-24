@@ -1,0 +1,40 @@
+// What lies about on Foundry's decks before anyone has dropped anything:
+// on which decks, and how often. What each thing is and does is
+// `items.ron`; this is only where. What a kill drops is its kind's `drops`
+// in `monsters.ron`, and what is in a crate is the crate's in `props.ron`.
+//
+// Every field:
+//   item:   a name from `items.ron`
+//   decks:  (first, last), the decks the row applies on, both included
+//   weight: how often it is drawn against every other row that applies on a
+//           deck; only the ratio matters
+//
+// An item may have several rows; one with no row is never found lying
+// about. Rows are drawn in the order they are written, so moving one
+// changes what a seed builds.
+[
+    (item: "monoblade",          decks: (1, 10), weight: 3),
+    (item: "mono-axe",           decks: (2, 10), weight: 2),
+    (item: "hand blaster",       decks: (2, 10), weight: 3),
+    (item: "blaster carbine",    decks: (3, 10), weight: 2),
+    (item: "ion pistol",         decks: (2, 10), weight: 2),
+    // The one gun on deck one, at about two decks in five.
+    (item: "slug pistol",        decks: (1, 10), weight: 1),
+    (item: "slug rifle",         decks: (4, 10), weight: 2),
+    (item: "heavy repeater",     decks: (7, 10), weight: 2),
+    (item: "slug",               decks: (1, 10), weight: 4),
+    (item: "keycard",            decks: (1, 10), weight: 2),
+    (item: "stim",               decks: (1, 10), weight: 4),
+    (item: "medkit",             decks: (2, 10), weight: 2),
+    // No grenade lies on deck one, which is fought with bare hands.
+    (item: "frag grenade",       decks: (2, 10), weight: 2),
+    (item: "smoke grenade",      decks: (2, 10), weight: 2),
+    (item: "ion grenade",        decks: (3, 10), weight: 2),
+    (item: "incendiary grenade", decks: (4, 10), weight: 1),
+    (item: "commando helmet",    decks: (1, 10), weight: 2),
+    (item: "rangefinder helmet", decks: (2, 10), weight: 1),
+    (item: "scrap plate",        decks: (1, 10), weight: 3),
+    (item: "composite plate",    decks: (2, 10), weight: 2),
+    (item: "combat gauntlets",   decks: (1, 10), weight: 2),
+    (item: "armored greaves",    decks: (1, 10), weight: 2),
+]

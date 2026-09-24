@@ -9,7 +9,7 @@
 //   sight:     optional; whether the aim must be a cell the user can see (default true)
 //   requires:  optional; Has(status) | Lacks(status) | Wielding(tag) |
 //              InSlot(slot, tag) | Above(stat, n)
-//   costs:     optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n)
+//   costs:     optional; Pool(stat, n) | Health(n) | Item(tag, n)
 //   time:      optional; hundredths of a step the turn costs (default 100)
 //   cooldown:  optional; hundredths before it may be used again, from the
 //              moment of use (default 0)

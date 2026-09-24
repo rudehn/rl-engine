@@ -497,7 +497,7 @@ impl<A: Copy> Tactic<A> for UseAbility {
         let mut best: Option<(i32, Usable, Point)> = None;
         for usable in &ctx.snapshot.usable {
             for aim in Self::aims(usable, ctx.snapshot) {
-                let shape = footprint(usable.mode, me, aim, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p));
+                let shape = footprint(usable.mode, me, aim, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p), ctx.blocks_burst);
                 let score = Self::score(usable, &shape.cells, ctx.snapshot);
                 if score <= 0 {
                     continue;
@@ -848,6 +848,7 @@ mod tests {
                 fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
                 bounds: arena(),
                 rng: &mut rng,
             });
@@ -878,6 +879,7 @@ mod tests {
             fields: &mut NoFields,
             can_step: &can_step,
             blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
             bounds: arena(),
             rng: &mut rng,
         });
@@ -892,7 +894,15 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
         let b: Brain<u32> = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: 0 });
         let mut decide = |snapshot: &Snapshot<u32>| {
-            b.decide(&mut TacticCtx { snapshot, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng })
+            b.decide(&mut TacticCtx {
+                snapshot,
+                fields: &mut NoFields,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
+                bounds: arena(),
+                rng: &mut rng,
+            })
         };
 
         let mut lost = Snapshot::alone(view(1, 5, 5, 10));
@@ -922,7 +932,16 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
         let b: Brain<u32> = Brain::new().then(FleeWhenHurt { at_pct: 50 }).then(SearchLastKnown).then(Hunt);
         let mut decide = |snapshot: &Snapshot<u32>| {
-            b.decide(&mut TacticCtx { snapshot, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng }).1
+            b.decide(&mut TacticCtx {
+                snapshot,
+                fields: &mut NoFields,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
+                bounds: arena(),
+                rng: &mut rng,
+            })
+            .1
         };
 
         let mut hurt = Snapshot::alone(view(1, 5, 5, 2));
@@ -954,6 +973,7 @@ mod tests {
             fields: &mut NoFields,
             can_step: &can_step,
             blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
             bounds: arena(),
             rng: &mut rng,
         });
@@ -966,6 +986,7 @@ mod tests {
             fields: &mut NoFields,
             can_step: &can_step,
             blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
             bounds: arena(),
             rng: &mut rng,
         });
@@ -974,8 +995,15 @@ mod tests {
         let mut far = Snapshot::alone(view(1, 5, 5, 10));
         far.enemies.push(view(2, 8, 5, 10));
         let mut fields = Given::over(&view_t);
-        let (d, who) =
-            b.decide(&mut TacticCtx { snapshot: &far, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng });
+        let (d, who) = b.decide(&mut TacticCtx {
+            snapshot: &far,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        });
         assert_eq!((d, who), (Decision::Step(Point::new(6, 5)), Some("hunt")));
 
         let alone = Snapshot::alone(view(1, 5, 5, 10));
@@ -984,6 +1012,7 @@ mod tests {
             fields: &mut NoFields,
             can_step: &can_step,
             blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
             bounds: arena(),
             rng: &mut rng,
         });
@@ -995,6 +1024,7 @@ mod tests {
                 fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
                 bounds: arena(),
                 rng: &mut rng
             }),
@@ -1016,6 +1046,7 @@ mod tests {
             fields: &mut fields,
             can_step: &blocked,
             blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
             bounds: arena(),
             rng: &mut rng,
         });
@@ -1058,7 +1089,15 @@ mod tests {
         many.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10), view(4, 6, 6, 10)];
         many.usable = vec![burst];
         many.sort();
-        let mut ctx = TacticCtx { snapshot: &many, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &many,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         let decision = UseAbility::default().evaluate(&mut ctx);
         let Some(Decision::Ability { ability, aim }) = decision else { panic!("expected an ability, got {decision:?}") };
         assert_eq!(ability, Id::from_raw(0));
@@ -1071,7 +1110,15 @@ mod tests {
         mixed.usable = vec![usable(0, Aim::Ground, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
         mixed.allies = vec![view(9, 6, 6, 10)];
         mixed.enemies = vec![view(2, 3, 8, 10), view(3, 6, 5, 10)];
-        let mut ctx = TacticCtx { snapshot: &mixed, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &mixed,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
         assert_eq!(aim, Point::new(3, 8), "one ally caught outweighs one enemy hit");
     }
@@ -1092,14 +1139,30 @@ mod tests {
         s.allies = vec![view(8, 6, 6, 10), view(9, 7, 6, 10)];
         s.usable = vec![usable(0, Aim::Foe, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
         s.sort();
-        let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
         assert_ne!(aim, Point::new(3, 8), "the ally under the pair costs a foe-aimed burst nothing");
 
         // The same room with the burst on the ground: now the ally burns,
         // and the loner is the better shot.
         s.usable = vec![usable(0, Aim::Ground, rl_grid::TargetMode::Ball { range: 8, radius: 1 })];
-        let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         let Some(Decision::Ability { aim, .. }) = UseAbility::default().evaluate(&mut ctx) else { panic!("expected an ability") };
         assert_eq!(aim, Point::new(3, 8));
 
@@ -1107,13 +1170,29 @@ mod tests {
         // reach is itself.
         let mut hurt = Snapshot::alone(view(1, 0, 5, 4));
         hurt.usable = vec![usable(0, Aim::Ally, rl_grid::TargetMode::Adjacent)];
-        let mut ctx = TacticCtx { snapshot: &hurt, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &hurt,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(0, 5) }));
 
         // Whole again, there is nothing to mend.
         let mut whole = Snapshot::alone(view(1, 0, 5, 10));
         whole.usable = vec![usable(0, Aim::Ally, rl_grid::TargetMode::Adjacent)];
-        let mut ctx = TacticCtx { snapshot: &whole, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &whole,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
     }
 
@@ -1125,7 +1204,15 @@ mod tests {
         let can_step = |_: Point| true;
         let mut alone = Snapshot::alone(view(1, 0, 5, 10));
         alone.usable = vec![usable(0, Aim::Foe, rl_grid::TargetMode::Bolt { range: 6 })];
-        let mut ctx = TacticCtx { snapshot: &alone, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &alone,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None, "no enemies, no aim");
 
         // A wall between: the bolt stops short, so it covers nothing.
@@ -1133,7 +1220,15 @@ mod tests {
         walled.enemies = vec![view(2, 5, 5, 10)];
         walled.usable = vec![usable(0, Aim::Foe, rl_grid::TargetMode::Bolt { range: 6 })];
         let wall = |p: Point| p == Point::new(2, 5);
-        let mut ctx = TacticCtx { snapshot: &walled, fields: &mut NoFields, can_step: &can_step, blocks_shot: &wall, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &walled,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &wall,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None, "the wall is in the way");
     }
 
@@ -1153,6 +1248,7 @@ mod tests {
                 fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: blocks,
+                blocks_burst: &|_| false,
                 bounds: arena(),
                 rng,
             })
@@ -1186,7 +1282,15 @@ mod tests {
     fn decide(tactic: &ShootAtRange, s: &Snapshot<u32>, blocks_shot: impl Fn(Point) -> bool) -> Option<Decision<u32>> {
         let can_step = |_: Point| true;
         let mut rng = StdRng::seed_from_u64(1);
-        tactic.evaluate(&mut TacticCtx { snapshot: s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &blocks_shot, bounds: arena(), rng: &mut rng })
+        tactic.evaluate(&mut TacticCtx {
+            snapshot: s,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &blocks_shot,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        })
     }
 
     #[test]
@@ -1227,7 +1331,15 @@ mod tests {
             let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
             s.items = vec![rag, blade];
             s.sort();
-            let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+            let mut ctx = TacticCtx {
+                snapshot: &s,
+                fields: &mut NoFields,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
+                bounds: arena(),
+                rng: &mut rng,
+            };
             let decision = Scavenge { reach: 5 }.evaluate(&mut ctx);
             match decision {
                 Some(Decision::Step(to)) => {
@@ -1256,6 +1368,7 @@ mod tests {
                 fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
                 bounds: arena(),
                 rng: &mut rng,
             })
@@ -1279,7 +1392,15 @@ mod tests {
         let can_step = |_: Point| true;
         let mut sees = Snapshot::alone(view(1, 0, 0, 10));
         sees.enemies = vec![view(2, 1, 0, 10)];
-        let mut ctx = TacticCtx { snapshot: &sees, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &sees,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(UseAbility::default().evaluate(&mut ctx), None);
     }
 
@@ -1299,7 +1420,15 @@ mod tests {
         } else {
             s.last_known = Some(foe);
         }
-        let mut ctx = TacticCtx { snapshot: &s, fields: &mut fields, can_step: &can_step, blocks_shot: &blocks_shot, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &blocks_shot,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         tactic.evaluate(&mut ctx)
     }
 
@@ -1334,7 +1463,15 @@ mod tests {
         let mut s = Snapshot::alone(view(1, 3, 5, 10));
         s.last_known = Some(seen);
         s.wits = Wits::MINDLESS;
-        let mut ctx = TacticCtx { snapshot: &s, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(keep.evaluate(&mut ctx), None, "a mindless thing does not remember where");
     }
 
@@ -1357,7 +1494,15 @@ mod tests {
             let mut snapshot = Snapshot::alone(view(1, me.x, me.y, 10));
             snapshot.allies.push(view(3, mate.x, mate.y, 10));
             let mut fields = Given::over(&view_t);
-            let mut ctx = TacticCtx { snapshot: &snapshot, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng };
+            let mut ctx = TacticCtx {
+                snapshot: &snapshot,
+                fields: &mut fields,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
+                bounds: arena(),
+                rng,
+            };
             keep.evaluate(&mut ctx)
         };
         let gap = |d: Option<Decision<u32>>| match d {
@@ -1374,7 +1519,15 @@ mod tests {
         let mut lonely = Snapshot::alone(view(1, 9, 5, 10));
         lonely.enemies.push(view(2, 5, 5, 10));
         let mut fields = Given::over(&view_t);
-        let mut ctx = TacticCtx { snapshot: &lonely, fields: &mut fields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &lonely,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(keep.evaluate(&mut ctx), None, "an enemy is not company: with no ally in sight there is nobody to follow");
     }
 
@@ -1397,7 +1550,15 @@ mod tests {
         alone.allies.push(view(3, 9, 5, 10));
         let mut rng = StdRng::seed_from_u64(1);
         let can_step = |_: Point| true;
-        let mut ctx = TacticCtx { snapshot: &alone, fields: &mut NoFields, can_step: &can_step, blocks_shot: &nothing_blocks, bounds: arena(), rng: &mut rng };
+        let mut ctx = TacticCtx {
+            snapshot: &alone,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
         assert_eq!(keep.evaluate(&mut ctx), None, "with no enemy in sight there is nobody to shadow");
     }
 
@@ -1468,6 +1629,7 @@ mod tests {
                 fields: &mut NoFields,
                 can_step: &can_step,
                 blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
                 bounds: arena(),
                 rng: &mut rng,
             })

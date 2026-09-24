@@ -1,20 +1,22 @@
 // Foundry's abilities: what a commando calls on besides a weapon.
 //
 // Every field (the ones marked "optional" may be left out):
-//   name:        unique; `stims` is granted by the first upgrade. What a medical item
-//                does is not here: an item that is used and spent carries its own
-//                `on_use` effects in `items.ron`, and only what is aimed or waits on a
-//                cooldown belongs in this file
+//   name:        unique; `stims` is granted by the first upgrade. Nothing an item does
+//                is here: a thing in the pack says what it does with its own triggers
+//                in `items.ron`, and only what the commando has learned belongs here
 //   description: optional; what it is, in a sentence, for the list on `a`
 //   look:        optional; (glyph:, color: (r:, g:, b:))
 //   aim:         Foe (default) | Ally | SelfOnly | Ground | Anyone
 //   mode:        Own | Adjacent | Bolt(range:) | Ball(range:, radius:) | Beam(range:) | Cone(length:)
-//   costs:       optional; Pool(stat, n) | Charge(n) | Health(n) | Item(tag, n),
-//                where Charge is spent from the item that lends the ability
+//   costs:       optional; Pool(stat, n) | Health(n) | Item(tag, n)
 //   time:        optional; hundredths of a step the turn costs (default 100)
 //   cooldown:    optional; hundredths before it may be used again (default 0)
 //   effects:     each (kind:, chance:, args:); kind is one the engine ships:
-//                Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport
+//                Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport; Ignite(turns:),
+//                which sets the ground alight; Emit(gas:, amount:), which gives gas
+//                off on every cell. The damage kinds are "kinetic" | "energy" |
+//                "ion" | "electricity" | "thermal" | "care", the statuses
+//                "sensors down" | "mending" | "scorched", the one gas "smoke"
 #![enable(implicit_some)]
 [
     (

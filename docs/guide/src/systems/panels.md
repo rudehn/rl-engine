@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 9a2239f8 -->
+     fingerprint: fc36a18e -->
 
 # Panels
 
@@ -80,7 +80,7 @@ A stack rather than a return-to slot, because a slot can be pushed twice and los
 `Focus` is the one entity picked out of that list, held by entity rather than by cell so two things on a tile are two stops, and a focus on something that has left sight is treated as none rather than as an error.
 The rail highlights it, the look cursor opens on it and an aim opens on it when the aim can take it, so the row picked out and the thing aimed at are one choice.
 `VitalsView` is the player: a label, a list of `Bar`s, armor, status badges, game facets, the turn, the position, whether the player is seen and how loud it has been.
-`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is.
+`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one.
 `InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it and a `Duel` fought at the distance the cursor stands from the player.
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.

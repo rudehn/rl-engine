@@ -1,20 +1,15 @@
-//! [`Effects`], the list an ability an actor knows, a prop's trigger or
-//! offer, and a thing in the bag that is used up each carry, and the
-//! effects the engine ships to fill one: what such a list can do with the
+//! The effects the engine ships: what an effect list can ask of the
 //! subsystems the engine owns.
 //!
 //! [`Harm`] and [`Mend`] ask combat's damage pipeline, [`Inflict`] and
 //! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move
 //! an actor through [`EffectWorld`]; [`AddEngineEffects`] registers those
 //! seven. [`Ignite`] asks fire and [`Emit`] asks gas, and each is registered
-//! by the plugin that answers it, so an ability file naming one works exactly
+//! by the plugin that answers it, so a content file naming one works exactly
 //! when the game has that subsystem. Here, rather than each in the module
-//! that owns its mechanic, so the dependency runs one way: abilities are
-//! built on combat, statuses, fire and gas, and none of those has to know an
-//! ability exists.
-//!
-//! A game's own effects sit beside these through
-//! [`AddEffect::add_effect`], and the resolver cannot tell them apart.
+//! that owns its mechanic, so the dependency runs one way: effects are built
+//! on combat, statuses, fire and gas, and none of those has to know an
+//! effect list exists.
 
 use bevy::prelude::*;
 use rl_core::{DiceRoll, Point};
@@ -23,107 +18,10 @@ use rl_rules::damage::DamageKindId;
 use rl_rules::gas::GasId;
 use rl_rules::{Hit, Names, StatusId};
 
-use crate::ability::{AddEffect, Effect, EffectKinds, EffectWorld, FromArgs, Landing};
+use super::{AddEffect, Effect, EffectWorld, FromArgs, Landing};
 use crate::combat::DamageEvent;
 use crate::registries::Registries;
 use crate::status::{Afflict, Cure};
-
-/// One effect of a list, built, with the chance it lands.
-struct Built {
-    chance: u8,
-    effect: Box<dyn Effect>,
-}
-
-/// A list of effects, built once from content and landed together.
-///
-/// Three things in the engine own such a list and none of them is the
-/// others: an ability, a prop's trigger or one of its offers, and an item
-/// that does something when it is used. Each decides for itself what the
-/// list means and when it lands; what they share is reading the same
-/// `(kind, chance, args)` out of content, failing loudly on a name nobody
-/// registered, and rolling the ones that may miss. That sharing is here,
-/// because it was written three times before it was written once, and the
-/// prop's copy had already drifted from the ability's.
-///
-/// Not `Clone`, since an effect is a boxed trait object: a game that wants
-/// one list on many entities puts it behind an `Arc`, which is what
-/// [`OnUse`](crate::consumable::OnUse) does.
-#[derive(Default)]
-pub struct Effects(Vec<Built>);
-
-impl Effects {
-    /// Builds every spec, or reports every one that would not build.
-    ///
-    /// Every failure rather than the first, because content is fixed a
-    /// file at a time and a loader that stops at the first error hides the
-    /// other four. The caller says which thing the list belongs to when it
-    /// prints them: this cannot know whether it is reading an ability, a
-    /// trap or a medkit.
-    pub fn build(specs: &[rl_rules::EffectSpec], kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, Vec<String>> {
-        let mut built = Vec::new();
-        let mut errors = Vec::new();
-        for spec in specs {
-            match kinds.build(&spec.kind, &spec.args, names) {
-                Ok(effect) => built.push(Built { chance: spec.chance, effect }),
-                Err(e) => errors.push(e),
-            }
-        }
-        if errors.is_empty() { Ok(Self(built)) } else { Err(errors) }
-    }
-
-    /// Whether it does nothing at all, which is what content that named no
-    /// effects builds to.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Lands every effect on `landing`, rolling each that may miss.
-    ///
-    /// The roll comes from the ability stream, whoever is landing: a trap
-    /// and a potion are dealt from the same deck as a spell, so a subsystem
-    /// cannot shift another's dice by landing something of its own.
-    pub fn land(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        use rand::Rng;
-        for built in &self.0 {
-            if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
-                continue;
-            }
-            built.effect.apply(landing, world);
-        }
-    }
-
-    /// What these do, one line per effect that has something to say, with
-    /// its chance in front when it is not certain.
-    ///
-    /// What a menu lists under an ability, and what a screen could list
-    /// under a prop's offer or a thing in the bag: the list can say what it
-    /// is without anyone knowing what carries it.
-    pub fn describe(&self, registries: &Registries) -> Vec<String> {
-        self.0
-            .iter()
-            .filter_map(|b| {
-                let what = b.effect.describe(registries);
-                match (what.is_empty(), b.chance >= 100) {
-                    (true, _) => None,
-                    (false, true) => Some(what),
-                    (false, false) => Some(format!("{}% chance of {what}", b.chance)),
-                }
-            })
-            .collect()
-    }
-
-    /// Lands every effect on one cell, as `user` setting them off there.
-    ///
-    /// The shape for everything that happens where it already is rather
-    /// than where it was aimed: a trap underfoot, a crate levered open, a
-    /// stim in the arm. No ability, so nothing draws an ability's look, and
-    /// one cell, so a footprint is not invented for something that never
-    /// flew.
-    pub fn land_on(&self, user: Entity, at: Point, targets: Vec<Entity>, world: &mut EffectWorld<'_, '_>) {
-        let landing = Landing { user, ability: None, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets };
-        self.land(&landing, world);
-    }
-}
 
 /// Damage everyone the ability's aim wanted under its footprint.
 ///

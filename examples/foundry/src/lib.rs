@@ -8,6 +8,7 @@
 #![deny(missing_docs)]
 
 pub mod ammo;
+pub mod cheats;
 pub mod climb;
 pub mod content;
 pub mod decks;

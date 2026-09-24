@@ -26,6 +26,10 @@ pub struct GearSlot {
     pub name: String,
     /// What is worn in it, if anything.
     pub item: Option<Row>,
+    /// Charges left and the most it holds, for a worn thing that holds more
+    /// than one: a wand. On the slot rather than the row because the row is
+    /// every panel's and a count of charges is gear's.
+    pub charges: Option<(u16, u16)>,
 }
 
 /// Every slot, in the order the game registered them.
@@ -70,22 +74,23 @@ impl Plugin for GearViewPlugin {
     }
 }
 
+/// What a worn thing shows on its slot: its name, its look, how many,
+/// and its charges.
+type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Consumable>);
+
 /// Fills [`GearView`] from what the player wears.
-pub fn collect_gear(
-    mut view: ResMut<GearView>,
-    registries: Res<Registries>,
-    player: Query<&Equipped, With<Player>>,
-    items: Query<(Option<&Name>, Option<&Glyph>, Option<&Stack>)>,
-) {
+pub fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, player: Query<&Equipped, With<Player>>, items: Query<Worn>) {
     view.slots.clear();
     let worn = player.single().ok();
     for (slot, def) in registries.slots.iter() {
-        let item = worn.and_then(|w| w.in_slot(slot)).map(|entity| {
-            let (name, glyph, stack) = items.get(entity).unwrap_or((None, None, None));
+        let entity = worn.and_then(|w| w.in_slot(slot));
+        let (name, glyph, stack, consumable) = entity.and_then(|e| items.get(e).ok()).unwrap_or((None, None, None, None));
+        let item = entity.map(|entity| {
             let shown = name.map(|n| rl_core::noun::listed(n.as_str(), stack.map_or(1, |s| s.count))).unwrap_or_default();
             Row::new(entity, shown, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE)))
         });
-        view.slots.push(GearSlot { slot, name: def.name.clone(), item });
+        let charges = consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max));
+        view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges });
     }
 }
 
@@ -121,6 +126,29 @@ mod tests {
         let body = view.by_name("body").expect("listed");
         assert!(body.item.is_none(), "an empty slot is still a row");
         assert_eq!(view.worn().count(), 1);
+    }
+
+    /// A worn wand counts its charges on its slot; a blade, which counts
+    /// none, and a stim that holds one each, say nothing.
+    #[test]
+    fn a_worn_wand_counts_its_charges_and_a_blade_says_nothing() {
+        let hand = slots().expect("main hand");
+        let body = slots().expect("body");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let wand = stage.app.world_mut().spawn((Item, Name::new("wand"), Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) })).id();
+        let coat = stage.app.world_mut().spawn((Item, Name::new("coat"))).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(2));
+        worn.equip(wand, &EquipShape::in_slot(hand)).expect("the slot exists");
+        worn.equip(coat, &EquipShape::in_slot(body)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        assert_eq!(view.by_name("main hand").and_then(|s| s.charges), Some((3, 5)));
+        assert_eq!(view.by_name("body").and_then(|s| s.charges), None);
     }
 
     #[test]

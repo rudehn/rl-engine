@@ -28,7 +28,7 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::RunSeed;
 use rl_engine::rl_rules::Hit;
 use rl_engine::rl_rules::prelude::Ledger;
-use rl_engine::rl_ui::{NarratorPlugin, UiPlugin};
+use rl_engine::rl_ui::UiPlugin;
 
 /// A run with no window, seeded, with every plugin Foundry's stealth,
 /// radar and combat need already added.
@@ -67,6 +67,8 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
         StealthPlugin,
         FactsPlugin,
         AbilitiesPlugin,
+        FirePlugin,
+        GasPlugin,
         NoisePlugin::new(crate::droids::NOISE),
     ));
     app.add_engine_effects().insert_resource(Seed(seed)).insert_resource(crate::content::registries());
@@ -79,7 +81,7 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
     app.insert_resource(abilities);
     // The narrator the binary adds, since every line Foundry says from
     // inside a turn reaches the log through it.
-    app.add_plugins((UiPlugin, NarratorPlugin::default()));
+    app.add_plugins((UiPlugin, crate::plugin::narrator()));
     app
 }
 
@@ -88,19 +90,20 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
 ///
 /// An `Armory` needs them, since an item may lend an ability, and the
 /// tests that load one against a bare `content::registries()` have no
-/// world at all. The throwaway `App` is there for the effect kinds and
-/// nothing else: it declares what `add_engine_effects` declares, which is
-/// what `main.rs` gives the real load.
+/// world at all. The effect kinds are [`effect_kinds`]'s, the same ones
+/// `main.rs` gives the real load.
 pub fn abilities(registries: &Registries) -> Abilities {
     crate::upgrades::load_abilities(&effect_kinds(), registries)
 }
 
 /// The effect kinds a Foundry app has, for the same tests: whatever
-/// `add_engine_effects` declares, which is what `main.rs` gives the real
-/// load. The throwaway `App` is there for that and nothing else.
+/// `add_engine_effects` declares, and the `Ignite` and `Emit` that
+/// `FirePlugin` and `GasPlugin` declare for the grenades, which is what
+/// `main.rs` gives the real load. The throwaway `App` is there for that
+/// and nothing else.
 pub fn effect_kinds() -> EffectKinds {
     let mut app = App::new();
-    app.add_engine_effects();
+    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
     std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
 }
 
@@ -108,13 +111,14 @@ pub fn effect_kinds() -> EffectKinds {
 /// running game loads it from.
 pub fn armory_of(app: &App) -> crate::gear::Armory {
     let world = app.world();
-    crate::gear::Armory::load(world.resource::<Registries>(), world.resource::<Abilities>(), world.resource::<EffectKinds>())
+    crate::gear::Armory::load(world.resource::<Registries>(), world.resource::<EffectKinds>(), world.resource::<Moments>())
 }
 
 /// The armory, for a test that has `Registries` and no `App` at all: the
-/// abilities and the effect kinds are built on the spot.
+/// effect kinds are built on the spot, and the moments are the engine's,
+/// since Foundry registers none of its own.
 pub fn armory(registries: &Registries) -> crate::gear::Armory {
-    crate::gear::Armory::load(registries, &abilities(registries), &effect_kinds())
+    crate::gear::Armory::load(registries, &effect_kinds(), &Moments::default())
 }
 
 /// `Struck` messages copied out as they are written, the way the engine's
