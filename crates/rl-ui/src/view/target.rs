@@ -19,6 +19,14 @@
 //! any actor but whoever sends it. The direction keys still reach every
 //! cell, and wherever the cursor goes the [`Focus`] follows.
 //!
+//! What an aim was confirmed at is remembered apart from the focus, as
+//! [`LastAimed`], and the next aim opens on it when nothing is picked out.
+//! The two are kept apart because they answer different questions: the
+//! focus is what the nearby list shows picked out, and an aim that has been
+//! fired or put away leaves nothing picked out, so the list is not left
+//! pointing at a droid long after the grenade has landed; what the player
+//! last threw at is only where the next throw starts.
+//!
 //! The cursor is a modal, declared under the name `target`, so a game
 //! gates its movement keys on [`no_modal`](crate::no_modal) and gets the
 //! exclusion from the bag and the look cursor for free.
@@ -145,6 +153,7 @@ impl Plugin for TargetViewPlugin {
         app.init_resource::<TargetView>()
             .init_resource::<CursorKeys>()
             .init_resource::<Focus>()
+            .init_resource::<LastAimed>()
             .add_message::<AimAt>()
             .add_message::<AimThrow>()
             .add_message::<AimFire>();
@@ -208,6 +217,16 @@ impl Pointing {
     }
 }
 
+/// What the last aim was confirmed at, where the next one opens when
+/// nothing is picked out in the nearby list.
+///
+/// It may name something that has since left sight or died, or that the
+/// next aim cannot take: it is read against the aim's own candidates, and
+/// a stale one reads as none. A cancelled aim leaves it as it was, since
+/// only a thing actually thrown or shot at is worth coming back to.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct LastAimed(pub Option<Entity>);
+
 /// Everything the cursor steers by.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Aiming<'w, 's> {
@@ -216,6 +235,7 @@ pub struct Aiming<'w, 's> {
     abilities: Option<Res<'w, Abilities>>,
     occupancy: Res<'w, Occupancy>,
     focus: ResMut<'w, Focus>,
+    last: ResMut<'w, LastAimed>,
     sighted: Res<'w, crate::focus::Sighted>,
     bystanders: Bystanders<'w, 's>,
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>)>,
@@ -262,7 +282,8 @@ impl Aiming<'_, '_> {
     }
 
     /// Where the cursor opens: on what is picked out, when the aim can take
-    /// it, and otherwise on the nearest thing worth aiming at.
+    /// it, then on what the last aim was fired at, and otherwise on the
+    /// nearest thing worth aiming at.
     ///
     /// [`Aim::worth_aiming_at`] is the rule the mind's tactic aims by, so
     /// the cursor opens on what a monster would have picked, the user's own
@@ -273,6 +294,9 @@ impl Aiming<'_, '_> {
         let list = self.candidates(user, pointing);
         if let Some(picked) = self.focus.within(&list) {
             return Some(*picked);
+        }
+        if let Some(last) = self.last.0.and_then(|entity| list.iter().find(|s| s.entity == entity)) {
+            return Some(*last);
         }
         let aim = self.aim(pointing);
         list.into_iter().find(|s| {
@@ -366,7 +390,10 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
         *aiming.focus = focus;
     }
     match steer {
-        Steer::Close => close(&mut view, &mut modals, modal),
+        Steer::Close => {
+            aiming.focus.clear();
+            close(&mut view, &mut modals, modal);
+        }
         Steer::Confirm => {
             // Refused aims are the resolver's to report, not the cursor's: a
             // player who insists gets the refusal in the log with its reason,
@@ -387,6 +414,10 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
                     intents.attacks.write(Intent::new(user, Attack(target)));
                 }
             }
+            // What it was fired at is remembered for the next aim, and is
+            // no longer picked out in the list.
+            aiming.last.0 = aiming.focus.get();
+            aiming.focus.clear();
             close(&mut view, &mut modals, modal);
         }
         Steer::Moved | Steer::Stay => {}
@@ -761,8 +792,8 @@ mod tests {
     }
 
     /// Something picked out before the cursor opened is where it opens,
-    /// when the aim can take it, and what the cursor lands on stays picked
-    /// out after it closes.
+    /// when the aim can take it, and putting the cursor away leaves nothing
+    /// picked out.
     #[test]
     fn the_cursor_opens_on_what_is_picked_out_when_the_aim_can_take_it() {
         let mut stage = staged();
@@ -783,6 +814,37 @@ mod tests {
         assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(2, 0), "a bolt at foes cannot take a coin");
         stage.press(KeyCode::Escape);
         assert_ne!(stage.app.world().resource::<Focus>().get(), Some(coin), "the cursor moved the focus to what it opened on");
+    }
+
+    /// The aim remembers what it was last confirmed at and opens on it
+    /// again, the nearest notwithstanding, without leaving it picked out in
+    /// the nearby list: once the cursor is put away, fired or not, nothing
+    /// is picked out, and a cancelled aim does not change what is
+    /// remembered.
+    #[test]
+    fn the_next_aim_opens_on_the_last_one_confirmed_and_nothing_stays_picked_out() {
+        let mut stage = staged();
+        let (bolt, _, _) = arm(&mut stage);
+        stage.actor("near one", 'n', 2, 0);
+        let far = stage.actor("far one", 'f', 4, 0);
+        stage.tick();
+        let at = stage.at;
+
+        aim_at(&mut stage, bolt);
+        assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(2, 0), "the nearest, the first time");
+        stage.press(KeyCode::Tab);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), Some(far), "the list follows the cursor while it aims");
+        stage.press(KeyCode::Enter);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "fired, and nothing is left picked out");
+
+        aim_at(&mut stage, bolt);
+        assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(4, 0), "back on the one fired at, not the nearest");
+        stage.press(KeyCode::Tab);
+        stage.press(KeyCode::Escape);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "put away, and nothing is left picked out");
+
+        aim_at(&mut stage, bolt);
+        assert_eq!(stage.app.world().resource::<TargetView>().cursor, at.offset(4, 0), "a cancelled aim is not remembered over a fired one");
     }
 
     /// What the cursor shows is what the resolver will do: the same

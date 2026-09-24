@@ -11,8 +11,11 @@
 //! Cycling steps through [`Sighting`]s, entities rather than cells, in the
 //! order the nearby list prints them, and moves the [`Focus`] with it; a
 //! step moves the focus onto whatever the list has on the new cell. So the
-//! row the nearby panel highlights is always what the cursor is on, and
-//! closing a cursor leaves picked out what it was last pointed at.
+//! row the nearby panel highlights is always what the cursor is on. Closing
+//! the look cursor leaves picked out what it was last pointed at; putting
+//! an aim away, fired or not, leaves nothing picked out, and the aim keeps
+//! what it was fired at to itself, as
+//! [`LastAimed`](crate::view::target::LastAimed).
 //!
 //! Where each cursor is stays with it, because the two remember different
 //! things: one a cell, the other a cell and what is being aimed. Only what

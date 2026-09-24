@@ -172,10 +172,32 @@ pub struct Choices<'w> {
     exits: MessageWriter<'w, AppExit>,
 }
 
+/// What decides whether the menu opens: its key, and what is picked out in
+/// the nearby list when a game has one, which the close key lets go of
+/// before it opens the menu.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Opening<'w> {
+    binds: Res<'w, MenuKeys>,
+    focus: Option<Res<'w, crate::focus::Focus>>,
+    sighted: Option<Res<'w, crate::focus::Sighted>>,
+}
+
+impl Opening<'_> {
+    /// Whether something in sight is picked out.
+    fn picked_out(&self) -> bool {
+        self.focus.as_deref().zip(self.sighted.as_deref()).is_some_and(|(focus, sighted)| focus.within(sighted.list()).is_some())
+    }
+}
+
 /// Opens, closes, walks and chooses.
+///
+/// With nothing open and something in sight picked out, the close key is
+/// the nearby list's, which lets go of it: a player who pressed Tab to look
+/// down the list backs out of it the way they back out of a cursor, and a
+/// second press, with nothing picked out, opens the menu.
 pub fn menu_keys(
     keys: ControlInput,
-    binds: Res<MenuKeys>,
+    opening: Opening,
     state: Res<State<EngineState>>,
     seed: Option<Res<Seed>>,
     mut menu: ResMut<GameMenu>,
@@ -185,7 +207,8 @@ pub fn menu_keys(
     let modal = game_menu_modal(&modals);
     let playing = *state.get() == EngineState::Playing;
     let input = keys.input();
-    if playing && input.just_pressed(binds.toggle) && (modals.is_top(modal) || !modals.any_open()) {
+    let letting_go = !modals.any_open() && input.just_pressed(keys.bindings().cursor.close) && opening.picked_out();
+    if playing && input.just_pressed(opening.binds.toggle) && (modals.is_top(modal) || !modals.any_open()) && !letting_go {
         modals.toggle(modal);
         menu.selected = 0;
         return;
@@ -388,6 +411,23 @@ mod tests {
         stage.press(KeyCode::Escape);
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open(), "the same key closes it again");
+    }
+
+    /// With nothing open and something in sight picked out, escape lets
+    /// go of it rather than opening the menu, and the next escape, with
+    /// nothing picked out, opens the menu.
+    #[test]
+    fn escape_lets_go_of_what_is_picked_out_before_it_opens_the_menu() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 40, 12)), crate::NearbyViewPlugin)).screen(40, 12);
+        stage.actor("them", 't', 2, 0);
+        stage.tick();
+        stage.press(KeyCode::Tab);
+        assert!(stage.app.world().resource::<crate::focus::Focus>().get().is_some(), "picked out");
+        stage.press(KeyCode::Escape);
+        assert_eq!(stage.app.world().resource::<crate::focus::Focus>().get(), None, "let go of");
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "and no menu over it");
+        stage.press(KeyCode::Escape);
+        assert!(stage.app.world().resource::<Modals>().any_open(), "then the menu");
     }
 
     /// The menu is only as tall as what it says: its rectangle is the most
