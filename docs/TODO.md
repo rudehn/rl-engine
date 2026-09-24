@@ -25,49 +25,52 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 
 | # | Item | Section | Impact | Effort |
 |---|------|---------|--------|--------|
-| 1 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
-| 2 | Corsair's tests play a different game from its binary | 3 | medium | medium |
-| 3 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
-| 4 | `OnMap` as a required component | 4 | medium | medium |
-| 5 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 6 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 7 | What the save holds is stated where the save is | 7 | medium | medium |
-| 8 | Anyone travels | 3 | medium | high |
-| 9 | Movement profiles that change costs | 3 | medium | high |
-| 10 | The narrator hears what registers itself | 7 | medium | high |
-| 11 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 12 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 13 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 14 | Admission scans its waiting actors linearly | 4 | low | low |
-| 15 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 16 | A `Burning` entity comes back unlit | 3 | low | low |
-| 17 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 18 | A place for a miss | 3 | low | low |
-| 19 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 20 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 21 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
-| 22 | `HalveIfBlocked` can never fire | 3 | low | low |
-| 23 | Two engine types are named for a theme word | 4 | low | low |
-| 24 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
+| 1 | Healing is not a kind of damage | 4 | high | high |
+| 2 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
+| 3 | Corsair's tests play a different game from its binary | 3 | medium | medium |
+| 4 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
+| 5 | `OnMap` as a required component | 4 | medium | medium |
+| 6 | Light is recast once a frame, not once a turn | 3 | medium | medium |
+| 7 | Every game's log lines go through `Tell` | 3 | medium | medium |
+| 8 | What the save holds is stated where the save is | 7 | medium | medium |
+| 9 | Anyone travels | 3 | medium | high |
+| 10 | Movement profiles that change costs | 3 | medium | high |
+| 11 | The narrator hears what registers itself | 7 | medium | high |
+| 12 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 13 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 14 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 15 | Admission scans its waiting actors linearly | 4 | low | low |
+| 16 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 17 | A `Burning` entity comes back unlit | 3 | low | low |
+| 18 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 19 | A place for a miss | 3 | low | low |
+| 20 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 23 | `HalveIfBlocked` can never fire | 3 | low | low |
+| 24 | Two engine types are named for a theme word | 4 | low | low |
+| 25 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 
-Why the order that is left, in three moves:
+Why the order that is left, in four moves:
 
-1. **The performance section is done for now.**
+1. **Healing first.**
+   It was put at the top on 2026-09-23 as a design correction rather than by the ranking below: every game registers a damage kind that is not one, and each new game copies it, so it only gets dearer.
+2. **The performance section is done for now.**
    Eight items opened there; the benches closed or struck seven of them and one line fixed the eighth.
    The turn loop's ceiling was schedule dispatch, and everything else that was supposed to be a ceiling measured small: the perceive scans, the veil's epoch, the closed screens' collectors, the terminal's entity count.
    What is left in section 8 is one cache that thrashes and two cheap cleanups, none of them urgent.
-2. **So start at item 1 and work down the middle band, 1 to 8.**
+3. **Then work down the middle band, 2 to 9.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-3. **Then 9 to 11**, the high-effort ones, of which only the narrator's registry is structural.
+4. **Then 10 to 12**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
 
-Items 12 to 19 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 20 waits on a game that actually wants the tactics it would add, and item 21 waits on a second game asking for it.
+Items 13 to 20 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 21 waits on a game that actually wants the tactics it would add, and item 22 waits on a second game asking for it.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
 
@@ -147,6 +150,13 @@ The five items that opened this section were built in the six stages of `docs/de
   Found on 2026-09-22 while writing `docs/guide/src/systems/narration.md`.
 
 ## 4. Simplify
+
+- **Healing is not a kind of damage.**
+  `Mend` writes negative damage of a named kind (`crates/rl-bevy/src/effects/engine.rs`), and a status mends over time by ticking negative damage (`StatusDef::ticks` in `crates/rl-rules/src/status.rs`), so every game registers a damage kind that is not one, `care` in Foundry, Corsair, Delve and the tutorial, and sets it unarmored so plate does not stop a medkit.
+  The reason given is that a game can then make a construct resist healing without the engine learning the word, but that is one case bought by teaching armor, resistances and the damage stages to leave a heal alone, and a damage table that lists healing beside kinetic and thermal reads as a mistake to anyone who opens it.
+  Healing becomes its own effect and its own path to `Health`: `Mend { roll }` with no kind, a status that mends rather than ticks negative damage, and a per-actor modifier on healing received for the construct case.
+  It touches the damage pipeline in `crates/rl-bevy/src/combat.rs`, narration and the views that read a negative hit as a heal, the content of five games and the genre tests, and `docs/guide/src/05-a-knack.md`, which teaches `care` to a new author.
+  Raised on 2026-09-23 while writing up Foundry's props, and ranked first in the order at the maintainer's call.
 
 - **`Thinking` splits its context from its snapshot.**
   `crates/rl-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.

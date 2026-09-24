@@ -1283,6 +1283,25 @@ mod tests {
         assert!(stage.app.world().get_entity(last).is_err(), "the last stim is gone");
     }
 
+    /// The last of a thing, used up, is named in the log in its own colour,
+    /// as it was named when it was picked up, though it is gone from the
+    /// bag the moment the pass ends.
+    #[test]
+    fn the_last_of_a_thing_used_up_is_named_in_its_own_colour() {
+        let (mut stage, triggers) = with_things(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))])]"#);
+        let player = stage.player;
+        let green = Color::srgb(0.2, 0.9, 0.4);
+        let last =
+            stage.app.world_mut().spawn((Item, Name::new("stim"), rl_render::Glyph::new('!', green), triggers, Consumable::new(1, WhenEmpty::Destroyed))).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![last] });
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, UseItem(last)));
+        stage.tick();
+        let entry = stage.app.world().resource::<MessageLog>().iter().find(|e| e.text == "You use a stim.").cloned().expect("the use is said");
+        assert_eq!(entry.spans.iter().map(|s| (s.start, s.len, s.color)).collect::<Vec<_>>(), [(8, 6, green)], "'a stim' in its green: {entry:?}");
+        assert!(stage.app.world().get::<Inventory>(player).unwrap().items.is_empty(), "and it is out of the bag");
+    }
+
     /// A thing thrown and spent where it lands, a grenade, is named as
     /// what it was, not as something nobody could make out.
     #[test]

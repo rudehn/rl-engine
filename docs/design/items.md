@@ -96,7 +96,7 @@ At zero a stack of more than one loses a unit and the next starts full; otherwis
 An empty kept thing does nothing it is spent by: `Loadout` stops finding its attack, and a use is refused.
 A thing with triggers and no `Consumable` survives every moment, which is what a tool is.
 
-A thing spent to nothing is marked `Spent` and lives to the end of the pass, so the log can still name it; `remove_spent` despawns it then, and `forget_removed_items` clears it from the bag, which is where everything that stops being an item is forgotten.
+A thing spent to nothing is marked `Spent` and kept, as the dead are, until the log has been drawn, so it is named there in its own colour: `remove_spent` takes it out of play at the end of the pass, off the map and no longer an `Item`, `bury_spent` despawns it at the end of the frame, and `forget_removed_items` clears it from the bag, which is where everything that stops being an item is forgotten.
 
 ## 6. What is deliberately not here
 

@@ -128,10 +128,9 @@ impl AddSpending for App {
 /// After [`land_triggers`](crate::effects::land_triggers), so what the
 /// last charge did has landed before the thing is gone. A moment with no
 /// triggers on the thing still spends, which is how a plain wand's ordinary
-/// shot costs a charge. A thing spent to nothing is marked [`Spent`] and
-/// despawned at the end of the pass by [`remove_spent`], and the bag it was
-/// in forgets it in [`forget_removed_items`](crate::items::forget_removed_items),
-/// where everything that stops being an item is forgotten.
+/// shot costs a charge. A thing spent to nothing is marked [`Spent`]:
+/// [`remove_spent`] takes it out of play at the end of the pass and
+/// [`bury_spent`] despawns it at the end of the frame.
 pub fn spend_charges(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
@@ -160,20 +159,33 @@ pub fn spend_charges(
     }
 }
 
-/// A thing spent to nothing, gone at the end of the pass.
+/// A thing spent to nothing: out of play at the end of the pass, gone at
+/// the end of the frame.
 ///
-/// Not despawned the moment its last charge goes, because the pass is not
-/// over: the log is written after every reaction, and a stim drunk to the
-/// last or a grenade spent where it landed is named in it as what it was,
-/// not as something nobody could make out. Empty, it does nothing more in
-/// the meantime: it has no charge to use and no attack to fire.
+/// Not despawned the moment its last charge goes, for the reason the dead
+/// are not: the log is written and drawn after the turns, and a stim drunk
+/// to the last or a grenade spent where it landed is named in it as what
+/// it was, in its own colour, rather than as something nobody could make
+/// out. Empty, it does nothing more in the meantime: it has no charge to
+/// use and no attack to fire, and from the end of its pass it is in no bag,
+/// no slot and no cell. A save leaves it out.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Spent;
 
-/// Despawns everything [`Spent`], in
+/// Takes everything [`Spent`] out of play, in
 /// [`CleanupSet::Remove`](crate::plugin::CleanupSet::Remove), after the
-/// pass has been written down.
-pub fn remove_spent(mut commands: Commands, spent: Query<Entity, With<Spent>>) {
+/// pass has been written down: no longer an [`Item`](crate::items::Item),
+/// so every bag and slot forgets it, and off the map, so nothing draws it
+/// or picks it up. What it is called and how it looks stay for the log.
+pub fn remove_spent(mut commands: Commands, spent: Query<Entity, (With<Spent>, With<crate::items::Item>)>) {
+    for e in &spent {
+        commands.entity(e).remove::<(crate::items::Item, crate::components::Position, crate::places::OnMap)>();
+    }
+}
+
+/// Despawns everything [`Spent`], in `Last`, once the frame's log has been
+/// drawn, as [`bury_the_dead`](crate::combat::bury_the_dead) does the dead.
+pub fn bury_spent(mut commands: Commands, spent: Query<Entity, With<Spent>>) {
     for e in &spent {
         commands.entity(e).despawn();
     }
@@ -228,7 +240,10 @@ impl Plugin for ConsumablesPlugin {
             // effects are in before the thing goes.
             .add_systems(Turn, spend_charges.in_set(ResolveSet::Triggers).after(crate::effects::land_triggers))
             .add_systems(Turn, recharge_charges.in_set(TurnSet::React))
-            .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove));
+            .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove))
+            // Before a restart tears the run down, so what the last pass
+            // spent goes with the run it was spent in.
+            .add_systems(Last, bury_spent.before(crate::plugin::restart_runs));
     }
 
     fn finish(&self, app: &mut App) {

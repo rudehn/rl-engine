@@ -245,10 +245,12 @@ struct StateEntry {
     restore: fn(&mut World, &RawValue) -> Result<(), SaveError>,
 }
 
-/// Every living `K`, in spawn order, so a save is the same bytes for the
-/// same run whatever order the archetypes are in.
+/// Every living `K` still in play, in spawn order, so a save is the same
+/// bytes for the same run whatever order the archetypes are in. The dead
+/// and the spent are kept to the end of their frame only so the log can
+/// name them, and are gone by the next.
 fn collect<K: Component>(world: &mut World) -> Vec<Entity> {
-    let mut found: Vec<Entity> = world.query_filtered::<Entity, (With<K>, Without<Dead>)>().iter(world).collect();
+    let mut found: Vec<Entity> = world.query_filtered::<Entity, (With<K>, Without<Dead>, Without<rl_bevy::Spent>)>().iter(world).collect();
     found.sort_by_key(|e| (e.index(), *e));
     found
 }

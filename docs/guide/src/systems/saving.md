@@ -10,7 +10,7 @@
             crates/rl-ui/src/game_menu.rs
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
-     fingerprint: 04e19ffd -->
+     fingerprint: 3bd8e9e3 -->
 
 # Saving and the ending screen
 
@@ -37,7 +37,7 @@ Neither says anything about position, health, bags, slots, stacks, statuses, rem
 `AddSaveable::save_kind::<K>` and `save_state::<R>` register both into `SaveRegistry`, filing each under the last segment of its type name and panicking at build time when two would share one.
 `PropKind` and `Quests` are the two the engine implements for itself, since it read those definitions out of a file and can read them again; `SavePlugin` registers the first, and a game with a quest tracker adds `save_state::<Quests>()`.
 `RunSave` is the result: a `format`, the `EngineSave`, a `KindSave` per kind holding each entry's own RON, the `EntityState` of each, and the game's resources by name.
-`RunSave::capture` walks the kinds in registration order and each kind's living entities in spawn order, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources and whose `Seed` the game has already inserted.
+`RunSave::capture` walks the kinds in registration order and each kind's living entities still in play in spawn order, leaving out the dead and the spent the frame keeps only so the log can name them, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources and whose `Seed` the game has already inserted.
 `RunSave::state::<R>` reads one resource out of a save before anything is restored, for the part of a start that runs before the world exists, and `count_of` and `turn` are for a line in the log.
 `EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and which sites it has found, each saved entity's pools and cooldowns, its charges and what refills them, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
 `EngineSave::restore` puts every one of those back except the `seed`, which it only carries: a game reads `save.engine.seed` itself and inserts the `Seed` before it builds the world the continued run stands in.

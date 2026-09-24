@@ -456,13 +456,34 @@ Undecided design, not tasks.
 ### Props
 
 Things for the decks beyond the crate, the locker, the console and the live cable, ordered by how much they need that does not exist yet, least first.
+A prop's triggers land as the prop itself, so a `Shove` or a `Pull` in its burst pushes away from it or draws toward it, and an offer's effects land on whoever took it up, at the prop.
 
-- **Fuel drum:** breaks into a thermal burst and sets what is around it burning; data alone today.
+Content alone, today:
+
+- **Fuel drum:** breaks into a thermal burst and sets what is around it burning.
+- **Security mine:** hidden, a kinetic burst on whoever steps on it, and the droids set one off as readily as the commando, so a patrol can clear a corridor.
+- **Loose grating:** hidden, gives way once under whoever steps on it for a fall's kinetic damage, and shows as bent afterwards.
+- **Steam grate:** hidden, scalds and scorches whoever steps on it and lets off a puff of steam, a fast-fading gas that hides, so the trap that burns is also cover.
+- **Capacitor bank:** blocks, and breaks into an electricity burst two tiles wide that tells on chassis and flesh alike, so it is set off from outside its reach.
+- **Ion coil:** breaks into an ion burst that takes down every droid's sensors in it for several turns, and flesh barely feels ion, so the commando can pop it standing inside.
+- **Blast valve:** a pressure valve that breaks into a kinetic burst shoving everything beside it two tiles away, knockback the commando sets off without an ability of their own.
+- **Scrap magnet:** an electromagnet hung over a cell that switches on when something steps under it and draws everything within three tiles a step toward it, bunching a pack up beside whatever else stands there.
+- **Purge valve:** a `purge` offer that fills its cell with smoke, a room the commando can blind at will.
+- **Quench shower:** a `douse` offer that cleanses `scorched`, clearing the burn and healing nothing, so the rule against regeneration holds.
+- **Scrap barricade:** a corridor welded shut, with a lot of health and nothing inside, so cutting through is turns of blows the deck hears.
+- **Emergency cache:** not locked but six turns to open, for a stim and a medkit, so time is the lock while the deck keeps moving.
 - **Crushed conveyor:** derailed track laid in lines across a bay, blocking movement but not sight, so it is a lane to shoot across and not walk across, with half-built chassis on it to search as wreckage.
+- **Coolant drum:** breaks into coolant vapour that hides and chills whoever breathes it, once cryo, a `chilled` status and the vapour are registered, each a line of content.
+- **Coolant line:** overhead piping over a placed spill that deals cryo underfoot, and breaking it floods the corridor with vapour; the rats feeding at the spill waits on a sense.
+
+A little game code, today:
+
 - **Parts bin:** a searchable pile of severed optics and limbs named after the deck's own droids, so it says who lives here before they are met, and scrap crabs forage from it.
-- **Coolant drum:** breaks into coolant vapour that hides and chills whoever is in it; waits on cryo and a chill status.
-- **Coolant line:** overhead piping over a placed spill that feeds coolant rats, and breaking it floods the corridor with vapour; waits on cryo.
+- **Dormant trooper cradle:** a finished chassis racked in its cradle that becomes a live trooper when a probe's klaxon sounds, through an `alarm` moment the game fires, so a quiet probe is a quiet line.
 - **Control terminal:** wired to one machine nearby, and a hack of a few turns reprograms it, darkens the room or overloads a dock, while a glitched one fails and sounds a klaxon; no text to read.
+
+Waiting on the engine:
+
 - **Charging dock:** a faulty wall alcove where the commando can vent an energy weapon to zero heat for a jolt of electricity, a hurt droid goes to recharge, and breaking it arcs into whatever is docked; waits on minds using a prop's offers.
 - **Mag plate:** a striped floor plate that holds anything metal stepping on it, droids always and the commando only in plate, and hacked it pulls every metal thing within two tiles onto it once; waits on a status that refuses a step but not an action, and a trigger that picks whom it lands on.
 - **Cutting rig:** a ceiling laser whose red wire marks a line across a room, firing thermal along the whole line at whatever crosses it, then going dark for a few turns to recharge; waits on a line-shaped trigger area and a light carried by a prop.
