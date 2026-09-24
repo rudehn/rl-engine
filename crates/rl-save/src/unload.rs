@@ -76,7 +76,9 @@ impl Plugin for UnloadPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Stash>()
             .needs::<Saves>("UnloadPlugin", "`Saves`, the backend the stash is written through, such as `Saves::platform_default(\"my-game\")`")
-            .add_systems(Last, flush_on_exit);
+            // In the save stage, after the stash is refreshed, so what is
+            // written on the way out is the run as it stood last.
+            .add_systems(Last, flush_on_exit.in_set(rl_bevy::EndOfFrame::Save).after(crate::run::refresh_stash));
     }
 
     fn finish(&self, app: &mut App) {

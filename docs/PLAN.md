@@ -339,6 +339,13 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   The review found a trap credited its harm to whoever stepped on it, a barrel's burst could be lost while the loop was held to show something, and a spent grenade was thrown as "something"; each is fixed with a test, and a prop's triggers now land as the prop's own doing.
   Nate, 2026-09-23, on bursts reaching through walls: "Yes, walls should stop both", so `rl_grid::burst` stops at walls for an ability's ball and a trigger's burst alike; and on the silent stim: "Yes, narrate the item use".
   `docs/design/effects.md` is the reasoning, and `docs/design/items.md` is rewritten around "an item never lends an ability".
+- 2026-09-24: Foundry's lift out, and saving a run.
+  Nate, 2026-09-23: "let's do the lift out (it should be where the player came in the first floor at), and saving a game".
+  The mission always said what winning was, a climb back to the lift the commando came down on, and nothing read it.
+  The lift out is a lift with no `Transition` on deck one's arrival cell: the engine refuses a `GoThrough` on it at no cost, and Foundry answers the refusal, with a line before the core is charged and the fact that finishes a fifth quest, `victory: true`, after.
+  A run is saved on the way out and on every deck arrival, Nate choosing that over a save key; the arrival save is the engine's, `SavePlugin::on_arrival()`, since when a save is written is the engine's loop and every game with places wants it.
+  Found on the way: nothing ordered the end of the frame, so a save refreshed after a restart could write a world with no run in it; `Last` is now `EndOfFrame::{Save, Bury, Restart}`, and `Counters` is saved by the engine as `Quests` is.
+  The title screen's Continue is taken whenever the slot holds a readable run, and New Game asks "Abandon the run in progress?" first, No picked out, as Nate chose.
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.

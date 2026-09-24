@@ -20,12 +20,14 @@ const QUESTS_RON: &str = include_str!("../assets/quests.ron");
 pub struct Facts {
     /// `ChargeSet(deck)`: the reactor on `deck` was charged.
     pub charge_set: FactKind,
+    /// `LiftOut`: the lift out on deck one was ridden, with the core charged.
+    pub lift_out: FactKind,
 }
 
 impl Facts {
     fn new() -> Self {
-        let defs = Registry::from_defs(vec![FactDef::new("charge_set")]).unwrap();
-        Self { charge_set: defs.expect("charge_set") }
+        let defs = Registry::from_defs(vec![FactDef::new("charge_set"), FactDef::new("lift_out")]).unwrap();
+        Self { charge_set: defs.expect("charge_set"), lift_out: defs.expect("lift_out") }
     }
 }
 
@@ -49,20 +51,24 @@ struct ObjectiveRon {
     need: Need,
 }
 
-/// What an objective counts. One variant for the whole slice: the deck
-/// whose reactor was charged, so a deck nothing built a reactor on is a
-/// parse-time typo rather than an objective that can never finish.
+/// What an objective counts: the deck whose reactor was charged, or the
+/// ride out, so a deck nothing built a reactor on is a parse-time typo
+/// rather than an objective that can never finish.
 #[derive(Debug, Clone, serde::Deserialize)]
 enum On {
     /// The reactor on this deck was charged.
     ChargeSet(u32),
+    /// The lift out on deck one was ridden.
+    LiftOut,
 }
 
 impl On {
     /// The matcher the tracker counts facts with.
     fn matcher(&self, facts: &Facts) -> Matcher {
-        let On::ChargeSet(deck) = self;
-        Matcher::any(facts.charge_set).about(*deck as u64)
+        match self {
+            On::ChargeSet(deck) => Matcher::any(facts.charge_set).about(*deck as u64),
+            On::LiftOut => Matcher::any(facts.lift_out),
+        }
     }
 }
 
@@ -125,6 +131,9 @@ pub const CHARGE: &str = "charge";
 /// once here so the pick and the climb's own win condition read the same
 /// list rather than each spelling it out.
 pub const CHARGE_QUESTS: [&str; 4] = ["first_charge", "second_charge", "third_charge", "core_charge"];
+
+/// The last charge, which the lift out waits on.
+pub const CORE_QUEST: &str = "core_charge";
 
 /// Puts a reactor console on the `R` mark of any deck that reports one,
 /// the moment it is first entered, beside the loot
@@ -214,6 +223,18 @@ pub fn offer_the_pick(
             && charges.contains(&quest)
         {
             crate::upgrades::offer(&mut modals, &mut screen, &mut choosing, &taken);
+        }
+    }
+}
+
+/// Ends the run won when the tracker reports the victory quest done, the
+/// way Corsair's quests end its runs: the win is the mission's, written in
+/// `quests.ron`, not a system that knows which quest is last. In `Update`
+/// beside [`offer_the_pick`], for the same reason.
+pub fn answer_victory(mut changes: MessageReader<QuestChange>, mut over: MessageWriter<RunOver>) {
+    for change in changes.read() {
+        if let Change::QuestDone { victory: true, .. } = change.0 {
+            over.write(RunOver::won().saying("The lift climbs out of the foundry, and the core goes up under it."));
         }
     }
 }

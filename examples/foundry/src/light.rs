@@ -60,13 +60,21 @@ pub fn set_ambient(map: Res<WorldMap>, mut lighting: ResMut<Lighting>) {
 /// in its static layer and recasts it only when the map changes.
 pub fn light_the_lamps(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, lamp: Res<LampTile>) {
     for ev in entered.read() {
-        if !ev.first {
-            continue;
+        if ev.first {
+            hang_lamps(&mut commands, &map, ev.map, lamp.0);
         }
-        let Some(place) = map.place(ev.map) else { continue };
-        for (p, _) in place.terrain.iter().filter(|(_, t)| *t == lamp.0) {
-            commands.spawn((Position(p), OnMap(ev.map), WALL_LAMP));
-        }
+    }
+}
+
+/// Hangs a [`WALL_LAMP`] on every lamp tile of the built deck `deck`.
+///
+/// Read off the deck's own terrain rather than kept, so a continued run
+/// hangs them again from the decks it restored, the way the first arrival
+/// hung them, and the two can never disagree about where a lamp is.
+pub fn hang_lamps(commands: &mut Commands, map: &WorldMap, deck: MapId, lamp: TileId) {
+    let Some(place) = map.place(deck) else { return };
+    for (p, _) in place.terrain.iter().filter(|(_, t)| *t == lamp) {
+        commands.spawn((Position(p), OnMap(deck), WALL_LAMP));
     }
 }
 

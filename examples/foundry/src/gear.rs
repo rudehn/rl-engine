@@ -284,6 +284,11 @@ pub fn shape_of(d: &ItemDef, registries: &Registries) -> Option<EquipShape> {
     Some(shape)
 }
 
+/// Marks an item with the definition it was made from, which is what a
+/// save writes down and a continued run makes it again from.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemKind(pub Id<ItemDef>);
+
 /// Spawns `id` as an item entity carrying every component its definition
 /// implies: what it is called and drawn as, what it counts as, and, for
 /// something worn, its shape, its armor, its resistances and whatever it
@@ -292,7 +297,7 @@ pub fn shape_of(d: &ItemDef, registries: &Registries) -> Option<EquipShape> {
 /// a stack of one; the caller merges or grows it as it likes.
 pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, registries: &Registries) -> Entity {
     let d = armory.defs.get(id);
-    let mut e = commands.spawn((Item, Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
+    let mut e = commands.spawn((Item, ItemKind(id), Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));
     }

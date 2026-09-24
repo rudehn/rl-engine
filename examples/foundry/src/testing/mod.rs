@@ -46,7 +46,20 @@ pub fn headless(seed: RunSeed) -> App {
     // before the first update, so `run::start` builds the deck exactly as
     // it does for a player who has already picked. A test of the screen
     // itself puts it back up.
-    app.insert_resource(crate::title::Title { up: false, picked: 0 });
+    app.insert_resource(crate::title::Title { up: false, ..Default::default() });
+    app
+}
+
+/// A run continued from `text`, a save the way the slot holds it: the
+/// title down, the save in the memory backend, [`Resume`](crate::run::Resume)
+/// asked for, and the first frames run so the continued run stands.
+pub fn continued(text: &str) -> App {
+    use rl_engine::rl_save::SaveBackend as _;
+    let mut app = headless(RunSeed(0));
+    app.world().resource::<rl_engine::rl_save::Saves>().persist(crate::save::SLOT, text).expect("the memory backend takes it");
+    app.insert_resource(crate::run::Resume);
+    settle(&mut app);
+    settle(&mut app);
     app
 }
 
@@ -73,6 +86,9 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
     ));
     app.add_engine_effects().insert_resource(Seed(seed)).insert_resource(crate::content::registries());
     app.insert_resource(Counters(Ledger::default()));
+    // Saved in memory: a test never touches the disk, and each one starts
+    // with an empty slot of its own.
+    app.insert_resource(rl_engine::rl_save::Saves::new(rl_engine::rl_save::MemoryBackend::default()));
     let abilities = {
         let world = app.world();
         let (kinds, registries) = (world.resource::<EffectKinds>(), world.resource::<Registries>());

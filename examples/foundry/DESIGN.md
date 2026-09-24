@@ -61,7 +61,7 @@ All ten decks **exist** and are played; the four zones are **planned**, so every
 A charge is set on the reactor console on decks 3, 6 and 9, and on the core on deck 10.
 Setting a charge takes three whole turns beside the console and opens a pick of one upgrade from three (**exists** on decks 3, 6, 9 and 10).
 
-After the core charge, the commando climbs all ten decks back to the lift they came down on.
+After the core charge, the commando climbs all ten decks back to the lift they came down on: the lift out on deck one, where the run began, which refuses to move until the core is charged and wins the run once it is (**exists**).
 The way up is the harder half:
 
 - Every deck is repopulated, drawn from the band of the deepest deck reached rather than the deck's own, so an assembly deck on the way up holds reactor-ring droids.
@@ -359,6 +359,13 @@ One pick of three at each charge, four in a run, kept for the run.
 Permadeath: a dead commando ends the run, and nothing carries over to the next.
 The run ends on a summary on the engine's ending screen (**exists** in its general form, and draws the outcome, the seed and the turn itself; Foundry pushes none of its own sections onto `EndingView` yet): the deepest deck reached, the charges set, the killer, and the build.
 A run is deterministic from its seed, so a summary can be shared and the run replayed.
+
+## Saving
+
+A run is saved on the way out, when the window closes or the menu quits, and on every deck arrival, so a crash loses at most the deck in hand (**exists**).
+There is no save key, so there is nothing to save and reload around.
+The title screen's Continue picks the run up where it was left, and New Game asks before it abandons one (**exists**).
+Death and a win delete the save, so no run is continued past its end.
 
 ## Art
 

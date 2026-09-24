@@ -37,6 +37,24 @@ pub enum EngineSet {
     Present,
 }
 
+/// The stages of `Last`, in order: what the run is written down as, then
+/// what the frame is done with, then a restart.
+///
+/// A save written after a restart tore the run down would write a world
+/// with no map in it, and a burial after the restart would despawn what
+/// the new run had just spawned; so the three are named here, where the
+/// schedule is, and each crate puts its own system in its stage rather
+/// than ordering itself after another's function.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EndOfFrame {
+    /// The run written to the stash and the slot.
+    Save,
+    /// The dead and the spent despawned.
+    Bury,
+    /// A restart asked for this frame.
+    Restart,
+}
+
 /// The order the frame is drawn in.
 ///
 /// Every set is inside [`EngineSet::Present`]. Drawing is layered, and the
@@ -289,7 +307,8 @@ impl Plugin for CorePlugin {
             // torn down and begun again by a `Restart`.
             .add_systems(Startup, begin_first_run)
             .add_systems(PostUpdate, crate::state::end_runs)
-            .add_systems(Last, restart_runs)
+            .configure_sets(Last, (EndOfFrame::Save, EndOfFrame::Bury, EndOfFrame::Restart).chain())
+            .add_systems(Last, restart_runs.in_set(EndOfFrame::Restart))
             .add_systems(OnEnter(EngineState::Idle), begin_pending_run);
         // Run on one thread. [`Turn`] is dozens of small systems, and it
         // runs once per actor turn rather than once per frame, so the

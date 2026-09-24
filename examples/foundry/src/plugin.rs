@@ -42,6 +42,12 @@ pub struct FoundryPlugin;
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(NewRun, crate::run::start);
+        // A continued run: after the fresh start stood aside and the
+        // mission was loaded, so what a restore writes into is there.
+        app.add_systems(NewRun, crate::run::resume.after(crate::run::start).after(crate::mission::start));
+        // What a run is saved as, and when: on the way out and on every
+        // deck arrival.
+        crate::save::register(app);
         // Props and remains: the crates, the cable, the console and the
         // wreck a droid leaves. `PropsPlugin` owns what a prop is and does;
         // Foundry says where one stands, what goes in a container, and that
@@ -182,6 +188,11 @@ impl Plugin for FoundryPlugin {
         // reads `Modals` that frame and a key cannot fall through to the
         // world while the pick is pending, and before the drawing.
         app.add_systems(Update, crate::mission::offer_the_pick.before(EngineSet::Input));
+        // The mission's end, answered as its charges are: from the tracker's
+        // report, one frame behind the fact that finished it.
+        app.add_systems(Update, crate::mission::answer_victory.before(EngineSet::Input));
+        // The lift out: a refused `GoThrough` on it, answered in the pass.
+        app.add_systems(Turn, crate::lifts::ride_out.in_set(TurnSet::React));
         // Uplink's own reach bonus: after `heat`'s and `ammo`'s chains
         // above, for the reason `upgrades::react_uplink` gives.
         app.add_systems(Turn, crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(crate::ammo::sync_ammo).in_set(TurnSet::React));

@@ -6,7 +6,7 @@
             crates/rl-ui/src/lib.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: a396fb03 -->
+     fingerprint: 2c4c0714 -->
 
 # Narration
 
