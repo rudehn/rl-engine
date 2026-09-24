@@ -69,11 +69,13 @@
     // The grenades: thrown, and what each does is its land trigger, a
     // burst where it comes to rest, which spends it there. Plate takes half
     // a frag burst off a droid; an ion burst undoes a chassis and blinds
-    // every radar in it, and barely touches flesh.
+    // every radar in it, and barely touches flesh. Smoke is thirty cells'
+    // worth, more than its burst holds, so it spills past it: a room of
+    // cover in the open, a long plume down a corridor.
     (name: "frag grenade", glyph: '*', color: (0.7, 0.72, 0.45), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6"))])]),
     (name: "smoke grenade", glyph: '*', color: (0.75, 0.75, 0.75), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 160))])]),
+     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 590))])]),
     (name: "ion grenade", glyph: '*', color: (0.4, 0.7, 1.0), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4"))])]),
     (name: "incendiary grenade", glyph: '*', color: (0.95, 0.45, 0.2), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),

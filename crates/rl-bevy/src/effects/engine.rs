@@ -310,14 +310,18 @@ impl FromArgs for Ignite {
 
 /// Give off `amount` of a gas on every cell under the footprint.
 ///
+/// A full cell is 255, and what a cell has no room for spills to the nearest
+/// cells, so a footprint of one cell and an amount of thousands is a cloud
+/// that fills a room: a grenade's burst of smoke.
+///
 /// Registered by [`GasPlugin`](crate::gas::GasPlugin), which is what answers
 /// it.
 #[derive(Debug, Clone, Copy)]
 pub struct Emit {
     /// Which gas.
     pub gas: GasId,
-    /// How much on each cell.
-    pub amount: u8,
+    /// How much on each cell, a full cell being 255.
+    pub amount: u16,
 }
 
 impl Effect for Emit {
@@ -344,7 +348,7 @@ impl FromArgs for Emit {
         #[derive(serde::Deserialize)]
         struct Args {
             gas: String,
-            amount: u8,
+            amount: u16,
         }
         let a: Args = read_args(args)?;
         Ok(Self { gas: names.gas(&a.gas)?, amount: a.amount })

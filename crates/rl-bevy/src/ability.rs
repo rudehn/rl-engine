@@ -511,12 +511,16 @@ fn flight_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
     Some(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor_of(landing, world, stop), look: LookOf::Ability(landing.ability()?) })
 }
 
-/// The burst over the footprint, for a shape that covers anything.
+/// The burst over the footprint, for a shape that covers anything, spreading
+/// out from where a projectile stopped, or else from the user: a ball goes
+/// off where it lands, and a nova, a cone or a line goes out from whoever
+/// cast it.
 fn burst_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
     if landing.cells.is_empty() {
         return None;
     }
-    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability()?) })
+    let from = landing.landed_at.map(|stop| anchor_of(landing, world, stop)).unwrap_or(Anchor::on(landing.user, landing.origin));
+    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability()?), from: Some(from) })
 }
 
 /// Every reason `def` may not be used by `user` right now.
@@ -1002,7 +1006,9 @@ mod tests {
         app.world_mut().resource_mut::<TurnHold>().release();
         app.update();
         assert_eq!(hp(&app, them), 16, "seen to fly, it lands");
-        assert!(matches!(cues(&mut app).as_slice(), [Cue::Burst { .. }]), "and bursts where it did");
+        let burst = cues(&mut app);
+        let [Cue::Burst { from, .. }] = burst.as_slice() else { panic!("and bursts where it did: {burst:?}") };
+        assert_eq!(*from, Some(Anchor::on(them, start.offset(3, 0))), "spreading out from where it landed, on whoever it landed on");
         let hold = *app.world().resource::<TurnHold>();
         assert!(hold.is_held() && !hold.in_flight(), "held again for the burst, nothing in the air");
         assert!(app.world().get::<MyTurn>(me).is_none(), "no turn dealt while the burst is seen");

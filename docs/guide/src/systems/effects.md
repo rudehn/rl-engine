@@ -11,7 +11,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-rules/src/ability.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 25cb4707 -->
+     fingerprint: 96ea6c7e -->
 
 # Effects
 
@@ -42,7 +42,7 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 A spec with no list takes the definition's `shared` one, and a spec with neither fails, since a trigger that does nothing is a typo.
 `Triggers` is the component, and each copy counts its own `fires`, so springing one cable spends nothing of another.
 `Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing and `hit` at the struck actor's cell, and props report `entered` and `destroyed`.
-`land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a burst over the cells for one with a `look`, lands the list over `area_cells`, the one cell or the burst `rl_grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
+`land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a blast over the cells for one with a `look`, going out from the cell the moment happened on, lands the list over `area_cells`, the one cell or the burst `rl_grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
 The landing's user, who a hit is credited to, is `by`, or the carrier itself when it is `LandsAsItself`, which every armed prop is.
 A `Remnant` is a carrier that lands its triggers once and is despawned, for something gone by the time they land: it holds its moment, `by` and `at` as data, and `report_remnants` writes its `Fired` in the pass that lands it, so a pass held back while something is shown loses nothing.
 A broken prop leaves one for its `destroyed` moment, and a watched shot from a thing its last charge spent leaves one for its `hit`.
@@ -56,11 +56,13 @@ A trigger is a moment, an area and a list, and Foundry's grenades are four of th
     // The grenades: thrown, and what each does is its land trigger, a
     // burst where it comes to rest, which spends it there. Plate takes half
     // a frag burst off a droid; an ion burst undoes a chassis and blinds
-    // every radar in it, and barely touches flesh.
+    // every radar in it, and barely touches flesh. Smoke is thirty cells'
+    // worth, more than its burst holds, so it spills past it: a room of
+    // cover in the open, a long plume down a corridor.
     (name: "frag grenade", glyph: '*', color: (0.7, 0.72, 0.45), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6"))])]),
     (name: "smoke grenade", glyph: '*', color: (0.75, 0.75, 0.75), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 160))])]),
+     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 590))])]),
     (name: "ion grenade", glyph: '*', color: (0.4, 0.7, 1.0), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4"))])]),
     (name: "incendiary grenade", glyph: '*', color: (0.95, 0.45, 0.2), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),

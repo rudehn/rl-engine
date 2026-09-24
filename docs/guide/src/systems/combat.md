@@ -9,7 +9,7 @@
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/faction.rs
             crates/rl-rules/src/forecast.rs
-     fingerprint: 4dbfcde8 -->
+     fingerprint: d6283279 -->
 
 # Combat and loadout
 

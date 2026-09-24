@@ -81,12 +81,17 @@ pub enum Cue {
         /// What flies.
         look: LookOf,
     },
-    /// Something happens on every anchor at once.
+    /// Something happens on every anchor: at once, or spreading out from
+    /// one of them.
     Burst {
         /// Where.
         on: Vec<Anchor>,
         /// What shows.
         look: LookOf,
+        /// Where it spreads out from, so a grenade is seen to go off where
+        /// it landed and reach each cell a moment after the one nearer it.
+        /// `None` lights every anchor at once: a blow on whoever took it.
+        from: Option<Anchor>,
     },
 }
 
@@ -308,7 +313,7 @@ mod tests {
                 continue;
             }
             let beside = players.iter().find(|(_, p)| rl_core::geometry::chebyshev(p.0, at.0) == 1).map(|(p, at)| Anchor::on(p, at.0));
-            cues.write(Cued { actor, cue: Cue::Burst { on: vec![beside.unwrap_or(Anchor::on(actor, at.0))], look: LookOf::Plain } });
+            cues.write(Cued { actor, cue: Cue::Burst { on: vec![beside.unwrap_or(Anchor::on(actor, at.0))], look: LookOf::Plain, from: None } });
             resolution.done(actor, 100);
         }
     }

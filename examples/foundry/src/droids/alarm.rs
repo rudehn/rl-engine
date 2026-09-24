@@ -102,7 +102,7 @@ pub fn shout_alarm(
         if !players.iter().any(|(_, sight)| sight.can_see(at.0)) {
             continue;
         }
-        cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE) } });
+        cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE), from: None } });
     }
 }
 // ANCHOR_END: shout
@@ -169,7 +169,7 @@ mod tests {
         let pulses: Vec<&Cued> = alarms.cues.iter().filter(|c| c.actor == probe).collect();
         assert_eq!(pulses.len(), shouts.len(), "a pulse for every shout: {pulses:?}");
         for (cue, shouted) in pulses.iter().zip(&shouts) {
-            let Cue::Burst { on, look: LookOf::Given(look) } = &cue.cue else { panic!("a pulse is a burst of its own look: {cue:?}") };
+            let Cue::Burst { on, look: LookOf::Given(look), .. } = &cue.cue else { panic!("a pulse is a burst of its own look: {cue:?}") };
             assert_eq!(on.as_slice(), [Anchor::on(probe, *shouted)], "on the probe, where it shouted");
             assert_eq!(*look, PULSE);
         }

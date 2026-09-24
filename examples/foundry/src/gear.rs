@@ -768,20 +768,39 @@ mod tests {
         }
     }
 
-    /// A smoke grenade does no harm and leaves a cloud thick enough to hide
-    /// in where it lands.
+    /// A smoke grenade is a burst of smoke big enough to fight in, and does
+    /// no harm. On open deck it hides a room's worth of cells the moment it
+    /// lands, still hides some of it nine turns on, and then thins away.
     #[test]
-    fn a_smoke_grenade_leaves_a_cloud_thick_enough_to_hide_in() {
+    fn a_smoke_grenade_hides_a_room_s_worth_of_deck_for_ten_turns_then_thins() {
         let mut app = crate::testing::headless(RunSeed(1));
-        let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 4, 4);
-        let grenade = carry(&mut app, player, "smoke grenade", 1);
+        let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 5, 5);
         let (aim, before) = (at(&app, droid), health(&app, droid));
+        let floor = app.world().resource::<WorldMap>().tile(aim).expect("the lane is loaded");
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            for dy in -9..=9 {
+                for dx in -9..=9 {
+                    map.set_tile(aim.offset(dx, dy), floor);
+                }
+            }
+        }
+        let grenade = carry(&mut app, player, "smoke grenade", 1);
         throw_grenade(&mut app, player, grenade, aim);
         let registries = app.world().resource::<Registries>();
         let smoke = registries.gases.expect("smoke");
         let veils_at = registries.gases.get(smoke).veils_at.expect("smoke hides what is behind it");
-        assert!(app.world().resource::<Gases>().at(smoke, aim) >= veils_at, "a cloud where it landed, thick enough to hide in");
+        let hidden = |app: &App| app.world().resource::<Gases>().cells(smoke).filter(|(_, c)| *c >= veils_at).count();
+        let landed = hidden(&app);
+        assert!(landed >= 25, "a room's worth hidden where it landed, not {landed} cells");
         assert_eq!(health(&app, droid), before, "and nobody hurt by it");
+        // Out of the way, so nine turns of waiting in the open are nine
+        // turns nobody is shot in.
+        app.world_mut().despawn(droid);
+        crate::testing::pass_turns(&mut app, 9);
+        assert!(hidden(&app) > 0, "still hiding some of the deck nine turns on");
+        crate::testing::pass_turns(&mut app, 40);
+        assert_eq!(app.world().resource::<Gases>().cells(smoke).count(), 0, "and thinned away to nothing");
     }
 
     /// A stim is used, never thrown: a use trigger, and no throw in the file,

@@ -15,7 +15,7 @@
             crates/rl-bevy/src/gas.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: 78e99243 -->
+     fingerprint: 08eccaf6 -->
 
 # Abilities
 
@@ -55,6 +55,7 @@ A `Ball` flies as a bolt and bursts where it lands with `rl_grid::burst`, which 
 The targeting cursor previews through that same call, so the cells it paints are the cells that will be hit, and a projectile stopped short of where it was pointed is `Blocked::OutOfReach` rather than a burst on a spot nobody chose.
 `Landing` is the result: the user, the ability, the origin, the aim, every cell covered, the flight path, where a projectile stopped, and everyone under it the aim wanted there.
 Its `source` says what landed it, `Source::Ability`, `Trigger` or `Offer`, so an effect can tell a spell from a trap without assuming either, and only an ability has a look to fly.
+An ability with a look bursts over its footprint as a blast going out from where its projectile stopped, or from its user when it had none, so a ball goes off where it lands and a nova, a cone or a line goes out from whoever cast it.
 An `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe` a menu reads, and `FromArgs` is its constructor, kept separate so the trait a game writes stays object-safe.
 `EffectWorld` asks for what another subsystem owns rather than doing it: damage, a status on, a status off, along with the effect stream, cues, and `Commands` for whatever the engine never thought of.
 Asking is what keeps a fireball mitigated by the same armor a sword is, and moving an actor is the one exception, since no other subsystem owns it: `position`, `sight_of`, `is_free`, `place` and `slide` are methods on it, and `slide` is what keeps a shove out of a wall.

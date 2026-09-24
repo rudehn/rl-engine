@@ -302,7 +302,8 @@ pub fn land_triggers(
             // cue an effect adds plays after it.
             if let Some(look) = trigger.look {
                 let on = landing.cells.iter().map(|c| anchor(&landing, &world, *c)).collect();
-                world.cues.write(Cued { actor: user, cue: Cue::Burst { on, look: LookOf::Given(look) } });
+                let from = Some(anchor(&landing, &world, f.at));
+                world.cues.write(Cued { actor: user, cue: Cue::Burst { on, look: LookOf::Given(look), from } });
             }
             trigger.effects.land(&landing, &mut world);
             if let Some(left) = trigger.fires.as_mut() {
@@ -431,8 +432,9 @@ mod tests {
         cues.0.extend(cued.read().map(|c| c.cue.clone()));
     }
 
-    /// A trigger with a look is seen where it lands, over every cell it
-    /// covers, the way an ability with a look is; one with none cues
+    /// A trigger with a look is seen where it lands, spreading out from
+    /// there over every cell it covers, the way an ability with a look is;
+    /// one with none cues
     /// nothing, as a trap nobody should see go off does not.
     #[test]
     fn a_trigger_with_a_look_bursts_over_its_cells_and_one_without_shows_nothing() {
@@ -443,8 +445,9 @@ mod tests {
         fire(&mut app, carrier, Moments::LAND, at);
         let look = rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 128, 0) };
         let cues = std::mem::take(&mut app.world_mut().resource_mut::<Cues>().0);
-        let [crate::cue::Cue::Burst { on, look: shown }] = cues.as_slice() else { panic!("one burst: {cues:?}") };
+        let [crate::cue::Cue::Burst { on, look: shown, from }] = cues.as_slice() else { panic!("one burst: {cues:?}") };
         assert_eq!(*shown, crate::cue::LookOf::Given(look));
+        assert_eq!(from.map(|a| a.at), Some(at), "going off where it landed");
         let mut cells: Vec<Point> = on.iter().map(|a| a.at).collect();
         let mut expected = area_cells(rl_rules::Area::Burst { radius: 1 }, at, app.world().resource::<WorldMap>());
         cells.sort();

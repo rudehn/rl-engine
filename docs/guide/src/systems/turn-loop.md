@@ -5,7 +5,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/components.rs
-     fingerprint: 41ea84da -->
+     fingerprint: 4086593c -->
 
 # The turn loop
 
@@ -36,7 +36,7 @@ An actor holding `MyTurn` is out of the queue until something reports `ActionDon
 A decision is an `Intent<A>` for an `A: Action`, written by the game in `EngineSet::Input` for the player and by minds in `TurnSet::Decide` for everyone else.
 A resolver takes a `Resolution`: `claim` gives it the turn once, `done(actor, cost)` spends it, and `failed(actor, cost)` refuses for the player and charges anyone else, because a monster handed a free retry asks again forever.
 `cleanup_turns` requeues at `scaled_cost` of what was owed against `Speed`, requeues one actor once per pass, and charges a wait to any non-player left holding a turn nobody used.
-`Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s or a `Cue::Burst` on several, where an anchor that follows an entity goes where the entity goes.
+`Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s or a `Cue::Burst` on several, all at once or going out `from` one of them, where an anchor that follows an entity goes where the entity goes.
 `TurnHold` is the brake, and it takes only while something watches: `hold_for_cues` raises it after any pass that cued, and `run_turns` then runs no pass until the watcher releases it.
 `Airborne<L>` is what a subsystem has in the air; `launched` hands the landing straight back when nothing watches, so a headless game lands everything at once.
 

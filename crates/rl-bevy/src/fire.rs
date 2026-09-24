@@ -118,7 +118,7 @@ pub struct FireRules {
     /// A status, for some whole turns, on whoever stands in a burning cell.
     pub inflicts: Option<(StatusId, u32)>,
     /// A gas, and how much a turn, that each burning cell gives off.
-    pub smoke: Option<(GasId, u8)>,
+    pub smoke: Option<(GasId, u16)>,
     /// The light each burning cell sheds, or `None` for a fire that does not
     /// light what is around it.
     pub glow: Option<LightSource>,
@@ -140,7 +140,7 @@ impl FireRules {
     }
 
     /// Each burning cell gives off `amount` of `gas` a turn.
-    pub fn smoke(mut self, gas: GasId, amount: u8) -> Self {
+    pub fn smoke(mut self, gas: GasId, amount: u16) -> Self {
         self.smoke = Some((gas, amount));
         self
     }
@@ -331,8 +331,9 @@ pub fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>, blaze
                 }
             }
             if let Some((smoke, amount)) = rules.smoke {
+                let spill = crate::gas::spill_salt(&seed, turn as u32);
                 for p in &alight {
-                    gases.release(smoke, *p, amount);
+                    gases.release(smoke, *p, amount, &map, spill);
                 }
             }
         }

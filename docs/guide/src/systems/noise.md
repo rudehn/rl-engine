@@ -13,7 +13,7 @@
             crates/rl-bevy/src/items.rs
             crates/rl-ui/src/view/nearby.rs
             crates/rl-ui/src/panel/nearby.rs
-     fingerprint: 45c3e606 -->
+     fingerprint: 0f69977e -->
 
 # Noise
 
@@ -89,7 +89,7 @@ pub fn shout_alarm(
         if !players.iter().any(|(_, sight)| sight.can_see(at.0)) {
             continue;
         }
-        cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE) } });
+        cues.write(Cued { actor: ev.actor, cue: Cue::Burst { on: vec![Anchor::on(ev.actor, at.0)], look: LookOf::Given(PULSE), from: None } });
     }
 }
 ```

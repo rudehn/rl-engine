@@ -714,7 +714,7 @@ pub fn resolve_attacks(
                 continue;
             }
             (Some(look), false) => {
-                cues.write(Cued { actor, cue: Cue::Burst { on: vec![Anchor::on(target, target_pos.0)], look: LookOf::Given(look) } });
+                cues.write(Cued { actor, cue: Cue::Burst { on: vec![Anchor::on(target, target_pos.0)], look: LookOf::Given(look), from: None } });
             }
             (None, _) => {}
         }
@@ -1186,7 +1186,7 @@ mod tests {
         let (mut app, start, player, target) = duel(1, true, |kind| MeleeAttack::new(kind, DiceRoll::flat(4)).looking(LOOK));
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
-        let burst = Cue::Burst { on: vec![Anchor::on(target, start.offset(1, 0))], look: LookOf::Given(LOOK) };
+        let burst = Cue::Burst { on: vec![Anchor::on(target, start.offset(1, 0))], look: LookOf::Given(LOOK), from: None };
         assert_eq!(app.world().resource::<Seen>().cues, vec![Cued { actor: player, cue: burst }]);
         assert_eq!(hp(&app, target), 16, "and it hurt at once");
 

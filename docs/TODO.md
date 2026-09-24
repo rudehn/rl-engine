@@ -294,6 +294,9 @@ What is left below is measured unless it says otherwise.
   It would only bite in a game whose viewsheds are otherwise still, and no game here is one.
   Left alone.
   Note for anyone measuring this again: the first run of this bench was taken with a load average of 22 and reported `clear_air` at 548 microseconds, which is nonsense; measured alone on a quiet machine it is 328.
+  The diffusion itself was rewritten on 2026-09-23 to spill and swirl, and measured against the old step in one process, the two alternating so a busy machine weighs on both alike, with a tile lookup behind what holds gas as the game has.
+  One grenade's cloud on an eighty by fifty field costs less than the old step did, about 55 microseconds against 80, because whether a cell holds gas is now asked once a cell rather than by each of its neighbours; a field full of gas costs about 1.65 times as much, 134 against 81.
+  The bench above has not been rerun on a quiet machine since.
 - **Struck: view collectors run for screens nobody opened.**
   Measured on 2026-09-22 by `crates/rl-ui/benches/frame.rs`, at thirty-two actors in sight: the map alone is 265 microseconds a frame, the rail a game always shows takes it to 300, and adding the four screen-backed views whose screens nobody has opened takes it to 309.
   Nine microseconds of a 309-microsecond frame, three per cent, against a change that breaks two of the five collectors it would gate: `open_on_crowded_bump` reads `OffersView` every frame to decide whether to open the offers screen, and the menu reads `SheetView` at the end of a run to write the obituary.

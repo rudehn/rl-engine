@@ -19,8 +19,13 @@
 //! left to wait for; what still plays, plays over the player's move.
 //!
 //! Two shapes cover what a roguelike animates: a [`Trail`] between two
-//! anchors and a [`Burst`] over some. An [`Animation`] is a list of them
-//! played one after another, one per actor per frame, in the order the
+//! anchors and a [`Burst`] over some. A burst with a source is a blast: it
+//! goes off there and reaches each cell a moment after the one nearer it,
+//! white-hot at its front and cooling to embers behind, with sparks thrown
+//! ahead of it, and the fire and gas it left are held back until it has
+//! reached them (see [`fields`](crate::fields)), so a grenade is seen to go
+//! off and then to leave its smoke behind. An [`Animation`] is a list of
+//! them played one after another, one per actor per frame, in the order the
 //! actor's cues were written. A game with a look of its own writes to
 //! [`Particles`] itself.
 //!
@@ -35,6 +40,7 @@ use rl_core::Point;
 use rl_core::geometry::line;
 use rl_core::seed::position_hash;
 
+use crate::fields::{Wavefront, Wavefronts};
 use crate::map_view::{Glyph, MapView, draw_map};
 use crate::terminal::Terminal;
 
@@ -74,19 +80,99 @@ impl Trail {
     }
 }
 
-/// Every anchor lit at once and fading out, each showing one of a few
-/// glyphs picked by position, so a burst reads as embers rather than a
-/// stamp.
+/// Every anchor lit and fading out, each showing one of a few glyphs
+/// picked by position, so a burst reads as embers rather than a stamp.
+///
+/// With no source every anchor lights at once. With one it is a blast: each
+/// anchor lights [`ring_secs`](Self::ring_secs) later for every cell it is
+/// further from the source, give or take a little so the front is ragged,
+/// and then burns down through [`blast_glyphs`](ParticleStyle::blast_glyphs)
+/// from white-hot to embers, lighting the ground under it as it goes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Burst {
     /// Where.
     pub on: Vec<Anchor>,
-    /// The glyphs the cells pick from.
+    /// The glyphs the cells pick from: any of them for a burst, and hottest
+    /// first for a blast, which moves each cell down them as it cools.
     pub glyphs: Vec<char>,
     /// The colour at the start, fading to the map's own.
     pub color: Color,
-    /// How long it lasts.
+    /// How long each cell burns.
     pub secs: f32,
+    /// Where it goes off, for a blast.
+    pub from: Option<Anchor>,
+    /// Seconds the front takes to go one cell further.
+    pub ring_secs: f32,
+}
+
+impl Burst {
+    /// When `cell` lights, in seconds after the blast went off at `from`:
+    /// its distance in rings, plus up to half a ring by its position, so a
+    /// front is not a square. The same sum [`Wavefront::reaches`] gives
+    /// the fields it held back, so smoke shows where the fire has been.
+    fn lights(&self, from: Point, cell: Point) -> f32 {
+        Wavefront { from, begins: 0.0, ring_secs: self.ring_secs, ends: f32::INFINITY }.reaches(cell)
+    }
+
+    /// How long it plays: the last cell to light, and then its burning.
+    fn duration(&self) -> f32 {
+        match &self.from {
+            None => self.secs,
+            Some(from) => self.on.iter().map(|a| self.lights(from.at, a.at)).fold(0.0, f32::max) + self.secs,
+        }
+    }
+
+    /// A blast `t` seconds in, from wherever `at` puts its source now.
+    fn blast(&self, from: Point, t: f32, at: &Resolve<'_>) -> Vec<Spark> {
+        let mut sparks = Vec::new();
+        let ramp = self.glyphs.len().max(1);
+        for anchor in &self.on {
+            let cell = at(anchor);
+            let age = t - self.lights(from, cell);
+            if age < 0.0 || age >= self.secs {
+                continue;
+            }
+            let cooled = age / self.secs;
+            // Down the ramp as it cools, a cell a step ahead or behind its
+            // neighbours by its position, so the ring is not one glyph.
+            let step = ((cooled * ramp as f32) as usize + (position_hash(1, cell.x, cell.y) % 2) as usize).min(ramp - 1);
+            let glyph = self.glyphs.get(step).copied().unwrap_or('*');
+            // White at the front, the look's own colour behind it.
+            let heat = (1.0 - cooled * 4.0).max(0.0);
+            let color = self.color.mix(&Color::WHITE, heat * 0.8);
+            // Nothing fades until the last third: a blast is a flash, not a
+            // slow dimming.
+            let faded = ((cooled - 0.66) * 3.0).clamp(0.0, 1.0);
+            sparks.push(Spark { at: cell, glyph, color, faded, glow: (1.0 - cooled).powi(2) * 0.85 });
+        }
+        sparks.extend(self.thrown(from, t, at));
+        sparks
+    }
+
+    /// Sparks thrown ahead of the front to the far edge of the blast, where
+    /// it reaches farthest: a few, picked by position, each gone as the
+    /// front arrives behind it.
+    fn thrown(&self, from: Point, t: f32, at: &Resolve<'_>) -> Vec<Spark> {
+        let far = self.on.iter().map(|a| rl_core::geometry::chebyshev(from, at(a))).max().unwrap_or(0);
+        if far < 2 {
+            return Vec::new();
+        }
+        let edge: Vec<Point> = self.on.iter().map(at).filter(|c| rl_core::geometry::chebyshev(from, *c) == far).collect();
+        let count = edge.len().div_ceil(3).min(6);
+        (0..count)
+            .filter_map(|i| {
+                let target = edge[position_hash(i as u64, from.x, from.y) as usize % edge.len()];
+                // Twice the front's speed, so it is out ahead the whole way.
+                let flight = self.lights(from, target) / 2.0;
+                if t >= flight || flight <= 0.0 {
+                    return None;
+                }
+                let path: Vec<Point> = line(from, target).skip(1).collect();
+                let cell = *path.get(((t / flight) * path.len() as f32) as usize)?;
+                Some(Spark { at: cell, glyph: '\'', color: self.color.mix(&Color::WHITE, 0.6), faded: 0.0, glow: 0.0 })
+            })
+            .collect()
+    }
 }
 
 /// One beat of an animation: what plays before the next begins.
@@ -103,7 +189,7 @@ impl Beat {
     pub fn duration(&self) -> f32 {
         match self {
             Beat::Trail(t) => t.cells as f32 * t.cell_secs,
-            Beat::Burst(b) => b.secs,
+            Beat::Burst(b) => b.duration(),
         }
     }
 
@@ -120,18 +206,21 @@ impl Beat {
                 let path: Vec<Point> = line(at(&trail.from), at(&trail.to)).skip(1).collect();
                 let head = ((t / duration) * path.len() as f32).floor() as usize;
                 let Some(cell) = path.get(head) else { return Vec::new() };
-                let mut sparks = vec![Spark { at: *cell, glyph: trail.glyph, color: trail.color, faded: 0.0 }];
+                let mut sparks = vec![Spark { at: *cell, glyph: trail.glyph, color: trail.color, faded: 0.0, glow: 0.0 }];
                 // Three cells of tail, each older and fainter.
                 for back in 1..=3 {
                     if let Some(cell) = head.checked_sub(back).and_then(|i| path.get(i)) {
-                        sparks.push(Spark { at: *cell, glyph: '.', color: trail.color, faded: back as f32 / 4.0 });
+                        sparks.push(Spark { at: *cell, glyph: '.', color: trail.color, faded: back as f32 / 4.0, glow: 0.0 });
                     }
                 }
                 sparks
             }
             Beat::Burst(burst) => {
-                if burst.secs <= 0.0 || t >= burst.secs {
+                if burst.secs <= 0.0 || t >= burst.duration() {
                     return Vec::new();
+                }
+                if let Some(from) = &burst.from {
+                    return burst.blast(at(from), t, at);
                 }
                 let faded = t / burst.secs;
                 burst
@@ -140,7 +229,7 @@ impl Beat {
                     .map(|anchor| {
                         let cell = at(anchor);
                         let pick = position_hash(0, cell.x, cell.y) as usize % burst.glyphs.len().max(1);
-                        Spark { at: cell, glyph: burst.glyphs.get(pick).copied().unwrap_or('*'), color: burst.color, faded }
+                        Spark { at: cell, glyph: burst.glyphs.get(pick).copied().unwrap_or('*'), color: burst.color, faded, glow: 0.0 }
                     })
                     .collect()
             }
@@ -159,6 +248,9 @@ pub struct Spark {
     pub color: Color,
     /// How far it has faded towards nothing, 0 to 1.
     pub faded: f32,
+    /// How far it lights the ground under it towards its colour, 0 to 1:
+    /// a blast's flash, where a flight and a plain burst light nothing.
+    pub glow: f32,
 }
 
 /// Steps played one after another on one map.
@@ -222,6 +314,23 @@ impl Particles {
         self.playing.retain(|(a, _)| !a.holds);
     }
 
+    /// Every blast playing or still to play on `map`, as the front the
+    /// fields wait for, with one that has not begun taken to begin `now`,
+    /// which is when the next frame drawn will begin it.
+    pub fn wavefronts(&self, now: f32, map: MapId, at: &Resolve<'_>) -> Vec<Wavefront> {
+        let mut fronts = Vec::new();
+        for (animation, began) in self.playing.iter().filter(|(a, _)| a.map == map) {
+            let mut begins = began.unwrap_or(now);
+            for step in &animation.steps {
+                if let Beat::Burst(Burst { from: Some(from), ring_secs, .. }) = step {
+                    fronts.push(Wavefront { from: at(from), begins, ring_secs: *ring_secs, ends: begins + step.duration() });
+                }
+                begins += step.duration();
+            }
+        }
+        fronts
+    }
+
     /// What every animation shows at `now` with the anchors where `at`
     /// puts them, starting the ones that have not begun and dropping the
     /// ones that have finished.
@@ -245,15 +354,28 @@ pub struct ParticleStyle {
     pub plain: (char, Color),
     /// Seconds a flight spends on each cell.
     pub cell_secs: f32,
-    /// Seconds a burst takes to fade.
+    /// Seconds a burst takes to fade, and each cell of a blast to burn.
     pub burst_secs: f32,
     /// What a burst's cells show.
     pub burst_glyphs: Vec<char>,
+    /// Seconds a blast's front takes to go one cell further.
+    pub ring_secs: f32,
+    /// What a blast's cells show as they cool, hottest first.
+    pub blast_glyphs: Vec<char>,
 }
 
 impl Default for ParticleStyle {
     fn default() -> Self {
-        Self { plain: ('*', Color::srgb(0.9, 0.9, 0.8)), cell_secs: 0.035, burst_secs: 0.4, burst_glyphs: vec!['*', '+', '\u{00b7}', 'x'] }
+        Self {
+            plain: ('*', Color::srgb(0.9, 0.9, 0.8)),
+            cell_secs: 0.035,
+            burst_secs: 0.4,
+            burst_glyphs: vec!['*', '+', '\u{00b7}', 'x'],
+            ring_secs: 0.06,
+            // Not `#`, which is a wall in most games and would read as
+            // one going up.
+            blast_glyphs: vec!['*', '%', '+', '\u{00b7}'],
+        }
     }
 }
 
@@ -262,7 +384,7 @@ impl ParticleStyle {
     /// never held: what a headless test wants, where even a frame's hold
     /// would put the player's turn past the frame a key is read in.
     pub fn instant() -> Self {
-        Self { cell_secs: 0.0, burst_secs: 0.0, ..Self::default() }
+        Self { cell_secs: 0.0, burst_secs: 0.0, ring_secs: 0.0, ..Self::default() }
     }
 
     /// Whether anything drawn in this style takes time to watch.
@@ -285,7 +407,7 @@ impl Plugin for ParticlesPlugin {
         app.add_systems(rl_bevy::EndRun, |mut particles: ResMut<Particles>| *particles = Particles::default())
             .add_systems(OnEnter(EngineState::Playing), watch_unless_instant)
             .add_systems(Update, skip_on_key.before(EngineSet::Input).run_if(in_state(EngineState::Playing)))
-            .add_systems(Update, play_cues.in_set(PresentSet::Narrate))
+            .add_systems(Update, (play_cues, publish_wavefronts).chain().in_set(PresentSet::Narrate))
             .add_systems(Update, (draw_particles, hold_turns).chain().in_set(PresentSet::Map).after(draw_map));
     }
 
@@ -332,9 +454,10 @@ impl Cues<'_, '_> {
                 let (glyph, color) = self.look(*look);
                 Beat::Trail(Trail::new(*from, *to, glyph, color, self.style.cell_secs))
             }
-            Cue::Burst { on, look } => {
+            Cue::Burst { on, look, from } => {
                 let (_, color) = self.look(*look);
-                Beat::Burst(Burst { on: on.clone(), glyphs: self.style.burst_glyphs.clone(), color, secs: self.style.burst_secs })
+                let glyphs = if from.is_some() { &self.style.blast_glyphs } else { &self.style.burst_glyphs };
+                Beat::Burst(Burst { on: on.clone(), glyphs: glyphs.clone(), color, secs: self.style.burst_secs, from: *from, ring_secs: self.style.ring_secs })
             }
         }
     }
@@ -358,9 +481,17 @@ pub fn play_cues(mut particles: ResMut<Particles>, mut cues: Cues) {
     }
 }
 
+/// Tells the map view where every blast's front is, so the fire and gas a
+/// blast left show only once it has reached them.
+pub fn publish_wavefronts(particles: Res<Particles>, mut fronts: ResMut<Wavefronts>, map: Res<WorldMap>, time: Res<Time>, positions: Query<&Position>) {
+    let at = |anchor: &Anchor| anchor.follow.and_then(|e| positions.get(e).ok()).map(|p| p.0).unwrap_or(anchor.at);
+    fronts.0 = particles.wavefronts(time.elapsed_secs(), map.current(), &at);
+}
+
 /// Paints whatever is playing over the map, keeping each cell's
-/// background and fading the glyph towards it, with every anchor where
-/// what it follows stands now.
+/// background and fading the glyph towards it, and lighting the background
+/// under a blast's flash, with every anchor where what it follows stands
+/// now.
 pub fn draw_particles(
     mut terminal: ResMut<Terminal>,
     mut particles: ResMut<Particles>,
@@ -377,7 +508,10 @@ pub fn draw_particles(
         let Some(screen) = view.to_screen(spark.at) else { continue };
         let Some(mut cell) = terminal.get(screen.x, screen.y) else { continue };
         cell.glyph = spark.glyph;
-        cell.fg = bevy::color::Mix::mix(&spark.color, &cell.bg, spark.faded.clamp(0.0, 1.0));
+        // Lit toward a darker shade of itself, so the glyph over it still
+        // reads.
+        cell.bg = cell.bg.mix(&spark.color.mix(&Color::BLACK, 0.45), spark.glow.clamp(0.0, 1.0));
+        cell.fg = spark.color.mix(&cell.bg, spark.faded.clamp(0.0, 1.0));
         terminal.set(screen.x, screen.y, cell);
     }
 }
@@ -471,7 +605,7 @@ mod tests {
     #[test]
     fn a_burst_lights_every_cell_at_once_and_fades_to_nothing() {
         let on = vec![Anchor::cell(Point::new(0, 0)), Anchor::cell(Point::new(1, 0)), Anchor::cell(Point::new(0, 1))];
-        let step = Beat::Burst(Burst { on, glyphs: vec!['*', '+'], color: Color::WHITE, secs: 0.5 });
+        let step = Beat::Burst(Burst { on, glyphs: vec!['*', '+'], color: Color::WHITE, secs: 0.5, from: None, ring_secs: 0.0 });
         let fresh = step.frame(0.0, &fixed);
         assert_eq!(fresh.len(), 3);
         assert!(fresh.iter().all(|s| s.faded == 0.0));
@@ -484,14 +618,75 @@ mod tests {
     #[test]
     fn a_burst_goes_where_what_it_is_on_goes() {
         let me = Entity::from_bits(3);
-        let step = Beat::Burst(Burst { on: vec![Anchor::on(me, Point::new(2, 2))], glyphs: vec!['*'], color: Color::WHITE, secs: 0.5 });
+        let step =
+            Beat::Burst(Burst { on: vec![Anchor::on(me, Point::new(2, 2))], glyphs: vec!['*'], color: Color::WHITE, secs: 0.5, from: None, ring_secs: 0.0 });
         let stepped = |a: &Anchor| if a.follow == Some(me) { Point::new(3, 2) } else { a.at };
         assert_eq!(step.frame(0.1, &stepped)[0].at, Point::new(3, 2));
     }
 
+    fn blast(radius: i32) -> Burst {
+        let on = (-radius..=radius).flat_map(|y| (-radius..=radius).map(move |x| Anchor::cell(Point::new(x, y)))).collect();
+        Burst { on, glyphs: vec!['*', '%', '+', '.'], color: Color::srgb(1.0, 0.5, 0.1), secs: 0.4, from: Some(Anchor::cell(Point::new(0, 0))), ring_secs: 0.1 }
+    }
+
+    /// A blast goes off where it landed and reaches each ring after the
+    /// one inside it, white-hot and lighting the ground at its front, and
+    /// is over once its last cell has burned down.
+    #[test]
+    fn a_blast_goes_off_at_its_source_and_spreads_ring_by_ring() {
+        let step = Beat::Burst(blast(3));
+        let lit = |t: f32| step.frame(t, &fixed).into_iter().filter(|s| s.glyph != '\'').map(|s| s.at).collect::<Vec<_>>();
+        assert_eq!(lit(0.0), vec![Point::new(0, 0)], "only where it went off, at first");
+        let early = lit(0.16);
+        assert!(early.iter().all(|p| rl_core::geometry::chebyshev(*p, Point::new(0, 0)) <= 1), "a ring out a tenth of a second on: {early:?}");
+        assert!(early.len() > 1);
+        let at_front = step.frame(0.0, &fixed)[0];
+        assert_eq!(at_front.glyph, '*', "hottest glyph first");
+        assert!(at_front.glow > 0.5 && at_front.faded == 0.0, "lighting the ground, not yet fading");
+        assert!(at_front.color.to_srgba().blue > 0.5, "white at the front, not yet the look's own orange");
+        let later = step.frame(0.35, &fixed).into_iter().find(|s| s.at == Point::new(0, 0)).expect("still burning");
+        assert!(later.glow < at_front.glow, "cooling");
+        assert!(
+            step.duration() > 3.0 * 0.1 + 0.4 - 1e-4 && step.duration() < 3.5 * 0.1 + 0.4 + 1e-4,
+            "the last ring, give or take its jitter, then its burning: {}",
+            step.duration()
+        );
+        assert!(step.frame(step.duration(), &fixed).is_empty(), "and over");
+    }
+
+    /// Sparks fly out ahead of a blast to its far edge, and a blast too
+    /// small to have an edge throws none.
+    #[test]
+    fn a_blast_throws_sparks_ahead_of_its_front() {
+        let sparks = |b: &Burst, t: f32| b.thrown(Point::new(0, 0), t, &fixed);
+        let wide = blast(3);
+        let early = sparks(&wide, 0.05);
+        assert!(!early.is_empty(), "thrown as soon as it goes off");
+        assert!(early.iter().all(|s| rl_core::geometry::chebyshev(s.at, Point::new(0, 0)) <= 3), "and within its reach: {early:?}");
+        assert!(sparks(&wide, 0.3).len() < early.len() || sparks(&wide, 0.3).is_empty(), "gone as the front catches up");
+        assert!(sparks(&blast(1), 0.01).is_empty(), "nothing thrown from a blast a cell wide");
+    }
+
+    /// The front the fields wait for is where the blast is: after a flight
+    /// before it, from where it went off, and gone once the blast is over.
+    #[test]
+    fn a_blast_after_a_flight_tells_the_fields_when_its_front_starts() {
+        let mut particles = Particles::default();
+        let (flight, burst) = (Beat::Trail(trail()), Beat::Burst(blast(2)));
+        let (flown, burned) = (flight.duration(), burst.duration());
+        particles.play(Animation { map: MapId::SURFACE, steps: vec![flight, burst], holds: true });
+        let fronts = particles.wavefronts(2.0, MapId::SURFACE, &fixed);
+        assert_eq!(fronts.len(), 1);
+        let front = fronts[0];
+        assert_eq!(front.from, Point::new(0, 0));
+        assert!((front.begins - (2.0 + flown)).abs() < 1e-4, "after the flight, taking an animation not yet begun to begin now");
+        assert!((front.ends - (2.0 + flown + burned)).abs() < 1e-4);
+        assert!(particles.wavefronts(2.0, MapId(9), &fixed).is_empty(), "and nothing on another map");
+    }
+
     #[test]
     fn steps_play_one_after_another_and_a_finished_animation_is_dropped() {
-        let burst = Burst { on: vec![Anchor::cell(Point::new(4, 0))], glyphs: vec!['*'], color: Color::WHITE, secs: 0.2 };
+        let burst = Burst { on: vec![Anchor::cell(Point::new(4, 0))], glyphs: vec!['*'], color: Color::WHITE, secs: 0.2, from: None, ring_secs: 0.0 };
         let animation = Animation { map: MapId::SURFACE, steps: vec![Beat::Trail(trail()), Beat::Burst(burst)], holds: true };
         assert_eq!(animation.duration(), 0.6);
         assert_eq!(animation.frame(0.35, &fixed)[0].glyph, '*');
@@ -538,7 +733,7 @@ mod tests {
             actor: eel,
             cue: Cue::Flight { from: Anchor::on(eel, start.offset(3, 0)), to: Anchor::on(crab, start.offset(-3, 0)), look },
         });
-        app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(crab, start.offset(-3, 0))], look } });
+        app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(crab, start.offset(-3, 0))], look, from: None } });
         app.world_mut().write_message(Cued { actor: crab, cue: Cue::Flight { from: Anchor::on(crab, start.offset(-3, 0)), to: Anchor::on(me, start), look } });
         app.update();
         let particles = app.world().resource::<Particles>();
@@ -570,7 +765,7 @@ mod tests {
         let eel = app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
-        app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain } });
+        app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain, from: None } });
         app.update();
         assert!(app.world().resource::<TurnHold>().is_held() && app.world().resource::<Particles>().is_holding());
         app.world_mut().resource_mut::<rl_bevy::testing::KeyScript>().press(KeyCode::KeyH);
@@ -595,7 +790,7 @@ mod tests {
         let eel = app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
-        app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain } });
+        app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain, from: None } });
         app.update();
         assert!(app.world().resource::<TurnHold>().is_held(), "the burst holds the turns");
 

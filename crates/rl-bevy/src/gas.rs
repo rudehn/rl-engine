@@ -6,19 +6,25 @@
 //! steps every gas a whole turn at a time, writes the gas thick enough to hide
 //! what is behind it into the map's veil, and reports whoever breathes it.
 //!
+//! What spills where and which way a cloud swirls are hashed from the run's
+//! seed, the turn and the cell, as fire's rolls are, so a cloud spreads the
+//! same whichever order it is stepped in and a save holds no generator for it.
+//!
 //! What a gas does beyond its [`Breath`](rl_rules::gas::Breath) is the game's,
 //! answered from [`Breathed`], which is sent every turn an actor stands in some.
 
 use bevy::prelude::*;
-use rl_core::Point;
+use rl_core::seed::position_hash;
+use rl_core::{Point, SeedDomain};
 use rl_rules::gas::{self, GasId};
 
 use crate::components::{Actor, Position};
 use crate::fields::{MapFields, SavedField};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
+use crate::seed::Seed;
 use crate::status::Afflict;
-use crate::turn::TurnEnd;
+use crate::turn::{TurnEnd, Turns};
 use crate::world::WorldMap;
 
 /// Every gas on every map.
@@ -45,12 +51,14 @@ impl Gases {
         self.layers.get(gas.index()).into_iter().flat_map(|l| l.cells())
     }
 
-    /// Gives off `amount` of `gas` at `p` on the current map at once, never
-    /// past the most a cell holds.
-    pub fn release(&mut self, gas: GasId, p: Point, amount: u8) {
-        if let Some(layer) = self.layers.get_mut(gas.index()) {
-            layer.update(p, |c| c.saturating_add(amount));
-        }
+    /// Gives off `amount` of `gas` at `p` on the current map at once: what
+    /// the cell has room for stays, and the rest spills to the nearest cells
+    /// `map` lets gas into, as [`gas::release`] says. `salt` is what the
+    /// ragged edge is hashed from; [`spill_salt`] is the turn's.
+    pub fn release(&mut self, gas: GasId, p: Point, amount: u16, map: &WorldMap, salt: u64) {
+        let Some(layer) = self.layers.get_mut(gas.index()) else { return };
+        let origin = layer.origin();
+        gas::release(layer.field_mut(), p - origin, amount, |q| !map.blocks_projectiles(q + origin), |q| roll(salt, q + origin));
     }
 
     /// Takes every bit of `gas` out of `p`.
@@ -98,8 +106,9 @@ pub struct Release {
     pub gas: GasId,
     /// Where.
     pub at: Point,
-    /// How much, out of the most a cell holds, 255.
-    pub amount: u8,
+    /// How much, a full cell being [`gas::FULL`]: what the cell has no room
+    /// for spills to the nearest cells, so a grenade's worth is a cloud.
+    pub amount: u16,
 }
 
 /// Gives off `amount` of `gas` wherever this entity is, every whole turn: a
@@ -108,8 +117,8 @@ pub struct Release {
 pub struct Vents {
     /// Which gas.
     pub gas: GasId,
-    /// How much a turn.
-    pub amount: u8,
+    /// How much a turn, a full cell being [`gas::FULL`].
+    pub amount: u16,
 }
 
 /// An actor spent a whole turn standing in gas.
@@ -123,11 +132,36 @@ pub struct Breathed {
     pub amount: u8,
 }
 
+/// What a spill on `turn` is hashed from: which of two nearly as near cells
+/// it fills first.
+pub fn spill_salt(seed: &Seed, turn: u32) -> u64 {
+    seed.0.derive(SeedDomain::new(b"gas spill"), u64::from(turn))
+}
+
+/// What the swirls of `turn` are hashed from.
+fn swirl_salt(seed: &Seed, turn: u32) -> u64 {
+    seed.0.derive(SeedDomain::new(b"gas swirl"), u64::from(turn))
+}
+
+/// A cell's roll under `salt`, by its world coordinates, so a cloud on the
+/// streamed surface swirls alike wherever the window stands.
+fn roll(salt: u64, p: Point) -> u32 {
+    position_hash(salt, p.x, p.y) as u32
+}
+
 /// Gives off what was asked for this pass.
-pub fn release_gas(mut requests: MessageReader<Release>, mut gases: ResMut<Gases>, registries: Res<Registries>, map: Res<WorldMap>) {
+pub fn release_gas(
+    mut requests: MessageReader<Release>,
+    mut gases: ResMut<Gases>,
+    registries: Res<Registries>,
+    map: Res<WorldMap>,
+    seed: Res<Seed>,
+    clock: Res<Turns>,
+) {
     gases.fit(registries.gases.len(), &map);
+    let salt = spill_salt(&seed, clock.turn_number());
     for request in requests.read() {
-        gases.release(request.gas, request.at, request.amount);
+        gases.release(request.gas, request.at, request.amount, &map, salt);
     }
 }
 
@@ -136,6 +170,8 @@ pub fn release_gas(mut requests: MessageReader<Release>, mut gases: ResMut<Gases
 pub struct Air<'w, 's> {
     registries: Res<'w, Registries>,
     map: ResMut<'w, WorldMap>,
+    seed: Res<'w, Seed>,
+    clock: Res<'w, Turns>,
     vents: Query<'w, 's, (&'static Position, &'static Vents, Option<&'static OnMap>)>,
     breathers: Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Actor>>,
     afflict: MessageWriter<'w, Afflict>,
@@ -148,24 +184,27 @@ pub struct Air<'w, 's> {
 /// A tile that stops a thrown thing stops gas too, so walls and closed doors
 /// hold a cloud back and open water does not.
 pub fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gases>, air: Air) {
-    let turns = ends.read().count();
-    if turns == 0 {
+    let passed = ends.read().count() as u32;
+    if passed == 0 {
         return;
     }
-    let Air { registries, mut map, vents, breathers, mut afflict, mut breathed } = air;
+    let Air { registries, mut map, seed, clock, vents, breathers, mut afflict, mut breathed } = air;
     gases.fit(registries.gases.len(), &map);
     let here = map.current();
     let on_here = |on: Option<&OnMap>| on.map_or(MapId::SURFACE, |m| m.0) == here;
-    for _ in 0..turns {
+    for step in 0..passed {
+        let turn = clock.turn_number() + 1 - passed + step;
+        let spill = spill_salt(&seed, turn);
         for (pos, vent, on) in &vents {
             if on_here(on) {
-                gases.release(vent.gas, pos.0, vent.amount);
+                gases.release(vent.gas, pos.0, vent.amount, &map, spill);
             }
         }
+        let swirl = swirl_salt(&seed, turn);
         for (id, def) in registries.gases.iter() {
             let Some(layer) = gases.layers.get_mut(id.index()) else { continue };
             let origin = layer.origin();
-            gas::diffuse(layer.field_mut(), def, |p| !map.blocks_projectiles(p + origin));
+            gas::diffuse(layer.field_mut(), def, |p| !map.blocks_projectiles(p + origin), |p| roll(swirl, p + origin));
         }
     }
     // Thick enough to hide what is behind it: into the veil the map reads
@@ -210,7 +249,7 @@ fn check_breaths(registries: Option<Res<Registries>>, statuses: Option<Res<Messa
 /// every whole turn, hiding what is behind it and breathed by whoever stands
 /// in it.
 ///
-/// Needs [`Registries`] with the gases in it, and [`StatusPlugin`](crate::status::StatusPlugin)
+/// Needs [`Registries`] with the gases in it, the run's [`Seed`], and [`StatusPlugin`](crate::status::StatusPlugin)
 /// as well when a gas inflicts a status, which it checks when play begins.
 /// Registers the `Emit` ability effect, so abilities may give gas off.
 pub struct GasPlugin;
@@ -225,6 +264,7 @@ impl Plugin for GasPlugin {
             .add_message::<Breathed>()
             .add_message::<Afflict>()
             .needs::<Registries>("GasPlugin", "`Registries`, with the gases in it, loaded with `gas::load`")
+            .needs::<Seed>("GasPlugin", "`Seed(RunSeed(n))`, which a cloud's spill and swirls are hashed from")
             .add_effect::<crate::effects::Emit>()
             .add_systems(Turn, (release_gas, step_gases).chain().in_set(FieldSet::Gas))
             .add_systems(OnEnter(crate::state::EngineState::Playing), check_breaths);
