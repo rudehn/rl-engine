@@ -34,6 +34,7 @@ These are the reasoning; the overview is the list.
 - [remains.md](design/remains.md), what is left where something died.
 - [stealth.md](design/stealth.md), being noticed, and being looked for.
 - [ui.md](design/ui.md), why a panel is a view, a collector and a presenter.
+- [work.md](design/work.md), an actor doing one thing across many turns.
 
 The subsystems with no page yet are listed at the end of the layout section in [AGENTS.md](../AGENTS.md).
 
