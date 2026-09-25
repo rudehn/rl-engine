@@ -26,6 +26,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, Keep, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
 use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::{DropRow, DropTable};
 use serde::Deserialize;
 
 pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, shout_alarm, sound_alarm};
@@ -159,6 +160,9 @@ pub struct Roster {
     pub table: BandedTable<Id<MonsterDef>>,
     /// One brain per definition, indexed the same way `defs` is.
     brains: Vec<Arc<Brain<Entity>>>,
+    /// What each kind leaves when it dies, its names resolved against
+    /// `items.ron` once, indexed the same way `defs` is.
+    drops: Vec<DropTable<Id<crate::gear::ItemDef>>>,
 }
 
 impl Roster {
@@ -188,6 +192,29 @@ impl Roster {
         for row in rows {
             table.push(BandedEntry::new(row.monster.id()).bands(row.decks.0, row.decks.1).weight(row.weight).group(row.group.0, row.group.1));
         }
+        // What each kind drops, by the item ids the armory hands out: both
+        // read `items.ron` through `gear::load_defs`, so an id here is the
+        // same thing there.
+        let items = crate::gear::load_defs(registries);
+        let mut unknown = Vec::new();
+        let drops: Vec<DropTable<Id<crate::gear::ItemDef>>> = defs
+            .iter()
+            .map(|(_, d)| {
+                DropTable(
+                    d.drops
+                        .iter()
+                        .filter_map(|(name, pct)| match items.id(name) {
+                            Some(id) => Some(DropRow::new(id, *pct)),
+                            None => {
+                                unknown.push(format!("{} drops {name:?}, which is no item", d.name));
+                                None
+                            }
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        assert!(unknown.is_empty(), "monster roster: {}", unknown.join("; "));
         let mut brains = Vec::new();
         for (_, d) in defs.iter() {
             let mut brain = Brain::new();
@@ -206,7 +233,12 @@ impl Roster {
             };
             brains.push(Arc::new(brain.then(SearchLastKnown).then(Wander { chance_pct: 30 })));
         }
-        Self { defs, table, brains }
+        Self { defs, table, brains, drops }
+    }
+
+    /// What `id` leaves when it dies, as the engine's loot rolls it.
+    pub fn drops(&self, id: Id<MonsterDef>) -> Drops<crate::gear::ItemDef> {
+        Drops(self.drops[id.index()].clone())
     }
 }
 
@@ -242,6 +274,10 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
     }
     if let Some(hearing) = d.hearing {
         e.insert(Hearing(hearing));
+    }
+    // What it leaves is the engine's to roll and put down when it dies.
+    if !d.drops.is_empty() {
+        e.insert(roster.drops(id));
     }
     e.id()
 }

@@ -38,7 +38,7 @@ while read -r plugin; do
 	if ! grep -q "\b${plugin}\b" "$overview"; then
 		note "$overview: no mention of \`${plugin}\`. A plugin the inventory does not name is one a game cannot find."
 	fi
-done < <(grep -rho 'impl Plugin for [A-Za-z0-9_]*' --include='*.rs' crates/ | sed 's/impl Plugin for //' | sort -u)
+done < <(grep -rhoE 'impl(<[^>]*>)? Plugin for [A-Za-z0-9_]*' --include='*.rs' crates/ | sed 's/.* Plugin for //' | sort -u)
 
 # 2. Design docs. The layout section lists them by name, and that list went
 # stale at four of nine before this check existed.

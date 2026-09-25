@@ -341,9 +341,11 @@ pub fn resolve_interactions(
 /// A prop that holds things.
 ///
 /// Its [`Inventory`] is what it holds, so everything that already knows
-/// how to read a bag reads this one too. What goes in is the game's: the
-/// engine rolls how many of each and asks with [`FillContainer`], because
-/// items are a game's own registry and only a game can spawn one.
+/// how to read a bag reads this one too. The engine rolls how many of each
+/// row and asks with [`FillContainer`], because items are a game's own
+/// registry and only a game can make one; with
+/// [`LootPlugin`](crate::loot::LootPlugin) the engine answers it too,
+/// through the game's [`ItemMaker`](crate::loot::ItemMaker).
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Container;
 
@@ -369,21 +371,28 @@ impl crate::seed::Stream for PropRng {
     }
 }
 
-/// Asks the game to put `count` of the item named `item` into `prop`.
+/// Asks for one row of what `prop` holds: `count` of a fixed item, or
+/// `count` draws of anything carrying a tag, `band` bands deeper than
+/// where the container stands.
 ///
-/// The engine rolled the count from the definition and its own stream;
-/// spawning is the game's, since only it knows what a "slug" is. A game
-/// answers in [`TurnSet::React`](crate::plugin::TurnSet::React) or in any
-/// `Update` system, spawns what it spawns anywhere else, and pushes the
-/// entities onto the prop's [`Inventory`].
+/// The engine rolled the count from the definition and its own stream.
+/// [`LootPlugin`](crate::loot::LootPlugin) answers it in
+/// [`PropSet::Fill`]; a game without one answers a fixed item itself,
+/// spawning what it names and pushing the entities onto the prop's
+/// [`Inventory`], and cannot be asked for a tag, which needs a loot table
+/// to draw from.
 #[derive(Message, Debug, Clone)]
 pub struct FillContainer {
     /// Which container.
     pub prop: Entity,
-    /// What goes in, by the name its own registry knows it by.
-    pub item: String,
-    /// How many, already rolled.
+    /// What goes in: an item by the name its own registry knows it by, or
+    /// a tag.
+    pub what: rl_rules::prop::Stock,
+    /// How many of the item, or how many draws of the tag, already rolled.
     pub count: u32,
+    /// For a tag, how many bands deeper than the container's own it is
+    /// drawn at.
+    pub band: i32,
 }
 
 /// A container whose contents have been asked for, so they are asked for
@@ -396,6 +405,26 @@ type Unstocked = (Entity, &'static PropKind);
 
 /// A container whose bag has just changed, and what it was made from.
 type JustEmptied<'w, 's> = Query<'w, 's, (Entity, &'static PropKind, &'static Inventory), (With<Container>, Without<Emptied>, Changed<Inventory>)>;
+
+/// Refuses play when a container asks for a kind of thing by tag and no
+/// [`LootPlugin`](crate::loot::LootPlugin) is there to draw it, rather
+/// than leaving every such crate empty.
+fn check_tagged_contents(registries: Option<Res<Registries>>, answered: Option<Res<crate::loot::ContainersAnswered>>) {
+    let Some(registries) = registries else { return };
+    if answered.is_some() {
+        return;
+    }
+    let asking: Vec<&str> = registries
+        .props
+        .iter()
+        .filter(|(_, def)| def.container.as_ref().is_some_and(|c| c.contents.iter().any(|r| matches!(r.what, rl_rules::prop::Stock::Tag(_)))))
+        .map(|(_, def)| def.name.as_str())
+        .collect();
+    assert!(
+        asking.is_empty(),
+        "PropsPlugin: {asking:?} ask for things by tag, which is drawn from a loot table, and no LootPlugin was added to draw them; add LootPlugin"
+    );
+}
 
 /// Rolls what each new container holds and asks the game for it.
 ///
@@ -418,7 +447,7 @@ pub fn stock_containers(
         for roll in &container.contents {
             let count = if roll.min >= roll.max { roll.max } else { rng.0.random_range(roll.min..=roll.max) };
             if count > 0 {
-                asks.write(FillContainer { prop, item: roll.item.clone(), count });
+                asks.write(FillContainer { prop, what: roll.what.clone(), count, band: roll.band });
             }
         }
     }
@@ -844,7 +873,8 @@ impl Plugin for PropsPlugin {
             // warp, so every action in the pass is ordered after it and a
             // plate's report is in before `ResolveSet::Triggers` lands it.
             .add_systems(Turn, report_entered.in_set(ResolveSet::Travel).after(crate::places::resolve_warps))
-            .add_systems(Turn, report_destroyed.in_set(crate::plugin::TurnSet::React));
+            .add_systems(Turn, report_destroyed.in_set(crate::plugin::TurnSet::React))
+            .add_systems(OnEnter(crate::state::EngineState::Playing), check_tagged_contents);
     }
 
     fn finish(&self, app: &mut App) {
@@ -864,7 +894,7 @@ mod tests {
     const PROPS: &str = r#"#![enable(implicit_some)]
         [
             (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true, health: 6,
-             container: (contents: [("slug", 8, 12)]), offers: [(verb: "open", time: 200)]),
+             container: (contents: [(item: "slug", count: (8, 12))]), offers: [(verb: "open", time: 200)]),
             (name: "pressure plate", glyph: '^', color: (r: 230, g: 140, b: 51)),
         ]"#;
 
@@ -946,11 +976,11 @@ mod offers {
     const PROPS: &str = r#"#![enable(implicit_some)]
         [
             (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true,
-             container: (contents: [("slug", 1, 1)]), offers: [(verb: "open", time: 200)]),
+             container: (contents: [(item: "slug", count: 1)]), offers: [(verb: "open", time: 200)]),
             (name: "reactor console", glyph: '%', color: (r: 89, g: 217, b: 230), blocks: true,
              offers: [(verb: "charge", time: 300)]),
             (name: "locked cache", glyph: '&', color: (r: 204, g: 204, b: 217), blocks: true,
-             container: (contents: [("slug", 1, 1)], locked: "cutter"), offers: [(verb: "open", time: 250)]),
+             container: (contents: [(item: "slug", count: 1)], locked: "cutter"), offers: [(verb: "open", time: 250)]),
             (name: "workbench", glyph: 'T', color: (r: 150, g: 120, b: 90), blocks: true,
              offers: [(verb: "search", time: 100), (verb: "charge", time: 100)]),
         ]"#;
@@ -1106,10 +1136,10 @@ mod containers {
     const PROPS: &str = r#"#![enable(implicit_some)]
         [
             (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true,
-             container: (contents: [("slug", 2, 2), ("medkit", 1, 1)], opened: (glyph: '"', color: (r: 128, g: 115, b: 90))),
+             container: (contents: [(item: "slug", count: 2), (item: "medkit", count: 1)], opened: (glyph: '"', color: (r: 128, g: 115, b: 90))),
              offers: [(verb: "open", time: 200)]),
             (name: "open bin", glyph: 'u', color: (r: 150, g: 150, b: 150), blocks: true,
-             container: (contents: [("slug", 1, 1)]),
+             container: (contents: [(item: "slug", count: 1)]),
              offers: [(verb: "open", time: 100)]),
         ]"#;
 
@@ -1132,10 +1162,11 @@ mod containers {
         // The game's half: spawn what it was asked for and put it in.
         app.add_systems(Update, |mut commands: Commands, mut asks: MessageReader<FillContainer>, mut bags: Query<&mut Inventory>| {
             for ask in asks.read() {
+                let rl_rules::prop::Stock::Item(name) = &ask.what else { continue };
                 let mut items = Vec::new();
                 for _ in 0..ask.count {
-                    let mut item = commands.spawn((Item, Name::new(ask.item.clone())));
-                    if ask.item == "slug" {
+                    let mut item = commands.spawn((Item, Name::new(name.clone())));
+                    if name == "slug" {
                         item.insert(Stack { key: 1, count: 1 });
                     }
                     items.push(item.id());
@@ -1159,6 +1190,27 @@ mod containers {
 
     fn bag_of(app: &App, who: Entity) -> Vec<Entity> {
         app.world().get::<Inventory>(who).map(|b| b.items.clone()).unwrap_or_default()
+    }
+
+    /// A container that asks for a kind of thing by tag has nothing to
+    /// draw it from without a loot table, and is refused when play begins
+    /// rather than left empty.
+    #[test]
+    #[should_panic(expected = "no LootPlugin was added")]
+    fn a_container_asking_by_tag_without_loot_is_refused_when_play_begins() {
+        let mut app = headless_app();
+        app.add_plugins(PropsPlugin);
+        let tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("weapon")]).unwrap();
+        let props = rl_rules::prop::load(
+            r#"#![enable(implicit_some)] [(name: "locker", glyph: '&', color: (r: 1, g: 2, b: 3), offers: [(verb: "open")], container: (contents: [(tag: "weapon", count: 1)]))]"#,
+            &rl_rules::Names::new().tags(&tags),
+        )
+        .unwrap();
+        app.insert_resource(Registries { tags, props, ..Default::default() }).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        crate::testing::surface(&mut app);
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
     }
 
     /// The engine rolls how many and the game spawns what: neither knows

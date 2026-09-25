@@ -19,6 +19,9 @@
 //!   the layer above resolves. [`EffectSpec`] is one effect as any content
 //!   file writes it, and [`TriggerSpec`] with its [`Area`] one trigger, the
 //!   moment a prop or a thing answers and where its effects land.
+//! - [`loot`]: where items turn up and how often, keyed by a game's own
+//!   item ids: a banded table drawn by weight, by group and by tag, what
+//!   the dead leave, and a place's scatter.
 //! - [`prop`]: what stands on a map that is neither an actor nor an item,
 //!   as data: a look, what it offers, what it holds, what sets it off and
 //!   how hard it is to spot.
@@ -52,6 +55,7 @@ pub mod faction;
 pub mod fire;
 pub mod forecast;
 pub mod gas;
+pub mod loot;
 pub mod names;
 pub mod prop;
 pub mod stats;
@@ -72,8 +76,9 @@ pub use faction::{FactionId, Factions, Relation};
 pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
 pub use gas::{Breath, GasDef, GasId};
+pub use loot::{DropRow, DropTable, Layout, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use names::{NameRef, Names};
-pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId};
+pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 
@@ -97,8 +102,9 @@ pub mod prelude {
     pub use crate::fire::Tinder;
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
     pub use crate::gas::{Breath, GasDef, GasId};
+    pub use crate::loot::{DropRow, DropTable, Layout, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
     pub use crate::names::{NameRef, Names};
-    pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId};
+    pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 }

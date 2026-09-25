@@ -3,10 +3,11 @@
 //!
 //! All of it is the engine's props, so this module is short on purpose:
 //! [`load`] reads `assets/props.ron`, [`place_on_arrival`] says where one
-//! stands, [`fill_containers`] answers the engine's ask for what goes
-//! inside, and [`wreck_the_dead`] makes a droid's remains a kind of prop
+//! stands, and [`wreck_the_dead`] makes a droid's remains a kind of prop
 //! so it can be gone through. Nothing here knows what opening a crate
-//! does, because the engine does.
+//! does or what goes in one, because the engine does: `props.ron` asks
+//! for kinds of thing by tag, and the engine's loot draws them at the
+//! deck's band through the armory.
 //!
 //! The one prop Foundry answers itself is the reactor console, in
 //! `mission`, because reporting a fact the quest tracker counts is the
@@ -18,7 +19,6 @@ use rl_engine::rl_core::{Direction, Point, geometry};
 use std::collections::BTreeSet;
 
 use crate::decks::deck_of;
-use crate::gear::spawn_item;
 
 const PROPS_RON: &str = include_str!("../assets/props.ron");
 
@@ -118,11 +118,11 @@ fn cables_for(deck: u32) -> usize {
 /// Puts Foundry's props on a deck the first time it is entered, beside
 /// the loot and the droids: crates in the stores, cable on open floor.
 ///
-/// Reads the same [`PlaceEntered`] as `loot::scatter_on_arrival` and
-/// `droids::populate_deck`, and runs after both, in the chain `plugin`
-/// builds a deck in: three systems that all spawn, left unordered, hand
-/// their commands in whatever order they finish in, and the fingerprint
-/// tripwire reads a run by spawn order.
+/// Reads the same [`PlaceEntered`] as `droids::populate_deck` and the
+/// engine's loot, and runs after the one and before the other, in the
+/// chain `plugin` builds a deck in: systems that all spawn, left
+/// unordered, hand their commands in whatever order they finish in, and
+/// the fingerprint tripwire reads a run by spawn order.
 pub fn place_on_arrival(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, seed: Res<Seed>, registries: Res<Registries>) {
     let (Some(supply), Some(locker), Some(cable)) =
         (registries.props.id("supply crate"), registries.props.id("armory locker"), registries.props.id("live cable"))
@@ -187,33 +187,6 @@ pub fn place_on_arrival(mut commands: Commands, mut entered: MessageReader<Place
             if let Some(at) = free(&mut roll, &mut taken, false) {
                 spawn_prop(&mut commands, &registries, cable, at, ev.map);
             }
-        }
-    }
-}
-
-/// Puts into each container what the engine asked for.
-///
-/// The engine rolled how many of what, from its own stream, and asks by
-/// name; spawning is Foundry's, because only Foundry has an armory. This
-/// is the whole of the seam.
-pub fn fill_containers(
-    mut commands: Commands,
-    mut asks: MessageReader<FillContainer>,
-    content: crate::gear::Content,
-    mut bags: Query<&mut Inventory, With<Container>>,
-) {
-    let (armory, registries) = (content.armory(), content.registries());
-    for ask in asks.read() {
-        let Some(id) = armory.defs.id(&ask.item) else {
-            warn!("props.ron asks for {:?}, which the armory has no definition for", ask.item);
-            continue;
-        };
-        let mut items = Vec::new();
-        for _ in 0..ask.count {
-            items.push(spawn_item(&mut commands, &armory, id, registries));
-        }
-        if let Ok(mut bag) = bags.get_mut(ask.prop) {
-            bag.items.extend(items);
         }
     }
 }
@@ -374,7 +347,7 @@ mod tests {
         let card = {
             let id = armory.defs.id("keycard").expect("the armory has keycards");
             let mut commands = app.world_mut().commands();
-            let card = spawn_item(&mut commands, &armory, id, &registries);
+            let card = crate::gear::spawn_item(&mut commands, &armory, id, &registries);
             commands.entity(card).insert(Stack { key: 99, count: 2 });
             card
         };

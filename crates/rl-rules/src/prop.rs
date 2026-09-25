@@ -14,9 +14,11 @@
 //! Three things are deliberately left as names rather than resolved to
 //! ids. A verb and a trigger's moment are strings until the engine interns
 //! them, the way a sound is, because the id only exists once there is a
-//! run. A container's contents
-//! are item names because items are a game's own registry and only the
-//! game can spawn one; the engine rolls the counts and asks.
+//! run. A container's fixed contents are item names because items are a
+//! game's own registry and only the game can spawn one; the engine rolls
+//! the counts and asks. A container may also ask for a *kind* of thing by
+//! tag, which the engine draws from the game's loot table at the band the
+//! container stands at, so one locker holds better gear the deeper it is.
 
 use rl_core::Id;
 use rl_grid::Rgb;
@@ -100,9 +102,7 @@ pub struct OfferDef {
 /// What a container holds, and what it takes to open it.
 #[derive(Debug, Clone)]
 pub struct ContainerDef {
-    /// What is in it: an item's name, and how many, rolled when it is
-    /// placed. The names stay names because items are a game's own
-    /// registry, and only the game can spawn one.
+    /// What is in it, each row rolled when it is placed.
     pub contents: Vec<ContentRoll>,
     /// A tag the actor must carry to open it at all.
     pub locked: Option<TagId>,
@@ -112,15 +112,31 @@ pub struct ContainerDef {
     pub opened: Option<Look>,
 }
 
-/// How many of one item a container holds.
+/// One row of what a container holds: a thing, and how many.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentRoll {
-    /// The item's name, in the game's own registry.
-    pub item: String,
+    /// What goes in.
+    pub what: Stock,
     /// The fewest.
     pub min: u32,
     /// The most.
     pub max: u32,
+    /// For a [`Stock::Tag`] row, how many bands deeper than where the
+    /// container stands it is drawn at: `2` for a weapon from two decks
+    /// down, negative for one from above. Always nought for an item.
+    pub band: i32,
+}
+
+/// What a container row puts in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stock {
+    /// That item, by its name in the game's own registry: the count is how
+    /// many of it.
+    Item(String),
+    /// Anything carrying the tag, drawn from the game's loot table at the
+    /// container's band: the count is how many draws, each its own, so a
+    /// row of ammunition over two kinds of round may give some of each.
+    Tag(TagId),
 }
 
 /// How hard a prop is to spot, for one that is not in plain sight.
@@ -158,10 +174,32 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
             offers.push(OfferDef { verb: o.verb.clone(), time: o.time, needs, effects: read_effects(&a.name, &o.effects, &mut errors) });
         }
         let container = a.container.as_ref().map(|c| {
-            for ContentRon(item, min, max) in &c.contents {
+            let mut contents = Vec::new();
+            for row in &c.contents {
+                let (min, max) = row.count.range();
+                let what = match (&row.item, &row.tag) {
+                    (Some(item), None) => {
+                        if row.band != 0 {
+                            errors.push(format!("{}: {item:?} is a fixed item, drawn from no band, so a band offset means nothing on it", a.name));
+                        }
+                        Stock::Item(item.clone())
+                    }
+                    (None, Some(tag)) => match names.tag(tag) {
+                        Ok(tag) => Stock::Tag(tag),
+                        Err(e) => {
+                            errors.push(format!("{}: its contents ask for {e}", a.name));
+                            continue;
+                        }
+                    },
+                    _ => {
+                        errors.push(format!("{}: a row of its contents names an `item` or a `tag`, and exactly one of them", a.name));
+                        continue;
+                    }
+                };
                 if min > max {
-                    errors.push(format!("{}: {item:?} is written as {min} to {max}, which is no range at all", a.name));
+                    errors.push(format!("{}: {what:?} is written as {min} to {max}, which is no range at all", a.name));
                 }
+                contents.push(ContentRoll { what, min, max, band: row.band });
             }
             let locked = match c.locked.as_deref().map(|tag| names.tag(tag)) {
                 Some(Ok(tag)) => Some(tag),
@@ -171,11 +209,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
                 }
                 None => None,
             };
-            ContainerDef {
-                contents: c.contents.iter().map(|ContentRon(item, min, max)| ContentRoll { item: item.clone(), min: *min, max: *max }).collect(),
-                locked,
-                opened: c.opened,
-            }
+            ContainerDef { contents, locked, opened: c.opened }
         });
         for t in &a.triggers {
             if t.fires == Some(0) {
@@ -285,10 +319,36 @@ struct ContainerRon {
     opened: Option<Look>,
 }
 
-/// What a container holds, as authored: `("slug", 8, 12)`, the way a
-/// monster's drops are written.
+/// One row of what a container holds, as authored: `(item: "keycard",
+/// count: (0, 1))` or `(tag: "weapon", count: 1, band: 2)`.
 #[derive(Debug, Deserialize)]
-struct ContentRon(String, u32, u32);
+#[serde(deny_unknown_fields)]
+struct ContentRon {
+    #[serde(default)]
+    item: Option<String>,
+    #[serde(default)]
+    tag: Option<String>,
+    count: CountRon,
+    #[serde(default)]
+    band: i32,
+}
+
+/// A count as authored: one number, or `(fewest, most)`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(untagged)]
+enum CountRon {
+    Exactly(u32),
+    Between(u32, u32),
+}
+
+impl CountRon {
+    fn range(self) -> (u32, u32) {
+        match self {
+            Self::Exactly(n) => (n, n),
+            Self::Between(min, max) => (min, max),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 struct HiddenRon {
@@ -340,10 +400,10 @@ mod tests {
             r#"#![enable(implicit_some)]
             [
                 (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true, health: 6,
-                 container: (contents: [("slug", 8, 12)], opened: (glyph: '"', color: (r: 128, g: 115, b: 90))),
+                 container: (contents: [(item: "slug", count: (8, 12))], opened: (glyph: '"', color: (r: 128, g: 115, b: 90))),
                  offers: [(verb: "open", time: 200)]),
                 (name: "locked cache", glyph: '&', color: (r: 204, g: 204, b: 217), blocks: true,
-                 container: (contents: [("composite plate", 1, 1)], locked: "cutter"),
+                 container: (contents: [(item: "composite plate", count: 1)], locked: "cutter"),
                  offers: [(verb: "open", time: 300)]),
                 (name: "fuel-line plate", glyph: '^', color: (r: 230, g: 140, b: 51),
                  hidden: (spot: 40),
@@ -359,7 +419,10 @@ mod tests {
         assert_eq!(crate_def.look.layer, 1, "a layer nobody wrote is one");
         assert_eq!(crate_def.health, Some(6));
         assert_eq!(crate_def.offers[0].time, 200);
-        assert_eq!(crate_def.container.as_ref().expect("it holds things").contents[0], ContentRoll { item: "slug".into(), min: 8, max: 12 });
+        assert_eq!(
+            crate_def.container.as_ref().expect("it holds things").contents[0],
+            ContentRoll { what: Stock::Item("slug".into()), min: 8, max: 12, band: 0 }
+        );
         assert!(crate_def.container.as_ref().expect("it holds things").locked.is_none(), "an unlocked crate needs nothing");
 
         let cache = props.get(props.expect("locked cache"));
@@ -374,6 +437,39 @@ mod tests {
         let console = props.get(props.expect("reactor console"));
         assert!(console.offers[0].effects.is_empty(), "a verb only the game answers carries nothing");
         assert_eq!(console.offers[0].verb, "charge");
+    }
+
+    /// A container may ask for a kind of thing by tag, a number of draws
+    /// and a band offset, beside fixed items; each mistake in a row is
+    /// named, and a row naming both an item and a tag, or neither, is
+    /// refused rather than guessed at.
+    #[test]
+    fn a_container_asks_for_things_by_tag_as_well_as_by_name() {
+        let tags = Registry::from_defs(vec![TagDef::new("weapon"), TagDef::new("slug")]).expect("two tags");
+        let names = Names::new().tags(&tags);
+        let props = load(
+            r#"#![enable(implicit_some)]
+            [(name: "armory", glyph: '&', color: (r: 1, g: 2, b: 3), offers: [(verb: "open")],
+                 container: (contents: [(tag: "slug", count: (4, 9)), (tag: "weapon", count: 1, band: 2), (item: "keycard", count: (0, 1))]))]"#,
+            &names,
+        )
+        .expect("the file loads");
+        let rows = &props.get(props.expect("armory")).container.as_ref().expect("it holds things").contents;
+        assert_eq!(rows[0], ContentRoll { what: Stock::Tag(tags.expect("slug")), min: 4, max: 9, band: 0 });
+        assert_eq!(rows[1], ContentRoll { what: Stock::Tag(tags.expect("weapon")), min: 1, max: 1, band: 2 }, "a weapon from two bands deeper");
+        assert_eq!(rows[2].what, Stock::Item("keycard".into()));
+
+        let err = load(
+            r#"#![enable(implicit_some)]
+            [(name: "bad", glyph: '&', color: (r: 1, g: 2, b: 3), offers: [(verb: "open")],
+                 container: (contents: [(item: "slug", count: 1, band: 1), (item: "slug", tag: "weapon", count: 1), (count: 1), (tag: "wepon", count: 1)]))]"#,
+            &names,
+        )
+        .expect_err("four bad rows")
+        .to_string();
+        for said in ["band offset means nothing", "exactly one of them", "wepon"] {
+            assert!(err.contains(said), "{said:?} in {err}");
+        }
     }
 
     /// A props file written for 0.3.0, with `trigger:` where `triggers:`
@@ -406,7 +502,7 @@ mod tests {
             r#"#![enable(implicit_some)]
             [
                 (name: "bad crate", glyph: '&', color: (r: 1, g: 2, b: 3),
-                 container: (contents: [("slug", 9, 4)], locked: "skeleton key")),
+                 container: (contents: [(item: "slug", count: (9, 4))], locked: "skeleton key")),
                 (name: "bad plate", glyph: '^', color: (r: 1, g: 2, b: 3),
                  hidden: (spot: 140),
                  triggers: [(on: "entered", fires: 0, effects: [])]),

@@ -146,7 +146,7 @@ impl Plugin for TitlePlugin {
             // before the first key is read: in `PreStartup`, so it is done
             // before the engine begins its first run in `Startup`, and after
             // the save's armory is loaded beside it.
-            .add_systems(PreStartup, look_for_save.after(crate::save::load_armory))
+            .add_systems(PreStartup, look_for_save.after(crate::gear::load_armory))
             // Before the engine's input phase, and both of them before it:
             // that phase holds the exclusive key handlers, which conflict
             // with everything in the schedule they are not ordered against.

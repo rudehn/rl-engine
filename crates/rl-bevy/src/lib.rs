@@ -29,6 +29,7 @@ pub mod gas;
 pub mod items;
 pub mod knowledge;
 pub mod lighting;
+pub mod loot;
 pub mod minds;
 pub mod noise;
 pub mod places;
@@ -72,6 +73,7 @@ pub use items::{
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Scattered};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Profile, Sight, Thinking,
     a_mind_holds_the_turn,
@@ -130,6 +132,7 @@ pub mod prelude {
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+    pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Scattered};
     pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, Sounds};
     pub use crate::places::{

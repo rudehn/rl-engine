@@ -53,7 +53,7 @@ crates/<name>/src/lib.rs        module-level //! docs name every public item
 crates/<name>/benches/          criterion, on realistic maps, only for hot paths
 docs/PLAN.md                    the design and milestones
 docs/design/                    how one subsystem works, and why: abilities, effects, fields,
-                                items, lighting, minds, noise, props, remains, stealth, ui,
+                                items, lighting, loot, minds, noise, props, remains, stealth, ui,
                                 work
 docs/guide/                     the mdBook; every chapter quotes examples/tutorial
 docs/reviews/                   the evidence

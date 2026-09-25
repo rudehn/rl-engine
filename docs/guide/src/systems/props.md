@@ -14,7 +14,7 @@
             crates/rl-render/src/map_view.rs
             crates/rl-ui/src/interact.rs
             crates/rl-save/src/run.rs
-     fingerprint: 25de65ec -->
+     fingerprint: 0f485cf9 -->
 
 # Props
 
@@ -47,8 +47,9 @@ A container's lock is folded in here, since opening a locked thing wants its key
 `Interact { prop, verb }` is the one action whatever the verb: its resolver spends the offer's `time`, lands whatever effects the offer carried, and writes `Interacted { actor, prop, verb }`.
 Verbs are interned by `Verbs`, `OPEN` and `SEARCH` first and the rest through `app.add_verb`, so two games spell `open` the same way.
 `Container` is `Inventory` on something that is not an actor, so everything that reads a bag reads this one.
-`stock_containers` rolls each one's counts from `PropRng` and asks the game with `FillContainer { prop, item, count }`, keyed on a `Stocked` marker rather than on `Added` because a stream derived from the run's seed may not exist on the frame a place is built.
-Answering one means spawning that many of what it names, wherever the game spawns things, and pushing the entities onto the prop's own `Inventory`; nothing checks that the answer arrived, so a container nobody filled is an empty container and no error.
+A container's `contents` are `ContentRoll`s, each a `Stock::Item` by name in a count or a `Stock::Tag` in a number of draws, with a `band` offset for a tag.
+`stock_containers` rolls each row's count from `PropRng` and asks with `FillContainer { prop, what, count, band }`, keyed on a `Stocked` marker rather than on `Added` because a stream derived from the run's seed may not exist on the frame a place is built.
+With `LootPlugin` the engine answers it, drawing a tag from the game's loot table at the container's band plus the offset, so one locker holds better things deeper; without one, a game answers a named item itself, and a container asking by tag is refused as play begins, since there is nothing to draw it from.
 `Take { from, item }` moves one or all into the taker's bag, merging stacks and writing `ItemEvent::PickedUp` the way the ground does, and costs one turn either way.
 `close_emptied_containers` marks a container `Emptied` only when its definition gives an opened look, so a crate that cannot show it is done goes on offering and the screen says it is empty.
 Each trigger is the `TriggerSpec` an item's are, an `on` moment by name, an `Area`, an optional `fires` count and effects, and a prop answers two of the engine's moments, `entered` and `destroyed`.
@@ -117,7 +118,7 @@ Where a prop stands and what a container holds are saved as any entity's are; wh
 ## Where it lives
 
 `rl-rules` is tier 1 and has no Bevy in it: `prop.rs` is the content half and nothing in it runs, so a `props.ron` with three mistakes names three without an `App` anywhere.
-Two things are left as names there rather than resolved to ids, and both for the same reason: a verb is a string until there is a run to intern it in, and a container's contents are item names because items are a game's own registry.
+Two things are left as names there rather than resolved to ids, and both for the same reason: a verb is a string until there is a run to intern it in, and a container's fixed contents are item names because items are a game's own registry, which the loot plugin resolves through the game's `ItemMaker`.
 `rl-bevy` is tier 2 and owns everything that happens: `props.rs` is the plugin, the components, the gate, the two actions, the reports of its two moments and the spotting roll, and it is one file because a prop's parts are one idea seen from several sides.
 What a trigger does is not in it: landing one is `effects`', shared with every item, so a prop's trap and a thrown grenade cannot drift apart.
 What stays out of it says as much: the look is dressed in `rl-render` from the same definition, the offers screen and the take-only modal are in `rl-ui`, and the save kind is in `rl-save`, because `Saveable` is that crate's and `rl-bevy` sits below it.

@@ -137,6 +137,9 @@ fn main() -> AppExit {
         .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StreamingPlugin, FactsPlugin, AbilitiesPlugin))
         // What a bottle of rum does when it is drunk.
         .add_plugins(ConsumablesPlugin)
+        // What washes up on each region as it streams in and what the dead
+        // leave is the engine's, made by the armory.
+        .add_plugins(LootPlugin::<items::Armory>::default())
         // The engine's seven effects, and the one Corsair adds.
         .add_engine_effects()
         .add_effect::<abilities::Plunder>()
@@ -196,11 +199,11 @@ fn main() -> AppExit {
         .add_systems(Update, save::save_keys.after(EngineSet::Present))
         .add_systems(Turn, honour_portals.in_set(TurnSet::Resolve))
         .add_systems(Update, places::light_the_way.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)))
-        .add_systems(Update, (monsters::spawn_on_load, items::scatter_on_load, places::mark_entrances).in_set(EngineSet::Stream))
+        .add_systems(Update, (monsters::spawn_on_load, places::mark_entrances).in_set(EngineSet::Stream))
         // What this turn caused, answered inside the turn: the floor that
         // fills on first arrival, what the dead leave, what a bite leaves
         // behind. Inside the pass, so a bite poisons on the bite.
-        .add_systems(Turn, (places::populate_places, items::drop_loot, statuses::inflict_on_hit).chain().in_set(TurnSet::React))
+        .add_systems(Turn, (places::populate_places, statuses::inflict_on_hit).chain().in_set(TurnSet::React))
         // Once a frame, in words: everything the chrome is about to draw.
         .add_systems(Update, (note_discoveries, statuses::narrate_statuses, quests::report_facts, quests::narrate_quests).chain().in_set(PresentSet::Narrate))
         // What the engine cannot know about a row: what an enemy is holding,
@@ -279,9 +282,6 @@ fn start_world(world: &mut World) {
         saved.as_ref().map(|s| (s.engine.seed, s.state::<StartOptions>().unwrap_or(start.regions))).unwrap_or((world.resource::<Seed>().0, start.regions));
     // A continued run keeps the seed it was saved with, and every stream follows.
     world.insert_resource(Seed(seed));
-    // The game's own stream for what the dead leave, kept from where it
-    // last stood rather than derived per kill.
-    world.insert_resource(items::Drops(Seed(seed).stream(b"corsair.drops", 0)));
     world.insert_resource(statuses::Inflicts(Seed(seed).stream(b"corsair.inflicts", 0)));
 
     let content = Content::new();
@@ -299,8 +299,10 @@ fn start_world(world: &mut World) {
     // Every table, against the effects registered while the app was built, so
     // a file naming an effect nobody added fails here rather than the first
     // time its key is pressed.
-    let rules::Loaded { registries, combat, armory, abilities, bestiary, quests: quest_log, facts } =
+    let rules::Loaded { registries, combat, mut armory, abilities, bestiary, quests: quest_log, facts } =
         rules::load(seed, town.position, world.resource::<EffectKinds>());
+    // Every port is always stocked when it first streams in.
+    armory.stock_ports(graph.sites().iter().filter(|s| s.kind == PORT).map(|s| s.position));
     world.insert_resource(abilities);
     let cove = graph.sites().iter().position(|s| s.kind == content::COVE);
 

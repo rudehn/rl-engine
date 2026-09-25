@@ -1,5 +1,8 @@
-//! Items: definitions from RON, what lies about, what the dead drop, and
-//! what wearing a jerkin is worth.
+//! Items: definitions from RON, what wearing a jerkin is worth, and the
+//! [`Armory`], Corsair's [`ItemMaker`]: the engine's `LootPlugin` decides
+//! what washes up on each region of the sea as it streams in and what the
+//! dead leave, from `item_spawns.ron` and the bestiary's drops, and asks
+//! the armory to make each thing, which rolls what quality it comes in.
 //!
 //! The engine moves items between ground, bag and slots, charges the turns,
 //! and reads what an item does off the item itself: a spawned cutlass
@@ -15,17 +18,17 @@ use std::collections::BTreeSet;
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::{DiceRoll, Id, Point, RunSeed, SeedDomain, geometry};
+use rl_engine::rl_bevy::{Found, ItemMaker, LootArea};
+use rl_engine::rl_core::{DiceRoll, Id, Point, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::damage::DamageKind;
 use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::{AffixDef, Enchanted, EnhanceRule, EquipShape, NameRef, SlotDef, SlotId, StatId, TagDef, TagId, affix, roll_affixes};
-use rl_engine::rl_rules::{BandedEntry, BandedTable, EffectSpec, Named, Registry, TriggerSpec};
+use rl_engine::rl_rules::{EffectSpec, LootTable, Named, Registry, ScatterRules, TriggerSpec};
 use serde::Deserialize;
 
-use crate::content::PORT;
-
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
+const ITEM_SPAWNS_RON: &str = include_str!("../assets/item_spawns.ron");
 const AFFIXES_RON: &str = include_str!("../assets/affixes.ron");
 
 /// One kind of item, as authored.
@@ -64,8 +67,6 @@ pub struct ItemDef {
     pub consumable: Option<ConsumableDef>,
     #[serde(default)]
     pub stack: bool,
-    #[serde(default)]
-    pub spawn: Option<(i32, i32, u32)>,
 }
 
 /// A throw as `items.ron` writes it.
@@ -129,17 +130,20 @@ pub struct Armory {
     /// every item spawned from it: a boxed effect is no cheaper to parse
     /// twice.
     triggers: Vec<Triggers>,
-    table: BandedTable<Id<ItemDef>>,
-    seed: RunSeed,
+    /// What washes up where, by distance from the home port, from
+    /// `item_spawns.ron` through the engine's loader.
+    pub table: LootTable<Id<ItemDef>>,
+    /// The home port's region, which a region's band is its distance from.
     home: Point,
-    spawned: BTreeSet<Point>,
+    /// The regions holding a port, which are always stocked.
+    ports: BTreeSet<Point>,
 }
 
 impl Armory {
     /// Loads the items and their affixes against `registries`, and builds
     /// each item's triggers against the effect `kinds` and `moments`;
     /// panics with every problem listed.
-    pub fn load(seed: RunSeed, home: Point, registries: &Registries, kinds: &EffectKinds, moments: &Moments) -> Self {
+    pub fn load(home: Point, registries: &Registries, kinds: &EffectKinds, moments: &Moments) -> Self {
         let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
         defs.validate(|d, _| {
             if d.ranged.as_ref().is_some_and(|(range, _, _)| *range < 2) {
@@ -166,10 +170,9 @@ impl Armory {
         let affixes = affix::load(AFFIXES_RON, &registries.names()).unwrap_or_else(|e| panic!("assets/affixes.ron: {e}"));
         let mut shapes = Vec::new();
         let mut item_tags = Vec::new();
-        let mut table = BandedTable::default();
         let mut triggers = Vec::new();
         let mut broken = Vec::new();
-        for (id, d) in defs.iter() {
+        for (_, d) in defs.iter() {
             triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &registries.names()) {
                 Ok(t) => t,
                 Err(each) => {
@@ -185,11 +188,12 @@ impl Armory {
                 }
                 shape
             }));
-            if let Some((lo, hi, w)) = d.spawn {
-                table.push(BandedEntry::new(id).bands(lo, hi).weight(w));
-            }
         }
         assert!(broken.is_empty(), "assets/items.ron: {}", broken.join("; "));
+        let table = rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &registries.names().with("item", &defs), &defs, |d: &ItemDef| {
+            d.tags.iter().map(|t| t.id()).collect()
+        })
+        .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
         Self {
             armor_stat: registries.stats.expect("armor"),
             weapon_tag: registries.tags.expect("weapon"),
@@ -202,10 +206,15 @@ impl Armory {
             item_tags,
             triggers,
             table,
-            seed,
             home,
-            spawned: BTreeSet::new(),
+            ports: BTreeSet::new(),
         }
+    }
+
+    /// Marks the regions holding a port, which the world knows and the
+    /// item files do not: each is always stocked with three finds.
+    pub fn stock_ports(&mut self, ports: impl IntoIterator<Item = Point>) {
+        self.ports = ports.into_iter().collect();
     }
 
     /// The tags of `id`.
@@ -243,16 +252,6 @@ impl Armory {
             Some(e) => e.0.display_name(base, &self.affixes),
             None => base.clone(),
         }
-    }
-
-    /// Regions already scattered over.
-    pub fn spawned(&self) -> impl Iterator<Item = &Point> {
-        self.spawned.iter()
-    }
-
-    /// Marks regions as scattered over, when continuing a run.
-    pub fn restore_spawned(&mut self, regions: impl IntoIterator<Item = Point>) {
-        self.spawned = regions.into_iter().collect();
     }
 
     /// The shape `id` is worn in, if it is worn at all.
@@ -333,69 +332,51 @@ impl Armory {
         }
         e.id()
     }
-
-    /// How many a fresh stack of `id` holds.
-    fn stack_size(&self, id: Id<ItemDef>, rng: &mut impl Rng) -> u32 {
-        if self.defs.get(id).stack { rng.random_range(1..=12) } else { 1 }
-    }
 }
 
-/// Scatters a few items over each region the first time it streams in.
-pub fn scatter_on_load(mut commands: Commands, mut loaded: MessageReader<ChunkLoaded>, mut armory: ResMut<Armory>, world: Res<WorldRes>, map: Res<WorldMap>) {
-    for ev in loaded.read() {
-        let region = ev.region;
-        if !armory.spawned.insert(region) {
-            continue;
+/// The engine's loot is made here: what washes up on a region as it
+/// streams in and what the dead leave. Everything found this way comes in
+/// the quality found gear does; a smugglers' hoard, which `places` lays by
+/// hand, rolls its own.
+impl ItemMaker for Armory {
+    type Def = ItemDef;
+
+    fn make(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, count: u32, _: Found, rng: &mut rand::rngs::StdRng) -> Vec<Entity> {
+        if self.defs.get(def).stack {
+            return vec![self.spawn_with(commands, def, count, None, Enchanted::plain())];
         }
-        let band = geometry::chebyshev(region, armory.home);
-        let index = ((region.x as u32 as u64) << 32) | (region.y as u32 as u64);
-        let mut rng = armory.seed.rng(SeedDomain::new(b"corsair.loot"), index);
-        let count = if world.site_at(region).is_some_and(|s| s.kind == PORT) { 3 } else { rng.random_range(0..=2) };
-        let tiles = world.region_tiles(region);
-        for _ in 0..count {
-            let Some(entry) = armory.table.pick(band, &mut rng) else { continue };
-            let id = entry.item;
-            for _ in 0..8 {
-                let p = Point::new(rng.random_range(tiles.x..tiles.right()), rng.random_range(tiles.y..tiles.bottom()));
-                if map.is_walkable(p) {
-                    let n = armory.stack_size(id, &mut rng);
-                    let enchant = armory.roll_quality(id, Quality::FOUND, &mut rng);
-                    armory.spawn_with(&mut commands, id, n, Some(p), enchant);
-                    break;
-                }
-            }
+        (0..count).map(|_| self.spawn_with(commands, def, 1, None, self.roll_quality(def, Quality::FOUND, rng))).collect()
+    }
+
+    fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {
+        self.defs.id(name)
+    }
+
+    fn table(&self) -> &LootTable<Id<ItemDef>> {
+        &self.table
+    }
+
+    /// Nothing to a mark, and up to two loose finds a region.
+    fn scatter(&self) -> ScatterRules {
+        ScatterRules::new().loose(0, 2)
+    }
+
+    /// A region's distance from the home port. A cave is stocked by hand
+    /// and never scattered, so what it answers is never asked.
+    fn band(&self, area: LootArea) -> i32 {
+        match area {
+            LootArea::Region(region) => geometry::chebyshev(region, self.home),
+            LootArea::Place(_) => 0,
         }
     }
-}
 
-/// The stream every kill's drop rolls come from: seeded once, from
-/// `Seed::stream(b"corsair.drops", 0)`, when the run starts, and never
-/// reseeded, so one kill's roll picks up where the last one left off.
-///
-/// Never the engine's own `CombatRng`, which this drew from until
-/// 2026-09-22: a game's draws come from its own stream, or a kill's loot
-/// shifts the dice of a blow that has not been struck yet.
-#[derive(Resource)]
-pub struct Drops(pub rand::rngs::StdRng);
-
-/// What the dead leave behind, from the bestiary's drop lists.
-pub fn drop_loot(
-    mut commands: Commands,
-    mut deaths: MessageReader<DeathEvent>,
-    armory: Res<Armory>,
-    bestiary: Res<crate::monsters::Bestiary>,
-    mut rng: ResMut<Drops>,
-    kinds: Query<&crate::monsters::MonsterKind>,
-) {
-    for d in deaths.read() {
-        let Ok(kind) = kinds.get(d.entity) else { continue };
-        for (item, pct) in &bestiary.defs.get(kind.0).drops {
-            if rng.0.random_range(0..100) < *pct {
-                let id = item.id();
-                let n = armory.stack_size(id, &mut rng.0);
-                let enchant = armory.roll_quality(id, Quality::FOUND, &mut rng.0);
-                armory.spawn_with(&mut commands, id, n, Some(d.at), enchant);
-            }
+    /// A port is always stocked with three finds, and a cave never
+    /// scattered: its treasure is the smugglers' own, laid at its marks.
+    fn loose(&self, area: LootArea, planned: u32) -> u32 {
+        match area {
+            LootArea::Region(region) if self.ports.contains(&region) => 3,
+            LootArea::Region(_) => planned,
+            LootArea::Place(_) => 0,
         }
     }
 }
@@ -426,6 +407,7 @@ pub fn whats_here(p: Point, armory: &Armory, ground: &Query<GroundData, With<Ite
 mod tests {
     use super::*;
     use rand::SeedableRng;
+    use rl_engine::rl_core::RunSeed;
 
     #[test]
     fn the_armory_loads_its_affixes_and_rolls_the_hoard_rich() {
@@ -467,6 +449,31 @@ mod tests {
         let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
         let loadout = state.get(app.world()).expect("the loadout's inputs are all optional");
         (loadout.armor(who), loadout.melee(who).map(|m| m.dice), loadout.strikes(who))
+    }
+
+    /// The home port is stocked with three finds the first time it streams
+    /// in, whatever the dice would have washed up on an ordinary region,
+    /// and the engine remembers it so a later load does not stock it again.
+    #[test]
+    fn the_home_port_washes_up_three_finds_as_it_first_streams_in() {
+        let dir = std::env::temp_dir().join(format!("corsair-port-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        for _ in 0..3 {
+            app.update();
+        }
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let at = app.world().get::<Position>(me).unwrap().0;
+        let region = app.world().resource::<WorldRes>().0.region_of_tile(at);
+        let tiles = app.world().resource::<WorldRes>().0.region_tiles(region);
+        let lying = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<&Position, With<Item>>();
+            q.iter(world).filter(|p| tiles.contains(p.0)).count()
+        };
+        assert_eq!(lying, 3, "three finds on the port's region");
+        assert!(app.world().resource::<Scattered>().0.contains(&region), "and the port remembered as scattered");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A marine that puts on a buckler keeps its own pistol-whip and hide,

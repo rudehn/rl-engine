@@ -85,6 +85,7 @@ The engine answers `open` on a container itself: contents and taking are the eng
 
 What it holds is written as item names rather than ids, and stays names: items are each game's own registry, so only the game can spawn one.
 The engine rolls the counts from `PropRng` and asks the game to fill the container, which is the same seam a game's own spawner already sits behind.
+A row may instead ask for anything carrying a tag, drawn from the game's loot table at the band the container stands on, which `docs/design/loot.md` explains; the engine answers both kinds through the game's `ItemMaker` when a loot plugin is added.
 
 The modal is take-only, one or all.
 Putting things back is a stash mechanic, and no game here wants one.
@@ -210,20 +211,21 @@ An emptied crate stays emptied, a sprung trap stays sprung, a spotted plate stay
 //              time is hundredths of a step, default 100;
 //              needs is a tag the actor must carry, or the offer is refused;
 //              effects are the engine's, landed when the interaction resolves
-//   container: optional; (contents: [(item, min, max)], locked: (needs:),
-//              opened: (glyph:, color:)) - the look it takes once emptied
+//   container: optional; (contents: [...], locked: (needs:),
+//              opened: (glyph:, color:)) - the look it takes once emptied;
+//              each row is (item: name, count:) or (tag: name, count:, band:)
 //   trigger:   optional; (on: Entered | Destroyed, fires:, effects: [...])
 //              fires is how many times it may go off, default 1
 //   hidden:    optional; (spot:) percent a turn to spot it while in sight
 #![enable(implicit_some)]
 [
     (name: "supply crate", glyph: '&', color: (0.75, 0.65, 0.45), blocks: true, health: 6,
-     container: (contents: [("slug", 8, 12), ("medkit", 0, 1)],
+     container: (contents: [(item: "slug", count: (8, 12)), (item: "medkit", count: (0, 1))],
                  opened: (glyph: '"', color: (0.5, 0.45, 0.35))),
      offers: [(verb: "open", time: 200)]),
 
     (name: "locked cache", glyph: '&', color: (0.8, 0.8, 0.85), blocks: true,
-     container: (contents: [("composite plate", 1, 1)], locked: (needs: "cutter")),
+     container: (contents: [(item: "composite plate", count: 1)], locked: (needs: "cutter")),
      offers: [(verb: "open", time: 300)]),
 
     (name: "fuel-line plate", glyph: '^', color: (0.9, 0.55, 0.2),

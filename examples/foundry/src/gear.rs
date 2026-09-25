@@ -1,7 +1,11 @@
 //! Gear: the weapons, the armor, the slugs, the medical pair and the
-//! grenades that arm the foundry's decks, loaded once from `items.ron`,
-//! found where `item_spawns.ron` says, and spawned as items an actor can
-//! find, carry, wear and use.
+//! grenades that arm the foundry's decks, loaded once from `items.ron` into
+//! the [`Armory`] resource, found where `item_spawns.ron` says, and spawned
+//! as items an actor can find, carry, wear and use.
+//!
+//! The [`Armory`] is Foundry's [`ItemMaker`]: the engine's `LootPlugin`
+//! decides what lies on a deck, what a kill leaves and what a crate holds,
+//! and asks the armory to make each thing.
 //!
 //! An [`ItemDef`] is the file's own vocabulary: everything a game needs
 //! to know about a weapon or a suit of plate, named rather than typed, so
@@ -16,9 +20,10 @@
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
+use rl_engine::rl_bevy::{Found, ItemMaker, LootArea};
 use rl_engine::rl_core::{DiceRoll, Id};
 use rl_engine::rl_render::Glyph;
-use rl_engine::rl_rules::{BandedEntry, BandedTable, DamageKind, EquipShape, NameRef, Named, Registry, Resistances, SlotDef, TagDef, TagId};
+use rl_engine::rl_rules::{DamageKind, EquipShape, LootTable, NameRef, Named, Registry, Resistances, ScatterRules, SlotDef, TagDef, TagId};
 use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
 use serde::Deserialize;
 
@@ -129,22 +134,6 @@ impl Named for ItemDef {
     }
 }
 
-/// One row of `item_spawns.ron`: an item, the decks it lies about on, and
-/// how often.
-///
-/// Its own file rather than a field of [`ItemDef`], for the reason
-/// [`MonsterSpawn`](crate::droids::MonsterSpawn) is: what a thing is and
-/// where it is found are read and tuned apart.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct ItemSpawn {
-    /// Which item.
-    pub item: NameRef<ItemDef>,
-    /// The first and last deck it applies on, both included.
-    pub decks: (i32, i32),
-    /// How often, against every other row that applies on a deck.
-    pub weight: u32,
-}
-
 /// Grants [`DarkSight`] while worn: the rangefinder helmet's sensor
 /// suite, and whatever else ever names one.
 ///
@@ -156,17 +145,18 @@ pub struct ItemSpawn {
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WornDarkSight(pub i32);
 
-/// The item definitions and the table of what lies on which deck.
+/// The item definitions and the table of what lies on which deck, loaded
+/// once, in `PreStartup`, by [`load_armory`].
 ///
 /// `Clone` but not `Debug`: what an item lands when it is used is a list of
 /// boxed effects, shared by handle, and a trait object has nothing to print.
-#[derive(Clone)]
+#[derive(Resource, Clone)]
 pub struct Armory {
     /// The item definitions, by id.
     pub defs: Registry<ItemDef>,
     /// What can be found on a deck, drawn by band, where the band is the
-    /// deck number.
-    pub table: BandedTable<Id<ItemDef>>,
+    /// deck number: `item_spawns.ron`, through the engine's loader.
+    pub table: LootTable<Id<ItemDef>>,
     /// Each definition's triggers, built once and shared by every item
     /// spawned from it.
     ///
@@ -215,10 +205,10 @@ impl Armory {
     /// nothing in the middle of a run.
     pub fn load(registries: &Registries, kinds: &EffectKinds, moments: &Moments) -> Self {
         let names = registries.names();
-        let defs: Registry<ItemDef> = names.load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
-        defs.validate(validate_def).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
-        let rows: Vec<ItemSpawn> = names.clone().with("item", &defs).load_list(ITEM_SPAWNS_RON).unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
-        let table = BandedTable::new(rows.iter().map(|r| BandedEntry::new(r.item.id()).bands(r.decks.0, r.decks.1).weight(r.weight)).collect());
+        let defs = load_defs(registries);
+        let table =
+            rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &names.clone().with("item", &defs), &defs, |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect())
+                .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
         // ANCHOR: triggers
         // Each definition's triggers, built once against the moments and
         // effect kinds the run registered, and every problem in the file
@@ -240,23 +230,38 @@ impl Armory {
     }
 }
 
-/// The three tables an armory is read against, for the systems that spawn
-/// items: what items exist, what kinds of effect a trigger may land, and
-/// what moments one may answer.
+/// Every item definition in `items.ron`, checked, and nothing built from
+/// them: what the monster roster reads its drops' names against, as the
+/// armory reads its own.
+pub fn load_defs(registries: &Registries) -> Registry<ItemDef> {
+    let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+    defs.validate(validate_def).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
+    defs
+}
+
+/// Loads the [`Armory`] once, in `PreStartup`, before any run begins or is
+/// continued, against the effects and moments the app registered.
 ///
-/// One parameter rather than three, because every system that spawns an
-/// item wants all three and none of them wants any of the three alone.
+/// Once rather than per use: every deck's scatter, every kill and every
+/// crate used to read `items.ron` and build its triggers afresh, and the
+/// save refreshed every turn needs it too.
+pub fn load_armory(mut commands: Commands, registries: Res<Registries>, kinds: Res<EffectKinds>, moments: Res<Moments>) {
+    commands.insert_resource(Armory::load(&registries, &kinds, &moments));
+}
+
+/// The armory and the registries it was read against, for the systems that
+/// spawn items: one parameter rather than two, because every such system
+/// wants both.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Content<'w> {
+    armory: Res<'w, Armory>,
     registries: Res<'w, Registries>,
-    kinds: Res<'w, EffectKinds>,
-    moments: Res<'w, Moments>,
 }
 
 impl Content<'_> {
-    /// The armory, read fresh from `items.ron`.
-    pub fn armory(&self) -> Armory {
-        Armory::load(&self.registries, &self.kinds, &self.moments)
+    /// The armory.
+    pub fn armory(&self) -> &Armory {
+        &self.armory
     }
 
     /// The registries, for whatever else a spawn needs them for.
@@ -352,6 +357,49 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     }
     e.id()
 }
+
+/// Spawns `count` of `id`: one stack of `count` for a thing that stacks,
+/// and `count` of it otherwise, placed nowhere.
+pub fn spawn_items(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, count: u32, registries: &Registries) -> Vec<Entity> {
+    if armory.defs.get(id).stack {
+        let stack = spawn_item(commands, armory, id, registries);
+        commands.entity(stack).insert(Stack { key: id.index() as u64, count: count.max(1) });
+        return vec![stack];
+    }
+    (0..count).map(|_| spawn_item(commands, armory, id, registries)).collect()
+}
+
+// ANCHOR: maker
+/// The engine's loot is made here: what lies on a deck when it is first
+/// entered, what a kill leaves, and what a crate or a locker holds. A
+/// deck's band is its number, and Foundry has no streamed surface.
+impl ItemMaker for Armory {
+    type Def = ItemDef;
+
+    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<ItemDef>, count: u32, _: Found, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
+        spawn_items(commands, self, def, count, registries)
+    }
+
+    fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {
+        self.defs.id(name)
+    }
+
+    fn table(&self) -> &LootTable<Id<ItemDef>> {
+        &self.table
+    }
+
+    fn scatter(&self) -> ScatterRules {
+        crate::loot::scatter_rules()
+    }
+
+    fn band(&self, area: LootArea) -> i32 {
+        match area {
+            LootArea::Place(map) => crate::decks::deck_of(map) as i32,
+            LootArea::Region(_) => 0,
+        }
+    }
+}
+// ANCHOR_END: maker
 
 #[cfg(test)]
 mod tests {

@@ -28,6 +28,7 @@ These are the reasoning; the overview is the list.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
 - [items.md](design/items.md), what a thing does: the three carriers of an effect list, and why an item never lends an ability.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
+- [loot.md](design/loot.md), where items turn up and how many, with what an item is left to the game.
 - [minds.md](design/minds.md), how a non-player decides.
 - [noise.md](design/noise.md), what a sound is and who hears it.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.

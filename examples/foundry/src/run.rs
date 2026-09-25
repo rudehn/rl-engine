@@ -57,12 +57,6 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // is a fire and a screen at once.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
     commands.insert_resource(Roster::load(registries));
-    // Seeded once, here, and never again: `Drops` is a resource a kill's
-    // roll keeps advancing, not a stream `Seed::stream` is asked for
-    // fresh on every event the way `scatter_on_arrival`'s own is. A
-    // continued run derives it again from the saved seed, as the engine
-    // does its own streams.
-    commands.insert_resource(crate::loot::Drops(seed.stream(b"foundry.drops", 0)));
     commands.insert_resource(PlaceRulesRes(Box::new(foundry)));
 }
 

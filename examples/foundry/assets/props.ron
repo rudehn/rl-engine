@@ -12,8 +12,14 @@
 //   offers:    optional; [(verb:, time:, needs:, effects: [...])]
 //              verb is registered: "open" and "search" are the engine's,
 //              and Foundry adds "charge"; time is hundredths of a step
-//   container: optional; (contents: [(item, min, max)], locked: (needs:),
-//              opened: (glyph:, color:)) - the look it takes once emptied
+//   container: optional; (contents: [...], locked:, opened: (glyph:, color:)) where
+//              contents is a list of rows, each either (item: "name", count:) for that
+//              item, or (tag: "tag", count:, band:) for anything carrying the tag, drawn
+//              from item_spawns.ron at the deck the container stands on plus band
+//              (optional, 0 by default; 2 is a thing from two decks down); count is n
+//              or (fewest, most), how many of the item or how many draws of the tag;
+//              the tags are "weapon" | "armor" | "slug" | "med" | "keycard"; locked is
+//              the tag an opener must carry; opened is the look once emptied
 //   triggers:  optional; [(on:, area:, fires:, effects: [...], look:)], what it does at the moments
 //              it answers: on is "entered" | "destroyed" or a moment the game registers;
 //              area is Here (default) | Burst(radius:), where the effects land around it;
@@ -26,16 +32,20 @@
     // Supply crates stand in the stores. Two turns to lever open, and
     // slugs are what a commando runs out of first.
     (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true, health: 6,
-     container: (contents: [("slug", 4, 9), ("stim", 0, 1)], opened: (glyph: '"', color: (r: 120, g: 105, b: 75))),
+     container: (contents: [(tag: "slug", count: (4, 9)), (tag: "med", count: (0, 1))], opened: (glyph: '"', color: (r: 120, g: 105, b: 75))),
      offers: [(verb: "open", time: 200)]),
 
+    // ANCHOR: locker
     // An armory locker: better than a crate, and shut. A keycard opens
     // it, and `props::spend_the_keycard` takes the card doing it, so a
-    // card found is a locker opened and no more.
+    // card found is a locker opened and no more. What is in it is drawn
+    // at the deck it stands on, so a locker on deck eight holds a deck
+    // eight weapon.
     (name: "armory locker", glyph: '&', color: (r: 205, g: 210, b: 220), blocks: true, health: 8,
-     container: (contents: [("slug", 0, 4), ("commando helmet", 0, 1), ("scrap plate", 0, 1), ("medkit", 0, 1)],
+     container: (contents: [(tag: "slug", count: (4, 9)), (tag: "weapon", count: 1), (tag: "armor", count: (0, 1)), (tag: "med", count: (0, 1))],
                  locked: "keycard", opened: (glyph: '"', color: (r: 130, g: 135, b: 145))),
      offers: [(verb: "open", time: 300)]),
+    // ANCHOR_END: locker
 
     // The reactor console: three turns to set the charge, and Foundry
     // answers the verb itself, since no effect can report a fact.
@@ -56,6 +66,6 @@
     // only what a wreck nobody died into would be called; stripping one is
     // opening it, and what is in it is whatever the droid had left.
     (name: "wreckage", glyph: '%', color: (r: 130, g: 130, b: 140),
-     container: (contents: [("slug", 0, 2)]),
+     container: (contents: [(item: "slug", count: (0, 2))]),
      offers: [(verb: "open", time: 100)]),
 ]
