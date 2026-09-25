@@ -190,17 +190,16 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
             let mut contents = Vec::new();
             for row in &c.contents {
                 let (min, max) = row.count.range();
-                let what = match read_stock(row.item.as_deref(), row.tag.as_deref(), row.band, names) {
-                    Ok(what) => what,
-                    Err(e) => {
-                        errors.push(format!("{}: its contents: {e}", a.name));
-                        continue;
-                    }
-                };
+                // Checked before the stock, and whether or not it resolves,
+                // so a row with two mistakes names both in one load.
                 if min > max {
-                    errors.push(format!("{}: {what:?} is written as {min} to {max}, which is no range at all", a.name));
+                    let written = row.item.as_deref().or(row.tag.as_deref()).unwrap_or("a row naming nothing");
+                    errors.push(format!("{}: {written:?} is written as {min} to {max}, which is no range at all", a.name));
                 }
-                contents.push(ContentRoll { what, min, max, band: row.band });
+                match read_stock(row.item.as_deref(), row.tag.as_deref(), row.band, names) {
+                    Ok(what) => contents.push(ContentRoll { what, min, max, band: row.band }),
+                    Err(e) => errors.push(format!("{}: its contents: {e}", a.name)),
+                }
             }
             let locked = match c.locked.as_deref().map(|tag| names.tag(tag)) {
                 Some(Ok(tag)) => Some(tag),
@@ -469,6 +468,25 @@ mod tests {
         .expect_err("four bad rows")
         .to_string();
         for said in ["band offset means nothing", "exactly one of them", "wepon"] {
+            assert!(err.contains(said), "{said:?} in {err}");
+        }
+    }
+
+    /// A row whose stock is refused still has its count checked, so a
+    /// mistyped tag written with a backwards range is two mistakes named
+    /// in one load, not one now and the other on the next.
+    #[test]
+    fn a_contents_row_refused_for_its_stock_still_has_its_count_checked() {
+        let tags = tags();
+        let err = load(
+            r#"#![enable(implicit_some)]
+            [(name: "bad", glyph: '&', color: (r: 1, g: 2, b: 3), offers: [(verb: "open")],
+                 container: (contents: [(tag: "wepon", count: (5, 2))]))]"#,
+            &Names::new().tags(&tags),
+        )
+        .expect_err("a bad row")
+        .to_string();
+        for said in ["wepon", "5 to 2, which is no range at all"] {
             assert!(err.contains(said), "{said:?} in {err}");
         }
     }

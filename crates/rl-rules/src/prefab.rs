@@ -289,16 +289,20 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
                 }
                 Err(e) => errors.push(format!("{}: '{c}': {e}", a.name)),
             },
-            LegendRon::Item { item, tag, count, band } => match read_stock(item.as_deref(), tag.as_deref(), *band, names) {
-                Ok(what) => {
-                    let (min, max) = count.map(CountRon::range).unwrap_or((1, 1));
-                    if min > max {
-                        errors.push(format!("{}: '{c}' is written as {min} to {max}, which is no range at all", a.name));
-                    }
-                    slots.insert(c, Slot::Item(ContentRoll { what, min, max, band: *band }));
+            LegendRon::Item { item, tag, count, band } => {
+                // Checked whether or not the stock resolves, so a slot with
+                // two mistakes names both in one load.
+                let (min, max) = count.map(CountRon::range).unwrap_or((1, 1));
+                if min > max {
+                    errors.push(format!("{}: '{c}' is written as {min} to {max}, which is no range at all", a.name));
                 }
-                Err(e) => errors.push(format!("{}: '{c}': {e}", a.name)),
-            },
+                match read_stock(item.as_deref(), tag.as_deref(), *band, names) {
+                    Ok(what) => {
+                        slots.insert(c, Slot::Item(ContentRoll { what, min, max, band: *band }));
+                    }
+                    Err(e) => errors.push(format!("{}: '{c}': {e}", a.name)),
+                }
+            }
             LegendRon::Monster { monster, role, band } => {
                 let pick = match (monster.as_deref(), role.as_deref()) {
                     (Some(name), None) => {
@@ -682,6 +686,18 @@ mod tests {
         let err =
             read(&w, r#"(name: "backwards range", ground: "floor", rows: ["i"], legend: { 'i': Item(item: "rope", count: (5, 2)) })"#).unwrap_err().to_string();
         assert!(err.contains("5 to 2, which is no range at all"), "{err}");
+    }
+
+    /// An item slot refused for its tag still has its count checked, the
+    /// same as a container's row: every mistake in a file at once.
+    #[test]
+    fn an_item_slot_refused_for_its_stock_still_has_its_count_checked() {
+        let w = world();
+        let err =
+            read(&w, r#"(name: "two mistakes", ground: "floor", rows: ["i"], legend: { 'i': Item(tag: "wepon", count: (5, 2)) })"#).unwrap_err().to_string();
+        for said in ["wepon", "5 to 2, which is no range at all"] {
+            assert!(err.contains(said), "{said:?} in {err}");
+        }
     }
 
     fn heavy_on(w: &World, lo: i32, hi: i32) -> BandedTable<Id<Beast>> {
