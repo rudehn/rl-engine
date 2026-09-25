@@ -307,7 +307,15 @@ fn area_of(map: MapId, at: Point, world: Option<&WorldRes>) -> LootArea {
 /// made together. By definition id, so what is made comes out in one
 /// order however the draws fell. Shared by containers and prefab slots,
 /// which ask in the same words.
+///
+/// A count of nought comes to nothing, a fixed item included: a maker is
+/// only ever asked for at least one, since a game's may round a nought up
+/// to a single item and turn a row that is sometimes empty into one that
+/// never is.
 pub(crate) fn draw_stock<M: ItemMaker>(maker: &M, what: &Stock, count: u32, band: i32, rng: &mut StdRng) -> Vec<(Id<M::Def>, u32)> {
+    if count == 0 {
+        return Vec::new();
+    }
     let mut wanted: BTreeMap<u32, (Id<M::Def>, u32)> = BTreeMap::new();
     match what {
         Stock::Item(name) => {

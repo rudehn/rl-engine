@@ -175,7 +175,8 @@ enum Drawn<A, I> {
 /// stream derived for its own cell, so nothing that happens at one slot
 /// moves what is drawn at another. A slot draws first and then decides
 /// whether to spawn: on the arrival cell, on a cell no longer walkable,
-/// or on one this pass already filled, it spawns nothing.
+/// or on one this pass already filled, it spawns nothing. An item slot
+/// whose count rolls nought lays nothing and leaves its cell unfilled.
 pub fn fill_prefabs<A, I>(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, fill: Filling<A, I>)
 where
     A: ActorMaker,
@@ -601,6 +602,33 @@ mod tests {
         assert!(at(&mut app, deck, HEAVY).is_empty(), "the patch owns the heavy's cell");
         assert_eq!(at(&mut app, deck, LOCKER), vec!["prop locker"]);
         assert_eq!(at(&mut app, deck, PAIR).len(), 1);
+    }
+
+    /// A slot of nought to one slug is sometimes empty and never a stack of
+    /// none: a count that rolls nought lays nothing, rather than handing the
+    /// maker a nought it may round up to one, as Foundry's does.
+    #[test]
+    fn an_item_slot_whose_count_rolls_nought_lays_nothing() {
+        const SLUGS: &str = r#"(name: "slugs", ground: "floor", rows: ["i"], legend: { 'i': Item(item: "slug", count: (0, 1)) })"#;
+        let deck = MapId(1);
+        let cell = Point::new(4, 4);
+        let mut empty = 0;
+        for s in 0..32 {
+            let mut app = app(&[SLUGS], RunSeed(s));
+            let build = stamped(vec![(piece(&app, "slugs"), cell)]);
+            install(&mut app, deck, build);
+            arrive(&mut app, deck, ENTRY, true);
+            let world = app.world_mut();
+            let laid: Vec<u32> = world
+                .query_filtered::<(&crate::items::Stack, &Position), With<Item>>()
+                .iter(world)
+                .filter(|(_, at)| at.0 == cell)
+                .map(|(s, _)| s.count)
+                .collect();
+            assert!(laid.is_empty() || laid == vec![1], "seed {s}: one slug or nothing, never a stack of none: {laid:?}");
+            empty += usize::from(laid.is_empty());
+        }
+        assert!(empty > 0 && empty < 32, "sometimes a slug and sometimes none: {empty} of 32 empty");
     }
 
     /// A revisit is not the arrival that built the place, and fills

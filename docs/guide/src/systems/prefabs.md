@@ -12,7 +12,7 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/remains.rs
             crates/rl-save/src/run.rs
-     fingerprint: 74587285 -->
+     fingerprint: 5b14a23c -->
 
 # Prefabs
 
@@ -45,6 +45,7 @@ The loader resolves every tile, prop, tag, monster and role name and reports eve
 `ActorMaker` is the game's side for monsters: `make` spawns one at a cell on a map and returns it, `table` is the spawn table a role draws from, and `band` says how deep a map is.
 `fill_prefabs` reads each first `PlaceEntered`, walks the place's keyed spots in the order they were recorded, and draws each slot from a stream derived as `prefab.content` for its own map and cell, so what one slot holds never depends on another.
 It draws before it decides: on the arrival cell, on a cell no longer walkable, or on one already filled that arrival, a slot spawns nothing, and nothing anywhere else moves because of it.
+An item slot whose count rolls nought lays nothing, so a maker is never asked to make none.
 A prop is spawned as any prop is, items are made through `ItemMaker` as `Found::Placed` and laid on the cell, and a monster is made through `ActorMaker::make` and given `Post` on its cell.
 A `Mark`, and every spot of an unkeyed piece, is the game's, found among the place's spots by its glyph.
 `Post(Point)` is read by `KeepPost`, which walks a guard home when it has nothing better to do, waits when it stands beside its post and cannot step onto it, and passes for an actor with no post.
