@@ -96,6 +96,9 @@ Fantasy-rogue also offered roaming within the room, walking a loop of waypoints,
 Foundry found the one shape rule a post needs.
 Its guard post first had a one-cell door with the brute standing in it, and a sentry that went out after the commando could never get home past it; the mouth is now three cells wide.
 That is a property of a piece, not of the engine, and Foundry holds it with a test that every floor cell of a stamped guard post can be walked to from the deck's entry with its guards at home.
+It also found a guard standing beside the arrival on about one guard post deck in sixteen, because the start was drawn from anywhere in the first room and a post could be stamped there.
+Where the start goes is the chain's, so the fix is a mapgen option rather than a slot rule: `RandomStart.clear_of_stamps(n)` keeps the start `n` cells from every stamped piece, and Foundry asks for seven, its own population's distance from the way in.
+A slot that skipped a guard near the arrival instead would have left a post empty on the decks where it mattered most.
 
 ## 7. What is checked, and when
 

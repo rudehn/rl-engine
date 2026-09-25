@@ -18,6 +18,20 @@ pub fn monsters_on(app: &mut App, deck: u32) -> usize {
     q.iter(world).filter(|on| on.0 == here).count()
 }
 
+/// Takes every monster off the deck but `keep`, for a test about the
+/// player's own gear rather than the deck's population. Such a test counts
+/// the player's turns and shots on the real deck one, and a droid that
+/// happens to stand near wherever the deck puts the arrival takes turns,
+/// shots and the player's health it never asked about: any change to how a
+/// deck is built moved these tests before, for no reason of their own.
+pub fn clear_droids(app: &mut App, keep: &[Entity]) {
+    let world = app.world_mut();
+    let droids: Vec<Entity> = world.query_filtered::<Entity, With<Mind>>().iter(world).filter(|e| !keep.contains(e)).collect();
+    for droid in droids {
+        world.despawn(droid);
+    }
+}
+
 /// Spawns `name` `range` tiles east of the player, on floor stamped clear
 /// for it, the way [`droid_down_a_lane`] does with a lane as long as the
 /// range. Returns the monster, then the player.

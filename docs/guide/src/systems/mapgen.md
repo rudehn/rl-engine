@@ -8,7 +8,7 @@
             crates/rl-core/src/seed.rs
             crates/rl-world/src/chunk.rs
             crates/rl-bevy/src/places.rs
-     fingerprint: f973d012 -->
+     fingerprint: 17a75ca9 -->
 
 # Map generation
 
@@ -42,6 +42,8 @@ Every engine pass is generic over `C: BuildContext`, which is the whole extensio
 `Rooms` scatters non-overlapping rectangles and joins each to the one before it with an L-shaped corridor, failing below `min_rooms`; `Bsp` splits the map into a tree of leaves, carves a room per leaf and joins siblings, so the layout fills the map evenly.
 Both publish a `Room` per room in placement order, which is what lets `Doors` find the ring around each one and a prefab ask for a room to sit in.
 `RandomStart` and `CentralStart` publish a `StartPoint`, and `FarthestExit` walks from it and publishes the cell furthest away as an `ExitPoint`.
+`RandomStart.clear_of_stamps(n)` is the same start kept at least `n` cells, Chebyshev, from every `Stamped` a pass emitted before it, drawn from the first room with a cell that clear, so a piece holding a guard never stands it beside the arrival.
+Where no cell anywhere is that clear it is the plain pick, from the same stream, rather than a failed chain, and a chain that never asks draws the start it always has.
 `prefab` is the hand-drawn half: a `Prefab` is rows of characters and a legend, a character the legend does not know is transparent so a piece can be an irregular shape, and `rotated` and `flipped` carry a piece's marks around with its tiles.
 A legend maps a character to a `Cell`: `Tile` paints, `Mark` marks the position and may paint the tile under it, and `Clear` leaves the map as it was.
 `StampPrefab` places one at a `Placement` with an `Orient` saying how it may be turned first, authored per stamp because the same vault may turn freely in a cave and be fixed against the corridor its door has to meet.

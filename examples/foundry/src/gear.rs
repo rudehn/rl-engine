@@ -840,6 +840,7 @@ mod tests {
     fn a_smoke_grenade_hides_a_room_s_worth_of_deck_for_ten_turns_then_thins() {
         let mut app = crate::testing::headless(RunSeed(1));
         let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 5, 5);
+        crate::testing::clear_droids(&mut app, &[droid]);
         let (aim, before) = (at(&app, droid), health(&app, droid));
         let floor = app.world().resource::<WorldMap>().tile(aim).expect("the lane is loaded");
         {

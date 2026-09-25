@@ -13,6 +13,7 @@ use rl_grid::{DijkstraMap, PathRules, TileId};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
 pub use crate::passes::StartPoint;
+use crate::prefab::Stamped;
 
 /// A room a pass carved, emitted once per room in placement order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,8 +234,46 @@ impl<C: BuildContext> Pass<C> for Doors {
 
 /// Emits a random open cell as the [`StartPoint`]; inside the first
 /// emitted [`Room`] when there is one. Fails if there is no open cell.
+///
+/// [`clear_of_stamps`](Self::clear_of_stamps) keeps it away from the
+/// pieces stamped before it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RandomStart;
+
+impl RandomStart {
+    /// This start, kept at least `cells` cells, Chebyshev, from the bounds
+    /// of every [`Stamped`] a pass emitted before it.
+    ///
+    /// Opt-in, so a chain that never asks draws exactly the start it
+    /// always has.
+    pub fn clear_of_stamps(self, cells: i32) -> ClearStart {
+        ClearStart { cells }
+    }
+}
+
+/// The open cells of `area`.
+fn open_cells<C: BuildContext>(ctx: &C, area: Rect) -> Vec<Point> {
+    let tables = ctx.tiles().tables();
+    area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| tables.walkable[t.index()])).collect()
+}
+
+/// The cells [`RandomStart`] draws from: the first room's open cells, or
+/// the whole map's when no room was emitted.
+fn start_cells<C: BuildContext>(ctx: &C) -> Vec<Point> {
+    let area = ctx.outputs().first::<Room>().map(|r| r.0).unwrap_or_else(|| ctx.terrain().bounds());
+    open_cells(ctx, area)
+}
+
+/// One of `cells`, drawn from the chain's stream for the start, as the
+/// [`StartPoint`].
+fn emit_start<C: BuildContext>(ctx: &mut C, cells: &[Point]) -> Result<(), BuildError> {
+    if cells.is_empty() {
+        return Err(BuildError::new("random_start", "no open cell"));
+    }
+    let p = cells[ctx.rng().random_range(0..cells.len())];
+    ctx.emit(StartPoint(p));
+    Ok(())
+}
 
 impl<C: BuildContext> Pass<C> for RandomStart {
     fn name(&self) -> &'static str {
@@ -244,15 +283,46 @@ impl<C: BuildContext> Pass<C> for RandomStart {
         Phase::Exits
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        let tables = ctx.tiles().tables();
-        let area = ctx.outputs().first::<Room>().map(|r| r.0).unwrap_or_else(|| ctx.terrain().bounds());
-        let open: Vec<Point> = area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| tables.walkable[t.index()])).collect();
-        if open.is_empty() {
-            return Err(BuildError::new("random_start", "no open cell"));
+        let cells = start_cells(ctx);
+        emit_start(ctx, &cells)
+    }
+}
+
+/// A [`RandomStart`] kept at least `cells` cells from every piece stamped
+/// before it, made by [`RandomStart::clear_of_stamps`].
+///
+/// A piece that places what fights, stamped in the room the start is
+/// drawn from, would stand it beside the arrival. So the start is drawn
+/// from the first room, in the order they were emitted, with an open cell
+/// that clear of every [`Stamped`] bounds, and stands in a room as the
+/// plain start does. Where no cell anywhere is that clear, it is
+/// [`RandomStart`]'s own pick, from the same stream: a start closer than
+/// a game hoped is a worse map, and a chain that failed over it would be
+/// no map at all.
+#[derive(Debug, Clone, Copy)]
+pub struct ClearStart {
+    cells: i32,
+}
+
+impl<C: BuildContext> Pass<C> for ClearStart {
+    // The plain start's name, so both draw from one stream and the
+    // fallback is exactly the plain pick.
+    fn name(&self) -> &'static str {
+        "random_start"
+    }
+    fn phase(&self) -> Phase {
+        Phase::Exits
+    }
+    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let clear = |p: &Point| stamps.iter().all(|r| rl_core::geometry::chebyshev(*p, rl_core::geometry::clamp_to(*p, *r)) >= self.cells);
+        let mut areas: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        if areas.is_empty() {
+            areas.push(ctx.terrain().bounds());
         }
-        let p = open[ctx.rng().random_range(0..open.len())];
-        ctx.emit(StartPoint(p));
-        Ok(())
+        let cells = areas.into_iter().map(|area| open_cells(ctx, area).into_iter().filter(clear).collect::<Vec<_>>()).find(|cells| !cells.is_empty());
+        let cells = cells.unwrap_or_else(|| start_cells(ctx));
+        emit_start(ctx, &cells)
     }
 }
 
@@ -342,6 +412,54 @@ mod tests {
             let left = rooms.iter().filter(|r| r.center().x < 30).count();
             assert!(left >= 2 && left <= rooms.len() - 2, "seed {seed}: rooms all on one side");
             assert!(c.terrain().bounds().border().all(|p| c.terrain().get(p) != Some(floor)), "the edge is kept");
+        }
+    }
+
+    /// Rooms with a three-by-three piece stamped in one of them, and then
+    /// `start`, on `seed`: the start and the piece's bounds.
+    fn start_beside_a_stamp(start: impl Pass<BaseContext> + 'static, seed: u64) -> (Point, Rect, Vec<Rect>) {
+        use crate::prefab::{Orient, Placement, Prefab, StampPrefab, Stamped};
+        let (mut c, _, floor, _) = ctx();
+        let piece = Prefab::parse(&["...", ".m.", "..."], |ch| (ch == '.').then_some(floor)).unwrap();
+        Chain::new()
+            .then(Rooms { floor, ..Default::default() })
+            .then(StampPrefab { name: "piece", prefab: piece, at: Placement::AnyRoom, orient: Orient::Fixed })
+            .then(start)
+            .run(&mut c, RunSeed(seed))
+            .unwrap();
+        let start = c.outputs().first::<StartPoint>().unwrap().0;
+        let stamp = c.outputs().first::<Stamped>().unwrap().bounds;
+        (start, stamp, c.outputs().iter::<Room>().map(|r| r.0).collect())
+    }
+
+    /// How far `p` stands from the nearest cell of `r`, nought inside it.
+    fn clearance(p: Point, r: Rect) -> i32 {
+        rl_core::geometry::chebyshev(p, rl_core::geometry::clamp_to(p, r))
+    }
+
+    /// A start kept clear of stamps stands at least that far from every
+    /// piece stamped before it, and still in a room, over a span of seeds
+    /// on which the plain start sometimes lands beside the piece.
+    #[test]
+    fn a_start_kept_clear_of_stamps_stands_that_far_from_every_one_and_in_a_room() {
+        let mut close = 0;
+        for seed in 1..=60 {
+            let (start, stamp, rooms) = start_beside_a_stamp(RandomStart.clear_of_stamps(6), seed);
+            assert!(clearance(start, stamp) >= 6, "seed {seed}: {start:?} is {} from {stamp:?}", clearance(start, stamp));
+            assert!(rooms.iter().any(|r| r.contains(start)), "seed {seed}: {start:?} is in no room");
+            close += usize::from(clearance(start_beside_a_stamp(RandomStart, seed).0, stamp) < 6);
+        }
+        assert!(close > 0, "the plain start never came near the piece, so this proves nothing");
+    }
+
+    /// With no cell that clear anywhere, the start is the plain one, from
+    /// the same stream, rather than a chain that fails.
+    #[test]
+    fn a_start_with_nowhere_clear_enough_falls_back_to_the_plain_pick() {
+        for seed in 1..=10 {
+            let (clear, ..) = start_beside_a_stamp(RandomStart.clear_of_stamps(100), seed);
+            let (plain, ..) = start_beside_a_stamp(RandomStart, seed);
+            assert_eq!(clear, plain, "seed {seed}");
         }
     }
 

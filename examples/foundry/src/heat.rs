@@ -250,6 +250,7 @@ mod tests {
         // longer carries a ranged attack. That is dual wielding under heat.
         let mut app = crate::testing::headless(RunSeed(1));
         let (player, first, second) = crate::testing::dual_blasters(&mut app);
+        crate::testing::clear_droids(&mut app, &[]);
         let struck: Vec<_> = crate::testing::fire_at_a_target(&mut app, player, 8);
         assert!(struck[..7].iter().all(|s| s.with == Some(first)));
         assert_eq!(struck[7].with, Some(second), "the eighth shot comes from the other hand");
@@ -351,7 +352,7 @@ mod tests {
         let mut app = crate::testing::headless(RunSeed(1));
         app.add_plugins(GearViewPlugin);
         let (player, first, _second) = crate::testing::dual_blasters(&mut app);
-        let _ = player;
+        crate::testing::clear_droids(&mut app, &[]);
         app.update();
         let pct_at = |app: &App, item: Entity| -> Option<String> {
             let view = app.world().resource::<GearView>();

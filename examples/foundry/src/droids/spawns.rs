@@ -23,8 +23,10 @@ const BASE_GROUPS: u32 = 4;
 /// Groups placed a deck aims for, on top of the four every deck gets.
 const GROUPS_PER_DECK: u32 = 2;
 
-/// No group is placed nearer the entry than this, in tiles.
-const MIN_DISTANCE_FROM_ENTRY: i32 = 7;
+/// No group is placed nearer the entry than this, in tiles, and no deck's
+/// start nearer a stamped piece, so no guard at a post stands nearer
+/// either.
+pub(crate) const MIN_DISTANCE_FROM_ENTRY: i32 = 7;
 
 /// Draws up to `target` groups from `table` at `band`, each one or more
 /// monsters at one random anchor within `bounds`, and keeps only the

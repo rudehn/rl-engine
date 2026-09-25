@@ -152,7 +152,10 @@ impl Foundry {
             DECKS => chain.then(StampPrefab { name: "core", prefab: self.prefabs.piece("core")?, at: Placement::AnyRoom, orient: Orient::Fixed }),
             _ => chain,
         };
-        chain.then(RandomStart).then(FarthestExit).run(&mut ctx, seed)?;
+        // The start keeps the population's own distance from every piece,
+        // so no guard at a post stands beside the arrival.
+        let start = RandomStart.clear_of_stamps(crate::droids::MIN_DISTANCE_FROM_ENTRY);
+        chain.then(start).then(FarthestExit).run(&mut ctx, seed)?;
         Ok(ctx)
     }
 }
@@ -212,6 +215,35 @@ mod tests {
                 assert_eq!(posts, usize::from(matches!(deck, 2 | 4 | 5 | 7 | 8)), "deck {deck}, seed {s}");
             }
         }
+    }
+
+    /// No guard post stands a guard within the distance the deck's own
+    /// population keeps from the way in, over a span of seeds: the start
+    /// is drawn clear of every stamped piece. It used to be drawn from
+    /// anywhere in the first room, which `Placement::AnyRoom` sometimes
+    /// stamped the post into, and about one guard post deck in sixteen put
+    /// a guard within two cells of the arrival.
+    #[test]
+    fn no_guard_stands_within_the_populations_distance_of_the_entry_over_a_span_of_seeds() {
+        use rl_engine::rl_core::geometry::chebyshev;
+        use rl_engine::rl_rules::prefab::Slot;
+        let min = crate::droids::MIN_DISTANCE_FROM_ENTRY;
+        let mut guards = 0;
+        for s in 0..100 {
+            let foundry = Foundry::new(RunSeed(s));
+            for deck in [2, 4, 5, 7, 8] {
+                let built = foundry.build(map_of(deck), None).unwrap();
+                for spot in &built.spots {
+                    let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| foundry.prefabs().slot(key, c));
+                    if matches!(slot, Some(Slot::Monster { .. })) {
+                        let d = chebyshev(spot.at, built.entry);
+                        assert!(d >= min, "deck {deck}, seed {s}: a guard's slot at {:?} is {d} from the entry at {:?}", spot.at, built.entry);
+                        guards += 1;
+                    }
+                }
+            }
+        }
+        assert!(guards > 0, "some guard's slot was measured");
     }
 
     /// With every guard on its post and the locker standing, every floor

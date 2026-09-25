@@ -31,6 +31,7 @@ use serde::Deserialize;
 
 pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, shout_alarm, sound_alarm};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
+pub(crate) use spawns::MIN_DISTANCE_FROM_ENTRY;
 pub use spawns::populate_deck;
 
 use crate::content::{MeleeDef, Profile, RangedDef, resistances};

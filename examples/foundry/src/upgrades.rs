@@ -382,6 +382,7 @@ mod tests {
     fn a_weapon_locked_by_heat_when_uplink_is_picked_comes_back_raised() {
         let mut app = crate::testing::headless(RunSeed(1));
         let (player, first, _second) = crate::testing::dual_blasters(&mut app);
+        crate::testing::clear_droids(&mut app, &[]);
         crate::testing::fire_at_a_target(&mut app, player, 7);
         assert!(app.world().get::<RangedAttack>(first).is_none(), "locked: stowed");
         crate::testing::pick(&mut app, player, Upgrade::Uplink);

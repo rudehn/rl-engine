@@ -47,6 +47,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - The pass chain: named passes keying their own RNG stream, enforced phase order, fallible passes, typed outputs, snapshots.
 - Passes: fill, border, scatter, scatter by a per-cell density, cellular cave, keep largest region, central start.
 - Dungeon passes: rooms, BSP, doors, random start, farthest exit.
+  A random start may be kept a distance clear of every piece stamped before it, falling back to the plain pick where nowhere is that clear.
 - Prefab stamping from ASCII with a legend and marks, placed at a point, centred, or in a room, in any of eight facings, and one stamp may choose among weighted candidates.
   A turned piece takes its marks with it.
   A room-placed stamp never lands where an earlier stamp in the same chain already is.
