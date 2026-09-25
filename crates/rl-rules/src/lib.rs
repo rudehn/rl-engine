@@ -27,6 +27,9 @@
 //!   how hard it is to spot.
 //! - [`role`]: a name and the monsters that fit it, drawn from a game's
 //!   spawn table at a band, for a prefab's monster slot to ask for.
+//! - [`prefab`]: one prefab, read from rows of glyphs and a legend naming a
+//!   tile or a slot, a prop, an item row, a monster or a mark, every name
+//!   resolved at load; the terrain and the stamp are `rl-mapgen`'s.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
 //! - [`events`]: facts, counters and quests as data over what happened.
 //! - [`balance`]: threat scoring and the spawn-band report, so content is
@@ -59,6 +62,7 @@ pub mod forecast;
 pub mod gas;
 pub mod loot;
 pub mod names;
+pub mod prefab;
 pub mod prop;
 pub mod role;
 pub mod stats;
@@ -81,6 +85,7 @@ pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damag
 pub use gas::{Breath, GasDef, GasId};
 pub use loot::{DropRow, DropTable, Layout, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use names::{NameRef, Names};
+pub use prefab::{Pick, PrefabDef, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};

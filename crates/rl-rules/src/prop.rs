@@ -146,6 +146,19 @@ pub struct HiddenDef {
     pub spot: u8,
 }
 
+/// What a row naming an `item` or a `tag` puts in: a fixed item by name,
+/// which takes no band offset, or anything carrying the tag. Shared by
+/// a container's contents and a prefab's item slot, which are the same
+/// row, so the two can never disagree about what one means.
+pub(crate) fn read_stock(item: Option<&str>, tag: Option<&str>, band: i32, names: &Names<'_>) -> Result<Stock, String> {
+    match (item, tag) {
+        (Some(item), None) if band != 0 => Err(format!("{item:?} is a fixed item, drawn from no band, so a band offset means nothing on it")),
+        (Some(item), None) => Ok(Stock::Item(item.to_string())),
+        (None, Some(tag)) => names.tag(tag).map(Stock::Tag).map_err(|e| format!("it asks for {e}")),
+        _ => Err("a row names an `item` or a `tag`, and exactly one of them".to_string()),
+    }
+}
+
 /// Loads props from RON, resolving every name through `names`.
 ///
 /// Reports every problem in the file at once rather than the first, so a
@@ -177,22 +190,10 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
             let mut contents = Vec::new();
             for row in &c.contents {
                 let (min, max) = row.count.range();
-                let what = match (&row.item, &row.tag) {
-                    (Some(item), None) => {
-                        if row.band != 0 {
-                            errors.push(format!("{}: {item:?} is a fixed item, drawn from no band, so a band offset means nothing on it", a.name));
-                        }
-                        Stock::Item(item.clone())
-                    }
-                    (None, Some(tag)) => match names.tag(tag) {
-                        Ok(tag) => Stock::Tag(tag),
-                        Err(e) => {
-                            errors.push(format!("{}: its contents ask for {e}", a.name));
-                            continue;
-                        }
-                    },
-                    _ => {
-                        errors.push(format!("{}: a row of its contents names an `item` or a `tag`, and exactly one of them", a.name));
+                let what = match read_stock(row.item.as_deref(), row.tag.as_deref(), row.band, names) {
+                    Ok(what) => what,
+                    Err(e) => {
+                        errors.push(format!("{}: {e}", a.name));
                         continue;
                     }
                 };
@@ -336,13 +337,13 @@ struct ContentRon {
 /// A count as authored: one number, or `(fewest, most)`.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(untagged)]
-enum CountRon {
+pub(crate) enum CountRon {
     Exactly(u32),
     Between(u32, u32),
 }
 
 impl CountRon {
-    fn range(self) -> (u32, u32) {
+    pub(crate) fn range(self) -> (u32, u32) {
         match self {
             Self::Exactly(n) => (n, n),
             Self::Between(min, max) => (min, max),
