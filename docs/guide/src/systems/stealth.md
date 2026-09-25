@@ -8,8 +8,9 @@
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/components.rs
             crates/rl-bevy/src/lighting.rs
+            crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 3ac23be9 -->
+     fingerprint: 55bb7a6e -->
 
 # Stealth
 
@@ -25,12 +26,13 @@ It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on,
 Both sides have to be authored before anything changes: a `Notice` absent means the observer sees on sight, which is the behaviour before stealth existed, and a `Stealth` absent means the subject never hides.
 That is the right way round, and it is why "I added the plugin and nothing happened" is the likely first report.
 The plugin is opt-in per game and the components are opt-in per spawn, so a game may carry it and still have places where nothing hides.
-Lighting is optional under it: with no `Lighting` resource every cell counts as lit, and with one, a subject standing in light widens the observer's certain radius by `lit_bonus`, which is zero unless a game says otherwise.
+Lighting is optional under it: with no `Lighting` resource every cell counts as lit, and with one, a subject standing in the lit band widens the observer's certain radius by `lit_bonus`, which is zero unless a game says otherwise.
+A subject in a lamp's dim ring is seen and gives no bonus, which is what makes the edge of the light a place to stand.
 Combat is optional too: with no `CombatRules` nobody has a side, so everyone is at odds with everyone and every observer rolls against every hider.
 
 ## The model
 
-`NoticeStats` is the observer's half: `certain`, the tiles inside which it spots you whatever the roll; `chance_pct`, its chance a turn beyond that; `lit_bonus`, added to `certain` while you stand in light; and `memory`, the turns it keeps looking after losing you, six when a content file leaves it out.
+`NoticeStats` is the observer's half: `certain`, the tiles inside which it spots you whatever the roll; `chance_pct`, its chance a turn beyond that; `lit_bonus`, added to `certain` while you stand in the lit band; and `memory`, the turns it keeps looking after losing you, six when a content file leaves it out.
 `StealthStats` is the subject's: `quiet` off the certain radius and `subtlety` off the chance, both defaulting to nothing.
 `certain_radius` is `certain` plus the light bonus less `quiet`, floored at one, so no stack of gear hides you from somebody standing next to you; `notice_chance` is the chance less `subtlety`; `notices` is either of them answering yes.
 `Notice(NoticeStats)` and `Stealth(StealthStats)` are the components, one name per tier so that globbing both crates into a prelude does not put two types called `Notice` in it.

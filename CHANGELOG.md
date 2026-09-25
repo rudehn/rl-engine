@@ -77,6 +77,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Foundry's title screen reads Continue, New Game and Exit, and nothing else: no line under a row and no row of keys. Continue is drawn dim and the cursor steps over it until there is a save to continue. The picked row is drawn in the title's warm tone; it had been drawn in the selection background's, which as a foreground read darker than the row that cannot be picked.
 - Foundry has a cheat menu on `\`: reveal the deck, heal, godmode, the lift a deck down or up, and a search of the armory by name that puts what is picked in the pack, merged into a stack the way a pickup merges it. Godmode and reveal stay on through a deck change and a new run.
 - Foundry keeps where things turn up apart from what they are: `monster_spawns.ron` and `item_spawns.ron`, a named row per band, in place of the `spawn` tuples in `monsters.ron` and `items.ron`. The rows are in the order the tuples were, and the fingerprint does not move.
+- Light has three bands. `Lighting::bright`, 64 by default, splits what is seen into `LightBand::Dim` and `LightBand::Lit`, read with `Lighting::band` or `band_at`, which reads a game without lighting as lit. What is seen is unchanged.
+- Stealth's `lit_bonus` applies only in the `Lit` band. A subject in a lamp's dim ring, or under an ambient between `threshold` and `bright`, is still seen and no longer gives it. A game that wants the old reading sets `bright` equal to `threshold`.
 
 ## 0.3.0
 

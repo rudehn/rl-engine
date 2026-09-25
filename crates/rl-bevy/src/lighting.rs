@@ -15,13 +15,19 @@
 //! thing is lit is the game's call, made by inserting or removing the
 //! component; the engine reads only what is there.
 //!
+//! What is seen falls in one of three [`LightBand`]s, which
+//! [`Lighting::band`] names and [`band_at`] names with no lighting read as
+//! lit: dark below `threshold`, dim up to `bright`, and lit above it. Sight
+//! reads only whether a tile is dark; stealth's light bonus reads the lit
+//! band, and a to-hit model may read either.
+//!
 //! Ambient is a plain field the game writes: once at start for a dungeon,
 //! from a system of its own for a surface with nights. The engine has no
 //! clock hook and no notion of a day.
 
 use bevy::prelude::*;
 use rl_core::{Grid2D, Point, Rect, geometry};
-use rl_grid::{BitGrid, Emitter, Light, LightField, Rgb};
+use rl_grid::{BitGrid, Emitter, Light, LightBand, LightField, Rgb};
 
 use crate::components::{Actor, Position, Viewshed};
 use crate::items::{Inventory, Item};
@@ -85,6 +91,12 @@ pub enum LightEvent {
 /// The intensity a tile needs to count as lit, unless the game says otherwise.
 pub const DEFAULT_THRESHOLD: u8 = 16;
 
+/// The intensity at or above which a seen tile counts as lit rather than
+/// dim, unless the game says otherwise. With the lamps the example games
+/// carry, it leaves a ring of one or two tiles of dim light at a lamp's
+/// edge, which is where a sneak stands and where a shot goes wide.
+pub const DEFAULT_BRIGHT: u8 = 64;
+
 /// The light over the loaded window. Inserting it turns lighting on.
 #[derive(Resource, Debug, Clone)]
 pub struct Lighting {
@@ -93,6 +105,8 @@ pub struct Lighting {
     pub ambient: Light,
     /// The intensity at or above which a tile is seen.
     pub threshold: u8,
+    /// The intensity at or above which a seen tile is lit rather than dim.
+    pub bright: u8,
     origin: Point,
     statics: LightField,
     dynamics: LightField,
@@ -114,6 +128,7 @@ impl Lighting {
         Self {
             ambient,
             threshold: DEFAULT_THRESHOLD,
+            bright: DEFAULT_BRIGHT,
             origin: Point::ZERO,
             statics: LightField::new(0, 0),
             dynamics: LightField::new(0, 0),
@@ -142,6 +157,11 @@ impl Lighting {
     /// Whether world tile `p` is lit enough to be seen.
     pub fn is_lit(&self, p: Point) -> bool {
         self.at(p).intensity >= self.threshold
+    }
+
+    /// The band world tile `p` is in, by `threshold` and `bright`.
+    pub fn band(&self, p: Point) -> LightBand {
+        LightBand::of(self.at(p).intensity, self.threshold, self.bright)
     }
 
     /// The world tile at the field's top-left.
@@ -365,6 +385,13 @@ pub fn gate(lighting: &Lighting, at: Point, dark_sight: i32, viewshed: &mut View
 /// `to` that it has a line to. With no lighting, always.
 pub fn perceives(lighting: Option<&Lighting>, from: Point, dark_sight: i32, to: Point) -> bool {
     lighting.is_none_or(|l| l.is_lit(to) || geometry::chebyshev(from, to) <= dark_sight.max(1))
+}
+
+/// The band `p` is in, with no lighting read as lit: a game without
+/// [`LightingPlugin`] is a world seen everywhere, and nothing in it is
+/// harder to hit or easier to hide in for want of light.
+pub fn band_at(lighting: Option<&Lighting>, p: Point) -> LightBand {
+    lighting.map_or(LightBand::Lit, |l| l.band(p))
 }
 
 /// Burns fuel every whole turn and puts out what runs dry.

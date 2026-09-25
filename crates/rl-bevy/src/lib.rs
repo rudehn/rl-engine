@@ -72,7 +72,7 @@ pub use items::{
     Tagged, Unequip, UseItem, Wearable,
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
-pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Scattered};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Profile, Sight, Thinking,
@@ -93,6 +93,7 @@ pub use props::{
 pub use registries::Registries;
 pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
 pub use replay::{Pressed, Recording};
+pub use rl_grid::LightBand;
 pub use seed::{AddStream, Seed, Stream};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
@@ -131,7 +132,7 @@ pub mod prelude {
         UseItem, Wearable,
     };
     pub use crate::knowledge::Knowledge;
-    pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+    pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Scattered};
     pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, Sounds};
@@ -155,4 +156,5 @@ pub mod prelude {
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
+    pub use rl_grid::LightBand;
 }

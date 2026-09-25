@@ -13,7 +13,8 @@
 //!   reads the field as it stood, for fire, gas and whatever else spreads.
 //! - [`fov`]: symmetric shadowcasting into a [`BitGrid`].
 //! - [`light`]: point sources cast through the same shadows into a
-//!   [`LightField`] of intensity and colour.
+//!   [`LightField`] of intensity and colour, and the [`LightBand`] an
+//!   intensity falls in.
 //! - [`AStar`]: point-to-point search with reusable scratch buffers.
 //! - [`DijkstraMap`]: one flood, any number of consumers.
 //! - [`SpatialGrid`]: who is standing where.
@@ -38,7 +39,7 @@ pub use astar::{AStar, PathRules};
 pub use bitgrid::BitGrid;
 pub use dijkstra::DijkstraMap;
 pub use field::{Around, TileField};
-pub use light::{Emitter, Light, LightField, Rgb};
+pub use light::{Emitter, Light, LightBand, LightField, Rgb};
 pub use spatial::SpatialGrid;
 pub use targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
 pub use terrain::{CostSource, OpacitySource, Terrain, TerrainView};
@@ -51,7 +52,7 @@ pub mod prelude {
     pub use crate::dijkstra::DijkstraMap;
     pub use crate::field::{Around, TileField};
     pub use crate::fov;
-    pub use crate::light::{Emitter, Light, LightField, Rgb};
+    pub use crate::light::{Emitter, Light, LightBand, LightField, Rgb};
     pub use crate::region;
     pub use crate::spatial::SpatialGrid;
     pub use crate::targeting::{Footprint, TargetMode, burst, clear_shot, footprint};

@@ -7,7 +7,7 @@
             crates/rl-bevy/src/knowledge.rs
             crates/rl-grid/src/fov.rs
             crates/rl-grid/src/light.rs
-     fingerprint: b94d5a0d -->
+     fingerprint: 268d3789 -->
 
 # Sight and lighting
 
@@ -36,6 +36,8 @@ An item on the floor lights the tile it lies on, and once picked up it sheds fro
 `Fuel(pub u32)` is turns of light left, burned one per whole turn, and at zero the engine removes the `LightSource` and writes `LightEvent::BurntOut`.
 The `Lighting` resource carries `ambient` and `threshold` as public fields and its three light layers privately; `at` gives a tile's light and `is_lit` compares that light against the threshold.
 `threshold` starts at `DEFAULT_THRESHOLD`, which is 16.
+`bright` starts at `DEFAULT_BRIGHT`, which is 64, and `band` names a tile's `LightBand`: `Dark` below `threshold`, `Dim` from there to `bright`, and `Lit` at or above it.
+`band_at` reads a missing `Lighting` as lit, the same way a game without lighting sees everywhere.
 `Viewshed` holds both bit grids: `line` is the shadowcast, and `visible` is what the gate left of it.
 `gate` writes the second from the first, and `perceives` answers the same question about a single target without a viewshed; with no `Lighting` it is always true.
 A mind's range comes from `Perception`, and an actor with `RevealsMap` writes `visible` into `Knowledge`, so a dark corridor is not remembered until something lights it.
@@ -89,6 +91,7 @@ There is no clock hook and no notion of a day in the engine, so a game without a
 The engine puts a light out when `Fuel` reaches zero and reports it; what becomes of that entity, refilled or dropped or despawned, is the game's answer.
 `Lighting` is derived and never saved, while `Fuel` and the presence of a `LightSource` on an item are the game's to save with its item state.
 What a light means is the game's too: the engine knows emitters and one ambient level, and never a torch, a sun or a noon.
+What the bands are worth is the game's: the engine names them, stealth reads the lit band for its bonus, and a to-hit model may read either.
 
 ## Where it lives
 
