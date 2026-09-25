@@ -29,7 +29,8 @@
 //!   spawn table at a band, for a prefab's monster slot to ask for.
 //! - [`prefab`]: one prefab, read from rows of glyphs and a legend naming a
 //!   tile or a slot, a prop, an item row, a monster or a mark, every name
-//!   resolved at load; the terrain and the stamp are `rl-mapgen`'s.
+//!   but a fixed item's resolved at load; the terrain and the stamp are
+//!   `rl-mapgen`'s.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
 //! - [`events`]: facts, counters and quests as data over what happened.
 //! - [`balance`]: threat scoring and the spawn-band report, so content is

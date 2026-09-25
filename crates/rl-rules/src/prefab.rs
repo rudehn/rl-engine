@@ -4,11 +4,14 @@
 //! A prefab file is [`PrefabDef`], read once by [`load`], which resolves
 //! every name the legend carries against whatever registries the game
 //! lends the load: a prop from `props.ron`, a monster or a role from the
-//! game's own, an item by name or a tag drawn at a band. A cell holds
-//! exactly one thing, a tile or a [`Slot`], never both, because a legend
-//! that let a glyph be a wall and a monster's post at once could put a
-//! guard where nothing can stand, and the place would only find out when
-//! it tried to draw it.
+//! game's own, and a tag drawn at a band. A slot's fixed item stays a
+//! name, the same as a container's fixed contents, because a game's
+//! items are its own registry and only the game can say whether one
+//! exists; that check waits for play to begin. A cell holds exactly one
+//! thing, a tile or a [`Slot`], never both, because a legend that let a
+//! glyph be a wall and a monster's post at once could put a monster
+//! where nothing can stand, and the place would only find out when it
+//! tried to draw it.
 //!
 //! A slot is one of four things: a prop, an item row (the same
 //! [`ContentRoll`] a container's contents are, so the two can never
@@ -38,8 +41,11 @@
 //! //   legend: glyph to what it stands for, one of
 //! //     Tile("name")                          a tile from the game's tiles
 //! //     Prop("name")                          a prop from props.ron
-//! //     Item(item: "item", count: 1)          that item; count is a number
-//! //                                           or a range, default 1
+//! //     Item(item: "item", count: 1)          that item, by the name the
+//! //                                           game's own items answer to;
+//! //                                           count is 1 or a range,
+//! //                                           count: (fewest, most),
+//! //                                           default 1
 //! //     Item(tag: "tag", count: 1, band: 0)   drawn from the item table by
 //! //                                           tag at the place's band plus
 //! //                                           band; count is separate draws
@@ -52,7 +58,7 @@
 //! //   A monster at a slot holds that cell as its post.
 //! (
 //!     name: "guarded locker",
-//!     ground: "deck",
+//!     ground: "floor",
 //!     rows: [
 //!         "#######",
 //!         "#s.A.s#",
@@ -60,9 +66,9 @@
 //!         "##.b.##",
 //!     ],
 //!     legend: {
-//!         '#': Tile("bulkhead"),
-//!         '.': Tile("deck"),
-//!         'A': Prop("armory locker"),
+//!         '#': Tile("wall"),
+//!         '.': Tile("floor"),
+//!         'A': Prop("locker"),
 //!         'w': Item(tag: "weapon", band: 2),
 //!         's': Monster(role: "sentry", band: 1),
 //!         'b': Monster(role: "brute", band: 2),
@@ -70,7 +76,7 @@
 //! )
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rl_core::Id;
 use rl_grid::{TileId, TileRegistry};
@@ -220,12 +226,16 @@ enum LegendRon {
 }
 
 /// Loads one prefab from RON, resolving every name in its legend through
-/// `names`, and painting `ground` and every `Tile` glyph from `tiles`.
+/// `names`, and painting `ground` and every `Tile` glyph from `tiles`. A
+/// fixed item's name is left unchecked: a game's items are its own
+/// registry, the same as a container's fixed contents, and only the
+/// game can say whether one exists, so that check waits for play to
+/// begin.
 ///
 /// Reports every problem in the file at once rather than the first: a
-/// mistyped tile, prop, item, tag, monster or role name, a row of the
-/// wrong width, a glyph in a row that names nothing, a legend entry that
-/// names nothing in any row, and a ground missing or unfit to stand on.
+/// mistyped tile, prop, tag, monster or role name, a row of the wrong
+/// width, a glyph in a row that names nothing, a legend entry that names
+/// nothing in any row, and a ground missing or unfit to stand on.
 pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> Result<PrefabDef<M>, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let a: PrefabRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -242,7 +252,7 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
         }
     }
 
-    let mut reported_unknown = std::collections::BTreeSet::new();
+    let mut reported_unknown = BTreeSet::new();
     for (y, row) in a.rows.iter().enumerate() {
         for c in row.chars() {
             if c != ' ' && !a.legend.contains_key(&c) && reported_unknown.insert(c) {
@@ -288,17 +298,18 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
             },
             LegendRon::Monster { monster, role, band } => {
                 let pick = match (monster.as_deref(), role.as_deref()) {
-                    (Some(name), None) if *band != 0 => {
-                        errors.push(format!("{}: '{c}': {name:?} is a fixed monster, drawn from no band, so a band offset means nothing on it", a.name));
-                        None
-                    }
-                    (Some(name), None) => match names.id::<M>(name) {
-                        Ok(id) => Some(Pick::Kind(id)),
-                        Err(e) => {
-                            errors.push(format!("{}: '{c}': {e}", a.name));
-                            None
+                    (Some(name), None) => {
+                        if *band != 0 {
+                            errors.push(format!("{}: '{c}': {name:?} is a fixed monster, drawn from no band, so a band offset means nothing on it", a.name));
                         }
-                    },
+                        match names.id::<M>(name) {
+                            Ok(id) => Some(Pick::Kind(id)),
+                            Err(e) => {
+                                errors.push(format!("{}: '{c}': {e}", a.name));
+                                None
+                            }
+                        }
+                    }
                     (None, Some(role)) => match names.id::<RoleDef<M>>(role) {
                         Ok(id) => Some(Pick::Role(id)),
                         Err(e) => {
@@ -331,14 +342,19 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
         },
         None => None,
     };
-    if !slots.is_empty() {
-        match (&a.ground, ground) {
-            (None, _) => errors.push(format!("{}: has slots and no `ground` to stand them on", a.name)),
-            (Some(name), Some(id)) if !tiles.get(id).walkable => {
-                errors.push(format!("{}: its ground {name:?} is a tile nothing can stand on", a.name));
-            }
-            _ => {}
-        }
+    // Whether the legend asks for a ground is decided from what was
+    // authored, not from what resolved: a legend whose one slot entry is
+    // a typo still needs a ground to stand it on, and saying so beside
+    // the typo is how both get fixed in one pass instead of one at a
+    // time.
+    let has_slots = a.legend.values().any(|entry| !matches!(entry, LegendRon::Tile(_)));
+    if has_slots && a.ground.is_none() {
+        errors.push(format!("{}: has slots and no `ground` to stand them on", a.name));
+    }
+    if let (Some(name), Some(id)) = (&a.ground, ground)
+        && !tiles.get(id).walkable
+    {
+        errors.push(format!("{}: its ground {name:?} is a tile nothing can stand on", a.name));
     }
 
     if !errors.is_empty() {
@@ -372,8 +388,8 @@ mod tests {
 
     fn world() -> World {
         let mut tiles = TileRegistry::new();
-        tiles.register(TileProps::wall("bulkhead")).unwrap();
-        tiles.register(TileProps::floor("deck")).unwrap();
+        tiles.register(TileProps::wall("wall")).unwrap();
+        tiles.register(TileProps::floor("floor")).unwrap();
         let beasts = Registry::from_defs(vec![Beast("heavy"), Beast("warden")]).unwrap();
         let roles = crate::role::load(r#"{ "brute": ["heavy"] }"#, &Names::new().with("monster", &beasts)).unwrap();
         let tags = Registry::from_defs(vec![TagDef::new("weapon")]).unwrap();
@@ -388,10 +404,10 @@ mod tests {
 
     const GUARDED: &str = r######"(
         name: "guarded locker",
-        ground: "deck",
+        ground: "floor",
         rows: ["#####", "#bLw#", "##W##", "##m##"],
         legend: {
-            '#': Tile("bulkhead"),
+            '#': Tile("wall"),
             'L': Prop("locker"),
             'w': Item(tag: "weapon", band: 2),
             'b': Monster(role: "brute", band: 1),
@@ -405,8 +421,8 @@ mod tests {
         let w = world();
         let def = read(&w, GUARDED).unwrap();
         assert_eq!(def.name, "guarded locker");
-        assert_eq!(def.ground, w.tiles.id("deck"));
-        assert_eq!(def.tile('#'), w.tiles.id("bulkhead"));
+        assert_eq!(def.ground, w.tiles.id("floor"));
+        assert_eq!(def.tile('#'), w.tiles.id("wall"));
         assert!(matches!(def.slot('L'), Some(Slot::Prop(p)) if *p == w.props.expect("locker")));
         assert!(matches!(def.slot('w'), Some(Slot::Item(ContentRoll { what: Stock::Tag(_), min: 1, max: 1, band: 2 }))));
         assert!(matches!(def.slot('b'), Some(Slot::Monster { pick: Pick::Role(r), band: 1 }) if *r == w.roles.expect("brute")));
@@ -420,11 +436,11 @@ mod tests {
         let w = world();
         let text = r##"(
             name: "broken",
-            ground: "bulkhead",
+            ground: "wall",
             rows: ["#?#", "#b"],
             legend: {
-                '#': Tile("bulkhed"),
-                'b': Monster(monster: "warden", band: 1),
+                '#': Tile("wallx"),
+                'b': Monster(monster: "wardn", band: 1),
                 'r': Monster(role: "bruiser"),
                 'x': Monster(monster: "heavy", role: "brute"),
                 'i': Item(item: "knife", band: 1),
@@ -437,8 +453,9 @@ mod tests {
         for said in [
             "row 1 is 2 wide",
             "'?' in row 0 is not in the legend",
-            "bulkhed",
+            "wallx",
             "a band offset means nothing",
+            "unknown monster \"wardn\"",
             "bruiser",
             "exactly one of them",
             "wepon",
@@ -461,6 +478,43 @@ mod tests {
     #[test]
     fn a_prefab_of_tiles_alone_needs_no_ground() {
         let w = world();
-        assert!(read(&w, r###"(name: "wall", rows: ["##"], legend: { '#': Tile("bulkhead") })"###).is_ok());
+        assert!(read(&w, r###"(name: "tiles only", rows: ["##"], legend: { '#': Tile("wall") })"###).is_ok());
+    }
+
+    #[test]
+    fn a_prefab_whose_only_slot_entry_fails_still_demands_a_ground() {
+        let w = world();
+        let err = read(&w, r#"(name: "unground", rows: ["p"], legend: { 'p': Prop("lockr") })"#).unwrap_err().to_string();
+        assert!(err.contains("lockr"), "{err}");
+        assert!(err.contains("no `ground`"), "{err}");
+    }
+
+    #[test]
+    fn a_prefab_with_no_rows_is_refused() {
+        let w = world();
+        let err = read(&w, r#"(name: "empty", rows: [], legend: {})"#).unwrap_err().to_string();
+        assert!(err.contains("has no rows"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_ground_is_refused() {
+        let w = world();
+        let err = read(&w, r##"(name: "bad ground", ground: "hull", rows: ["#"], legend: { '#': Tile("wall") })"##).unwrap_err().to_string();
+        assert!(err.contains("its ground is unknown tile"), "{err}");
+    }
+
+    #[test]
+    fn a_ground_that_cannot_be_stood_on_is_refused_even_with_no_slots() {
+        let w = world();
+        let err = read(&w, r##"(name: "solid", ground: "wall", rows: ["#"], legend: { '#': Tile("wall") })"##).unwrap_err().to_string();
+        assert!(err.contains("nothing can stand on"), "{err}");
+    }
+
+    #[test]
+    fn an_item_slots_count_written_backwards_is_refused() {
+        let w = world();
+        let err =
+            read(&w, r#"(name: "backwards range", ground: "floor", rows: ["i"], legend: { 'i': Item(item: "rope", count: (5, 2)) })"#).unwrap_err().to_string();
+        assert!(err.contains("5 to 2, which is no range at all"), "{err}");
     }
 }

@@ -193,7 +193,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
                 let what = match read_stock(row.item.as_deref(), row.tag.as_deref(), row.band, names) {
                     Ok(what) => what,
                     Err(e) => {
-                        errors.push(format!("{}: {e}", a.name));
+                        errors.push(format!("{}: its contents: {e}", a.name));
                         continue;
                     }
                 };
