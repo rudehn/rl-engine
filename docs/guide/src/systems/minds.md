@@ -14,7 +14,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
-     fingerprint: 5b389b28 -->
+     fingerprint: 2743951f -->
 
 # Minds
 
@@ -26,7 +26,7 @@ Deciding is tier 1 and sees no world: a tactic reads the snapshot and asks for t
 ## Turning it on
 
 `MindsPlugin` is every non-player deciding its own turn, and it is opt-in: a game that moves its monsters with systems of its own leaves it out.
-It puts `sense` in `DecideSet::Sense`, `begin_thinking` in `PerceiveSet::Begin`, `perceive_roster` in `PerceiveSet::Roster` and `decide_minds` in `DecideSet::Minds`, and adds `MindRng`, a stream of its own, so writing one more tactic cannot shift combat's rolls.
+It puts `sense` in `DecideSet::Sense`, `begin_thinking` in `PerceiveSet::Begin`, `perceive_roster` in `PerceiveSet::Roster`, `sense_posts` in `PerceiveSet::Annotate` and `decide_minds` in `DecideSet::Minds`, and adds `MindRng`, a stream of its own, so writing one more tactic cannot shift combat's rolls.
 It declares `depends_on::<FovPlugin>` and nothing else, because a mind's sight is a `Viewshed` of its own cast by the function that casts the player's.
 Not combat: without `CombatPlugin` there is no faction matrix, everyone a mind sees is one of the others, and it steps round them rather than at them.
 It registers the `Attack` action itself, so a blow decided in a game with no combat is refused by the sweeper rather than left holding the turn, and it registers the messages for a use, a pickup, an equip and a throw so that a brain reaching for one in a game without that subsystem writes into a message nobody reads.
@@ -45,12 +45,13 @@ A `Tactic` is a `name` for that trace and an `evaluate` returning a `Decision` o
 `Snapshot` carries `me`, `enemies`, `allies`, `others`, `items`, `props`, `missiles`, `usable`, `reach`, `last_known`, `came_from`, `wits` and the game's own `senses`.
 An `ActorView` holds `health` and `faction` as options, so a civilian in a game with no combat is still someone a mind sees and steps round, and `is_hurt` is false when health is unknown rather than true.
 `Thinking` is that snapshot while it is being filled, plus `mark_hazard` for a cell no mind will step on and `offer_trail` for something worth walking to, the freshest offer becoming `last_known` when the snapshot closes.
-The four phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in sight into the three lists by the faction matrix, `Filter` is where stealth drops the hiders the mind has not noticed and offers what it lost, and `Annotate` is where combat says how far its own shot carries, items what it carries and sees lying about, abilities what it may use, props what stands about, fire where not to step and hearing where a sound came from.
+The four phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in sight into the three lists by the faction matrix, `Filter` is where stealth drops the hiders the mind has not noticed and offers what it lost, and `Annotate` is where combat says how far its own shot carries, items what it carries and sees lying about, abilities what it may use, props what stands about, fire where not to step, hearing where a sound came from and `sense_posts` where the mind's post is.
 `decide_minds` sorts the snapshot once, there and nowhere else, so the order the contributors ran in cannot reach a tactic.
 `TacticCtx` then offers `step_toward` and `step_away_from` over `FlowFields`, keyed by the goal cells, the movement class, whether the walker opens doors and which way it is going, stamped with the map's cost epoch and capped at `FIELD_CACHE`: fifty hunters after one player cost one flood.
 It also offers `can_step`, which refuses an occupied cell and any cell marked a hazard, `blocks_shot` and `blocks_burst`, the two predicates the ability resolver flies and bursts by, and the turn's stream.
 `can_step` answers whether a cell may be stood on and says nothing about the way in, so a tactic that picks a neighbour for itself rather than taking one a field offered pairs it with the resolver's corner rule: a diagonal that squeezes between two cells the actor cannot stand on is refused silently, and a mind deciding on one would decide the same way again on every turn until something moved.
-The twelve shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Keep`, `Hover`, `Wander`, `GiveWay`, `UseAbility`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
+The thirteen shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Keep`, `Hover`, `KeepPost`, `Wander`, `GiveWay`, `UseAbility`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
+`Post(Point)` on an actor is the cell it was set to stand on, pushed into its snapshot as the `Posted` sense, and `KeepPost` walks it back there and waits, waiting too beside a post something else stands on, and passes for an actor with no post, so one brain serves a kind whether or not this one was posted.
 `Keep` is one tactic for both sides of keeping station, parameterised by the roster it reads: `Keep::allies(keep_within, no_closer_than)` is what a companion is and `Keep::enemies(..)` what a spotter or a skirmisher is, each closing past the first distance, backing off inside the second and leaving the band between to the next tactic, and it reports itself as `follow` or `shadow`, because a trace that says `shadow` says more about what a probe did than one that says `keep`.
 `app.add_choice::<A>()` registers an action that is also a `Choice` and routes every `MindChose` carrying an `A` into its `Intent` in `DecideSet::Game`, and `Snapshot::add_sense` with `sense::<T>()` carries a game's own knowledge in by type, one per type.
 
@@ -108,7 +109,8 @@ Nothing a game extends this with is numbered: an action of its own arrives as a 
 A game's own contributor goes in `PerceiveSet::Annotate`, its own answer to its own choice in `DecideSet::Game`, and neither orders itself after another crate's system function.
 Two contributors in one phase never write the same list, and the sort at the head of the decision is the guard, so which one the executor ran first cannot reach a replay.
 A game that decides one actor's turn itself claims that decision in `TurnSet::Decide`, and the stage never opens for it, so no contributor works for a decision nobody will make.
-`Wits` are the engine's whole vocabulary for what a mind is able to do; anything finer, a post to return to or a pack that hunts together, is a tactic and a `Sense` of the game's.
+`Wits` are the engine's whole vocabulary for what a mind is able to do; anything finer, a pack that hunts together or a scent to follow, is a tactic and a `Sense` of the game's.
+A post is the one such sense the engine pushes itself: the engine decides how a post is kept, and the game decides which actors have one, where, and where `KeepPost` sits in a brain, usually after `SearchLastKnown` and before its idle tactic.
 
 ## Where it lives
 

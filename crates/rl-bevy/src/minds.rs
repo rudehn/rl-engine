@@ -92,6 +92,15 @@ pub struct Intelligence(pub Wits);
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CameFrom(pub Option<Point>);
 
+/// Where an actor was set to stand and walks back to when it has nothing
+/// better to do: a monster placed at a prefab's slot. Read by the
+/// [`KeepPost`](rl_rules::ai::tactics::KeepPost) tactic through the
+/// [`Posted`](rl_rules::ai::tactics::Posted) sense [`sense_posts`] pushes,
+/// so a kind's shared brain posts only the ones given a post. Saved by
+/// `rl-save` with the actor.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Post(pub Point);
+
 /// What one field is for: the cells it leads to, in world coordinates and
 /// sorted so two minds wanting the same cells share one flood; the movement
 /// class it is walked by; whether that class opens doors, which changes
@@ -440,6 +449,14 @@ pub fn perceive_roster(mut thinking: ResMut<Thinking>, sight: Sight, rules: Opti
     }
 }
 
+/// Tells the mind holding the turn where its post is, if it has one.
+pub fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
+    let Some(post) = thinking.actor().and_then(|actor| posts.get(actor).ok()).copied() else { return };
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(rl_rules::ai::tactics::Posted(post.0));
+    }
+}
+
 /// The minds' own stream, so adding a tactic cannot shift combat's rolls
 /// and a game with no combat still has one to draw from.
 #[derive(Resource, Debug)]
@@ -656,6 +673,7 @@ impl Plugin for MindsPlugin {
             .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
+            .add_systems(Turn, sense_posts.in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
@@ -1132,6 +1150,34 @@ mod tests {
         let at = app.world().get::<Position>(sniffer).unwrap().0;
         assert!(at.x < start.x + 4, "it walked toward the scent, which only the game knew: {at:?}");
         assert!(app.world().get::<CameFrom>(sniffer).unwrap().0.is_some(), "and remembers where it stepped from");
+    }
+
+    /// A mind given a post walks back to it with nothing better to do,
+    /// told where it is by the sense the engine pushes from its [`Post`],
+    /// and then stays on it turn after turn.
+    #[test]
+    fn a_posted_mind_walks_home_and_stays_there() {
+        use rl_rules::ai::tactics::KeepPost;
+        let (mut app, start, _) = arena();
+        let us = rl_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let post = start.offset(3, 3);
+        let guard = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(9, 3)), Health::full(10), Faction(us), Mind(Arc::new(Brain::new().then(KeepPost))), Post(post)))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        // Into play first, so each pass below is one turn of the guard's.
+        app.update();
+        let mut trail = Vec::new();
+        for _ in 0..12 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+            trail.push(app.world().get::<Position>(guard).unwrap().0);
+        }
+        assert!(trail[5..].iter().all(|at| *at == post), "home by the sixth turn and on its post since: {trail:?}");
     }
 
     /// Sixty hunters after one player are one flood: every mind that

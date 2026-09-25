@@ -325,6 +325,44 @@ impl<A: Copy> Tactic<A> for Hover {
     }
 }
 
+/// Where an actor was set to stand, pushed as a [`Sense`](crate::ai::Sense)
+/// by whoever set it: a monster placed at a prefab's slot is posted there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Posted(pub Point);
+
+/// Hold a post: with nothing better to do, walk back to the cell the
+/// actor was set to stand on, and wait there.
+///
+/// Last before a brain's idle tactic, so a guard fights, flees and
+/// searches as it otherwise would and only then goes home, and a guard
+/// that loses the player searches where it last saw them before it does.
+/// Waits beside a post something else is standing on rather than
+/// wandering off, since the post will be free again. Leaves the turn to
+/// the next tactic for an actor with no [`Posted`] sense, so one brain
+/// serves a monster kind whether or not this one was posted.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KeepPost;
+
+impl<A: Copy> Tactic<A> for KeepPost {
+    fn name(&self) -> &'static str {
+        "keep_post"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let post = ctx.snapshot.sense::<Posted>()?.0;
+        let me = ctx.snapshot.me.pos;
+        if me == post {
+            return Some(Decision::Wait);
+        }
+        // Beside a taken post every other downhill cell is only a sidestep:
+        // a field offers each lower neighbour, and from a diagonal the two
+        // orthogonal ones are lower and still beside it.
+        if geometry::chebyshev(me, post) <= 1 && !(ctx.can_step)(post) {
+            return Some(Decision::Wait);
+        }
+        Some(ctx.step_toward(&[post]).map_or(Decision::Wait, Decision::Step))
+    }
+}
+
 /// Drift: some chance of a random step, otherwise wait.
 ///
 /// Never straight back where it came from while any other cell is open,
@@ -956,6 +994,52 @@ mod tests {
         assert_eq!(decide(&lost), Some("search_last_known"), "an animal follows the trail");
         lost.wits = Wits::MINDLESS;
         assert_eq!(decide(&lost), None, "a mindless thing has nothing to follow");
+    }
+
+    /// What [`KeepPost`] decides for `snapshot` on the open floor, with
+    /// fields built over it and every open cell free but those `taken`.
+    fn keep_post(snapshot: &Snapshot<u32>, taken: &[Point]) -> Option<Decision<u32>> {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p) && !taken.contains(&p);
+        let mut fields = Given::over(&view_t);
+        let mut rng = StdRng::seed_from_u64(1);
+        KeepPost.evaluate(&mut TacticCtx {
+            snapshot,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        })
+    }
+
+    #[test]
+    fn a_posted_actor_with_nothing_to_do_walks_back_to_its_post() {
+        let mut snapshot = Snapshot::alone(view(0, 6, 6, 10));
+        snapshot.add_sense(Posted(Point::new(2, 2)));
+        assert_eq!(keep_post(&snapshot, &[]), Some(Decision::Step(Point::new(5, 5))), "one step down the field toward the post");
+    }
+
+    #[test]
+    fn a_posted_actor_at_its_post_waits_there() {
+        let mut snapshot = Snapshot::alone(view(0, 2, 2, 10));
+        snapshot.add_sense(Posted(Point::new(2, 2)));
+        assert_eq!(keep_post(&snapshot, &[]), Some(Decision::Wait));
+    }
+
+    #[test]
+    fn a_guard_whose_post_is_taken_waits_rather_than_wandering() {
+        let mut snapshot = Snapshot::alone(view(0, 3, 3, 10));
+        snapshot.add_sense(Posted(Point::new(2, 2)));
+        assert_eq!(keep_post(&snapshot, &[Point::new(2, 2)]), Some(Decision::Wait), "beside a post something else stands on, it waits for it");
+    }
+
+    #[test]
+    fn an_actor_with_no_post_is_left_to_the_next_tactic() {
+        let snapshot = Snapshot::alone(view(0, 6, 6, 10));
+        assert_eq!(keep_post(&snapshot, &[]), None);
     }
 
     #[test]

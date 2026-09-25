@@ -13,9 +13,9 @@
 //! one down and how to spawn one again from what was written, and
 //! registers it with [`AddSaveable::save_kind`]. Everything the engine
 //! owns on that entity, where it stands, its health, what it carries and
-//! wears, its statuses, its stack, the transition it is, is the engine's
-//! to capture and put back, in [`EntityState`]. A resource a game keeps of
-//! the run goes through [`SaveableState`] and
+//! wears, its statuses, its stack, the transition it is, the post it
+//! holds, is the engine's to capture and put back, in [`EntityState`]. A
+//! resource a game keeps of the run goes through [`SaveableState`] and
 //! [`save_state`](AddSaveable::save_state).
 //!
 //! [`RunSave`] is the result: the engine's own [`EngineSave`], every kind's
@@ -32,7 +32,7 @@
 use bevy::prelude::*;
 use rl_bevy::{
     Afflict, Afflicted, Counters, Dead, Emptied, EndOfFrame, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap, PlaceEntered,
-    Position, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
+    Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
 };
 use rl_core::Point;
 use rl_rules::Equipment;
@@ -368,6 +368,10 @@ pub struct EntityState {
     /// the thing was knows nothing of.
     #[serde(default)]
     pub remains_as: Option<String>,
+    /// Where it was posted, for an actor that holds a post, so a guard still
+    /// walks back to its cell after a load.
+    #[serde(default)]
+    pub post: Option<Point>,
 }
 
 impl EntityState {
@@ -396,7 +400,18 @@ impl EntityState {
             (Some(_), Some(kind), Some(registries)) => Some(registries.props.name(kind.0).to_string()),
             _ => None,
         };
-        Self { at, health, bag, worn, statuses, stack: e.get::<Stack>().map(|s| s.count), transition: e.get::<Transition>().copied(), remains, remains_as }
+        Self {
+            at,
+            health,
+            bag,
+            worn,
+            statuses,
+            stack: e.get::<Stack>().map(|s| s.count),
+            transition: e.get::<Transition>().copied(),
+            remains,
+            remains_as,
+            post: e.get::<Post>().map(|p| p.0),
+        }
     }
 
     /// Puts this back on `entity`, the other entities through `remap`.
@@ -440,6 +455,9 @@ impl EntityState {
         }
         if let Some(transition) = self.transition {
             target.insert(transition);
+        }
+        if let Some(at) = self.post {
+            target.insert(Post(at));
         }
         // Last, and after the health a kind's own spawn gave it: a game
         // writes down what a thing is, never that it is dead, so what
@@ -1012,6 +1030,28 @@ mod tests {
         assert_eq!(at, start.offset(0, 3), "lying where she fell");
         assert!(w.get::<Health>(ada2).is_none(), "and not brought back to life by her own record of herself");
         assert!(w.get::<Actor>(ada2).is_none(), "nor dealt turns again");
+    }
+
+    /// An actor posted somewhere is posted there again after a load, by
+    /// the engine: the game's own record of it says nothing of a post, and
+    /// a guard that forgot its cell would wander off the first time it
+    /// had nothing better to do.
+    #[test]
+    fn a_posted_actor_keeps_its_post_when_the_run_is_continued() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        let post = start.offset(2, 3);
+        app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), Post(post)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let posted = w.query_filtered::<&Post, With<Person>>().single(w).copied().expect("Ada came back");
+        assert_eq!(posted, Post(post), "posted on the same cell");
     }
 
     /// The whole of a run comes back: every kind by its own account, and
