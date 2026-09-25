@@ -25,6 +25,8 @@
 //! - [`prop`]: what stands on a map that is neither an actor nor an item,
 //!   as data: a look, what it offers, what it holds, what sets it off and
 //!   how hard it is to spot.
+//! - [`role`]: a name and the monsters that fit it, drawn from a game's
+//!   spawn table at a band, for a prefab's monster slot to ask for.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
 //! - [`events`]: facts, counters and quests as data over what happened.
 //! - [`balance`]: threat scoring and the spawn-band report, so content is
@@ -58,6 +60,7 @@ pub mod gas;
 pub mod loot;
 pub mod names;
 pub mod prop;
+pub mod role;
 pub mod stats;
 pub mod status;
 
@@ -79,6 +82,7 @@ pub use gas::{Breath, GasDef, GasId};
 pub use loot::{DropRow, DropTable, Layout, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use names::{NameRef, Names};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
+pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 
