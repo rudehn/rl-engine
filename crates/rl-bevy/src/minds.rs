@@ -1180,6 +1180,59 @@ mod tests {
         assert!(trail[5..].iter().all(|at| *at == post), "home by the sixth turn and on its post since: {trail:?}");
     }
 
+    /// A guard that lost the player searches where it last knew of them
+    /// before it goes home: with a trail five cells off its post, offered
+    /// the way stealth and hearing offer one, it walks to the trail first,
+    /// and once the memory runs out it walks back to its post and stands
+    /// there turn after turn.
+    #[test]
+    fn a_posted_mind_that_lost_the_player_searches_then_returns_to_its_post_and_stands_there() {
+        use crate::plugin::{PerceiveSet, Turn};
+        use rl_rules::ai::tactics::{KeepPost, SearchLastKnown};
+
+        /// Where the guard last knew of someone, for how many more of its
+        /// turns it remembers.
+        #[derive(Resource)]
+        struct Memory {
+            at: Point,
+            turns: u32,
+        }
+
+        /// Offers the trail to whichever mind is deciding, the way
+        /// stealth offers a lost enemy's last known cell, until it fades.
+        fn remember(mut thinking: ResMut<Thinking>, mut memory: ResMut<Memory>) {
+            if thinking.actor().is_none() || memory.turns == 0 {
+                return;
+            }
+            memory.turns -= 1;
+            let at = memory.at;
+            thinking.offer_trail(at, 0);
+        }
+
+        let (mut app, start, _) = arena();
+        let us = rl_rules::FactionId::from_raw(0);
+        let post = start.offset(3, 3);
+        let trail_at = post.offset(5, 0);
+        app.insert_resource(Memory { at: trail_at, turns: 8 }).add_systems(Turn, remember.in_set(PerceiveSet::Annotate));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let brain = Brain::new().then(SearchLastKnown).then(KeepPost);
+        let guard = app.world_mut().spawn((Actor, Blocks, Position(post), Health::full(10), Faction(us), Mind(Arc::new(brain)), Post(post))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        // Into play first, so each pass below is one turn of the guard's.
+        app.update();
+        let mut trail = Vec::new();
+        for _ in 0..24 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+            trail.push(app.world().get::<Position>(guard).unwrap().0);
+        }
+        let searched = trail.iter().position(|at| *at == trail_at).unwrap_or_else(|| panic!("it never reached the trail: {trail:?}"));
+        assert!(trail[..searched].iter().all(|at| *at != post), "it searched before it went home: {trail:?}");
+        assert!(trail[16..].iter().all(|at| *at == post), "home once the memory ran out, and on its post since: {trail:?}");
+    }
+
     /// Sixty hunters after one player are one flood: every mind that
     /// wants the way toward the same cells in the same movement class reads
     /// the same field, and it is kept while the map and the goals stand.
