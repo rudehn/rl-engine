@@ -106,20 +106,45 @@ impl<T> BandedTable<T> {
         self.at(band).any(|e| e.weight > 0)
     }
 
-    /// Draws one row at `band` by weight, or `None` if nothing applies.
-    pub fn pick(&self, band: i32, rng: &mut impl Rng) -> Option<&BandedEntry<T>> {
-        let total: u64 = self.at(band).map(|e| e.weight as u64).sum();
+    /// Draws one row at `band` by weight among those `keep` accepts, or
+    /// `None` if none applies there. No fallback: ask
+    /// [`band_where`](Self::band_where) first for the band to draw at.
+    pub fn pick_where(&self, band: i32, keep: impl Fn(&T) -> bool, rng: &mut impl Rng) -> Option<&BandedEntry<T>> {
+        let kept = || self.at(band).filter(|e| keep(&e.item));
+        let total: u64 = kept().map(|e| e.weight as u64).sum();
         if total == 0 {
             return None;
         }
         let mut roll = rng.random_range(0..total);
-        for e in self.at(band) {
+        for e in kept() {
             if (e.weight as u64) > roll {
                 return Some(e);
             }
             roll -= e.weight as u64;
         }
         None
+    }
+
+    /// The band a draw among the rows `keep` accepts is made at, the way
+    /// `LootTable::band_for` answers for a tag: `band` itself when a kept row
+    /// with weight applies there, else the deepest band shallower than it
+    /// that one covers, so a request past the table's end gets its deepest,
+    /// else the shallowest band deeper. `None` when no kept row has weight.
+    pub fn band_where(&self, band: i32, keep: impl Fn(&T) -> bool) -> Option<i32> {
+        let kept: Vec<&BandedEntry<T>> = self.entries.iter().filter(|e| e.weight > 0 && keep(&e.item)).collect();
+        if kept.is_empty() {
+            return None;
+        }
+        if kept.iter().any(|e| e.applies(band)) {
+            return Some(band);
+        }
+        let shallower = kept.iter().map(|e| e.max_band).filter(|deepest| *deepest < band).max();
+        shallower.or_else(|| kept.iter().map(|e| e.min_band).filter(|shallowest| *shallowest > band).min())
+    }
+
+    /// Draws one row at `band` by weight, or `None` if nothing applies.
+    pub fn pick(&self, band: i32, rng: &mut impl Rng) -> Option<&BandedEntry<T>> {
+        self.pick_where(band, |_| true, rng)
     }
 
     /// Draws one row and a group size within its range.
@@ -145,6 +170,15 @@ mod tests {
             BandedEntry::new("rat").bands(1, 5).weight(3).group(2, 4),
             BandedEntry::new("wolf").bands(3, 10).weight(1),
             BandedEntry::new("bear").bands(8, 10).weight(2),
+        ])
+    }
+
+    fn rows() -> BandedTable<&'static str> {
+        BandedTable::new(vec![
+            BandedEntry::new("rat").bands(1, 10).weight(5),
+            BandedEntry::new("crab").bands(2, 7).weight(3),
+            BandedEntry::new("heavy").bands(3, 8).weight(2),
+            BandedEntry::new("ghost").bands(1, 10).weight(0),
         ])
     }
 
@@ -182,5 +216,36 @@ mod tests {
         assert!(t.entries()[0].applies(i32::MAX));
         assert_eq!(t.entries()[1].weight, 0);
         assert!(!t.covers(6) || t.entries()[0].applies(6));
+    }
+
+    #[test]
+    fn a_restricted_draw_never_returns_a_row_it_was_told_to_leave_out() {
+        let table = rows();
+        for s in 0..500 {
+            let mut rng = StdRng::seed_from_u64(s);
+            let e = table.pick_where(5, |n| *n != "rat", &mut rng).unwrap();
+            assert_ne!(e.item, "rat", "seed {s}");
+            assert_ne!(e.item, "ghost", "seed {s}: a row with no weight is never drawn");
+        }
+    }
+
+    #[test]
+    fn an_unrestricted_draw_is_the_plain_draw_over_a_span_of_seeds() {
+        let table = rows();
+        for s in 0..500 {
+            let (mut a, mut b) = (StdRng::seed_from_u64(s), StdRng::seed_from_u64(s));
+            assert_eq!(table.pick(4, &mut a).map(|e| e.item), table.pick_where(4, |_| true, &mut b).map(|e| e.item), "seed {s}");
+        }
+    }
+
+    #[test]
+    fn a_restricted_band_is_exact_where_a_kept_row_applies_and_falls_back_shallower_first() {
+        let table = rows();
+        let heavy_or_crab = |n: &&str| *n == "heavy" || *n == "crab";
+        assert_eq!(table.band_where(5, heavy_or_crab), Some(5), "both apply at five");
+        assert_eq!(table.band_where(12, heavy_or_crab), Some(8), "past the deepest, the deepest");
+        assert_eq!(table.band_where(1, heavy_or_crab), Some(2), "shallower than all, the shallowest");
+        assert_eq!(table.band_where(5, |n| *n == "ghost"), None, "a row with no weight covers nothing");
+        assert_eq!(table.band_where(5, |n| *n == "nobody"), None);
     }
 }
