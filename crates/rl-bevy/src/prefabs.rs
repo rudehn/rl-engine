@@ -268,8 +268,8 @@ fn check_prefabs<A: ActorMaker, I: ItemMaker>(prefabs: Res<Prefabs<A::Def>>, act
 /// [`ActorMaker`] `A` and the items through its [`ItemMaker`] `I`.
 ///
 /// Opt-in, and for one pair of makers. Needs [`Prefabs`] over `A`'s
-/// monsters, both makers and [`Registries`], each asked for with a hint,
-/// and the run's seed, from which each slot's stream derives. Does not
+/// monsters, both makers, [`Registries`] and the run's [`Seed`], from
+/// which each slot's stream derives, each asked for with a hint. Does not
 /// need [`LootPlugin`](crate::loot::LootPlugin): a game may lay items at
 /// slots and nowhere else.
 pub struct PrefabPlugin<A, I>(PhantomData<(A, I)>);
@@ -287,6 +287,7 @@ impl<A: ActorMaker, I: ItemMaker> Plugin for PrefabPlugin<A, I> {
             .needs::<A>("PrefabPlugin", "the resource holding the game's monsters, implementing `ActorMaker`, inserted before play begins")
             .needs::<I>("PrefabPlugin", "the resource holding the game's items, implementing `ItemMaker`, inserted before play begins")
             .needs::<Registries>("PrefabPlugin", "`Registries`, whose props a prefab's slots name")
+            .needs::<Seed>("PrefabPlugin", "`Seed(RunSeed(n))`, which each slot's stream derives from")
             .add_message::<PlaceEntered>()
             .configure_sets(Turn, PrefabSet::Fill.in_set(TurnSet::React).before(crate::loot::LootSet::Scatter))
             .add_systems(Turn, fill_prefabs::<A, I>.in_set(PrefabSet::Fill))
@@ -657,6 +658,17 @@ mod tests {
         assert!(at(&mut app, deck, MARK).is_empty(), "the mark is the game's");
         assert!(at(&mut app, deck, loose).is_empty(), "the unkeyed spot is the game's");
         assert_eq!(at(&mut app, deck, LOCKER), vec!["prop locker"], "while the keyed `A` is filled");
+    }
+
+    /// Every slot's stream derives from the run's seed, so a game that
+    /// forgot one is told so by name as play begins, beside everything
+    /// else it forgot.
+    #[test]
+    fn prefab_slots_without_a_seed_say_so_when_play_begins() {
+        let mut app = app(&[GUARDED], crate::testing::TEST_SEED);
+        app.world_mut().remove_resource::<Seed>();
+        let missing = app.world().resource::<crate::plugin::Requirements>().missing(app.world());
+        assert!(missing.iter().any(|m| m.starts_with("PrefabPlugin needs") && m.contains("Seed(RunSeed(n))")), "{missing:#?}");
     }
 
     /// Installs a place and begins play, where the plugin's check runs.

@@ -13,7 +13,7 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/remains.rs
             crates/rl-save/src/run.rs
-     fingerprint: 6a05be71 -->
+     fingerprint: 05ed8e27 -->
 
 # Prefabs
 
@@ -24,7 +24,7 @@ A monster slot may name a role rather than a monster, so a guarded room keeps it
 ## Turning it on
 
 `PrefabPlugin::<A, I>` is opt-in, and generic over `A`, the resource holding the game's monsters, which implements `ActorMaker`, and `I`, the one holding its items, which implements `ItemMaker`.
-It declares `needs::<Prefabs<A::Def>>`, both makers and `Registries`, each with a hint on how to provide it, and `depends_on::<CorePlugin>`; it does not need `LootPlugin`, so a game may lay items at slots and nowhere else.
+It declares `needs::<Prefabs<A::Def>>`, both makers, `Registries` and `Seed`, from which each slot's stream derives, each with a hint on how to provide it, and `depends_on::<CorePlugin>`; it does not need `LootPlugin`, so a game may lay items at slots and nowhere else.
 Slots are filled in `PrefabSet::Fill`, inside `TurnSet::React` and before `LootSet::Scatter`, so no loot lands under a prefab's prop; a game that populates a place in the same pass orders that after `PrefabSet::Fill`, so its own spawns can keep off the slots.
 As play begins it refuses, all at once and by name, a slot holding an item the game has no definition for, one asking for a tag nothing in the loot table carries, and one asking for a role none of whose members has a weighted row in the spawn table.
 Only a keyed piece has slots: the game's chain stamps what `Prefabs::piece` hands it, and a piece still parsed from a closure stamps exactly as before, every mark the game's.
