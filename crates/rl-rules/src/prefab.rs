@@ -737,6 +737,25 @@ mod tests {
         assert_eq!(report.empties(), vec![("guarded locker", 'b', 1), ("guarded locker", 'b', 2), ("guarded locker", 'b', 3)]);
     }
 
+    /// Two prefabs are two blocks, each under its own header, with one
+    /// blank line between them and none anywhere else.
+    #[test]
+    fn a_rendered_report_of_two_prefabs_puts_one_blank_line_between_them() {
+        let w = world();
+        let guarded = read(&w, GUARDED).unwrap();
+        let rack = read(&w, r#"(name: "rack", ground: "floor", rows: ["w"], legend: { 'w': Item(tag: "weapon") })"#).unwrap();
+        let (monsters, items) = (heavy_on(&w, 3, 8), weapons(&w, 1, 10));
+        let sources = Sources { roles: &w.roles, monsters: &monsters, items: &items, tags: &w.tags };
+        let text = coverage([&guarded, &rack], &sources, 1..=3).render();
+        let lines: Vec<&str> = text.lines().collect();
+        let rack_at = lines.iter().position(|l| l.starts_with("rack")).unwrap_or_else(|| panic!("no rack header: {text}"));
+        assert!(lines[0].starts_with("guarded locker"), "{text}");
+        assert_eq!(lines[rack_at - 1], "", "one blank line before the second header: {text}");
+        assert_eq!(lines.iter().filter(|l| l.is_empty()).count(), 1, "and no other: {text}");
+        assert!(lines[rack_at + 1].trim_start().starts_with("w weapon"), "{text}");
+        assert_eq!(lines.len(), rack_at + 2, "the rack's one row ends the report: {text}");
+    }
+
     #[test]
     fn a_rendered_report_has_a_column_per_band_and_a_row_per_drawn_slot() {
         let w = world();

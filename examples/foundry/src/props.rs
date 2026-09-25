@@ -6,10 +6,10 @@
 //! loose crates and the cable, and [`wreck_the_dead`] makes a droid's
 //! remains a kind of prop so it can be gone through. The lockers and the
 //! stores' crates are not here at all: the pieces in `assets/prefabs/`
-//! name them, and the engine stands them at their slots. Nothing here knows what opening a crate
-//! does or what goes in one, because the engine does: `props.ron` asks
-//! for kinds of thing by tag, and the engine's loot draws them at the
-//! deck's band through the armory.
+//! name them, and the engine stands them at their slots. Nothing here
+//! knows what opening a crate does or what goes in one, because the
+//! engine does: `props.ron` asks for kinds of thing by tag, and the
+//! engine's loot draws them at the deck's band through the armory.
 //!
 //! The one prop Foundry answers itself is the reactor console, in
 //! `mission`, because reporting a fact the quest tracker counts is the
@@ -313,6 +313,40 @@ mod tests {
                 assert!(lost.is_empty(), "seed {seed}, deck {deck}: props cut off {} cells, first {:?}", lost.len(), lost.first());
             }
         }
+    }
+
+    /// Every prop slot on every deck, an armory's `A`, a store's two `L`s
+    /// and a guard post's locker, holds the prop its piece names, over a
+    /// span of seeds. A slot skips its prop only on the arrival cell, on a
+    /// cell walled over or on one already filled, and none of those is
+    /// ever meant to happen on a deck: a locker missing from an armory is
+    /// a deck with nothing to find in it.
+    #[test]
+    fn every_prop_slot_on_every_deck_holds_its_prop_over_a_span_of_seeds() {
+        use rl_engine::rl_rules::prefab::Slot;
+        let mut checked = 0;
+        for seed in 1..=6u64 {
+            let mut app = crate::testing::headless(RunSeed(seed));
+            for deck in 1..=crate::decks::DECKS {
+                crate::testing::arrive_on(&mut app, deck);
+                let here = crate::decks::map_of(deck);
+                let standing: Vec<(Point, PropId)> = {
+                    let world = app.world_mut();
+                    let mut q = world.query::<(&PropKind, &Position, Option<&OnMap>)>();
+                    q.iter(world).filter(|(.., on)| on.map_or(MapId::SURFACE, |m| m.0) == here).map(|(kind, at, _)| (at.0, kind.0)).collect()
+                };
+                let prefabs = app.world().resource::<Prefabs<crate::droids::MonsterDef>>();
+                let place = app.world().resource::<WorldMap>().place(here).expect("the deck is built");
+                for spot in &place.spots {
+                    let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| prefabs.slot(key, c));
+                    let Some(Slot::Prop(kind)) = slot else { continue };
+                    let glyph = char::from_u32(spot.tag).unwrap_or('?');
+                    assert!(standing.contains(&(spot.at, *kind)), "seed {seed}, deck {deck}: '{glyph}' at {:?} holds no prop of its kind", spot.at);
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked >= 6 * 10 * 3, "every deck's armory and two store crates were checked, not {checked}");
     }
 
     /// A live cable is electricity, and plate is no insulation: a commando
