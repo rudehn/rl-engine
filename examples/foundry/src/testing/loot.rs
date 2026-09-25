@@ -4,7 +4,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::{Grid2D, Point, RunSeed};
+use rl_engine::rl_core::{Point, RunSeed};
 use rl_engine::rl_rules::Hit;
 
 /// Warps the player onto `deck`'s entry and lets the arrival, and
@@ -32,26 +32,16 @@ pub fn arrive_on(app: &mut App, deck: u32) {
     }
 }
 
-/// How many items sit on every armory mark, and beside every store mark,
-/// on the current deck: armories first, then stores, each in mark order.
+/// How many items lie beside every armory mark and every store mark on
+/// the current deck: armories first, then stores, each in mark order.
 ///
-/// A real store's own two `L`s can sit close enough
-/// (`decks::Foundry::stores`) that a tile beside one also falls within a
-/// step of the other, so guessing an item's mark from where it landed can
-/// credit the wrong one. Recomputes `scatter_on_arrival`'s own plan
-/// instead, from the same seed, the same `foundry.scatter` stream and the
-/// same terrain it already used, and reads each item's origin off that:
-/// `Seed::stream` is a pure function of the seed, the domain and the
-/// index, so calling it again here reproduces the exact draws
-/// `scatter_on_arrival` made, without needing a plan the game keeps
-/// around. Each count is then checked against what is actually on the
-/// ground, so a bug in `scatter_on_arrival` itself (spawning something
-/// other than what it planned) still shows up as a mismatch here.
-pub fn items_at_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
+/// A lower bound on each mark's own and no more: a real store's two `L`s
+/// can sit close enough (`decks::Foundry::stores`) that a tile beside one
+/// is also beside the other, so an item may be counted at both. Which mark
+/// each item was laid for is the engine's plan's to say, and
+/// `loot::tests` checks it there against every real deck.
+pub fn items_beside_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
     let map = app.world().resource::<WorldMap>().current();
-    let deck = crate::decks::deck_of(map);
-    let seed = *app.world().resource::<Seed>();
-    let armory = crate::testing::armory_of(app);
     let positions: Vec<Point> = {
         let world = app.world_mut();
         // `OnMap` too, not just `Item`: an earlier deck's own scatter is
@@ -59,26 +49,17 @@ pub fn items_at_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
         let mut q = world.query_filtered::<(&Position, &OnMap), With<Item>>();
         q.iter(world).filter(|(_, on)| on.0 == map).map(|(p, _)| p.0).collect()
     };
-    // Where the props stand, since the real scatter lands beside the marks
-    // and never under a crate: a plan made without them would not be the
-    // plan the deck was built from.
-    let standing: Vec<Point> = {
-        let world = app.world_mut();
-        let mut q = world.query_filtered::<(&Position, Option<&OnMap>), With<rl_engine::rl_bevy::Prop>>();
-        q.iter(world).filter(|(_, on)| on.map(|m| m.0).unwrap_or(map) == map).map(|(p, _)| p.0).collect()
-    };
     let wm = app.world().resource::<WorldMap>();
     let place = wm.place(map).expect("the current deck is built");
-    let armories: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'A' as u32).map(|s| s.at).collect();
-    let stores: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'L' as u32).map(|s| s.at).collect();
-    let layout = crate::loot::Layout { bounds: place.terrain.bounds(), armories: &armories, stores: &stores };
-    let mut rng = seed.stream(b"foundry.scatter", deck as u64);
-    let mut free = |p: Point| wm.is_walkable(p) && !standing.contains(&p);
-    let plan = crate::loot::plan_scatter(&armory.table, deck as i32, &layout, crate::loot::extra_loose_items(deck), &mut free, &mut rng);
-    let count_origin = |o: crate::loot::Origin| plan.iter().filter(|(_, p, at)| *at == o && positions.contains(p)).count();
-    let armories = (0..armories.len()).map(|i| count_origin(crate::loot::Origin::Armory(i))).collect();
-    let stores = (0..stores.len()).map(|i| count_origin(crate::loot::Origin::Store(i))).collect();
-    (armories, stores)
+    let beside = |tag: char| -> Vec<usize> {
+        place
+            .spots
+            .iter()
+            .filter(|s| s.tag == tag as u32)
+            .map(|s| positions.iter().filter(|p| rl_engine::rl_core::geometry::chebyshev(**p, s.at) == 1).count())
+            .collect()
+    };
+    (beside('A'), beside('L'))
 }
 
 /// Runs the same fight twice from `seed`: once where the actor that dies
@@ -90,10 +71,10 @@ pub fn items_at_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
 /// kill itself is written as a bare `DeathEvent` rather than a real blow
 /// rolled through combat, since nothing about reaching zero health should
 /// ever touch `CombatRng` here: the only thing left that could shift the
-/// follow-up rolls is `drop_on_death` (`crate::loot::drop_on_death`)
-/// drawing from the wrong stream. The dying actor carries only `Kind` and
-/// `OnMap`, never `Actor`, so it can never be dealt a turn of its own to
-/// blur the comparison with a move or a swing neither run should have.
+/// follow-up rolls is the engine's loot drawing from the wrong stream. The
+/// dying actor carries only its `Kind`, what its kind drops and `OnMap`,
+/// never `Actor`, so it can never be dealt a turn of its own to blur the
+/// comparison with a move or a swing neither run should have.
 ///
 /// [`kill_with_a_guaranteed_drop`] is the other half of this file's kill
 /// tests: a real kill, through the engine's own damage and death path,
@@ -107,8 +88,10 @@ pub fn combat_rolls_across_a_kill(seed: RunSeed) -> (Vec<i32>, Vec<i32>) {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         let pos = app.world().get::<Position>(player).copied().expect("the player stands somewhere");
         let map = app.world().resource::<WorldMap>().current();
-        let id = app.world().resource::<crate::droids::Roster>().defs.expect(kind);
-        let victim = app.world_mut().spawn((crate::droids::Kind(id), OnMap(map))).id();
+        let roster = app.world().resource::<crate::droids::Roster>();
+        let id = roster.defs.expect(kind);
+        let drops = roster.drops(id);
+        let victim = app.world_mut().spawn((crate::droids::Kind(id), drops, OnMap(map))).id();
         app.world_mut().write_message(DeathEvent { entity: victim, at: pos.0, credit: None, was_player: false });
         app.update();
         fire_at_an_adjacent_unkillable_target(&mut app, player, 20)

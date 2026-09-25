@@ -7,7 +7,7 @@
 //! does for its own, larger vocabulary; Foundry's objective vocabulary is
 //! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants the
 //! reactor console on the `R` mark of any deck that reports one, beside the
-//! loot `loot::scatter_on_arrival` plants on the same arrival
+//! loot the engine scatters on the same arrival
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -136,8 +136,8 @@ pub const CHARGE_QUESTS: [&str; 4] = ["first_charge", "second_charge", "third_ch
 pub const CORE_QUEST: &str = "core_charge";
 
 /// Puts a reactor console on the `R` mark of any deck that reports one,
-/// the moment it is first entered, beside the loot
-/// `loot::scatter_on_arrival` plants on the same arrival: reads the same
+/// the moment it is first entered, beside the loot the engine scatters on
+/// the same arrival: reads the same
 /// [`PlaceEntered`] the way that system and `droids::populate_deck` do,
 /// and is unordered against both, since none of the three ever shares a
 /// tile-claiming concern with either of the others.

@@ -185,6 +185,22 @@ pub struct SavedProp {
     pub hidden: Option<u8>,
 }
 
+/// Which regions of the streamed surface have had their loot put down is
+/// the engine's, so its saving is too: a game with a streamed surface and a
+/// [`LootPlugin`](rl_bevy::LootPlugin) adds `save_state::<Scattered>()`,
+/// and a region scattered before the save is not scattered again after it.
+impl SaveableState for rl_bevy::Scattered {
+    type Saved = Vec<Point>;
+
+    fn capture(&self) -> Vec<Point> {
+        self.0.iter().copied().collect()
+    }
+
+    fn restore(&mut self, saved: Vec<Point>) {
+        self.0 = saved.into_iter().collect();
+    }
+}
+
 /// The fact ledger is the engine's, so its saving is too: a game with a
 /// [`Counters`] adds `save_state::<Counters>()` and nothing more.
 impl SaveableState for Counters {
@@ -859,7 +875,7 @@ mod tests {
         const PROPS: &str = r#"#![enable(implicit_some)]
             [
                 (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true,
-                 container: (contents: [("coin", 1, 1)]), offers: [(verb: "open", time: 200)]),
+                 container: (contents: [(item: "coin", count: 1)]), offers: [(verb: "open", time: 200)]),
                 (name: "pressure plate", glyph: '^', color: (r: 230, g: 140, b: 51),
                  hidden: (spot: 40), triggers: [(on: "entered", fires: 2, effects: [(kind: "Teleport")])]),
             ]"#;

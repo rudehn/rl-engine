@@ -11,7 +11,7 @@
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 8524c7f1 -->
+     fingerprint: 9e034f7b -->
 
 # Saving and the ending screen
 
@@ -38,7 +38,7 @@ Neither says anything about position, health, bags, slots, stacks, statuses, rem
 Remains are saved as whatever they were, and a prop kind a game laid on a body afterwards is part of what `EntityState` records of the remains, which is why `PropKind` answers false to `Saveable::TAKES_REMAINS`; a capture that finds one entity claimed by two kinds is refused with both named, since restoring it would spawn the thing twice.
 `SaveableState` is the same bargain for a resource a game keeps of a run, with `capture` and `restore` on the resource itself, which must already exist when the save is restored.
 `AddSaveable::save_kind::<K>` and `save_state::<R>` register both into `SaveRegistry`, filing each under the last segment of its type name and panicking at build time when two would share one.
-`PropKind`, `Quests` and `Counters` are the three the engine implements for itself, since it read those definitions out of a file or built them from facts it owns; `SavePlugin` registers the first, and a game with a quest tracker or a fact ledger adds `save_state::<Quests>()` or `save_state::<Counters>()`.
+`PropKind`, `Quests`, `Counters` and `Scattered` are the four the engine implements for itself, since it read those definitions out of a file or built them from facts and loot it owns; `SavePlugin` registers the first, and a game with a quest tracker, a fact ledger or a streamed surface its loot plugin stocks adds `save_state::<Quests>()`, `save_state::<Counters>()` or `save_state::<Scattered>()`.
 `RunSave` is the result: a `format`, the `EngineSave`, a `KindSave` per kind holding each entry's own RON, the `EntityState` of each, and the game's resources by name.
 `RunSave::capture` walks the kinds in registration order and each kind's living entities still in play in spawn order, leaving out the dead and the spent the frame keeps only so the log can name them, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources and whose `Seed` the game has already inserted.
 `RunSave::state::<R>` reads one resource out of a save before anything is restored, for the part of a start that runs before the world exists, and `count_of` and `turn` are for a line in the log.
@@ -99,7 +99,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Captain>()
         .save_kind::<Stairway>()
         .save_state::<StartOptions>()
-        .save_state::<Armory>()
+        .save_state::<Scattered>()
         .save_state::<Bestiary>()
         .save_state::<Entrances>()
         .save_state::<Quests>();

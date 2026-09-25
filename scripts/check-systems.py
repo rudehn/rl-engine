@@ -88,7 +88,9 @@ def pages() -> list[pathlib.Path]:
     return sorted(p for p in SYSTEMS.glob("*.md") if not p.name.startswith("_"))
 
 
-PLUGIN = re.compile(r"impl Plugin for ([A-Za-z0-9_]+)")
+# A generic plugin, `impl<M: ItemMaker> Plugin for LootPlugin<M>`, is a
+# plugin too, and would otherwise go unclaimed without anything noticing.
+PLUGIN = re.compile(r"impl(?:<[^>]*>)? Plugin for ([A-Za-z0-9_]+)")
 
 
 def plugins_in_code() -> set[str]:

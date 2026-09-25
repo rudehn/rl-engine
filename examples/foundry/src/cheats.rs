@@ -219,7 +219,7 @@ impl Acts<'_, '_> {
     /// there is one, the way a pickup merges it.
     fn give(&mut self, id: Id<ItemDef>) {
         let armory = self.content.armory();
-        let item = spawn_item(&mut self.commands, &armory, id, self.content.registries());
+        let item = spawn_item(&mut self.commands, armory, id, self.content.registries());
         let Ok((me, _, mut bag)) = self.player.single_mut() else { return };
         let stacking = armory.defs.get(id).stack;
         let key = id.index() as u64;

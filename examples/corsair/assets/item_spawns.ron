@@ -1,0 +1,26 @@
+// What washes up on Corsair's sea, by distance from the home port: a
+// region's band is how many regions it lies from the port the run starts
+// in. What each thing is and does is `items.ron`; this is only where and
+// how often, read by the engine's loot as each region first streams in.
+//
+// Every field (the ones marked "optional" may be left out):
+//   item:   a name from `items.ron`
+//   bands:  (nearest, farthest), the distances the row applies at, both included
+//   weight: how often it is drawn against every other row that applies at a
+//           band; only the ratio matters
+//   group:  optional; (fewest, most) found together, one when left out
+//
+// The engine sorts the rows by item name before it draws, so the order
+// they are written in here changes nothing.
+[
+    (item: "cutlass", bands: (0, 40), weight: 2),
+    (item: "boarding axe", bands: (4, 40), weight: 1),
+    (item: "pistol", bands: (3, 40), weight: 2),
+    (item: "buckler", bands: (2, 40), weight: 2),
+    (item: "leather jerkin", bands: (0, 40), weight: 2),
+    (item: "tricorne", bands: (6, 40), weight: 1),
+    (item: "bottle of rum", bands: (0, 40), weight: 4, group: (1, 12)),
+    (item: "doubloon", bands: (0, 40), weight: 4, group: (1, 12)),
+    (item: "throwing knife", bands: (1, 40), weight: 2, group: (1, 12)),
+    (item: "charge of powder", bands: (0, 40), weight: 3, group: (1, 12)),
+]

@@ -18,6 +18,7 @@ use rl_engine::rl_rules::damage::{DamageKind, SubtractArmor};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{AbilityDef, Equipment, NameRef, Names, StatusDef, Wits};
 use rl_engine::rl_rules::{BandedEntry, BandedTable, Named, Registry};
+use rl_engine::rl_rules::{DropRow, DropTable};
 use serde::Deserialize;
 
 use crate::content::PORT;
@@ -93,6 +94,9 @@ pub struct Bestiary {
     seed: RunSeed,
     home: Point,
     spawned: BTreeSet<Point>,
+    /// What each kind leaves when it dies, indexed as `defs` is: filled in
+    /// by [`leaves`](Self::leaves) once the armory says which things stack.
+    drops: Vec<DropTable<rl_engine::rl_core::Id<crate::items::ItemDef>>>,
 }
 
 impl Bestiary {
@@ -128,7 +132,28 @@ impl Bestiary {
             let brain = brain.then(ThrowAtRange { chance_pct: 70 }).then(Scavenge { reach: 4 });
             brains.push(Arc::new(brain.then(Hunt).then(SearchLastKnown).then(Wander { chance_pct: m.wander })));
         }
-        Self { defs, table, brains, slots, seed, home, spawned: BTreeSet::new() }
+        Self { defs, table, brains, slots, seed, home, spawned: BTreeSet::new(), drops: Vec::new() }
+    }
+
+    /// Builds what each kind leaves from its `drops`, for the engine's
+    /// loot to roll: a thing that stacks is left as a handful of one to
+    /// twelve, anything else alone.
+    pub fn leaves(&mut self, armory: &crate::items::Armory) {
+        self.drops = self
+            .defs
+            .iter()
+            .map(|(_, m)| {
+                DropTable(
+                    m.drops
+                        .iter()
+                        .map(|(item, pct)| {
+                            let most = if armory.defs.get(item.id()).stack { 12 } else { 1 };
+                            DropRow::new(item.id(), *pct).count(1, most)
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
     }
 }
 
@@ -179,6 +204,8 @@ impl Bestiary {
                 // much of it a crab can use.
                 Intelligence(m.wits),
                 MonsterKind(id),
+                // What it leaves when it dies, which the engine rolls.
+                Drops(self.drops.get(id.index()).cloned().unwrap_or_default()),
                 // What the panels call it. The engine has no bestiary.
                 Name::new(m.name.clone()),
                 Glyph::new(m.glyph, Color::srgb(m.color.0, m.color.1, m.color.2)).on_layer(5),

@@ -6,6 +6,7 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/ef
 ## 0. Summary
 
 The engine owns no item definition and never will: what an item *is* belongs to a game's own registry, and the engine reads components off whatever the game spawned.
+Where and when items turn up is the engine's, through a trait a game implements on that registry; `docs/design/loot.md` has why.
 This page is about the other half, which the engine does own: what a thing *does*, and which carrier of an effect list it should use.
 
 Three carriers exist, and the reason there are three rather than one is that they differ in who chooses them and when, not in what they can do:

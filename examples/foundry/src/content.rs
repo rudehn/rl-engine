@@ -174,7 +174,7 @@ pub fn registries() -> Registries {
         statuses,
         gases,
         factions: Registry::from_defs(vec![FactionDef::new("commando"), FactionDef::new("droids"), FactionDef::new("vermin")]).unwrap(),
-        tags: Registry::from_defs(vec![TagDef::new("weapon"), TagDef::new("armor"), TagDef::new("slug"), TagDef::new("keycard")]).unwrap(),
+        tags: Registry::from_defs(vec![TagDef::new("weapon"), TagDef::new("armor"), TagDef::new("slug"), TagDef::new("med"), TagDef::new("keycard")]).unwrap(),
         slots: Registry::from_defs(vec![
             SlotDef::new("main hand"),
             SlotDef::new("off hand"),

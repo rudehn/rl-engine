@@ -40,7 +40,9 @@ use crate::places::Entrances;
 // v4: the engine saves what a thing has left of its charges and its
 //     triggers' firings, and a prop its firings per trigger, in place of
 //     the charges an item that lent an ability counted.
-pub const VERSION: u32 = 4;
+// v5: the regions already scattered are the engine's `Scattered`, in place
+//     of the armory's own record of them.
+pub const VERSION: u32 = 5;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "corsair";
@@ -57,7 +59,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Captain>()
         .save_kind::<Stairway>()
         .save_state::<StartOptions>()
-        .save_state::<Armory>()
+        .save_state::<Scattered>()
         .save_state::<Bestiary>()
         .save_state::<Entrances>()
         .save_state::<Quests>();
@@ -188,18 +190,6 @@ impl SaveableState for Entrances {
 
     fn restore(&mut self, saved: Vec<Point>) {
         self.0 = saved.into_iter().collect();
-    }
-}
-
-impl SaveableState for Armory {
-    type Saved = Vec<Point>;
-
-    fn capture(&self) -> Vec<Point> {
-        self.spawned().copied().collect()
-    }
-
-    fn restore(&mut self, saved: Vec<Point>) {
-        self.restore_spawned(saved);
     }
 }
 

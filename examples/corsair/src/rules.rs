@@ -65,8 +65,9 @@ pub fn load(seed: RunSeed, home: Point, effects: &EffectKinds) -> Loaded {
     let abilities = crate::abilities::load(&registries.names(), effects);
     // The engine's moments are all an item here answers; Corsair declares
     // none of its own.
-    let armory = Armory::load(seed, home, &registries, effects, &Moments::default());
-    let bestiary = Bestiary::load(seed, home, &registries.names().with("item", &armory.defs).with("ability", abilities.defs()), registries.slots.len());
+    let armory = Armory::load(home, &registries, effects, &Moments::default());
+    let mut bestiary = Bestiary::load(seed, home, &registries.names().with("item", &armory.defs).with("ability", abilities.defs()), registries.slots.len());
+    bestiary.leaves(&armory);
     let (quests, facts) = crate::quests::load(&bestiary, &armory, &registries);
     let combat = relations(&registries);
     Loaded { registries, combat, armory, abilities, bestiary, quests, facts }

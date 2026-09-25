@@ -9,7 +9,8 @@
 //   slot:      optional; where it is worn: "main hand" | "off hand" | "head" | "torso" | "arms" | "legs"
 //   either:    optional; true for a one-handed weapon that fits either hand, so two can be dual wielded
 //   also:      optional; slots it also claims when worn, for two-handers
-//   tags:      optional; "weapon" | "armor" | "slug" | "keycard"
+//   tags:      optional; "weapon" | "armor" | "slug" | "med" | "keycard"; what a container's
+//              row asks for by tag, as well as what a weapon's ammo and a lock name
 //   effects:   optional; [(kind:, chance:, args:)] what the thing holds, written as an
 //              ability's effects are in abilities.ron: landed by any trigger with no list of
 //              its own, so a thing says what it holds once and each trigger delivers it
@@ -61,9 +62,9 @@
     // as much and pays it two a turn over ten, which is ten turns of a deck
     // to live through first. Both are spent by being used: one charge each,
     // so one off the stack, and the last one takes the item with it.
-    (name: "stim", glyph: '!', color: (0.55, 0.9, 0.63), stack: true, consumable: (charges: 1, when_empty: Destroyed),
+    (name: "stim", glyph: '!', color: (0.55, 0.9, 0.63), tags: ["med"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "2d4+5"))])]),
-    (name: "medkit", glyph: '!', color: (0.78, 0.94, 0.82), stack: true, consumable: (charges: 1, when_empty: Destroyed),
+    (name: "medkit", glyph: '!', color: (0.78, 0.94, 0.82), tags: ["med"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "mending", turns: 10))])]),
     // ANCHOR: grenades
     // The grenades: thrown, and what each does is its land trigger, a

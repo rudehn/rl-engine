@@ -17,7 +17,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddSound, AddVerb, ConsumablesPlugin, PropSet, PropsPlugin, RemainsPlugin};
+use rl_engine::rl_bevy::{AddSound, AddVerb, ConsumablesPlugin, LootPlugin, LootSet, PropsPlugin, RemainsPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
 
 /// The narrator as Foundry words it, for `main.rs` and
@@ -53,6 +53,10 @@ impl Plugin for FoundryPlugin {
         // Foundry says where one stands, what goes in a container, and that
         // a wreck is worth opening.
         app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
+        // Loot is the engine's: what lies on a deck when it is first
+        // entered, what a kill leaves and what a crate holds, each made by
+        // the armory, which is loaded once before any run begins.
+        app.add_plugins(LootPlugin::<crate::gear::Armory>::default()).add_systems(PreStartup, crate::gear::load_armory);
         // What a stim and a medkit do when they are used. Its own plugin,
         // because a use is not an ability: nothing here is aimed, nothing
         // waits on a cooldown, and nothing shows on the abilities screen.
@@ -64,10 +68,6 @@ impl Plugin for FoundryPlugin {
 
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
         app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));
-        // In the engine's own filling stage, so what goes into a crate
-        // lands in the frame the crate was put down: the engine asks in
-        // `PropSet::Stock` and a game answers in `PropSet::Fill`.
-        app.add_systems(Update, crate::props::fill_containers.in_set(PropSet::Fill));
         // The alarm is a sound of Foundry's own, declared once so
         // `sound_alarm` finds it by name.
         app.add_sound(crate::droids::ALARM_SOUND);
@@ -116,9 +116,9 @@ impl Plugin for FoundryPlugin {
         // The run's depth memory, one at the start, only ever raised.
         app.init_resource::<crate::climb::Deepest>();
         // A deck fills the moment it is first entered, the way delve's own
-        // floors do: its droids, then its props, then its loot, each from
-        // its own stream and each reading the same `PlaceEntered` through
-        // its own cursor.
+        // floors do: its droids, then its props, then the engine's loot in
+        // `LootSet::Scatter`, each from its own stream and each reading the
+        // same `PlaceEntered` through its own cursor.
         //
         // `remember_depth` goes first, ahead of anything that spawns: it
         // writes no entity of its own, but `populate_deck` will read
@@ -127,7 +127,9 @@ impl Plugin for FoundryPlugin {
         // this same arrival's `Deepest` is current.
         //
         // Props before loot, because loot lands where nothing stands: an
-        // item under a crate is an item nothing can pick up.
+        // item under a crate is an item nothing can pick up. The loot is
+        // the engine's, so the chain is ordered before its set rather than
+        // ending in it.
         //
         // Chained, though no two of them share a tile-claiming concern:
         // three systems that all spawn, left unordered, queue their
@@ -138,23 +140,11 @@ impl Plugin for FoundryPlugin {
         // no tripwire. This is the order the deck is built in.
         app.add_systems(
             Turn,
-            (
-                crate::climb::remember_depth,
-                crate::droids::populate_deck,
-                crate::props::place_on_arrival,
-                crate::mission::spawn_console_on_arrival,
-                crate::loot::scatter_on_arrival,
-            )
+            (crate::climb::remember_depth, crate::droids::populate_deck, crate::props::place_on_arrival, crate::mission::spawn_console_on_arrival)
                 .chain()
-                .in_set(TurnSet::React),
+                .in_set(TurnSet::React)
+                .before(LootSet::Scatter),
         );
-        // Whatever a kill's kind carries falls where it died, from
-        // `Drops` rather than the combat stream a kill's own dice came
-        // from. Needs no ordering against `process_deaths`
-        // (crates/rl-bevy/src/combat.rs): that runs in `TurnSet::Cleanup`,
-        // which the engine's own schedule always runs after every
-        // `TurnSet::React` system, this one included.
-        app.add_systems(Turn, crate::loot::drop_on_death.in_set(TurnSet::React));
         // A probe's alarm: its line reacts to the same `Noticed` the
         // engine's own stealth writes, before heat's pair for the order of
         // the log, as above; its shout answers each action it finishes,

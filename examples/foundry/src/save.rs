@@ -43,7 +43,6 @@ pub const SLOT: &str = "foundry";
 /// four resources.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin))
-        .add_systems(PreStartup, load_armory)
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Commando>()
@@ -73,18 +72,6 @@ fn spawned(world: &mut World, spawn: impl FnOnce(&mut Commands, &World) -> Entit
     };
     queue.apply(world);
     e
-}
-
-/// The armory, loaded once for the save: capturing an item names its
-/// definition every turn the stash is refreshed, and reading `items.ron`
-/// for each item each time would be the whole cost of a turn.
-#[derive(Resource)]
-pub struct SavedArmory(pub crate::gear::Armory);
-
-/// Loads [`SavedArmory`], in `PreStartup`, before any run begins or is
-/// continued, against the effects and moments the app registered.
-pub fn load_armory(mut commands: Commands, content: crate::gear::Content) {
-    commands.insert_resource(SavedArmory(content.armory()));
 }
 
 /// The commando, as the save writes it: whether its lamp was lit. The
@@ -168,17 +155,17 @@ impl Saveable for ItemKind {
 
     fn capture(world: &World, entity: Entity) -> ItemSave {
         let kind = world.get::<ItemKind>(entity).expect("an item's kind");
-        let armory = &world.resource::<SavedArmory>().0;
+        let armory = world.resource::<crate::gear::Armory>();
         ItemSave { def: armory.defs.name(kind.0).to_string(), heat: world.get::<Heat>(entity).map(|h| (h.now, h.locked)) }
     }
 
     fn restore(world: &mut World, saved: &ItemSave) -> Entity {
-        let Some(id) = world.resource::<SavedArmory>().0.defs.id(&saved.def) else {
+        let Some(id) = world.resource::<crate::gear::Armory>().defs.id(&saved.def) else {
             warn!("a saved item is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
             return world.spawn_empty().id();
         };
         let e = spawned(world, |commands, world| {
-            let armory = &world.resource::<SavedArmory>().0;
+            let armory = world.resource::<crate::gear::Armory>();
             crate::gear::spawn_item(commands, armory, id, world.resource::<Registries>())
         });
         if let (Some((now, locked)), Some(mut heat)) = (saved.heat, world.get_mut::<Heat>(e)) {
