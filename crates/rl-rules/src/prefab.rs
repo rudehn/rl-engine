@@ -77,15 +77,18 @@
 //! ```
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
 
 use rl_core::Id;
 use rl_grid::{TileId, TileRegistry};
 use serde::Deserialize;
 
-use crate::content::{ContentError, Named};
+use crate::affix::TagDef;
+use crate::content::{BandedTable, ContentError, Named, Registry};
+use crate::loot::LootTable;
 use crate::names::Names;
-use crate::prop::{ContentRoll, CountRon, PropDef, PropId, read_stock};
-use crate::role::{RoleDef, RoleId};
+use crate::prop::{ContentRoll, CountRon, PropDef, PropId, Stock, read_stock};
+use crate::role::{self, RoleDef, RoleId};
 
 /// Which monster a slot holds: that one, or one drawn for a role.
 pub enum Pick<M> {
@@ -363,6 +366,169 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
     Ok(PrefabDef { name: a.name, ground, rows: a.rows, tiles: tile_map, slots })
 }
 
+/// The registries and tables a coverage report draws through: the same
+/// ones a game hands the engine at play, so a report answers no question
+/// a run would answer differently.
+pub struct Sources<'a, M, I> {
+    /// Every role a monster slot may name.
+    pub roles: &'a Registry<RoleDef<M>>,
+    /// The spawn table a role is drawn from.
+    pub monsters: &'a BandedTable<Id<M>>,
+    /// The loot table a tagged item slot is drawn from.
+    pub items: &'a LootTable<I>,
+    /// Every tag, so a tagged slot's tag has a name to print.
+    pub tags: &'a Registry<TagDef>,
+}
+
+/// Whether a slot's draw at a band lands on the band it asked for, falls
+/// back to the nearest band that has something, or finds nothing at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    /// The band asked for has something.
+    Exact,
+    /// Nothing at the band asked for; the nearest band that has something.
+    Fallback(i32),
+    /// No band, asked or fallen back to, has anything at all.
+    Empty,
+}
+
+/// One drawn slot's reach at every band a [`Coverage`] report covers.
+pub struct CoverageRow {
+    /// The prefab it is drawn in.
+    pub prefab: String,
+    /// The glyph it stamps.
+    pub glyph: char,
+    /// The role's or the tag's name, with the slot's own band offset
+    /// appended when it is not nought: `"brute +1"`.
+    pub what: String,
+    /// The band asked and what the draw there reaches, one pair for every
+    /// band the report covers.
+    pub reach: Vec<(i32, Reach)>,
+}
+
+/// A report of what every drawn slot in a set of prefabs finds at every
+/// band, item by tag and monster by role. Loading a prefab file only
+/// checks that a name resolves; whether the band it is stamped at ever has
+/// anything to draw is a question only a game's own spawn and loot tables
+/// answer, and no startup check can ask it before those tables exist. This
+/// runs the same fallback a real draw takes, against no map and no run.
+pub struct Coverage {
+    /// The bands it covers.
+    pub bands: RangeInclusive<i32>,
+    /// One row per drawn slot, in the order its prefab was given and then
+    /// glyph order.
+    pub rows: Vec<CoverageRow>,
+}
+
+impl Coverage {
+    /// Every band where a drawn slot finds nothing at all: `(prefab,
+    /// glyph, band)`, so a content author can see what to fix before a run
+    /// ever reaches it.
+    pub fn empties(&self) -> Vec<(&str, char, i32)> {
+        self.rows
+            .iter()
+            .flat_map(|r| r.reach.iter().filter(|(_, reach)| matches!(reach, Reach::Empty)).map(move |(band, _)| (r.prefab.as_str(), r.glyph, *band)))
+            .collect()
+    }
+
+    /// A table, one column per band and one row per drawn slot: `✓` where
+    /// the draw lands on the band asked, `~N` where it falls back to band
+    /// `N`, `✗` where it finds nothing.
+    pub fn render(&self) -> String {
+        let mut prefabs: Vec<&str> = Vec::new();
+        for row in &self.rows {
+            if !prefabs.contains(&row.prefab.as_str()) {
+                prefabs.push(&row.prefab);
+            }
+        }
+        let label_width = prefabs.iter().map(|p| p.chars().count()).chain(self.rows.iter().map(|r| 4 + r.what.chars().count())).max().unwrap_or(0) + 2;
+        let mut out = String::new();
+        for (i, &prefab) in prefabs.iter().enumerate() {
+            if i > 0 {
+                out.push('\n');
+            }
+            out.push_str(&format!("{prefab:<label_width$}"));
+            for band in self.bands.clone() {
+                out.push_str(&format!("{band:>4}"));
+            }
+            out.push('\n');
+            for row in self.rows.iter().filter(|r| r.prefab == prefab) {
+                let label = format!("  {} {}", row.glyph, row.what);
+                out.push_str(&format!("{label:<label_width$}"));
+                for (_, reach) in &row.reach {
+                    let cell = match reach {
+                        Reach::Exact => "✓".to_string(),
+                        Reach::Fallback(band) => format!("~{band}"),
+                        Reach::Empty => "✗".to_string(),
+                    };
+                    out.push_str(&format!("{cell:>4}"));
+                }
+                out.push('\n');
+            }
+        }
+        out
+    }
+}
+
+/// What `asked` reaches, from what `role::band_for` or `LootTable::band_for`
+/// answered: nothing when it is `None`, the band asked for when it answers
+/// with itself, else the band it fell back to.
+fn reach_of(asked: i32, reached: Option<i32>) -> Reach {
+    match reached {
+        None => Reach::Empty,
+        Some(band) if band == asked => Reach::Exact,
+        Some(band) => Reach::Fallback(band),
+    }
+}
+
+/// `name`, with a slot's own band offset appended when it is not nought:
+/// `"brute +1"`, `"weapon -2"`, plain `"weapon"` at nought.
+fn slot_name(name: &str, offset: i32) -> String {
+    if offset == 0 { name.to_string() } else { format!("{name} {offset:+}") }
+}
+
+/// Runs every drawn slot in `prefabs`, an item slot naming a tag and a
+/// monster slot naming a role, against `sources` at every band in `bands`:
+/// the same fallback a real draw takes, in the order the prefabs are given
+/// and then glyph order. A slot with a fixed item or a fixed monster draws
+/// nothing to report; only what a game's tables might not cover is worth
+/// checking.
+pub fn coverage<'p, M: 'p, I: Copy>(prefabs: impl IntoIterator<Item = &'p PrefabDef<M>>, sources: &Sources<'_, M, I>, bands: RangeInclusive<i32>) -> Coverage {
+    let mut rows = Vec::new();
+    for def in prefabs {
+        for (glyph, slot) in def.slots() {
+            let (what, slot_reach): (String, Vec<(i32, Reach)>) = match slot {
+                Slot::Item(ContentRoll { what: Stock::Tag(tag), band: offset, .. }) => {
+                    let what = slot_name(sources.tags.name(*tag), *offset);
+                    let slot_reach = bands
+                        .clone()
+                        .map(|b| {
+                            let asked = b + offset;
+                            (b, reach_of(asked, sources.items.band_for(*tag, asked)))
+                        })
+                        .collect();
+                    (what, slot_reach)
+                }
+                Slot::Monster { pick: Pick::Role(role), band: offset } => {
+                    let role_def = sources.roles.get(*role);
+                    let what = slot_name(&role_def.name, *offset);
+                    let slot_reach = bands
+                        .clone()
+                        .map(|b| {
+                            let asked = b + offset;
+                            (b, reach_of(asked, role::band_for(sources.monsters, role_def, asked)))
+                        })
+                        .collect();
+                    (what, slot_reach)
+                }
+                _ => continue,
+            };
+            rows.push(CoverageRow { prefab: def.name.clone(), glyph, what, reach: slot_reach });
+        }
+    }
+    Coverage { bands, rows }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,5 +682,55 @@ mod tests {
         let err =
             read(&w, r#"(name: "backwards range", ground: "floor", rows: ["i"], legend: { 'i': Item(item: "rope", count: (5, 2)) })"#).unwrap_err().to_string();
         assert!(err.contains("5 to 2, which is no range at all"), "{err}");
+    }
+
+    fn heavy_on(w: &World, lo: i32, hi: i32) -> BandedTable<Id<Beast>> {
+        BandedTable::new(vec![crate::content::BandedEntry::new(w.beasts.expect("heavy")).bands(lo, hi)])
+    }
+
+    fn weapons(w: &World, lo: i32, hi: i32) -> crate::loot::LootTable<u32> {
+        let weapon = w.tags.expect("weapon");
+        crate::loot::LootTable::new(vec![crate::loot::LootRow { item: 1u32, bands: (lo, hi), weight: 1, group: (1, 1), tags: vec![weapon] }], |n| n.to_string())
+    }
+
+    #[test]
+    fn coverage_reads_exact_where_a_slot_finds_its_band_and_fallback_where_it_does_not() {
+        let w = world();
+        let def = read(&w, GUARDED).unwrap();
+        let (monsters, items) = (heavy_on(&w, 3, 8), weapons(&w, 1, 10));
+        let sources = Sources { roles: &w.roles, monsters: &monsters, items: &items, tags: &w.tags };
+        let report = coverage([&def], &sources, 1..=10);
+        let brute = report.rows.iter().find(|r| r.glyph == 'b').unwrap();
+        assert_eq!(brute.what, "brute +1");
+        assert!(matches!(brute.reach[0], (1, Reach::Fallback(3))), "band 1 asks at 2, nothing until 3");
+        assert!(matches!(brute.reach[4], (5, Reach::Exact)));
+        assert!(matches!(brute.reach[9], (10, Reach::Fallback(8))), "band 10 asks at 11, the deepest is 8");
+        let weapon = report.rows.iter().find(|r| r.glyph == 'w').unwrap();
+        assert!(matches!(weapon.reach[9], (10, Reach::Fallback(10))));
+        assert!(report.rows.iter().all(|r| r.glyph != 'W' && r.glyph != 'L' && r.glyph != 'm'), "named, prop and mark slots draw nothing");
+        assert!(report.empties().is_empty());
+    }
+
+    #[test]
+    fn coverage_names_every_slot_that_can_draw_nothing_at_all() {
+        let w = world();
+        let def = read(&w, GUARDED).unwrap();
+        let (monsters, items) = (BandedTable::new(Vec::new()), weapons(&w, 1, 10));
+        let sources = Sources { roles: &w.roles, monsters: &monsters, items: &items, tags: &w.tags };
+        let report = coverage([&def], &sources, 1..=3);
+        assert_eq!(report.empties(), vec![("guarded locker", 'b', 1), ("guarded locker", 'b', 2), ("guarded locker", 'b', 3)]);
+    }
+
+    #[test]
+    fn a_rendered_report_has_a_column_per_band_and_a_row_per_drawn_slot() {
+        let w = world();
+        let def = read(&w, GUARDED).unwrap();
+        let (monsters, items) = (heavy_on(&w, 3, 8), weapons(&w, 1, 10));
+        let sources = Sources { roles: &w.roles, monsters: &monsters, items: &items, tags: &w.tags };
+        let text = coverage([&def], &sources, 1..=10).render();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].starts_with("guarded locker") && lines[0].trim_end().ends_with("10"), "{text}");
+        assert!(lines.iter().any(|l| l.trim_start().starts_with("b brute +1") && l.contains("~3") && l.contains("~8") && l.contains('✓')), "{text}");
+        assert!(lines.iter().any(|l| l.trim_start().starts_with("w weapon +2")), "{text}");
     }
 }

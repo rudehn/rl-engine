@@ -86,7 +86,7 @@ pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damag
 pub use gas::{Breath, GasDef, GasId};
 pub use loot::{DropRow, DropTable, Layout, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use names::{NameRef, Names};
-pub use prefab::{Pick, PrefabDef, Slot};
+pub use prefab::{Coverage, CoverageRow, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
