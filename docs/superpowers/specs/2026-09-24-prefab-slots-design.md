@@ -28,7 +28,7 @@ Done when:
 
 These were settled in conversation and are not reopened here.
 
-1. **One file per prefab, one thing per cell.** The legend maps a glyph to a tile or to a slot, so a guard cannot be placed on a wall and a prop cannot share a cell with a monster, by construction. Fantasy-rogue kept tiles and content in separate coordinate lists and needed spawn-time checks for both mistakes.
+1. **One file per prefab, one thing per cell.** The legend maps a glyph to a tile or to a slot, so a guard cannot be placed on a wall and a prop cannot share a cell with a monster, by construction. Fantasy-rogue kept tiles and content in separate coordinate lists, caught a slot on a wall only at spawn by skipping it, and never caught two slots on one cell.
 2. **An item slot is the same row a container's contents use.** `Item(tag: "weapon", band: 2)`, `Item(item: "keycard")`, with the same `count` and the same rule that a named item takes no `band`. A tag is how a prefab says "a weapon, armor or a med here".
 3. **A monster slot names a monster or a role.** `Monster(monster: "heart warden")` is always that monster and takes no `band`; `Monster(role: "brute", band: 2)` draws from the role at the place's band plus two.
 4. **Roles live in their own file**, not in the spawn table. A role is a name and the monsters that fit it, nothing more.
@@ -52,7 +52,8 @@ These were settled in conversation and are not reopened here.
 // Every field:
 //   name:   the prefab's name, which a mapgen chain asks for
 //   ground: the tile painted under every slot; required when the legend
-//           has any slot, and it must be a tile a monster can stand on
+//           has any slot, and whenever it is given, slots or none, it
+//           must be a tile a monster can stand on
 //           whenever it is given
 //   rows:   the piece, one string per row, all the same width; a space is
 //           left as the map had it, and every other glyph must be in the

@@ -22,10 +22,10 @@
 //! What this module does not hold is the terrain half. Turning [`rows`
 //! ](PrefabDef::rows), [`tile`](PrefabDef::tile) and [`slot`
 //! ](PrefabDef::slot) into a grid of tiles and entities, with rotation and
-//! mirroring, is `rl-mapgen`'s, a tier above this one; this crate names no
-//! mapgen type and keeps no dependency on it, so a prefab file loads and
-//! every one of its mistakes is reported with no map, no `App` and no grid
-//! anywhere in the test.
+//! mirroring, is `rl-mapgen`'s, a tier 1 crate beside this one; this
+//! crate names no mapgen type and keeps no dependency on it, so a prefab
+//! file loads and every one of its mistakes is reported with no map, no
+//! `App` and no grid anywhere in the test.
 //!
 //! ```text
 //! // A prefab: a piece of a place, drawn as rows of glyphs, and what each
@@ -34,7 +34,8 @@
 //! // Every field:
 //! //   name:   the prefab's name, which a mapgen chain asks for
 //! //   ground: the tile painted under every slot; required when the legend
-//! //           has any slot, and it must be a tile a monster can stand on
+//! //           has any slot, and whenever it is given, slots or none, it
+//! //           must be a tile a monster can stand on
 //! //   rows:   the piece, one string per row, all the same width; a space is
 //! //           left as the map had it, and every other glyph must be in the
 //! //           legend
@@ -373,6 +374,12 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
 /// The registries and tables a coverage report draws through: the same
 /// ones a game hands the engine at play, so a report answers no question
 /// a run would answer differently.
+///
+/// Both tables are read at the same band for a column, since a report has
+/// one band per column: that assumes the game numbers its loot bands and
+/// its spawn bands alike, as Foundry does with a deck's number for both.
+/// A game whose `ItemMaker::band` and `ActorMaker::band` answer one place
+/// differently reads each kind of slot's rows against its own numbering.
 pub struct Sources<'a, M, I> {
     /// Every role a monster slot may name.
     pub roles: &'a Registry<RoleDef<M>>,
@@ -497,6 +504,10 @@ fn slot_name(name: &str, offset: i32) -> String {
 /// and then glyph order. A slot with a fixed item or a fixed monster draws
 /// nothing to report; only what a game's tables might not cover is worth
 /// checking.
+///
+/// One band per column serves item and monster slots alike, which assumes
+/// the game's item bands and monster bands agree, as Foundry's do; see
+/// [`Sources`].
 pub fn coverage<'p, M: 'p, I: Copy>(prefabs: impl IntoIterator<Item = &'p PrefabDef<M>>, sources: &Sources<'_, M, I>, bands: RangeInclusive<i32>) -> Coverage {
     let mut rows = Vec::new();
     for def in prefabs {

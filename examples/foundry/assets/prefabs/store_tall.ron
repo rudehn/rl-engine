@@ -6,7 +6,8 @@
 // Every field:
 //   name:   the prefab's name, which a mapgen chain asks for
 //   ground: the tile painted under every slot; required when the legend
-//           has any slot, and it must be a tile a monster can stand on
+//           has any slot, and whenever it is given, slots or none, it
+//           must be a tile a monster can stand on
 //   rows:   the piece, one string per row, all the same width; a space is
 //           left as the map had it, and every other glyph must be in the
 //           legend

@@ -325,8 +325,11 @@ impl<A: Copy> Tactic<A> for Hover {
     }
 }
 
-/// Where an actor was set to stand, pushed as a [`Sense`](crate::ai::Sense)
-/// by whoever set it: a monster placed at a prefab's slot is posted there.
+/// Where an actor was set to stand, as a [`Sense`](crate::ai::Sense).
+///
+/// The engine's `sense_posts` pushes it from an actor's `Post` component,
+/// which a monster placed at a prefab's slot is given on its cell; a game
+/// running minds without `rl-bevy` pushes it itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Posted(pub Point);
 

@@ -1,6 +1,6 @@
 # Prefabs
 
-Status: built 2026-09-25 on branch `prefab-slots`, against `main` at `b5dd60b`.
+Status: built 2026-09-25, against `main` at `b5dd60b`.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/guide/src/systems/prefabs.md` is the reference.
 
 ## 0. Summary

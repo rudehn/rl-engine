@@ -13,12 +13,12 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/remains.rs
             crates/rl-save/src/run.rs
-     fingerprint: 915db1b9 -->
+     fingerprint: 881f5904 -->
 
 # Prefabs
 
 A prefab is a piece of a place written as data: rows of glyphs, and a legend saying what each glyph stands for, a tile or one slot.
-A slot is a prop, items, a monster, or a mark left to the game, and the engine fills every slot on the arrival that built the place, drawn at that place's depth.
+A slot is a prop, items, a monster, or a mark left to the game; the engine fills every slot but a mark on the arrival that built the place, drawn at that place's depth, and the game fills its marks itself.
 A monster slot may name a role rather than a monster, so a guarded room keeps its shape on every floor while what guards it changes, and a monster put there holds its cell as a post.
 
 ## Turning it on
@@ -123,5 +123,5 @@ Whether a role's members fight side by side is the game's too, since who fights 
 ## Where it lives
 
 `rl-rules` holds the file formats, the role draw and the coverage report, all tested with no `App` and no map: that every mistake in a file is reported together, that a role draw only ever returns a member of the role, and that a report names every slot that can draw nothing.
-`rl-mapgen` carries a piece's key through the stamp and knows nothing of slots, so a keyless piece stamps as it always has and the tier 1 crates never learn what a monster is.
-`rl-bevy` holds only when, from which stream and what is skipped, over two traits a game implements on resources it already had, and `rl-save` saves the post, the engine's record of where a guard belongs.
+`rl-mapgen` carries a piece's key through the stamp and knows nothing of slots, so a keyless piece stamps as it always has and it never learns what a monster is; `rl-rules` knows a monster only as the game's generic id, the `M` in `RoleDef<M>`.
+`rl-bevy` holds when, from which stream and what is skipped, the `Post` a placed monster keeps, `Prefabs::piece` handing a chain its keyed piece, and the check as play begins of what only the game's tables can answer, all over two traits a game implements on resources it already had; `rl-save` saves the post, the engine's record of where a guard belongs.

@@ -53,9 +53,11 @@ use crate::world::WorldMap;
 ///
 /// Implemented on the resource holding a game's monster definitions, the
 /// one place that knows what a monster is. The engine decides when, where
-/// and which, and asks this to make it. A game's own population spawns
-/// through the same `make`, so a monster placed at a slot and one placed
-/// by the game are built the same way and cannot drift apart.
+/// and which, and asks this to make it. A game's own population should
+/// build through the same builder `make` uses, as Foundry's `make` wraps
+/// the `spawn_monster` its decks populate by, so a monster placed at a
+/// slot and one placed by the game are built the same way and cannot
+/// drift apart.
 pub trait ActorMaker: Resource {
     /// The game's monster definition.
     type Def: Send + Sync + 'static;
