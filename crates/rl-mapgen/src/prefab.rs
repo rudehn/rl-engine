@@ -16,6 +16,10 @@
 //! that wants variety without one entry per piece; a piece with no weight
 //! stays in the list without ever being drawn, and nothing carrying weight
 //! fails the chain rather than generating a map its game does not expect.
+//! A piece's legend maps a character to a [`Cell`], so a mark can paint the
+//! tile under it instead of leaving whatever the map had there. A piece
+//! [`Prefab::keyed`] carries that key through every stamp as
+//! [`Stamped::prefab`], so a game can trace a stamp's marks back to it.
 //!
 //! Either pass emits where it landed as a [`Stamped`], in map coordinates,
 //! so later passes can keep out of it or spawn into it.
@@ -28,6 +32,22 @@ use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
 use crate::dungeon::Room;
 
+/// What one character of a drawn piece stands for.
+///
+/// A mark may carry the tile under it, so a piece whose marks are where
+/// things will stand paints a floor for them to stand on rather than
+/// leaving whatever the map had there, which could be a wall.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cell {
+    /// Paints this tile.
+    Tile(TileId),
+    /// A mark: a position the piece's owner gives a meaning to, painted
+    /// with the tile when there is one and transparent when not.
+    Mark(Option<TileId>),
+    /// Leaves the map as it was.
+    Clear,
+}
+
 /// A piece of map drawn by hand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prefab {
@@ -35,6 +55,10 @@ pub struct Prefab {
     /// Marks the legend gave a meaning to besides a tile, by character,
     /// in prefab-local coordinates: an entrance, a spawn, a chest.
     marks: Vec<(char, Point)>,
+    /// An opaque number its owner set, carried to [`Stamped::prefab`], so
+    /// the stamp's marks can be traced back to the definition that gave
+    /// them meaning. `None` for a piece nobody keyed.
+    key: Option<u32>,
 }
 
 impl Prefab {
@@ -42,6 +66,17 @@ impl Prefab {
     /// for a character. A character with no tile is transparent; if it is
     /// not a space it is kept as a mark.
     pub fn parse(rows: &[&str], legend: impl Fn(char) -> Option<TileId>) -> Result<Self, String> {
+        Self::parse_cells(rows, |ch| match legend(ch) {
+            Some(t) => Cell::Tile(t),
+            None if ch == ' ' => Cell::Clear,
+            None => Cell::Mark(None),
+        })
+    }
+
+    /// Parses `rows`, all the same width, with `legend` naming the
+    /// [`Cell`] for a character: a tile, a mark that may carry a tile
+    /// under it, or transparency.
+    pub fn parse_cells(rows: &[&str], legend: impl Fn(char) -> Cell) -> Result<Self, String> {
         let height = rows.len() as i32;
         let width = rows.first().map(|r| r.chars().count()).unwrap_or(0) as i32;
         if width == 0 || height == 0 {
@@ -56,15 +91,29 @@ impl Prefab {
             for (x, ch) in row.chars().enumerate() {
                 let p = Point::new(x as i32, y as i32);
                 match legend(ch) {
-                    Some(t) => {
+                    Cell::Tile(t) => {
                         cells.set(p, Some(t));
                     }
-                    None if ch != ' ' => marks.push((ch, p)),
-                    None => {}
+                    Cell::Mark(under) => {
+                        cells.set(p, under);
+                        marks.push((ch, p));
+                    }
+                    Cell::Clear => {}
                 }
             }
         }
-        Ok(Self { cells, marks })
+        Ok(Self { cells, marks, key: None })
+    }
+
+    /// This piece, keyed: its stamp reports `key` as [`Stamped::prefab`].
+    pub fn keyed(mut self, key: u32) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    /// The key its owner set, if any.
+    pub fn key(&self) -> Option<u32> {
+        self.key
     }
 
     /// Width in cells.
@@ -115,7 +164,7 @@ impl Prefab {
             }
         }
         let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(w - 1 - p.x, p.y))).collect();
-        Self { cells, marks }
+        Self { cells, marks, key: self.key }
     }
 
     /// One quarter-turn clockwise.
@@ -128,7 +177,7 @@ impl Prefab {
             }
         }
         let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(h - 1 - p.y, p.x))).collect();
-        Self { cells, marks }
+        Self { cells, marks, key: self.key }
     }
 
     /// Writes the prefab with its top-left at `origin`.
@@ -202,6 +251,9 @@ pub struct Stamped {
     pub bounds: Rect,
     /// Its marks, in map coordinates.
     pub marks: Vec<(char, Point)>,
+    /// The stamped piece's [`Prefab::key`], so whoever fills its marks finds
+    /// the definition that gave them meaning; `None` for an unkeyed piece.
+    pub prefab: Option<u32>,
 }
 
 /// Stamps one prefab. Fails if the placement does not fit on the map.
@@ -263,7 +315,7 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
         }
         prefab.stamp(ctx.terrain_mut(), origin);
         let marks = prefab.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
-        ctx.emit(Stamped { bounds: placed, marks });
+        ctx.emit(Stamped { bounds: placed, marks, prefab: prefab.key() });
         Ok(())
     }
 }
@@ -399,6 +451,45 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_mark_with_ground_paints_the_ground_and_is_still_a_mark() {
+        let r = TileRegistry::standard();
+        let (wall, floor) = (r.expect("wall"), r.expect("floor"));
+        let p = Prefab::parse_cells(&["#s#"], |c| match c {
+            '#' => Cell::Tile(wall),
+            's' => Cell::Mark(Some(floor)),
+            _ => Cell::Clear,
+        })
+        .unwrap();
+        assert_eq!(p.tile(Point::new(1, 0)), Some(floor), "the mark's cell is painted");
+        assert_eq!(p.marks(), &[('s', Point::new(1, 0))], "and still reported as a mark");
+    }
+
+    #[test]
+    fn a_key_survives_every_facing_and_reaches_the_stamp() {
+        let r = TileRegistry::standard();
+        let wall = r.expect("wall");
+        let piece = Prefab::parse(&["#.", "A#"], |c| (c == '#').then_some(wall)).unwrap().keyed(7);
+        for quarters in 0..4 {
+            assert_eq!(piece.rotated(quarters).key(), Some(7));
+            assert_eq!(piece.rotated(quarters).flipped().key(), Some(7));
+        }
+        let mut ctx = BaseContext::blank(10, 10, r.clone(), r.expect("floor"));
+        Chain::new()
+            .then(StampPrefab { name: "keyed", prefab: piece, at: Placement::At(Point::new(2, 2)), orient: Orient::TurnedOrMirrored })
+            .run(&mut ctx, RunSeed(1))
+            .unwrap();
+        let stamped = ctx.outputs().first::<Stamped>().unwrap();
+        assert_eq!(stamped.prefab, Some(7));
+    }
+
+    #[test]
+    fn a_piece_parsed_from_a_tile_legend_has_no_key() {
+        let r = TileRegistry::standard();
+        let wall = r.expect("wall");
+        assert_eq!(Prefab::parse(&["#A#"], |c| (c == '#').then_some(wall)).unwrap().key(), None);
     }
 
     #[test]

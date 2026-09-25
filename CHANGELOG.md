@@ -78,6 +78,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Foundry has a cheat menu on `\`: reveal the deck, heal, godmode, the lift a deck down or up, and a search of the armory by name that puts what is picked in the pack, merged into a stack the way a pickup merges it. Godmode and reveal stay on through a deck change and a new run.
 - Foundry keeps where things turn up apart from what they are: `monster_spawns.ron` and `item_spawns.ron`, a named row per band, in place of the `spawn` tuples in `monsters.ron` and `items.ron`. The rows are in the order the tuples were, and the fingerprint does not move.
 
+- A prefab mark can paint the ground under it: `Prefab::parse_cells` takes a legend to `Cell`, `Tile`, `Mark(Option<TileId>)` or `Clear`, and `parse` is unchanged. A piece can be `keyed`, and its stamp reports the key as `Stamped::prefab`, carried to `Spot::prefab`. Breaking only for a struct literal: `Stamped { .., prefab: None }` and `Spot { .., prefab: None }`.
+
 ## 0.3.0
 
 A page for every system, a screen for the run's end, and a line drawn between an ability and a thing in the bag: one release, 2026-09-23.

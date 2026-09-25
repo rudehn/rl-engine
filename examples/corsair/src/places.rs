@@ -136,8 +136,11 @@ impl PlaceRules for Caves {
         chain.run(&mut ctx, seed)?;
         let entry = ctx.outputs().first::<StartPoint>().ok_or_else(|| BuildError::new("caves", "no start"))?.0;
         let exit = ctx.outputs().first::<ExitPoint>().map(|e| e.0);
-        let spots =
-            ctx.outputs().iter::<Stamped>().flat_map(|s| s.marks.iter().filter(|(c, _)| *c == '$').map(|(_, p)| Spot { tag: TREASURE, at: *p })).collect();
+        let spots = ctx
+            .outputs()
+            .iter::<Stamped>()
+            .flat_map(|s| s.marks.iter().filter(|(c, _)| *c == '$').map(|(_, p)| Spot { tag: TREASURE, at: *p, prefab: None }))
+            .collect();
         let (terrain, _) = ctx.finish();
         Ok(PlaceBuild { terrain, entry, exit, spots })
     }

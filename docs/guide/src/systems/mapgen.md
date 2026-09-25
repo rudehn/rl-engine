@@ -8,7 +8,7 @@
             crates/rl-core/src/seed.rs
             crates/rl-world/src/chunk.rs
             crates/rl-bevy/src/places.rs
-     fingerprint: c528f683 -->
+     fingerprint: 2a3bf531 -->
 
 # Map generation
 
@@ -43,9 +43,11 @@ Every engine pass is generic over `C: BuildContext`, which is the whole extensio
 Both publish a `Room` per room in placement order, which is what lets `Doors` find the ring around each one and a prefab ask for a room to sit in.
 `RandomStart` and `CentralStart` publish a `StartPoint`, and `FarthestExit` walks from it and publishes the cell furthest away as an `ExitPoint`.
 `prefab` is the hand-drawn half: a `Prefab` is rows of characters and a legend, a character the legend does not know is transparent so a piece can be an irregular shape, and `rotated` and `flipped` carry a piece's marks around with its tiles.
+A legend maps a character to a `Cell`: `Tile` paints, `Mark` marks the position and may paint the tile under it, and `Clear` leaves the map as it was.
 `StampPrefab` places one at a `Placement` with an `Orient` saying how it may be turned first, authored per stamp because the same vault may turn freely in a cave and be fixed against the corridor its door has to meet.
 `StampOneOf` is the same pass with a weighted choice in front of it; a zero weight is a piece in the list that is never drawn, which is how a piece stays in while it is being worked on, and nothing carrying weight fails the chain.
 Either stamp publishes a `Stamped` with its bounds and its marks in map coordinates, so a later pass can keep out of it or spawn into it.
+A piece `keyed` with an opaque number carries that key through every turn and mirror to its stamp's `Stamped::prefab`, so whoever fills the marks can trace them back to the piece that gave them meaning.
 
 ## Using it
 

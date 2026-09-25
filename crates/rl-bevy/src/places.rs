@@ -85,6 +85,11 @@ pub struct Spot {
     pub tag: u32,
     /// Where.
     pub at: Point,
+    /// The key of the prefab whose mark this is, when it was keyed, so the
+    /// engine can find what the mark stands for. `None` for a spot a game
+    /// made itself or a mark of an unkeyed piece.
+    #[serde(default)]
+    pub prefab: Option<u32>,
 }
 
 /// What building a place produced.
@@ -110,7 +115,11 @@ impl PlaceBuild {
         use rl_mapgen::BuildContext;
         let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
         let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
-        let spots = ctx.outputs().iter::<rl_mapgen::prefab::Stamped>().flat_map(|s| s.marks.iter().map(|(c, p)| Spot { tag: *c as u32, at: *p })).collect();
+        let spots = ctx
+            .outputs()
+            .iter::<rl_mapgen::prefab::Stamped>()
+            .flat_map(|s| s.marks.iter().map(|(c, p)| Spot { tag: *c as u32, at: *p, prefab: s.prefab }))
+            .collect();
         let (terrain, _) = ctx.finish();
         Ok(Self { terrain, entry, exit, spots })
     }
@@ -351,7 +360,7 @@ mod tests {
             let entry = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
             let (terrain, _) = ctx.finish();
-            Ok(PlaceBuild { terrain, entry, exit, spots: vec![Spot { tag: 7, at: entry }] })
+            Ok(PlaceBuild { terrain, entry, exit, spots: vec![Spot { tag: 7, at: entry, prefab: None }] })
         }
     }
 
@@ -410,7 +419,7 @@ mod tests {
             assert!(w.resource::<Occupancy>().is_occupied(place.entry));
             assert!(!w.resource::<Occupancy>().is_occupied(r.start.offset(2, 0)), "the surface watcher is not on this map's index");
             assert_eq!(w.resource::<Entered>().0, vec![PlaceEntered { map: cave, first: true, entry: place.entry, exit: place.exit }]);
-            assert_eq!(place.spots, vec![Spot { tag: 7, at: place.entry }]);
+            assert_eq!(place.spots, vec![Spot { tag: 7, at: place.entry, prefab: None }]);
             let v = w.get::<Viewshed>(r.player).unwrap();
             assert!(!v.dirty && v.can_see(place.entry), "sight was recomputed in the place");
             assert!(w.resource::<Knowledge>().is_explored(place.entry));
@@ -471,6 +480,23 @@ mod tests {
         assert_eq!(r.app.world().get::<OnMap>(coin).map(|m| m.0), Some(cave), "it lies on the map it was dropped on");
         intend(&mut r, PickUp);
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin), "and can be taken back up there");
+    }
+
+    #[test]
+    fn a_keyed_stamps_marks_become_spots_carrying_its_key() {
+        use rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
+        use rl_mapgen::{BaseContext, BuildContext, Chain};
+        let tiles = rl_grid::TileRegistry::standard();
+        let wall = tiles.expect("wall");
+        let piece = Prefab::parse(&["#A#"], |c| (c == '#').then_some(wall)).unwrap().keyed(3);
+        let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
+        Chain::new()
+            .then(StampPrefab { name: "keyed", prefab: piece, at: Placement::At(Point::new(1, 1)), orient: Orient::Fixed })
+            .run(&mut ctx, rl_core::RunSeed(0))
+            .unwrap();
+        ctx.emit(rl_mapgen::passes::StartPoint(Point::new(5, 5)));
+        let build = PlaceBuild::from_context(ctx).unwrap();
+        assert_eq!(build.spots, vec![Spot { tag: 'A' as u32, at: Point::new(2, 1), prefab: Some(3) }]);
     }
 
     #[test]

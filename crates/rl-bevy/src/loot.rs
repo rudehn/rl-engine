@@ -530,7 +530,7 @@ mod tests {
                 terrain: Terrain::filled(20, 12, tiles.expect("floor")),
                 entry: Point::new(1, 1),
                 exit: None,
-                spots: vec![crate::places::Spot { tag: 'A' as u32, at: mark }],
+                spots: vec![crate::places::Spot { tag: 'A' as u32, at: mark, prefab: None }],
             },
         );
         world.switch_to(map);
