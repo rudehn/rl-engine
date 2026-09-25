@@ -31,6 +31,8 @@
 //!   checked from the command line.
 //! - [`forecast`]: what a fight is likely to cost, run through the same
 //!   mitigation a real blow goes through, for an inspect panel to print.
+//! - [`accuracy`]: whether an attack lands, as a [`HitModel`] the game
+//!   chooses turning plain facts into [`Odds`] and the lines behind them.
 //!
 //! One crate rather than five, because crate boundaries are drawn on
 //! dependency weight and these all weigh the same: core, grid, serde and
@@ -44,6 +46,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ability;
+pub mod accuracy;
 pub mod affix;
 pub mod ai;
 pub mod balance;
@@ -62,6 +65,7 @@ pub mod stats;
 pub mod status;
 
 pub use ability::{AbilityDef, AbilityId, Aim, Area, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, TriggerSpec, blocked, read_args};
+pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot, range_penalty};
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
 pub use ai::{
     ActorView, Awareness, Brain, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense, Snapshot,
