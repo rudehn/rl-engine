@@ -1,12 +1,14 @@
 //! The foundry's ten decks: assembly halls of rooms and doors, each
-//! holding an armory and a supply store, with a reactor chamber added on
-//! three of them and the core chamber on the tenth, so all four charges
-//! have somewhere to be set.
+//! holding an armory and a supply store, a guard post on five of them, a
+//! reactor chamber on three and the core chamber on the tenth, so all four
+//! charges have somewhere to be set.
 //!
-//! This is the whole of a deck builder: a tile registry, one chain per
-//! deck, and [`PlaceBuild::from_context`] to read the entry, the exit and
-//! the prefab marks back out, the way delve's `Whale` does for the
-//! whale's floors.
+//! This is the whole of a deck builder: a tile registry, the pieces in
+//! `assets/prefabs/` loaded against it by [`crate::prefabs::load`], one
+//! chain per deck stamping them by name, and [`PlaceBuild::from_context`]
+//! to read the entry, the exit and the pieces' marks back out, the way
+//! delve's `Whale` does for the whale's floors. What stands at a mark is
+//! the engine's to put down, from what the piece's file says.
 
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::RunSeed;
@@ -16,6 +18,8 @@ use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampOneOf, StampP
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_world::WorldGraph;
+
+use crate::droids::MonsterDef;
 
 /// How many decks the foundry has. Charges are set on three, six and
 /// nine, and on the core on ten.
@@ -34,39 +38,49 @@ pub fn map_of(deck: u32) -> MapId {
     MapId(deck)
 }
 
-/// The foundry's tiles and how each of its decks is built.
+/// The foundry's tiles, its pieces, and how each of its decks is built.
 pub struct Foundry {
     tiles: TileRegistry,
     hull: TileId,
     deck: TileId,
-    grating: TileId,
-    bulkhead: TileId,
     hatch: TileId,
-    console: TileId,
     lamp: TileId,
+    prefabs: Prefabs<MonsterDef>,
     seed: RunSeed,
 }
 
 impl Foundry {
-    /// Registers every tile the decks are built from.
+    /// Registers every tile the decks are built from, and loads every
+    /// piece against them. The load reads the content registries and the
+    /// roster itself, the same ones the run inserts, which is what makes a
+    /// piece's prop and monster ids match the running game's.
     pub fn new(seed: RunSeed) -> Self {
         let mut tiles = TileRegistry::new();
         let hull = tiles.register(TileProps::wall("hull")).unwrap();
         let deck = tiles.register(TileProps::floor("deck")).unwrap();
         // A grated walkway: no slower to look at, a little slower to cross.
-        let grating = tiles.register(TileProps::floor("grating").move_cost(120)).unwrap();
-        let bulkhead = tiles.register(TileProps::wall("bulkhead")).unwrap();
+        tiles.register(TileProps::floor("grating").move_cost(120)).unwrap();
+        tiles.register(TileProps::wall("bulkhead")).unwrap();
         // The doors pass's own door: walkable underfoot, but standing in
         // the frame still blocks a shot through it.
         let hatch = tiles.register(TileProps::floor("hatch").opaque(true)).unwrap();
-        let console = tiles.register(TileProps::wall("console")).unwrap();
+        tiles.register(TileProps::wall("console")).unwrap();
         let lamp = tiles.register(TileProps::wall("lamp")).unwrap();
-        Self { tiles, hull, deck, grating, bulkhead, hatch, console, lamp, seed }
+        // After the tiles, which the pieces paint by name.
+        let prefabs = crate::prefabs::load(&tiles);
+        Self { tiles, hull, deck, hatch, lamp, prefabs, seed }
     }
 
     /// The registered tiles, for `WorldMap::new`.
     pub fn tiles(&self) -> &TileRegistry {
         &self.tiles
+    }
+
+    /// Every piece and role, the same ones the chain stamps from: the
+    /// engine's `PrefabPlugin` fills the slots of what was stamped by the
+    /// key each stamp carries, which names a piece in this very set.
+    pub fn prefabs(&self) -> &Prefabs<MonsterDef> {
+        &self.prefabs
     }
 
     /// The wall lamp's tile, for `light::light_the_lamps` to find on a
@@ -84,69 +98,16 @@ impl Foundry {
     /// Two candidates for the armory, asymmetric so [`Orient::TurnedOrMirrored`]
     /// lays each one down more than one way: a square piece here collapsed
     /// its eight facings onto four, so both are drawn wider than they are
-    /// tall or the other way around, with the mark off-centre in both.
-    /// Each holds exactly one `A`, the guaranteed item's spot.
+    /// tall or the other way around, with the locker off-centre in both.
+    /// Each holds exactly one `A`, the locker the engine stands and stocks.
     fn armories(&self) -> Result<Vec<(Prefab, u32)>, BuildError> {
-        let (bulkhead, deck, grating) = (self.bulkhead, self.deck, self.grating);
-        let legend = |c: char| match c {
-            '#' => Some(bulkhead),
-            '.' => Some(deck),
-            'g' => Some(grating),
-            _ => None,
-        };
-        let a = Prefab::parse(&["#####", "#g.A#", "#...#", "##.##"], legend).map_err(|e| BuildError::new("armory", e))?;
-        let b = Prefab::parse(&["####", "#A.#", "#g.#", "#..#", "##.#"], legend).map_err(|e| BuildError::new("armory", e))?;
-        Ok(vec![(a, 1), (b, 1)])
+        Ok(vec![(self.prefabs.piece("armory wide")?, 1), (self.prefabs.piece("armory tall")?, 1)])
     }
 
-    /// Two candidates for the supply store, each holding two `L`s, a floor
-    /// item's spot, and each lit by one `lamp` fixture on its wall.
+    /// Two candidates for the supply store, each holding two `L`s, a
+    /// supply crate each, and each lit by one `lamp` fixture on its wall.
     fn stores(&self) -> Result<Vec<(Prefab, u32)>, BuildError> {
-        let (bulkhead, deck, lamp) = (self.bulkhead, self.deck, self.lamp);
-        let legend = |c: char| match c {
-            '#' => Some(bulkhead),
-            '.' => Some(deck),
-            'l' => Some(lamp),
-            _ => None,
-        };
-        let a = Prefab::parse(&["#l###", "#L..#", "#..L#", "##.##"], legend).map_err(|e| BuildError::new("store", e))?;
-        let b = Prefab::parse(&["#l##", "#L.#", "#..#", "#.L#", "##.#"], legend).map_err(|e| BuildError::new("store", e))?;
-        Ok(vec![(a, 1), (b, 1)])
-    }
-
-    /// The reactor chamber, stamped on decks three, six and nine: one `R`,
-    /// the console's machinery on the far wall behind it, and a hatch.
-    /// The machinery stands at the back rather than in the hatch's way:
-    /// in front of it, the chamber could only be entered diagonally
-    /// between two walls, which the engine refuses. Stamped
-    /// [`Orient::Fixed`], since nothing
-    /// about the chamber reads better turned.
-    fn reactor(&self) -> Result<Prefab, BuildError> {
-        let (bulkhead, console, hatch) = (self.bulkhead, self.console, self.hatch);
-        let legend = |c: char| match c {
-            '#' => Some(bulkhead),
-            'c' => Some(console),
-            'h' => Some(hatch),
-            _ => None,
-        };
-        Prefab::parse(&["#####", "#.c.#", "#.R.#", "#...#", "##h##"], legend).map_err(|e| BuildError::new("reactor", e))
-    }
-
-    /// The core chamber, deck ten only: the same five by five as a
-    /// reactor so the room-size guarantee in `generate` still holds, with
-    /// machinery down both sides rather than one, which is the whole of
-    /// how the core reads as bigger without needing a bigger room.
-    /// Marks `R`, since what stands on it is a console like the other
-    /// three and nothing in the mission distinguishes them.
-    fn core(&self) -> Result<Prefab, BuildError> {
-        let (bulkhead, console, hatch) = (self.bulkhead, self.console, self.hatch);
-        let legend = |c: char| match c {
-            '#' => Some(bulkhead),
-            'c' => Some(console),
-            'h' => Some(hatch),
-            _ => None,
-        };
-        Prefab::parse(&["#####", "#ccc#", "#.R.#", "#c.c#", "##h##"], legend).map_err(|e| BuildError::new("core", e))
+        Ok(vec![(self.prefabs.piece("store wide")?, 1), (self.prefabs.piece("store tall")?, 1)])
     }
 
     /// Runs the deck's chain and hands back the context still open, so a
@@ -168,14 +129,27 @@ impl Foundry {
             .then(Doors { door: self.hatch })
             .then(StampOneOf { name: "armory", choices: self.armories()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored })
             .then(StampOneOf { name: "store", choices: self.stores()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored });
+        // Decks two, four, five, seven and eight hold a guard post: a locker
+        // and a weapon held by what the deck has. Not deck one, which
+        // teaches the lamp and the droids, and not the charge decks, which
+        // already fit a third piece in their rooms.
+        if matches!(deck, 2 | 4 | 5 | 7 | 8) {
+            chain = chain.then(StampPrefab {
+                name: "guard post",
+                prefab: self.prefabs.piece("guard post")?,
+                at: Placement::AnyRoom,
+                orient: Orient::TurnedOrMirrored,
+            });
+        }
         // Decks three, six and nine each feed a section of the plant, and
         // deck ten is the core: one reactor chamber on each, so the four
         // charges have somewhere to be set. The core is its own shape and
         // marks `R` like the others, so one system plants all four
-        // consoles.
+        // consoles. Both are stamped fixed, since nothing about either
+        // chamber reads better turned.
         chain = match deck {
-            3 | 6 | 9 => chain.then(StampPrefab { name: "reactor", prefab: self.reactor()?, at: Placement::AnyRoom, orient: Orient::Fixed }),
-            DECKS => chain.then(StampPrefab { name: "core", prefab: self.core()?, at: Placement::AnyRoom, orient: Orient::Fixed }),
+            3 | 6 | 9 => chain.then(StampPrefab { name: "reactor", prefab: self.prefabs.piece("reactor")?, at: Placement::AnyRoom, orient: Orient::Fixed }),
+            DECKS => chain.then(StampPrefab { name: "core", prefab: self.prefabs.piece("core")?, at: Placement::AnyRoom, orient: Orient::Fixed }),
             _ => chain,
         };
         chain.then(RandomStart).then(FarthestExit).run(&mut ctx, seed)?;
@@ -225,6 +199,71 @@ mod tests {
         }
     }
 
+    /// The guard post decks, and only they, hold one: two, four, five,
+    /// seven and eight. One each, counted by the brute at its mouth,
+    /// which every post has exactly one of.
+    #[test]
+    fn only_the_guard_post_decks_hold_one_and_each_holds_exactly_one() {
+        for s in 0..20 {
+            let foundry = Foundry::new(RunSeed(s));
+            for deck in 1..=DECKS {
+                let built = foundry.build(map_of(deck), None).unwrap();
+                let posts = built.spots.iter().filter(|s| s.tag == 'b' as u32).count();
+                assert_eq!(posts, usize::from(matches!(deck, 2 | 4 | 5 | 7 | 8)), "deck {deck}, seed {s}");
+            }
+        }
+    }
+
+    /// With every guard on its post and the locker standing, every floor
+    /// cell of a stamped guard post can still be walked to from the deck's
+    /// entry, one orthogonal step at a time. A guard's post is where it
+    /// goes home to: a piece whose guard stands in its only way in shuts
+    /// the post to every other guard that ever steps out, which is how a
+    /// brute in a one-cell door once kept both sentries out for good.
+    #[test]
+    fn with_every_guard_home_every_floor_cell_of_a_guard_post_can_be_walked_to_from_the_entry() {
+        use rl_engine::rl_rules::prefab::Slot;
+        let tables = Foundry::new(RunSeed(0)).tiles().tables();
+        let mut checked = 0;
+        for s in 0..60 {
+            let foundry = Foundry::new(RunSeed(s));
+            let post = foundry.prefabs().defs().expect("guard post").raw();
+            for deck in [2, 4, 5, 7, 8] {
+                let ctx = foundry.generate(map_of(deck)).unwrap();
+                let st = ctx.outputs().iter::<Stamped>().find(|st| st.prefab == Some(post)).expect("a guard post deck holds one").clone();
+                let built = PlaceBuild::from_context(ctx).unwrap();
+                // What stands on the post's cells once it is filled: every
+                // guard at home, and the locker.
+                let standing: Vec<rl_engine::rl_core::Point> = st
+                    .marks
+                    .iter()
+                    .filter(|(c, p)| *p != built.entry && matches!(foundry.prefabs().slot(post, *c), Some(Slot::Monster { .. } | Slot::Prop(_))))
+                    .map(|(_, p)| *p)
+                    .collect();
+                let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&p);
+                let mut seen = BTreeSet::from([(built.entry.x, built.entry.y)]);
+                let mut queue = vec![built.entry];
+                while let Some(p) = queue.pop() {
+                    for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
+                        if open(n) && seen.insert((n.x, n.y)) {
+                            queue.push(n);
+                        }
+                    }
+                }
+                for y in st.bounds.y..st.bounds.bottom() {
+                    for x in st.bounds.x..st.bounds.right() {
+                        let p = rl_engine::rl_core::Point::new(x, y);
+                        if open(p) {
+                            assert!(seen.contains(&(x, y)), "deck {deck}, seed {s}: {p:?} in the guard post cannot be walked to with its guards home");
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 0, "some guard post cell was checked");
+    }
+
     /// The armory's mark, measured from its stamp's corner, is its facing.
     /// `PlaceBuild` flattens marks into `Spot`s with no bounds to measure
     /// from, so this reads the `Stamped` pass straight off the context
@@ -269,7 +308,7 @@ mod tests {
                 }
                 for st in ctx.outputs().iter::<Stamped>() {
                     for (c, p) in &st.marks {
-                        if matches!(c, 'A' | 'L' | 'R') {
+                        if matches!(c, 'A' | 'L' | 'R' | 's' | 'w' | 'b') {
                             let tile = ctx.terrain().get(*p).unwrap_or_else(|| panic!("deck {deck}, seed {s}: mark {c} at {p:?} is off the map"));
                             assert!(tables.walkable[tile.index()], "deck {deck}, seed {s}: mark {c} at {p:?} sits on a wall");
                         }
@@ -304,7 +343,7 @@ mod tests {
                     }
                 }
                 let reached = |p: rl_engine::rl_core::Point| seen.contains(&(p.x, p.y));
-                for spot in built.spots.iter().filter(|s| matches!(char::from_u32(s.tag), Some('A' | 'L' | 'R'))) {
+                for spot in built.spots.iter().filter(|s| matches!(char::from_u32(s.tag), Some('A' | 'L' | 'R' | 's' | 'w' | 'b'))) {
                     assert!(reached(spot.at), "deck {deck}, seed {s}: mark {:?} at {:?} cannot be walked to", char::from_u32(spot.tag), spot.at);
                 }
                 if let Some(exit) = built.exit {

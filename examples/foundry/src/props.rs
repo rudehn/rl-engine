@@ -2,9 +2,11 @@
 //! and the wreck a droid leaves.
 //!
 //! All of it is the engine's props, so this module is short on purpose:
-//! [`load`] reads `assets/props.ron`, [`place_on_arrival`] says where one
-//! stands, and [`wreck_the_dead`] makes a droid's remains a kind of prop
-//! so it can be gone through. Nothing here knows what opening a crate
+//! [`load`] reads `assets/props.ron`, [`place_on_arrival`] scatters the
+//! loose crates and the cable, and [`wreck_the_dead`] makes a droid's
+//! remains a kind of prop so it can be gone through. The lockers and the
+//! stores' crates are not here at all: the pieces in `assets/prefabs/`
+//! name them, and the engine stands them at their slots. Nothing here knows what opening a crate
 //! does or what goes in one, because the engine does: `props.ron` asks
 //! for kinds of thing by tag, and the engine's loot draws them at the
 //! deck's band through the armory.
@@ -15,10 +17,12 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_core::{Direction, Point, geometry};
+use rl_engine::rl_core::{Direction, Point};
+use rl_engine::rl_rules::prefab::Slot;
 use std::collections::BTreeSet;
 
 use crate::decks::deck_of;
+use crate::droids::MonsterDef;
 
 const PROPS_RON: &str = include_str!("../assets/props.ron");
 
@@ -115,18 +119,30 @@ fn cables_for(deck: u32) -> usize {
     deck.saturating_sub(1) as usize * 2
 }
 
-/// Puts Foundry's props on a deck the first time it is entered, beside
-/// the loot and the droids: crates in the stores, cable on open floor.
+/// Puts Foundry's loose props on a deck the first time it is entered,
+/// beside the loot and the droids: crates wherever there is room floor to
+/// stand them on, more the deeper the deck, and cable on open floor.
+///
+/// The lockers and the stores' own crates are not put down here: the
+/// pieces in `assets/prefabs/` name them, and the engine stands them at
+/// their slots before this runs. What this puts down keeps off every spot
+/// a piece marked, so no loose crate or cable lands where a locker, a
+/// guard or the reactor console goes.
 ///
 /// Reads the same [`PlaceEntered`] as `droids::populate_deck` and the
 /// engine's loot, and runs after the one and before the other, in the
 /// chain `plugin` builds a deck in: systems that all spawn, left
 /// unordered, hand their commands in whatever order they finish in, and
 /// the fingerprint tripwire reads a run by spawn order.
-pub fn place_on_arrival(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, seed: Res<Seed>, registries: Res<Registries>) {
-    let (Some(supply), Some(locker), Some(cable)) =
-        (registries.props.id("supply crate"), registries.props.id("armory locker"), registries.props.id("live cable"))
-    else {
+pub fn place_on_arrival(
+    mut commands: Commands,
+    mut entered: MessageReader<PlaceEntered>,
+    map: Res<WorldMap>,
+    seed: Res<Seed>,
+    registries: Res<Registries>,
+    prefabs: Res<Prefabs<MonsterDef>>,
+) {
+    let (Some(supply), Some(cable)) = (registries.props.id("supply crate"), registries.props.id("live cable")) else {
         return;
     };
     for ev in entered.read() {
@@ -136,39 +152,33 @@ pub fn place_on_arrival(mut commands: Commands, mut entered: MessageReader<Place
         let Some(place) = map.place(ev.map) else { continue };
         let deck = deck_of(ev.map);
         let mut rng = seed.stream(b"foundry.props", deck as u64);
-        // A locker at every armory mark, a crate in every store, and the
-        // rest of the crates wherever there is room floor to stand them
-        // on. A mark that sits in a doorway is stood beside instead: the
-        // builder put it where the room's contents go, not where a crate
-        // may block the way in.
-        // What already stands in the way, so each crate is judged against
-        // the deck as the ones before it left it.
-        let mut taken: Vec<Point> = Vec::new();
-        let free_to_block = |p: Point, taken: &Vec<Point>| room_floor(&map, p) && !taken.contains(&p) && keeps_the_way_open(&map, ev.entry, taken, p);
-        let stand = |commands: &mut Commands, kind, at: Point, taken: &mut Vec<Point>| {
-            let spot = [at].into_iter().chain(geometry::square(at, 1)).find(|p| free_to_block(*p, taken));
-            if let Some(spot) = spot {
-                taken.push(spot);
-                spawn_prop(commands, &registries, kind, spot, ev.map);
-            }
-        };
-        for spot in place.spots.iter().filter(|s| s.tag == 'A' as u32) {
-            stand(&mut commands, locker, spot.at, &mut taken);
-        }
-        let stores: Vec<Point> = place.spots.iter().filter(|s| s.tag == 'L' as u32).map(|s| s.at).collect();
-        for at in &stores {
-            stand(&mut commands, supply, *at, &mut taken);
-        }
+        // Two lists, because they answer two questions. `taken` is every
+        // cell spoken for, every spot a piece marked among them, so nothing
+        // loose lands on a slot. `blocking` is what a walker cannot pass:
+        // a blocking prop a piece stood at its slot, the console `mission`
+        // stands at `R`, and each crate put down here. A guard or an item
+        // is in the one and not the other: a crate that shuts a room
+        // behind a guard has shut it for good once the guard walks off.
+        let mut taken: Vec<Point> = place.spots.iter().map(|s| s.at).collect();
+        let mut blocking: Vec<Point> = place.spots.iter().filter(|s| stands_in_the_way(s, &prefabs, &registries)).map(|s| s.at).collect();
+        let free_to_block =
+            |p: Point, taken: &Vec<Point>, blocking: &Vec<Point>| room_floor(&map, p) && !taken.contains(&p) && keeps_the_way_open(&map, ev.entry, blocking, p);
+        // The stores' crates stand at their slots already; the count below
+        // is the loose ones on top of them.
+        let stores = place.spots.iter().filter(|s| s.tag == 'L' as u32).count();
         let bounds = place.terrain.bounds();
         // A blocking prop must leave the deck whole; loose cable lies flat
         // and may go anywhere walkable, doorway included, since nothing is
         // shut by something you can walk over.
-        let free = |rng: &mut dyn FnMut() -> Point, taken: &mut Vec<Point>, blocks: bool| -> Option<Point> {
+        let free = |rng: &mut dyn FnMut() -> Point, taken: &mut Vec<Point>, blocking: &mut Vec<Point>, blocks: bool| -> Option<Point> {
             for _ in 0..64 {
                 let p = rng();
-                let ok = if blocks { free_to_block(p, taken) } else { map.is_walkable(p) && !taken.contains(&p) };
+                let ok = if blocks { free_to_block(p, taken, blocking) } else { map.is_walkable(p) && !taken.contains(&p) };
                 if ok {
                     taken.push(p);
+                    if blocks {
+                        blocking.push(p);
+                    }
                     return Some(p);
                 }
             }
@@ -178,17 +188,29 @@ pub fn place_on_arrival(mut commands: Commands, mut entered: MessageReader<Place
             use rand::Rng;
             Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()))
         };
-        for _ in stores.len()..crates_for(deck, stores.len()) {
-            if let Some(at) = free(&mut roll, &mut taken, true) {
+        for _ in stores..crates_for(deck, stores) {
+            if let Some(at) = free(&mut roll, &mut taken, &mut blocking, true) {
                 spawn_prop(&mut commands, &registries, supply, at, ev.map);
             }
         }
         for _ in 0..cables_for(deck) {
-            if let Some(at) = free(&mut roll, &mut taken, false) {
+            if let Some(at) = free(&mut roll, &mut taken, &mut blocking, false) {
                 spawn_prop(&mut commands, &registries, cable, at, ev.map);
             }
         }
     }
+}
+
+/// Whether what stands at `spot` once the deck is filled blocks a walker:
+/// a prop a piece's slot names that blocks, or the reactor console
+/// `mission` stands at every `R`. A guard's slot, an item's and a mark
+/// Foundry leaves empty do not.
+fn stands_in_the_way(spot: &Spot, prefabs: &Prefabs<MonsterDef>, registries: &Registries) -> bool {
+    if spot.tag == 'R' as u32 {
+        return true;
+    }
+    let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| prefabs.slot(key, glyph));
+    matches!(slot, Some(Slot::Prop(id)) if registries.props.get(*id).blocks)
 }
 
 /// Takes the keycard that opened a locker.
@@ -259,14 +281,16 @@ mod tests {
     use rl_engine::rl_core::RunSeed;
 
     /// A crate in a doorway is a room sealed shut and everything in it
-    /// lost for the run. Over a span of seeds and every deck: what the
-    /// commando could reach before the props were put down, it can reach
-    /// after.
+    /// lost for the run. Over a span of seeds and every deck, the core on
+    /// ten included: what the commando could reach before the props were
+    /// put down, it can reach after. Every deck, because the pieces differ
+    /// by deck: when this stopped at three, the core's console stood where
+    /// it shut off the two cells beside it and nothing noticed.
     #[test]
     fn a_prop_that_blocks_never_seals_off_anything_the_deck_could_reach_over_a_span_of_seeds() {
         for seed in 1..=6u64 {
             let mut app = crate::testing::headless(RunSeed(seed));
-            for deck in 1..=3 {
+            for deck in 1..=crate::decks::DECKS {
                 crate::testing::arrive_on(&mut app, deck);
                 let here = crate::decks::map_of(deck);
                 let blockers: Vec<Point> = {

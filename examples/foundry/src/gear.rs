@@ -239,6 +239,18 @@ pub fn load_defs(registries: &Registries) -> Registry<ItemDef> {
     defs
 }
 
+/// The effect kinds a Foundry app has, for loading an [`Armory`] where no
+/// app is running, as `foundry --prefabs` does and a test with no world
+/// does: whatever `add_engine_effects` declares, and the `Ignite` and
+/// `Emit` that `FirePlugin` and `GasPlugin` declare for the grenades,
+/// which is what `main.rs` gives the real load. The throwaway `App` is
+/// there for that and nothing else.
+pub fn effect_kinds() -> EffectKinds {
+    let mut app = App::new();
+    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
+    std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
+}
+
 /// Loads the [`Armory`] once, in `PreStartup`, before any run begins or is
 /// continued, against the effects and moments the app registered.
 ///

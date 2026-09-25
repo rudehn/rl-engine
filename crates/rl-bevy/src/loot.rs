@@ -71,6 +71,8 @@ pub enum Found {
     Drop,
     /// Stocked into a container.
     Container,
+    /// Laid at a prefab's slot when the place was first built.
+    Placed,
 }
 
 /// A game's item registry, as the engine asks it for things.
@@ -163,7 +165,7 @@ pub enum LootSet {
 /// A stream for one area's scatter or one container's contents, derived
 /// from the run's seed under `domain` for `index` alone, so nothing that
 /// happened elsewhere first changes what is drawn there.
-fn stream_for(seed: &Seed, domain: &[u8], index: u64) -> StdRng {
+pub(crate) fn stream_for(seed: &Seed, domain: &[u8], index: u64) -> StdRng {
     seed.0.rng(SeedDomain::new(domain), index)
 }
 
@@ -173,10 +175,19 @@ fn standing(props: &Query<(&Position, Option<&OnMap>), With<Prop>>, map: MapId) 
     props.iter().filter(|(_, on)| on.map_or(MapId::SURFACE, |m| m.0) == map).map(|(at, _)| at.0).collect()
 }
 
-/// Makes what a plan put down and lays it on the floor of `map`.
-fn lay<M: ItemMaker>(commands: &mut Commands, maker: &M, registries: &Registries, what: (Id<M::Def>, u32, Point), map: MapId, rng: &mut StdRng) {
+/// Makes what a plan or a slot put down, found as `found`, and lays it on
+/// the floor of `map`.
+pub(crate) fn lay<M: ItemMaker>(
+    commands: &mut Commands,
+    maker: &M,
+    registries: &Registries,
+    what: (Id<M::Def>, u32, Point),
+    map: MapId,
+    found: Found,
+    rng: &mut StdRng,
+) {
     let (def, count, at) = what;
-    for item in maker.make(commands, registries, def, count, Found::Scatter, rng) {
+    for item in maker.make(commands, registries, def, count, found, rng) {
         let mut e = commands.entity(item);
         e.insert(Position(at));
         if map != MapId::SURFACE {
@@ -211,7 +222,7 @@ pub fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: Message
         let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
         let loose = maker.loose(area, rules.loose_count(band, &mut rng));
         for placed in plan_scatter(maker.table(), band, &rules, Layout { marks: &marks, bounds: place.terrain.bounds() }, loose, &mut free, &mut rng) {
-            lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), ev.map, &mut rng);
+            lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), ev.map, Found::Scatter, &mut rng);
         }
     }
 }
@@ -239,7 +250,7 @@ pub fn scatter_regions<M: ItemMaker>(
         let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
         let loose = maker.loose(area, rules.loose_count(band, &mut rng));
         for placed in plan_scatter(maker.table(), band, &rules, Layout { marks: &[], bounds: world.0.region_tiles(ev.region) }, loose, &mut free, &mut rng) {
-            lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), MapId::SURFACE, &mut rng);
+            lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), MapId::SURFACE, Found::Scatter, &mut rng);
         }
     }
 }
@@ -291,6 +302,29 @@ fn area_of(map: MapId, at: Point, world: Option<&WorldRes>) -> LootArea {
     }
 }
 
+/// What `count` of `what` comes to at `band`: a fixed item in that count,
+/// or that many draws of a tag, each its own, with draws of one thing
+/// made together. By definition id, so what is made comes out in one
+/// order however the draws fell. Shared by containers and prefab slots,
+/// which ask in the same words.
+pub(crate) fn draw_stock<M: ItemMaker>(maker: &M, what: &Stock, count: u32, band: i32, rng: &mut StdRng) -> Vec<(Id<M::Def>, u32)> {
+    let mut wanted: BTreeMap<u32, (Id<M::Def>, u32)> = BTreeMap::new();
+    match what {
+        Stock::Item(name) => {
+            if let Some(def) = maker.id_of(name) {
+                wanted.insert(def.raw(), (def, count));
+            }
+        }
+        Stock::Tag(tag) => {
+            for _ in 0..count {
+                let Some(def) = maker.table().pick_tagged(*tag, band, rng) else { break };
+                wanted.entry(def.raw()).or_insert((def, 0)).1 += 1;
+            }
+        }
+    }
+    wanted.into_values().collect()
+}
+
 /// Answers every [`FillContainer`]: a fixed item in the count rolled, and
 /// a tag as that many draws from the loot table at the container's band
 /// plus the row's offset, from a stream derived for the container's cell.
@@ -304,24 +338,9 @@ pub fn fill_containers<M: ItemMaker>(mut commands: Commands, mut asks: MessageRe
         let Ok((at, on)) = places.get(ask.prop) else { continue };
         let map = on.map_or(MapId::SURFACE, |m| m.0);
         let mut rng = stream_for(&seed, b"loot.container", position_hash(u64::from(map.0), at.0.x, at.0.y));
-        // By definition id, so what is made comes out in one order however
-        // the draws fell.
-        let mut wanted: BTreeMap<u32, (Id<M::Def>, u32)> = BTreeMap::new();
-        match &ask.what {
-            Stock::Item(name) => {
-                let Some(def) = maker.id_of(name) else { continue };
-                wanted.insert(def.raw(), (def, ask.count));
-            }
-            Stock::Tag(tag) => {
-                let band = maker.band(area_of(map, at.0, world.as_deref())) + ask.band;
-                for _ in 0..ask.count {
-                    let Some(def) = maker.table().pick_tagged(*tag, band, &mut rng) else { break };
-                    wanted.entry(def.raw()).or_insert((def, 0)).1 += 1;
-                }
-            }
-        }
+        let band = maker.band(area_of(map, at.0, world.as_deref())) + ask.band;
         let mut made = Vec::new();
-        for (def, count) in wanted.into_values() {
+        for (def, count) in draw_stock(&*maker, &ask.what, ask.count, band, &mut rng) {
             made.extend(maker.make(&mut commands, &registries, def, count, Found::Container, &mut rng));
         }
         if let Ok(mut bag) = bags.get_mut(ask.prop) {
@@ -403,7 +422,7 @@ impl<M: ItemMaker> Plugin for LootPlugin<M> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::combat::DeathEvent;
     use crate::items::{Item, Stack};
@@ -416,7 +435,7 @@ mod tests {
     use rl_rules::{Named, Names, Registry, TagDef, TagId};
 
     /// A test game's item: a name, its tags, and whether it stacks.
-    struct Toy {
+    pub(crate) struct Toy {
         name: &'static str,
         tags: Vec<TagId>,
         stack: bool,
@@ -430,13 +449,13 @@ mod tests {
 
     /// How a made thing was found, so a test can see what the engine said.
     #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-    struct FoundAs(Found);
+    pub(crate) struct FoundAs(pub(crate) Found);
 
     /// A test game's item registry: blades that improve with the band,
     /// plate from band two, and slugs in handfuls. The band of a place is
     /// its map number, and of a region its x.
     #[derive(Resource)]
-    struct Toys {
+    pub(crate) struct Toys {
         defs: Registry<Toy>,
         table: LootTable<Id<Toy>>,
         rules: ScatterRules,
@@ -481,12 +500,10 @@ mod tests {
          container: (contents: [(tag: "weapon", count: 1, band: 2), (tag: "armor", count: 2), (item: "slug", count: 5)])),
     ]"#;
 
-    /// An app with loot over the toy registry, the props above, the test
-    /// seed, and `rules` for a place's floor.
-    fn app(rules: ScatterRules) -> App {
-        let mut app = headless_app();
-        app.add_plugins((PropsPlugin, LootPlugin::<Toys>::default()));
-        let tags = Registry::from_defs(vec![TagDef::new("weapon"), TagDef::new("armor")]).unwrap();
+    /// The toy registry over `tags`, which names a weapon and an armor,
+    /// laying a place's floor by `rules`. Shared with the prefab tests,
+    /// whose item slots draw from the same table.
+    pub(crate) fn toys(tags: &Registry<TagDef>, rules: ScatterRules) -> Toys {
         let (weapon, armor) = (tags.expect("weapon"), tags.expect("armor"));
         let defs = Registry::from_defs(vec![
             Toy { name: "blade", tags: vec![weapon], stack: false },
@@ -502,10 +519,18 @@ mod tests {
             .chain([LootRow::new(defs.expect("slug")).bands(1, 9).weight(3).group(2, 4)])
             .collect();
         let table = LootTable::new(rows, |id| defs.get(id).name.to_string());
+        Toys { defs, table, rules }
+    }
+
+    /// An app with loot over the toy registry, the props above, the test
+    /// seed, and `rules` for a place's floor.
+    fn app(rules: ScatterRules) -> App {
+        let mut app = headless_app();
+        app.add_plugins((PropsPlugin, LootPlugin::<Toys>::default()));
+        let tags = Registry::from_defs(vec![TagDef::new("weapon"), TagDef::new("armor")]).unwrap();
+        let toys = toys(&tags, rules);
         let props = rl_rules::prop::load(PROPS, &Names::new().tags(&tags)).unwrap();
-        app.insert_resource(Registries { tags, props, ..Default::default() })
-            .insert_resource(Toys { defs, table, rules })
-            .insert_resource(Seed(crate::testing::TEST_SEED));
+        app.insert_resource(Registries { tags, props, ..Default::default() }).insert_resource(toys).insert_resource(Seed(crate::testing::TEST_SEED));
         app
     }
 

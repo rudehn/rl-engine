@@ -31,6 +31,7 @@ These are the reasoning; the overview is the list.
 - [loot.md](design/loot.md), where items turn up and how many, with what an item is left to the game.
 - [minds.md](design/minds.md), how a non-player decides.
 - [noise.md](design/noise.md), what a sound is and who hears it.
+- [prefabs.md](design/prefabs.md), a piece of a place as data: slots for props, items and monsters drawn at the place's depth, roles, and guards that hold their post.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.
 - [remains.md](design/remains.md), what is left where something died.
 - [stealth.md](design/stealth.md), being noticed, and being looked for.

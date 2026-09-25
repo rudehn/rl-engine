@@ -439,6 +439,42 @@ mod tests {
         crate::testing::pass_turns(&mut continued, 2);
     }
 
+    /// Every guard's post on the decks the run has seen, as `(where it
+    /// holds, its kind)`, sorted: what a continued run must give back.
+    fn posts(app: &mut App) -> Vec<(i32, i32, String)> {
+        let world = app.world_mut();
+        let roster = world.resource::<crate::droids::Roster>().defs.clone();
+        let mut posts: Vec<(i32, i32, String)> = world
+            .query_filtered::<(&Post, &crate::droids::Kind), Without<rl_engine::rl_bevy::Remains>>()
+            .iter(world)
+            .map(|(post, kind)| (post.0.x, post.0.y, roster.name(kind.0).to_string()))
+            .collect();
+        posts.sort();
+        posts
+    }
+
+    /// A run saved on deck two, which holds a guard post, and continued: the
+    /// deck is not filled a second time, so there are exactly as many
+    /// guards as there were, and each still holds the cell it held.
+    #[test]
+    fn a_continued_run_neither_refills_a_deck_nor_forgets_a_guards_post() {
+        let mut app = crate::testing::headless(RunSeed(3));
+        crate::testing::arrive_on(&mut app, 2);
+        let before = posts(&mut app);
+        assert!(!before.is_empty(), "deck two's guard post is manned: {before:?}");
+        save_run(app.world_mut()).expect("the run saves");
+        let text = app.world().resource::<Saves>().load(SLOT).unwrap().expect("a save");
+
+        let mut continued = crate::testing::continued(&text);
+        assert_eq!(looks(&mut continued).deck, 2, "continued on deck two");
+        // A few turns played, so a refill that waited on the first turn of
+        // the continued run has had the chance to happen.
+        crate::testing::pass_turns(&mut continued, 2);
+        let after = posts(&mut continued);
+        assert_eq!(after.len(), before.len(), "as many guards as there were, and no more: {after:?}");
+        assert_eq!(after, before, "each holding the post it held");
+    }
+
     /// Arriving on a deck writes the save, so each deck is a save point.
     #[test]
     fn a_deck_arrival_writes_the_save() {

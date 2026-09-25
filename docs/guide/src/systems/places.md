@@ -8,7 +8,7 @@
             crates/rl-bevy/src/minds.rs
             crates/rl-world/src/chunk.rs
             crates/rl-world/src/graph.rs
-     fingerprint: f34629dd -->
+     fingerprint: 472d5230 -->
 
 # Places and streaming
 
@@ -36,6 +36,7 @@ Three counters tell readers when to recompute without anyone asking them: `gener
 `set_veil` is the fourth case, a set of cells that hide what is behind them for a reason other than their tile, rewritten each turn by whatever makes it and lifted whenever the map or the window under it changes.
 `PlaceRules::build` is the one method a game writes, taking a `MapId` and the `WorldGraph` when there is one, and returning a `PlaceBuild`: a `Terrain`, an `entry`, an optional `exit`, and a `Vec<Spot>` of points of interest tagged in the game's own numbering.
 `PlaceBuild::from_context` is the usual way to make one from a finished chain, taking the chain's `StartPoint` as the entry, its `ExitPoint` as the exit, and every prefab mark as a `Spot` tagged with its character.
+A mark inside the bounds of a stamp emitted after its own is dropped, keyed or not, because the piece drawn on top owns its cells.
 A `Spot` from a keyed piece carries its `prefab`, the key set on the `Prefab` that stamped it, so the game can trace it back to what defined it; `None` for a spot a game made itself or a mark of an unkeyed piece.
 `Transition` is a component on an entity standing on a cell, holding the `Destination` it leads to: a cell of the surface, or a place with an `Arrive` of its entry, its exit or a named cell.
 `GoThrough` is the action that takes the player through the one it is standing on, and `WarpRequest` does the same from anywhere for a portal or a first arrival, resolved without charging a turn so the game charges what it likes.

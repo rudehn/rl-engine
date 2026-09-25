@@ -1,0 +1,56 @@
+// A prefab: a piece of a deck, drawn as rows of glyphs, and what each
+// glyph stands for. The deck's chain in `src/decks.rs` asks for it by name
+// and chooses where it goes and which way it faces; the engine fills its
+// slots the first time the deck is entered.
+//
+// Every field:
+//   name:   the prefab's name, which a mapgen chain asks for
+//   ground: the tile painted under every slot; required when the legend
+//           has any slot, and it must be a tile a monster can stand on
+//   rows:   the piece, one string per row, all the same width; a space is
+//           left as the map had it, and every other glyph must be in the
+//           legend
+//   legend: glyph to what it stands for, one of
+//     Tile("name")                          a tile: "hull" | "deck" |
+//                                           "grating" | "bulkhead" |
+//                                           "hatch" | "console" | "lamp"
+//     Prop("name")                          a prop from props.ron
+//     Item(item: "item", count: 1)          that item from items.ron;
+//                                           count is 1 or a range,
+//                                           count: (fewest, most),
+//                                           default 1
+//     Item(tag: "tag", count: 1, band: 0)   drawn from item_spawns.ron by
+//                                           tag at the deck plus band;
+//                                           count is separate draws; the
+//                                           tags are "weapon" | "armor" |
+//                                           "slug" | "med" | "keycard"
+//     Monster(monster: "monster")           that monster from monsters.ron
+//     Monster(role: "role", band: 0)        drawn from monster_spawns.ron
+//                                           among the role's monsters in
+//                                           roles.ron, at the deck plus band
+//     Mark                                  a position Foundry finds by
+//                                           this glyph and fills itself
+//   A monster at a slot holds that cell as its post.
+//
+// The taller of the two supply stores: the same two crates and lamp as
+// store_wide.ron, stood the other way up. Its opening is under the left
+// column, beside the lower crate rather than in front of it: a crate
+// stands exactly at its slot, and one in the only cell inside the opening
+// would shut the store, since a diagonal past it cuts a wall's corner.
+(
+    name: "store tall",
+    ground: "deck",
+    rows: [
+        "#l##",
+        "#L.#",
+        "#..#",
+        "#.L#",
+        "#.##",
+    ],
+    legend: {
+        '#': Tile("bulkhead"),
+        '.': Tile("deck"),
+        'l': Tile("lamp"),
+        'L': Prop("supply crate"),
+    },
+)

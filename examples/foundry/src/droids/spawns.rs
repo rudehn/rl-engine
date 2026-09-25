@@ -80,13 +80,13 @@ pub struct Stock<'w> {
 }
 
 /// Populates a deck on every arrival, the way `examples/delve` fills a
-/// floor: follows `plan_population` against the deck's real terrain and
-/// spawns what it plans. A first arrival draws at the deck's own band. A
-/// revisit is the climb, and the climb is drawn at the band of the
-/// deepest deck the run has reached rather than the deck's own, the way
-/// NetHack's ascension run and DCSS's Orb Run both make the way back the
-/// harder half: a deck one revisited after the core holds what the
-/// deepest deck holds.
+/// floor: follows `plan_population` against the deck's real terrain,
+/// never on a cell a piece marked as a spot, and spawns what it plans. A
+/// first arrival draws at the deck's own band. A revisit is the climb,
+/// and the climb is drawn at the band of the deepest deck the run has
+/// reached rather than the deck's own, the way NetHack's ascension run
+/// and DCSS's Orb Run both make the way back the harder half: a deck one
+/// revisited after the core holds what the deepest deck holds.
 ///
 /// Draws from `Seed::stream(b"foundry.spawns", deck)` on a first arrival
 /// and `Seed::stream(b"foundry.climb", deck)` on a revisit, never a combat
@@ -112,7 +112,11 @@ pub fn populate_deck(mut commands: Commands, mut entered: MessageReader<PlaceEnt
         let mut rng = seed.stream(if ev.first { b"foundry.spawns" } else { b"foundry.climb" }, u64::from(deck));
         let bounds = place.terrain.bounds();
         let target = BASE_GROUPS + band * GROUPS_PER_DECK;
-        let groups = plan_population(&roster.table, band as i32, bounds, ev.entry, target, &mut |p| map.is_walkable(p), &mut rng);
+        // Never on a spot a piece marked: a guard, a locker or the reactor
+        // console stands there, or will, and the deck's own population
+        // keeps off it even where the engine's slot drew nothing.
+        let spots: Vec<Point> = place.spots.iter().map(|s| s.at).collect();
+        let groups = plan_population(&roster.table, band as i32, bounds, ev.entry, target, &mut |p| map.is_walkable(p) && !spots.contains(&p), &mut rng);
         for (id, p) in groups.into_iter().flatten() {
             spawn_monster(&mut commands, roster, id, p, ev.map, registries);
         }

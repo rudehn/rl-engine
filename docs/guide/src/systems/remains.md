@@ -7,7 +7,7 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-rules/src/ai/snapshot.rs
             crates/rl-save/src/run.rs
-     fingerprint: 0d244b9e -->
+     fingerprint: 58f0ea9a -->
 
 # Remains
 
@@ -32,9 +32,10 @@ Without `PropsPlugin` a body is something named lying on the floor and nothing r
 Those are the two things the engine already knew at the moment of death, and neither is a claim about a world.
 `leave_remains` reads `DeathEvent`, skips the player and skips anything unmarked, and on the rest removes `WasLiving` and inserts `Position`, `Prop` and `Remains`.
 The position is put back because `process_deaths` took it off with the turn and the cell in the index, and remains lie where the actor fell rather than where a game would have to remember it fell.
-`WasLiving` is the one list of what an actor stops being: `Dead`, `Actor`, `Blocks`, `Health`, `Mind`, `Perception`, `Viewshed`, `Notice`, `Aware`, `Hearing` and `Heard`.
+`WasLiving` is the one list of what an actor stops being: `Dead`, `Actor`, `Blocks`, `Health`, `Mind`, `Perception`, `Viewshed`, `Notice`, `Aware`, `Hearing`, `Heard` and `Post`.
 `Health` comes off rather than being left at zero, because a body left with health answers the query the damage pass makes and could be killed a second time.
 `Notice` and `Hearing` come off for a subtler reason: a watcher is anything carrying a `Mind` or a `Notice` that is not `Dead`, a listener anything carrying `Hearing` that is not `Dead`, and remains are not `Dead` by design, so a body that kept them would go on watching and hearing the player with every enemy on the level dead.
+`Post` comes off with them, since a body keeps no cell and walks back to none.
 `Dead` is on that list too, and taking it off is the whole of keeping the entity, since `bury_the_dead` despawns whatever still carries it at the end of the frame.
 `RemainsLeft { entity, at }` is sent for each one, and `entity` is the actor that died, so a game reacting in `TurnSet::React` reads whatever it spawned that actor with.
 `RemainsNaming` is a template with `{what}` standing for whatever the actor was called, and `name_as_remains` applies it, once at the death and again when a save lays a body back down.

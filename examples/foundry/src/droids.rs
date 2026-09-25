@@ -24,7 +24,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, Keep, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
+use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, Keep, KeepPost, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{DropRow, DropTable};
 use serde::Deserialize;
@@ -185,6 +185,13 @@ impl Roster {
     /// names `flee_at` above zero. A kind that names `shadow` keeps its
     /// distance with [`Shadow`] and hangs there with [`Hover`] in place of
     /// [`Hunt`], which would close the gap it keeps.
+    ///
+    /// Every kind ends the same way: [`SearchLastKnown`], then
+    /// [`KeepPost`], then [`Wander`]. A guard the engine stood at a
+    /// prefab's slot that loses the commando searches where it was last
+    /// seen before it walks home, and walks home before it drifts off; a
+    /// monster with no post passes straight over `KeepPost`, so one brain
+    /// serves a kind whether it was posted or not.
     pub(crate) fn from_ron(ron: &str, spawns: &str, registries: &Registries) -> Self {
         let defs: Registry<MonsterDef> = registries.names().load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
         let rows: Vec<MonsterSpawn> = registries.names().with("monster", &defs).load_list(spawns).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
@@ -231,7 +238,7 @@ impl Roster {
                 Some(s) => brain.then(Keep::enemies(s.keep_within, s.no_closer_than)).then(Hover),
                 None => brain.then(Hunt),
             };
-            brains.push(Arc::new(brain.then(SearchLastKnown).then(Wander { chance_pct: 30 })));
+            brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));
         }
         Self { defs, table, brains, drops }
     }
@@ -241,6 +248,27 @@ impl Roster {
         Drops(self.drops[id.index()].clone())
     }
 }
+
+// ANCHOR: maker
+/// The engine's guards are made here: a monster at a prefab's slot is
+/// made exactly as one a deck's population places, and a deck's band is
+/// its number.
+impl ActorMaker for Roster {
+    type Def = MonsterDef;
+
+    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId, _: &mut rand::rngs::StdRng) -> Entity {
+        spawn_monster(commands, self, def, at, map, registries)
+    }
+
+    fn table(&self) -> &BandedTable<Id<MonsterDef>> {
+        &self.table
+    }
+
+    fn band(&self, map: MapId) -> i32 {
+        crate::decks::deck_of(map) as i32
+    }
+}
+// ANCHOR_END: maker
 
 /// Spawns `id` on `map` at `at`: an actor with health, armor, resistances,
 /// perception, a mind and the notice every monster carries. `MeleeAttack`,

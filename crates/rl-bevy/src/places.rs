@@ -87,7 +87,9 @@ pub struct Spot {
     pub at: Point,
     /// The key of the prefab whose mark this is, when it was keyed, so the
     /// engine can find what the mark stands for. `None` for a spot a game
-    /// made itself or a mark of an unkeyed piece.
+    /// made itself or a mark of an unkeyed piece. A mark a later stamp
+    /// covered is never a spot, since the piece drawn on top owns its
+    /// cells and what the earlier one meant there is no longer on the map.
     #[serde(default)]
     pub prefab: Option<u32>,
 }
@@ -111,14 +113,21 @@ impl PlaceBuild {
     /// [`ExitPoint`](rl_mapgen::dungeon::ExitPoint) if one was emitted,
     /// and every prefab mark becomes a spot tagged with its character.
     /// Fails if no start was emitted.
+    ///
+    /// A mark inside the bounds of a stamp emitted after its own is
+    /// dropped, keyed or not: the piece drawn on top owns its cells, so a
+    /// slot or a mark it painted over never fills a cell that now belongs
+    /// to another piece.
     pub fn from_context(ctx: rl_mapgen::BaseContext) -> Result<Self, BuildError> {
         use rl_mapgen::BuildContext;
         let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
         let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
-        let spots = ctx
-            .outputs()
-            .iter::<rl_mapgen::prefab::Stamped>()
-            .flat_map(|s| s.marks.iter().map(|(c, p)| Spot { tag: *c as u32, at: *p, prefab: s.prefab }))
+        let stamps: Vec<&rl_mapgen::prefab::Stamped> = ctx.outputs().iter::<rl_mapgen::prefab::Stamped>().collect();
+        let covered = |i: usize, p: Point| stamps[i + 1..].iter().any(|later| later.bounds.contains(p));
+        let spots = stamps
+            .iter()
+            .enumerate()
+            .flat_map(|(i, s)| s.marks.iter().filter(move |(_, p)| !covered(i, *p)).map(|(c, p)| Spot { tag: *c as u32, at: *p, prefab: s.prefab }))
             .collect();
         let (terrain, _) = ctx.finish();
         Ok(Self { terrain, entry, exit, spots })
@@ -497,6 +506,29 @@ mod tests {
         ctx.emit(rl_mapgen::passes::StartPoint(Point::new(5, 5)));
         let build = PlaceBuild::from_context(ctx).unwrap();
         assert_eq!(build.spots, vec![Spot { tag: 'A' as u32, at: Point::new(2, 1), prefab: Some(3) }]);
+    }
+
+    #[test]
+    fn a_mark_under_a_later_stamp_is_dropped_and_the_piece_on_top_keeps_its_own() {
+        use rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
+        use rl_mapgen::{BaseContext, BuildContext, Chain};
+        let tiles = rl_grid::TileRegistry::standard();
+        let wall = tiles.expect("wall");
+        let under = Prefab::parse(&["A.B"], |c| (c == '.').then_some(wall)).unwrap().keyed(1);
+        let over = Prefab::parse(&["C"], |_| None).unwrap().keyed(2);
+        let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
+        Chain::new()
+            .then(StampPrefab { name: "under", prefab: under, at: Placement::At(Point::new(1, 1)), orient: Orient::Fixed })
+            .then(StampPrefab { name: "over", prefab: over, at: Placement::At(Point::new(3, 1)), orient: Orient::Fixed })
+            .run(&mut ctx, rl_core::RunSeed(0))
+            .unwrap();
+        ctx.emit(rl_mapgen::passes::StartPoint(Point::new(5, 5)));
+        let build = PlaceBuild::from_context(ctx).unwrap();
+        assert_eq!(
+            build.spots,
+            vec![Spot { tag: 'A' as u32, at: Point::new(1, 1), prefab: Some(1) }, Spot { tag: 'C' as u32, at: Point::new(3, 1), prefab: Some(2) }],
+            "the first piece's `B` at (3, 1) is under the second, whose `C` owns the cell"
+        );
     }
 
     #[test]

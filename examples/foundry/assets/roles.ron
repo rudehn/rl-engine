@@ -1,0 +1,21 @@
+// Roles: which of Foundry's monsters fit which part in a prefab.
+//
+// A role is a name a prefab's `Monster(role: "name", band: N)` slot asks
+// for, and the monsters from monsters.ron that fit it. Where and how often
+// each monster turns up is monster_spawns.ron's; a role only says who may
+// stand in the slot, and a draw for it is the spawn table restricted to
+// the role's members at the deck plus the slot's band. A monster may fit
+// several roles.
+//
+// Every field:
+//   the map's key:   the role's name, unique
+//   the map's value: a list of monster names, at least one, none twice
+// Every member here is a droid. Droids and vermin fight each other, so a
+// scrap crab drawn to hold a post beside two droid sentries is shot by
+// them the moment either wakes.
+// ANCHOR: roles
+{
+    "sentry": ["probe droid", "trooper droid"],
+    "brute":  ["line droid", "heavy droid"],
+}
+// ANCHOR_END: roles

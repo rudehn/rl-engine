@@ -21,6 +21,7 @@ pub mod light;
 pub mod loot;
 pub mod mission;
 pub mod plugin;
+pub mod prefabs;
 pub mod props;
 pub mod run;
 pub mod save;

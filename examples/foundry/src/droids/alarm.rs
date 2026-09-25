@@ -220,7 +220,7 @@ mod tests {
         let (probe, _) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
         assert!(app.world().get::<MeleeAttack>(probe).is_none() && app.world().get::<RangedAttack>(probe).is_none(), "a probe carries no attack");
         let brain = format!("{:?}", app.world().get::<Mind>(probe).expect("a probe has a mind").0);
-        assert_eq!(brain, r#"["shadow", "hover", "search_last_known", "wander"]"#, "and no tactic that would strike");
+        assert_eq!(brain, r#"["shadow", "hover", "search_last_known", "keep_post", "wander"]"#, "and no tactic that would strike");
         crate::testing::pass_turns(&mut app, 12);
         let lines = lines(&app);
         let noticed = lines.iter().position(|l| l == "The probe droid notices you.").unwrap_or_else(|| panic!("{lines:#?}"));

@@ -17,7 +17,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddSound, AddVerb, ConsumablesPlugin, LootPlugin, LootSet, PropsPlugin, RemainsPlugin};
+use rl_engine::rl_bevy::{AddSound, AddVerb, ConsumablesPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
 
 /// The narrator as Foundry words it, for `main.rs` and
@@ -57,6 +57,11 @@ impl Plugin for FoundryPlugin {
         // entered, what a kill leaves and what a crate holds, each made by
         // the armory, which is loaded once before any run begins.
         app.add_plugins(LootPlugin::<crate::gear::Armory>::default()).add_systems(PreStartup, crate::gear::load_armory);
+        // Prefab slots are the engine's too: the lockers and crates the
+        // pieces name, the guard post's weapon and its guards, each put
+        // down on a deck's first arrival, the guards made by the roster
+        // and the items by the armory.
+        app.add_plugins(PrefabPlugin::<crate::droids::Roster, crate::gear::Armory>::default());
         // What a stim and a medkit do when they are used. Its own plugin,
         // because a use is not an ability: nothing here is aimed, nothing
         // waits on a cooldown, and nothing shows on the abilities screen.
@@ -116,20 +121,23 @@ impl Plugin for FoundryPlugin {
         // The run's depth memory, one at the start, only ever raised.
         app.init_resource::<crate::climb::Deepest>();
         // A deck fills the moment it is first entered, the way delve's own
-        // floors do: its droids, then its props, then the engine's loot in
+        // floors do: the engine's prefab slots in `PrefabSet::Fill`, then
+        // its droids, then its props, then the engine's loot in
         // `LootSet::Scatter`, each from its own stream and each reading the
-        // same `PlaceEntered` through its own cursor.
+        // same `PlaceEntered` through its own cursor. The slots are filled
+        // first, so the deck's own population and props, which keep off
+        // every slot's cell, never stand where a guard or a locker goes.
         //
-        // `remember_depth` goes first, ahead of anything that spawns: it
-        // writes no entity of its own, but `populate_deck` will read
-        // `Deepest` to draw a revisited deck's population at the band the
-        // run has actually reached, and that read is only correct once
+        // `remember_depth` goes first, ahead of anything of Foundry's that
+        // spawns: it writes no entity of its own, but `populate_deck` will
+        // read `Deepest` to draw a revisited deck's population at the band
+        // the run has actually reached, and that read is only correct once
         // this same arrival's `Deepest` is current.
         //
         // Props before loot, because loot lands where nothing stands: an
         // item under a crate is an item nothing can pick up. The loot is
         // the engine's, so the chain is ordered before its set rather than
-        // ending in it.
+        // ending in it, and after the slots' set for the same reason.
         //
         // Chained, though no two of them share a tile-claiming concern:
         // three systems that all spawn, left unordered, queue their
@@ -143,6 +151,7 @@ impl Plugin for FoundryPlugin {
             (crate::climb::remember_depth, crate::droids::populate_deck, crate::props::place_on_arrival, crate::mission::spawn_console_on_arrival)
                 .chain()
                 .in_set(TurnSet::React)
+                .after(PrefabSet::Fill)
                 .before(LootSet::Scatter),
         );
         // A probe's alarm: its line reacts to the same `Noticed` the

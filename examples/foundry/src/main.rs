@@ -6,6 +6,10 @@
 //!
 //! `cargo run -p foundry -- --seed 7`. For a screenshot of a deeper deck,
 //! `FOUNDRY_START=3` starts the run on deck three instead of deck one.
+//! `cargo run -p foundry -- --prefabs` prints, instead of playing, what
+//! every drawn slot of every piece finds on every deck: `✓` where the draw
+//! lands on the deck asked, `~N` where it falls back to deck `N`, and `✗`
+//! where it finds nothing.
 
 use bevy::prelude::*;
 use foundry::cheats::CheatPanel;
@@ -161,8 +165,12 @@ fn main() -> AppExit {
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         [] => {}
         ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
+        ["--prefabs"] => {
+            print!("{}", foundry::prefabs::coverage_report().render());
+            return AppExit::Success;
+        }
         _ => {
-            eprintln!("usage: foundry [--seed N]");
+            eprintln!("usage: foundry [--seed N | --prefabs]");
             return AppExit::error();
         }
     }

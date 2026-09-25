@@ -112,15 +112,11 @@ pub fn abilities(registries: &Registries) -> Abilities {
     crate::upgrades::load_abilities(&effect_kinds(), registries)
 }
 
-/// The effect kinds a Foundry app has, for the same tests: whatever
-/// `add_engine_effects` declares, and the `Ignite` and `Emit` that
-/// `FirePlugin` and `GasPlugin` declare for the grenades, which is what
-/// `main.rs` gives the real load. The throwaway `App` is there for that
-/// and nothing else.
+/// The effect kinds a Foundry app has, for the same tests:
+/// [`gear::effect_kinds`](crate::gear::effect_kinds), the ones `main.rs`
+/// gives the real load.
 pub fn effect_kinds() -> EffectKinds {
-    let mut app = App::new();
-    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
-    std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
+    crate::gear::effect_kinds()
 }
 
 /// The armory, for a test that has an `App`: the same three tables the

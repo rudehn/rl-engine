@@ -113,7 +113,7 @@ fn fingerprint_tripwire_a_scripted_two_hundred_turn_run_on_seed_seven_comes_to_t
     assert_eq!(first, run(7, 200), "one seed, two runs, one fingerprint");
     assert_ne!(first, run(8, 200), "another seed is another run");
     assert_eq!(
-        first, 4_522_241_706_254_112_780,
+        first, 8_405_133_597_109_566_668,
         "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say so in the changelog"
     );
 }

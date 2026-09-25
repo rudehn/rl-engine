@@ -34,6 +34,7 @@ pub mod minds;
 pub mod noise;
 pub mod places;
 pub mod plugin;
+pub mod prefabs;
 pub mod props;
 pub mod registries;
 pub mod remains;
@@ -86,6 +87,7 @@ pub use plugin::{
     CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, Requirements,
     ResetsOnNewRun, ResolveSet, RunResets, Turn, TurnSet, clear_run, depends_on,
 };
+pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
 pub use props::{
     AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet,
     PropsPlugin, Refused, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
@@ -142,6 +144,7 @@ pub mod prelude {
         CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, ResetsOnNewRun,
         ResolveSet, Turn, TurnSet, depends_on,
     };
+    pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{
         AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Spotted,
         Take, VerbId, Verbs, spawn_prop,

@@ -130,7 +130,8 @@ pub fn name_as_remains(world: &mut World, entity: Entity) {
 /// tidiness: a watcher is anything that carries `Notice` and is not
 /// `Dead`, and remains are not `Dead` by design, so a body left with its
 /// `Notice` went on watching the player, who stayed marked as seen with
-/// every enemy on the deck dead.
+/// every enemy on the deck dead. Its [`Post`](crate::minds::Post) comes
+/// off as well, since a body keeps no cell and walks back to none.
 pub type WasLiving = (
     Dead,
     Actor,
@@ -143,6 +144,7 @@ pub type WasLiving = (
     crate::stealth::Aware,
     crate::noise::Hearing,
     crate::noise::Heard,
+    crate::minds::Post,
 );
 
 /// Keeps the dead that leave remains, and takes the life off them.

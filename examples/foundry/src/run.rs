@@ -36,8 +36,9 @@ pub struct Resume;
 
 /// Everything a run stands on that is the same however it began: the
 /// decks, the combat rules and the damage pipeline, the dark, the fire,
-/// the roster, the loot stream. Shared by [`start`] and [`resume`], so a
-/// continued run is built on exactly the foundry a fresh one is.
+/// the roster, the pieces, the loot stream. Shared by [`start`] and
+/// [`resume`], so a continued run is built on exactly the foundry a fresh
+/// one is.
 pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     let foundry = Foundry::new(seed.0);
     commands.insert_resource(crate::light::LampTile(foundry.lamp()));
@@ -57,6 +58,9 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // is a fire and a screen at once.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
     commands.insert_resource(Roster::load(registries));
+    // The pieces the decks are stamped from, shared with the engine that
+    // fills their slots, so a stamp's key names the same piece in both.
+    commands.insert_resource(foundry.prefabs().clone());
     commands.insert_resource(PlaceRulesRes(Box::new(foundry)));
 }
 
