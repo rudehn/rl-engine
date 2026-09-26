@@ -7,7 +7,7 @@
             crates/rl-bevy/src/knowledge.rs
             crates/rl-grid/src/fov.rs
             crates/rl-grid/src/light.rs
-     fingerprint: 268d3789 -->
+     fingerprint: 29a15a1d -->
 
 # Sight and lighting
 

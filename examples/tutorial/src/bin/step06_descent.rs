@@ -502,7 +502,7 @@ fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
     } else {
         commands.spawn((
             Item,
-            Throwable { range: 7, strike: Some((rats.bite, DiceRoll::new(1, 4))) },
+            Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4)))),
             Name::new("a rock"),
             Position(p),
             Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2),

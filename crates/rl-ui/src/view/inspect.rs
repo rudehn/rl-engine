@@ -479,7 +479,7 @@ mod tests {
             let gunner = stage.actor("gunner", 'g', away, 0);
             // Nothing but a gun: no melee at all, the case the bug hid.
             let (kind, world) = (stage.kind, stage.app.world_mut());
-            world.entity_mut(gunner).remove::<MeleeAttack>().insert(RangedAttack { kind, dice: rl_core::DiceRoll::flat(5), range: 8, cost: None, look: None });
+            world.entity_mut(gunner).remove::<MeleeAttack>().insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(5), 8));
             stage.tick();
             stage.press(CursorKeys::default().look);
             stage.app.world().resource::<InspectView>().duel.expect("a duel against something that fights")

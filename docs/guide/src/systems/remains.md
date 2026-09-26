@@ -7,7 +7,7 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-rules/src/ai/snapshot.rs
             crates/rl-save/src/run.rs
-     fingerprint: 35f7fb59 -->
+     fingerprint: 3fe0c4ca -->
 
 # Remains
 

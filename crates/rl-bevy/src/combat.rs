@@ -144,6 +144,9 @@ pub struct RangedAttack {
     pub dice: DiceRoll,
     /// Furthest cell it reaches.
     pub range: i32,
+    /// The furthest cell with no range penalty, for a hit model that reads
+    /// one. `None` is a third of `range`, so only a weapon that cares says.
+    pub effective: Option<i32>,
     /// What one shot with it costs, in hundredths of a step. `None` is
     /// [`BASE_ACTION_COST`](rl_core::turn::BASE_ACTION_COST). A shot that
     /// finds nothing in reach costs the ordinary turn rather than this,
@@ -159,7 +162,7 @@ impl RangedAttack {
     /// A shot of `kind` rolling `dice` out to `range`, costing an ordinary
     /// turn and flying nothing.
     pub const fn new(kind: DamageKindId, dice: DiceRoll, range: i32) -> Self {
-        Self { kind, dice, range, cost: None, look: None }
+        Self { kind, dice, range, effective: None, cost: None, look: None }
     }
 
     /// One shot costs `cost` hundredths of a step.
@@ -172,6 +175,21 @@ impl RangedAttack {
     pub const fn looking(mut self, look: Look) -> Self {
         self.look = Some(look);
         self
+    }
+
+    /// No range penalty out to `cells`.
+    pub const fn effective_to(mut self, cells: i32) -> Self {
+        self.effective = Some(cells);
+        self
+    }
+
+    /// The furthest cell with no range penalty: the one set, or a third of
+    /// the range.
+    pub const fn effective_range(&self) -> i32 {
+        match self.effective {
+            Some(cells) => cells,
+            None => self.range / 3,
+        }
     }
 }
 
@@ -217,6 +235,12 @@ pub struct CombatRules {
     /// The stat whose value is added to the roll of the blow and the shot,
     /// if any.
     pub attack: Option<StatId>,
+    /// The stat an attacker's accuracy is read from, if any. With none, the
+    /// hit model is told there is no accuracy and uses its own default:
+    /// 100 for `Percent`.
+    pub accuracy: Option<StatId>,
+    /// The stat a target's evasion is read from, if any.
+    pub evasion: Option<StatId>,
     /// Whether the player's death ends the run, which it does unless the
     /// game says otherwise: one that revives, or plays on as a ghost, keeps
     /// the ending for itself.
@@ -228,7 +252,7 @@ impl CombatRules {
     /// until a pair is named, no stat read by a blow, and the player's death
     /// the end of the run.
     pub fn new(sides: &Registry<FactionDef>) -> Self {
-        Self { factions: Factions::new(sides), armor: None, attack: None, death_ends_run: true }
+        Self { factions: Factions::new(sides), armor: None, attack: None, accuracy: None, evasion: None, death_ends_run: true }
     }
 
     /// The player's death does not end the run; the game says when it ends.
@@ -248,6 +272,18 @@ impl CombatRules {
     /// the blow and the shot.
     pub fn attack_stat(mut self, stat: StatId) -> Self {
         self.attack = Some(stat);
+        self
+    }
+
+    /// Reads `stat` as accuracy, for the hit model.
+    pub fn accuracy_stat(mut self, stat: StatId) -> Self {
+        self.accuracy = Some(stat);
+        self
+    }
+
+    /// Reads `stat` as evasion, for the hit model.
+    pub fn evasion_stat(mut self, stat: StatId) -> Self {
+        self.evasion = Some(stat);
         self
     }
 
@@ -912,7 +948,9 @@ impl Plugin for CombatPlugin {
             // then the queue simply stays empty.
             .add_message::<crate::effects::Fired>()
             .add_message::<Struck>()
+            .add_message::<crate::accuracy::Missed>()
             .init_resource::<DamageStages>()
+            .init_resource::<crate::accuracy::HitRules>()
             .add_airborne::<ShotLanding>()
             .add_action::<Attack>()
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")

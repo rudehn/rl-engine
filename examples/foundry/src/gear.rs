@@ -341,7 +341,7 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
         e.insert(RangedAttack { cost: d.cost, ..ranged.attack() });
     }
     if let Some(throw) = d.throw {
-        e.insert(Throwable { range: throw.range, strike: throw.strike.map(|(dice, kind)| (kind.id(), dice)) });
+        e.insert(Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), dice))));
     }
     if let Some((per_shot, vent)) = d.heat {
         e.insert(Heat::new(per_shot, vent));

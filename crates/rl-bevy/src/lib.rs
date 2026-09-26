@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ability;
+pub mod accuracy;
 pub mod bump;
 pub mod combat;
 pub mod components;
@@ -48,6 +49,7 @@ pub mod turn;
 pub mod world;
 
 pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
+pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,
@@ -111,6 +113,7 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 /// that collided with a game's own `Shove` action.
 pub mod prelude {
     pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Use};
+    pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,

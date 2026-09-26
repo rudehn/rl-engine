@@ -1005,7 +1005,7 @@ mod tests {
         let mut stage = Stage::new_with((ThrowingPlugin, TargetViewPlugin), |_| {});
         stage.tick();
         let (user, kind) = (stage.player, stage.kind);
-        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable { range: 6, strike: Some((kind, rl_core::DiceRoll::flat(2))) })).id();
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(6, Some((kind, rl_core::DiceRoll::flat(2)))))).id();
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
         stage.actor("near", 'n', 2, 0);
         stage.actor("far", 'f', 4, 0);

@@ -40,6 +40,33 @@ pub struct Throwable {
     pub range: i32,
     /// The kind of damage and the roll it deals whoever it strikes, if any.
     pub strike: Option<(DamageKindId, DiceRoll)>,
+    /// The furthest cell with no range penalty, for a hit model that reads
+    /// one. `None` is a third of `range`.
+    pub effective: Option<i32>,
+}
+
+impl Throwable {
+    /// Reaching `range` and striking with `strike`, its effective range a
+    /// third of that. A constructor rather than a literal, so a field only
+    /// some games want is added without touching every call site.
+    pub const fn new(range: i32, strike: Option<(DamageKindId, DiceRoll)>) -> Self {
+        Self { range, strike, effective: None }
+    }
+
+    /// No range penalty out to `cells`.
+    pub const fn effective_to(mut self, cells: i32) -> Self {
+        self.effective = Some(cells);
+        self
+    }
+
+    /// The furthest cell with no range penalty: the one set, or a third of
+    /// the range.
+    pub const fn effective_range(&self) -> i32 {
+        match self.effective {
+            Some(cells) => cells,
+            None => self.range / 3,
+        }
+    }
 }
 
 /// Throw a carried item at a cell.
@@ -134,7 +161,7 @@ pub fn resolve_throws(
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         }
-        let Throwable { range, strike } = *throwable;
+        let Throwable { range, strike, .. } = *throwable;
         let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range);
 
         // One leaves the hand: off the top of a stack, which makes it a
@@ -285,7 +312,7 @@ mod tests {
 
         /// A stack of `count` knives in the player's bag.
         fn knives(&mut self, count: u32) -> Entity {
-            let knife = Throwable { range: 5, strike: Some((self.sides.kind, DiceRoll::flat(3))) };
+            let knife = Throwable::new(5, Some((self.sides.kind, DiceRoll::flat(3))));
             let stack = self.app.world_mut().spawn((Item, knife, Stack { key: 1, count }, Name::new("knife"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
             stack
@@ -311,8 +338,7 @@ mod tests {
                 .expect("the trigger builds")
             };
             let spent = crate::consumable::Consumable::new(1, crate::consumable::WhenEmpty::Destroyed);
-            let stack =
-                self.app.world_mut().spawn((Item, Throwable { range: 6, strike: None }, spent, triggers, Stack { key: 2, count }, Name::new("grenade"))).id();
+            let stack = self.app.world_mut().spawn((Item, Throwable::new(6, None), spent, triggers, Stack { key: 2, count }, Name::new("grenade"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
             stack
         }
@@ -450,7 +476,7 @@ mod tests {
         let mut rig = Rig::new();
         let knives = rig.knives(2);
         assert!(rig.throw(knives, 0).is_empty(), "not at your own feet");
-        let lying = rig.app.world_mut().spawn((Item, Position(rig.start.offset(1, 0)), Throwable { range: 3, strike: None })).id();
+        let lying = rig.app.world_mut().spawn((Item, Position(rig.start.offset(1, 0)), Throwable::new(3, None))).id();
         assert!(rig.throw(lying, 3).is_empty(), "not what lies on the ground");
         let stone = rig.app.world_mut().spawn(Item).id();
         rig.app.world_mut().get_mut::<Inventory>(rig.player).unwrap().items.push(stone);

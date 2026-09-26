@@ -322,7 +322,7 @@ impl Armory {
             e.insert((Wearable(shape.clone()), GearScore(self.gear_score(id, &enchant)), Enchant(enchant)));
         }
         if let Some(ThrowDef { range, strike: (dice, kind) }) = d.throw {
-            e.insert(Throwable { range, strike: Some((kind.id(), dice)) });
+            e.insert(Throwable::new(range, Some((kind.id(), dice))));
         }
         if d.stack {
             e.insert(Stack { key: id.raw() as u64, count });

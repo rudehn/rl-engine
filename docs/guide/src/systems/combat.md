@@ -9,7 +9,10 @@
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/faction.rs
             crates/rl-rules/src/forecast.rs
-     fingerprint: 29eedd34 -->
+            crates/rl-rules/src/accuracy.rs
+            crates/rl-bevy/src/accuracy.rs
+            crates/rl-bevy/src/throwing.rs
+     fingerprint: cd9d76bd -->
 
 # Combat and loadout
 
@@ -37,6 +40,8 @@ A grudge that is not returned is the reason the matrix is dense and asymmetric r
 `CombatRules` also carries `armor` and `attack`, each an optional `StatId`, and `death_ends_run`, which `death_is_not_the_end()` clears for a game that revives or plays on as a ghost.
 `MeleeAttack` is a `kind`, a `dice` roll, an optional `cost` in hundredths of a step and an optional `look`; `RangedAttack` is the same with a `range`.
 Both are built by `new` and narrowed by `costing` and `looking`, so a field only some games want is added without touching every call site.
+`RangedAttack` and `Throwable` also carry an optional `effective` range, a third of `range` when left out, which is as far as a hit model charges nothing for distance.
+`HitRules` holds the game's `HitModel`, `Certain` unless the game inserts another, and `Marksmanship` gathers what a model reads into a `Shot`: how the attack travels, the distance, the effective range and reach, the `LightBand` at the target, and the stats `accuracy_stat` and `evasion_stat` name.
 `Armor` is flat damage removed and `Strikes` is a list of extra rolls every hit carries, a flaming blade's fire or a venomed edge's poison.
 All four sit on an actor or on an item, and that is the whole of how gear fights: a jerkin is an item with `Armor(1)` and nothing copies the 1 onto whoever puts it on.
 `Loadout` is the one answer to what an entity fights with, in three layers: the actor's own components, the same components on every item in its `Equipped` slots in slot order, and the value of the stat `CombatRules` names.
