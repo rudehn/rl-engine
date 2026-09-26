@@ -88,6 +88,17 @@ What a game hands combat is two registries and two rules, which is the whole of 
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
 ```
 
+Turning accuracy on is one resource, and Foundry's is the whole of it.
+
+<!-- include: ../../../../examples/foundry/src/run.rs:accuracy -->
+```rust,no_run
+    // A shot goes wide past its weapon's effective range and in poor light:
+    // five points a tile past it, sixteen for a target in dim light, thirty
+    // for one seen only by the helmet in the dark. Foundry has no stats, so
+    // accuracy is the model's hundred and nobody evades.
+    commands.insert_resource(HitRules(Box::new(Percent::new(5, 16, 30))));
+```
+
 ## The line
 
 The engine decides whether a blow is in reach, whether a shot has a line, what it is struck with, what it costs, what it rolls, the order the stages run in, what comes off health and who died.

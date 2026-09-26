@@ -363,10 +363,10 @@ mod tests {
             crate::testing::pick(&mut app, player, u);
         }
         assert!(crate::testing::knows(&app, player, "stims"));
-        assert_eq!(app.world().get::<RangedAttack>(blaster).unwrap().range, 6, "five, and one more");
+        assert_eq!(app.world().get::<RangedAttack>(blaster).unwrap().range, 9, "eight, and one more");
         assert_eq!(app.world().get::<Speed>(player).map(|s| s.0), Some(110));
         let carbine = crate::testing::equip_new(&mut app, player, "blaster carbine");
-        assert_eq!(app.world().get::<RangedAttack>(carbine).unwrap().range, 10, "nine, and one more, put on after the pick");
+        assert_eq!(app.world().get::<RangedAttack>(carbine).unwrap().range, 13, "twelve, and one more, put on after the pick");
     }
 
     #[test]
@@ -375,7 +375,7 @@ mod tests {
         let (player, blaster) = crate::testing::player_with_hand_blaster(&mut app);
         crate::testing::pick(&mut app, player, Upgrade::Uplink);
         crate::testing::unequip(&mut app, player, blaster);
-        assert_eq!(app.world().get::<RangedAttack>(blaster).unwrap().range, 5, "back to what the file says");
+        assert_eq!(app.world().get::<RangedAttack>(blaster).unwrap().range, 8, "back to what the file says");
     }
 
     #[test]
@@ -386,9 +386,9 @@ mod tests {
         assert!(app.world().get::<RangedAttack>(first).is_none(), "locked: stowed");
         crate::testing::pick(&mut app, player, Upgrade::Uplink);
         let Stowed::Ranged(attack) = app.world().get::<Stowed>(first).unwrap() else { panic!("still stowed as ranged") };
-        assert_eq!(attack.range, 6, "raised while stowed");
+        assert_eq!(attack.range, 9, "raised while stowed");
         crate::testing::pass_turns(&mut app, 6);
-        assert_eq!(app.world().get::<RangedAttack>(first).unwrap().range, 6, "cooled off with its extra reach");
+        assert_eq!(app.world().get::<RangedAttack>(first).unwrap().range, 9, "cooled off with its extra reach");
     }
 
     #[test]
@@ -398,9 +398,9 @@ mod tests {
         assert!(app.world().get::<RangedAttack>(pistol).is_none(), "dry from the start");
         crate::testing::pick(&mut app, player, Upgrade::Uplink);
         let Stowed::Ranged(attack) = app.world().get::<Stowed>(pistol).unwrap() else { panic!("still stowed as ranged") };
-        assert_eq!(attack.range, 7, "raised while dry");
+        assert_eq!(attack.range, 10, "raised while dry");
         crate::testing::give_slugs(&mut app, player, 3);
         app.update();
-        assert_eq!(app.world().get::<RangedAttack>(pistol).unwrap().range, 7, "loaded again with its extra reach");
+        assert_eq!(app.world().get::<RangedAttack>(pistol).unwrap().range, 10, "loaded again with its extra reach");
     }
 }

@@ -83,6 +83,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - `RangedAttack` and `Throwable` carry an optional `effective` range, a third of `range` when left out. Breaking: a `Throwable` literal no longer compiles; write `Throwable::new(range, strike)`. A `RangedAttack` literal adds `effective: None`, or is written with `RangedAttack::new`.
 - A forecast counts the misses: `Combatant` has `chance_pct`, set with `hitting`, and `InspectView::odds` is the chance the player's own attack lands, printed under the forecast. A `Combatant` literal adds `chance_pct: 100`.
 - `TargetPanel::new(rect)` draws a framed box in `rect`, not a one-row banner: what is aimed, the range, the target, and the chance to hit with the lines behind it. Breaking: give it a box at least eight rows tall, such as the bottom of the rail, and keep its hints within the box's width less four, since they now sit in its bottom border.
+- Foundry rolls to hit: five points a tile past a weapon's effective range, sixteen against a target in dim light and thirty in the dark. Short guns reach further than they aim well: the hand blaster and ion pistol aim to 3 and reach 8, the slug pistol 3 and 9, the heavy repeater 4 and 10, the blaster carbine 6 and 12, the slug rifle 7 and 14, and a thrown monoblade 2 and 5. Its fingerprint tripwire is re-baselined, since shots now roll.
 
 ## 0.3.0
 

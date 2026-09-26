@@ -123,6 +123,9 @@ pub struct ConsumableDef {
 pub struct ThrowDef {
     /// The furthest cell it reaches.
     pub range: i32,
+    /// The furthest cell with no range penalty; absent, a third of `range`.
+    #[serde(default)]
+    pub effective: Option<i32>,
     /// The roll and damage kind it strikes whoever it hits with.
     #[serde(default)]
     pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
@@ -341,7 +344,7 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
         e.insert(RangedAttack { cost: d.cost, ..ranged.attack() });
     }
     if let Some(throw) = d.throw {
-        e.insert(Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), dice))));
+        e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), dice))) });
     }
     if let Some((per_shot, vent)) = d.heat {
         e.insert(Heat::new(per_shot, vent));
@@ -464,7 +467,7 @@ mod tests {
         let melee = world.get::<MeleeAttack>(axe).expect("the axe swings");
         assert_eq!(melee.cost, Some(140));
         let ranged = world.get::<RangedAttack>(carbine).expect("the carbine fires");
-        assert_eq!((ranged.range, ranged.cost), (9, Some(100)));
+        assert_eq!((ranged.range, ranged.cost), (12, Some(100)));
         let shape = &world.get::<Wearable>(axe).unwrap().0;
         assert_eq!(shape.slots().count(), 2, "main hand and off hand");
     }
