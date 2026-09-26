@@ -50,6 +50,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 23 | `HalveIfBlocked` can never fire | 3 | low | low |
 | 24 | Two engine types are named for a theme word | 4 | low | low |
 | 25 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
+| 26 | A searcher dithers where it lost the trail | 2 | medium | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -86,6 +87,12 @@ The five items that opened this section were built in the six stages of `docs/de
   No pack or leader behaviour, no keep-at-range for a shooter, no patrol or idle routine, and no scent, though `DijkstraMap` is the right tool for it; noise is built, in `docs/design/noise.md`.
   A mind now shoots what it wields when there is a clear shot to take, with `ShootAtRange`, and holds a distance with `Shadow` above it; no game fields a skirmisher yet.
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
+- **A searcher dithers where it lost the trail.**
+  `SearchLastKnown` walks to the remembered cell and, standing on it, gives the turn to the next tactic, but the memory stays until `NoticeStats::memory` turns have passed.
+  So whatever comes next steps off the cell and the search walks straight back: a posted guard shuffles between the cell and one step toward its `Post`, and a wanderer between the cell and a random neighbour, until the memory runs out.
+  Seen on 2026-09-25 in Foundry's guard posts, where it reads as a guard that cannot decide to go home.
+  The fix is to forget the remembered cell once the searcher has reached it and seen nothing there, in stealth's awareness update or in the tactic's own contract, so the search ends where it arrives and the next tactic takes over for good.
+  It changes how every game's monsters search, so every fingerprint moves with it.
 
 ## 3. Make what exists real
 
