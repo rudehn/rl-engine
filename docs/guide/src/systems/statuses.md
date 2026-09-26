@@ -13,7 +13,7 @@
             crates/rl-rules/src/events/ledger.rs
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
-     fingerprint: 6967166c -->
+     fingerprint: 661b5a6e -->
 
 # Statuses
 
