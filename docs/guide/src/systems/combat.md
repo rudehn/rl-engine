@@ -12,7 +12,7 @@
             crates/rl-rules/src/accuracy.rs
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/throwing.rs
-     fingerprint: af15d0f8 -->
+     fingerprint: c2f2e0a0 -->
 
 # Combat and loadout
 
@@ -108,6 +108,7 @@ Arithmetic that is really about the rules lives in `rl-rules`, and what that buy
 `rl-rules` is tier 1 and has no Bevy in it: `damage.rs` is `Hit`, `Defender`, the `DamageStage` trait and a `resolve` that is a fold over stages, all of it tested against ids made out of thin air.
 `faction.rs` is the dense matrix, which is a table and an index rather than anything that needs a world.
 `forecast.rs` is where the split earns its keep: `expected_damage` calls the same `resolve` with the average roll in place of a real one and through the game's own stages, so a panel that says a fight is deadly got the word from the arithmetic the fight will use.
+A `Combatant` also carries the chance its attacks land, 100 unless a hit model says otherwise, and `expected_damage` counts the misses by it, so a fight that is deadly on paper and a coin toss at the trigger reads as the coin toss.
 `Arms` is what a fight fought at a distance costs it: both sets of rolls, both costs and the shot's reach, with `Arms::at` the one place the choice between them is made and `Combatant` still one set already chosen.
 The distance is an argument because only the caller knows where the two stand, and the one thing `Arms::at` will not check is whether the line of fire is clear, since a forecast a wall may yet block is still the right forecast for the fight the two would have.
 `rl-bevy` is tier 2 and owns everything that touches the world: `combat.rs` is the components, `Loadout`, the resolver, the pipeline runner and the deaths, in one file because a blow is one decision and not six.

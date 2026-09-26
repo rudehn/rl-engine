@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: acbd4787 -->
+     fingerprint: ffabf65e -->
 
 # Panels
 
@@ -85,6 +85,7 @@ An aim put away, fired or not, leaves nothing picked out, so the rail is not lef
 `NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one.
 `InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it and a `Duel` fought at the distance the cursor stands from the player.
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
+Each side's chance of landing what it would attack with from there comes from `Marksmanship::at_distance` and scales its `Combatant` through `hitting`, and the player's own is kept as `odds` for the panel to print under the forecast, the same lines the targeting cursor prints.
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.
 `AbilityView` is an `AbilityRow` per ability the turn-holder knows, in registration order so a key bound to the third row stays bound to it, each carrying its costs, requirements and effects as sentences and every reason it is refused.
 `TargetView` is what is being aimed, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, and a `Row` per target.

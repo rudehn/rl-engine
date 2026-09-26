@@ -53,12 +53,16 @@ pub struct Combatant<'a> {
     pub resists: &'a Resistances,
     /// Every roll one blow of its lands, the main one first.
     pub strikes: &'a [(DamageKindId, DiceRoll)],
+    /// The chance, in whole percent, that one of its attacks lands at all:
+    /// 100 unless a hit model says otherwise, so a forecast built without
+    /// one reads as it always did.
+    pub chance_pct: u32,
 }
 
 impl Combatant<'_> {
     /// A combatant that neither strikes nor resists anything.
     pub fn unarmed(health: i32, armor: i32, speed: u32, resists: &Resistances) -> Combatant<'_> {
-        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[] }
+        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[], chance_pct: 100 }
     }
 
     /// A combatant fighting whatever `arms` gives it at `distance`.
@@ -67,7 +71,14 @@ impl Combatant<'_> {
     /// panel cannot pick differently from the resolver.
     pub fn armed<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
         let (strikes, blow_cost) = arms.at(distance);
-        Combatant { health, armor, speed, blow_cost, resists, strikes }
+        Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
+    }
+
+    /// The same combatant landing `chance_pct` percent of its attacks, so a
+    /// forecast counts the misses: half the hits is twice the blows.
+    pub fn hitting(mut self, chance_pct: u32) -> Self {
+        self.chance_pct = chance_pct.min(100);
+        self
     }
 }
 
@@ -123,7 +134,7 @@ impl<'a> Arms<'a> {
 }
 
 /// What one blow by `attacker` takes off `defender`, on average, after the
-/// game's own mitigation.
+/// game's own mitigation and counting the blows that miss.
 ///
 /// Fractional because dice are: a d4 that armor takes 1 from averages 1.5,
 /// and rounding that to 1 or 2 before it is multiplied out is how a
@@ -146,7 +157,9 @@ pub fn expected_damage<A: Copy>(attacker: &Combatant<'_>, defender: &Combatant<'
             };
             at(low) * (1.0 - share) + at(low + 1) * share
         })
-        .sum()
+        .sum::<f32>()
+        * attacker.chance_pct as f32
+        / 100.0
 }
 
 /// How many blows `attacker` needs to fell `defender`, or `None` when it
@@ -276,7 +289,7 @@ mod tests {
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
-        let attacker = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
+        let attacker = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
         let bare = Combatant::unarmed(10, 0, 100, &none);
         let armored = Combatant::unarmed(10, 1, 100, &none);
         let open = expected_damage::<u32>(&attacker, &bare, &kinds, &stages);
@@ -286,19 +299,34 @@ mod tests {
     }
 
     #[test]
+    fn a_blow_that_lands_half_the_time_is_expected_to_do_half_the_damage() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::flat(6))];
+        let sure = Combatant { strikes: &strikes, ..Combatant::unarmed(10, 0, 100, &none) };
+        let even = Combatant { strikes: &strikes, ..Combatant::unarmed(10, 0, 100, &none) }.hitting(50);
+        let target = Combatant::unarmed(30, 0, 100, &none);
+        assert_eq!(expected_damage::<u32>(&sure, &target, &kinds, &stages), 6.0);
+        assert_eq!(expected_damage::<u32>(&even, &target, &kinds, &stages), 3.0);
+        assert_eq!(blows_to_fell::<u32>(&even, &target, &kinds, &stages), Some(10), "twice the blows for half the hits");
+    }
+
+    #[test]
     fn a_blow_that_never_lands_never_fells_and_a_stalemate_reads_as_even() {
         let kinds = kinds();
         let boxed = armor_only();
         let stages = stage_refs(&boxed);
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let biter = Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
+        let biter = Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
         let plated = Combatant::unarmed(30, 10, 100, &none);
         assert_eq!(blows_to_fell::<u32>(&biter, &plated, &kinds, &stages), None);
         let stalemate = duel::<u32>(&plated, &biter, &kinds, &stages);
         assert_eq!(stalemate.turns_to_fall, None, "the plated one is never felled");
         assert_eq!(stalemate.outlook, Outlook::Even, "neither side can end it, which is even and not a win");
-        let armed = Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
+        let armed = Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
         assert_eq!(duel::<u32>(&armed, &biter, &kinds, &stages).outlook, Outlook::Easy, "armor it cannot pierce and a blow that lands");
     }
 
@@ -334,8 +362,8 @@ mod tests {
         let none = Resistances::new();
         let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
         let target = Combatant::unarmed(30, 0, 100, &none);
-        let quick = Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes };
-        let ordinary = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes };
+        let quick = Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes, chance_pct: 100 };
+        let ordinary = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
         let cheaper = duel::<u32>(&quick, &target, &kinds, &stages);
         let plain = duel::<u32>(&ordinary, &target, &kinds, &stages);
         assert!(cheaper.turns_to_fell.is_some() && plain.turns_to_fell.is_some(), "both land the same blows and fell the target");
@@ -350,8 +378,8 @@ mod tests {
         let none = Resistances::new();
         let hard = [(kinds.expect("kinetic"), DiceRoll { num: 1, sides: 8, bonus: 4 })];
         let soft = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
-        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard };
-        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft };
+        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard, chance_pct: 100 };
+        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft, chance_pct: 100 };
         assert_eq!(duel::<u32>(&strong, &weak, &kinds, &stages).outlook, Outlook::Easy);
         assert_eq!(duel::<u32>(&weak, &strong, &kinds, &stages).outlook, Outlook::Deadly);
         assert_eq!(duel::<u32>(&strong, &strong, &kinds, &stages).outlook, Outlook::Even);

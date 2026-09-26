@@ -90,6 +90,17 @@ pub fn frame(terminal: &mut Terminal, rect: Rect, title: &str, hints: &str, pale
     }
 }
 
+/// The tone a chance to hit is drawn in: good from 75, worth noticing from
+/// 40, bad below. One rule, so the targeting box and the inspect panel
+/// agree about when a shot is a bad bet.
+pub fn odds_tone(percent: u32) -> ToneId {
+    match percent {
+        75.. => Tones::GOOD,
+        40.. => Tones::NOTICE,
+        _ => Tones::BAD,
+    }
+}
+
 /// Draws a section heading at `y`, underlined to the width of `rect`.
 ///
 /// `count` is printed right-aligned on the same row when it is `Some`,
