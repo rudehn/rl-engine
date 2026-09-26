@@ -79,6 +79,12 @@ pub enum Phrase {
     OthersShoot,
     /// Someone shot someone else for nothing.
     OthersShootNothing,
+    /// You attacked someone and missed.
+    YouMiss,
+    /// Someone attacked you and missed.
+    MissesYou,
+    /// Someone attacked someone else and missed.
+    OthersMiss,
     /// You hurt yourself.
     YouHurtYourself,
     /// You were mended.
@@ -366,6 +372,7 @@ impl Plugin for NarrationViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NarrationView>()
             .add_message::<DamageDealt>()
+            .add_message::<Missed>()
             .add_message::<DeathEvent>()
             .add_message::<ItemEvent>()
             .add_message::<DoorEvent>()
@@ -397,6 +404,7 @@ pub struct Heard<'w, 's> {
     doors: MessageReader<'w, 's, DoorEvent>,
     items: MessageReader<'w, 's, ItemEvent>,
     dealt: MessageReader<'w, 's, DamageDealt>,
+    missed: MessageReader<'w, 's, Missed>,
     statuses: MessageReader<'w, 's, StatusEvent>,
     deaths: MessageReader<'w, 's, DeathEvent>,
     noticed: MessageReader<'w, 's, Noticed>,
@@ -612,6 +620,18 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         said.what = Some(item);
         rows.push(said);
     }
+    // A miss is said where a hit would have been, ahead of the damage the
+    // same pass dealt, since both come from attacks made in that pass.
+    for m in heard.missed.read() {
+        let phrase = if witness.is_you(m.attacker) {
+            Phrase::YouMiss
+        } else if witness.is_you(m.target) {
+            Phrase::MissesYou
+        } else {
+            Phrase::OthersMiss
+        };
+        rows.push(say(phrase, Some(m.attacker), Some(m.target)));
+    }
     for d in heard.dealt.read() {
         let target = d.target;
         let you_target = witness.is_you(target);
@@ -765,7 +785,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 60] = [
+        let table: [(Phrase, &str, ToneId); 63] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -776,6 +796,9 @@ impl Default for Phrasebook {
             (ShootsYouForNothing, "{Who} shoots you, to no effect.", Tones::MUTED),
             (OthersShoot, "{Who} shoots {whom} for {n}.", Tones::TEXT),
             (OthersShootNothing, "{Who} shoots {whom}, to no effect.", Tones::MUTED),
+            (YouMiss, "You miss {whom}.", Tones::MUTED),
+            (MissesYou, "{Who} misses you.", Tones::MUTED),
+            (OthersMiss, "{Who} misses {whom}.", Tones::MUTED),
             (OthersFight, "{Who} hits {whom} for {n}.", Tones::TEXT),
             (OthersHitNothing, "{Who} hits {whom}, to no effect.", Tones::MUTED),
             (YouHurtYourself, "You hurt yourself for {n}.", Tones::BAD),
@@ -1393,6 +1416,22 @@ mod tests {
         let said = spoken(&stage, &["The line droid"]);
         assert_eq!(said[0], "The line droid shoots you for 3.", "{said:#?}");
         assert_eq!(said[1], "The line droid hits you for 2.", "a blow still reads as one: {said:#?}");
+    }
+
+    /// A miss is said from where the player stands, and the droid is named
+    /// the way a hit names it.
+    #[test]
+    fn a_miss_is_said_from_where_the_player_stands() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let droid = stage.actor("line droid", 'd', 4, 0);
+        stage.tick();
+        let world = stage.app.world_mut();
+        world.write_message(Missed { attacker: player, target: droid, with: None, reach: Reach::Shot });
+        world.write_message(Missed { attacker: droid, target: player, with: None, reach: Reach::Shot });
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You miss"]), vec!["You miss the line droid."]);
+        assert_eq!(spoken(&stage, &["The line droid"]), vec!["The line droid misses you."]);
     }
 
     /// Something that did not travel as a weapon keeps the blow wording: a
