@@ -40,6 +40,33 @@ pub struct Throwable {
     pub range: i32,
     /// The kind of damage and the roll it deals whoever it strikes, if any.
     pub strike: Option<(DamageKindId, DiceRoll)>,
+    /// The furthest cell with no range penalty, for a hit model that reads
+    /// one. `None` is a third of `range`.
+    pub effective: Option<i32>,
+}
+
+impl Throwable {
+    /// Reaching `range` and striking with `strike`, its effective range a
+    /// third of that. A constructor rather than a literal, so a field only
+    /// some games want is added without touching every call site.
+    pub const fn new(range: i32, strike: Option<(DamageKindId, DiceRoll)>) -> Self {
+        Self { range, strike, effective: None }
+    }
+
+    /// No range penalty out to `cells`.
+    pub const fn effective_to(mut self, cells: i32) -> Self {
+        self.effective = Some(cells);
+        self
+    }
+
+    /// The furthest cell with no range penalty: the one set, or a third of
+    /// the range.
+    pub const fn effective_range(&self) -> i32 {
+        match self.effective {
+            Some(cells) => cells,
+            None => self.range / 3,
+        }
+    }
 }
 
 /// Throw a carried item at a cell.
@@ -96,17 +123,22 @@ pub struct Launch<'w, 's> {
     cues: MessageWriter<'w, Cued>,
     hold: ResMut<'w, TurnHold>,
     airborne: ResMut<'w, Airborne<ThrowLanding>>,
+    /// The odds of striking whoever the flight meets.
+    marks: crate::accuracy::Marksmanship<'w, 's>,
 }
 
 /// A throw that has left the hand and not yet come down: what it will do
 /// when it does.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ThrowLanding {
     actor: Entity,
     item: Entity,
     rests: Point,
     struck: Option<Entity>,
     strike: Option<(DamageKindId, DiceRoll)>,
+    /// The odds against whoever it struck, read as it left the hand and
+    /// rolled as it lands, where the damage is rolled.
+    odds: Option<rl_rules::Odds>,
 }
 
 impl crate::cue::Lands for ThrowLanding {}
@@ -120,7 +152,7 @@ pub fn resolve_throws(
     launch: Launch,
     mut reports: ThrowReports,
 ) {
-    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut hold, mut airborne } = launch;
+    let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut hold, mut airborne, marks } = launch;
     for intent in intents.read() {
         let (actor, Throw { item, at }) = (intent.actor, intent.action);
         if !resolution.claim(actor) {
@@ -134,7 +166,8 @@ pub fn resolve_throws(
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         }
-        let Throwable { range, strike } = *throwable;
+        let thrown_as = *throwable;
+        let Throwable { range, strike, .. } = thrown_as;
         let Flight { struck, rests, .. } = flight(&map, &occupancy, pos.0, at, range);
 
         // One leaves the hand: off the top of a stack, which makes it a
@@ -158,9 +191,10 @@ pub fn resolve_throws(
         // The flight, in the item's own glyph, landing on whoever it struck
         // wherever they are by the time it is seen.
         let struck = struck.filter(|who| alive.contains(*who));
+        let odds = struck.and_then(|who| marks.odds(actor, who, crate::accuracy::Attempt::Throw(&thrown_as)));
         let to = struck.map(|who| Anchor::on(who, rests)).unwrap_or(Anchor::cell(rests));
         cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Item(thrown) } });
-        let landing = ThrowLanding { actor, item: thrown, rests, struck, strike };
+        let landing = ThrowLanding { actor, item: thrown, rests, struck, strike, odds };
         resolution.done(actor, BASE_ACTION_COST);
         // The turn is spent on the throw. With something watching, the
         // knife is in the air until its flight has been seen, and lies
@@ -177,6 +211,7 @@ pub struct ThrowReports<'w> {
     damage: MessageWriter<'w, DamageEvent>,
     events: MessageWriter<'w, ItemEvent>,
     fired: MessageWriter<'w, Fired>,
+    missed: MessageWriter<'w, crate::accuracy::Missed>,
 }
 
 /// Lands every throw in the air, on the first pass after its flight has
@@ -201,9 +236,17 @@ fn land(
     alive: &Query<(), (With<Health>, Without<Dead>)>,
     reports: &mut ThrowReports,
 ) {
-    let ThrowLanding { actor, item, rests, struck, strike } = landing;
+    let ThrowLanding { actor, item, rests, struck, strike, odds } = landing;
     commands.entity(item).insert((Position(rests), OnMap(map)));
-    let struck = struck.filter(|who| alive.contains(*who));
+    let target = struck.filter(|who| alive.contains(*who));
+    // Rolled where the damage is rolled, as it lands, so a watched throw
+    // and an unwatched one draw in the same order. A miss reports whom it
+    // missed and then lands as a throw that struck nobody.
+    let missed = target.is_some() && odds.is_some_and(|o| !o.roll(&mut **rng));
+    if let (true, Some(target)) = (missed, target) {
+        reports.missed.write(crate::accuracy::Missed { attacker: actor, target, with: Some(item), reach: crate::combat::Reach::Thrown });
+    }
+    let struck = if missed { None } else { target };
     if let (Some(target), Some((kind, dice))) = (struck, strike) {
         // Floored where it is rolled, as a blow is: a throw that rolls
         // below nothing has missed, not healed.
@@ -285,7 +328,7 @@ mod tests {
 
         /// A stack of `count` knives in the player's bag.
         fn knives(&mut self, count: u32) -> Entity {
-            let knife = Throwable { range: 5, strike: Some((self.sides.kind, DiceRoll::flat(3))) };
+            let knife = Throwable::new(5, Some((self.sides.kind, DiceRoll::flat(3))));
             let stack = self.app.world_mut().spawn((Item, knife, Stack { key: 1, count }, Name::new("knife"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
             stack
@@ -311,8 +354,7 @@ mod tests {
                 .expect("the trigger builds")
             };
             let spent = crate::consumable::Consumable::new(1, crate::consumable::WhenEmpty::Destroyed);
-            let stack =
-                self.app.world_mut().spawn((Item, Throwable { range: 6, strike: None }, spent, triggers, Stack { key: 2, count }, Name::new("grenade"))).id();
+            let stack = self.app.world_mut().spawn((Item, Throwable::new(6, None), spent, triggers, Stack { key: 2, count }, Name::new("grenade"))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).unwrap().items.push(stack);
             stack
         }
@@ -347,6 +389,46 @@ mod tests {
         fn now(&self) -> u32 {
             self.app.world().resource::<Turns>().now()
         }
+    }
+
+    /// Always misses.
+    struct Never;
+    impl rl_rules::accuracy::HitModel for Never {
+        fn odds(&self, _: &rl_rules::accuracy::Shot) -> Option<rl_rules::Odds> {
+            Some(rl_rules::Odds::new(0, 100, Vec::new()))
+        }
+    }
+
+    /// Hits only at exactly this distance, and misses everywhere else.
+    struct OnlyAt(i32);
+    impl rl_rules::accuracy::HitModel for OnlyAt {
+        fn odds(&self, shot: &rl_rules::accuracy::Shot) -> Option<rl_rules::Odds> {
+            Some(rl_rules::Odds::new(u32::from(shot.distance == self.0), 1, Vec::new()))
+        }
+    }
+
+    #[test]
+    fn a_missed_throw_rests_where_a_hit_would_have_and_hurts_nobody() {
+        let mut rig = Rig::new();
+        rig.app.insert_resource(crate::accuracy::HitRules(Box::new(Never)));
+        let target = rig.mark(3);
+        let knife = rig.knives(1);
+        let events = rig.throw(knife, 3);
+        assert_eq!(rig.hp(target), 20, "a miss deals nothing");
+        assert_eq!(rig.lying_at(rig.start.offset(3, 0)), vec![knife], "and lies where a hit would have left it");
+        assert!(events.iter().any(|e| matches!(e, ItemEvent::Thrown { struck: None, .. })), "the item event says it struck nobody: {events:?}");
+    }
+
+    #[test]
+    fn a_throw_that_strikes_a_body_in_between_is_rolled_against_that_body_at_its_distance() {
+        let mut rig = Rig::new();
+        rig.app.insert_resource(crate::accuracy::HitRules(Box::new(OnlyAt(2))));
+        let near = rig.mark(2);
+        let far = rig.mark(4);
+        let knife = rig.knives(1);
+        rig.throw(knife, 4);
+        assert_eq!(rig.hp(near), 17, "rolled against the near mark at two cells, and it hit for the knife's three");
+        assert_eq!(rig.hp(far), 20);
     }
 
     /// A grenade bursts where it comes down and is gone, not left lying
@@ -450,7 +532,7 @@ mod tests {
         let mut rig = Rig::new();
         let knives = rig.knives(2);
         assert!(rig.throw(knives, 0).is_empty(), "not at your own feet");
-        let lying = rig.app.world_mut().spawn((Item, Position(rig.start.offset(1, 0)), Throwable { range: 3, strike: None })).id();
+        let lying = rig.app.world_mut().spawn((Item, Position(rig.start.offset(1, 0)), Throwable::new(3, None))).id();
         assert!(rig.throw(lying, 3).is_empty(), "not what lies on the ground");
         let stone = rig.app.world_mut().spawn(Item).id();
         rig.app.world_mut().get_mut::<Inventory>(rig.player).unwrap().items.push(stone);

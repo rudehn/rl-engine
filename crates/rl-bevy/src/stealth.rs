@@ -209,7 +209,11 @@ impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, Turn, TurnSet};
         use crate::seed::AddStream;
+        // The blows it wakes on, registered here as well so a game with
+        // stealth and no combat has nothing to wake on rather than a panic.
         app.add_message::<Noticed>()
+            .add_message::<DamageDealt>()
+            .add_message::<crate::accuracy::Missed>()
             .add_stream::<StealthRng>("StealthPlugin")
             .add_systems(Turn, update_awareness.in_set(DecideSet::Notice))
             .add_systems(Turn, filter_unnoticed.in_set(crate::plugin::PerceiveSet::Filter))
@@ -299,7 +303,9 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
         if in_view && state.is_alert() {
             state.saw(at.0);
         } else if in_view {
-            let lit = lighting.is_none_or(|l| l.is_lit(at.0));
+            // Lit means the lit band, not merely seen: a subject in a
+            // lamp's dim ring is seen, and is harder to pick out there.
+            let lit = crate::lighting::band_at(lighting, at.0) == rl_grid::LightBand::Lit;
             let roll = watch.rng.0.random_range(0..100);
             let distance = rl_core::geometry::chebyshev(pos.0, at.0);
             if awareness::notices(distance, &notice.0, &stealth.0, lit, roll) && state.saw(at.0) {
@@ -320,7 +326,8 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     aware.0.retain(|subject, _| seen.contains(subject));
 }
 
-/// Wakes whoever takes a blow from something hiding, and points them at it.
+/// Wakes whoever takes a blow from something hiding, or is missed by one, and
+/// points them at it.
 ///
 /// Being hit is noticing, however quiet the attacker was. In
 /// [`TurnSet::React`](crate::plugin::TurnSet::React) because that is where
@@ -328,10 +335,19 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// struck already knows where from when it next decides.
 pub fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
+    mut missed: MessageReader<crate::accuracy::Missed>,
     mut observers: Query<&mut Aware>,
     attackers: Query<&Position, With<Stealth>>,
     mut noticed: MessageWriter<Noticed>,
 ) {
+    let mut wake = |target: Entity, attacker: Entity| {
+        let (Ok(mut aware), Ok(at)) = (observers.get_mut(target), attackers.get(attacker)) else { return };
+        let mut state = aware.of(attacker);
+        if state.alerted_to(at.0) {
+            noticed.write(Noticed { observer: target, subject: attacker, at: at.0 });
+        }
+        aware.0.insert(attacker, state);
+    };
     for ev in dealt.read() {
         // A mend is a negative hit down the same pipeline, and a hider who
         // patches a sleeper up has not struck it. A blow that armor stopped
@@ -340,12 +356,13 @@ pub fn wake_on_damage(
             continue;
         }
         let Some(attacker) = ev.hit.attacker else { continue };
-        let (Ok(mut aware), Ok(at)) = (observers.get_mut(ev.target), attackers.get(attacker)) else { continue };
-        let mut state = aware.of(attacker);
-        if state.alerted_to(at.0) {
-            noticed.write(Noticed { observer: ev.target, subject: attacker, at: at.0 });
-        }
-        aware.0.insert(attacker, state);
+        wake(ev.target, attacker);
+    }
+    // A blow or a shot that went wide was still aimed at it, and is at
+    // least as plain as one armor stopped: otherwise a hider could fire at
+    // a sleeper until one landed.
+    for m in missed.read() {
+        wake(m.target, m.attacker);
     }
 }
 
@@ -375,11 +392,16 @@ mod tests {
     }
 
     impl Field {
-        fn new(notice: NoticeStats, gap: i32, reach: i32, plugin: bool) -> Field {
+        /// With `light`, lighting is on and the whole field stands under an
+        /// ambient of that intensity and nothing else.
+        fn new(notice: NoticeStats, gap: i32, reach: i32, plugin: bool, light: Option<u8>) -> Field {
             let mut app = headless_app();
             app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StreamingPlugin));
             if plugin {
                 app.add_plugins(StealthPlugin);
+            }
+            if light.is_some() {
+                app.add_plugins(crate::lighting::LightingPlugin);
             }
             let start = crate::testing::surface(&mut app);
             let crate::testing::Sides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
@@ -400,6 +422,10 @@ mod tests {
                 .id();
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
             app.update();
+            // After play begins, since a new run resets lighting to dark.
+            if let Some(intensity) = light {
+                app.world_mut().resource_mut::<crate::lighting::Lighting>().ambient = rl_grid::Light::white(intensity);
+            }
             app.update();
             Field { app, player, watcher }
         }
@@ -431,16 +457,37 @@ mod tests {
         NoticeStats { certain: 1, chance_pct: 100, lit_bonus: 0, memory: 3 }
     }
 
+    /// A watcher whose certain radius only reaches the player in light.
+    fn light_hunter() -> NoticeStats {
+        NoticeStats { certain: 1, chance_pct: 0, lit_bonus: 10, memory: 3 }
+    }
+
+    #[test]
+    fn a_watcher_gets_its_light_bonus_in_the_lit_band_and_not_in_the_dim_one() {
+        // 40 is above the seen threshold of 16 and below bright at 64: the
+        // player is seen but dim, so the bonus of ten does not reach five
+        // tiles and a watcher that never rolls a chance never notices.
+        let mut dim = Field::new(light_hunter(), 5, 10, true, Some(40));
+        for _ in 0..3 {
+            dim.wait();
+        }
+        assert!(!dim.aware().knows(dim.player), "dim light hides the player from a watcher that sees by light");
+
+        let mut lit = Field::new(light_hunter(), 5, 10, true, Some(100));
+        lit.wait();
+        assert!(lit.aware().knows(lit.player), "in the lit band the bonus of ten covers five tiles");
+    }
+
     #[test]
     fn a_hider_nobody_noticed_is_left_alone_and_one_they_did_is_hunted() {
-        let mut quiet = Field::new(blind(), 5, 10, true);
+        let mut quiet = Field::new(blind(), 5, 10, true, None);
         for _ in 0..4 {
             quiet.wait();
         }
         assert_eq!(quiet.distance(), 5, "an unnoticed player is not approached");
         assert!(!quiet.aware().knows(quiet.player));
 
-        let mut loud = Field::new(keen(), 5, 10, true);
+        let mut loud = Field::new(keen(), 5, 10, true, None);
         for _ in 0..3 {
             loud.wait();
         }
@@ -450,7 +497,7 @@ mod tests {
 
     #[test]
     fn without_the_plugin_an_authored_observer_still_sees_on_sight() {
-        let mut field = Field::new(blind(), 5, 10, false);
+        let mut field = Field::new(blind(), 5, 10, false, None);
         for _ in 0..3 {
             field.wait();
         }
@@ -459,7 +506,7 @@ mod tests {
 
     #[test]
     fn a_blow_wakes_an_observer_that_never_saw_it_coming() {
-        let mut field = Field::new(blind(), 5, 10, true);
+        let mut field = Field::new(blind(), 5, 10, true, None);
         field.wait();
         assert!(!field.aware().knows(field.player));
         let (watcher, player) = (field.watcher, field.player);
@@ -472,10 +519,21 @@ mod tests {
     }
 
     #[test]
+    fn a_blow_that_misses_wakes_an_observer_as_surely_as_one_that_lands() {
+        let mut field = Field::new(blind(), 5, 10, true, None);
+        field.wait();
+        assert!(!field.aware().knows(field.player));
+        let (watcher, player) = (field.watcher, field.player);
+        field.app.world_mut().write_message(crate::accuracy::Missed { attacker: player, target: watcher, with: None, reach: crate::combat::Reach::Shot });
+        field.wait();
+        assert!(field.aware().knows(player), "shot at and missed, so it knows where from");
+    }
+
+    #[test]
     fn a_lost_trail_is_walked_to_and_then_forgotten() {
         // Reach three and a gap of eight: the player is out of range, so
         // every turn is a turn without a sighting.
-        let mut field = Field::new(blind(), 8, 3, true);
+        let mut field = Field::new(blind(), 8, 3, true, None);
         let (watcher, player) = (field.watcher, field.player);
         let start = field.at(watcher);
         let rumour = start.offset(-3, 0);
@@ -502,7 +560,7 @@ mod tests {
 
     #[test]
     fn a_watcher_that_sees_on_sight_counts_and_an_observer_that_has_not_noticed_does_not() {
-        let mut field = Field::new(blind(), 2, 10, true);
+        let mut field = Field::new(blind(), 2, 10, true, None);
         field.app.init_resource::<Watched>().add_systems(PostUpdate, read_watched);
         field.wait();
         assert_eq!(field.app.world().resource::<Watched>().0, Some(false), "two tiles off and never noticed: not watching");
@@ -526,7 +584,7 @@ mod tests {
 
     #[test]
     fn noticed_is_written_once_on_the_flip_and_not_while_the_awareness_holds() {
-        let mut field = Field::new(keen(), 6, 10, true);
+        let mut field = Field::new(keen(), 6, 10, true, None);
         field.app.init_resource::<Heard>().add_systems(Update, listen);
         for _ in 0..5 {
             field.wait();

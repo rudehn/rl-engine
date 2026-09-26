@@ -993,7 +993,7 @@ mod tests {
                 MeleeAttack::new(sides.kind, DiceRoll::flat(1)),
             ))
             .id();
-        let knife = app.world_mut().spawn((Item, Position(start.offset(5, 0)), Throwable { range: 6, strike: Some((sides.kind, DiceRoll::flat(4))) })).id();
+        let knife = app.world_mut().spawn((Item, Position(start.offset(5, 0)), Throwable::new(6, Some((sides.kind, DiceRoll::flat(4)))))).id();
         app.world_mut().spawn((
             Actor,
             Blocks,

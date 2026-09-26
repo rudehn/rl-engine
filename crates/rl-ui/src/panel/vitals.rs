@@ -5,12 +5,12 @@
 //! the top of a rail.
 
 use bevy::prelude::*;
-use rl_bevy::PresentSet;
+use rl_bevy::{LightBand, PresentSet};
 use rl_core::Rect;
 use rl_render::Terminal;
 
 use crate::panel::{bar, clear, clip};
-use crate::tone::{Palette, Tones};
+use crate::tone::{Palette, ToneId, Tones};
 use crate::view::{VitalsView, VitalsViewPlugin};
 
 /// Where the vitals are drawn.
@@ -141,11 +141,19 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
         terminal.print_on(rect.x, y, &format!("armor {armor}"), text, bg);
         y += 1;
     }
-    if let Some(seen) = view.seen
-        && y < bottom
-    {
-        let (word, tone) = if seen { ("seen", Tones::BAD) } else { ("hidden", Tones::GOOD) };
-        terminal.print_on(rect.x, y, word, palette.get(tone), bg);
+    // Seen or hidden, then the band of light, on one line: two answers to
+    // how exposed the player is, read together.
+    let seen_word = view.seen.map(seen_word);
+    let band_word = view.exposure.map(exposure_word);
+    if (seen_word.is_some() || band_word.is_some()) && y < bottom {
+        let mut x = rect.x;
+        for (i, (word, tone)) in seen_word.into_iter().chain(band_word).enumerate() {
+            if i > 0 {
+                x += 2;
+            }
+            terminal.print_on(x, y, word, palette.get(tone), bg);
+            x += word.chars().count() as i32;
+        }
         y += 1;
     }
     // How loud it is here, a line of its own on a panel with room, beside
@@ -213,6 +221,21 @@ impl Part {
     }
 }
 
+/// The word and tone for whether the player has been seen.
+fn seen_word(seen: bool) -> (&'static str, ToneId) {
+    if seen { ("seen", Tones::BAD) } else { ("hidden", Tones::GOOD) }
+}
+
+/// The word and tone for the band the player stands in: dark is good news
+/// for a sneak and lit is bad, the same reading as seen and hidden.
+fn exposure_word(band: LightBand) -> (&'static str, ToneId) {
+    match band {
+        LightBand::Dark => ("dark", Tones::GOOD),
+        LightBand::Dim => ("dim", Tones::NOTICE),
+        LightBand::Lit => ("lit", Tones::BAD),
+    }
+}
+
 /// A one-row strip: every bar, then armor, badges, facets and the
 /// whereabouts, in that order, with the hints at the right.
 ///
@@ -232,7 +255,11 @@ fn draw_line(terminal: &mut Terminal, rect: Rect, view: &VitalsView, layout: &Vi
         parts.push(Part::Text(format!("armor {armor}"), palette.get(Tones::TEXT)));
     }
     if let Some(seen) = view.seen {
-        let (word, tone) = if seen { ("seen", Tones::BAD) } else { ("hidden", Tones::GOOD) };
+        let (word, tone) = seen_word(seen);
+        parts.push(Part::Text(word.into(), palette.get(tone)));
+    }
+    if let Some(band) = view.exposure {
+        let (word, tone) = exposure_word(band);
         parts.push(Part::Text(word.into(), palette.get(tone)));
     }
     // How loud it is where the player stands, as a gauge beside being
@@ -367,6 +394,27 @@ mod tests {
         stage.app.world_mut().get_mut::<rl_bevy::Aware>(guard).unwrap().0.insert(player, rl_rules::Awareness::Alert { at, stale_turns: 0 });
         stage.tick();
         assert!(stage.rows().contains(&"seen".to_string()), "a guard has: {:?}", stage.rows());
+    }
+
+    #[test]
+    fn the_band_the_player_stands_in_is_named_beside_whether_it_has_been_seen() {
+        let mut stage =
+            Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), rl_bevy::MindsPlugin, rl_bevy::StealthPlugin, rl_bevy::LightingPlugin)).screen(24, 8);
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(rl_bevy::Stealth::default());
+        stage.app.world_mut().resource_mut::<rl_bevy::Lighting>().ambient = rl_grid::Light::white(40);
+        stage.tick();
+        stage.tick();
+        assert!(stage.rows().contains(&"hidden  dim".to_string()), "{:?}", stage.rows());
+    }
+
+    #[test]
+    fn a_player_that_cannot_hide_is_still_told_its_exposure() {
+        let mut stage = Stage::new((VitalsPanel::new(Rect::new(0, 0, 24, 8)), rl_bevy::LightingPlugin)).screen(24, 8);
+        stage.app.world_mut().resource_mut::<rl_bevy::Lighting>().ambient = rl_grid::Light::white(200);
+        stage.tick();
+        stage.tick();
+        assert!(stage.rows().contains(&"lit".to_string()), "{:?}", stage.rows());
     }
 
     #[test]

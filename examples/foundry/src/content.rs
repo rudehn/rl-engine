@@ -92,6 +92,9 @@ impl MeleeDef {
 pub struct RangedDef {
     /// The furthest cell it reaches.
     pub range: i32,
+    /// The furthest cell with no range penalty; absent, a third of `range`.
+    #[serde(default)]
+    pub effective: Option<i32>,
     /// The damage roll, as `"NdS+B"`.
     pub roll: DiceRoll,
     /// The damage kind.
@@ -105,7 +108,7 @@ pub struct RangedDef {
 impl RangedDef {
     /// The engine's attack for it, at the ordinary cost.
     pub fn attack(&self) -> RangedAttack {
-        RangedAttack { look: self.look, ..RangedAttack::new(self.kind.id(), self.roll, self.range) }
+        RangedAttack { look: self.look, effective: self.effective, ..RangedAttack::new(self.kind.id(), self.roll, self.range) }
     }
 }
 
@@ -257,6 +260,33 @@ mod tests {
             assert_eq!(fired, flies(&name), "{name}");
             assert_eq!(app.world().get::<MeleeAttack>(e).and_then(|m| m.look), None, "{name} bursts on nothing yet");
         }
+    }
+
+    /// Every gun's reach and the edge of its no-penalty range are the
+    /// design's: short guns reach further than they aim well, and a long
+    /// gun aims well most of the way.
+    #[test]
+    fn every_weapon_reaches_and_aims_as_far_as_the_design_says() {
+        use bevy::ecs::world::CommandQueue;
+        use bevy::prelude::*;
+        use rl_engine::rl_core::RunSeed;
+        let table =
+            [("hand blaster", 3, 8), ("ion pistol", 3, 8), ("slug pistol", 3, 9), ("heavy repeater", 4, 10), ("blaster carbine", 6, 12), ("slug rifle", 7, 14)];
+        let mut app = crate::testing::headless(RunSeed(1));
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = crate::testing::armory_of(&app);
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, app.world_mut());
+        let spawned: Vec<(String, Entity)> =
+            armory.defs.iter().map(|(id, d)| (d.name.clone(), crate::gear::spawn_item(&mut commands, &armory, id, &registries))).collect();
+        queue.apply(app.world_mut());
+        let found = |name: &str| spawned.iter().find(|(n, _)| n == name).map(|(_, e)| *e).unwrap_or_else(|| panic!("{name} is in the armory"));
+        for (name, effective, reach) in table {
+            let gun = app.world().get::<RangedAttack>(found(name)).unwrap_or_else(|| panic!("{name} shoots"));
+            assert_eq!((gun.effective_range(), gun.range), (effective, reach), "{name}");
+        }
+        let blade = app.world().get::<Throwable>(found("monoblade")).expect("a monoblade can be thrown");
+        assert_eq!((blade.effective_range(), blade.range), (2, 5), "the monoblade thrown");
     }
 
     #[test]

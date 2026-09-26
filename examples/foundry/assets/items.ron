@@ -30,10 +30,13 @@
 //   melee:     optional; (roll:, kind:, look:) while wielded, roll as "NdS+B"; look is optional,
 //              (glyph:, color: (r:, g:, b:)) in bytes as in abilities.ron, and a blow bursts on
 //              its target in its colour; absent, a blow shows nothing
-//   ranged:    optional; (range:, roll:, kind:, look:) while wielded; look is optional, the same
-//              shape, and is what a shot flies as; absent, a shot lands unseen
-//   throw:     optional; (range:, strike:) when thrown, strike optional as (roll, kind) for
-//              the blow it deals whoever it hits; absent, it cannot be thrown
+//   ranged:    optional; (range:, effective:, roll:, kind:, look:) while wielded; effective is
+//              optional, the furthest cell with no range penalty, a third of range when absent;
+//              look is optional, the same shape, and is what a shot flies as; absent, a shot
+//              lands unseen
+//   throw:     optional; (range:, effective:, strike:) when thrown, effective as for ranged,
+//              strike optional as (roll, kind) for the blow it deals whoever it hits; absent,
+//              it cannot be thrown
 //   cost:      optional; what one blow or shot costs, in hundredths of a step; absent is 100
 //   heat:      optional; (per shot, vent per quiet turn); the weapon locks at 100 until it cools to 0
 //   ammo:      optional; the tag of what one shot spends, as "slug"
@@ -41,18 +44,18 @@
 //   stack:     optional; whether copies merge into one counted entry
 #![enable(implicit_some)]
 [
-    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d6+1", kind: "kinetic"), throw: (range: 4, strike: ("1d6", "kinetic")), cost: 100),
+    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d6+1", kind: "kinetic"), throw: (range: 5, effective: 2, strike: ("1d6", "kinetic")), cost: 100),
     (name: "mono-axe", glyph: '/', color: (0.7, 0.75, 0.8), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6+1", kind: "kinetic"), cost: 140),
-    (name: "hand blaster", glyph: '}', color: (0.95, 0.4, 0.3), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 5, roll: "1d6", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 80, heat: (15, 20)),
-    (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 9, roll: "1d8+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 100, heat: (22, 22)),
-    (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 5, roll: "1d6", kind: "ion", look: (glyph: '~', color: (r: 89, g: 166, b: 255))), cost: 90, heat: (25, 20)),
-    (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 6, roll: "1d8", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
+    (name: "hand blaster", glyph: '}', color: (0.95, 0.4, 0.3), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 8, effective: 3, roll: "1d6", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 80, heat: (15, 20)),
+    (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 12, effective: 6, roll: "1d8+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 100, heat: (22, 22)),
+    (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 8, effective: 3, roll: "1d6", kind: "ion", look: (glyph: '~', color: (r: 89, g: 166, b: 255))), cost: 90, heat: (25, 20)),
+    (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 9, effective: 3, roll: "1d8", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
     // The pistol's economy at a rifle's reach: past the lamp, so it kills
     // what the commando cannot yet see, and dry the moment the bag is.
-    (name: "slug rifle", glyph: '}', color: (0.55, 0.5, 0.4), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 9, roll: "1d10+1", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
+    (name: "slug rifle", glyph: '}', color: (0.55, 0.5, 0.4), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 14, effective: 7, roll: "1d10+1", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
     // Two shots to a step: its five-shot burst is gone in half the time a
     // carbine's is, and then it is five quiet turns like anything else.
-    (name: "heavy repeater", glyph: '}', color: (1.0, 0.55, 0.3), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 8, roll: "1d8+2", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 50, heat: (20, 20)),
+    (name: "heavy repeater", glyph: '}', color: (1.0, 0.55, 0.3), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 10, effective: 4, roll: "1d8+2", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 50, heat: (20, 20)),
     (name: "slug", glyph: ',', color: (0.7, 0.65, 0.5), tags: ["slug"], stack: true),
     // What opens an armory locker, and is spent doing it. A droid carries
     // one because the foundry's own machines open its own lockers.

@@ -46,6 +46,9 @@ const ROWS: i32 = 44;
 const LOG_ROWS: i32 = 4;
 /// Columns given to the rail down the right.
 const RAIL: i32 = 26;
+/// Rows the targeting box takes at the bottom of the rail: the frame, what
+/// is aimed, the range, the target, the chance, and up to four lines of it.
+const TARGET_ROWS: i32 = 10;
 /// The watch, compiled in so the binary runs from anywhere.
 const WATCH_RON: &str = include_str!("../assets/watch.ron");
 /// How loud the house is at night, in steps of bare boards. A thief's
@@ -69,7 +72,7 @@ fn main() -> AppExit {
             LogPanel::new(screen.log),
             InspectPanel::new(screen.inspect),
             ScrollbackPanel::new(screen.scrollback),
-            TargetPanel::new(screen.target).hints("[enter] throw  [tab] next  [esc] back"),
+            TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle"),
             InventoryPanel::new(screen.pockets).title("Pockets").called("pockets").empty("Lint, and a plan."),
             ControlsPanel::new(screen.controls).hint(screen.hint),
             GameMenuPanel::new(screen.menu).title("The Counting House").died("The watch have you.").won("Over the roofs and away."),
@@ -118,6 +121,10 @@ impl Screen {
         let (map, log) = panel::split_bottom(left, LOG_ROWS);
         let (vitals, nearby) = panel::split_top(rail, 11);
         let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // The targeting box sits over the bottom of the nearby list while
+        // the cursor is up, where the eye already is when choosing what to
+        // aim at; the rows above it stay readable.
+        let (_, target) = panel::split_bottom(nearby, TARGET_ROWS);
         Self {
             map,
             log,
@@ -125,7 +132,7 @@ impl Screen {
             nearby,
             inspect: Rect::new(map.x + 2, map.bottom() - 11, map.width.min(50), 10),
             scrollback: map.inflate(-2),
-            target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
+            target,
             pockets: Rect::new(map.x + map.width / 2 - 24, map.y + 3, 48, 18),
             menu: Rect::new(map.x + map.width / 2 - 22, map.y + 6, 44, 14),
             controls: map.inflate(-2),
@@ -438,7 +445,7 @@ fn start(
             Pebble,
             Name::new("pebble"),
             Stack { key: 2, count: 6 },
-            Throwable { range: 7, strike: None },
+            Throwable::new(7, None),
             Glyph::new('\u{b7}', Color::srgb(0.7, 0.7, 0.7)).on_layer(2),
         ))
         .id();

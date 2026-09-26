@@ -98,6 +98,18 @@ pub struct AimFire {
     pub user: Entity,
 }
 
+/// Distances for the targeting box: to the cursor, the edge of no range
+/// penalty, and the furthest reach.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AimRange {
+    /// Chebyshev distance from the user to the cursor.
+    pub distance: i32,
+    /// The furthest cell with no range penalty.
+    pub effective: i32,
+    /// The furthest cell reached.
+    pub max: i32,
+}
+
 /// What is being aimed, and where it would land.
 #[derive(Resource, Debug, Default)]
 pub struct TargetView {
@@ -131,6 +143,14 @@ pub struct TargetView {
     pub why: Vec<Blocked>,
     /// Everyone under the footprint the ability's aim wants there.
     pub targets: Vec<Row>,
+    /// How far the cursor is from the user, how far the weapon reaches
+    /// with no penalty, and how far it reaches at all. `None` with no aim.
+    pub span: Option<AimRange>,
+    /// The chance of landing on whoever the aim would strike, and what
+    /// shaped it, from the same call the resolver rolls by. `None` when
+    /// nobody would be struck, the game's model does not roll, or the aim
+    /// is an ability, which is never rolled.
+    pub odds: Option<rl_rules::Odds>,
 }
 
 impl TargetView {
@@ -408,7 +428,7 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
                 Pointing::Fire => {
                     // A shot is at someone rather than at a cell. With nobody
                     // under the cursor there is no attack to write, and the
-                    // banner already says there is no target, so the cursor
+                    // box already says there is no target, so the cursor
                     // stays up for the player to move.
                     let Some(target) = mark(&aiming.occupancy, user, view.cursor, |who| aiming.living.contains(who)) else { return };
                     intents.attacks.write(Intent::new(user, Attack(target)));
@@ -449,6 +469,8 @@ fn forget(view: &mut TargetView) {
     view.beyond.clear();
     view.targets.clear();
     view.why.clear();
+    view.span = None;
+    view.odds = None;
 }
 
 /// Anything the cursor might land on, as a row is built from it.
@@ -456,7 +478,7 @@ fn forget(view: &mut TargetView) {
 /// The name and the glyph are optional here and required by the other
 /// views, and the difference matters: a nameless or glyphless row is one a
 /// list can leave out, but such a target is one the ability will hit
-/// anyway. Dropping it would make the banner say "nothing" over a monster
+/// anyway. Dropping it would make the box say "nothing" over a monster
 /// about to be burned, so `targets` counts what the footprint catches and
 /// the cosmetics are filled in where they exist.
 type Standing = (Entity, &'static Position, Option<&'static Name>, Option<&'static Glyph>, Option<&'static Health>);
@@ -477,6 +499,10 @@ pub struct Reach<'w, 's> {
     /// strikes.
     loadout: Loadout<'w, 's>,
     living: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
+    /// The odds a shot or throw lands, by the call the resolver rolls with.
+    marks: Marksmanship<'w, 's>,
+    /// What a worn gun is called, for the first line of the box.
+    names: Query<'w, 's, &'static Name>,
 }
 
 impl Reach<'_, '_> {
@@ -499,7 +525,7 @@ impl Reach<'_, '_> {
 ///
 /// Through [`Bystanders::land`] for an ability, [`flight`] for a throw and
 /// [`shot`] for a shot, the calls the resolvers act on, so the cells lit on
-/// the map, the names in the banner and whether it reads as refused are
+/// the map, the names in the box and whether it reads as refused are
 /// what will happen when the player confirms. A preview computed any other
 /// way is a preview that drifts.
 pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: Reach) {
@@ -517,27 +543,36 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     view.beyond.clear();
     view.landing = None;
     view.legal = false;
+    view.span = None;
+    view.odds = None;
     let Some(user) = view.user else { return };
     let Ok((from, sight, bag)) = reach.users.get(user) else { return };
     let from = from.0;
 
     if view.firing {
-        let Some(gun) = reach.loadout.ranged(user) else { return };
+        let Some((from_item, gun)) = reach.loadout.ranged_with(user) else { return };
         let has_melee = reach.loadout.melee(user).is_some();
-        view.what.clear();
+        // The worn gun's name, empty for a shot that is the user's own.
+        view.what = from_item.and_then(|item| reach.names.get(item).ok()).map(|n| n.as_str().to_string()).unwrap_or_default();
+        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: gun.effective_range(), max: gun.range });
         let flies = shot(&reach.map, &reach.occupancy, from, view.cursor, gun.range);
         let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who));
         // Point blank is a blow, struck with whatever the user fights with
         // in hand; anything further needs a clear line to the target.
         let point_blank = rl_core::geometry::is_adjacent(from, view.cursor);
         let arrives = point_blank || flies.landing == Some(view.cursor);
-        if !arrives {
-            view.why.push(Blocked::OutOfReach);
-        } else if target.is_none() || (point_blank && !has_melee) {
+        // The shooter's own cell, where the cursor opens with nothing in
+        // sight, is nobody to shoot rather than somewhere too far.
+        if view.cursor == from || (arrives && (target.is_none() || (point_blank && !has_melee))) {
             view.why.push(Blocked::NoTarget);
+        } else if !arrives {
+            view.why.push(Blocked::OutOfReach);
         }
         let legal = view.why.is_empty();
         view.legal = legal;
+        // Point blank is struck as a blow, so its odds are the blow's.
+        let attempt = if point_blank { Attempt::Blow } else { Attempt::Shot(&gun) };
+        view.odds = target.filter(|_| legal).and_then(|who| reach.marks.odds(user, who, attempt));
         view.targets.extend(target.filter(|_| legal).and_then(|who| reach.row(user, from, who)));
         view.cells = flies.landing.into_iter().collect();
         view.beyond = beyond(flies.landing.unwrap_or(from), view.cursor);
@@ -550,6 +585,17 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         let Ok((throwable, name)) = reach.missiles.get(item) else { return };
         view.what = name.map(|n| n.as_str().to_string()).unwrap_or_default();
         let thrown = flight(&reach.map, &reach.occupancy, from, view.cursor, throwable.range);
+        // Rolled against whoever living the flight strikes first, as the
+        // resolver rolls, which need not be who the cursor is on; the range
+        // read is to where it strikes, the distance the chance was worked
+        // out at, so the two lines of the box agree.
+        let struck = thrown.struck.filter(|who| reach.living.contains(*who));
+        let reaches = match (struck, thrown.path.last()) {
+            (Some(_), Some(end)) => *end,
+            _ => view.cursor,
+        };
+        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range });
+        view.odds = struck.and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
         // It lands on whoever it strikes, or wherever it comes to rest.
         let lands = match (thrown.struck, thrown.path.last()) {
             (Some(_), Some(end)) => *end,
@@ -573,6 +619,13 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     let (Some(ability), Some(abilities)) = (view.ability, reach.abilities.as_deref()) else { return };
     let def = abilities.get(ability);
     view.what = def.name.clone();
+    let max = match def.mode {
+        TargetMode::Own => 0,
+        TargetMode::Adjacent => 1,
+        TargetMode::Bolt { range } | TargetMode::Ball { range, .. } | TargetMode::Beam { range } => range,
+        TargetMode::Cone { length } => length,
+    };
+    view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: max, max });
     let aimed = Aimed { user, ability, def, origin: from, aim: view.cursor, sees_aim: sight.map(|s| s.can_see(view.cursor)) };
     let Landed { landing, refused } = reach.bystanders.land(aimed, &reach.map, &reach.occupancy);
 
@@ -904,7 +957,7 @@ mod tests {
     }
 
     /// The property the preview exists for, over many layouts: who the
-    /// banner lists and whether it reads as refused are exactly what the
+    /// box lists and whether it reads as refused are exactly what the
     /// resolver does once the player confirms.
     #[test]
     fn the_preview_names_exactly_who_the_resolver_hits() {
@@ -966,7 +1019,7 @@ mod tests {
                         let mut hit = targets.clone();
                         hit.sort();
                         assert!(legal, "seed {seed}: the preview refused an aim the resolver took");
-                        assert_eq!(hit, shown, "seed {seed}: the banner listed other than who was hit");
+                        assert_eq!(hit, shown, "seed {seed}: the box listed other than who was hit");
                     }
                     [AbilityEvent::Refused { why, .. }] => assert!(!legal, "seed {seed}: the resolver refused ({why:?}) an aim the preview called legal"),
                     other => panic!("seed {seed}: expected one outcome, got {other:?}"),
@@ -1005,7 +1058,7 @@ mod tests {
         let mut stage = Stage::new_with((ThrowingPlugin, TargetViewPlugin), |_| {});
         stage.tick();
         let (user, kind) = (stage.player, stage.kind);
-        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable { range: 6, strike: Some((kind, rl_core::DiceRoll::flat(2))) })).id();
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(6, Some((kind, rl_core::DiceRoll::flat(2)))))).id();
         stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
         stage.actor("near", 'n', 2, 0);
         stage.actor("far", 'f', 4, 0);
@@ -1030,6 +1083,122 @@ mod tests {
         let thrown: Vec<Throw> = stage.app.world_mut().resource_mut::<Messages<Intent<Throw>>>().drain().map(|i| i.action).collect();
         assert_eq!(thrown, vec![Throw { item: knife, at: at.offset(4, 0) }], "confirm throws it where it was aimed");
         assert!(!stage.app.world().resource::<TargetView>().aiming());
+    }
+
+    fn percent(app: &mut App) {
+        app.insert_resource(HitRules(Box::new(rl_rules::Percent::new(5, 16, 30))));
+    }
+
+    #[test]
+    fn a_shot_carries_its_range_and_the_resolvers_odds() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12).effective_to(3));
+        stage.actor("droid", 'd', 5, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.span, Some(AimRange { distance: 5, effective: 3, max: 12 }));
+        assert_eq!(view.odds.as_ref().map(rl_rules::Odds::percent), Some(90));
+    }
+
+    #[test]
+    fn point_blank_is_a_blow_and_carries_the_blows_odds() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12).effective_to(0));
+        stage.actor("rat", 'r', 1, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let odds = stage.app.world().resource::<TargetView>().odds.clone().expect("the player has a fist");
+        assert_eq!((odds.percent(), odds.lines.len()), (100, 0), "a blow reads no range and no light");
+    }
+
+    /// With nothing in sight the cursor opens on the shooter's own cell, and
+    /// that is no target, not a target out of reach: nothing is too far.
+    #[test]
+    fn a_shot_aimed_at_the_shooters_own_cell_has_no_target_rather_than_being_out_of_reach() {
+        let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12));
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.cursor, stage.at, "nothing in sight, so it opens on the shooter");
+        assert_eq!(view.why, vec![Blocked::NoTarget]);
+        assert!(view.beyond.is_empty(), "and nothing is painted as out of reach");
+    }
+
+    #[test]
+    fn an_empty_cell_has_a_span_and_no_odds() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12));
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let at = stage.at;
+        stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(0, 4);
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.odds, None);
+        assert_eq!(view.span.map(|s| s.distance), Some(4));
+    }
+
+    #[test]
+    fn a_throw_is_rolled_against_the_body_it_strikes_first_at_that_bodys_distance() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(9, Some((kind, rl_core::DiceRoll::flat(2)))).effective_to(1))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
+        stage.actor("near", 'n', 2, 0);
+        stage.actor("far", 'f', 6, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimThrow { user, item: knife });
+        stage.tick();
+        let at = stage.at;
+        stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(6, 0);
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.odds.as_ref().map(rl_rules::Odds::percent), Some(95), "one tile past effective, against the near body");
+        assert_eq!(view.span.map(|s| s.distance), Some(2), "and the range read is the near body's, which the chance was worked out at");
+    }
+
+    /// Something in the way that nothing can hurt, a crate with no health,
+    /// stops the throw and is never rolled against, so no chance is shown.
+    #[test]
+    fn a_throw_stopped_by_something_that_cannot_be_hurt_shows_no_odds() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(9, Some((kind, rl_core::DiceRoll::flat(2)))))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
+        let at = stage.at;
+        stage.app.world_mut().spawn((Blocks, Position(at.offset(2, 0)), Name::new("crate")));
+        stage.actor("far", 'f', 6, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimThrow { user, item: knife });
+        stage.tick();
+        stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(6, 0);
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<TargetView>().odds, None);
+    }
+
+    #[test]
+    fn a_grenade_has_no_odds() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let user = stage.player;
+        let grenade = stage.app.world_mut().spawn((Item, Name::new("grenade"), Throwable::new(6, None))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(grenade);
+        stage.actor("droid", 'd', 3, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimThrow { user, item: grenade });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert!(view.aiming());
+        assert_eq!(view.odds, None);
     }
 
     /// A shot is aimed like a throw, and the preview is the resolver's own

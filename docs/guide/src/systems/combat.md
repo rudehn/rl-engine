@@ -9,7 +9,10 @@
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/faction.rs
             crates/rl-rules/src/forecast.rs
-     fingerprint: 29eedd34 -->
+            crates/rl-rules/src/accuracy.rs
+            crates/rl-bevy/src/accuracy.rs
+            crates/rl-bevy/src/throwing.rs
+     fingerprint: 3d3a0471 -->
 
 # Combat and loadout
 
@@ -37,6 +40,8 @@ A grudge that is not returned is the reason the matrix is dense and asymmetric r
 `CombatRules` also carries `armor` and `attack`, each an optional `StatId`, and `death_ends_run`, which `death_is_not_the_end()` clears for a game that revives or plays on as a ghost.
 `MeleeAttack` is a `kind`, a `dice` roll, an optional `cost` in hundredths of a step and an optional `look`; `RangedAttack` is the same with a `range`.
 Both are built by `new` and narrowed by `costing` and `looking`, so a field only some games want is added without touching every call site.
+`RangedAttack` and `Throwable` also carry an optional `effective` range, a third of `range` when left out, which is as far as a hit model charges nothing for distance.
+`HitRules` holds the game's `HitModel`, `Certain` unless the game inserts another, and `Marksmanship` gathers what a model reads into a `Shot`: how the attack travels, the distance, the effective range and reach, the `LightBand` at the target, and the stats `accuracy_stat` and `evasion_stat` name.
 `Armor` is flat damage removed and `Strikes` is a list of extra rolls every hit carries, a flaming blade's fire or a venomed edge's poison.
 All four sit on an actor or on an item, and that is the whole of how gear fights: a jerkin is an item with `Armor(1)` and nothing copies the 1 onto whoever puts it on.
 `Loadout` is the one answer to what an entity fights with, in three layers: the actor's own components, the same components on every item in its `Equipped` slots in slot order, and the value of the stat `CombatRules` names.
@@ -48,6 +53,7 @@ The attack resolver strikes with it, `apply_damage` defends with it, and `blows`
 That is the rule `resolve_attacks` picks by, kept in one place, so an actor carrying only a gun forecasts as dangerous across the room and harmless once you are beside it rather than as harmless everywhere.
 `resolve_attacks` picks melee when the two are adjacent and otherwise a shot filtered by `line_of_fire`; an attack with nothing that reaches still spends an ordinary turn, since what was spent was the aim.
 It writes `Struck` before any damage, naming the worn item the attack came from, because what a weapon does to itself happens at the trigger rather than at the target.
+A rolled attack that misses still writes `Struck` and the `fire` moment, since the weapon fired, and then writes `Missed` where it would have landed instead of any damage or `hit` moment; a thrown miss rests where a hit would have and reports that it struck nobody.
 For a worn item it also reports the `fire` moment at the attacker's cell, and the `hit` moment at the target's cell when the blow or shot lands, so a wand's charge is spent and its effects land through [Effects](effects.md) without combat knowing what either is.
 A shot takes its item's triggers with it as it is fired, so a watched shot from a thing its last charge spent still lands what its hits carry, from a remnant in its place.
 Every roll is floored at zero where it is rolled, so a weapon with a bad bonus that rolls low has missed rather than healed.
@@ -82,6 +88,17 @@ What a game hands combat is two registries and two rules, which is the whole of 
     commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
 ```
 
+Turning accuracy on is one resource, and Foundry's is the whole of it.
+
+<!-- include: ../../../../examples/foundry/src/run.rs:accuracy -->
+```rust,no_run
+    // A shot goes wide past its weapon's effective range and in poor light:
+    // five points a tile past it, sixteen for a target in dim light, thirty
+    // for one seen only by the helmet in the dark. Foundry has no stats, so
+    // accuracy is the model's hundred and nobody evades.
+    commands.insert_resource(HitRules(Box::new(Percent::new(5, 16, 30))));
+```
+
 ## The line
 
 The engine decides whether a blow is in reach, whether a shot has a line, what it is struck with, what it costs, what it rolls, the order the stages run in, what comes off health and who died.
@@ -89,7 +106,8 @@ Which of an actor's two attacks a forecast counts is the engine's for the same r
 The game decides what a damage kind is and whether armor applies to it, who hates whom, what mitigates a hit, and what a hit or a death is worth beyond health reaching zero.
 `DamageStages` is a list of boxed `DamageStage`s, so there is no enum of mitigations and no `Custom` arm: a game's critical rule sits in the list beside `SubtractArmor` and `resolve` cannot tell them apart.
 `Defender::blocked` is never set by the engine, which builds one with `blocked: false` every time, so `HalveIfBlocked` is for a caller that fills its own and a game that blocks rolls the block inside a stage of its own.
-Accuracy does not exist either: a blow lands unconditionally, and a to-hit roll when a game wants one is a stage that returns zero rather than a change to the resolver.
+Whether an attack lands is the game's model and the engine's roll: `HitRules` holds whatever `HitModel` the game chose, `Marksmanship` hands it the same facts whoever asks, and the resolver draws once from `CombatRng`, so a panel's chance and the attack's outcome cannot disagree.
+What a miss spends is the engine's call, the weapon's `fire` moment and nothing after it; what accuracy is made of, which stats, what range and light cost, whether anything is ever certain, is the model's.
 `armor_stat` and `attack_stat` are the whole seam between the registered stats and a blow, which is why a status that hardens the skin and an affix that sharpens the hand both work by moving a stat and neither is named in combat.
 A game that registered no stats names neither, and its armor is components alone.
 What a weapon does to itself is the game's, hung on `Struck`: heat, ammunition, wear, each read off a message that already names the item, so no game recomputes which weapon the loadout would have chosen.
@@ -102,6 +120,7 @@ Arithmetic that is really about the rules lives in `rl-rules`, and what that buy
 `rl-rules` is tier 1 and has no Bevy in it: `damage.rs` is `Hit`, `Defender`, the `DamageStage` trait and a `resolve` that is a fold over stages, all of it tested against ids made out of thin air.
 `faction.rs` is the dense matrix, which is a table and an index rather than anything that needs a world.
 `forecast.rs` is where the split earns its keep: `expected_damage` calls the same `resolve` with the average roll in place of a real one and through the game's own stages, so a panel that says a fight is deadly got the word from the arithmetic the fight will use.
+A `Combatant` also carries the chance its attacks land, 100 unless a hit model says otherwise, and `expected_damage` counts the misses by it, so a fight that is deadly on paper and a coin toss at the trigger reads as the coin toss.
 `Arms` is what a fight fought at a distance costs it: both sets of rolls, both costs and the shot's reach, with `Arms::at` the one place the choice between them is made and `Combatant` still one set already chosen.
 The distance is an argument because only the caller knows where the two stand, and the one thing `Arms::at` will not check is whether the line of fire is clear, since a forecast a wall may yet block is still the right forecast for the fight the two would have.
 `rl-bevy` is tier 2 and owns everything that touches the world: `combat.rs` is the components, `Loadout`, the resolver, the pipeline runner and the deaths, in one file because a blow is one decision and not six.

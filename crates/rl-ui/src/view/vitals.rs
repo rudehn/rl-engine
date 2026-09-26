@@ -41,6 +41,10 @@ pub struct VitalsView {
     /// that sees on sight can see it. `None` for a player that cannot hide,
     /// or in a game without stealth.
     pub seen: Option<bool>,
+    /// The band of light the player stands in, which is what a watcher's
+    /// light bonus and a shot at the player read. `None` in a game without
+    /// lighting, where every tile is lit and the word would say nothing.
+    pub exposure: Option<LightBand>,
     /// How loud it is where the player stands: the loudest noise that
     /// reached them this turn, in hundredths of a step of loudness still
     /// on it when it arrived, falling away over the turns after by
@@ -123,6 +127,8 @@ pub struct Me<'w, 's> {
     facets: ResMut<'w, crate::facet::Facets>,
     watchers: Watchers<'w, 's>,
     loadout: Loadout<'w, 's>,
+    /// The light, when the game has any, for the band the player stands in.
+    lighting: Option<Res<'w, Lighting>>,
     player: Query<'w, 's, Vitals, With<Player>>,
 }
 
@@ -165,6 +171,7 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     let total = me.loadout.armor(entity);
     view.armor = (armor.is_some() || total != 0).then_some(total);
     view.seen = (hides && me.watchers.running()).then(|| me.watchers.watched(entity));
+    view.exposure = me.lighting.as_deref().map(|l| l.band(pos.0));
     if let Some(health) = health {
         // Tone by how close to death, so a panel needs no thresholds of
         // its own and every panel agrees on when it is bad.
@@ -314,6 +321,23 @@ mod tests {
         stage.app.world_mut().get_mut::<Aware>(guard).unwrap().0.insert(player, rl_rules::Awareness::Alert { at, stale_turns: 0 });
         stage.tick();
         assert_eq!(stage.app.world().resource::<VitalsView>().seen, Some(true));
+    }
+
+    #[test]
+    fn exposure_is_the_band_the_player_stands_in_and_none_without_lighting() {
+        let mut stage = Stage::new(VitalsViewPlugin);
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<VitalsView>().exposure, None, "no lighting, nothing to say");
+
+        let mut stage = Stage::new((VitalsViewPlugin, rl_bevy::LightingPlugin));
+        stage.app.world_mut().resource_mut::<Lighting>().ambient = rl_grid::Light::white(40);
+        stage.tick();
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<VitalsView>().exposure, Some(LightBand::Dim));
+        stage.app.world_mut().resource_mut::<Lighting>().ambient = rl_grid::Light::white(200);
+        stage.tick();
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<VitalsView>().exposure, Some(LightBand::Lit));
     }
 
     #[test]

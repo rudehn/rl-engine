@@ -134,6 +134,38 @@ pub fn screen(a: u8, b: u8) -> u8 {
     (255 - (((255 - a as u32) * (255 - b as u32)) / 255)) as u8
 }
 
+/// How lit a tile is, in the three steps gameplay reads.
+///
+/// Below the seen threshold a tile is dark and unseen; from there up to
+/// `bright` it is dim, seen but hard to hit and easy to hide in; at or
+/// above `bright` it is lit. Three steps rather than the intensity itself,
+/// because a rule a player can learn is a word on a panel, and a number
+/// that changes every step is not one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub enum LightBand {
+    /// Below the seen threshold.
+    Dark,
+    /// Seen, and short of bright.
+    Dim,
+    /// At or above bright.
+    Lit,
+}
+
+impl LightBand {
+    /// The band `intensity` falls in, with `threshold` the least that is
+    /// seen and `bright` the least that is lit. The one rule, so sight,
+    /// stealth and a to-hit roll cannot draw the lines differently.
+    pub fn of(intensity: u8, threshold: u8, bright: u8) -> LightBand {
+        if intensity < threshold {
+            LightBand::Dark
+        } else if intensity < bright {
+            LightBand::Dim
+        } else {
+            LightBand::Lit
+        }
+    }
+}
+
 /// Brightness of a source of `intensity` and `radius` at distance `d`:
 /// full within a third of the radius, then linear to exactly zero at the
 /// rim, so the lit edge has nothing to alias against.
@@ -273,6 +305,23 @@ mod tests {
         assert_eq!(falloff(200, 9, 10), 0);
         assert_eq!(falloff(200, 0, 0), 200, "a radius of zero lights its own tile");
         assert_eq!(falloff(200, 1, 1), 0);
+    }
+
+    #[test]
+    fn a_band_changes_exactly_at_the_threshold_and_at_bright() {
+        for (threshold, bright) in [(16u8, 64u8), (1, 2), (0, 255), (40, 40)] {
+            for intensity in 0..=255u8 {
+                let band = LightBand::of(intensity, threshold, bright);
+                let expected = if intensity < threshold {
+                    LightBand::Dark
+                } else if intensity < bright {
+                    LightBand::Dim
+                } else {
+                    LightBand::Lit
+                };
+                assert_eq!(band, expected, "intensity {intensity} with threshold {threshold} and bright {bright}");
+            }
+        }
     }
 
     #[test]

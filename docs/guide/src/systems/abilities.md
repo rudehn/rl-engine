@@ -15,7 +15,7 @@
             crates/rl-bevy/src/gas.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: 1306f6ee -->
+     fingerprint: f76fe2e7 -->
 
 # Abilities
 
@@ -67,7 +67,7 @@ The effects module holds `Effects` and nine effects: `add_engine_effects()` regi
 `Known` is the set of abilities an actor knows, rebuilt every `TurnSet::React` from its own `Grants` and nothing else: a thing in the bag never lends an ability, because what an item does is its own triggers.
 `Offered` is the turn-holder's abilities sorted into `usable` and `refused` once a pass by the gate the resolver uses, read through `usable_by` and `why_for`, which answer only for the actor it was worked out for.
 `perceive_abilities` copies `usable` into `Snapshot::usable` as `Usable { ability, aim, mode }`, everything the `UseAbility` tactic needs to score a footprint and nothing about what the ability does.
-Throwing is the smaller half: `Throwable { range, strike }` is an item made to be thrown, `Throw { item, at }` its action, and `flight` the one answer to where it goes, shared with the cursor that previews it.
+Throwing is the smaller half: `Throwable::new(range, strike)` is an item made to be thrown, with an optional `effective` range a hit model reads, `Throw { item, at }` its action, and `flight` the one answer to where it goes, shared with the cursor that previews it.
 A thrown knife and a bolt stop at the same first wall or body, and each hangs in the air until whatever is watching has seen it fly.
 
 ## Using it

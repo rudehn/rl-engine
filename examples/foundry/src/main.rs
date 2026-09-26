@@ -26,6 +26,9 @@ const ROWS: i32 = 40;
 const LOG_ROWS: i32 = 4;
 /// Columns given to the rail down the right.
 const RAIL: i32 = 30;
+/// Rows the targeting box takes at the bottom of the rail: the frame, what
+/// is aimed, the range, the target, the chance, and up to four lines of it.
+const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals and to gear; the rest is what is nearby.
 const VITALS_ROWS: i32 = 7;
 const GEAR_ROWS: i32 = 9;
@@ -59,6 +62,10 @@ impl Screen {
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
         // The last row of the rail says how to see the controls.
         let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // The targeting box sits over the bottom of the nearby list while
+        // the cursor is up, where the eye already is when choosing what to
+        // aim at; the rows above it stay readable.
+        let (_, target) = panel::split_bottom(nearby, TARGET_ROWS);
         let centred = |w: i32, y: i32, h: i32| Rect::new(map.x + (map.width - w) / 2, map.y + y, w, h);
         Self {
             map,
@@ -68,7 +75,7 @@ impl Screen {
             nearby,
             hint,
             inspect: Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10),
-            target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
+            target,
             // Stims and the four grenades, a rule, and what the one picked
             // out does: how it is aimed, what it costs and every effect, which
             // for an incendiary is two.
@@ -122,7 +129,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
         )),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
-        TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back").cursor(CursorStyle::ticks()),
+        TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
         AbilityPanel::new(screen.abilities).title("Abilities").called("abilities"),
         // ANCHOR: bags
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but dust."),
@@ -242,6 +249,33 @@ mod tests {
         assert!(log.iter().any(|l| l.starts_with("Press ? for the controls.")), "{log:#?}");
         assert!(row(&app, ROWS - 1).trim_end().ends_with("? controls"), "the rail's last row: {:?}", row(&app, ROWS - 1));
         assert!(row(&app, 0)[(COLS - RAIL) as usize..].starts_with("Vitals"));
+    }
+
+    /// The targeting box sits at the bottom of the rail, over the nearby
+    /// list and above the controls hint, only while the cursor is up, and
+    /// its first row names the gun being fired.
+    #[test]
+    fn the_targeting_box_is_framed_at_the_bottom_of_the_rail_while_aiming() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, _) = foundry::testing::player_with_hand_blaster(&mut app);
+        let rail = |app: &App, y: i32| row(app, y).chars().skip((COLS - RAIL) as usize).collect::<String>().trim_end().to_string();
+        let hint = ROWS - 1;
+        let top = hint - TARGET_ROWS;
+        assert!(!rail(&app, top).contains("Targeting"), "no box before the cursor is up: {:?}", rail(&app, top));
+
+        app.world_mut().write_message(AimFire { user: me });
+        app.update();
+        app.update();
+        assert!(rail(&app, top).starts_with("\u{250c}\u{2500} Targeting "), "the top border: {:?}", rail(&app, top));
+        assert!(rail(&app, top + 1).starts_with("\u{2502}fire hand blaster"), "what is aimed: {:?}", rail(&app, top + 1));
+        assert!(
+            rail(&app, hint - 1).starts_with("\u{2514}") && rail(&app, hint - 1).contains("[tab/shift-tab] cycle"),
+            "the bottom border: {:?}",
+            rail(&app, hint - 1)
+        );
+        // The controls hint goes while a screen is open; the box stops above
+        // its row rather than drawing over it.
+        assert!(!rail(&app, hint).contains('\u{2502}') && !rail(&app, hint).contains('\u{2514}'), "the box stops above the hint row: {:?}", rail(&app, hint));
     }
 
     /// The heat facet is the one thing on the rail the engine could not

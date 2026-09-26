@@ -1,10 +1,18 @@
 //! The targeting overlay: the footprint, painted over the map the frame
-//! already drew.
+//! already drew, and a box saying what the aim is worth.
 //!
-//! Not a framed box like the other panels. An aim is about the map, so
-//! this reads back the cells [`draw_map`](rl_render::map_view::draw_map)
-//! wrote and repaints their backgrounds, keeping every glyph where it is:
-//! the monster under the cursor stays the monster, lit differently.
+//! The footprint is not framed like the other panels. An aim is about the
+//! map, so this reads back the cells
+//! [`draw_map`](rl_render::map_view::draw_map) wrote and repaints their
+//! backgrounds, keeping every glyph where it is: the monster under the
+//! cursor stays the monster, lit differently.
+//!
+//! The box is where the words go: what is aimed, the range against how far
+//! it reaches, the target, and the chance to hit with every line the game's
+//! hit model gave for it, or the reason the aim is refused in its place. It
+//! is drawn only while the cursor is up, so a game sets it over the bottom
+//! of its rail, where the eye already is when choosing what to aim at, and
+//! the rows above it stay readable.
 //!
 //! Three colours and no more, because a fourth stops reading at a glance:
 //! the flight the projectile takes, the cells it will hit, and the tone
@@ -21,17 +29,18 @@ use rl_core::{Point, Rect};
 use rl_render::{MapView, Terminal};
 
 use crate::cursor::CursorStyle;
-use crate::panel::clip;
+use crate::panel::nearby::relation_tone;
+use crate::panel::{clear, clip, frame, odds_tone};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::target::{TargetView, TargetViewPlugin};
 
 /// Where the aim is described in words.
 #[derive(Resource, Debug, Clone)]
 pub struct TargetLayout {
-    /// One row for the line naming the ability and what is under the
-    /// cursor. Zero-height draws none and leaves only the footprint.
+    /// The box the aim is described in. Under three rows tall draws none,
+    /// leaving only the footprint.
     pub rect: Rect,
-    /// Key hints at the right of the row.
+    /// Key hints, in the box's bottom border.
     pub hints: String,
     /// How the cell being aimed at is marked, over the footprint. A glow
     /// in the title tone by default, which is what a cell about to be
@@ -39,20 +48,20 @@ pub struct TargetLayout {
     pub cursor: CursorStyle,
 }
 
-/// Draws [`TargetView`]: the footprint on the map, and a line saying what
-/// is being aimed at what.
+/// Draws [`TargetView`]: the footprint on the map, and a box saying what
+/// is being aimed at what and the chance it lands.
 ///
 /// Adds [`TargetViewPlugin`] if the game has not.
 pub struct TargetPanel(TargetLayout);
 
 impl TargetPanel {
-    /// The banner in `rect`. Pass a zero-height rectangle for the
-    /// footprint alone.
+    /// The box in `rect`, eight rows or more to hold a shot's lines. Pass a
+    /// zero-height rectangle for the footprint alone.
     pub fn new(rect: Rect) -> Self {
         Self(TargetLayout { rect, hints: String::new(), cursor: CursorStyle::glow(Tones::TITLE) })
     }
 
-    /// Sets the key hints at the right of the row.
+    /// Sets the key hints in the bottom border, clipped to it.
     pub fn hints(mut self, hints: impl Into<String>) -> Self {
         self.0.hints = hints.into();
         self
@@ -95,7 +104,7 @@ pub fn pulsed(tone: ToneId, index: usize, t: f32, palette: &Palette) -> Color {
     palette.get(tone).mix(&palette.get(Tones::SURFACE), PULSE_DEPTH * (1.0 - pulse(index, t)))
 }
 
-/// Paints the footprint and the banner.
+/// Paints the footprint and the box.
 pub fn draw_target(
     mut terminal: ResMut<Terminal>,
     layout: Res<TargetLayout>,
@@ -131,35 +140,68 @@ pub fn draw_target(
     crate::cursor::mark(&mut terminal, &map, view.cursor, layout.cursor, &palette, t);
 
     let rect = layout.rect;
-    if rect.height < 1 || rect.width < 8 {
+    if rect.height < 3 || rect.width < 8 {
         return;
     }
+    clear(&mut terminal, rect, &palette);
+    frame(&mut terminal, rect, "Targeting", &layout.hints, &palette);
     let bg = palette.get(Tones::SURFACE);
-    terminal.fill(rect, rl_render::Cell::new(' ', bg).on(bg));
-    let name = match (view.throwing, view.firing) {
-        (Some(_), _) => format!("throw {}", view.what),
-        (None, true) => "fire".to_string(),
-        (None, false) => view.what.clone(),
-    };
-    let at = match view.targets.as_slice() {
-        [] => "nothing".to_string(),
-        [one] if !one.label.is_empty() => one.label.clone(),
-        [_] => "one of them".to_string(),
-        many => format!("{} of them", many.len()),
-    };
-    // Red says no; the reason says why, because a cursor that refuses
-    // without saying what is wrong is a cursor the player argues with.
-    let line = match view.why.first() {
-        None => format!("{name} at {at}"),
-        Some(reason) => format!("{name} at {at} - {}", crate::view::ability::plain(reason)),
-    };
-    let tone = if view.legal { Tones::NOTICE } else { Tones::BAD };
-    terminal.print_on(rect.x, rect.y, &clip(&line, rect.width as usize), palette.get(tone), bg);
-    if !layout.hints.is_empty() {
-        let x = rect.right() - 1 - layout.hints.chars().count() as i32;
-        if x > rect.x + line.chars().count() as i32 {
-            terminal.print_on(x, rect.y, &layout.hints, palette.get(Tones::MUTED), bg);
+    let inner = rect.inflate(-1);
+    let width = inner.width as usize;
+    let mut y = inner.y;
+    let mut line = |terminal: &mut Terminal, text: &str, tone: ToneId| {
+        if y < inner.bottom() {
+            terminal.print_on(inner.x, y, &clip(text, width), palette.get(tone), bg);
+            y += 1;
         }
+    };
+    let name = match (view.throwing, view.firing, view.what.is_empty()) {
+        (Some(_), _, _) => format!("throw {}", view.what),
+        (None, true, true) => "fire".to_string(),
+        (None, true, false) => format!("fire {}", view.what),
+        (None, false, _) => view.what.clone(),
+    };
+    line(&mut terminal, &name, Tones::TITLE);
+    if let Some(span) = view.span {
+        line(&mut terminal, &format!("Range: {} / {}", span.distance, span.max), Tones::TEXT);
+    }
+    // The target's name in the tone of what it is to the aimer, the way the
+    // nearby list colours it, so a friend under the cursor reads as one.
+    let (at, at_tone) = match view.targets.as_slice() {
+        [] => ("nothing".to_string(), Tones::MUTED),
+        [one] if !one.label.is_empty() => (one.label.clone(), relation_tone(one.relation)),
+        [_] => ("one of them".to_string(), Tones::TEXT),
+        many => (format!("{} of them", many.len()), Tones::TEXT),
+    };
+    if y < inner.bottom() {
+        // Both halves clipped to the box, so a narrow one keeps its border.
+        let prefix = clip("Target: ", width);
+        terminal.print_on(inner.x, y, &prefix, palette.get(Tones::TEXT), bg);
+        let used = prefix.chars().count();
+        if used < width {
+            terminal.print_on(inner.x + used as i32, y, &clip(&at, width - used), palette.get(at_tone), bg);
+        }
+        y += 1;
+    }
+    // Red says no, and says why, where the chance would be: a cursor that
+    // refuses without saying what is wrong is a cursor the player argues
+    // with, and a refused aim has no chance worth printing.
+    let mut line = |terminal: &mut Terminal, text: &str, tone: ToneId| {
+        if y < inner.bottom() {
+            terminal.print_on(inner.x, y, &clip(text, width), palette.get(tone), bg);
+            y += 1;
+        }
+    };
+    match (view.why.first(), &view.odds) {
+        (Some(reason), _) => line(&mut terminal, crate::view::ability::plain(reason), Tones::BAD),
+        (None, Some(odds)) => {
+            let percent = odds.percent();
+            line(&mut terminal, &format!("Chance to hit: {percent}%"), odds_tone(percent));
+            for reason in &odds.lines {
+                line(&mut terminal, &format!("  {:+} {}", reason.value, reason.label), Tones::MUTED);
+            }
+        }
+        (None, None) => {}
     }
 }
 
@@ -175,18 +217,37 @@ fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, bg: Color) {
 mod tests {
     use super::*;
     use crate::harness::Stage;
-    use crate::view::target::AimAt;
     use crate::view::target::harness::{abilities, arm};
+    use crate::view::target::{AimAt, AimFire};
     use rl_bevy::{Abilities, AbilitiesPlugin, AddEngineEffects};
 
     /// A stage with the map drawn under the overlay, so the test sees the
     /// same cells a player would.
     fn staged() -> Stage {
-        let mut stage = Stage::new_with((AbilitiesPlugin, rl_bevy::ThrowingPlugin, TargetPanel::new(Rect::new(0, 0, 40, 1)).hints("[enter]")), |app| {
+        let mut stage = Stage::new_with((AbilitiesPlugin, rl_bevy::ThrowingPlugin, TargetPanel::new(Rect::new(0, 0, 26, 10)).hints("[tab] next")), |app| {
             app.add_engine_effects();
             abilities(app);
-            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 1, 40, 20)));
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 10, 40, 20)));
         });
+        stage.tick();
+        stage
+    }
+
+    /// The box's inner rows, the frame stripped and trailing spaces trimmed.
+    fn boxed(stage: &Stage, height: i32) -> Vec<String> {
+        (1..height - 1).map(|y| stage.row(y).chars().skip(1).take(24).collect::<String>().trim_end().to_string()).collect()
+    }
+
+    /// A stage with the box, a shooter whose gun reaches twelve and three of
+    /// them without penalty, and the game's odds a percent roll.
+    fn shooter(height: i32) -> Stage {
+        let mut stage = Stage::new_with(TargetPanel::new(Rect::new(0, 0, 26, height)), |app| {
+            app.insert_resource(rl_bevy::HitRules(Box::new(rl_rules::Percent::new(5, 16, 30))));
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 12, 40, 20)));
+        });
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(rl_bevy::RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12).effective_to(3));
+        stage.actor("droid", 'd', 5, 0);
         stage.tick();
         stage
     }
@@ -205,9 +266,9 @@ mod tests {
     }
 
     /// The footprint is painted over the map the frame already drew, and
-    /// the banner says what is being aimed at what.
+    /// the box says what is being aimed at what.
     #[test]
-    fn the_footprint_is_tinted_over_the_map_and_the_banner_names_it() {
+    fn the_footprint_is_tinted_over_the_map_and_the_box_names_it() {
         let mut stage = staged();
         let (bolt, _, _) = arm(&mut stage);
         stage.actor("them", 't', 2, 0);
@@ -223,7 +284,8 @@ mod tests {
         assert_eq!(bg_at(&stage, at.offset(2, 0)), Some(palette.get(Tones::TITLE)), "the cursor is brightest");
         assert_eq!(bg_at(&stage, at.offset(1, 0)), Some(lined(&stage, Tones::NOTICE, 0)), "the flight to it, on its pulse");
         assert_eq!(bg_at(&stage, at.offset(0, 3)), Some(plain), "and nothing else moved");
-        assert_eq!(stage.row(0), "bolt at them                    [enter]");
+        assert_eq!(boxed(&stage, 10)[..4], ["bolt", "Range: 2 / 6", "Target: them", ""], "an ability is never rolled, so no chance");
+        assert!(stage.row(9).contains("[tab] next"), "the hints are in the bottom border: {:?}", stage.row(9));
     }
 
     /// An aim past where the bolt reaches is refused, and the part of the
@@ -252,7 +314,56 @@ mod tests {
         assert_eq!(bg_at(&stage, at.offset(-6, 0)), Some(lined(&stage, Tones::NOTICE, 5)), "the stop is flight, not a hit");
         assert_eq!(bg_at(&stage, at.offset(-7, 0)), Some(lined(&stage, Tones::BAD, 6)), "past it is red, the pulse counting on");
         assert_eq!(bg_at(&stage, at.offset(-9, 0)), Some(stage.app.world().resource::<Palette>().get(Tones::TITLE)), "the cursor, over the refused shape");
-        assert_eq!(stage.row(0), "bolt at nothing - out of reach  [enter]");
+        assert_eq!(boxed(&stage, 10)[..4], ["bolt", "Range: 9 / 6", "Target: nothing", "out of reach"]);
+    }
+
+    #[test]
+    fn a_shot_shows_its_chance_and_every_line_behind_it() {
+        let mut stage = shooter(10);
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        assert_eq!(boxed(&stage, 10)[..5], ["fire", "Range: 5 / 12", "Target: droid", "Chance to hit: 90%", "  -10 for range"]);
+        let palette = stage.app.world().resource::<Palette>().clone();
+        assert_eq!(stage.app.world().resource::<Terminal>().get(1, 4).map(|c| c.fg), Some(palette.get(Tones::GOOD)), "ninety is a good bet");
+        assert_eq!(stage.app.world().resource::<Terminal>().get(9, 3).map(|c| c.fg), Some(palette.get(Tones::BAD)), "a foe's name in the hostile tone");
+    }
+
+    #[test]
+    fn more_lines_than_rows_are_clipped_inside_the_frame() {
+        // Six rows: the frame and four inside, which the name, the range,
+        // the target and the chance fill, so the range line is cut.
+        let mut stage = shooter(6);
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        assert_eq!(boxed(&stage, 6), ["fire", "Range: 5 / 12", "Target: droid", "Chance to hit: 90%"]);
+        assert!(stage.row(5).starts_with('\u{2514}'), "the bottom border is where it belongs: {:?}", stage.row(5));
+        let below: String = stage.row(6).chars().take(26).collect();
+        assert!(!below.contains("range") && !below.contains('\u{2502}'), "and nothing spilled below it: {below:?}");
+    }
+
+    #[test]
+    fn a_box_too_narrow_for_the_target_line_clips_it_inside_the_frame() {
+        let mut stage = Stage::new_with(TargetPanel::new(Rect::new(0, 0, 9, 8)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 12, 40, 20)));
+        });
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(rl_bevy::RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12));
+        stage.actor("droid", 'd', 5, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let line = |y: i32| stage.row(y).chars().take(10).collect::<String>();
+        let target = (1..7).find(|y| line(*y).contains("Targ")).expect("a target line");
+        assert_eq!(line(target).chars().nth(8), Some('\u{2502}'), "the right border is left standing: {:?}", line(target));
+        assert!(line(target).chars().nth(9).is_none_or(|c| c == ' '), "and nothing is drawn past it: {:?}", line(target));
+    }
+
+    #[test]
+    fn with_the_cursor_down_the_box_draws_nothing() {
+        let stage = shooter(10);
+        assert!(stage.rows()[..10].iter().all(|r| !r.contains("Targeting")), "{:?}", &stage.rows()[..10]);
     }
 
     /// The pulse runs up the line: a crest at one cell is at the next a
@@ -287,7 +398,7 @@ mod tests {
         let at = stage.at;
         let palette = stage.app.world().resource::<Palette>().clone();
         assert_eq!(bg_at(&stage, at.offset(2, 0)), Some(palette.get(Tones::TITLE)), "the cursor is still the cursor");
-        assert_eq!(stage.row(0), "dear at them - cannot pay       [enter]");
+        assert_eq!(boxed(&stage, 10)[..4], ["dear", "Range: 2 / 6", "Target: them", "cannot pay"]);
         // The landing cell is the one the footprint covers, and an
         // illegal aim paints it in the bad tone rather than the select.
         let view = stage.app.world().resource::<TargetView>();

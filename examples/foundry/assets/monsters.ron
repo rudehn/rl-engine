@@ -18,8 +18,10 @@
 //               optional, (glyph:, color: (r:, g:, b:)) in bytes as in abilities.ron, and a blow bursts
 //               on its target in its colour; absent, it shows nothing. With neither melee nor
 //               ranged, it never attacks at all
-//   ranged:     optional; (range:, roll:, kind:, look:); a droid with one shoots; look is optional,
-//               the same shape, and is what a shot flies as; absent, a shot lands unseen
+//   ranged:     optional; (range:, effective:, roll:, kind:, look:); a droid with one shoots;
+//               effective is optional, the furthest cell with no range penalty, a third of range
+//               when absent; look is optional, the same shape, and is what a shot flies as;
+//               absent, a shot lands unseen
 //   speed:      percent of normal, 100 normal, 200 twice as fast
 //   flee_at:    percent health at or below which it runs; 0 never flees
 //   notice:     optional; how it notices a subject that can go unnoticed, as (certain: tiles

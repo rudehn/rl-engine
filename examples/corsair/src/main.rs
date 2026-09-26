@@ -50,6 +50,9 @@ const FONT: f32 = 14.0;
 const LOG_ROWS: i32 = 4;
 /// Columns given to the rail down the right.
 const RAIL: i32 = 26;
+/// Rows the targeting box takes at the bottom of the rail: the frame, what
+/// is aimed, the range, the target, the chance, and up to four lines of it.
+const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals and to gear; the rest is what is nearby.
 const VITALS_ROWS: i32 = 9;
 const GEAR_ROWS: i32 = 7;
@@ -80,13 +83,16 @@ impl Screen {
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
         // The last row of the rail says how to see the controls.
         let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // The targeting box sits over the bottom of the nearby list while
+        // the cursor is up, where the eye already is when choosing what to
+        // aim at; the rows above it stay readable.
+        let (_, target) = panel::split_bottom(nearby, TARGET_ROWS);
         let inspect = Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10);
         // The whole map area, since reading back is all you are doing, and
         // the same for the controls.
         let scrollback = map.inflate(-2);
         let controls = map.inflate(-2);
         let sheet = map.inflate(-2);
-        let target = Rect::new(map.x, map.bottom() - 1, map.width, 1);
         // Four rows, a rule, and a described ability with its effects.
         let abilities = Rect::new(map.x + map.width / 2 - 21, map.y + 3, 42, 20);
         // Room for the bag's rows, a rule, and what the row picked out is
@@ -159,7 +165,7 @@ fn main() -> AppExit {
             ScrollbackPanel::new(screen.scrollback).titled("Ship's log"),
             // The cursor's reading of what an ability would cover, and the list
             // of what can be called on with the reasons any cannot.
-            TargetPanel::new(screen.target).hints("[enter] fire  [tab] next  [esc] back"),
+            TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle"),
             AbilityPanel::new(screen.abilities).title("What you can call on").called("abilities"),
             // The sea chest: the bag, run by the engine end to end. `i` opens
             // it, and a bottle is described by what a pull of it does.

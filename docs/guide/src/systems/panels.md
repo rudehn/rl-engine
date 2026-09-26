@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 9f7ae46c -->
+     fingerprint: 17bc4109 -->
 
 # Panels
 
@@ -80,13 +80,17 @@ A stack rather than a return-to slot, because a slot can be pushed twice and los
 `Focus` is the one entity picked out of that list, held by entity rather than by cell so two things on a tile are two stops, and a focus on something that has left sight is treated as none rather than as an error.
 The rail highlights it, the look cursor opens on it and an aim opens on it when the aim can take it, so the row picked out and the thing aimed at are one choice.
 An aim put away, fired or not, leaves nothing picked out, so the rail is not left pointing at what a grenade already landed on; what it was fired at is kept apart as `LastAimed`, and the next aim opens there when nothing is picked out.
-`VitalsView` is the player: a label, a list of `Bar`s, armor, status badges, game facets, the turn, the position, whether the player is seen and how loud it has been.
+`VitalsView` is the player: a label, a list of `Bar`s, armor, status badges, game facets, the turn, the position, whether the player is seen, the `LightBand` it stands in, and how loud it has been.
+`exposure` is `None` without lighting, and the strip prints it beside seen or hidden, since the same band decides how well a watcher sees the player and how hard it is to hit.
 `NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one.
 `InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it and a `Duel` fought at the distance the cursor stands from the player.
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
+Each side's chance of landing what it would attack with from there comes from `Marksmanship::at_distance` and scales its `Combatant` through `hitting`, and the player's own is kept as `odds` for the panel to print under the forecast, the same lines the targeting cursor prints.
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.
 `AbilityView` is an `AbilityRow` per ability the turn-holder knows, in registration order so a key bound to the third row stays bound to it, each carrying its costs, requirements and effects as sentences and every reason it is refused.
 `TargetView` is what is being aimed, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, and a `Row` per target.
+`TargetPanel` draws the footprint over the map and describes the aim in a framed box, drawn only while the cursor is up so a game sets it over the bottom of its rail: what is aimed, the range, the target in its relation's tone, then the chance to hit and each of the model's lines, or the reason the aim is refused where the chance would be.
+The view also holds the `AimRange`, how far the aim reaches against how far the weapon reaches with no penalty and at all, and the `Odds` against whoever living a shot or a throw would strike, asked of `Marksmanship` as the resolver asks it, so a throw a body intercepts shows the chance against that body and the range to it.
 `AimAt`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm.
 `OffersView` is an `OfferRow` per verb the player is offered where it stands, with its cost in hundredths and the reason a refused one is refused.
 `SheetView` is the character sheet: stats with every `Change` that made them what they are, resists, strikes, statuses and what is worn.

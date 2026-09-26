@@ -258,11 +258,8 @@ mod tests {
             ))
             .id();
         let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
-        let knives = stage
-            .app
-            .world_mut()
-            .spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable { range: 5, strike: Some((kind, DiceRoll::new(1, 4))) }))
-            .id();
+        let knives =
+            stage.app.world_mut().spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(5, Some((kind, DiceRoll::new(1, 4)))))).id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
         worn.equip(blade, &EquipShape::in_slot(hand)).unwrap();
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![knives, blade, hat] }, worn));

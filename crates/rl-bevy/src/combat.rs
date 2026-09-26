@@ -144,6 +144,9 @@ pub struct RangedAttack {
     pub dice: DiceRoll,
     /// Furthest cell it reaches.
     pub range: i32,
+    /// The furthest cell with no range penalty, for a hit model that reads
+    /// one. `None` is a third of `range`, so only a weapon that cares says.
+    pub effective: Option<i32>,
     /// What one shot with it costs, in hundredths of a step. `None` is
     /// [`BASE_ACTION_COST`](rl_core::turn::BASE_ACTION_COST). A shot that
     /// finds nothing in reach costs the ordinary turn rather than this,
@@ -159,7 +162,7 @@ impl RangedAttack {
     /// A shot of `kind` rolling `dice` out to `range`, costing an ordinary
     /// turn and flying nothing.
     pub const fn new(kind: DamageKindId, dice: DiceRoll, range: i32) -> Self {
-        Self { kind, dice, range, cost: None, look: None }
+        Self { kind, dice, range, effective: None, cost: None, look: None }
     }
 
     /// One shot costs `cost` hundredths of a step.
@@ -172,6 +175,21 @@ impl RangedAttack {
     pub const fn looking(mut self, look: Look) -> Self {
         self.look = Some(look);
         self
+    }
+
+    /// No range penalty out to `cells`.
+    pub const fn effective_to(mut self, cells: i32) -> Self {
+        self.effective = Some(cells);
+        self
+    }
+
+    /// The furthest cell with no range penalty: the one set, or a third of
+    /// the range.
+    pub const fn effective_range(&self) -> i32 {
+        match self.effective {
+            Some(cells) => cells,
+            None => self.range / 3,
+        }
     }
 }
 
@@ -217,6 +235,12 @@ pub struct CombatRules {
     /// The stat whose value is added to the roll of the blow and the shot,
     /// if any.
     pub attack: Option<StatId>,
+    /// The stat an attacker's accuracy is read from, if any. With none, the
+    /// hit model is told there is no accuracy and uses its own default:
+    /// 100 for `Percent`.
+    pub accuracy: Option<StatId>,
+    /// The stat a target's evasion is read from, if any.
+    pub evasion: Option<StatId>,
     /// Whether the player's death ends the run, which it does unless the
     /// game says otherwise: one that revives, or plays on as a ghost, keeps
     /// the ending for itself.
@@ -228,7 +252,7 @@ impl CombatRules {
     /// until a pair is named, no stat read by a blow, and the player's death
     /// the end of the run.
     pub fn new(sides: &Registry<FactionDef>) -> Self {
-        Self { factions: Factions::new(sides), armor: None, attack: None, death_ends_run: true }
+        Self { factions: Factions::new(sides), armor: None, attack: None, accuracy: None, evasion: None, death_ends_run: true }
     }
 
     /// The player's death does not end the run; the game says when it ends.
@@ -248,6 +272,18 @@ impl CombatRules {
     /// the blow and the shot.
     pub fn attack_stat(mut self, stat: StatId) -> Self {
         self.attack = Some(stat);
+        self
+    }
+
+    /// Reads `stat` as accuracy, for the hit model.
+    pub fn accuracy_stat(mut self, stat: StatId) -> Self {
+        self.accuracy = Some(stat);
+        self
+    }
+
+    /// Reads `stat` as evasion, for the hit model.
+    pub fn evasion_stat(mut self, stat: StatId) -> Self {
+        self.evasion = Some(stat);
         self
     }
 
@@ -591,6 +627,10 @@ pub struct Arena<'w, 's> {
     fired: MessageWriter<'w, crate::effects::Fired>,
     /// What a worn thing does when its attack strikes, for the shot to carry.
     carried: Query<'w, 's, &'static crate::effects::Triggers>,
+    /// The odds of the attack landing, from the game's hit model.
+    marks: crate::accuracy::Marksmanship<'w, 's>,
+    /// Where a rolled attack that missed is reported.
+    missed: MessageWriter<'w, crate::accuracy::Missed>,
 }
 
 /// What an attack is seen as, and the shots in the air while it is.
@@ -623,6 +663,8 @@ pub struct ShotLanding {
     /// later narrates as what it was.
     reach: Reach,
     hits: Vec<Hit<Entity>>,
+    /// Whether it was rolled and missed: it still flies, and lands nothing.
+    missed: bool,
 }
 
 impl crate::cue::Lands for ShotLanding {}
@@ -664,7 +706,7 @@ pub fn resolve_attacks(
     mut arena: Arena,
     shown: Shown,
 ) {
-    let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried } = &mut arena;
+    let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, missed } = &mut arena;
     let Shown { mut cues, mut hold, mut airborne } = shown;
     for intent in intents.read() {
         let (actor, target) = (intent.actor, intent.action.0);
@@ -676,17 +718,17 @@ pub fn resolve_attacks(
             resolution.done(actor, rl_core::turn::BASE_ACTION_COST);
             continue;
         };
+        // The gun is kept beside the weapon it became, so the odds can read
+        // its reach.
+        let gun = if geometry::is_adjacent(pos.0, target_pos.0) {
+            None
+        } else {
+            loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range))
+        };
         let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
             loadout.melee_with(actor).map(|(from, m)| Weapon { from, ranged: false, kind: m.kind, dice: m.dice, cost: m.cost, look: m.look })
         } else {
-            loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range)).map(|(from, r)| Weapon {
-                from,
-                ranged: true,
-                kind: r.kind,
-                dice: r.dice,
-                cost: r.cost,
-                look: r.look,
-            })
+            gun.map(|(from, r)| Weapon { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look })
         };
         let Some(Weapon { from, ranged, kind, dice, cost, look }) = weapon else {
             resolution.done(actor, rl_core::turn::BASE_ACTION_COST);
@@ -699,18 +741,32 @@ pub fn resolve_attacks(
         if let Some(item) = from {
             fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::FIRE, by: Some(actor), at: pos.0 });
         }
-        // Floored where it is rolled: a blow that rolls below zero has
-        // missed, and the pipeline would read a negative one as a heal.
-        let mut hits = vec![Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))];
-        hits.extend(loadout.strikes(actor).into_iter().map(|(kind, dice)| Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))));
+        // Rolled after the weapon has fired and before the damage, so a
+        // miss still spends what firing spends and draws no damage dice.
+        // Under `Certain` there are no odds and nothing is drawn.
+        let attempt = match &gun {
+            Some((_, gun)) => crate::accuracy::Attempt::Shot(gun),
+            None => crate::accuracy::Attempt::Blow,
+        };
+        let wide = marks.odds(actor, target, attempt).is_some_and(|odds| !odds.roll(&mut **rng));
+        let hits = if wide {
+            Vec::new()
+        } else {
+            // Floored where it is rolled: a blow that rolls below zero has
+            // missed, and the pipeline would read a negative one as a heal.
+            let mut hits = vec![Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))];
+            hits.extend(loadout.strikes(actor).into_iter().map(|(kind, dice)| Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))));
+            hits
+        };
         let carried = from.and_then(|item| carried.get(item).ok()).filter(|t| t.on(crate::effects::Moments::HIT).next().is_some()).cloned();
-        let shot = ShotLanding { target, attacker: actor, with: from, carried, reach: if ranged { Reach::Shot } else { Reach::Melee }, hits };
+        let reach = if ranged { Reach::Shot } else { Reach::Melee };
+        let shot = ShotLanding { target, attacker: actor, with: from, carried, reach, hits, missed: wide };
         match (look, ranged) {
             (Some(look), true) => {
                 let to = Anchor::on(target, target_pos.0);
                 cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Given(look) } });
                 let Some(shot) = airborne.launched(&mut hold, shot) else { continue };
-                land(shot, target_pos.0, &mut damage, fired);
+                land(shot, target_pos.0, &mut damage, fired, missed);
                 continue;
             }
             (Some(look), false) => {
@@ -718,7 +774,7 @@ pub fn resolve_attacks(
             }
             (None, _) => {}
         }
-        land(shot, target_pos.0, &mut damage, fired);
+        land(shot, target_pos.0, &mut damage, fired, missed);
     }
 }
 
@@ -730,6 +786,7 @@ pub struct Arriving<'w, 's> {
     fired: MessageWriter<'w, crate::effects::Fired>,
     commands: Commands<'w, 's>,
     present: Query<'w, 's, (), With<crate::effects::Triggers>>,
+    missed: MessageWriter<'w, crate::accuracy::Missed>,
 }
 
 /// Lands every shot in the air, on the first pass after its flight has
@@ -749,6 +806,7 @@ pub fn land_shots(
         // carry lands from a remnant in its place, as the shooter's doing.
         if let Some(item) = shot.with
             && !arriving.present.contains(item)
+            && !shot.missed
         {
             if let Some(triggers) = shot.carried.take() {
                 let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
@@ -756,15 +814,27 @@ pub fn land_shots(
             }
             shot.with = None;
         }
-        land(shot, at.0, &mut arriving.damage, &mut arriving.fired);
+        land(shot, at.0, &mut arriving.damage, &mut arriving.fired, &mut arriving.missed);
     }
 }
 
 /// Every hit an attack carries, down the damage pipeline, and the `hit`
 /// moment on the worn item it came from, at the cell the target stands on
-/// as it lands, so a trigger that bursts bursts where the shot arrived.
-fn land(shot: ShotLanding, at: Point, damage: &mut MessageWriter<DamageEvent>, fired: &mut MessageWriter<crate::effects::Fired>) {
+/// as it lands, so a trigger that bursts bursts where the shot arrived. A
+/// miss lands none of that and is reported as [`Missed`](crate::accuracy::Missed)
+/// instead, at the moment a hit would have landed.
+fn land(
+    shot: ShotLanding,
+    at: Point,
+    damage: &mut MessageWriter<DamageEvent>,
+    fired: &mut MessageWriter<crate::effects::Fired>,
+    missed: &mut MessageWriter<crate::accuracy::Missed>,
+) {
     let (target, reach) = (shot.target, shot.reach);
+    if shot.missed {
+        missed.write(crate::accuracy::Missed { attacker: shot.attacker, target, with: shot.with, reach });
+        return;
+    }
     damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent::arriving(target, hit, reach)));
     if let Some(item) = shot.with {
         fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at });
@@ -912,7 +982,9 @@ impl Plugin for CombatPlugin {
             // then the queue simply stays empty.
             .add_message::<crate::effects::Fired>()
             .add_message::<Struck>()
+            .add_message::<crate::accuracy::Missed>()
             .init_resource::<DamageStages>()
+            .init_resource::<crate::accuracy::HitRules>()
             .add_airborne::<ShotLanding>()
             .add_action::<Attack>()
             .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")
@@ -992,6 +1064,86 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Attack(far)));
         app.update();
         assert_eq!(app.world().get::<Health>(far).unwrap().current, 20);
+    }
+
+    /// A model that always misses, so a test reads a miss without a seed.
+    struct Never;
+    impl rl_rules::accuracy::HitModel for Never {
+        fn odds(&self, _: &rl_rules::accuracy::Shot) -> Option<rl_rules::Odds> {
+            Some(rl_rules::Odds::new(0, 100, Vec::new()))
+        }
+    }
+
+    /// Counts what one attack wrote.
+    #[derive(Resource, Default, Debug)]
+    struct Wrote {
+        struck: usize,
+        damage: usize,
+        missed: Vec<crate::accuracy::Missed>,
+    }
+
+    fn count(mut wrote: ResMut<Wrote>, mut s: MessageReader<Struck>, mut d: MessageReader<DamageEvent>, mut m: MessageReader<crate::accuracy::Missed>) {
+        wrote.struck += s.read().count();
+        wrote.damage += d.read().count();
+        wrote.missed.extend(m.read().copied());
+    }
+
+    #[test]
+    fn a_miss_fires_the_weapon_and_deals_nothing() {
+        for adjacent in [true, false] {
+            let (mut app, start, blunt) = arena();
+            app.insert_resource(crate::accuracy::HitRules(Box::new(Never))).init_resource::<Wrote>().add_systems(PostUpdate, count);
+            let player = app
+                .world_mut()
+                .spawn((
+                    (Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(rl_rules::FactionId::from_raw(0))),
+                    (MeleeAttack::new(blunt, DiceRoll::flat(3)), RangedAttack::new(blunt, DiceRoll::flat(3), 6)),
+                ))
+                .id();
+            let gap = if adjacent { 1 } else { 4 };
+            let target =
+                app.world_mut().spawn((Actor, Blocks, Position(start.offset(gap, 0)), Health::full(20), Faction(rl_rules::FactionId::from_raw(1)))).id();
+            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+            app.update();
+            app.update();
+            let before = app.world().resource::<Turns>().now();
+            app.world_mut().write_message(Intent::new(player, Attack(target)));
+            app.update();
+            app.update();
+            assert_eq!(app.world().get::<Health>(target).unwrap().current, 20, "nothing landed");
+            let wrote = app.world().resource::<Wrote>();
+            assert_eq!((wrote.struck, wrote.damage), (1, 0), "the weapon fired and hurt nobody");
+            let reach = if adjacent { Reach::Melee } else { Reach::Shot };
+            assert_eq!(wrote.missed, vec![crate::accuracy::Missed { attacker: player, target, with: None, reach }]);
+            assert!(app.world().resource::<Turns>().now() > before, "a miss is a spent turn");
+        }
+    }
+
+    /// Which moments a worn weapon's attack set off.
+    #[derive(Resource, Default)]
+    struct Moments {
+        fire: bool,
+        hit: bool,
+    }
+
+    fn moments(mut seen: ResMut<Moments>, mut fired: MessageReader<crate::effects::Fired>) {
+        for f in fired.read() {
+            seen.fire |= f.moment == crate::effects::Moments::FIRE;
+            seen.hit |= f.moment == crate::effects::Moments::HIT;
+        }
+    }
+
+    #[test]
+    fn a_missed_shot_with_a_worn_weapon_fires_its_fire_moment_and_not_its_hit_moment() {
+        let (mut app, player, _gun, target) = gunman(3, None, None);
+        app.insert_resource(crate::accuracy::HitRules(Box::new(Never))).init_resource::<Moments>().add_systems(PostUpdate, moments);
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+        app.update();
+        let seen = app.world().resource::<Moments>();
+        assert!(seen.fire, "the gun fired");
+        assert!(!seen.hit, "and hit nothing");
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 20);
     }
 
     /// A call site names only what it cares about: `new` leaves every

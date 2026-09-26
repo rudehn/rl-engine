@@ -183,6 +183,22 @@ pub fn draw_inspect(
             y += 1;
         }
     }
+    // The chance the player's own attack lands, and every line the model
+    // gave for it, the same the targeting box prints.
+    if let Some(odds) = &view.odds
+        && y < inner.bottom()
+    {
+        let percent = odds.percent();
+        terminal.print_on(inner.x, y, &clip(&format!("Chance to hit: {percent}%"), width), palette.get(crate::panel::odds_tone(percent)), bg);
+        y += 1;
+        for line in &odds.lines {
+            if y >= inner.bottom() {
+                break;
+            }
+            terminal.print_on(inner.x, y, &clip(&format!("  {:+} {}", line.value, line.label), width), palette.get(Tones::MUTED), bg);
+            y += 1;
+        }
+    }
     for facet in &view.facets {
         if y >= inner.bottom() {
             break;
@@ -238,6 +254,23 @@ mod tests {
     }
 
     /// The ground is named whether or not something stands on it.
+    #[test]
+    fn the_chance_to_hit_and_what_shaped_it_are_printed_under_the_forecast() {
+        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(0, 21, 40, 12)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+            app.insert_resource(rl_bevy::HitRules(Box::new(rl_rules::Percent::new(5, 16, 30))));
+        })
+        .screen(40, 34);
+        let (player, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(player).insert(rl_bevy::RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12).effective_to(3));
+        stage.actor("droid", 'd', 5, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let rows: Vec<String> = stage.rows().iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect();
+        assert!(rows.iter().any(|r| r == "Chance to hit: 90%"), "{rows:#?}");
+        assert!(rows.iter().any(|r| r == "  -10 for range"), "{rows:#?}");
+    }
+
     #[test]
     fn the_panel_names_the_ground_under_the_cursor() {
         let mut stage = staged();

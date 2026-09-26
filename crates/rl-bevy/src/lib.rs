@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ability;
+pub mod accuracy;
 pub mod bump;
 pub mod combat;
 pub mod components;
@@ -49,6 +50,7 @@ pub mod turn;
 pub mod world;
 
 pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
+pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,
@@ -73,7 +75,7 @@ pub use items::{
     Tagged, Unequip, UseItem, Wearable,
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
-pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Scattered};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight, Thinking,
@@ -95,6 +97,7 @@ pub use props::{
 pub use registries::Registries;
 pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
 pub use replay::{Pressed, Recording};
+pub use rl_grid::LightBand;
 pub use seed::{AddStream, Seed, Stream};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
@@ -112,6 +115,7 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 /// that collided with a game's own `Shove` action.
 pub mod prelude {
     pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Use};
+    pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,
@@ -133,7 +137,7 @@ pub mod prelude {
         UseItem, Wearable,
     };
     pub use crate::knowledge::Knowledge;
-    pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin};
+    pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Scattered};
     pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, Sounds};
@@ -158,4 +162,5 @@ pub mod prelude {
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
+    pub use rl_grid::LightBand;
 }

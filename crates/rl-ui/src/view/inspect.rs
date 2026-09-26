@@ -18,6 +18,7 @@ use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::{Point, geometry};
 use rl_render::Glyph;
+use rl_rules::Odds;
 use rl_rules::Relation;
 use rl_rules::forecast::{Combatant, Duel, duel};
 
@@ -47,6 +48,10 @@ pub struct InspectView {
     /// How a fight with the subject is likely to go, when both sides can
     /// be read as combatants.
     pub duel: Option<Duel>,
+    /// The chance the player's own attack on the subject lands, from where
+    /// it stands: a blow when adjacent, a shot while it reaches. `None`
+    /// when nothing reaches or the game's hit model does not roll.
+    pub odds: Option<Odds>,
     /// What the game added about the subject.
     pub facets: Vec<Facet>,
 }
@@ -173,6 +178,8 @@ pub struct Duelists<'w, 's> {
     loadout: Loadout<'w, 's>,
     /// What is a prop rather than a fighter, so a crate gets no forecast.
     props: Query<'w, 's, (), With<rl_bevy::Prop>>,
+    /// The odds either side lands, by the call the resolver rolls with.
+    marks: Marksmanship<'w, 's>,
 }
 
 /// What a side of a duel is made of, apart from what its [`Loadout`] says.
@@ -186,6 +193,7 @@ type Fighter = (Option<&'static Health>, Option<&'static Speed>);
 pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
+    view.odds = None;
     view.facets.clear();
     view.ground.clear();
     view.burning = false;
@@ -248,9 +256,16 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let my_arms = duelists.loadout.arms(me, &my_blows, &my_shots);
     let their_arms = duelists.loadout.arms(entity, &their_blows, &their_shots);
     let apart = geometry::chebyshev(origin.0, pos.0);
-    let asker = Combatant::armed(my_health.current, duelists.loadout.armor(me), my_speed.map(|s| s.0).unwrap_or(100), &my_resists, &my_arms, apart);
+    // Each side's chance of landing what it would attack with from here,
+    // so the forecast counts the misses the roll will make.
+    let mine = duelists.marks.at_distance(&duelists.loadout, me, entity);
+    let theirs = duelists.marks.at_distance(&duelists.loadout, entity, me);
+    let asker = Combatant::armed(my_health.current, duelists.loadout.armor(me), my_speed.map(|s| s.0).unwrap_or(100), &my_resists, &my_arms, apart)
+        .hitting(mine.as_ref().map_or(100, Odds::percent));
     let other =
-        Combatant::armed(their_health.current, duelists.loadout.armor(entity), their_speed.map(|s| s.0).unwrap_or(100), &their_resists, &their_arms, apart);
+        Combatant::armed(their_health.current, duelists.loadout.armor(entity), their_speed.map(|s| s.0).unwrap_or(100), &their_resists, &their_arms, apart)
+            .hitting(theirs.as_ref().map_or(100, Odds::percent));
+    view.odds = mine;
     let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = duelists.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
     view.duel = Some(duel(&asker, &other, &duelists.registries.damage_kinds, &stages));
 }
@@ -271,6 +286,34 @@ mod tests {
         let mut stage = Stage::new(InspectViewPlugin);
         stage.tick();
         stage
+    }
+
+    #[test]
+    fn inspect_gives_the_chance_of_the_players_own_attack_from_where_it_stands() {
+        let mut stage = Stage::new_with(InspectViewPlugin, |app| {
+            app.insert_resource(rl_bevy::HitRules(Box::new(rl_rules::Percent::new(5, 16, 30))));
+        });
+        let (player, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(player).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12).effective_to(3));
+        stage.actor("droid", 'd', 5, 0);
+        stage.actor("rat", 'r', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let odds = stage.app.world().resource::<InspectView>().odds.clone().expect("a blow");
+        assert_eq!((odds.percent(), odds.lines.len()), (100, 0), "a blow reads no range and no light");
+        stage.press(CursorKeys::default().next);
+        let odds = stage.app.world().resource::<InspectView>().odds.clone().expect("a shot reaches");
+        assert_eq!(odds.percent(), 90, "two tiles past effective, in a world with no lighting");
+    }
+
+    #[test]
+    fn with_no_model_inspect_gives_no_chance() {
+        let mut stage = stage();
+        stage.actor("rat", 'r', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        assert!(stage.app.world().resource::<InspectView>().subject.is_some());
+        assert_eq!(stage.app.world().resource::<InspectView>().odds, None);
     }
 
     #[test]
@@ -479,7 +522,7 @@ mod tests {
             let gunner = stage.actor("gunner", 'g', away, 0);
             // Nothing but a gun: no melee at all, the case the bug hid.
             let (kind, world) = (stage.kind, stage.app.world_mut());
-            world.entity_mut(gunner).remove::<MeleeAttack>().insert(RangedAttack { kind, dice: rl_core::DiceRoll::flat(5), range: 8, cost: None, look: None });
+            world.entity_mut(gunner).remove::<MeleeAttack>().insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(5), 8));
             stage.tick();
             stage.press(CursorKeys::default().look);
             stage.app.world().resource::<InspectView>().duel.expect("a duel against something that fights")

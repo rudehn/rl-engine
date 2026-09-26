@@ -5,8 +5,9 @@
             crates/rl-ui/src/tone.rs
             crates/rl-ui/src/lib.rs
             crates/rl-bevy/src/combat.rs
+            crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 2c4c0714 -->
+     fingerprint: 7f7a9d8d -->
 
 # Narration
 
@@ -31,6 +32,7 @@ A `Said` is one thing that happened as the narrator reads it: its `words`, a `wh
 Two kinds rather than a phrase a game may add to, because `Phrase` enumerates what the engine raises and nothing else, and a game's line needs no entry in a table, only a place in the order.
 `Phrase` is closed for the same reason, and it is split by perspective and by how the damage arrived: `YouHit`, `HitsYou` and `OthersFight` for a blow, `YouShoot`, `ShootsYou` and `OthersShoot` for a shot, each of the six with a twin for the one that got through nothing, so no grammar and no branch on who did it lives in the engine.
 What tells a shot from a blow is `Reach`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: only `Shot` is worded as one, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a bolt or a poison is already narrated by whatever cast or inflicted it.
+A rolled attack that missed is `YouMiss`, `MissesYou` or `OthersMiss`, read from `Missed` and said in the muted tone of a blow that did nothing, whatever way it travelled.
 `called` is what `who`, `whom` and `what` were called when the row was made, filled in by the collector, because a row is made inside the pass and spoken after it and things change in between: what dies becomes remains and is renamed, what is thrown merges into a stack.
 A use is named as one of the thing, `You use a stim.`, since the stack already counts one fewer, and only a use of a thing with a `use` trigger is said at all: what using anything else means is the game's to say, the way a crust of bread is.
 `seen` is whether the player saw it, which is either that it happened to the player or that it happened where the player can see, and `Phrasebook::speak_unseen` decides whether an unseen row is spoken at all.

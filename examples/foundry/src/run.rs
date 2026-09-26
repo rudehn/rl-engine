@@ -9,6 +9,7 @@
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
+use rl_engine::rl_rules::Percent;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
 use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor};
 
@@ -53,6 +54,13 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // engine's default list is armor alone, which would leave it written
     // down and never played.
     commands.insert_resource(DamageStages(vec![Box::new(ApplyResistance), Box::new(SubtractArmor)]));
+    // ANCHOR: accuracy
+    // A shot goes wide past its weapon's effective range and in poor light:
+    // five points a tile past it, sixteen for a target in dim light, thirty
+    // for one seen only by the helmet in the dark. Foundry has no stats, so
+    // accuracy is the model's hundred and nobody evades.
+    commands.insert_resource(HitRules(Box::new(Percent::new(5, 16, 30))));
+    // ANCHOR_END: accuracy
     commands.insert_resource(Lighting::dark());
     // Standing in fire scorches, and whatever burns smokes: an incendiary
     // is a fire and a screen at once.
@@ -227,6 +235,24 @@ mod tests {
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
+
+    /// A run rolls to hit: five a tile past a gun's effective range, and
+    /// sixteen for a droid in dim light, thirty for one in the dark.
+    #[test]
+    fn a_shot_goes_wide_past_its_effective_range_and_in_poor_light() {
+        use rl_engine::rl_grid::LightBand;
+        use rl_engine::rl_rules::accuracy::{Delivery, Shot};
+        let mut app = crate::testing::headless(RunSeed(1));
+        // The run's rules are laid down as it starts, on the first frames.
+        app.update();
+        app.update();
+        let rules = app.world().resource::<HitRules>();
+        let shot = |distance, light| Shot { delivery: Delivery::Shot, distance, effective: 3, range: 8, light, accuracy: None, evasion: None };
+        let chance = |distance, light| rules.0.odds(&shot(distance, light)).map(|o| o.percent());
+        assert_eq!(chance(3, LightBand::Lit), Some(100), "inside effective range, in light, a sure thing");
+        assert_eq!(chance(5, LightBand::Dim), Some(100 - 10 - 16));
+        assert_eq!(chance(8, LightBand::Dark), Some(100 - 25 - 30));
+    }
 
     /// Every actor ever dealt a turn, in the order it was dealt, whether
     /// player or not: a resource a test-only system fills from inside the

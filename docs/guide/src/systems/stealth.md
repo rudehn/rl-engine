@@ -8,8 +8,9 @@
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/components.rs
             crates/rl-bevy/src/lighting.rs
+            crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 46223185 -->
+     fingerprint: 04994ae4 -->
 
 # Stealth
 
@@ -25,12 +26,13 @@ It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on,
 Both sides have to be authored before anything changes: a `Notice` absent means the observer sees on sight, which is the behaviour before stealth existed, and a `Stealth` absent means the subject never hides.
 That is the right way round, and it is why "I added the plugin and nothing happened" is the likely first report.
 The plugin is opt-in per game and the components are opt-in per spawn, so a game may carry it and still have places where nothing hides.
-Lighting is optional under it: with no `Lighting` resource every cell counts as lit, and with one, a subject standing in light widens the observer's certain radius by `lit_bonus`, which is zero unless a game says otherwise.
+Lighting is optional under it: with no `Lighting` resource every cell counts as lit, and with one, a subject standing in the lit band widens the observer's certain radius by `lit_bonus`, which is zero unless a game says otherwise.
+A subject in a lamp's dim ring is seen and gives no bonus, which is what makes the edge of the light a place to stand.
 Combat is optional too: with no `CombatRules` nobody has a side, so everyone is at odds with everyone and every observer rolls against every hider.
 
 ## The model
 
-`NoticeStats` is the observer's half: `certain`, the tiles inside which it spots you whatever the roll; `chance_pct`, its chance a turn beyond that; `lit_bonus`, added to `certain` while you stand in light; and `memory`, the turns it keeps looking after losing you, six when a content file leaves it out.
+`NoticeStats` is the observer's half: `certain`, the tiles inside which it spots you whatever the roll; `chance_pct`, its chance a turn beyond that; `lit_bonus`, added to `certain` while you stand in the lit band; and `memory`, the turns it keeps looking after losing you, six when a content file leaves it out.
 `StealthStats` is the subject's: `quiet` off the certain radius and `subtlety` off the chance, both defaulting to nothing.
 `certain_radius` is `certain` plus the light bonus less `quiet`, floored at one, so no stack of gear hides you from somebody standing next to you; `notice_chance` is the chance less `subtlety`; `notices` is either of them answering yes.
 `Notice(NoticeStats)` and `Stealth(StealthStats)` are the components, one name per tier so that globbing both crates into a prelude does not put two types called `Notice` in it.
@@ -44,7 +46,7 @@ What "could be seen" means is the observer's own `Viewshed` and `within_reach` o
 `Noticed { observer, subject, at }` is written once, on the flip from unaware, and never again while the awareness holds.
 `filter_unnoticed` takes the hiders the mind holding the turn has not noticed back out of its enemies and leaves a mind that keeps no `Aware` alone, then offers every subject it is alert to but cannot see as a trail through `Thinking::offer_trail`.
 Noise offers its own to the same place, the freshest becomes `Snapshot::last_known`, and `SearchLastKnown` walks to it.
-`wake_on_damage` wakes whoever takes a blow from something carrying `Stealth` and points it at the attacker's cell: a mend is not a blow, and a blow armor stopped at zero still wakes it.
+`wake_on_damage` wakes whoever takes a blow from something carrying `Stealth` and points it at the attacker's cell: a mend is not a blow, a blow armor stopped at zero still wakes it, and so does a rolled attack that missed, read from `Missed`, so a hider cannot fire at a sleeper until one lands.
 `StealthRunning` answers whether the plugin was added, asked of its message rather than of the components, because `Notice` brings an `Aware` with it and a game that authored observers without the plugin would otherwise have monsters that notice nothing forever.
 `Watchers` answers who is watching whom by the rule the minds act on: an observer that keeps an `Aware` watches what it knows about, one that does not watches whatever its own sight reaches, and neither watches anything it is not at odds with.
 
