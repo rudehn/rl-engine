@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: ffabf65e -->
+     fingerprint: c1fb0c68 -->
 
 # Panels
 
@@ -89,6 +89,7 @@ Each side's chance of landing what it would attack with from there comes from `M
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.
 `AbilityView` is an `AbilityRow` per ability the turn-holder knows, in registration order so a key bound to the third row stays bound to it, each carrying its costs, requirements and effects as sentences and every reason it is refused.
 `TargetView` is what is being aimed, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, and a `Row` per target.
+It also holds the `AimRange`, how far the cursor is against how far the weapon reaches with no penalty and at all, and the `Odds` against whoever a shot or a throw would strike, asked of `Marksmanship` as the resolver asks it, so a throw a body intercepts shows the chance against that body.
 `AimAt`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm.
 `OffersView` is an `OfferRow` per verb the player is offered where it stands, with its cost in hundredths and the reason a refused one is refused.
 `SheetView` is the character sheet: stats with every `Change` that made them what they are, resists, strikes, statuses and what is worn.

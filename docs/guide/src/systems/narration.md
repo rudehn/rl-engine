@@ -7,7 +7,7 @@
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 0ef9f59b -->
+     fingerprint: 0f1601a6 -->
 
 # Narration
 

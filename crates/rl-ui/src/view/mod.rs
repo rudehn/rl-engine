@@ -35,7 +35,7 @@ pub use inventory::{InventoryView, InventoryViewPlugin, ItemRow};
 pub use nearby::{NearbyView, NearbyViewPlugin};
 pub use offers::{OfferRow, OffersView, OffersViewPlugin};
 pub use sheet::{Change, ResistLine, SheetView, SheetViewPlugin, StatLine, StatusLine, Strike, WornLine};
-pub use target::{AimAt, AimFire, AimThrow, TargetView, TargetViewPlugin, target_modal};
+pub use target::{AimAt, AimFire, AimRange, AimThrow, TargetView, TargetViewPlugin, target_modal};
 pub use vitals::{VitalsView, VitalsViewPlugin};
 
 use bevy::prelude::*;
