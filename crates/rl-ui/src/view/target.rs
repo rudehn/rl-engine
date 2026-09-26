@@ -561,10 +561,12 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         // in hand; anything further needs a clear line to the target.
         let point_blank = rl_core::geometry::is_adjacent(from, view.cursor);
         let arrives = point_blank || flies.landing == Some(view.cursor);
-        if !arrives {
-            view.why.push(Blocked::OutOfReach);
-        } else if target.is_none() || (point_blank && !has_melee) {
+        // The shooter's own cell, where the cursor opens with nothing in
+        // sight, is nobody to shoot rather than somewhere too far.
+        if view.cursor == from || (arrives && (target.is_none() || (point_blank && !has_melee))) {
             view.why.push(Blocked::NoTarget);
+        } else if !arrives {
+            view.why.push(Blocked::OutOfReach);
         }
         let legal = view.why.is_empty();
         view.legal = legal;
@@ -1105,6 +1107,22 @@ mod tests {
         stage.tick();
         let odds = stage.app.world().resource::<TargetView>().odds.clone().expect("the player has a fist");
         assert_eq!((odds.percent(), odds.lines.len()), (100, 0), "a blow reads no range and no light");
+    }
+
+    /// With nothing in sight the cursor opens on the shooter's own cell, and
+    /// that is no target, not a target out of reach: nothing is too far.
+    #[test]
+    fn a_shot_aimed_at_the_shooters_own_cell_has_no_target_rather_than_being_out_of_reach() {
+        let mut stage = Stage::new_with(TargetViewPlugin, |_| {});
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12));
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert_eq!(view.cursor, stage.at, "nothing in sight, so it opens on the shooter");
+        assert_eq!(view.why, vec![Blocked::NoTarget]);
+        assert!(view.beyond.is_empty(), "and nothing is painted as out of reach");
     }
 
     #[test]
