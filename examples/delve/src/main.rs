@@ -64,7 +64,7 @@ fn main() -> AppExit {
             LogPanel::new(screen.log),
             InspectPanel::new(screen.inspect),
             ScrollbackPanel::new(screen.scrollback),
-            TargetPanel::new(screen.target).hints("[enter] use  [tab] next  [esc] back"),
+            TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle"),
             // The list of knacks, walked, described and aimed by the engine.
             AbilityPanel::new(screen.knacks).title("Knacks").called("knacks"),
             // The pack, on `i`: the engine lists what is carried and puts it
@@ -123,6 +123,10 @@ impl Screen {
         let (vitals, nearby) = panel::split_top(rail, 11);
         // The last row of the rail says how to see the controls.
         let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // The targeting box sits over the bottom of the nearby list while
+        // the cursor is up, where the eye already is when choosing what to
+        // aim at; the rows above it stay readable.
+        let (_, target) = panel::split_bottom(nearby, TARGET_ROWS);
         Self {
             map,
             log,
@@ -130,7 +134,7 @@ impl Screen {
             nearby,
             inspect: Rect::new(map.x + 2, map.bottom() - 11, map.width.min(50), 10),
             scrollback: map.inflate(-2),
-            target: Rect::new(map.x, map.bottom() - 1, map.width, 1),
+            target,
             // Five rows of knacks, a rule, and a description with three
             // effects under it, without cutting any short.
             knacks: Rect::new(map.x + map.width / 2 - 21, map.y + 3, 42, 22),
@@ -203,6 +207,9 @@ const BRAND: LightSource = LightSource::new(200, 8, Rgb::new(255, 190, 120)).fli
 const FLAME: Rgb = Rgb::new(255, 170, 90);
 /// Columns given to the rail down the right.
 const RAIL: i32 = 26;
+/// Rows the targeting box takes at the bottom of the rail: the frame, what
+/// is aimed, the range, the target, the chance, and up to four lines of it.
+const TARGET_ROWS: i32 = 10;
 /// The delver's knacks and the one a beast has, compiled in.
 const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
 /// What the player knows, in the order `1` to `5` aim them.
