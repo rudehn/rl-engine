@@ -585,10 +585,17 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         let Ok((throwable, name)) = reach.missiles.get(item) else { return };
         view.what = name.map(|n| n.as_str().to_string()).unwrap_or_default();
         let thrown = flight(&reach.map, &reach.occupancy, from, view.cursor, throwable.range);
-        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: throwable.effective_range(), max: throwable.range });
-        // Rolled against whoever the flight strikes first, as the resolver
-        // rolls, which need not be who the cursor is on.
-        view.odds = thrown.struck.and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
+        // Rolled against whoever living the flight strikes first, as the
+        // resolver rolls, which need not be who the cursor is on; the range
+        // read is to where it strikes, the distance the chance was worked
+        // out at, so the two lines of the box agree.
+        let struck = thrown.struck.filter(|who| reach.living.contains(*who));
+        let reaches = match (struck, thrown.path.last()) {
+            (Some(_), Some(end)) => *end,
+            _ => view.cursor,
+        };
+        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range });
+        view.odds = struck.and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
         // It lands on whoever it strikes, or wherever it comes to rest.
         let lands = match (thrown.struck, thrown.path.last()) {
             (Some(_), Some(end)) => *end,
@@ -1157,6 +1164,26 @@ mod tests {
         stage.tick();
         let view = stage.app.world().resource::<TargetView>();
         assert_eq!(view.odds.as_ref().map(rl_rules::Odds::percent), Some(95), "one tile past effective, against the near body");
+        assert_eq!(view.span.map(|s| s.distance), Some(2), "and the range read is the near body's, which the chance was worked out at");
+    }
+
+    /// Something in the way that nothing can hurt, a crate with no health,
+    /// stops the throw and is never rolled against, so no chance is shown.
+    #[test]
+    fn a_throw_stopped_by_something_that_cannot_be_hurt_shows_no_odds() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(9, Some((kind, rl_core::DiceRoll::flat(2)))))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
+        let at = stage.at;
+        stage.app.world_mut().spawn((Blocks, Position(at.offset(2, 0)), Name::new("crate")));
+        stage.actor("far", 'f', 6, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimThrow { user, item: knife });
+        stage.tick();
+        stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(6, 0);
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<TargetView>().odds, None);
     }
 
     #[test]

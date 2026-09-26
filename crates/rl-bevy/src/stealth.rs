@@ -209,7 +209,11 @@ impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, Turn, TurnSet};
         use crate::seed::AddStream;
+        // The blows it wakes on, registered here as well so a game with
+        // stealth and no combat has nothing to wake on rather than a panic.
         app.add_message::<Noticed>()
+            .add_message::<DamageDealt>()
+            .add_message::<crate::accuracy::Missed>()
             .add_stream::<StealthRng>("StealthPlugin")
             .add_systems(Turn, update_awareness.in_set(DecideSet::Notice))
             .add_systems(Turn, filter_unnoticed.in_set(crate::plugin::PerceiveSet::Filter))
@@ -322,7 +326,8 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     aware.0.retain(|subject, _| seen.contains(subject));
 }
 
-/// Wakes whoever takes a blow from something hiding, and points them at it.
+/// Wakes whoever takes a blow from something hiding, or is missed by one, and
+/// points them at it.
 ///
 /// Being hit is noticing, however quiet the attacker was. In
 /// [`TurnSet::React`](crate::plugin::TurnSet::React) because that is where
@@ -330,10 +335,19 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// struck already knows where from when it next decides.
 pub fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
+    mut missed: MessageReader<crate::accuracy::Missed>,
     mut observers: Query<&mut Aware>,
     attackers: Query<&Position, With<Stealth>>,
     mut noticed: MessageWriter<Noticed>,
 ) {
+    let mut wake = |target: Entity, attacker: Entity| {
+        let (Ok(mut aware), Ok(at)) = (observers.get_mut(target), attackers.get(attacker)) else { return };
+        let mut state = aware.of(attacker);
+        if state.alerted_to(at.0) {
+            noticed.write(Noticed { observer: target, subject: attacker, at: at.0 });
+        }
+        aware.0.insert(attacker, state);
+    };
     for ev in dealt.read() {
         // A mend is a negative hit down the same pipeline, and a hider who
         // patches a sleeper up has not struck it. A blow that armor stopped
@@ -342,12 +356,13 @@ pub fn wake_on_damage(
             continue;
         }
         let Some(attacker) = ev.hit.attacker else { continue };
-        let (Ok(mut aware), Ok(at)) = (observers.get_mut(ev.target), attackers.get(attacker)) else { continue };
-        let mut state = aware.of(attacker);
-        if state.alerted_to(at.0) {
-            noticed.write(Noticed { observer: ev.target, subject: attacker, at: at.0 });
-        }
-        aware.0.insert(attacker, state);
+        wake(ev.target, attacker);
+    }
+    // A blow or a shot that went wide was still aimed at it, and is at
+    // least as plain as one armor stopped: otherwise a hider could fire at
+    // a sleeper until one landed.
+    for m in missed.read() {
+        wake(m.target, m.attacker);
     }
 }
 
@@ -501,6 +516,17 @@ mod tests {
         assert!(field.aware().knows(player), "struck, so it knows where from");
         field.wait();
         assert!(field.distance() < 5, "and goes for it: {}", field.distance());
+    }
+
+    #[test]
+    fn a_blow_that_misses_wakes_an_observer_as_surely_as_one_that_lands() {
+        let mut field = Field::new(blind(), 5, 10, true, None);
+        field.wait();
+        assert!(!field.aware().knows(field.player));
+        let (watcher, player) = (field.watcher, field.player);
+        field.app.world_mut().write_message(crate::accuracy::Missed { attacker: player, target: watcher, with: None, reach: crate::combat::Reach::Shot });
+        field.wait();
+        assert!(field.aware().knows(player), "shot at and missed, so it knows where from");
     }
 
     #[test]

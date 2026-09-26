@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 45613ba6 -->
+     fingerprint: 17bc4109 -->
 
 # Panels
 
@@ -90,7 +90,7 @@ A `Prop` is named and never duelled, since a crate's health is there to be broke
 `AbilityView` is an `AbilityRow` per ability the turn-holder knows, in registration order so a key bound to the third row stays bound to it, each carrying its costs, requirements and effects as sentences and every reason it is refused.
 `TargetView` is what is being aimed, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, and a `Row` per target.
 `TargetPanel` draws the footprint over the map and describes the aim in a framed box, drawn only while the cursor is up so a game sets it over the bottom of its rail: what is aimed, the range, the target in its relation's tone, then the chance to hit and each of the model's lines, or the reason the aim is refused where the chance would be.
-The view also holds the `AimRange`, how far the cursor is against how far the weapon reaches with no penalty and at all, and the `Odds` against whoever a shot or a throw would strike, asked of `Marksmanship` as the resolver asks it, so a throw a body intercepts shows the chance against that body.
+The view also holds the `AimRange`, how far the aim reaches against how far the weapon reaches with no penalty and at all, and the `Odds` against whoever living a shot or a throw would strike, asked of `Marksmanship` as the resolver asks it, so a throw a body intercepts shows the chance against that body and the range to it.
 `AimAt`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm.
 `OffersView` is an `OfferRow` per verb the player is offered where it stands, with its cost in hundredths and the reason a refused one is refused.
 `SheetView` is the character sheet: stats with every `Change` that made them what they are, resists, strikes, statuses and what is worn.

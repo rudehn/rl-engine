@@ -174,10 +174,13 @@ pub fn draw_target(
         many => (format!("{} of them", many.len()), Tones::TEXT),
     };
     if y < inner.bottom() {
-        let prefix = "Target: ";
-        terminal.print_on(inner.x, y, prefix, palette.get(Tones::TEXT), bg);
-        let room = width.saturating_sub(prefix.len());
-        terminal.print_on(inner.x + prefix.len() as i32, y, &clip(&at, room), palette.get(at_tone), bg);
+        // Both halves clipped to the box, so a narrow one keeps its border.
+        let prefix = clip("Target: ", width);
+        terminal.print_on(inner.x, y, &prefix, palette.get(Tones::TEXT), bg);
+        let used = prefix.chars().count();
+        if used < width {
+            terminal.print_on(inner.x + used as i32, y, &clip(&at, width - used), palette.get(at_tone), bg);
+        }
         y += 1;
     }
     // Red says no, and says why, where the chance would be: a cursor that
@@ -328,12 +331,33 @@ mod tests {
 
     #[test]
     fn more_lines_than_rows_are_clipped_inside_the_frame() {
-        let mut stage = shooter(5);
+        // Six rows: the frame and four inside, which the name, the range,
+        // the target and the chance fill, so the range line is cut.
+        let mut stage = shooter(6);
         let user = stage.player;
         stage.app.world_mut().write_message(AimFire { user });
         stage.tick();
-        assert!(stage.row(4).starts_with('\u{2514}'), "the bottom border is where it belongs: {:?}", stage.row(4));
-        assert!(!stage.row(5).contains("past"), "and nothing spilled below it: {:?}", stage.row(5));
+        assert_eq!(boxed(&stage, 6), ["fire", "Range: 5 / 12", "Target: droid", "Chance to hit: 90%"]);
+        assert!(stage.row(5).starts_with('\u{2514}'), "the bottom border is where it belongs: {:?}", stage.row(5));
+        let below: String = stage.row(6).chars().take(26).collect();
+        assert!(!below.contains("range") && !below.contains('\u{2502}'), "and nothing spilled below it: {below:?}");
+    }
+
+    #[test]
+    fn a_box_too_narrow_for_the_target_line_clips_it_inside_the_frame() {
+        let mut stage = Stage::new_with(TargetPanel::new(Rect::new(0, 0, 9, 8)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 12, 40, 20)));
+        });
+        let (user, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(user).insert(rl_bevy::RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12));
+        stage.actor("droid", 'd', 5, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        let line = |y: i32| stage.row(y).chars().take(10).collect::<String>();
+        let target = (1..7).find(|y| line(*y).contains("Targ")).expect("a target line");
+        assert_eq!(line(target).chars().nth(8), Some('\u{2502}'), "the right border is left standing: {:?}", line(target));
+        assert!(line(target).chars().nth(9).is_none_or(|c| c == ' '), "and nothing is drawn past it: {:?}", line(target));
     }
 
     #[test]
