@@ -268,7 +268,7 @@ mod tests {
         stage.press(CursorKeys::default().look);
         let rows: Vec<String> = stage.rows().iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect();
         assert!(rows.iter().any(|r| r == "Chance to hit: 90%"), "{rows:#?}");
-        assert!(rows.iter().any(|r| r == "  -10 past effective range"), "{rows:#?}");
+        assert!(rows.iter().any(|r| r == "  -10 for range"), "{rows:#?}");
     }
 
     #[test]

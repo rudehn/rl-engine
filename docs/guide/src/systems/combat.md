@@ -12,7 +12,7 @@
             crates/rl-rules/src/accuracy.rs
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/throwing.rs
-     fingerprint: c2f2e0a0 -->
+     fingerprint: 3d3a0471 -->
 
 # Combat and loadout
 

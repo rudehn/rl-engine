@@ -82,6 +82,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Attacks can miss. `HitRules` holds a `HitModel`: `Certain` by default, which rolls and draws nothing, so nothing changes until a game inserts another; `Percent` is shipped, accuracy less evasion, less a penalty per tile past a weapon's effective range and a penalty for dim or dark light at the target. `CombatRules::accuracy_stat` and `evasion_stat` name the stats it reads. A miss still writes `Struck` and the weapon's `fire` moment, then `Missed` in place of any damage, and the narrator says it with `YouMiss`, `MissesYou` and `OthersMiss`. `docs/design/accuracy.md` is the reasoning.
 - `RangedAttack` and `Throwable` carry an optional `effective` range, a third of `range` when left out. Breaking: a `Throwable` literal no longer compiles; write `Throwable::new(range, strike)`. A `RangedAttack` literal adds `effective: None`, or is written with `RangedAttack::new`.
 - A forecast counts the misses: `Combatant` has `chance_pct`, set with `hitting`, and `InspectView::odds` is the chance the player's own attack lands, printed under the forecast. A `Combatant` literal adds `chance_pct: 100`.
+- `TargetPanel::new(rect)` draws a framed box in `rect`, not a one-row banner: what is aimed, the range, the target, and the chance to hit with the lines behind it. Breaking: give it a box at least eight rows tall, such as the bottom of the rail, and keep its hints within the box's width less four, since they now sit in its bottom border.
 
 ## 0.3.0
 

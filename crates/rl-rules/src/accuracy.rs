@@ -122,6 +122,8 @@ impl HitModel for Certain {
 
 /// What [`Percent`] calls each of its lines. English by default, as the
 /// narrator's phrasebook is; a game says its own with [`Percent::labelled`].
+/// Short, because a line is printed after its value in a box that sits in a
+/// rail two dozen cells wide.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PercentLabels {
     /// The attacker's accuracy, against 100.
@@ -138,13 +140,7 @@ pub struct PercentLabels {
 
 impl Default for PercentLabels {
     fn default() -> Self {
-        Self {
-            accuracy: "accuracy".into(),
-            evasion: "evasion".into(),
-            range: "past effective range".into(),
-            dim: "for dim light".into(),
-            dark: "in the dark".into(),
-        }
+        Self { accuracy: "accuracy".into(), evasion: "evasion".into(), range: "for range".into(), dim: "for dim light".into(), dark: "for darkness".into() }
     }
 }
 
@@ -248,7 +244,7 @@ mod tests {
         let far = model.odds(&shot(Delivery::Shot, 5, LightBand::Dim)).unwrap();
         assert_eq!(far.hits, 100 - 10 - 16);
         let lines: Vec<(i32, &str)> = far.lines.iter().map(|l| (l.value, l.label.as_str())).collect();
-        assert_eq!(lines, vec![(-10, "past effective range"), (-16, "for dim light")]);
+        assert_eq!(lines, vec![(-10, "for range"), (-16, "for dim light")]);
     }
 
     #[test]

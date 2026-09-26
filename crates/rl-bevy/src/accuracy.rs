@@ -206,7 +206,7 @@ mod tests {
         let app = range(5, Some(HitRules(Box::new(Percent::new(5, 16, 30)))), None);
         let odds = app.world().resource::<Asked>().0.clone().unwrap();
         assert_eq!(odds.hits, 90);
-        assert!(odds.lines.iter().all(|l| l.label != "for dim light" && l.label != "in the dark"));
+        assert!(odds.lines.iter().all(|l| l.label != "for dim light" && l.label != "for darkness"));
     }
 
     #[test]

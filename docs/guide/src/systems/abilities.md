@@ -15,7 +15,7 @@
             crates/rl-bevy/src/gas.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: bd7ff5c3 -->
+     fingerprint: 78f65a45 -->
 
 # Abilities
 

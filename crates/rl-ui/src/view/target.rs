@@ -428,7 +428,7 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
                 Pointing::Fire => {
                     // A shot is at someone rather than at a cell. With nobody
                     // under the cursor there is no attack to write, and the
-                    // banner already says there is no target, so the cursor
+                    // box already says there is no target, so the cursor
                     // stays up for the player to move.
                     let Some(target) = mark(&aiming.occupancy, user, view.cursor, |who| aiming.living.contains(who)) else { return };
                     intents.attacks.write(Intent::new(user, Attack(target)));
@@ -478,7 +478,7 @@ fn forget(view: &mut TargetView) {
 /// The name and the glyph are optional here and required by the other
 /// views, and the difference matters: a nameless or glyphless row is one a
 /// list can leave out, but such a target is one the ability will hit
-/// anyway. Dropping it would make the banner say "nothing" over a monster
+/// anyway. Dropping it would make the box say "nothing" over a monster
 /// about to be burned, so `targets` counts what the footprint catches and
 /// the cosmetics are filled in where they exist.
 type Standing = (Entity, &'static Position, Option<&'static Name>, Option<&'static Glyph>, Option<&'static Health>);
@@ -525,7 +525,7 @@ impl Reach<'_, '_> {
 ///
 /// Through [`Bystanders::land`] for an ability, [`flight`] for a throw and
 /// [`shot`] for a shot, the calls the resolvers act on, so the cells lit on
-/// the map, the names in the banner and whether it reads as refused are
+/// the map, the names in the box and whether it reads as refused are
 /// what will happen when the player confirms. A preview computed any other
 /// way is a preview that drifts.
 pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: Reach) {
@@ -948,7 +948,7 @@ mod tests {
     }
 
     /// The property the preview exists for, over many layouts: who the
-    /// banner lists and whether it reads as refused are exactly what the
+    /// box lists and whether it reads as refused are exactly what the
     /// resolver does once the player confirms.
     #[test]
     fn the_preview_names_exactly_who_the_resolver_hits() {
@@ -1010,7 +1010,7 @@ mod tests {
                         let mut hit = targets.clone();
                         hit.sort();
                         assert!(legal, "seed {seed}: the preview refused an aim the resolver took");
-                        assert_eq!(hit, shown, "seed {seed}: the banner listed other than who was hit");
+                        assert_eq!(hit, shown, "seed {seed}: the box listed other than who was hit");
                     }
                     [AbilityEvent::Refused { why, .. }] => assert!(!legal, "seed {seed}: the resolver refused ({why:?}) an aim the preview called legal"),
                     other => panic!("seed {seed}: expected one outcome, got {other:?}"),
