@@ -201,7 +201,7 @@ The surface window is up to nine regions, so the compose pass is the number to m
   A lantern and oil in the armory, huts as static amber, caves dark.
   A Corsair-side system writes ambient from the turn clock so the open water has nights; this is content in the example, not a feature of the engine.
 - **E. Mechanics on top.**
-  Lit detection range for minds, a light-averse tactic, sconces as prefab marks in the dungeon passes, a ranged penalty in the dark once accuracy exists in the combat rules.
+  Lit detection range for minds, a light-averse tactic, sconces as prefab marks in the dungeon passes, a ranged penalty in dim and dark light, built as `Percent`'s light rule over `LightBand` (`docs/design/accuracy.md`).
 - **F. With tile fields.**
   Burning tiles inject into the static layer by flood; a shadow layer for negative emitters.
 

@@ -454,9 +454,8 @@ Corsair and the delve should each lose code on C and E.
   Validate-on-load pays most of it: a bad argument fails at startup, naming the ability.
 - **The cursor's dependency on the UI slice.**
   Resolved: the slice landed first, and phase D built on its modals, views and look cursor without changing any of them beyond moving the look cursor onto the shared arithmetic.
-- **Accuracy does not exist.**
-  Abilities land unconditionally, like every melee attack today.
-  When a to-hit roll arrives it is a stage in the damage pipeline, not a change here.
+- **Abilities are not rolled.**
+  Blows, shots and throws have a to-hit roll, in `docs/design/accuracy.md`; an ability still lands unconditionally, and rolling one is its own slice.
 - **Not built: ability trees, levelling, schools, spell failure, counterspelling, casting interrupted by damage.**
   Every one of them is a game's rule over the data this slice provides, and the engine should not guess which.
 - **Not built: an ability with no user.**

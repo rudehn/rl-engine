@@ -95,7 +95,8 @@ Which of an actor's two attacks a forecast counts is the engine's for the same r
 The game decides what a damage kind is and whether armor applies to it, who hates whom, what mitigates a hit, and what a hit or a death is worth beyond health reaching zero.
 `DamageStages` is a list of boxed `DamageStage`s, so there is no enum of mitigations and no `Custom` arm: a game's critical rule sits in the list beside `SubtractArmor` and `resolve` cannot tell them apart.
 `Defender::blocked` is never set by the engine, which builds one with `blocked: false` every time, so `HalveIfBlocked` is for a caller that fills its own and a game that blocks rolls the block inside a stage of its own.
-Accuracy does not exist either: a blow lands unconditionally, and a to-hit roll when a game wants one is a stage that returns zero rather than a change to the resolver.
+Whether an attack lands is the game's model and the engine's roll: `HitRules` holds whatever `HitModel` the game chose, `Marksmanship` hands it the same facts whoever asks, and the resolver draws once from `CombatRng`, so a panel's chance and the attack's outcome cannot disagree.
+What a miss spends is the engine's call, the weapon's `fire` moment and nothing after it; what accuracy is made of, which stats, what range and light cost, whether anything is ever certain, is the model's.
 `armor_stat` and `attack_stat` are the whole seam between the registered stats and a blow, which is why a status that hardens the skin and an affix that sharpens the hand both work by moving a stat and neither is named in combat.
 A game that registered no stats names neither, and its armor is components alone.
 What a weapon does to itself is the game's, hung on `Struck`: heat, ammunition, wear, each read off a message that already names the item, so no game recomputes which weapon the loadout would have chosen.

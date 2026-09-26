@@ -79,6 +79,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Foundry keeps where things turn up apart from what they are: `monster_spawns.ron` and `item_spawns.ron`, a named row per band, in place of the `spawn` tuples in `monsters.ron` and `items.ron`. The rows are in the order the tuples were, and the fingerprint does not move.
 - Light has three bands. `Lighting::bright`, 64 by default, splits what is seen into `LightBand::Dim` and `LightBand::Lit`, read with `Lighting::band` or `band_at`, which reads a game without lighting as lit. What is seen is unchanged.
 - Stealth's `lit_bonus` applies only in the `Lit` band. A subject in a lamp's dim ring, or under an ambient between `threshold` and `bright`, is still seen and no longer gives it. A game that wants the old reading sets `bright` equal to `threshold`.
+- Attacks can miss. `HitRules` holds a `HitModel`: `Certain` by default, which rolls and draws nothing, so nothing changes until a game inserts another; `Percent` is shipped, accuracy less evasion, less a penalty per tile past a weapon's effective range and a penalty for dim or dark light at the target. `CombatRules::accuracy_stat` and `evasion_stat` name the stats it reads. A miss still writes `Struck` and the weapon's `fire` moment, then `Missed` in place of any damage, and the narrator says it with `YouMiss`, `MissesYou` and `OthersMiss`. `docs/design/accuracy.md` is the reasoning.
+- `RangedAttack` and `Throwable` carry an optional `effective` range, a third of `range` when left out. Breaking: a `Throwable` literal no longer compiles; write `Throwable::new(range, strike)`. A `RangedAttack` literal adds `effective: None`, or is written with `RangedAttack::new`.
+- A forecast counts the misses: `Combatant` has `chance_pct`, set with `hitting`, and `InspectView::odds` is the chance the player's own attack lands, printed under the forecast. A `Combatant` literal adds `chance_pct: 100`.
 
 ## 0.3.0
 

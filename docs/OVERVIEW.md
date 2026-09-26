@@ -39,7 +39,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - Region-bounded `DijkstraMap` with scale and rescan for flee maps; descending it takes only a step the flood itself would take, so a mover is never handed the diagonal past a wall's corner that the move resolver refuses.
 - `SpatialGrid`.
 - Targeting: own, adjacent, bolt, ball, beam and cone shapes resolved to a footprint against two caller-named blockers, what stops a projectile and what stops a burst, `burst`, the cells a straight line from a centre reaches within a radius without crossing a wall, which a ball bursts with and a thrown thing's trigger too, and `clear_shot`.
-- Light: `Light` as an intensity, a landed colour and a waver the renderer alone reads, `Emitter` with a flicker, integer falloff to zero at the rim, screen blending, and a `LightField` cast through the shadowcast in an order-independent way, with a flood for glowing areas and a compose over two layers and an ambient.
+- Light: `Light` as an intensity, a landed colour and a waver the renderer alone reads, `Emitter` with a flicker, integer falloff to zero at the rim, screen blending, and a `LightField` cast through the shadowcast in an order-independent way, with a flood for glowing areas and a compose over two layers and an ambient; `LightBand::of`, the one rule that names an intensity dark, dim or lit against a seen threshold and a bright one.
 - Criterion benches on realistic maps, lighting at twenty sources included. `rl-bevy` has two, on one player turn as the crowd of awake minds grows and on where a pass and a sight recast go; `rl-ui` one on the frame: a still frame, a frame in which a carried lamp moved, and the same by how many panels are up.
 
 ### rl-mapgen
@@ -87,7 +87,8 @@ One crate, in modules: crate boundaries follow dependency weight, and content, r
 - `ai::hearing`: `HearingStats` (a threshold a sound must arrive above, and a memory), `carries`, which reads what a sound passes from the flags a tile already has (open ground at a step, a closed door at a step and a muffle more, a wall not at all), and `left_after` and `heard`, in whole steps of loudness spent in hundredths of a step.
 - `gas`: `GasDef` (spread, fade, the concentration that hides what is behind it, whether it burns, a status for breathing enough), loaded by status name; `release`, an amount let go at a point that fills the cell to `FULL` and spills the rest to the nearest cells at once, so a grenade's worth is a room of smoke and a plume down a corridor; and `diffuse`, an exchange with each neighbour and a swirl pushed one way per patch, both from `spread`, then held to the densest cell around and faded by at least one unit, so every cloud clears and no two spread alike.
 - `fire`: `Tinder` and `spread`, one catch chance per burning neighbour from rolls the caller passes in, so the spread does not depend on visiting order.
-- `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, weighed by each side's own blow cost and speed, and an `Outlook` read off the two counts.
+- `accuracy`: whether an attack lands. A `HitModel` turns a `Shot` of plain facts (how it travels, distance, effective range and reach, the `LightBand` at the target, accuracy and evasion) into `Odds`, some chances in some outcomes with the labelled `Line`s behind them, rolled with one draw; `Certain` never rolls and `Percent` is accuracy less evasion, less `range_penalty` and a dim or dark penalty, clamped to 0..=100.
+- `forecast`: what a fight is likely to cost, with the average roll put through the game's own mitigation pipeline in place of a real one; blows and turns to fell either side, weighed by each side's own blow cost and speed, and an `Outlook` read off the two counts; a `Combatant`'s chance to hit scales what it is expected to deal.
   Pure, so an inspect panel's numbers cannot drift from the fight.
 
 ## Tier 2: the Bevy layer
@@ -107,15 +108,15 @@ The prose below the table is the why.
 | `FovPlugin` | `CorePlugin` | every stale `Viewshed` recast, and what a `RevealsMap` saw written into `Knowledge` | - |
 | `StreamingPlugin` | `CorePlugin`; `WorldRes`, `ChunkRulesRes` | the surface streamed a window at a time, with edit deltas kept per chunk | `ChunkLoaded` |
 | `FactsPlugin` | `CorePlugin` | the fact ledger, named counters and the quest tracker | `Happened`, `QuestChange` |
-| `CombatPlugin` | `CorePlugin`; `CombatRules`, `Registries` | `Health`, `Armor`, resists, `Invulnerable`, `Loadout`, melee and ranged attacks, the damage pipeline (`SubtractArmor` by default), `Airborne<ShotLanding>` | `DamageEvent`, `DamageDealt`, `DeathEvent`, `Struck` |
+| `CombatPlugin` | `CorePlugin`; `CombatRules`, `Registries` | `Health`, `Armor`, resists, `Invulnerable`, `Loadout`, melee and ranged attacks, the damage pipeline (`SubtractArmor` by default), `HitRules` (`Certain` by default) and `Marksmanship`, `Airborne<ShotLanding>` | `DamageEvent`, `DamageDealt`, `DeathEvent`, `Struck`, `Missed` |
 | `MindsPlugin` | `FovPlugin` | `Mind`, `Perception`, `Profile`, `Intelligence`, `Thinking` and the perceive stage, `FlowFields`, the `Attack` action, and the one system that turns a decision into an act | `MindChose` |
 | `StatusPlugin` | `CombatPlugin`; `Registries` | `Afflicted` and `StatBlock` on every actor, per-turn ticks and cures | `Afflict`, `Cure`, `StatusEvent` |
 | `EffectsPlugin` | - (added by any plugin that lands effects) | `EffectKinds`, `Moments`, `EffectRng`, `Triggers` with an optional look cued over their cells, `LandsAsItself`, `Remnant`, and `report_remnants` and `land_triggers` in `ResolveSet::Triggers`: what an effect is and how a list lands, for abilities, props and items alike | `Fired` |
 | `ItemsPlugin` | `CorePlugin` | the ground, bags and slots, stacks, tags, enchantments, `StatBlock`, `fold_gear`, `GearScore` | `ItemEvent` |
-| `ThrowingPlugin` | `ItemsPlugin`, `CombatPlugin` | `Throwable`, the `Throw` action, `flight`, `Airborne<ThrowLanding>` | through `ItemEvent::Thrown` |
+| `ThrowingPlugin` | `ItemsPlugin`, `CombatPlugin` | `Throwable` with its `effective` range, the `Throw` action, `flight`, `Airborne<ThrowLanding>` | through `ItemEvent::Thrown`, and `Missed` |
 | `ConsumablesPlugin` | `ItemsPlugin` | `Consumable` with its charges, what happens at the last and an optional `Recharge`, `SpendingMoments`, `spend_charges` and `recharge_charges`: what a use, a landing or a shot costs the thing | through `Fired` |
 | `AbilitiesPlugin` | `CombatPlugin`; `Abilities`, `Registries` | `Known`, `Pools`, `Cooldowns`, the `Use` action, `Offered`, `Bystanders`, `Airborne<Landing>` | `AbilityEvent` |
-| `LightingPlugin` | `CorePlugin` | `Lighting` (dark), `LightSource`, the static and dynamic layers, `Fuel`, `DarkSight` | `LightEvent` |
+| `LightingPlugin` | `CorePlugin` | `Lighting` (dark, `bright` 64, `band`), `LightSource`, the static and dynamic layers, `Fuel`, `DarkSight` | `LightEvent` |
 | `StealthPlugin` | `MindsPlugin` | `Notice`, `Stealth`, `Aware`, the roll to notice, the hiders taken out of a snapshot, and the trail it offers `Thinking` | `Noticed` |
 | `NoisePlugin` | `CorePlugin` | `Sounds`, `Hearing`, `Footfall`, the flood in `TurnSet::Listen`, `Heard` | `MakeNoise`, `NoiseHeard` |
 | `GasPlugin` | `CorePlugin`; `Registries` | `Gases` per map, `Vents`, the diffusion step, the map's veil, the `Emit` effect | `Release`, `Breathed` |

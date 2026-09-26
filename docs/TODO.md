@@ -43,11 +43,10 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 16 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
 | 17 | A `Burning` entity comes back unlit | 3 | low | low |
 | 18 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 19 | A place for a miss | 3 | low | low |
-| 20 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
-| 23 | `HalveIfBlocked` can never fire | 3 | low | low |
+| 19 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 20 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 21 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 22 | `HalveIfBlocked` can never fire | 3 | low | low |
 | 24 | Two engine types are named for a theme word | 4 | low | low |
 | 25 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
@@ -102,8 +101,6 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Anyone travels.**
   `WarpRequest` and `GoThrough` ignore everyone but the player (`crates/rl-bevy/src/places.rs`, `resolve_warps`).
   Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.
-- **A place for a miss.**
-  Accuracy is deliberately absent (`docs/design/abilities.md`, "Accuracy does not exist"); the combat docs should say how a game adds a miss as a `DamageStage`, with an example.
 - **Light is recast once a frame, not once a turn.**
   `update_lighting` runs in `EngineSet::Light`, after every `Turn` pass the frame ran, so a droid acting in the same frame the player switches a lamp off still sees by the old light, for one turn.
   Foundry's lamp shows it; recasting the dynamic layer inside the turn loop, when a source was added or removed, would close it.
