@@ -173,7 +173,8 @@ pub enum Phrase {
     YouGainABoon,
     /// A status on you ran out, or a boon on you was broken off.
     YouAreNoLonger,
-    /// A status on you that is not a boon was cured.
+    /// A status on you that is not a boon was cured: the same words as
+    /// [`Phrase::YouAreNoLonger`], told as good news.
     YourAfflictionPasses,
     /// A status was put on someone else.
     IsAfflicted,
@@ -858,7 +859,7 @@ impl Default for Phrasebook {
             (UsesOn, "{Who} uses {named} on {whom}.", Tones::BAD),
             (UsesOnMany, "{Who} uses {named}, catching {n}.", Tones::BAD),
             (YouCannotUse, "You cannot use {named}: {detail}.", Tones::BAD),
-            // A status is named as what its holder is, "cloaked" or
+            // A status is named as what its holder is, "warded" or
             // "scorched", so every line about one says "you are".
             (YouAreAfflicted, "You are {named}.", Tones::BAD),
             (YouGainABoon, "You are {named}.", Tones::GOOD),
@@ -1486,36 +1487,36 @@ mod tests {
     }
 
     /// A status is told in the words its name is written for, "You are
-    /// cloaked." and "You are no longer cloaked.", however it ends; and in
+    /// warded." and "You are no longer warded.", however it ends; and in
     /// the tone of what it is to the player: an affliction landing is bad
     /// news and its cure good, a boon landing is good news and its end, run
     /// out or broken off, only a note.
     #[test]
     fn a_status_on_the_player_is_told_as_good_or_bad_news_by_whether_it_is_a_boon() {
         let mut stage = Stage::new(NarratorPlugin::default());
-        let defs = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked").boon(), rl_rules::StatusDef::new("scorched")]).unwrap();
-        let (cloaked, scorched) = (defs.expect("cloaked"), defs.expect("scorched"));
+        let defs = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("warded").boon(), rl_rules::StatusDef::new("scorched")]).unwrap();
+        let (warded, scorched) = (defs.expect("warded"), defs.expect("scorched"));
         stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
         let target = stage.player;
         for ev in [
-            StatusEvent::Applied { target, status: cloaked },
-            StatusEvent::Cured { target, status: cloaked },
+            StatusEvent::Applied { target, status: warded },
+            StatusEvent::Cured { target, status: warded },
             StatusEvent::Applied { target, status: scorched },
             StatusEvent::Cured { target, status: scorched },
-            StatusEvent::Applied { target, status: cloaked },
-            StatusEvent::Expired { target, status: cloaked },
+            StatusEvent::Applied { target, status: warded },
+            StatusEvent::Expired { target, status: warded },
         ] {
             stage.app.world_mut().write_message(ev);
             stage.tick();
         }
         let said: Vec<(String, ToneId)> = lines(&stage).into_iter().filter(|(t, _)| t.starts_with("You are")).collect();
         let expected = [
-            ("You are cloaked.", Tones::GOOD),
-            ("You are no longer cloaked.", Tones::MUTED),
+            ("You are warded.", Tones::GOOD),
+            ("You are no longer warded.", Tones::MUTED),
             ("You are scorched.", Tones::BAD),
             ("You are no longer scorched.", Tones::GOOD),
-            ("You are cloaked.", Tones::GOOD),
-            ("You are no longer cloaked.", Tones::MUTED),
+            ("You are warded.", Tones::GOOD),
+            ("You are no longer warded.", Tones::MUTED),
         ];
         assert_eq!(said, expected.map(|(t, tone)| (t.to_string(), tone)).to_vec());
     }
