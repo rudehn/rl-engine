@@ -91,6 +91,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 - A prefab mark can paint the ground under it: `Prefab::parse_cells` takes a legend to `Cell`, `Tile`, `Mark(Option<TileId>)` or `Clear`, and `parse` is unchanged. A piece can be `keyed`, and its stamp reports the key as `Stamped::prefab`, carried to `Spot::prefab`. Breaking only for a struct literal: `Stamped { .., prefab: None }` and `Spot { .., prefab: None }`.
 
+- A heal's `DamageDealt::dealt` is the health it restored, so a mend at full health reports nought and the narrator says nothing; it was the amount offered. A game that read a heal's `dealt` as what was offered reads it off the `DamageEvent` instead.
+
 ## 0.3.0
 
 A page for every system, a screen for the run's end, and a line drawn between an ability and a thing in the bag: one release, 2026-09-23.

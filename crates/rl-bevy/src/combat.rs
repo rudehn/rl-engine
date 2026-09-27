@@ -412,7 +412,8 @@ pub struct DamageDealt {
     pub target: Entity,
     /// The hit as it arrived.
     pub hit: Hit<Entity>,
-    /// What health lost.
+    /// What health lost; for a heal, the negative of what it gained, which
+    /// is nought for a heal at full health.
     pub dealt: i32,
     /// How it got there, carried through from the [`DamageEvent`] so a
     /// narrator can tell a shot from a blow.
@@ -889,8 +890,13 @@ pub fn apply_damage(
         let stage_refs: Vec<&dyn DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
         let amount = rl_rules::resolve(&ev.hit, &defender, &resists, &registries.damage_kinds, &stage_refs);
         let amount = if invulnerable { amount.min(0) } else { amount };
+        let before = health.current;
         health.current = (health.current - amount).min(health.max);
-        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: amount, reach: ev.reach });
+        // A heal reports what it restored, not what it offered: a mend at
+        // full health restored nothing, and saying otherwise put a line in
+        // the log every time a worn thing mended a wearer who was whole.
+        let reported = if amount < 0 { before - health.current } else { amount };
+        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: reported, reach: ev.reach });
         if health.current <= 0 {
             deaths.write(DeathEvent { entity: ev.target, at: pos.0, credit: ev.hit.credit, was_player: is_player });
         }
@@ -1347,6 +1353,23 @@ mod tests {
         app.update();
         assert!(app.world().resource::<Seen>().cues.is_empty());
         assert_eq!(hp(&app, target), 16);
+    }
+
+    /// A heal says what it restored rather than what it offered: two to
+    /// bring twenty-eight back to thirty, and then nought, so a wearer who
+    /// is whole is not told every few turns that they mended.
+    #[test]
+    fn a_heal_reports_what_it_restored_and_nothing_at_full_health() {
+        let (mut app, _, player, _) = duel(4, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        app.world_mut().get_mut::<Health>(player).unwrap().current = 28;
+        app.world_mut().write_message(DamageEvent::new(player, Hit::by(player, kind, -5)));
+        app.update();
+        app.world_mut().write_message(DamageEvent::new(player, Hit::by(player, kind, -5)));
+        app.update();
+        let dealt: Vec<i32> = app.world().resource::<Seen>().dealt.iter().map(|d| d.dealt).collect();
+        assert_eq!(dealt, vec![-2, 0], "two to reach thirty, then nothing left to mend");
+        assert_eq!(hp(&app, player), 30);
     }
 
     /// What `who` fights with, as a panel or a resolver would ask.
