@@ -36,6 +36,7 @@ use crate::modal::{ModalId, Modals};
 use crate::panel::sheet::plain_op;
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
+use crate::view::ability::turns;
 use crate::view::inventory::{InventoryView, InventoryViewPlugin, ItemRow};
 use crate::view::sheet::Strike;
 use crate::view::target::AimThrow;
@@ -337,7 +338,7 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     // simply empty.
     match (row.attuned && !row.worn(), row.empty, row.ready_in) {
         (true, _, _) => say("charges only while worn".to_string(), Tones::MUTED),
-        (false, true, Some(turns)) => say(format!("ready in {turns} turns"), Tones::MUTED),
+        (false, true, Some(whole)) => say(format!("ready in {}", turns(whole * rl_core::turn::BASE_ACTION_COST)), Tones::MUTED),
         (false, true, None) => say("empty".to_string(), Tones::MUTED),
         (false, false, _) => {}
     }
@@ -693,5 +694,19 @@ mod tests {
         stage.press(KeyCode::ArrowDown);
         assert!(detail(&stage).iter().any(|l| l == "charges only while worn"), "{:?}", detail(&stage));
         assert!(!detail(&stage).iter().any(|l| l == "empty"), "the reason, not the bare fact: {:?}", detail(&stage));
+    }
+
+    /// The last turn of a charge is one turn, not one turns.
+    #[test]
+    fn a_plate_a_turn_from_ready_says_one_turn() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        let player = stage.player;
+        let nearly = Consumable { left: 0, recharge: Some(rl_bevy::Recharge { every: 4000, progress: 3950 }), ..Consumable::new(1, WhenEmpty::Kept) };
+        let wand = stage.app.world_mut().spawn((Item, Name::new("wand"), triggers, nearly)).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![wand] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert!(detail(&stage).iter().any(|l| l == "ready in 1 turn"), "{:?}", detail(&stage));
     }
 }

@@ -164,7 +164,9 @@ fn lead_in(moment: MomentId, moments: Option<&Moments>, pulse: Option<&rl_bevy::
         m if m == Moments::HIT => "on a hit".to_string(),
         m if m == Moments::FIRE => "when fired".to_string(),
         m if m == Moments::PULSE => match pulse {
-            Some(p) => format!("every {} turns worn", p.every.div_ceil(rl_core::turn::BASE_ACTION_COST)),
+            // "Every 1 turn" is a count nobody says aloud.
+            Some(p) if p.every <= rl_core::turn::BASE_ACTION_COST => "every turn worn".to_string(),
+            Some(p) => format!("every {} worn", crate::view::ability::turns(p.every)),
             None => "worn".to_string(),
         },
         m => moments.map(|all| all.name(m).to_string()).unwrap_or_default(),
@@ -339,5 +341,7 @@ mod tests {
     fn a_pulse_is_introduced_by_how_often_it_comes_round() {
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(800))), "every 8 turns worn");
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(750))), "every 8 turns worn", "a part turn rounds up, never promising early");
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(100))), "every turn worn", "one turn is no count at all");
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(50))), "every turn worn", "nor is less than one");
     }
 }
