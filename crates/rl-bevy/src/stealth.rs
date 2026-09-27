@@ -13,6 +13,10 @@
 //! round, and the likely first report is "I added the plugin and nothing
 //! happened".
 //!
+//! A status registered as `unseen` hides its holder from everything, adjacency
+//! included, until it runs out or its holder attacks: see [`Unseen`]. Noise
+//! is still heard, since hearing is not sight.
+//!
 //! Awareness ticks in [`DecideSet::Notice`](crate::plugin::DecideSet::Notice),
 //! for the actor holding the turn and only that one, so it costs a roll per
 //! subject per monster-turn and nothing per frame.
@@ -28,6 +32,8 @@ use crate::combat::{CombatRules, DamageDealt, Dead, Faction};
 use crate::components::{MyTurn, Player, Position, Viewshed};
 use crate::minds::{DEFAULT_PERCEPTION, Mind, Perception, Thinking};
 use crate::places::{MapId, OnMap};
+use crate::registries::Registries;
+use crate::status::{Afflicted, Cure};
 use crate::world::WorldMap;
 
 /// How this actor notices what is trying not to be seen.
@@ -41,6 +47,18 @@ pub struct Notice(pub NoticeStats);
 /// How hard this actor is to notice.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default, Deref, DerefMut)]
 pub struct Stealth(pub StealthStats);
+
+/// Nothing sees this actor: it holds a status registered as `unseen`.
+///
+/// Kept by [`mark_unseen`] from the statuses, never inserted by hand in a
+/// game, so it lasts exactly as long as the status and a continued run
+/// gets it back from the statuses it saved. While it is on, no mind
+/// perceives its holder at any distance and no observer notices it. That
+/// departs on purpose from the rule that no stack of [`Stealth`] makes
+/// somebody standing next to you invisible: quiet is for good, and this
+/// lasts turns and ends the moment its holder strikes.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Unseen;
 
 /// What this observer knows about each subject it has an opinion of.
 ///
@@ -126,7 +144,8 @@ type Watcher<'a> = (Entity, &'a Position, Option<&'a Faction>, Option<&'a Percep
 /// this came to exist. The rule here is the one the minds perceive by: an
 /// observer that keeps an `Aware` watches what it knows about, alert or
 /// searching; one that does not watches whatever its own sight reaches,
-/// read off the same [`Viewshed`] its turns are decided from.
+/// read off the same [`Viewshed`] its turns are decided from. Nobody
+/// watches the [`Unseen`], since no mind perceives them.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Watchers<'w, 's> {
     running: StealthRunning<'w>,
@@ -134,6 +153,7 @@ pub struct Watchers<'w, 's> {
     subjects: Query<'w, 's, (&'static Position, Option<&'static Faction>, Option<&'static OnMap>)>,
     map: Option<Res<'w, WorldMap>>,
     rules: Option<Res<'w, CombatRules>>,
+    unseen: Query<'w, 's, (), With<Unseen>>,
 }
 
 impl Watchers<'_, '_> {
@@ -159,7 +179,7 @@ impl Watchers<'_, '_> {
     }
 
     fn judge(&self, (watcher, pos, faction, perception, sight, aware, on): Watcher<'_>, subject: Entity) -> bool {
-        if watcher == subject {
+        if watcher == subject || self.unseen.contains(subject) {
             return false;
         }
         let (Some(map), Ok((at, theirs, subject_on))) = (self.map.as_deref(), self.subjects.get(subject)) else {
@@ -202,27 +222,109 @@ impl crate::seed::Stream for StealthRng {
     }
 }
 
-/// Adds noticing, forgetting, and being woken by a blow.
+/// Adds noticing, forgetting, being woken by a blow, and the unseen.
 pub struct StealthPlugin;
 
 impl Plugin for StealthPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, Turn, TurnSet};
+        use crate::plugin::{DecideSet, PerceiveSet, Reads, ResolveSet, Turn, TurnSet};
         use crate::seed::AddStream;
         // The blows it wakes on, registered here as well so a game with
         // stealth and no combat has nothing to wake on rather than a panic.
         app.add_message::<Noticed>()
             .add_message::<DamageDealt>()
             .add_message::<crate::accuracy::Missed>()
+            // What ending the unseen reads and writes, registered here so a
+            // game with stealth and no items, abilities or statuses has
+            // nothing to reveal on rather than a panic.
+            .add_message::<Cure>()
+            .reads::<crate::combat::Struck>()
+            .reads::<crate::items::ItemEvent>()
+            .reads::<crate::ability::AbilityEvent>()
             .add_stream::<StealthRng>("StealthPlugin")
             .add_systems(Turn, update_awareness.in_set(DecideSet::Notice))
-            .add_systems(Turn, filter_unnoticed.in_set(crate::plugin::PerceiveSet::Filter))
-            .add_systems(Turn, wake_on_damage.in_set(TurnSet::React));
+            .add_systems(Turn, (filter_unseen, filter_unnoticed).chain().in_set(PerceiveSet::Filter))
+            .add_systems(Turn, wake_on_damage.in_set(TurnSet::React))
+            .add_systems(Turn, reveal_attackers.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions))
+            .add_systems(Turn, mark_unseen.in_set(ResolveSet::Effects).after(crate::status::tick_statuses));
     }
 
     fn finish(&self, app: &mut App) {
         crate::plugin::depends_on::<crate::minds::MindsPlugin>(app, "StealthPlugin");
     }
+}
+
+/// Puts [`Unseen`] on whoever holds an unseen status and takes it off
+/// whoever no longer does.
+///
+/// In [`ResolveSet::Effects`](crate::plugin::ResolveSet::Effects) after the
+/// statuses are applied, ticked and cured, so the pass a cloak goes on is
+/// the pass its wearer vanishes, and the pass a blow ends it is the pass
+/// it is seen again.
+pub fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, actors: Query<(Entity, &Afflicted, Has<Unseen>), Changed<Afflicted>>) {
+    let Some(registries) = registries else { return };
+    for (actor, afflicted, marked) in &actors {
+        let unseen = afflicted.0.iter().any(|s| registries.statuses.get(s.id).unseen);
+        match (unseen, marked) {
+            (true, false) => {
+                commands.entity(actor).insert(Unseen);
+            }
+            (false, true) => {
+                commands.entity(actor).remove::<Unseen>();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Ends every unseen status on whoever made an attack this pass: a blow or
+/// a shot, landed or not, a throw, or an ability landed on anyone but
+/// themselves.
+///
+/// Before the statuses resolve in the same pass, so the cure lands before
+/// the damage does and the one struck wakes to an attacker it can see.
+/// Being hurt is not here: a grenade in the dark does not light you up.
+pub fn reveal_attackers(
+    mut struck: MessageReader<crate::combat::Struck>,
+    mut items: MessageReader<crate::items::ItemEvent>,
+    mut abilities: MessageReader<crate::ability::AbilityEvent>,
+    registries: Option<Res<Registries>>,
+    unseen: Query<&Afflicted, With<Unseen>>,
+    mut cure: MessageWriter<Cure>,
+) {
+    let mut attackers: Vec<Entity> = struck.read().map(|s| s.attacker).collect();
+    attackers.extend(items.read().filter_map(|e| match e {
+        crate::items::ItemEvent::Thrown { actor, .. } => Some(*actor),
+        _ => None,
+    }));
+    attackers.extend(abilities.read().filter_map(|e| match e {
+        crate::ability::AbilityEvent::Used { user, targets, .. } if targets.iter().any(|t| t != user) => Some(*user),
+        _ => None,
+    }));
+    let Some(registries) = registries else { return };
+    attackers.sort();
+    attackers.dedup();
+    for who in attackers {
+        let Ok(afflicted) = unseen.get(who) else { continue };
+        for status in afflicted.0.iter().filter(|s| registries.statuses.get(s.id).unseen) {
+            cure.write(Cure { target: who, status: status.id });
+        }
+    }
+}
+
+/// Takes the unseen out of what the mind holding the turn perceives,
+/// enemies, allies and others alike.
+///
+/// In [`PerceiveSet::Filter`](crate::plugin::PerceiveSet::Filter) before
+/// [`filter_unnoticed`], so a mind that was alert to a subject that has
+/// just vanished is offered the trail to where it last saw it, as for
+/// anything else out of sight. Every mind, noticing or not: a monster that
+/// sees on sight sees nothing here either.
+pub fn filter_unseen(mut thinking: ResMut<Thinking>, unseen: Query<(), With<Unseen>>) {
+    let Some(snapshot) = thinking.snapshot_mut() else { return };
+    snapshot.enemies.retain(|e| !unseen.contains(e.id));
+    snapshot.allies.retain(|e| !unseen.contains(e.id));
+    snapshot.others.retain(|e| !unseen.contains(e.id));
 }
 
 /// Takes the hiders the mind holding the turn has not noticed out of its
@@ -252,9 +354,9 @@ pub fn filter_unnoticed(mut thinking: ResMut<Thinking>, aware: Query<&Aware>, hi
 type Observer =
     (Entity, &'static Position, &'static Notice, &'static mut Aware, Option<&'static Perception>, Option<&'static Viewshed>, Option<&'static Faction>);
 /// Anything that might be hiding from it.
-type Subject = (Entity, &'static Position, &'static Stealth, Option<&'static Faction>, Option<&'static OnMap>);
+type Subject = (Entity, &'static Position, &'static Stealth, Option<&'static Faction>, Option<&'static OnMap>, Has<Unseen>);
 /// One subject, as the query hands it back.
-type Hiding<'a> = (Entity, &'a Position, &'a Stealth, Option<&'a Faction>, Option<&'a OnMap>);
+type Hiding<'a> = (Entity, &'a Position, &'a Stealth, Option<&'a Faction>, Option<&'a OnMap>, bool);
 
 /// Everything noticing reads.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -288,7 +390,7 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     // which roll must not depend on how the world happens to be laid out.
     let mut subjects: Vec<Hiding<'_>> = watch.subjects.iter().collect();
     subjects.sort_by_key(|(e, ..)| (e.index(), *e));
-    for (subject, at, stealth, theirs, on) in subjects {
+    for (subject, at, stealth, theirs, on, hidden) in subjects {
         if subject == observer {
             continue;
         }
@@ -298,7 +400,7 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
             continue;
         }
         let on_this_map = on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here;
-        let in_view = on_this_map && awareness::within_reach(pos.0, at.0, reach) && sight.is_some_and(|s| s.can_see(at.0));
+        let in_view = !hidden && on_this_map && awareness::within_reach(pos.0, at.0, reach) && sight.is_some_and(|s| s.can_see(at.0));
         let mut state = aware.of(subject);
         if in_view && state.is_alert() {
             state.saw(at.0);
@@ -333,11 +435,16 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// [`TurnSet::React`](crate::plugin::TurnSet::React) because that is where
 /// a turn's consequences land, and inside the pass, so the monster that was
 /// struck already knows where from when it next decides.
+///
+/// Not by an attacker still [`Unseen`]: a blow has ended that before the
+/// damage lands, so what is left is harm credited to it that was no
+/// attack, a status it put on earlier ticking, and that gives nothing
+/// away.
 pub fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
     mut missed: MessageReader<crate::accuracy::Missed>,
     mut observers: Query<&mut Aware>,
-    attackers: Query<&Position, With<Stealth>>,
+    attackers: Query<&Position, (With<Stealth>, Without<Unseen>)>,
     mut noticed: MessageWriter<Noticed>,
 ) {
     let mut wake = |target: Entity, attacker: Entity| {
@@ -395,6 +502,12 @@ mod tests {
         /// With `light`, lighting is on and the whole field stands under an
         /// ambient of that intensity and nothing else.
         fn new(notice: NoticeStats, gap: i32, reach: i32, plugin: bool, light: Option<u8>) -> Field {
+            Field::build(notice, gap, reach, plugin, light, |_| {})
+        }
+
+        /// The field, with `extra` run on the app after the field's own
+        /// plugins are added and before anything is spawned or updated.
+        fn build(notice: NoticeStats, gap: i32, reach: i32, plugin: bool, light: Option<u8>, extra: impl FnOnce(&mut App)) -> Field {
             let mut app = headless_app();
             app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StreamingPlugin));
             if plugin {
@@ -403,6 +516,7 @@ mod tests {
             if light.is_some() {
                 app.add_plugins(crate::lighting::LightingPlugin);
             }
+            extra(&mut app);
             let start = crate::testing::surface(&mut app);
             let crate::testing::Sides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
             let player = app
@@ -591,5 +705,183 @@ mod tests {
         }
         assert!(field.aware().knows(field.player), "still aware after five turns");
         assert_eq!(field.app.world().resource::<Heard>().0, 1, "one flip, one message");
+    }
+
+    /// How many blows have been swung at the player, counted as they are
+    /// written, since the watcher's blow is `flat(0)` and health cannot
+    /// show one.
+    #[derive(Resource, Default)]
+    struct Swings(usize);
+
+    fn count_swings(mut struck: MessageReader<crate::combat::Struck>, player: Query<(), With<Player>>, mut swings: ResMut<Swings>) {
+        swings.0 += struck.read().filter(|s| player.contains(s.target)).count();
+    }
+
+    /// An unseen player is not noticed, however keen the watcher and
+    /// however close: a watcher that notices anything in reach every turn
+    /// stands one step away and never learns it is there.
+    #[test]
+    fn an_unseen_subject_is_not_noticed_even_adjacent() {
+        let mut field = Field::new(keen(), 1, 10, true, None);
+        field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
+        let player = field.player;
+        field.app.world_mut().entity_mut(player).insert(Unseen);
+        for _ in 0..4 {
+            field.wait();
+        }
+        assert!(!field.aware().knows(player), "adjacent, keen, and none the wiser");
+        assert_eq!(field.app.world().resource::<Swings>().0, 0, "and never swung at");
+    }
+
+    /// A watcher alert to the player loses it the moment it is unseen and
+    /// searches where it last saw it, then forgets.
+    #[test]
+    fn a_watcher_that_knew_loses_the_unseen_and_forgets_after_its_memory() {
+        let mut field = Field::new(keen(), 4, 10, true, None);
+        field.wait();
+        assert!(field.aware().knows(field.player), "noticed first");
+        let player = field.player;
+        field.app.world_mut().entity_mut(player).insert(Unseen);
+        for _ in 0..4 {
+            field.wait();
+        }
+        assert!(!field.aware().knows(player), "a memory of three turns, and it forgot");
+    }
+
+    /// Without awareness, a mind that sees on sight still does not see the
+    /// unseen.
+    #[test]
+    fn a_mind_that_sees_on_sight_does_not_see_the_unseen() {
+        let mut field = Field::new(blind(), 1, 10, true, None);
+        field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
+        let (watcher, player) = (field.watcher, field.player);
+        field.app.world_mut().entity_mut(watcher).remove::<(Notice, Aware)>();
+        field.wait();
+        assert!(field.app.world().resource::<Swings>().0 > 0, "seen, adjacent, it swings: the test can fail");
+        field.app.world_mut().resource_mut::<Swings>().0 = 0;
+        field.app.world_mut().entity_mut(player).insert(Unseen);
+        for _ in 0..3 {
+            field.wait();
+        }
+        assert_eq!(field.app.world().resource::<Swings>().0, 0, "unseen, adjacent, and never swung at");
+    }
+
+    /// The vitals strip's question: nobody watches the unseen.
+    #[test]
+    fn nobody_is_watching_the_unseen() {
+        let mut field = Field::new(keen(), 2, 10, true, None);
+        field.app.init_resource::<Watched>().add_systems(PostUpdate, read_watched);
+        field.wait();
+        assert_eq!(field.app.world().resource::<Watched>().0, Some(true));
+        let player = field.player;
+        field.app.world_mut().entity_mut(player).insert(Unseen);
+        field.wait();
+        assert_eq!(field.app.world().resource::<Watched>().0, Some(false));
+    }
+
+    /// The field, with statuses on and a `cloaked` status registered as
+    /// unseen, returned with its id.
+    fn cloaking_field(notice: NoticeStats, gap: i32) -> (Field, rl_rules::StatusId) {
+        let mut field = Field::build(notice, gap, 10, true, None, |app| {
+            app.add_plugins(crate::status::StatusPlugin);
+        });
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked").unseen()]).unwrap();
+        let cloaked = statuses.expect("cloaked");
+        field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
+        (field, cloaked)
+    }
+
+    fn cloak(field: &mut Field, status: rl_rules::StatusId) {
+        let player = field.player;
+        field.app.world_mut().write_message(crate::status::Afflict { target: player, status, turns: 5, by: None });
+        field.wait();
+    }
+
+    /// Holding an unseen status is being unseen, and losing it is being
+    /// seen again.
+    #[test]
+    fn an_unseen_status_marks_its_holder_while_it_lasts() {
+        let (mut field, cloaked) = cloaking_field(blind(), 6);
+        cloak(&mut field, cloaked);
+        assert!(field.app.world().get::<Unseen>(field.player).is_some());
+        for _ in 0..6 {
+            field.wait();
+        }
+        assert!(field.app.world().get::<Unseen>(field.player).is_none(), "five turns, and it wore off");
+    }
+
+    /// A blow ends it in the pass it is struck, before the damage lands, and
+    /// the one struck knows where from and answers on its very next turn.
+    ///
+    /// The answer is what shows the order: one update runs every pass up to
+    /// the player's next turn, so a cure that landed a pass late would still
+    /// be gone by the end of it, but the watcher would have decided its turn
+    /// with the player still unseen and swung at nothing.
+    #[test]
+    fn striking_from_the_unseen_ends_it_and_wakes_the_one_struck() {
+        let (mut field, cloaked) = cloaking_field(blind(), 1);
+        field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
+        cloak(&mut field, cloaked);
+        let (player, watcher) = (field.player, field.watcher);
+        let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
+        field.app.world_mut().entity_mut(player).insert(MeleeAttack::new(kind, DiceRoll::flat(1)));
+        field.app.world_mut().write_message(Intent::new(player, crate::combat::Attack(watcher)));
+        field.app.update();
+        assert!(field.app.world().get::<Unseen>(player).is_none(), "the blow ended it");
+        assert!(field.aware().knows(player), "and the one struck knows where from");
+        assert_eq!(field.app.world().resource::<Swings>().0, 1, "and swings back at an attacker it can see");
+    }
+
+    /// An unseen status hides its holder in the pass it goes on, so the next
+    /// mind to decide, even one that sees on sight standing next to it,
+    /// already cannot see it.
+    #[test]
+    fn a_status_hides_its_holder_from_the_very_next_mind_to_decide() {
+        let (mut field, cloaked) = cloaking_field(blind(), 1);
+        field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
+        let watcher = field.watcher;
+        field.app.world_mut().entity_mut(watcher).remove::<(Notice, Aware)>();
+        field.wait();
+        assert!(field.app.world().resource::<Swings>().0 > 0, "seen, adjacent, it swings: the test can fail");
+        field.app.world_mut().resource_mut::<Swings>().0 = 0;
+        cloak(&mut field, cloaked);
+        assert_eq!(field.app.world().resource::<Swings>().0, 0, "cloaked on the player's turn, and not swung at on the watcher's");
+    }
+
+    /// Harm credited to the unseen that was no attack, a status it put on
+    /// earlier ticking, does not give it away: only an attack does.
+    #[test]
+    fn harm_that_is_no_attack_does_not_give_the_unseen_away() {
+        let mut field = Field::new(blind(), 5, 10, true, None);
+        let (watcher, player) = (field.watcher, field.player);
+        field.app.world_mut().entity_mut(player).insert(Unseen);
+        let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
+        field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, 1), dealt: 1, reach: crate::combat::Reach::Melee });
+        field.wait();
+        assert!(!field.aware().knows(player), "hurt by something it never saw, and none the wiser");
+    }
+
+    /// Throwing and an ability aimed at someone else end it as a blow does;
+    /// an ability on oneself does not.
+    #[test]
+    fn a_throw_and_an_ability_at_another_end_it_and_one_on_yourself_does_not() {
+        use crate::ability::AbilityEvent;
+        let (mut field, cloaked) = cloaking_field(blind(), 6);
+        let (player, watcher) = (field.player, field.watcher);
+        let ability = rl_rules::ability::AbilityId::from_raw(0);
+        let at = field.at(player);
+        cloak(&mut field, cloaked);
+        field.app.world_mut().write_message(AbilityEvent::Used { user: player, ability, aim: at, targets: vec![player] });
+        field.wait();
+        assert!(field.app.world().get::<Unseen>(player).is_some(), "a stim in the arm is not an attack");
+        field.app.world_mut().write_message(AbilityEvent::Used { user: player, ability, aim: at, targets: vec![watcher] });
+        field.wait();
+        assert!(field.app.world().get::<Unseen>(player).is_none(), "one aimed at another is");
+
+        cloak(&mut field, cloaked);
+        let thing = field.app.world_mut().spawn(crate::items::Item).id();
+        field.app.world_mut().write_message(crate::items::ItemEvent::Thrown { actor: player, item: thing, at: Position(at), struck: None });
+        field.wait();
+        assert!(field.app.world().get::<Unseen>(player).is_none(), "and so is a throw, whatever it hit");
     }
 }

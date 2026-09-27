@@ -58,6 +58,10 @@ pub struct StatusDef {
     pub tick_damage: Option<(DamageKindId, i32)>,
     /// Glyph for a badge, if the game wants one.
     pub badge: Option<char>,
+    /// Whether nothing sees whoever holds it while it lasts. What that
+    /// means is stealth's to say: no mind perceives the holder and no
+    /// observer notices it, and an attack it makes ends it.
+    pub unseen: bool,
 }
 
 fn refresh() -> Stacking {
@@ -67,7 +71,7 @@ fn refresh() -> Stacking {
 impl StatusDef {
     /// A status with no effects.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None }
+        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None, unseen: false }
     }
 
     /// Sets the stacking rule.
@@ -86,6 +90,12 @@ impl StatusDef {
     /// through the same pipeline, so regeneration is a status like poison.
     pub fn ticks(mut self, kind: DamageKindId, amount: i32) -> Self {
         self.tick_damage = Some((kind, amount));
+        self
+    }
+
+    /// Makes whoever holds it unseen while it lasts.
+    pub fn unseen(mut self) -> Self {
+        self.unseen = true;
         self
     }
 }
@@ -111,6 +121,8 @@ struct Authored {
     ticks: Option<(String, i32)>,
     #[serde(default)]
     badge: Option<char>,
+    #[serde(default)]
+    unseen: bool,
 }
 
 impl Named for Authored {
@@ -133,6 +145,8 @@ impl Named for Authored {
 /// - `ticks`: `(damage kind, amount)` dealt every whole turn. A negative
 ///   amount mends.
 /// - `badge`: one character a panel may draw beside a health bar.
+/// - `unseen`: `true` for a status whose holder nothing can see while it
+///   lasts; `false`, the default, otherwise.
 ///
 /// Reports every unknown name in the file at once.
 pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, ContentError> {
@@ -154,7 +168,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
                 None
             }
         });
-        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge });
+        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge, unseen: a.unseen });
     }
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
@@ -384,6 +398,15 @@ mod tests {
         assert_eq!(r.get(r.expect("venom")).tick_damage, Some((kinds.expect("bite"), 1)));
         assert_eq!(r.get(r.expect("mending")).tick_damage, Some((kinds.expect("care"), -2)), "a negative tick mends");
         assert_eq!(r.get(r.expect("stunned")).stacking, Stacking::Ignore);
+    }
+
+    #[test]
+    fn a_status_can_be_written_unseen_and_is_seen_unless_it_says_so() {
+        let names = Names::new();
+        let loaded = load(r#"[(name: "cloaked", unseen: true), (name: "dazed")]"#, &names).expect("it loads");
+        assert!(loaded.get(loaded.expect("cloaked")).unseen);
+        assert!(!loaded.get(loaded.expect("dazed")).unseen);
+        assert!(StatusDef::new("cloaked").unseen().unseen);
     }
 
     #[test]

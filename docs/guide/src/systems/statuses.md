@@ -5,6 +5,7 @@
             crates/rl-bevy/src/events.rs
             crates/rl-bevy/src/items.rs
             crates/rl-bevy/src/plugin.rs
+            crates/rl-bevy/src/stealth.rs
             crates/rl-bevy/src/turn.rs
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/status.rs
@@ -13,12 +14,12 @@
             crates/rl-rules/src/events/ledger.rs
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
-     fingerprint: fb7f0f92 -->
+     fingerprint: 40527933 -->
 
 # Statuses
 
 A status is a registered definition an actor carries for a number of whole turns: what it does to registered stats while it lasts, and what damage it deals each turn.
-Those two are all the engine acts on, because they are the two it already knows how to undo and how to resolve.
+Those two are all the status plugin acts on, because they are the two it already knows how to undo and how to resolve; a third, whether nothing sees whoever holds it, is stealth's to act on.
 Stats are the currency underneath, one registry of ids and four operations on them, which is also how gear and a game's own traits reach a number.
 Facts are the other end of the same idea: an outcome as data, tallied into counters and matched against quests, so an achievement is a definition rather than a system.
 
@@ -34,7 +35,8 @@ A game that inserted neither has nothing listening and is told so, loudly, the m
 
 ## The model
 
-`StatusDef` is a `name`, a `stacking` rule, a list of `modifiers`, an optional `tick_damage` as a kind and an amount, and an optional `badge` of one character a panel may draw.
+`StatusDef` is a `name`, a `stacking` rule, a list of `modifiers`, an optional `tick_damage` as a kind and an amount, an optional `badge` of one character a panel may draw, and `unseen`, false unless a status file writes `unseen: true` or the builder `unseen()` sets it.
+An unseen status hides whoever holds it from every mind while it lasts and ends when its holder attacks, which `StealthPlugin` decides and this plugin knows nothing of; without stealth the flag is carried and read by nobody.
 `status::load` reads them from RON by name, resolving every stat and damage kind through `Names` and reporting every unknown name in the file at once, so a game authors statuses in the words its other content uses.
 The definition is never deserialized as it stands, because its ids index registries a content file cannot see and a number written in one would land on a different stat the day the stat list is reordered.
 `Stacking` is `Refresh`, where the longer duration wins and which is the default, `Extend`, where durations add, `Stack`, where a second instance sits beside the first, and `Ignore`.
@@ -86,7 +88,7 @@ A fact is the game's reading of an engine message, which is the only translation
 
 ## The line
 
-The engine acts on two things a status says and nothing else: it installs and removes the stat modifiers, and it turns the tick into a hit.
+The engine acts on two things a status says and nothing else: it installs and removes the stat modifiers, and it turns the tick into a hit; `unseen` is the one flag another plugin acts on, because who can see whom is stealth's question.
 Everything richer is the game's, keyed by the id: a status that silences an ability, one that walls a door, one that turns a body to stone is a system reading `StatusEvent` or `Afflicted` and doing the rest.
 Whether anything is inflicted at all is the game's too, and the shape the randomness rule points at is a system reading `DamageDealt` and writing `Afflict` with a chance drawn from the game's own stream, never the engine's, so a rule a game adds cannot shift the dice of the blows the engine has yet to throw.
 The engine also never decides that a status is worth saying out loud: it writes the three events and a game turns the ones about its player into words, which is why every phrase about an affliction lives in a game or in the narrator's table.

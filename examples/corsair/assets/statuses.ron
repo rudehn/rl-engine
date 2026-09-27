@@ -6,6 +6,7 @@
 //   modifies:  optional; stat changes while it lasts, each (stat, op): stat "armor" | "attack", op Add(n) | MulPct(n) | AtLeast(n) | AtMost(n)
 //   ticks:     optional; (damage kind, amount) dealt every whole turn: kind "cutlass" | "pistol" | "bite" | "claw" | "fist" | "fire"
 //   badge:     optional; one character for the status line
+//   unseen:    optional; true when nothing sees whoever holds it while it lasts, until it strikes (false, default)
 #![enable(implicit_some)]
 [
     (name: "venom", ticks: ("bite", 1), badge: 'v'),
