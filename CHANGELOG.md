@@ -92,6 +92,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - A prefab mark can paint the ground under it: `Prefab::parse_cells` takes a legend to `Cell`, `Tile`, `Mark(Option<TileId>)` or `Clear`, and `parse` is unchanged. A piece can be `keyed`, and its stamp reports the key as `Stamped::prefab`, carried to `Spot::prefab`. Breaking only for a struct literal: `Stamped { .., prefab: None }` and `Spot { .., prefab: None }`.
 
 - A heal's `DamageDealt::dealt` is the health it restored, so a mend at full health reports nought and the narrator says nothing; it was the amount offered. A game that read a heal's `dealt` as what was offered reads it off the `DamageEvent` instead.
+- A thing that can be worn is used only while it is worn: `UseItem` of a `Wearable` not in the user's `Equipped` is refused for free, and `ItemRow::usable` is false for it. No game shipped a wearable thing with a `use` trigger, so nothing changes for one that did not.
 
 ## 0.3.0
 

@@ -88,14 +88,15 @@ impl ItemRow {
         !self.goes_on.is_empty()
     }
 
-    /// Whether the use key does anything to it: a `use` trigger, and a
-    /// charge to spend when it counts them.
+    /// Whether the use key does anything to it: a `use` trigger, a charge
+    /// to spend when it counts them, and, for a thing that can be worn,
+    /// being worn, which is when the items resolver lets it be used.
     ///
     /// A thing whose effects all keep quiet about themselves is still used:
     /// the row reads it off the component, not off the description, so a
     /// game that wrote a terse effect does not lose the key that uses it.
     pub fn usable(&self) -> bool {
-        self.uses_something && !self.empty
+        self.uses_something && !self.empty && (!self.wearable() || self.worn())
     }
 }
 
@@ -284,5 +285,30 @@ mod tests {
         let hat = &view.rows[2];
         assert!(!hat.worn() && hat.wearable());
         assert_eq!((hat.goes_on.as_slice(), hat.armor), (["head".to_string()].as_slice(), 1));
+    }
+
+    /// The bag offers the use key for a worn thing only while it is on,
+    /// the rule the items resolver refuses it by.
+    #[test]
+    fn a_wearable_thing_is_usable_only_while_it_is_worn() {
+        let mut stage = Stage::new_with(InventoryViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("torso")]).unwrap();
+        });
+        let player = stage.player;
+        let torso = stage.app.world().resource::<Registries>().slots.expect("torso");
+        let on_use = rl_bevy::Trigger {
+            on: rl_bevy::Moments::USE,
+            area: rl_rules::Area::Here,
+            fires: None,
+            effects: std::sync::Arc::new(rl_bevy::Effects::default()),
+            look: None,
+        };
+        let plate = stage.app.world_mut().spawn((Item, Name::new("plate"), Wearable(EquipShape::in_slot(torso)), rl_bevy::Triggers(vec![on_use]))).id();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![plate] }, Equipped(Equipment::with_slot_count(1))));
+        stage.tick();
+        assert!(!stage.app.world().resource::<InventoryView>().rows[0].usable(), "in the bag, the use key is not offered");
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(plate, &EquipShape::in_slot(torso)).unwrap();
+        stage.tick();
+        assert!(stage.app.world().resource::<InventoryView>().rows[0].usable(), "worn, it is");
     }
 }

@@ -79,6 +79,7 @@ Two consequences worth stating:
 `land_triggers` lands it in `ResolveSet::Triggers`, after every action and before damage, so a stim at one hit point is applied in the pass that spent the turn and beats the blow already queued behind it.
 
 The user is the only target and their own cell the only cell.
+A thing that can be worn is used only while it is worn: a plate carried in the bag and used would let a wearer keep one plate on and spend another's charge, which is the swap the attunement in section 5 exists to prevent.
 A thing that should land somewhere else is thrown or fired.
 
 The narrator says a use of a thing with a `use` trigger, `You use a stim.`, and says nothing of a use of anything else.

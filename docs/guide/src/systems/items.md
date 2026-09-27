@@ -19,7 +19,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: f3043c6b -->
+     fingerprint: 842adddc -->
 
 # Items and equipment
 
@@ -52,7 +52,7 @@ A two-hander is `EquipShape::in_slot(main).and_claims(off)` and a ring is `in_an
 `GearScore` is what wearing it is worth in the game's own units, and only the comparison matters: a mind weighs an item in sight against everything it would displace and puts on what is worth more than all of them together.
 `EquipFromGround` costs `EQUIP_FROM_GROUND_COST`, half a step more than picking up or putting on alone, so taking up a sword in the middle of a fight is a real choice rather than a free one or two turns wasted.
 `resolve_items` reads all six intents into one list, so one turn spends one item action whichever kind it is; an impossible one is refused for the player and charged as a wait to anyone else, the way an impossible move is.
-A use of an empty `Consumable` is impossible, so it costs the player nothing.
+A use of an empty `Consumable` is impossible, so it costs the player nothing. So is a use of a thing that can be worn and is not, since a worn thing is used by wearing it.
 An accepted use writes `Fired` for the `use` moment at the user's cell, beside the `ItemEvent`.
 `ItemEvent` is what happened: `PickedUp` with the stack it `merged_into` when it merged, `Dropped`, `Equipped`, `Unequipped` for an item taken off by choice or displaced, `Used`, and `Thrown`.
 `fold_gear` runs whenever `Equipped` changed and rebuilds rather than edits: every modifier tagged `Source::Item` is dropped and each worn item's `Bestows` put back in slot order, so an item taken off takes its changes with it and a run restored from a save rebuilds its gear modifiers for nothing.

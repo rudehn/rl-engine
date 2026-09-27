@@ -9,7 +9,8 @@
 //! trigger, landed by the effects subsystem, and what a use costs it is its
 //! [`Consumable`](crate::consumable::Consumable); a use is reported both as
 //! [`ItemEvent::Used`], for the game, and as the `use` moment, for the
-//! triggers. An item never lends an ability.
+//! triggers. An item never lends an ability. A thing that can be worn is
+//! used only while it is worn.
 //!
 //! What wearing an item does is the item's to say and the engine's to
 //! apply. Its combat components are read straight off it by
@@ -233,7 +234,8 @@ impl Action for Unequip {}
 /// The engine charges the turn, reports [`ItemEvent::Used`] and the `use`
 /// moment, and the item's triggers do the rest. A use of an empty
 /// [`Consumable`](crate::consumable::Consumable) is refused, and the
-/// player keeps the turn.
+/// player keeps the turn. A thing that can be worn is used only while it
+/// is worn, and a use of one in the bag is refused the same way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseItem(pub Entity);
 impl Action for UseItem {}
@@ -392,12 +394,16 @@ pub fn resolve_items(
                     taken_off
                 }
                 Which::Use(item) => {
-                    let Ok((pos, bag, _)) = carriers.get_mut(actor) else { break 'attempt false };
+                    let Ok((pos, bag, worn)) = carriers.get_mut(actor) else { break 'attempt false };
                     // An empty wand is still a wand, and using one is a
                     // mistake the player keeps the turn for, as for any
                     // impossible item action.
                     let empty = consumables.get(item).is_ok_and(|c| c.is_empty());
-                    if bag.contains(item) && !empty {
+                    // A thing that can be worn is used by wearing it: one
+                    // used from the bottom of the bag would let a wearer
+                    // keep one plate on and spend another's charge.
+                    let off_the_body = wearables.contains(item) && !worn.is_some_and(|w| w.slot_of(item).is_some());
+                    if bag.contains(item) && !empty && !off_the_body {
                         events.write(ItemEvent::Used { actor, item });
                         fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at: pos.0 });
                         true
@@ -710,6 +716,20 @@ mod tests {
 
         assert_eq!(act(&mut r, UseItem(coins)), vec![ItemEvent::Used { actor: r.player, item: coins }]);
         assert_eq!(r.app.world().resource::<Turns>().now(), before + 100, "using is the game's, the turn is ours");
+    }
+
+    /// A thing that is worn is used by wearing it: in the bag its use is
+    /// refused and costs nothing, and once it is on the use goes through.
+    #[test]
+    fn a_wearable_thing_is_used_only_while_it_is_worn() {
+        let mut r = rig();
+        let plate = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
+        act(&mut r, PickUp);
+        let before = r.app.world().resource::<Turns>().now();
+        assert!(act(&mut r, UseItem(plate)).is_empty(), "in the bag, it is not used");
+        assert_eq!(r.app.world().resource::<Turns>().now(), before, "and the refusal is free");
+        act(&mut r, Equip(plate));
+        assert_eq!(act(&mut r, UseItem(plate)), vec![ItemEvent::Used { actor: r.player, item: plate }], "worn, it is");
     }
 
     #[test]
