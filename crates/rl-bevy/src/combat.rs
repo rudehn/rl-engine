@@ -405,7 +405,9 @@ pub enum Reach {
 }
 
 /// Damage that actually landed, after mitigation, for narration and
-/// on-hit reactions. Zero means the hit was fully stopped; negative healed.
+/// on-hit reactions. Zero means the hit was fully stopped, or was a heal
+/// that found its target whole; negative healed. [`DamageDealt::is_mend`]
+/// tells the two zeros apart.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct DamageDealt {
     /// Who took it.
@@ -418,6 +420,19 @@ pub struct DamageDealt {
     /// How it got there, carried through from the [`DamageEvent`] so a
     /// narrator can tell a shot from a blow.
     pub reach: Reach,
+}
+
+impl DamageDealt {
+    /// Whether this was a heal rather than a blow: offered as one, or
+    /// restoring health after the stages.
+    ///
+    /// Not `dealt < 0` alone, which misses a heal at full health: it
+    /// restored nothing and reports nought, the same as a blow armor
+    /// stopped, and a reader that took it for one said the healer struck
+    /// to no effect and woke whoever it patched up.
+    pub fn is_mend(&self) -> bool {
+        self.hit.amount < 0 || self.dealt < 0
+    }
 }
 
 /// An actor's health reached zero. A non-player is taken out of the

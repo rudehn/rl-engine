@@ -12,7 +12,7 @@
             crates/rl-rules/src/accuracy.rs
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/throwing.rs
-     fingerprint: 6352f2b2 -->
+     fingerprint: 9d6f7720 -->
 
 # Combat and loadout
 
@@ -67,7 +67,7 @@ An `Invulnerable` target keeps a heal and takes no harm: the hit is still writte
 A `DamageKind` is a name and whether armor applies to it, and `Resistances` is a percentage per kind: 100 is immunity, a negative number is vulnerability, and above 100 absorbs the hit into healing.
 The engine ships three stages, `SubtractArmor`, `ApplyResistance` and `HalveIfBlocked`, and the default list holds the first alone.
 A negative amount is a mend and goes down the same stages, which is why resistance scales a heal and immunity means nothing can patch the defender up.
-A heal reports the health it restored, so a mend at full health reports nought.
+A heal reports the health it restored, so a mend at full health reports nought, and `DamageDealt::is_mend` tells it from a blow armor stopped.
 `process_deaths` takes a dead non-player out of the world, the queue and the occupancy index and marks it `Dead`; `end_run_on_player_death` writes `RunOver` inside the turn, so the monster that would have struck the corpse never gets its move.
 `perceive_reach` is combat's one word to a mind: how far its own shot reaches, read from `Loadout::ranged` whether the gun is worn or is the monster itself.
 

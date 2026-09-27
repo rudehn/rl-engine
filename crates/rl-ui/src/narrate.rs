@@ -644,10 +644,14 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
             }
             continue;
         }
-        if d.dealt < 0 {
-            let mut said = say(if you_target { Phrase::YouMend } else { Phrase::Mends }, Some(target), None);
-            said.amount = -d.dealt;
-            rows.push(said);
+        // A heal that restored nothing is no line at all, and never a blow
+        // to no effect: the healer did not strike anyone.
+        if d.is_mend() {
+            if d.dealt < 0 {
+                let mut said = say(if you_target { Phrase::YouMend } else { Phrase::Mends }, Some(target), None);
+                said.amount = -d.dealt;
+                rows.push(said);
+            }
             continue;
         }
         if d.hit.attacker == Some(target) {
@@ -1446,6 +1450,23 @@ mod tests {
         stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(droid, kind, 3)));
         stage.tick();
         assert_eq!(spoken(&stage, &["The line droid"])[0], "The line droid hits you for 3.");
+    }
+
+    /// A heal aimed at another is a heal whether or not it restored
+    /// anything: at full health it says nothing, in either direction, and
+    /// never that someone was struck to no effect.
+    #[test]
+    fn a_heal_on_another_at_full_health_is_not_spoken_as_a_blow() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (player, kind) = (stage.player, stage.kind);
+        let droid = stage.actor("line droid", 'd', 1, 0);
+        stage.tick();
+        let world = stage.app.world_mut();
+        world.write_message(DamageEvent::new(droid, rl_rules::Hit::by(player, kind, -3)));
+        world.write_message(DamageEvent::new(player, rl_rules::Hit::by(droid, kind, -3)));
+        stage.tick();
+        let said = spoken(&stage, &["You", "The line droid"]);
+        assert!(said.is_empty(), "a heal that restored nothing is not a line: {said:#?}");
     }
 
     /// A shooter the player cannot see is not named, even though the line

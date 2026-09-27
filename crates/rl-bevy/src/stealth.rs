@@ -457,9 +457,9 @@ pub fn wake_on_damage(
     };
     for ev in dealt.read() {
         // A mend is a negative hit down the same pipeline, and a hider who
-        // patches a sleeper up has not struck it. A blow that armor stopped
-        // at zero still woke it.
-        if ev.dealt < 0 {
+        // patches a sleeper up has not struck it, whole or not. A blow that
+        // armor stopped at zero still woke it.
+        if ev.is_mend() {
             continue;
         }
         let Some(attacker) = ev.hit.attacker else { continue };
@@ -630,6 +630,19 @@ mod tests {
         assert!(field.aware().knows(player), "struck, so it knows where from");
         field.wait();
         assert!(field.distance() < 5, "and goes for it: {}", field.distance());
+    }
+
+    /// A heal is a negative hit down the same pipeline, and one that found
+    /// its target whole restored nothing; neither makes it a blow.
+    #[test]
+    fn a_heal_on_a_sleeper_at_full_health_does_not_wake_it() {
+        let mut field = Field::new(blind(), 5, 10, true, None);
+        field.wait();
+        let (watcher, player) = (field.watcher, field.player);
+        let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
+        field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, -3), dealt: 0, reach: crate::combat::Reach::Melee });
+        field.wait();
+        assert!(!field.aware().knows(player), "patched up while whole, and none the wiser");
     }
 
     #[test]
