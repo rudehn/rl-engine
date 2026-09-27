@@ -15,7 +15,9 @@
 //              ability's effects are in abilities.ron: landed by any trigger with no list of
 //              its own, so a thing says what it holds once and each trigger delivers it; a
 //              Harm or a Mend may add per_level: to its roll's bonus, and an Inflict per_level:
-//              to its turns, for each level of an enchanted thing that lands it
+//              to its turns, for each level of an enchanted thing that lands it; an Inflict
+//              a worn thing's trigger lands may say while_worn: true, and then the status
+//              ends the moment the thing is no longer worn
 //   triggers:  optional; [(on:, area:, fires:, effects:, look:)] what it does at its moments: on is
 //              "use" (used from the pack, or while worn for a thing that is worn; lands on
 //              the user where they stand) | "land" (a throw comes to rest) | "fire" (an
@@ -111,10 +113,13 @@
      pulse: (every: 1000, per_level: -100, fastest: 100), enchant: (most: 9),
      triggers: [(on: "pulse", effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]),
     // Used while worn, nothing sees the commando for ten turns, two more
-    // for every level, or until they strike. Its one charge comes back
-    // over forty turns worn, and it is empty each time it goes on, so it
-    // cannot be carried charged and swapped to.
+    // for every level, until they strike or until the plate comes off.
+    // Its one charge comes back over forty turns worn, and it is empty
+    // each time it goes on, so it cannot be carried charged and swapped
+    // to, and the cloak ends with the plate, so it cannot be used and
+    // swapped from either: cloaked in this and mending in the nanite
+    // plate is one plate too many.
     (name: "cloak plate", glyph: '[', color: (0.5, 0.55, 0.8), slot: "torso", tags: ["armor"], armor: 1,
      attuned: true, consumable: (charges: 1, when_empty: Kept, recharge: 4000), enchant: (most: 9),
-     triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "cloaked", turns: 10, per_level: 2))])]),
+     triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "cloaked", turns: 10, per_level: 2, while_worn: true))])]),
 ]

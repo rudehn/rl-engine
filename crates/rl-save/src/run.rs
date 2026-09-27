@@ -13,8 +13,9 @@
 //! one down and how to spawn one again from what was written, and
 //! registers it with [`AddSaveable::save_kind`]. Everything the engine
 //! owns on that entity, where it stands, its health, what it carries and
-//! wears, its statuses, its stack, the transition it is, the post it
-//! holds, is the engine's to capture and put back, in [`EntityState`]. A
+//! wears, its statuses and which worn thing holds each held one, its
+//! stack, the transition it is, the post it holds, is the engine's to
+//! capture and put back, in [`EntityState`]. A
 //! resource a game keeps of the run goes through [`SaveableState`] and
 //! [`save_state`](AddSaveable::save_state).
 //!
@@ -347,9 +348,16 @@ pub struct EntityState {
     /// order. Put back by each item's own shape, so no slot is named.
     #[serde(default)]
     pub worn: Option<(usize, Vec<SaveId>)>,
-    /// Its statuses by registered name, with the turns left on each.
+    /// Its statuses by registered name, with the turns left on each: the
+    /// ones no worn thing holds.
     #[serde(default)]
     pub statuses: Vec<(String, u32)>,
+    /// Its statuses a worn thing holds, by registered name, with the turns
+    /// left on each and the thing that holds it. A field of its own rather
+    /// than a third member of `statuses`, so a save written before a status
+    /// could be held reads unchanged.
+    #[serde(default)]
+    pub held: Vec<(String, u32, SaveId)>,
     /// How many, for a stack.
     #[serde(default)]
     pub stack: Option<u32>,
@@ -391,10 +399,16 @@ impl EntityState {
             }
             (w.0.slot_count(), items.into_iter().map(|i| remap.save_id(i)).collect())
         });
-        let statuses = match (e.get::<Afflicted>(), registries) {
-            (Some(afflicted), Some(registries)) => afflicted.iter().map(|s| (registries.statuses.name(s.id).to_string(), s.turns)).collect(),
-            _ => Vec::new(),
-        };
+        let (mut statuses, mut held) = (Vec::new(), Vec::new());
+        if let (Some(afflicted), Some(registries)) = (e.get::<Afflicted>(), registries) {
+            for s in afflicted.iter() {
+                let name = registries.statuses.name(s.id).to_string();
+                match s.held_by.and_then(Entity::try_from_bits) {
+                    Some(holder) => held.push((name, s.turns, remap.save_id(holder))),
+                    None => statuses.push((name, s.turns)),
+                }
+            }
+        }
         let remains = e.get::<Remains>().map(|r| (r.since, r.credit.map(|c| remap.save_id(c))));
         let remains_as = match (remains, e.get::<PropKind>(), registries) {
             (Some(_), Some(kind), Some(registries)) => Some(registries.props.name(kind.0).to_string()),
@@ -406,6 +420,7 @@ impl EntityState {
             bag,
             worn,
             statuses,
+            held,
             stack: e.get::<Stack>().map(|s| s.count),
             transition: e.get::<Transition>().copied(),
             remains,
@@ -416,8 +431,15 @@ impl EntityState {
 
     /// Puts this back on `entity`, the other entities through `remap`.
     fn restore(&self, world: &mut World, entity: Entity, remap: &EntityRemap) {
-        let statuses: Vec<(rl_rules::StatusId, u32)> = match world.get_resource::<Registries>() {
-            Some(registries) => self.statuses.iter().filter_map(|(name, turns)| registries.statuses.id(name).map(|id| (id, *turns))).collect(),
+        // A held status whose thing did not come back is left out rather
+        // than put back loose: it lasted only while the thing was worn, and
+        // the thing is not there to wear.
+        let statuses: Vec<(rl_rules::StatusId, u32, Option<Entity>)> = match world.get_resource::<Registries>() {
+            Some(registries) => {
+                let loose = self.statuses.iter().filter_map(|(name, turns)| Some((registries.statuses.id(name)?, *turns, None)));
+                let held = self.held.iter().filter_map(|(name, turns, holder)| Some((registries.statuses.id(name)?, *turns, Some(remap.entity(*holder)?))));
+                loose.chain(held).collect()
+            }
             None => Vec::new(),
         };
         let bag: Vec<Entity> = self.bag.iter().filter_map(|id| remap.entity(*id)).collect();
@@ -483,8 +505,8 @@ impl EntityState {
         // By request, so each status installs its modifiers the way it did
         // the first time. Only where statuses are resolved at all.
         if world.get_resource::<Messages<Afflict>>().is_some() {
-            for (status, turns) in statuses {
-                world.write_message(Afflict { target: entity, status, turns, by: None });
+            for (status, turns, held_by) in statuses {
+                world.write_message(Afflict { target: entity, status, turns, by: None, held_by });
             }
         }
     }
@@ -1088,7 +1110,7 @@ mod tests {
         app.world_mut().resource_mut::<Stocked>().0 = vec![3, 8];
         play(&mut app);
         let dazed = app.world().resource::<Registries>().statuses.expect("dazed");
-        app.world_mut().write_message(Afflict { target: me, status: dazed, turns: 6, by: None });
+        app.world_mut().write_message(Afflict { target: me, status: dazed, turns: 6, by: None, held_by: None });
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
         let clock = app.world().resource::<Turns>().now();
@@ -1126,6 +1148,74 @@ mod tests {
         assert_eq!(ground, vec![(3, start.offset(2, 0))], "the dropped coins lie where they lay");
         let stairs: Vec<(Point, Transition)> = w.query::<(&Position, &Transition)>().iter(w).map(|(p, t)| (p.0, *t)).collect();
         assert!(stairs.is_empty(), "a transition nobody registered a kind for is not the engine's to spawn");
+    }
+
+    /// A game with the player wearing a ring in its one slot, `dazed` on
+    /// them held by the ring, and, when `saved_ring`, the ring a saved
+    /// kind; saved, and continued in a fresh game that has begun play.
+    fn continued_wearing_a_ring_that_holds_a_status(saved_ring: bool) -> (App, Entity, rl_rules::StatusId) {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let finger = EquipShape::in_slot(rl_rules::SlotId::from_raw(0));
+        let ring = app.world_mut().spawn((Item, Wearable(finger.clone()))).id();
+        if saved_ring {
+            app.world_mut().entity_mut(ring).insert(Thing { def: "ring".into(), notches: 0 });
+        }
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(ring, &finger).unwrap();
+        let me = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                You,
+                Position(start),
+                Viewshed::new(6),
+                RevealsMap,
+                Health::full(30),
+                Inventory { items: vec![ring] },
+                Equipped(worn),
+            ))
+            .id();
+        play(&mut app);
+        let dazed = app.world().resource::<Registries>().statuses.expect("dazed");
+        app.world_mut().write_message(Afflict { target: me, status: dazed, turns: 20, by: None, held_by: Some(ring) });
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        assert!(app.world().get::<Afflicted>(me).is_some_and(|a| a.has(dazed)), "held, and on");
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save to continue").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let me = w.query_filtered::<Entity, With<You>>().single(w).unwrap();
+        (back, me, dazed)
+    }
+
+    /// A status a worn thing holds comes back held by that thing, not
+    /// loose: still on after the continue, and ended by taking the thing
+    /// off, as it would have been before the save.
+    #[test]
+    fn a_held_status_comes_back_held_by_its_thing_and_ends_when_it_comes_off() {
+        let (mut back, me, dazed) = continued_wearing_a_ring_that_holds_a_status(true);
+        let w = back.world();
+        let ring = w.get::<Inventory>(me).expect("a bag").items[0];
+        assert!(w.get::<Equipped>(me).is_some_and(|e| e.slot_of(ring).is_some()), "the ring is worn again");
+        let held: Vec<Option<u64>> = w.get::<Afflicted>(me).expect("afflicted").iter().filter(|s| s.id == dazed).map(|s| s.held_by).collect();
+        assert_eq!(held, vec![Some(ring.to_bits())], "and holds the status it held");
+        back.world_mut().write_message(Intent::new(me, Unequip(ring)));
+        back.update();
+        assert!(back.world().get::<Afflicted>(me).is_some_and(|a| !a.has(dazed)), "taken off, and it ended");
+    }
+
+    /// A held status whose thing did not come back does not come back
+    /// either, rather than coming back loose and running its time.
+    #[test]
+    fn a_held_status_whose_thing_was_not_saved_does_not_come_back() {
+        let (back, me, dazed) = continued_wearing_a_ring_that_holds_a_status(false);
+        assert!(back.world().get::<Afflicted>(me).is_some_and(|a| !a.has(dazed)));
     }
 
     /// The slot is refused whole when the game's version or the engine's

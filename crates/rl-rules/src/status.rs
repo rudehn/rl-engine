@@ -200,6 +200,13 @@ pub struct ActiveStatus {
     pub turns: u32,
     /// Who applied it, for credit on a tick. Opaque.
     pub source: Option<u64>,
+    /// The worn thing it lasts only while, if one holds it. Opaque, like
+    /// `source`: the rules never read it, and whoever answers wearing ends
+    /// the instance the pass its holder is not worn. Absent in a save
+    /// written before a status could be held, which reads as held by
+    /// nothing.
+    #[serde(default)]
+    pub held_by: Option<u64>,
 }
 
 /// Damage one status dealt on a tick.
@@ -245,7 +252,27 @@ impl Statuses {
     /// Applies `id` for `turns`, following the definition's stacking rule,
     /// and installs its modifiers into `stats`. Returns whether anything
     /// changed.
+    ///
+    /// Held by nothing; a refresh or an extension of an instance a worn
+    /// thing holds leaves it held, since a second source of the same status
+    /// is no reason for the thing's to outlast the thing.
     pub fn apply(&mut self, id: StatusId, turns: u32, source: Option<u64>, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
+        self.put(id, turns, source, None, defs, stats)
+    }
+
+    /// As [`apply`](Self::apply), held by `holder`: the instance lasts only
+    /// while that thing is worn.
+    ///
+    /// An instance it refreshes or extends is taken over by `holder`,
+    /// whether or not its time changed, so what holds a status is always
+    /// the thing that last put it on. The return value still says only
+    /// whether the time or the instances changed, which is what a narrator
+    /// tells.
+    pub fn apply_held(&mut self, id: StatusId, turns: u32, source: Option<u64>, holder: u64, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
+        self.put(id, turns, source, Some(holder), defs, stats)
+    }
+
+    fn put(&mut self, id: StatusId, turns: u32, source: Option<u64>, held_by: Option<u64>, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
         let def = defs.get(id);
         let existing = self.active.iter_mut().find(|s| s.id == id);
         match (def.stacking, existing) {
@@ -253,10 +280,12 @@ impl Statuses {
             (Stacking::Refresh, Some(s)) => {
                 let changed = turns > s.turns;
                 s.turns = s.turns.max(turns);
+                s.held_by = held_by.or(s.held_by);
                 changed
             }
             (Stacking::Extend, Some(s)) => {
                 s.turns = s.turns.saturating_add(turns);
+                s.held_by = held_by.or(s.held_by);
                 true
             }
             _ => {
@@ -265,7 +294,7 @@ impl Statuses {
                 for m in &def.modifiers {
                     stats.add(crate::stats::Modifier::new(m.stat, m.op, tag));
                 }
-                self.active.push(ActiveStatus { id, turns, source });
+                self.active.push(ActiveStatus { id, turns, source, held_by });
                 true
             }
         }
@@ -389,6 +418,50 @@ mod tests {
         let stats = Registry::from_defs(vec![StatDef::new("speed", 100), StatDef::new("armor", 0)]).unwrap();
         let kinds = Registry::from_defs(vec![crate::damage::DamageKind::new("bite"), crate::damage::DamageKind::new("care")]).unwrap();
         (stats, kinds)
+    }
+
+    fn held_by(st: &Statuses, id: StatusId) -> Vec<Option<u64>> {
+        st.iter().filter(|s| s.id == id).map(|s| s.held_by).collect()
+    }
+
+    #[test]
+    fn a_status_applied_with_a_holder_records_it_and_one_applied_without_has_none() {
+        let (_, defs) = world();
+        let (slowed, burning) = (defs.expect("slowed"), defs.expect("burning"));
+        let mut stats = Stats::new();
+        let mut st = Statuses::new();
+        assert!(st.apply_held(slowed, 3, Some(9), 42, &defs, &mut stats));
+        assert!(st.apply(burning, 3, Some(9), &defs, &mut stats));
+        assert_eq!(held_by(&st, slowed), vec![Some(42)]);
+        assert_eq!(held_by(&st, burning), vec![None]);
+    }
+
+    #[test]
+    fn a_held_application_takes_over_what_it_refreshes_or_extends_and_an_unheld_one_leaves_the_holder() {
+        let (_, defs) = world();
+        let (slowed, burning) = (defs.expect("slowed"), defs.expect("burning"));
+        let mut stats = Stats::new();
+        let mut st = Statuses::new();
+        st.apply(slowed, 3, None, &defs, &mut stats);
+        st.apply_held(slowed, 2, None, 7, &defs, &mut stats);
+        assert_eq!(held_by(&st, slowed), vec![Some(7)], "a shorter held refresh still takes the instance over");
+        st.apply_held(slowed, 5, None, 8, &defs, &mut stats);
+        assert_eq!(held_by(&st, slowed), vec![Some(8)], "held by the newest holder");
+        st.apply(slowed, 9, None, &defs, &mut stats);
+        assert_eq!(held_by(&st, slowed), vec![Some(8)], "an unheld refresh leaves it held");
+        assert_eq!(st.iter().find(|s| s.id == slowed).map(|s| s.turns), Some(9));
+        st.apply(burning, 2, None, &defs, &mut stats);
+        st.apply_held(burning, 2, None, 7, &defs, &mut stats);
+        st.apply(burning, 2, None, &defs, &mut stats);
+        assert_eq!(held_by(&st, burning), vec![Some(7)], "extend follows the same rule");
+        assert_eq!(st.iter().find(|s| s.id == burning).map(|s| s.turns), Some(6));
+    }
+
+    /// A save written before a status could be held still reads.
+    #[test]
+    fn a_status_saved_without_a_holder_reads_as_held_by_nothing() {
+        let old: ActiveStatus = ron::from_str("(id: 3, turns: 4, source: None)").expect("an old status reads");
+        assert_eq!(old.held_by, None);
     }
 
     #[test]

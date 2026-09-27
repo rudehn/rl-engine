@@ -229,7 +229,7 @@ pub fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gases>, ai
             }
             breathed.write(Breathed { actor, gas: id, amount });
             if let Some(breath) = def.breathed(amount) {
-                afflict.write(Afflict { target: actor, status: breath.status, turns: breath.turns, by: None });
+                afflict.write(Afflict { target: actor, status: breath.status, turns: breath.turns, by: None, held_by: None });
             }
         }
     }

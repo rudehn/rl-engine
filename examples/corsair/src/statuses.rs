@@ -43,7 +43,7 @@ pub fn inflict_on_hit(
         let Ok(kind) = kinds.get(attacker) else { continue };
         let Some((status, turns, pct)) = &bestiary.defs.get(kind.0).inflicts else { continue };
         if rng.0.random_range(0..100) < *pct {
-            afflict.write(Afflict { target: d.target, status: status.id(), turns: *turns, by: Some(attacker) });
+            afflict.write(Afflict { target: d.target, status: status.id(), turns: *turns, by: Some(attacker), held_by: None });
         }
     }
 }

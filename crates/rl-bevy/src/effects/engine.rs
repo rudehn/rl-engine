@@ -142,6 +142,11 @@ pub struct Inflict {
     pub turns: u32,
     /// Turns added for each enchant level of what landed it.
     pub per_level: u32,
+    /// Whether the status lasts only while the thing that landed it is
+    /// worn. Read only when a trigger landed it, since only a thing can be
+    /// worn: the [`Afflict`] is then held by the thing, and an ability or
+    /// an offer lands the status as if this were false.
+    pub while_worn: bool,
 }
 
 impl Inflict {
@@ -153,13 +158,18 @@ impl Inflict {
 
 impl Effect for Inflict {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let held_by = match landing.source {
+            super::Source::Trigger { on, .. } if self.while_worn => Some(on),
+            _ => None,
+        };
         for target in &landing.targets {
-            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns_at(landing.level), by: Some(landing.user) });
+            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns_at(landing.level), by: Some(landing.user), held_by });
         }
     }
 
     fn describe(&self, registries: &Registries, level: i32) -> String {
-        format!("{} for {} turns", registries.statuses.name(self.status), self.turns_at(level))
+        let held = if self.while_worn { " while worn" } else { "" };
+        format!("{} for {} turns{held}", registries.statuses.name(self.status), self.turns_at(level))
     }
 }
 
@@ -173,9 +183,11 @@ impl FromArgs for Inflict {
             turns: u32,
             #[serde(default)]
             per_level: u32,
+            #[serde(default)]
+            while_worn: bool,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { status: names.status(&a.status)?, turns: a.turns, per_level: a.per_level })
+        Ok(Self { status: names.status(&a.status)?, turns: a.turns, per_level: a.per_level, while_worn: a.while_worn })
     }
 }
 
@@ -430,7 +442,7 @@ mod tests {
         assert_eq!((mend.roll_at(0), mend.roll_at(3)), (DiceRoll::flat(1), DiceRoll::flat(7)));
         let harm = Harm { kind, roll: DiceRoll::new(2, 6), per_level: 1 };
         assert_eq!(harm.roll_at(2), DiceRoll { num: 2, sides: 6, bonus: 2 });
-        let hiding = Inflict { status: StatusId::from_raw(0), turns: 5, per_level: 1 };
+        let hiding = Inflict { status: StatusId::from_raw(0), turns: 5, per_level: 1, while_worn: false };
         assert_eq!((hiding.turns_at(0), hiding.turns_at(2), hiding.turns_at(-1)), (5, 7, 5), "a negative level is plain, never shorter");
     }
 
@@ -446,5 +458,22 @@ mod tests {
         assert_eq!(old.per_level, 0);
         let new = Inflict::from_args(&args(r#"(status: "hidden", turns: 5, per_level: 1)"#), &names).unwrap();
         assert_eq!(new.per_level, 1);
+    }
+
+    /// `while_worn` is read when written and false when not, and a held
+    /// status says so where it is described, which is the line the bag
+    /// shows under the thing.
+    #[test]
+    fn while_worn_is_read_when_written_and_said_where_the_effect_is_described() {
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
+        let names = Names::new().statuses(&statuses);
+        let args = |text: &str| rl_rules::ability::parse_args(text).unwrap();
+        let plain = Inflict::from_args(&args(r#"(status: "hidden", turns: 5)"#), &names).unwrap();
+        assert!(!plain.while_worn);
+        let held = Inflict::from_args(&args(r#"(status: "hidden", turns: 10, per_level: 2, while_worn: true)"#), &names).unwrap();
+        assert!(held.while_worn);
+        let registries = Registries { statuses, ..Default::default() };
+        assert_eq!(plain.describe(&registries, 0), "hidden for 5 turns");
+        assert_eq!(held.describe(&registries, 2), "hidden for 14 turns while worn");
     }
 }

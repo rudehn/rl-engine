@@ -1449,7 +1449,7 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
-        app.world_mut().write_message(crate::status::Afflict { target, status: hardened, turns: 9, by: None });
+        app.world_mut().write_message(crate::status::Afflict { target, status: hardened, turns: 9, by: None, held_by: None });
         app.update();
         assert_eq!(loadout(&mut app, target).0, 1 + 2 + 3, "hide, coat and status");
 

@@ -700,8 +700,9 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
             StatusEvent::Applied { target, status } if !witness.is_you(target) => (target, status, Phrase::IsAfflicted),
             StatusEvent::Applied { target, status } => (target, status, if witness.is_boon(status) { Phrase::YouGainABoon } else { Phrase::YouAreAfflicted }),
             StatusEvent::Expired { target, status } if witness.is_you(target) => (target, status, Phrase::YouAreNoLonger),
-            // A boon broken off, a cloak ended by a blow, is lost rather
-            // than cured: the player is not glad of it.
+            // A boon broken off, by a blow or by the worn thing that held it
+            // coming off, is lost rather than cured: the player is not glad
+            // of it.
             StatusEvent::Cured { target, status } if witness.is_you(target) => {
                 (target, status, if witness.is_boon(status) { Phrase::YouAreNoLonger } else { Phrase::YourAfflictionPasses })
             }

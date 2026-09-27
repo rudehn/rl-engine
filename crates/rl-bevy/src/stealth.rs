@@ -821,7 +821,7 @@ mod tests {
 
     fn hide(field: &mut Field, status: rl_rules::StatusId) {
         let player = field.player;
-        field.app.world_mut().write_message(crate::status::Afflict { target: player, status, turns: 5, by: None });
+        field.app.world_mut().write_message(crate::status::Afflict { target: player, status, turns: 5, by: None, held_by: None });
         field.wait();
     }
 
@@ -978,5 +978,65 @@ mod tests {
         field.app.update();
         assert!(!unseen(&field), "it landed, and the throw ended it");
         assert!(field.aware().knows(player), "and the one it hit knows where from");
+    }
+
+    /// A hiding field whose player wears, in its one slot, a thing whose use
+    /// puts `hidden` on them for twenty turns held by the thing, with the
+    /// watcher stripped of its noticing so it sees on sight, and returned
+    /// with the thing.
+    fn worn_hiding_field() -> (Field, Entity) {
+        let mut field = Field::build(blind(), 1, 10, true, None, |app| {
+            use crate::effects::AddEngineEffects;
+            app.add_plugins((crate::status::StatusPlugin, crate::items::ItemsPlugin, crate::consumable::ConsumablesPlugin));
+            app.add_engine_effects();
+        });
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden").unseen()]).unwrap();
+        field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
+        let triggers = {
+            let uses = r#"[(on: "use", effects: [(kind: "Inflict", args: (status: "hidden", turns: 20, while_worn: true))])]"#;
+            let specs: Vec<rl_rules::TriggerSpec> =
+                ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(uses).expect("the triggers parse");
+            let world = field.app.world();
+            let names = world.resource::<crate::registries::Registries>().names();
+            crate::effects::Triggers::build(&specs, &[], world.resource::<crate::effects::Moments>(), world.resource::<crate::effects::EffectKinds>(), &names)
+                .expect("the triggers build")
+        };
+        let slot = rl_rules::SlotId::from_raw(0);
+        let plate = field.app.world_mut().spawn((crate::items::Item, triggers, crate::items::Wearable(rl_rules::EquipShape::in_slot(slot)))).id();
+        let (player, watcher) = (field.player, field.watcher);
+        field
+            .app
+            .world_mut()
+            .entity_mut(player)
+            .insert((crate::items::Inventory { items: vec![plate] }, crate::items::Equipped(rl_rules::Equipment::with_slot_count(1))));
+        field.app.world_mut().entity_mut(watcher).remove::<(Notice, Aware)>();
+        field.app.world_mut().write_message(Intent::new(player, crate::items::Equip(plate)));
+        field.app.update();
+        (field, plate)
+    }
+
+    /// Taking off the thing that holds an unseen status shows its wearer in
+    /// the pass it comes off: a watcher standing next to them, which sees
+    /// on sight, swings on its very next turn.
+    ///
+    /// As for a blow, the swing is what shows the order: a cure a pass
+    /// late would leave the watcher deciding with its neighbour unseen.
+    #[test]
+    fn a_held_unseen_status_ends_the_pass_its_thing_comes_off_and_the_next_mind_sees_its_wearer() {
+        let (mut field, plate) = worn_hiding_field();
+        field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
+        let player = field.player;
+        field.wait();
+        assert!(field.app.world().resource::<Swings>().0 > 0, "seen, adjacent, it swings: the test can fail");
+        field.app.world_mut().write_message(Intent::new(player, crate::items::UseItem(plate)));
+        field.app.update();
+        assert!(unseen(&field), "used while worn, and hidden");
+        field.app.world_mut().resource_mut::<Swings>().0 = 0;
+        field.wait();
+        assert_eq!(field.app.world().resource::<Swings>().0, 0, "hidden, and not swung at");
+        field.app.world_mut().write_message(Intent::new(player, crate::items::Unequip(plate)));
+        field.app.update();
+        assert!(!unseen(&field), "taken off, and seen again");
+        assert_eq!(field.app.world().resource::<Swings>().0, 1, "and swung at on the watcher's very next turn");
     }
 }

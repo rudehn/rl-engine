@@ -41,6 +41,17 @@ pub struct Afflict {
     pub turns: u32,
     /// Who did it, for credit on the damage it deals.
     pub by: Option<Entity>,
+    /// The worn thing it lasts only while, or `None` for a status that runs
+    /// its time whatever is worn.
+    ///
+    /// Held, it ends through the ordinary [`Cure`] in the pass its holder
+    /// is not wearing that thing, however that came about; see
+    /// [`end_unworn_holds`](crate::items::end_unworn_holds). One landed on
+    /// somebody who is not wearing the thing, as an area use reaching a
+    /// bystander, ends in the pass after it goes on. A refresh or an
+    /// extension by a held request is held by the new thing, and one by an
+    /// unheld request stays held by the old.
+    pub held_by: Option<Entity>,
 }
 
 /// A request to take a status off an actor.
@@ -88,7 +99,12 @@ pub fn resolve_afflictions(
 ) {
     for a in afflicts.read() {
         let Ok((mut statuses, mut stats)) = actors.get_mut(a.target) else { continue };
-        if statuses.0.apply(a.status, a.turns, a.by.map(|e| e.to_bits()), &registries.statuses, &mut stats.0) {
+        let by = a.by.map(|e| e.to_bits());
+        let changed = match a.held_by {
+            Some(item) => statuses.0.apply_held(a.status, a.turns, by, item.to_bits(), &registries.statuses, &mut stats.0),
+            None => statuses.0.apply(a.status, a.turns, by, &registries.statuses, &mut stats.0),
+        };
+        if changed {
             events.write(StatusEvent::Applied { target: a.target, status: a.status });
         }
     }
@@ -228,8 +244,8 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
-        app.world_mut().write_message(Afflict { target: player, status: venom, turns: 3, by: None });
-        app.world_mut().write_message(Afflict { target: player, status: hearty, turns: 2, by: None });
+        app.world_mut().write_message(Afflict { target: player, status: venom, turns: 3, by: None, held_by: None });
+        app.world_mut().write_message(Afflict { target: player, status: hearty, turns: 2, by: None, held_by: None });
         app.update();
         {
             let w = app.world();

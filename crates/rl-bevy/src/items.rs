@@ -18,7 +18,9 @@
 //! and what it [`Bestows`] on the registered stats is folded into the
 //! wearer's [`StatBlock`] by [`fold_gear`] the moment its slots change.
 //! Nothing is copied onto the wearer and nothing has to be remembered
-//! when it comes off.
+//! when it comes off. A status a worn thing's trigger put on its wearer
+//! may be held by the thing, and [`end_unworn_holds`] cures it in the pass
+//! the thing is no longer worn.
 //!
 //! Throwing one is [`throwing`](crate::throwing), which needs combat as well.
 
@@ -32,7 +34,7 @@ use crate::combat::DeathEvent;
 use crate::components::{Actor, MyTurn, Position};
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
-use crate::status::StatBlock;
+use crate::status::{Afflicted, Cure, StatBlock};
 use crate::throwing::Throwable;
 use crate::turn::{Action, Intent, Resolution, Turns};
 use crate::world::WorldMap;
@@ -527,6 +529,42 @@ pub fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&m
     }
 }
 
+/// Ends every status a worn thing holds on anyone not wearing that very
+/// thing, through the ordinary [`Cure`].
+///
+/// A status is held when the [`Afflict`](crate::status::Afflict) that put
+/// it on named a holder, which an `Inflict` written `while_worn` does for
+/// the thing whose trigger landed it. Nothing here asks how the thing came
+/// off: taken off, dropped, displaced by another in its slot, used up or
+/// despawned, the question is only whether the holder still wears it, so
+/// a way of losing a thing added later is covered without a line here.
+/// A cure takes a status off whole, so a status that stacks loses an
+/// unheld instance beside the held one; no game stacks a held status, and
+/// a cure that picked one instance is a change to the status model this
+/// does not need yet.
+///
+/// In [`ResolveSet::Effects`](crate::plugin::ResolveSet::Effects) before
+/// the statuses resolve, so in the pass the thing comes off, which
+/// resolved in [`ResolveSet::Act`](crate::plugin::ResolveSet::Act), the
+/// cure lands, [`StatusEvent::Cured`](crate::status::StatusEvent) is
+/// written, and a status that hid its holder stops hiding it before the
+/// next actor decides. Here rather than in the status plugin because
+/// wearing is this plugin's to know; statuses never learn what an item
+/// is. A game with items and no statuses has no [`Afflicted`] to look at
+/// and the queue it writes stays empty.
+pub fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>, items: Query<(), With<Item>>, mut cure: MessageWriter<Cure>) {
+    for (who, afflicted, worn) in &holders {
+        for status in afflicted.iter() {
+            let Some(bits) = status.held_by else { continue };
+            let item = Entity::try_from_bits(bits);
+            let worn = item.is_some_and(|item| items.contains(item) && worn.is_some_and(|w| w.slot_of(item).is_some()));
+            if !worn {
+                cure.write(Cure { target: who, status: status.id });
+            }
+        }
+    }
+}
+
 /// Drops despawned items from every bag and every slot.
 pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: Query<(&mut Inventory, Option<&mut Equipped>)>) {
     let gone: Vec<Entity> = removed.read().collect();
@@ -642,7 +680,9 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
 /// wearer in a game with gear stats and no statuses still has somewhere
 /// for them to land.
 ///
-/// A worn [`Pulse`] reports its `pulse` moment on its own clock.
+/// A worn [`Pulse`] reports its `pulse` moment on its own clock, and a
+/// status a worn thing holds ends when it is no longer worn, in
+/// [`end_unworn_holds`].
 pub struct ItemsPlugin;
 
 impl Plugin for ItemsPlugin {
@@ -671,6 +711,13 @@ impl Plugin for ItemsPlugin {
             // Before the triggers land, so a pulse lands in the pass that
             // brought it; a game with no effects has nothing to land it.
             .add_systems(Turn, pulse_worn.in_set(ResolveSet::Triggers).before(crate::effects::land_triggers))
+            // What ending a held status writes, registered here as well as
+            // by the status plugin, since a game may have items and no
+            // statuses, and then nobody is afflicted and nothing is written.
+            .add_message::<Cure>()
+            // Before the statuses resolve, so a held status ends in the pass
+            // its thing came off; see `end_unworn_holds`.
+            .add_systems(Turn, end_unworn_holds.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions))
             // In the pass the slots changed in, so gear counts from the
             // moment it is worn.
             .add_systems(Turn, fold_gear.in_set(TurnSet::React))
@@ -881,7 +928,7 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Equip(ring)));
         app.update();
         assert_eq!(might_of(&app, player), Some(15), "the ring's five, folded the pass it went on");
-        app.world_mut().write_message(crate::status::Afflict { target: player, status: weak, turns: 9, by: None });
+        app.world_mut().write_message(crate::status::Afflict { target: player, status: weak, turns: 9, by: None, held_by: None });
         app.update();
         assert_eq!(might_of(&app, player), Some(12), "and the status's three off");
 

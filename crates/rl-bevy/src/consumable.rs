@@ -314,6 +314,13 @@ mod tests {
     /// On a real streamed surface with the state set to playing, because a
     /// use is an action and an action wants a turn to be dealt.
     fn rig(consumable: Option<Consumable>, stack: Option<u32>, triggers: &str) -> (App, Entity, Entity) {
+        rig_with(consumable, stack, triggers, |_| {})
+    }
+
+    /// [`rig`], with `extra` run on the app once its plugins and
+    /// registries are in and before the thing's triggers are built, so a
+    /// test can add a plugin and the content its triggers name.
+    fn rig_with(consumable: Option<Consumable>, stack: Option<u32>, triggers: &str, extra: impl FnOnce(&mut App)) -> (App, Entity, Entity) {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, ItemsPlugin, ConsumablesPlugin));
         app.add_engine_effects();
@@ -322,6 +329,7 @@ mod tests {
         app.insert_resource(crate::combat::CombatRules::new(&sides));
         app.insert_resource(Registries { damage_kinds: kinds, factions: sides, ..Registries::default() });
         app.insert_resource(Seed(TEST_SEED));
+        extra(&mut app);
         let start = crate::testing::surface(&mut app);
         let triggers = {
             let specs: Vec<rl_rules::TriggerSpec> =
@@ -595,5 +603,103 @@ mod tests {
         app.world_mut().entity_mut(item).insert(crate::items::Enchant(rl_rules::Enchanted { level: 3, affixes: Vec::new() }));
         use_it(&mut app, player, item);
         assert_eq!(health(&app, player), 20, "four and two for each of three levels");
+    }
+
+    /// Every status event, recorded by a reader, since a headless app may
+    /// swap its message buffers before a test can peek at them.
+    #[derive(Resource, Default)]
+    struct Heard(Vec<crate::status::StatusEvent>);
+
+    fn hear(mut events: MessageReader<crate::status::StatusEvent>, mut heard: ResMut<Heard>) {
+        heard.0.extend(events.read().copied());
+    }
+
+    /// A worn thing whose use puts `hidden` on its wearer for twenty turns,
+    /// held by the thing when `while_worn`, worn in the player's one slot
+    /// and used once; with statuses on and every status event heard.
+    fn used_while_worn(while_worn: bool) -> (App, Entity, Entity, rl_rules::StatusId) {
+        let uses = format!(r#"[(on: "use", effects: [(kind: "Inflict", args: (status: "hidden", turns: 20, while_worn: {while_worn}))])]"#);
+        let (mut app, player, plate) = rig_with(None, None, &uses, |app| {
+            app.add_plugins(crate::status::StatusPlugin);
+            app.world_mut().resource_mut::<Registries>().statuses = Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
+            app.init_resource::<Heard>().add_systems(PostUpdate, hear);
+        });
+        let hidden = app.world().resource::<Registries>().statuses.expect("hidden");
+        a_slot_for(&mut app, player, plate);
+        put_on(&mut app, player, plate);
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        app.update();
+        assert!(hides(&app, player, hidden), "used while worn, and it went on");
+        (app, player, plate, hidden)
+    }
+
+    fn hides(app: &App, player: Entity, hidden: rl_rules::StatusId) -> bool {
+        app.world().get::<crate::status::Afflicted>(player).is_some_and(|a| a.has(hidden))
+    }
+
+    fn cured(app: &App, player: Entity, hidden: rl_rules::StatusId) -> usize {
+        let cure = crate::status::StatusEvent::Cured { target: player, status: hidden };
+        app.world().resource::<Heard>().0.iter().filter(|e| **e == cure).count()
+    }
+
+    /// A status a worn thing holds lasts while it is worn and ends,
+    /// cured, in the pass it is taken off, with nineteen of its twenty
+    /// turns still to run.
+    #[test]
+    fn a_status_held_by_a_worn_thing_lasts_while_it_is_worn_and_is_cured_when_it_comes_off() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        let now = app.world().resource::<Turns>().now();
+        wait_until(&mut app, player, now + 300);
+        assert!(hides(&app, player, hidden), "three turns on, still worn, still held");
+        take_off(&mut app, player, plate);
+        assert!(!hides(&app, player, hidden), "off the body, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1, "through the cure, once");
+    }
+
+    /// The same status landed without `while_worn` runs its time whatever
+    /// becomes of the thing.
+    #[test]
+    fn a_status_a_worn_thing_does_not_hold_outlasts_taking_it_off() {
+        let (mut app, player, plate, hidden) = used_while_worn(false);
+        take_off(&mut app, player, plate);
+        let now = app.world().resource::<Turns>().now();
+        wait_until(&mut app, player, now + 300);
+        assert!(hides(&app, player, hidden), "off the body and still on");
+        assert_eq!(cured(&app, player, hidden), 0);
+    }
+
+    /// Dropping the thing is taking it off, and ends what it holds.
+    #[test]
+    fn dropping_a_worn_thing_ends_what_it_holds() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        app.world_mut().write_message(Intent::new(player, crate::items::DropItem(plate)));
+        app.update();
+        assert!(!hides(&app, player, hidden), "on the floor, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1);
+    }
+
+    /// Putting another thing on in its slot displaces it, and ends what it
+    /// holds, even though the wearer still carries it.
+    #[test]
+    fn a_worn_thing_displaced_by_another_in_its_slot_ends_what_it_holds() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        let slot = rl_rules::SlotId::from_raw(0);
+        let other = app.world_mut().spawn((Item, crate::items::Wearable(rl_rules::EquipShape::in_slot(slot)))).id();
+        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(other);
+        put_on(&mut app, player, other);
+        assert!(app.world().get::<Inventory>(player).is_some_and(|b| b.contains(plate)), "still carried");
+        assert!(!hides(&app, player, hidden), "but no longer worn, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1);
+    }
+
+    /// A thing that is gone, used up or despawned, holds nothing either.
+    #[test]
+    fn a_worn_thing_that_is_despawned_ends_what_it_holds() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        app.world_mut().despawn(plate);
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+        assert!(!hides(&app, player, hidden), "gone, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1);
     }
 }

@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: c259c010 -->
+     fingerprint: cbf90a59 -->
 
 # Stealth
 
@@ -22,7 +22,7 @@ Without this a mind acts on everything its own sight reaches the turn it first r
 Stealth is the layer between "could be seen" and "has been seen": a roll to notice, and a memory that decays.
 Noticing is two knobs rather than a radius, because a radius alone is a hard line the player learns to stand behind and a chance alone is a lottery with no readable edge.
 What an observer knows is per observer and per subject, so a monster may be unaware of you and perfectly aware of the thief beside it, and one that loses you searches where it last saw you before it forgets.
-A status can go further and make its holder unseen, hidden from every mind at any distance until it runs out or its holder attacks.
+A status can go further and make its holder unseen, hidden from every mind at any distance until it runs out or its holder attacks, or, for one a worn thing holds, until the thing comes off.
 
 ## Turning it on
 
@@ -58,6 +58,7 @@ Noise offers its own to the same place, the freshest becomes `Snapshot::last_kno
 `Watchers::remembers` answers whether an observer still has a subject in mind, watching it or not, and the two part only for the unseen.
 `StatusDef::unseen`, `unseen: true` in a status file, is a status whose holder nothing sees while it lasts, and `Unseen` is the marker `mark_unseen` keeps on whoever holds one.
 It is kept from `Changed<Afflicted>` after the statuses are applied, ticked and cured, so it lasts exactly as long as the status, a continued run gets it back from the statuses it saved, and the pass a status goes on is the pass the next mind to decide cannot see its holder.
+An unseen status a worn thing holds ends by the items plugin's `Cure`, written in the same stage before the statuses resolve, so the marker comes off in the pass the thing does and the next mind to decide sees its wearer.
 `filter_unseen` takes the unseen out of the enemies, allies and others of every mind, noticing or not, and `update_awareness` counts one out of view, so an observer that was alert to it searches where it last saw it for its memory and forgets.
 `reveal_attackers` reads `Struck`, written for every blow or shot before the accuracy roll, `ItemEvent::Thrown`, and `AbilityEvent::Used` with a target other than the user, and writes a `Cure` for every unseen status each attacker holds.
 It runs before `resolve_afflictions` in the same pass, so the marker is gone before the damage lands and `wake_on_damage` points the one struck at an attacker it can see.
@@ -117,7 +118,7 @@ The engine decides who has noticed whom; a game decides what that is worth.
 Propagation is deliberately absent: what a shout carries, how far it goes and who it reaches are content, so a game that wants a squad writes a dozen lines over `Noticed` rather than accepting the engine's idea of a squad.
 Sneak damage is absent for the same reason, since a multiplier is balance.
 Stealth hides a subject from minds and from nothing else: the drawing is untouched, so a monster is never hidden from the player, and two-way stealth would be a render change rather than another component.
-The engine decides that the unseen is seen by nothing and that attacking ends it; the game decides which status is unseen, for how long, and what grants it.
+The engine decides that the unseen is seen by nothing and that attacking ends it; the game decides which status is unseen, for how long, what grants it, and whether it lasts only while the thing that granted it is worn.
 The unseen departs on purpose from the floor of one: that floor is about `Stealth`'s quiet, which is for good, and the unseen is a status that lasts turns and ends the moment its holder strikes.
 Being hurt does not end it, and hearing is untouched, so a mind that hears the unseen still goes to look and finds nothing there to see.
 A `Perception` is still the hard cap on how far an actor notices anything at all, and `Notice` is only the curve inside it, which is how a game gives a guard long sight and poor attention.

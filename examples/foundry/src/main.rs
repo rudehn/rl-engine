@@ -319,11 +319,24 @@ mod tests {
         assert_eq!(rail(&app, VITALS_ROWS - 1), "", "blank with no badge to show");
         let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
-        app.world_mut().write_message(Afflict { target: me, status: cloaked, turns: 10, by: None });
+        app.world_mut().write_message(Afflict { target: me, status: cloaked, turns: 10, by: None, held_by: None });
         app.update();
         app.update();
         assert_eq!(rail(&app, VITALS_ROWS - 1), "%", "the badge, on the last row of the strip");
         assert!(rail(&app, VITALS_ROWS).starts_with("Worn"), "and the gear still under it: {:?}", rail(&app, VITALS_ROWS));
+    }
+
+    /// The pack says the cloak plate's cloak lasts only while it is worn,
+    /// under the plate, in the words the effect describes itself with.
+    #[test]
+    fn the_pack_says_the_cloak_plate_cloaks_only_while_worn() {
+        let mut app = on_screen(RunSeed(7));
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let plate = foundry::testing::equip_new(&mut app, me, "cloak plate");
+        app.update();
+        let view = app.world().resource::<InventoryView>();
+        let row = view.rows.iter().find(|r| r.entity == plate).expect("the plate in the pack");
+        assert!(row.used.contains(&"use: cloaked for 10 turns while worn".to_string()), "{:?}", row.used);
     }
 
     /// The log reads in the order things happened: a probe that spots the

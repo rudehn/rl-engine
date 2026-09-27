@@ -6,6 +6,7 @@
             crates/rl-bevy/src/ability.rs
             crates/rl-bevy/src/effects/mod.rs
             crates/rl-bevy/src/effects/triggers.rs
+            crates/rl-bevy/src/effects/engine.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/status.rs
@@ -19,7 +20,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 27ca1fdd -->
+     fingerprint: 371d748f -->
 
 # Items and equipment
 
@@ -32,8 +33,8 @@ Two screens come with the system, because an inventory panel belongs where inven
 ## Turning it on
 
 `ItemsPlugin` declares no `needs` at all: a game with items and no registries has a bag that works and rows with no names on them.
-It registers `ItemEvent` and the six actions `PickUp`, `DropItem`, `Equip`, `EquipFromGround`, `Unequip` and `UseItem`, and registers `DeathEvent` as a message it reads so that the dead can drop what they carried in a game with no combat plugin to write one.
-Its systems are `perceive_belongings` in `PerceiveSet::Annotate`, `resolve_items` in `ResolveSet::Act`, `pulse_worn` in `ResolveSet::Triggers` before `land_triggers`, `fold_gear` and `restart_pulses` in `TurnSet::React`, `drop_what_the_dead_carried` in `CleanupSet::Remove` and `forget_removed_items` in `CleanupSet::Requeue`.
+It registers `ItemEvent` and the six actions `PickUp`, `DropItem`, `Equip`, `EquipFromGround`, `Unequip` and `UseItem`, and registers `DeathEvent` as a message it reads so that the dead can drop what they carried in a game with no combat plugin to write one, and `Cure` as one it writes, which in a game with no statuses nobody reads.
+Its systems are `perceive_belongings` in `PerceiveSet::Annotate`, `resolve_items` in `ResolveSet::Act`, `pulse_worn` in `ResolveSet::Triggers` before `land_triggers`, `end_unworn_holds` in `ResolveSet::Effects` before `resolve_afflictions`, `fold_gear` and `restart_pulses` in `TurnSet::React`, `drop_what_the_dead_carried` in `CleanupSet::Remove` and `forget_removed_items` in `CleanupSet::Requeue`.
 Every `Actor` is given an empty `StatBlock` as it is spawned, with `try_register_required_components` rather than the plain call, because the status plugin asks for the same one and the order a game lists its plugins in must not matter.
 What an item does at a moment is landed by `EffectsPlugin`, the same subsystem that lands a prop's trap and an ability, and `ItemsPlugin` only reports the moment.
 `ConsumablesPlugin` is what makes doing it cost the thing, opt-in on its own and needing no `AbilitiesPlugin`: it depends on `ItemsPlugin`, adds `EffectsPlugin` if the game has not, runs `spend_charges` in `ResolveSet::Triggers` after `land_triggers`, and runs `recharge_charges` in `TurnSet::React`.
@@ -54,10 +55,10 @@ A two-hander is `EquipShape::in_slot(main).and_claims(off)` and a ring is `in_an
 A use of an empty `Consumable` is impossible, so it costs the player nothing. So is a use of a thing that can be worn and is not, since a worn thing is used by wearing it.
 An accepted use writes `Fired` for the `use` moment at the user's cell, beside the `ItemEvent`.
 `ItemEvent` is what happened: `PickedUp` with the stack it `merged_into` when it merged, `Dropped`, `Equipped`, `Unequipped` for an item taken off by choice or displaced, `Used`, and `Thrown`.
-`fold_gear` runs whenever `Equipped` changed and rebuilds rather than edits: every modifier tagged `Source::Item` is dropped and each worn item's `Bestows` put back in slot order, so an item taken off takes its changes with it and a run restored from a save rebuilds its gear modifiers for nothing.
-A status's modifiers carry their own tag and are left where they are, and so is anything the game filed under `Source::Game`.
+`fold_gear` runs whenever `Equipped` changed and rebuilds rather than edits: every modifier tagged `Source::Item` is dropped and each worn item's `Bestows` put back in slot order, so an item taken off takes its changes with it and a run restored from a save rebuilds its gear modifiers for nothing, while a status's modifiers and anything the game filed under `Source::Game` carry tags of their own and are left where they are.
 `Loadout` reads an item's `Armor`, `Resists`, `MeleeAttack`, `RangedAttack` and `Strikes` straight off it at the moment of a blow, which is the other half of wearing something and needs no fold at all.
 `Triggers` is what a thing does at its moments, the component a prop carries too: `use` lands on the user where they stand, `land` where a throw comes down, `fire` and `hit` when a worn weapon shoots and strikes, each over its `Area`.
+A status a worn thing's trigger put on with `while_worn` is held by the thing, and `end_unworn_holds` cures it in the pass its holder is no longer wearing that thing, taken off, dropped, displaced from its slot, spent or despawned alike, since it asks only whether the thing is worn.
 `Pulse` is a worn thing's own clock: `pulse_worn` reports the `pulse` moment every `every` hundredths it is worn, on the wearer's cell and only on the current map, and `restart_pulses` starts it from nothing each time it is put on.
 `Consumable` is what those moments cost the thing: `left` of `max` charges, `WhenEmpty::Destroyed` or `Kept` at zero, and an optional `Recharge` on the clock.
 `SpendingMoments` says which moments spend, `use`, `land` and `fire` unless a game adds its own, and `spend_charges` takes one for each: one off `left`, else the next unit of the `Stack` starts full, else the item is marked `Spent`, or kept empty.
@@ -141,7 +142,7 @@ There is no aimed use with a cursor of its own, because that would be an ability
 Foundry drew the line the hard way: its stims were abilities for a day, which put two consumables on the abilities screen beside the one thing the commando knew, and its grenades were abilities whose cost destroyed the item that lent them.
 A trigger with no list of its own lands the item's shared `effects`, so a draught drunk and a draught thrown are one list delivered two ways.
 A use of an item with a `use` trigger is said by the narrator, `You use a stim.`; an item with no trigger reports `ItemEvent::Used` and the game answers it, in its own words, which is the escape hatch and is meant to be one: the bag cannot know that a crust of bread mends, and a use that did nothing would still have spent a turn.
-Nothing about wearing goes through effects, and none is offered: what a worn thing does is `Armor`, `Resists`, an attack and `Bestows`, every one of them a standing state, where a list of effects lands once and is done.
+What wearing a thing is worth while it stays on is `Armor`, `Resists`, an attack and `Bestows`, standing states that go through no effects, and what it does at a moment, a pulse or a use, is a list that lands once and is done, bridged to the wearing only by a status the thing holds, which the engine ends when the thing comes off so a game never writes the unwinding.
 The engine never names anything either, which is why `InventoryLayout` carries a title, a word for the bag and a line for when it is empty; the engine has no word for a sea chest and will not invent one.
 Affixes fold down to the vocabulary the rest of the rules already speak, changes to registered stats and dice of a registered damage kind, so an enchanted blade needs no new machinery on the way to a blow.
 The container screen is take-only, because putting things back is a stash mechanic and the engine has no opinion about stashes.

@@ -65,7 +65,7 @@ pub fn jam_sensors(
         } else {
             continue;
         }
-        afflict.write(Afflict { target: ev.target, status: sensors_down, turns: JAM_TURNS, by: ev.hit.attacker });
+        afflict.write(Afflict { target: ev.target, status: sensors_down, turns: JAM_TURNS, by: ev.hit.attacker, held_by: None });
     }
 }
 

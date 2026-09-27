@@ -321,7 +321,7 @@ mod tests {
         let (mut stage, might) = stage();
         let player = stage.player;
         let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
-        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None });
+        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None, held_by: None });
         stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(Source::Game(77), "a ring")).in_set(crate::ViewSet::Annotate));
         stage.tick();
         stage.tick();

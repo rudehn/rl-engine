@@ -71,6 +71,12 @@ These were settled in conversation and are not reopened here.
     `DamageDealt::dealt` for a heal is the health actually restored, so a mend at full health reports nought and the narrator says nothing.
 12. **Foundry is the first game to use any of it.**
     Two plates, a `cloaked` status with a badge, `levels.ron`, the commando drawn faded while unseen, and the save keeping a thing's level and its pulse.
+13. **A status a worn thing puts on its wearer can be held by it.**
+    An `Inflict` written `while_worn: true` and landed by a thing's trigger puts on a status held by that thing, which lasts only while its holder wears that very thing and ends, through the ordinary cure, in the pass it stops being worn: taken off, dropped, displaced from its slot, spent or despawned alike.
+    The user asked for it in so many words: "if you unequip the cloak armor, do you lose the cloak? it should only be active while equipped."
+    It is also the other half of decision 3: attunement stops a charged plate being swapped to, and holding stops a used one being swapped from, since without it the commando could cloak, swap to the nanite plate, and keep both.
+    A held status landed on somebody not wearing the thing, an area use reaching a bystander, is held by a thing its holder does not wear, so it ends on the next pass.
+    A held application that refreshes or extends an instance makes it held by the new thing; an unheld one leaves it held.
 
 ### The approaches weighed
 
@@ -114,7 +120,10 @@ These were settled in conversation and are not reopened here.
 - `Effect::describe(&self, registries: &Registries, level: i32) -> String`, and `Effects::describe(registries, level)`.
   This is a breaking change for a game's own effect, which adds the parameter; the CHANGELOG says so.
 - `Harm { kind, roll, per_level }` and `Mend { kind, roll, per_level }`: `per_level: i32`, default 0, added to the roll's bonus per level.
-- `Inflict { status, turns, per_level }`: `per_level: u32`, default 0, turns added per level.
+- `Inflict { status, turns, per_level, while_worn }`: `per_level: u32`, default 0, turns added per level; `while_worn: bool`, default false, which, for a landing whose `Source` is `Trigger { on, .. }`, writes the `Afflict` held by `on`, and adds ` while worn` to the line `describe` gives.
+- `Afflict::held_by: Option<Entity>`, and `ActiveStatus::held_by: Option<u64>`, opaque like `source` and read as `None` from a save written before it; `Statuses::apply_held` applies with a holder beside `Statuses::apply`, which applies without one.
+- `end_unworn_holds` in `crates/rl-bevy/src/items.rs`, registered by `ItemsPlugin` in `ResolveSet::Effects` before `resolve_afflictions`, writes a `Cure` for every held status whose thing is not in its holder's `Equipped` or no longer exists; `ItemsPlugin` registers `Cure` so a game with items and no statuses still runs.
+- `EntityState::held` in `rl-save` keeps each held status's name, turns and holder's save id, apart from `statuses` so an older save reads unchanged; a held status whose thing did not come back is not restored.
 - The bag describes a thing's triggers at the thing's own level.
 
 ## 5. Band and level
@@ -147,7 +156,7 @@ These were settled in conversation and are not reopened here.
   - `attuned: true` for a thing whose charges come back only while worn;
   - `enchant: (most:)` for a thing that rolls a level where it is found, at most `most`.
 - `nanite plate`: torso, armor 1, `pulse: (every: 1000, per_level: -100, fastest: 100)`, `enchant: (most: 9)`, a `pulse` trigger mending 1 `care`.
-- `cloak plate`: torso, armor 1, `attuned: true`, `consumable: (charges: 1, when_empty: Kept, recharge: 4000)`, `enchant: (most: 9)`, a `use` trigger inflicting `cloaked` for 10 turns with `per_level: 2`.
+- `cloak plate`: torso, armor 1, `attuned: true`, `consumable: (charges: 1, when_empty: Kept, recharge: 4000)`, `enchant: (most: 9)`, a `use` trigger inflicting `cloaked` for 10 turns with `per_level: 2` and `while_worn: true`, so the cloak ends when the plate comes off and the bag reads `use: cloaked for 10 turns while worn`.
 - `item_spawns.ron`: the nanite plate on decks 3 to 10 and the cloak plate on 1 to 10, weight 1 each; both carry `armor`, so a store crate's armor row draws them too.
 - `levels.ron`, loaded into the `Armory`:
 

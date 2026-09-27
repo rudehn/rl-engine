@@ -446,6 +446,30 @@ mod tests {
         assert_eq!(progress(&continued, back), before, "charged as far as it was");
     }
 
+    /// A commando cloaked by a worn plate is still cloaked when the run is
+    /// continued, and the cloak still lasts only while the plate is worn:
+    /// taken off after the continue, it ends.
+    #[test]
+    fn a_cloak_worn_through_a_save_still_ends_when_the_plate_comes_off() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::settle(&mut app);
+        let me = player(&mut app);
+        let plate = crate::testing::equip_new(&mut app, me, "cloak plate");
+        app.world_mut().get_mut::<Consumable>(plate).unwrap().left = 1;
+        app.world_mut().write_message(Intent::new(me, UseItem(plate)));
+        crate::testing::settle(&mut app);
+        assert!(app.world().get::<Unseen>(me).is_some(), "cloaked before the save");
+
+        save_run(app.world_mut()).expect("the run saves");
+        let text = app.world().resource::<Saves>().load(SLOT).unwrap().expect("a save");
+        let mut continued = crate::testing::continued(&text);
+        let me = player(&mut continued);
+        let plate = in_pack(&continued, me, "cloak plate");
+        assert!(continued.world().get::<Unseen>(me).is_some(), "and still cloaked after the continue");
+        crate::testing::unequip(&mut continued, me, plate);
+        assert!(continued.world().get::<Unseen>(me).is_none(), "the plate came off, and so did the cloak");
+    }
+
     /// Spawns `name` at `level` into `me`'s pack.
     fn carried_at(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
         let registries = app.world().resource::<Registries>().clone();

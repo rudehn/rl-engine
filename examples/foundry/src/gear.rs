@@ -1183,11 +1183,34 @@ mod tests {
         let fg = |app: &App| app.world().get::<Glyph>(player).map(|g| g.fg);
         assert_eq!(fg(&app), Some(crate::run::COMMANDO));
         let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
-        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 2, by: None });
+        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 2, by: None, held_by: None });
         crate::testing::pass_turns(&mut app, 1);
         assert_eq!(fg(&app), Some(crate::run::COMMANDO_UNSEEN), "faded while unseen");
         crate::testing::pass_turns(&mut app, 3);
         assert_eq!(fg(&app), Some(crate::run::COMMANDO), "and white once it wore off");
+    }
+
+    /// The cloak lasts only while the plate is worn: used charged and then
+    /// taken off, the commando is seen again and drawn white in the pass it
+    /// comes off, and the log says so once, and never again when the ten
+    /// turns it would have run are up.
+    #[test]
+    fn taking_the_cloak_plate_off_ends_the_cloak_and_says_so_once() {
+        let (mut app, player) = alone_and_wounded(13, 0);
+        let plate = crate::testing::equip_new(&mut app, player, "cloak plate");
+        app.world_mut().get_mut::<Consumable>(plate).unwrap().left = 1;
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        crate::testing::settle(&mut app);
+        let fg = |app: &App| app.world().get::<Glyph>(player).map(|g| g.fg);
+        assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
+        assert_eq!(fg(&app), Some(crate::run::COMMANDO_UNSEEN));
+
+        crate::testing::unequip(&mut app, player, plate);
+        assert!(app.world().get::<Unseen>(player).is_none(), "the plate is off, and so is the cloak");
+        assert_eq!(fg(&app), Some(crate::run::COMMANDO), "drawn white again");
+        crate::testing::pass_turns(&mut app, 12);
+        let said = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
+        assert_eq!(said, 1, "said once, when it came off");
     }
 
     /// A stim is no attack and leaves a cloaked commando unseen; a frag
@@ -1201,7 +1224,7 @@ mod tests {
         crate::testing::pick(&mut app, player, crate::upgrades::Upgrade::Stims);
         let stims = app.world().resource::<Abilities>().expect("stims");
         let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
-        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 10, by: None });
+        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 10, by: None, held_by: None });
         crate::testing::pass_turns(&mut app, 1);
         assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
 

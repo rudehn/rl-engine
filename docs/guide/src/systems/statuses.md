@@ -4,6 +4,7 @@
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/events.rs
             crates/rl-bevy/src/items.rs
+            crates/rl-bevy/src/effects/engine.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/stealth.rs
             crates/rl-bevy/src/turn.rs
@@ -15,7 +16,7 @@
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 4f2aabc8 -->
+     fingerprint: b84964d4 -->
 
 # Statuses
 
@@ -41,9 +42,11 @@ An unseen status hides whoever holds it from every mind while it lasts and ends 
 `status::load` reads them from RON by name, resolving every stat and damage kind through `Names` and reporting every unknown name in the file at once, so a game authors statuses in the words its other content uses.
 The definition is never deserialized as it stands, because its ids index registries a content file cannot see and a number written in one would land on a different stat the day the stat list is reordered.
 `Stacking` is `Refresh`, where the longer duration wins and which is the default, `Extend`, where durations add, `Stack`, where a second instance sits beside the first, and `Ignore`.
-`Afflicted` is the `Statuses` an actor carries, each an `ActiveStatus` of an id, the whole turns left, and an opaque source so a tick can credit whoever applied it.
-`Afflict { target, status, turns, by }` puts one on and `Cure { target, status }` takes one off, and each answers with a `StatusEvent`: `Applied` for a fresh one, a refresh or an extension, `Expired` when the time ran out, `Cured` when it was lifted.
+`Afflicted` is the `Statuses` an actor carries, each an `ActiveStatus` of an id, the whole turns left, an opaque source so a tick can credit whoever applied it, and an opaque `held_by`, the worn thing it lasts only while, if one holds it.
+`Afflict { target, status, turns, by, held_by }` puts one on and `Cure { target, status }` takes one off, and each answers with a `StatusEvent`: `Applied` for a fresh one, a refresh or an extension, `Expired` when the time ran out, `Cured` when it was lifted.
 `Statuses::apply` installs the definition's modifiers under a `Source::Status` tagged with the id and the instance, which is what makes removal exact when the same status stacks three deep.
+`Statuses::apply_held` does the same held by a thing, and a refresh or an extension it makes is held by that thing from then on, while one by `apply` leaves the holder as it was.
+The status plugin never reads the holder: the items plugin's `end_unworn_holds` writes a `Cure` for every held status whose thing its holder is not wearing, in `ResolveSet::Effects` before `resolve_afflictions`, so it ends in the pass the thing comes off, and one landed on somebody not wearing the thing ends on the next pass.
 `Statuses::tick` collects what every status deals into a `TickReport`, then takes a turn off each and strips the modifiers of whatever ran out.
 `tick_statuses` runs it once per `TurnEnd` and only for actors on the current map, so a monster on a floor nobody is standing on does not burn down while the player is elsewhere.
 Its damage becomes a `DamageEvent` carrying `Hit::from_status`, which names the status and credits whoever applied it but leaves `attacker` empty, so a poison tick cannot set off the riders a blow would.
@@ -90,6 +93,7 @@ A fact is the game's reading of an engine message, which is the only translation
 ## The line
 
 The status plugin acts on two things a status says: it installs and removes the stat modifiers, and it turns the tick into a hit; `unseen` is read by stealth, because who can see whom is stealth's question.
+Whether a status outlasts the thing that gave it is the game's to write, as `while_worn` on the `Inflict` that lands it, and the engine's to keep: which way it came off never matters, only whether the thing is still worn.
 Everything richer is the game's, keyed by the id: a status that silences an ability, one that walls a door, one that turns a body to stone is a system reading `StatusEvent` or `Afflicted` and doing the rest.
 Whether anything is inflicted at all is the game's too, and the shape the randomness rule points at is a system reading `DamageDealt` and writing `Afflict` with a chance drawn from the game's own stream, never the engine's, so a rule a game adds cannot shift the dice of the blows the engine has yet to throw.
 The engine also never decides that a status is worth saying out loud: it writes the three events and a game turns the ones about its player into words, which is why every phrase about an affliction lives in a game or in the narrator's table.
