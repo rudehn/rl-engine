@@ -115,8 +115,10 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // or a blow next door reads about a third of it, and a probe's
         // klaxon, at eight times a shot, pegs it and then falls away over
         // the turns after. Scaled to the shot alone, everything pegged and
-        // the bar said only "something happened".
-        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals").noise("noise", 3000),
+        // the bar said only "something happened". No turn and position:
+        // the strip's last row is the badges', and a line that showed only
+        // while no status did would come and go.
+        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals").noise("noise", 3000).without_whereabouts(),
         // What is worn, with each blaster's heat as a facet on its row.
         GearPanel::new(screen.gear),
         // One mark for every cell a screen points at: the rail's tab
@@ -307,19 +309,21 @@ mod tests {
 
     /// A status's badge has a row of its own on the vitals strip, under
     /// the noise gauge and above the worn gear, so the cloak's `%` is on
-    /// screen for as long as the commando is cloaked.
+    /// screen for as long as the commando is cloaked; with no badge the
+    /// row is blank, never the turn and position, which would come and go
+    /// with every status.
     #[test]
     fn a_status_badge_is_drawn_on_the_vitals_strip_above_the_worn_gear() {
         let mut app = on_screen(RunSeed(7));
+        let rail = |app: &App, y: i32| row(app, y).chars().skip((COLS - RAIL) as usize).collect::<String>().trim_end().to_string();
+        assert_eq!(rail(&app, VITALS_ROWS - 1), "", "blank with no badge to show");
         let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
         app.world_mut().write_message(Afflict { target: me, status: cloaked, turns: 10, by: None });
         app.update();
         app.update();
-        let rail = |y: i32| row(&app, y).chars().skip((COLS - RAIL) as usize).collect::<String>().trim_end().to_string();
-        let vitals: Vec<String> = (0..VITALS_ROWS).map(rail).collect();
-        assert!(vitals.iter().any(|r| r == "%"), "the badge, on a row of its own: {vitals:#?}");
-        assert!(rail(VITALS_ROWS).starts_with("Worn"), "and the gear still under it: {:?}", rail(VITALS_ROWS));
+        assert_eq!(rail(&app, VITALS_ROWS - 1), "%", "the badge, on the last row of the strip");
+        assert!(rail(&app, VITALS_ROWS).starts_with("Worn"), "and the gear still under it: {:?}", rail(&app, VITALS_ROWS));
     }
 
     /// The log reads in the order things happened: a probe that spots the
