@@ -6,8 +6,8 @@
 //! the dead left as wrecks, every deck built, the clock and what the
 //! commando has seen. Foundry says only what each kind of thing it spawns
 //! is: the commando and whether its lamp was lit, a droid by its
-//! definition, an item by its definition and its heat, a lift by how it is
-//! drawn. What Foundry keeps of a run outside its entities, the upgrades
+//! definition, an item by its definition, its level and its heat, a lift
+//! by how it is drawn. What Foundry keeps of a run outside its entities, the upgrades
 //! taken and the deepest deck reached, goes through [`SaveableState`], and
 //! the mission's tracker and ledger are the engine's to save.
 //!
@@ -138,13 +138,21 @@ impl Saveable for Kind {
     }
 }
 
-/// An item, as the save writes it: what it was made from, and how hot it
-/// runs if it runs hot at all, which is the one thing about an item the
-/// run changes that the engine does not keep.
+/// An item, as the save writes it: what it was made from, the level it
+/// was found at, and how hot it runs if it runs hot at all, which are the
+/// things about an item the engine does not keep.
+///
+/// The level rather than the clock it makes: the level is what the item
+/// is, and a respawn at it writes the pulse's period and the name from it
+/// again, as the find did. The engine keeps the charges and the progress.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemSave {
     /// The definition's name.
     pub def: String,
+    /// Its enchant level; nought for a plain thing and for a save written
+    /// before levels were.
+    #[serde(default)]
+    pub level: i32,
     /// Heat carried, and whether it had locked.
     #[serde(default)]
     pub heat: Option<(u32, bool)>,
@@ -156,7 +164,11 @@ impl Saveable for ItemKind {
     fn capture(world: &World, entity: Entity) -> ItemSave {
         let kind = world.get::<ItemKind>(entity).expect("an item's kind");
         let armory = world.resource::<crate::gear::Armory>();
-        ItemSave { def: armory.defs.name(kind.0).to_string(), heat: world.get::<Heat>(entity).map(|h| (h.now, h.locked)) }
+        ItemSave {
+            def: armory.defs.name(kind.0).to_string(),
+            level: world.get::<Enchant>(entity).map_or(0, |e| e.level),
+            heat: world.get::<Heat>(entity).map(|h| (h.now, h.locked)),
+        }
     }
 
     fn restore(world: &mut World, saved: &ItemSave) -> Entity {
@@ -166,7 +178,7 @@ impl Saveable for ItemKind {
         };
         let e = spawned(world, |commands, world| {
             let armory = world.resource::<crate::gear::Armory>();
-            crate::gear::spawn_item(commands, armory, id, world.resource::<Registries>())
+            crate::gear::spawn_item_at(commands, armory, id, saved.level, world.resource::<Registries>())
         });
         if let (Some((now, locked)), Some(mut heat)) = (saved.heat, world.get_mut::<Heat>(e)) {
             heat.now = now;
@@ -389,6 +401,48 @@ mod tests {
         assert_eq!(looks(&mut continued), before);
         crate::testing::pass_turns(&mut continued, 5);
         assert_eq!(*continued.world().resource::<State<EngineState>>().get(), EngineState::Playing, "and it plays on");
+    }
+
+    /// A cloak plate found at `+2`, worn and half charged, comes back a
+    /// `+2`, worn, and as far charged as it was: a continued run is not a
+    /// fresh putting-on.
+    #[test]
+    fn a_leveled_worn_thing_comes_back_at_its_level_and_its_charge() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::settle(&mut app);
+        let me = player(&mut app);
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = crate::testing::armory_of(&app);
+        let plate = {
+            let mut queue = CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, app.world_mut());
+            let plate = crate::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect("cloak plate"), 2, &registries);
+            queue.apply(app.world_mut());
+            plate
+        };
+        app.world_mut().get_mut::<Inventory>(me).unwrap().items.push(plate);
+        app.world_mut().write_message(Intent::new(me, Equip(plate)));
+        app.update();
+        crate::testing::pass_turns(&mut app, 20);
+        let progress = |app: &App, item: Entity| app.world().get::<Consumable>(item).and_then(|c| c.recharge).map(|r| r.progress);
+        let before = progress(&app, plate);
+        assert!(before.is_some_and(|p| p > 0), "half charged: {before:?}");
+
+        save_run(app.world_mut()).expect("the run saves");
+        let text = app.world().resource::<Saves>().load(SLOT).unwrap().expect("a save");
+        let mut continued = crate::testing::continued(&text);
+        let me = player(&mut continued);
+        let world = continued.world();
+        let back = world
+            .get::<Inventory>(me)
+            .unwrap()
+            .items
+            .iter()
+            .copied()
+            .find(|i| world.get::<Name>(*i).is_some_and(|n| n.as_str() == "cloak plate +2"))
+            .expect("a cloak plate +2 in the pack");
+        assert!(world.get::<Equipped>(me).is_some_and(|w| w.slot_of(back).is_some()), "and worn");
+        assert_eq!(progress(&continued, back), before, "charged as far as it was");
     }
 
     /// The uplink's extra tile of reach, on a gun worn when the run was

@@ -38,18 +38,38 @@ A container's `ContentRoll` is `Stock::Item`, a named item in a count, or `Stock
 
 ## Using it
 
-A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's band is its number, and its floor has one item beside every armory mark, two beside every store and `3 + deck` more.
+A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's band is its number, its floor has one item beside every armory mark, two beside every store and `3 + deck` more, and a thing that can be enchanted rolls its level from the armory's `LevelTable` at the band it is found at.
 
 <!-- include: ../../../../examples/foundry/src/gear.rs:maker -->
 ```rust,no_run
 /// The engine's loot is made here: what lies on a deck when it is first
 /// entered, what a kill leaves, and what a crate or a locker holds. A
-/// deck's band is its number, and Foundry has no streamed surface.
+/// deck's band is its number, and Foundry has no streamed surface. The
+/// armory makes each thing, rolling a level from `levels.ron` at the band
+/// it is found at for a thing that names an `enchant`.
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<ItemDef>, count: u32, _: Provenance, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
-        spawn_items(commands, self, def, count, registries)
+    fn make(
+        &self,
+        commands: &mut Commands,
+        registries: &Registries,
+        def: Id<ItemDef>,
+        count: u32,
+        from: Provenance,
+        rng: &mut rand::rngs::StdRng,
+    ) -> Vec<Entity> {
+        let d = self.defs.get(def);
+        if d.stack {
+            return spawn_items(commands, self, def, count, registries);
+        }
+        // Each its own roll: two plates from one crate are two finds.
+        (0..count)
+            .map(|_| {
+                let level = d.enchant.map_or(0, |e| self.levels.roll(from.band, rng).min(e.most));
+                spawn_item_at(commands, self, def, level, registries)
+            })
+            .collect()
     }
 
     fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {

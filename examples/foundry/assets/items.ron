@@ -13,14 +13,18 @@
 //              row asks for by tag, as well as what a weapon's ammo and a lock name
 //   effects:   optional; [(kind:, chance:, args:)] what the thing holds, written as an
 //              ability's effects are in abilities.ron: landed by any trigger with no list of
-//              its own, so a thing says what it holds once and each trigger delivers it
+//              its own, so a thing says what it holds once and each trigger delivers it; a
+//              Harm or a Mend may add per_level: to its roll's bonus, and an Inflict per_level:
+//              to its turns, for each level of an enchanted thing that lands it
 //   triggers:  optional; [(on:, area:, fires:, effects:, look:)] what it does at its moments: on is
-//              "use" (used from the pack, lands on the user where they stand) | "land" (a
-//              throw comes to rest) | "fire" (an attack is made with it) | "hit" (that
-//              attack strikes, lands where the target stands); area is Here (default) |
-//              Burst(radius:); fires is how many times it may go off, every time when left
-//              out; effects is its own list, the thing's shared effects when left out; look
-//              is optional, (glyph:, color: (r:, g:, b:)) shown over every cell it lands on
+//              "use" (used from the pack, or while worn for a thing that is worn; lands on
+//              the user where they stand) | "land" (a throw comes to rest) | "fire" (an
+//              attack is made with it) | "hit" (that attack strikes, lands where the target
+//              stands) | "pulse" (a worn thing's clock came round; lands on the wearer); area
+//              is Here (default) | Burst(radius:); fires is how many times it may go off,
+//              every time when left out; effects is its own list, the thing's shared effects
+//              when left out; look is optional, (glyph:, color: (r:, g:, b:)) shown over every
+//              cell it lands on
 //   consumable: optional; (charges:, when_empty:, recharge:) what a use, a landing or a shot
 //              costs it: charges a fresh unit holds, Destroyed | Kept at the last, and
 //              recharge, optional, hundredths of a step per charge regained
@@ -41,6 +45,14 @@
 //   heat:      optional; (per shot, vent per quiet turn); the weapon locks at 100 until it cools to 0
 //   ammo:      optional; the tag of what one shot spends, as "slug"
 //   dark_sight: optional; tiles seen without light while worn
+//   pulse:     optional; (every:, per_level:, fastest:) a clock that comes round while it is
+//              worn, every `every` hundredths of a step at +0, `per_level` added per level,
+//              never shorter than `fastest`; what it does is its "pulse" trigger, and a
+//              thing with one must have the other
+//   attuned:   optional; true for a worn thing whose charges come back only while it is
+//              worn and which is empty each time it is put on
+//   enchant:   optional; (most:) a worn thing found about the decks rolls a level from
+//              levels.ron at the deck it is found on, at most `most`; absent, always plain
 //   stack:     optional; whether copies merge into one counted entry
 #![enable(implicit_some)]
 [
@@ -91,4 +103,18 @@
     (name: "composite plate", glyph: '[', color: (0.9, 0.9, 0.85), slot: "torso", tags: ["armor"], armor: 2, resists: [("energy", 10)]),
     (name: "combat gauntlets", glyph: '[', color: (0.7, 0.7, 0.7), slot: "arms", tags: ["armor"], armor: 1),
     (name: "armored greaves", glyph: '[', color: (0.65, 0.65, 0.6), slot: "legs", tags: ["armor"], armor: 1),
+    // Knits its wearer's wounds, a point every ten turns while it is
+    // worn, and a turn quicker for every level, to a point every turn at
+    // +9. The clock starts when it goes on, so it is a plate to live in,
+    // not to swap to.
+    (name: "nanite plate", glyph: '[', color: (0.55, 0.9, 0.7), slot: "torso", tags: ["armor"], armor: 1,
+     pulse: (every: 1000, per_level: -100, fastest: 100), enchant: (most: 9),
+     triggers: [(on: "pulse", effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]),
+    // Used while worn, nothing sees the commando for ten turns, two more
+    // for every level, or until they strike. Its one charge comes back
+    // over forty turns worn, and it is empty each time it goes on, so it
+    // cannot be carried charged and swapped to.
+    (name: "cloak plate", glyph: '[', color: (0.5, 0.55, 0.8), slot: "torso", tags: ["armor"], armor: 1,
+     attuned: true, consumable: (charges: 1, when_empty: Kept, recharge: 4000), enchant: (most: 9),
+     triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "cloaked", turns: 10, per_level: 2))])]),
 ]

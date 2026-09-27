@@ -43,4 +43,9 @@
     (item: "composite plate",    bands: (2, 10), weight: 2),
     (item: "combat gauntlets",   bands: (1, 10), weight: 2),
     (item: "armored greaves",    bands: (1, 10), weight: 2),
+    // The two plates with a use of their own, rarer than plate that is
+    // only plate: a cloak from the first deck, a mending plate from the
+    // third.
+    (item: "nanite plate",       bands: (3, 10), weight: 1),
+    (item: "cloak plate",        bands: (1, 10), weight: 1),
 ]

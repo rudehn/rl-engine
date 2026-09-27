@@ -29,6 +29,25 @@ mod tests {
 
     use super::*;
 
+    /// What the decks hand out gets better the deeper it is, over a
+    /// thousand draws a deck: deck one is plain but for the odd `+1`, deck
+    /// nine is never plain, and `+5` waits for the last band.
+    #[test]
+    fn enchant_levels_climb_from_a_rare_plus_one_on_deck_one_to_plus_five_on_the_last() {
+        let registries = crate::content::registries();
+        let armory = crate::testing::armory(&registries);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let mut draws = |band: i32| (0..1000).map(|_| armory.levels.roll(band, &mut rng)).collect::<Vec<i32>>();
+        let first = draws(1);
+        let ones = first.iter().filter(|l| **l == 1).count();
+        assert!(first.iter().all(|l| (0..=1).contains(l)), "deck one is plain or +1");
+        assert!((50..=160).contains(&ones), "and +1 is an uncommon surprise, about one in ten: {ones} of 1000");
+        assert!(draws(9).iter().all(|l| (1..=4).contains(l)), "deck nine is never plain, and +5 waits for the last");
+        let last = draws(10);
+        assert!(last.contains(&5) && last.iter().all(|l| (2..=5).contains(l)), "the last deck reaches +5");
+        assert!(draws(40).iter().all(|l| (2..=5).contains(l)), "a crate past the last deck reads the last row");
+    }
+
     /// Every kind a crate or a locker asks for is found at every deck it
     /// could stand on, offset included, so no container on any deck falls
     /// back to another deck's things or comes up empty.

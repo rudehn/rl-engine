@@ -1,0 +1,21 @@
+// How good a thing is where it is found: the enchant level a worn thing
+// that names `enchant` in items.ron rolls at the deck it is found on, or
+// the deck a crate or a slot draws at, capped at the thing's own `most`.
+//
+// Every field:
+//   bands:  (first, last), the decks the row covers, both included; no two
+//           rows share a deck, and a deck past the last row reads the last
+//   levels: [(level, weight)], each level nought or more and each weight
+//           more than nought; only the ratio of the weights matters, and a
+//           row of one level is that level every time
+[
+    // An uncommon +1 from the first deck, one find in ten.
+    (bands: (1, 2),   levels: [(0, 9), (1, 1)]),
+    (bands: (3, 4),   levels: [(0, 6), (1, 3), (2, 1)]),
+    (bands: (5, 6),   levels: [(0, 3), (1, 4), (2, 2), (3, 1)]),
+    (bands: (7, 8),   levels: [(0, 1), (1, 3), (2, 3), (3, 2), (4, 1)]),
+    (bands: (9, 9),   levels: [(1, 2), (2, 3), (3, 3), (4, 2)]),
+    // +5 only here: the last deck, or a locker asking two decks down
+    // from deck eight.
+    (bands: (10, 10), levels: [(2, 2), (3, 3), (4, 3), (5, 2)]),
+]
