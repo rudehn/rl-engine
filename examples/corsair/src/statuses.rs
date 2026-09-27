@@ -78,3 +78,43 @@ fn describe(name: &str) -> &str {
         _ => name,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rl_engine::rl_core::RunSeed;
+
+    use super::*;
+    use crate::items::{Armory, ItemKind};
+
+    /// Drinking the bottle puts heart in the captain, and the log says so
+    /// once, in the good tone: Corsair's own line, with every engine
+    /// phrase for a status on the player silenced, a boon's included.
+    #[test]
+    fn drinking_the_bottle_says_you_are_hearty_once_as_good_news() {
+        let dir = std::env::temp_dir().join(format!("corsair-hearty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = crate::testing::headless(RunSeed(7), false, &dir);
+        app.add_plugins(crate::narrator()).add_systems(Update, narrate_statuses.in_set(PresentSet::Narrate));
+        app.update();
+        app.update();
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let rum_kind = app.world().resource::<Armory>().defs.expect("bottle of rum");
+        let rum = {
+            let w = app.world();
+            w.get::<Inventory>(me)
+                .expect("a bag")
+                .items
+                .iter()
+                .copied()
+                .find(|i| w.get::<ItemKind>(*i).is_some_and(|k| k.0 == rum_kind))
+                .expect("a bottle of rum")
+        };
+        app.world_mut().write_message(Intent::new(me, UseItem(rum)));
+        app.update();
+        app.update();
+
+        let hearty: Vec<_> = app.world().resource::<MessageLog>().iter().filter(|e| e.text == "You are hearty.").map(|e| (e.count, e.tone)).collect();
+        assert_eq!(hearty, vec![(1, Tones::GOOD)], "one line, said once, as good news");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
