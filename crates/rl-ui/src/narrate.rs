@@ -168,9 +168,12 @@ pub enum Phrase {
     YouCannotUse,
     /// A status was put on you.
     YouAreAfflicted,
-    /// A status on you ran out.
+    /// A status that is a boon was put on you: the same words as
+    /// [`Phrase::YouAreAfflicted`], told as good news.
+    YouGainABoon,
+    /// A status on you ran out, or a boon on you was broken off.
     YouAreNoLonger,
-    /// A status on you was cured.
+    /// A status on you that is not a boon was cured.
     YourAfflictionPasses,
     /// A status was put on someone else.
     IsAfflicted,
@@ -511,6 +514,10 @@ impl Witness<'_, '_> {
         self.registries.as_deref().map(|r| r.statuses.name(id).to_string()).unwrap_or_default()
     }
 
+    fn is_boon(&self, id: rl_rules::StatusId) -> bool {
+        self.registries.as_deref().is_some_and(|r| r.statuses.get(id).boon)
+    }
+
     fn ability_name(&self, id: rl_rules::AbilityId) -> String {
         self.abilities.as_deref().map(|a| a.get(id).name.clone()).unwrap_or_default()
     }
@@ -690,9 +697,14 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
     }
     for ev in heard.statuses.read() {
         let (target, status, phrase) = match *ev {
-            StatusEvent::Applied { target, status } => (target, status, if witness.is_you(target) { Phrase::YouAreAfflicted } else { Phrase::IsAfflicted }),
+            StatusEvent::Applied { target, status } if !witness.is_you(target) => (target, status, Phrase::IsAfflicted),
+            StatusEvent::Applied { target, status } => (target, status, if witness.is_boon(status) { Phrase::YouGainABoon } else { Phrase::YouAreAfflicted }),
             StatusEvent::Expired { target, status } if witness.is_you(target) => (target, status, Phrase::YouAreNoLonger),
-            StatusEvent::Cured { target, status } if witness.is_you(target) => (target, status, Phrase::YourAfflictionPasses),
+            // A boon broken off, a cloak ended by a blow, is lost rather
+            // than cured: the player is not glad of it.
+            StatusEvent::Cured { target, status } if witness.is_you(target) => {
+                (target, status, if witness.is_boon(status) { Phrase::YouAreNoLonger } else { Phrase::YourAfflictionPasses })
+            }
             _ => continue,
         };
         let mut said = say(phrase, Some(target), None);
@@ -789,7 +801,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 63] = [
+        let table: [(Phrase, &str, ToneId); 64] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -845,9 +857,12 @@ impl Default for Phrasebook {
             (UsesOn, "{Who} uses {named} on {whom}.", Tones::BAD),
             (UsesOnMany, "{Who} uses {named}, catching {n}.", Tones::BAD),
             (YouCannotUse, "You cannot use {named}: {detail}.", Tones::BAD),
+            // A status is named as what its holder is, "cloaked" or
+            // "scorched", so every line about one says "you are".
             (YouAreAfflicted, "You are {named}.", Tones::BAD),
+            (YouGainABoon, "You are {named}.", Tones::GOOD),
             (YouAreNoLonger, "You are no longer {named}.", Tones::MUTED),
-            (YourAfflictionPasses, "The {named} passes.", Tones::GOOD),
+            (YourAfflictionPasses, "You are no longer {named}.", Tones::GOOD),
             (IsAfflicted, "{Who} is {named}.", Tones::NOTICE),
             (YourLightGoesOut, "Your light gutters and goes out.", Tones::BAD),
             (LightGoesOut, "{What} gutters and goes out.", Tones::MUTED),
@@ -1467,6 +1482,41 @@ mod tests {
         stage.tick();
         let said = spoken(&stage, &["You", "The line droid"]);
         assert!(said.is_empty(), "a heal that restored nothing is not a line: {said:#?}");
+    }
+
+    /// A status is told in the words its name is written for, "You are
+    /// cloaked." and "You are no longer cloaked.", however it ends; and in
+    /// the tone of what it is to the player: an affliction landing is bad
+    /// news and its cure good, a boon landing is good news and its end, run
+    /// out or broken off, only a note.
+    #[test]
+    fn a_status_on_the_player_is_told_as_good_or_bad_news_by_whether_it_is_a_boon() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let defs = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked").boon(), rl_rules::StatusDef::new("scorched")]).unwrap();
+        let (cloaked, scorched) = (defs.expect("cloaked"), defs.expect("scorched"));
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
+        let target = stage.player;
+        for ev in [
+            StatusEvent::Applied { target, status: cloaked },
+            StatusEvent::Cured { target, status: cloaked },
+            StatusEvent::Applied { target, status: scorched },
+            StatusEvent::Cured { target, status: scorched },
+            StatusEvent::Applied { target, status: cloaked },
+            StatusEvent::Expired { target, status: cloaked },
+        ] {
+            stage.app.world_mut().write_message(ev);
+            stage.tick();
+        }
+        let said: Vec<(String, ToneId)> = lines(&stage).into_iter().filter(|(t, _)| t.starts_with("You are")).collect();
+        let expected = [
+            ("You are cloaked.", Tones::GOOD),
+            ("You are no longer cloaked.", Tones::MUTED),
+            ("You are scorched.", Tones::BAD),
+            ("You are no longer scorched.", Tones::GOOD),
+            ("You are cloaked.", Tones::GOOD),
+            ("You are no longer cloaked.", Tones::MUTED),
+        ];
+        assert_eq!(said, expected.map(|(t, tone)| (t.to_string(), tone)).to_vec());
     }
 
     /// A shooter the player cannot see is not named, even though the line

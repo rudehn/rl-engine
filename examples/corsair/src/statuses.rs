@@ -59,7 +59,10 @@ pub fn narrate_statuses(
     let turn = turns.turn_number();
     for ev in events.read() {
         let (target, text, cat) = match *ev {
-            StatusEvent::Applied { target, status } => (target, format!("You are {}.", describe(registries.statuses.name(status))), Tones::BAD),
+            StatusEvent::Applied { target, status } => {
+                let tone = if registries.statuses.get(status).boon { Tones::GOOD } else { Tones::BAD };
+                (target, format!("You are {}.", describe(registries.statuses.name(status))), tone)
+            }
             StatusEvent::Expired { target, status } => (target, format!("You are no longer {}.", describe(registries.statuses.name(status))), Tones::MUTED),
             StatusEvent::Cured { target, status } => (target, format!("The {} passes.", registries.statuses.name(status)), Tones::GOOD),
         };

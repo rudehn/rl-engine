@@ -14,7 +14,8 @@
             crates/rl-rules/src/events/ledger.rs
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
-     fingerprint: af4e96d4 -->
+            crates/rl-ui/src/narrate.rs
+     fingerprint: 4f2aabc8 -->
 
 # Statuses
 
@@ -35,7 +36,7 @@ A game that inserted neither has nothing listening and is told so, loudly, the m
 
 ## The model
 
-`StatusDef` is a `name`, a `stacking` rule, a list of `modifiers`, an optional `tick_damage` as a kind and an amount, an optional `badge` of one character a panel may draw, and `unseen`, false unless a status file writes `unseen: true` or the builder `unseen()` sets it.
+`StatusDef` is a `name`, a `stacking` rule, a list of `modifiers`, an optional `tick_damage` as a kind and an amount, an optional `badge` of one character a panel may draw, `unseen`, false unless a status file writes `unseen: true` or the builder `unseen()` sets it, and `boon`, false unless a status file writes `boon: true` or the builder `boon()` sets it.
 An unseen status hides whoever holds it from every mind while it lasts and ends when its holder attacks, which `StealthPlugin` decides and this plugin knows nothing of; without stealth the flag is carried and read by nobody.
 `status::load` reads them from RON by name, resolving every stat and damage kind through `Names` and reporting every unknown name in the file at once, so a game authors statuses in the words its other content uses.
 The definition is never deserialized as it stands, because its ids index registries a content file cannot see and a number written in one would land on a different stat the day the stat list is reordered.
@@ -92,6 +93,7 @@ The status plugin acts on two things a status says: it installs and removes the 
 Everything richer is the game's, keyed by the id: a status that silences an ability, one that walls a door, one that turns a body to stone is a system reading `StatusEvent` or `Afflicted` and doing the rest.
 Whether anything is inflicted at all is the game's too, and the shape the randomness rule points at is a system reading `DamageDealt` and writing `Afflict` with a chance drawn from the game's own stream, never the engine's, so a rule a game adds cannot shift the dice of the blows the engine has yet to throw.
 The engine also never decides that a status is worth saying out loud: it writes the three events and a game turns the ones about its player into words, which is why every phrase about an affliction lives in a game or in the narrator's table.
+`boon` is the one thing a status says for the words alone: the rules never read it, and the narrator tells a boon landing as good news and its end as a note, so a cloak is not announced in the tone of a wound.
 What a panel shows of a status is the same division: `badge` is the one character the engine offers, and anything else is a `Facet` the game pushes onto a row in `ViewSet::Annotate`, a key interned in `Facets`, the words, and a tone.
 A facet is an escape hatch and its use is a signal, so two games pushing the same key is the argument for putting that field in the view instead.
 A stat is content, which is the reason nothing in the engine names one: `CombatRules` is handed the stat it should read as armor, an affix names the stat it sharpens, and a status names the stat it moves.

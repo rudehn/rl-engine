@@ -163,14 +163,15 @@ pub fn registries() -> Registries {
     // Scorched is what standing in fire leaves on whoever stood there, a
     // point a turn for as long as `run::start`'s `FireRules` says. Cloaked,
     // last, ticks nothing: it hides whoever holds it and does no more.
+    // Mending and cloaked are boons, so the log tells them as good news.
     let thermal = damage_kinds.expect("thermal");
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") },
-        StatusDef { badge: Some('+'), ..StatusDef::new("mending").ticks(care, -MEND_PER_TURN) },
+        StatusDef { badge: Some('+'), ..StatusDef::new("mending").ticks(care, -MEND_PER_TURN).boon() },
         StatusDef { badge: Some('^'), ..StatusDef::new("scorched").ticks(thermal, 1) },
         // What a cloak plate's charge puts on its wearer: nothing sees them
         // until it runs out or they strike.
-        StatusDef { badge: Some('%'), ..StatusDef::new("cloaked").unseen() },
+        StatusDef { badge: Some('%'), ..StatusDef::new("cloaked").unseen().boon() },
     ])
     .unwrap();
     // Smoke is the one gas: what a smoke grenade throws and what anything

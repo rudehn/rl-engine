@@ -62,6 +62,11 @@ pub struct StatusDef {
     /// means is stealth's to say: no mind perceives the holder and no
     /// observer notices it, and an attack it makes ends it.
     pub unseen: bool,
+    /// Whether holding it is good for the holder, a cloak or a mend rather
+    /// than a poison. The rules never read it; it is what a narrator tells
+    /// good news from bad by, so a game's log does not announce a gift in
+    /// the tone of a wound.
+    pub boon: bool,
 }
 
 fn refresh() -> Stacking {
@@ -71,7 +76,7 @@ fn refresh() -> Stacking {
 impl StatusDef {
     /// A status with no effects.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None, unseen: false }
+        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None, unseen: false, boon: false }
     }
 
     /// Sets the stacking rule.
@@ -96,6 +101,12 @@ impl StatusDef {
     /// Makes whoever holds it unseen while it lasts.
     pub fn unseen(mut self) -> Self {
         self.unseen = true;
+        self
+    }
+
+    /// Marks it good for whoever holds it.
+    pub fn boon(mut self) -> Self {
+        self.boon = true;
         self
     }
 }
@@ -123,6 +134,8 @@ struct Authored {
     badge: Option<char>,
     #[serde(default)]
     unseen: bool,
+    #[serde(default)]
+    boon: bool,
 }
 
 impl Named for Authored {
@@ -147,6 +160,8 @@ impl Named for Authored {
 /// - `badge`: one character a panel may draw beside a health bar.
 /// - `unseen`: `true` for a status whose holder nothing can see while it
 ///   lasts; `false`, the default, otherwise.
+/// - `boon`: `true` for a status that is good for its holder, which a
+///   narrator tells as good news; `false`, the default, otherwise.
 ///
 /// Reports every unknown name in the file at once.
 pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, ContentError> {
@@ -168,7 +183,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
                 None
             }
         });
-        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge, unseen: a.unseen });
+        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge, unseen: a.unseen, boon: a.boon });
     }
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
@@ -407,6 +422,15 @@ mod tests {
         assert!(loaded.get(loaded.expect("hidden")).unseen);
         assert!(!loaded.get(loaded.expect("dazed")).unseen);
         assert!(StatusDef::new("hidden").unseen().unseen);
+    }
+
+    #[test]
+    fn a_status_can_be_written_a_boon_and_is_not_one_unless_it_says_so() {
+        let names = Names::new();
+        let loaded = load(r#"[(name: "hearty", boon: true), (name: "dazed")]"#, &names).expect("it loads");
+        assert!(loaded.get(loaded.expect("hearty")).boon);
+        assert!(!loaded.get(loaded.expect("dazed")).boon);
+        assert!(StatusDef::new("hearty").boon().boon);
     }
 
     #[test]
