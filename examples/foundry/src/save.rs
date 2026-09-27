@@ -445,6 +445,59 @@ mod tests {
         assert_eq!(progress(&continued, back), before, "charged as far as it was");
     }
 
+    /// Spawns `name` at `level` into `me`'s pack.
+    fn carried_at(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = crate::testing::armory_of(app);
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, app.world_mut());
+        let thing = crate::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect(name), level, &registries);
+        queue.apply(app.world_mut());
+        app.world_mut().get_mut::<Inventory>(me).unwrap().items.push(thing);
+        thing
+    }
+
+    /// The one thing in `me`'s pack called `name`.
+    fn in_pack(app: &App, me: Entity, name: &str) -> Entity {
+        let world = app.world();
+        let pack = &world.get::<Inventory>(me).unwrap().items;
+        pack.iter().copied().find(|i| world.get::<Name>(*i).is_some_and(|n| n.as_str() == name)).unwrap_or_else(|| panic!("a {name} in the pack"))
+    }
+
+    /// A charged cloak plate in the pack and a `+3` nanite plate worn part
+    /// way to its next mend come back with the charge, the pulse's
+    /// progress, and the period its level gives it: the same charge,
+    /// progress and level, as spec section 8.5 asks.
+    #[test]
+    fn a_charged_plate_in_the_pack_and_a_nanite_plate_mid_pulse_come_back_as_they_were() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        crate::testing::settle(&mut app);
+        let me = player(&mut app);
+        let cloak = carried_at(&mut app, me, "cloak plate", 2);
+        let nanite = carried_at(&mut app, me, "nanite plate", 3);
+        app.world_mut().write_message(Intent::new(me, Equip(nanite)));
+        app.update();
+        crate::testing::pass_turns(&mut app, 4);
+        // Charged in the pack: an attuned thing keeps what it holds until
+        // it goes on, and this one has never been on.
+        app.world_mut().get_mut::<Consumable>(cloak).unwrap().left = 1;
+        let pulse = *app.world().get::<Pulse>(nanite).expect("a clock");
+        assert_eq!(pulse.every, 700, "a +3 nanite plate comes round every seven turns");
+        assert!(pulse.progress > 0 && pulse.progress < pulse.every, "part way round: {pulse:?}");
+
+        save_run(app.world_mut()).expect("the run saves");
+        let text = app.world().resource::<Saves>().load(SLOT).unwrap().expect("a save");
+        let mut continued = crate::testing::continued(&text);
+        let me = player(&mut continued);
+        let cloak = in_pack(&continued, me, "cloak plate +2");
+        let nanite = in_pack(&continued, me, "nanite plate +3");
+        let world = continued.world();
+        assert_eq!(world.get::<Consumable>(cloak).map(|c| c.left), Some(1), "the cloak plate still charged");
+        assert!(world.get::<Equipped>(me).is_some_and(|w| w.slot_of(nanite).is_some()), "the nanite plate still worn");
+        let back = world.get::<Pulse>(nanite).expect("a clock");
+        assert_eq!((back.every, back.progress), (pulse.every, pulse.progress), "the same period and as far round");
+    }
+
     /// The uplink's extra tile of reach, on a gun worn when the run was
     /// saved, comes back once: given again by the upgrade, not saved on
     /// the gun and then given a second time.

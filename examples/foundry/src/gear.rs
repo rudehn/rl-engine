@@ -378,10 +378,12 @@ pub struct ItemKind(pub Id<ItemDef>);
 ///
 /// At `level`, which names it `cloak plate +2`, lands its effects at that
 /// level and writes its clock with the level applied; a thing that names
-/// no `enchant` is plain whatever `level` says.
+/// no `enchant` is plain whatever `level` says, and one that does is held
+/// between plain and its `most`, so a save written before the file
+/// lowered a `most` never brings back a thing the file no longer allows.
 pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let d = armory.defs.get(id);
-    let level = if d.enchant.is_some() { level.max(0) } else { 0 };
+    let level = d.enchant.map_or(0, |e| level.clamp(0, e.most));
     let enchanted = Enchanted { level, affixes: Vec::new() };
     let name = enchanted.display_name(&d.name, &Registry::<AffixDef>::default());
     let mut e = commands.spawn((Item, ItemKind(id), Name::new(name), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
@@ -1013,6 +1015,13 @@ mod tests {
         let mut d = blank_def("loose enchant");
         d.enchant = Some(EnchantDef { most: 2 });
         assert!(validate_def(&d, &armory.defs).is_err(), "an enchant on nothing worn");
+        // An enchant on a stack is refused either way it is written: worn,
+        // a worn thing cannot stack; not worn, the enchant does nothing.
+        let mut d = blank_def("a stack of fine things");
+        (d.enchant, d.stack) = (Some(EnchantDef { most: 2 }), true);
+        assert!(validate_def(&d, &armory.defs).is_err(), "an enchanted stack, not worn");
+        d.slot = Some(rl_engine::rl_core::Id::from_raw(0).into());
+        assert!(validate_def(&d, &armory.defs).is_err(), "an enchanted stack, worn");
     }
 
     /// Worn, each still has to hold up its own end: a clock with nothing
@@ -1206,6 +1215,113 @@ mod tests {
         let aim = at(&app, droid);
         throw_grenade(&mut app, player, frags, aim);
         assert!(app.world().get::<Unseen>(player).is_none(), "a grenade at a droid is");
+    }
+
+    /// What `make` hands back, each thing with the level it was made at,
+    /// read off its `Enchant`, and its name.
+    fn made(armory: &Armory, registries: &Registries, name: &str, count: u32, band: i32, rng: &mut rand::rngs::StdRng) -> Vec<(Option<i32>, String)> {
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let from = Provenance { found: rl_engine::rl_bevy::Found::Container, band };
+        let things = {
+            let mut commands = Commands::new(&mut queue, &world);
+            armory.make(&mut commands, registries, armory.defs.expect(name), count, from, rng)
+        };
+        queue.apply(&mut world);
+        things
+            .into_iter()
+            .map(|e| (world.get::<Enchant>(e).map(|x| x.0.level), world.get::<Name>(e).map(|n| n.as_str().to_string()).unwrap_or_default()))
+            .collect()
+    }
+
+    /// A cloak plate found at band 10, over a span of seeds, is always
+    /// `+2` to `+5`, every one of the four turns up, and it carries its
+    /// level on it and in its name.
+    #[test]
+    fn a_plate_made_at_band_ten_is_plus_two_to_plus_five_and_says_so() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let mut rng = rand::SeedableRng::seed_from_u64(seed);
+            let [(level, name)] = made(&armory, &r, "cloak plate", 1, 10, &mut rng).try_into().expect("one plate");
+            let level = level.expect("an enchantable thing carries its level");
+            assert!((2..=5).contains(&level), "seed {seed}: +{level} at band 10");
+            assert_eq!(name, format!("cloak plate +{level}"));
+            seen.insert(level);
+        }
+        assert_eq!(seen.into_iter().collect::<Vec<_>>(), vec![2, 3, 4, 5], "every level the row names turns up");
+    }
+
+    /// Two plates from one `make` are two finds, each rolled for itself.
+    #[test]
+    fn two_plates_made_together_roll_their_levels_apart() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let differ = (0..50).any(|seed| {
+            let mut rng = rand::SeedableRng::seed_from_u64(seed);
+            let pair = made(&armory, &r, "cloak plate", 2, 10, &mut rng);
+            pair[0].0 != pair[1].0
+        });
+        assert!(differ, "fifty pairs and never two levels: the pair shares one roll");
+    }
+
+    /// A thing's `most` caps what the table hands it: a plate that reaches
+    /// only `+2` is never found better, even where the row runs to `+5`.
+    #[test]
+    fn a_things_most_caps_the_level_it_is_made_at() {
+        let r = crate::content::registries();
+        let mut armory = crate::testing::armory(&r);
+        let defs = armory
+            .defs
+            .iter()
+            .map(|(_, d)| {
+                let mut d = d.clone();
+                if d.name == "cloak plate" {
+                    d.enchant = Some(EnchantDef { most: 2 });
+                }
+                d
+            })
+            .collect();
+        armory.defs = Registry::from_defs(defs).expect("the same names");
+        let levels: Vec<i32> = (0..100)
+            .map(|seed| {
+                let mut rng = rand::SeedableRng::seed_from_u64(seed);
+                made(&armory, &r, "cloak plate", 1, 10, &mut rng)[0].0.expect("a level")
+            })
+            .collect();
+        assert!(levels.iter().all(|l| *l == 2), "capped at +2: {levels:?}");
+    }
+
+    /// A thing that names no enchant, or a stack, is made plain and draws
+    /// nothing from the stream, so adding enchants to plates did not shift
+    /// what every other find on a deck rolls.
+    #[test]
+    fn a_plain_or_stacking_thing_is_made_without_drawing_from_the_stream() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let (mut a, mut b): (rand::rngs::StdRng, rand::rngs::StdRng) = (rand::SeedableRng::seed_from_u64(4), rand::SeedableRng::seed_from_u64(4));
+        let pistols = made(&armory, &r, "slug pistol", 2, 10, &mut a);
+        let stims = made(&armory, &r, "stim", 3, 10, &mut a);
+        assert!(pistols.iter().chain(&stims).all(|(level, _)| level.is_none()), "plain: {pistols:?} {stims:?}");
+        assert_eq!(rand::Rng::random::<u64>(&mut a), rand::Rng::random::<u64>(&mut b), "the stream is where it was");
+    }
+
+    /// A level past a thing's `most`, such as one a save wrote before the
+    /// file lowered it, comes back at the most the file allows.
+    #[test]
+    fn a_level_past_most_is_spawned_at_most() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let plate = {
+            let mut commands = Commands::new(&mut queue, &world);
+            spawn_item_at(&mut commands, &armory, armory.defs.expect("cloak plate"), 12, &r)
+        };
+        queue.apply(&mut world);
+        assert_eq!(world.get::<Enchant>(plate).map(|e| e.0.level), Some(9));
+        assert_eq!(world.get::<Name>(plate).map(|n| n.as_str().to_string()), Some("cloak plate +9".to_string()));
     }
 
     #[test]
