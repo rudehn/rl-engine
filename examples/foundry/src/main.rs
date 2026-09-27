@@ -30,10 +30,10 @@ const RAIL: i32 = 30;
 /// is aimed, the range, the target, the chance, and up to four lines of it.
 const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals and to gear; the rest is what is nearby.
-/// Vitals is its heading, the name, health, armor, seen and lit, noise,
-/// and a last row for the badges: blank most turns, which sets the gear
-/// off from the gauges as the blank under the gear sets it off from the
-/// nearby list.
+/// Vitals is its heading with the rule under it, the name, health, armor,
+/// seen and lit, noise, and a last row for the badges: blank most turns,
+/// which sets the gear off from the gauges as the blank under the gear
+/// sets it off from the nearby list.
 const VITALS_ROWS: i32 = 8;
 const GEAR_ROWS: i32 = 9;
 

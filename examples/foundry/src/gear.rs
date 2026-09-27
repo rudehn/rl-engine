@@ -1213,6 +1213,28 @@ mod tests {
         assert_eq!(said, 1, "said once, when it came off");
     }
 
+    /// The exploit held statuses close: cloak with the cloak plate, then
+    /// put the nanite plate on over it, displacing the cloak plate from the
+    /// same torso slot. Without holding, the commando would keep both, seen
+    /// as neither: still cloaked and now mending. Held, the swap is the
+    /// same as taking the plate off, in the same update, and the log says
+    /// so once.
+    #[test]
+    fn swapping_the_cloak_plate_for_the_nanite_plate_ends_the_cloak_and_says_so_once() {
+        let (mut app, player) = alone_and_wounded(13, 0);
+        let plate = crate::testing::equip_new(&mut app, player, "cloak plate");
+        app.world_mut().get_mut::<Consumable>(plate).unwrap().left = 1;
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        crate::testing::settle(&mut app);
+        assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
+
+        crate::testing::equip_new(&mut app, player, "nanite plate");
+        assert!(app.world().get::<Unseen>(player).is_none(), "the nanite plate displaced it, and the commando is seen again in that update");
+        crate::testing::pass_turns(&mut app, 12);
+        let said = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
+        assert_eq!(said, 1, "said once, when the nanite plate came on over it");
+    }
+
     /// A stim is no attack and leaves a cloaked commando unseen; a frag
     /// grenade thrown at a droid is one, and the commando is seen again in
     /// the pass it bursts, through the same throw the pack's key makes.
