@@ -332,8 +332,14 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     if let Some((left, max)) = row.charges {
         say(format!("{left}/{max} charges"), Tones::MUTED);
     }
-    if row.empty {
-        say("empty".to_string(), Tones::MUTED);
+    // An attuned thing off the body says why nothing is coming back; one
+    // whose clock runs says when it will be ready; anything else empty is
+    // simply empty.
+    match (row.attuned && !row.worn(), row.empty, row.ready_in) {
+        (true, _, _) => say("charges only while worn".to_string(), Tones::MUTED),
+        (false, true, Some(turns)) => say(format!("ready in {turns} turns"), Tones::MUTED),
+        (false, true, None) => say("empty".to_string(), Tones::MUTED),
+        (false, false, _) => {}
     }
     for facet in &row.facets {
         say(facet.text.clone(), facet.tone);
@@ -662,5 +668,30 @@ mod tests {
         assert!(rows[0].usable() && !rows[1].usable(), "a live wand is used and a dead one is not");
         stage.press(KeyCode::KeyU);
         assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "so the use key does nothing on it");
+    }
+
+    /// Two attuned plates, one worn and a quarter charged and one spare in
+    /// the bag: the worn one says when it will be ready, and the spare says
+    /// why it never will be while it stays there.
+    #[test]
+    fn a_charging_plate_says_when_it_is_ready_and_a_spare_says_it_charges_only_worn() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        stage.app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("torso")]).unwrap();
+        let player = stage.player;
+        let torso = stage.app.world().resource::<Registries>().slots.expect("torso");
+        let charging = Consumable { left: 0, recharge: Some(rl_bevy::Recharge { every: 4000, progress: 1000 }), ..Consumable::new(1, WhenEmpty::Kept) };
+        let plate = |name: &str| (Item, Name::new(name.to_string()), triggers.clone(), charging, rl_bevy::Attuned, Wearable(EquipShape::in_slot(torso)));
+        let worn_plate = stage.app.world_mut().spawn(plate("plate")).id();
+        let spare = stage.app.world_mut().spawn(plate("spare")).id();
+        let mut worn = Equipped(Equipment::with_slot_count(1));
+        worn.equip(worn_plate, &EquipShape::in_slot(torso)).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![worn_plate, spare] }, worn));
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert!(detail(&stage).iter().any(|l| l == "ready in 30 turns"), "{:?}", detail(&stage));
+        stage.press(KeyCode::ArrowDown);
+        assert!(detail(&stage).iter().any(|l| l == "charges only while worn"), "{:?}", detail(&stage));
+        assert!(!detail(&stage).iter().any(|l| l == "empty"), "the reason, not the bare fact: {:?}", detail(&stage));
     }
 }

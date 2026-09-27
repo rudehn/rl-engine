@@ -17,11 +17,12 @@
 //! [`AddSpending::spends_on`]. A hit never spends: one shot can strike, and
 //! a flaming blade is not used up by landing a blow.
 //!
-//! **What is not here.** Nothing about wearing. What a worn thing does is
-//! declarative and needs no effects: [`Armor`](crate::combat::Armor),
-//! [`Resists`](crate::combat::Resists), an attack, [`Bestows`](crate::items::Bestows)
-//! for the registered stats. An `on_equip` trigger would be one-shot where
-//! wearing is a standing state, and waits for a game that wants one.
+//! **Worn things.** Wearing is declarative and needs no effects:
+//! [`Armor`](crate::combat::Armor), [`Resists`](crate::combat::Resists), an
+//! attack, [`Bestows`](crate::items::Bestows). What is here is the one rule
+//! about charges and wearing: an [`Attuned`] thing refills only while it is
+//! worn and is emptied each time it is put on, so a charge is earned by
+//! wearing the thing rather than by carrying it.
 
 use bevy::prelude::*;
 
@@ -85,6 +86,17 @@ impl Consumable {
         self.left == 0
     }
 }
+
+/// A worn thing whose charges come back only while it is worn, and which
+/// is emptied each time it is put on.
+///
+/// The rule that makes swapping gear cost something: a plate that cloaks
+/// its wearer cannot be carried charged and put on for the one turn it is
+/// needed, nor kept charging in the bag while another plate is worn. What
+/// it holds is earned by wearing it. Only a thing that can be worn means
+/// anything by it.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Attuned;
 
 /// The moments that spend a charge from whatever they happened to.
 ///
@@ -196,15 +208,25 @@ pub fn bury_spent(mut commands: Commands, spent: Query<Entity, With<Spent>>) {
 ///
 /// Reads the clock rather than counting passes, because a pass is one
 /// actor's turn and the clock is what a refill is written in. A clock that
-/// went backwards, a new run, counts as no time.
-pub fn recharge_charges(turns: Res<Turns>, mut last: Local<Option<u32>>, mut things: Query<&mut Consumable>) {
+/// went backwards, a new run, counts as no time. An [`Attuned`] thing that
+/// nobody is wearing counts nothing.
+pub fn recharge_charges(
+    turns: Res<Turns>,
+    mut last: Local<Option<u32>>,
+    mut things: Query<(Entity, &mut Consumable, Has<Attuned>)>,
+    wearers: Query<&crate::items::Equipped>,
+) {
     let now = turns.now();
     let passed = now.saturating_sub(last.unwrap_or(now));
     *last = Some(now);
     if passed == 0 {
         return;
     }
-    for mut c in &mut things {
+    let worn: Vec<Entity> = wearers.iter().flat_map(|w| w.0.worn().map(|(_, item)| item)).collect();
+    for (thing, mut c, attuned) in &mut things {
+        if attuned && !worn.contains(&thing) {
+            continue;
+        }
         let (left, max) = (c.left, c.max);
         let Some(r) = c.recharge.as_mut() else { continue };
         if left >= max {
@@ -220,6 +242,22 @@ pub fn recharge_charges(turns: Res<Turns>, mut last: Local<Option<u32>>, mut thi
             r.progress = 0;
         }
         c.left = (left + gained).min(max);
+    }
+}
+
+/// Empties an [`Attuned`] thing, charges and progress both, whenever it is
+/// put on.
+///
+/// After [`recharge_charges`] in the same set, so the pass it went on in
+/// counts nothing towards it.
+pub fn attune(mut events: MessageReader<crate::items::ItemEvent>, mut things: Query<&mut Consumable, With<Attuned>>) {
+    for ev in events.read() {
+        let crate::items::ItemEvent::Equipped { item, .. } = *ev else { continue };
+        let Ok(mut c) = things.get_mut(item) else { continue };
+        c.left = 0;
+        if let Some(r) = c.recharge.as_mut() {
+            r.progress = 0;
+        }
     }
 }
 
@@ -239,7 +277,7 @@ impl Plugin for ConsumablesPlugin {
             // After the triggers land, in the same set, so the last charge's
             // effects are in before the thing goes.
             .add_systems(Turn, spend_charges.in_set(ResolveSet::Triggers).after(crate::effects::land_triggers))
-            .add_systems(Turn, recharge_charges.in_set(TurnSet::React))
+            .add_systems(Turn, (recharge_charges, attune).chain().in_set(TurnSet::React))
             .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove))
             // With the dead, before a restart tears the run down, so what
             // the last pass spent goes with the run it was spent in.
@@ -470,6 +508,57 @@ mod tests {
         assert_eq!(health(&app, player), 10, "the seven turns before it came off counted for nothing");
         wait_until(&mut app, player, again + 800);
         assert_eq!(health(&app, player), 11);
+    }
+
+    /// An attuned thing is empty the moment it is put on and refills only
+    /// while it is worn: forty turns in the bag buy nothing, and a charge
+    /// comes back one period after it went on.
+    #[test]
+    fn an_attuned_thing_is_empty_when_put_on_and_charges_only_while_worn() {
+        let (mut app, player, plate) = rig(Some(Consumable::new(1, WhenEmpty::Kept).recharging(400)), None, MEND_ON_USE);
+        app.world_mut().entity_mut(plate).insert(Attuned);
+        a_slot_for(&mut app, player, plate);
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(0), "full in the bag, empty once on");
+        wait_until(&mut app, player, on + 300);
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(0), "three turns worn, still charging");
+        wait_until(&mut app, player, on + 400);
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(1), "four turns worn, ready");
+    }
+
+    /// Put on, off, and on again: each putting-on empties it, and the turns
+    /// it spent in the bag between refilled nothing.
+    #[test]
+    fn an_attuned_thing_taken_off_gains_nothing_and_is_empty_again_when_put_back_on() {
+        let (mut app, player, plate) = rig(Some(Consumable::new(1, WhenEmpty::Kept).recharging(400)), None, MEND_ON_USE);
+        app.world_mut().entity_mut(plate).insert(Attuned);
+        a_slot_for(&mut app, player, plate);
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, on + 300);
+        take_off(&mut app, player, plate);
+        let off = app.world().resource::<Turns>().now();
+        wait_until(&mut app, player, off + 2000);
+        let c = app.world().get::<Consumable>(plate).copied().unwrap();
+        assert_eq!((c.left, c.recharge.map(|r| r.progress)), (0, Some(300)), "twenty turns off the body counted for nothing");
+        put_on(&mut app, player, plate);
+        let c = app.world().get::<Consumable>(plate).copied().unwrap();
+        // Progress starts over from nothing, not from the 300 it carried
+        // into the bag, but the pass that puts it on is itself a whole
+        // action's worth of the clock, credited the same way the first
+        // test's own put-on pass is: reset to nothing, then one turn's
+        // worth of worn time, not the three hundred left over from before.
+        assert_eq!((c.left, c.recharge.map(|r| r.progress)), (0, Some(100)), "and back on, it starts over");
+    }
+
+    /// A thing that is not attuned refills in the bag as it always has.
+    #[test]
+    fn a_thing_that_is_not_attuned_refills_in_the_bag() {
+        let empty = Consumable { left: 0, ..Consumable::new(1, WhenEmpty::Kept).recharging(400) };
+        let (mut app, player, wand) = rig(Some(empty), None, MEND_ON_USE);
+        wait_until(&mut app, player, 400);
+        assert_eq!(app.world().get::<Consumable>(wand).map(|c| c.left), Some(1));
     }
 
     /// A wearer on a map that is not the current one has its pulse land on

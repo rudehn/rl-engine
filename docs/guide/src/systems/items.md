@@ -19,7 +19,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: a9adf960 -->
+     fingerprint: 3df412a1 -->
 
 # Items and equipment
 
@@ -64,10 +64,10 @@ A status's modifiers carry their own tag and are left where they are, and so is 
 `SpendingMoments` says which moments spend, `use`, `land` and `fire` unless a game adds its own, and `spend_charges` takes one for each: one off `left`, else the next unit of the `Stack` starts full, else the item is marked `Spent`, or kept empty.
 A `Spent` thing is kept the way the dead are, so the log names it in its own colour: `remove_spent` takes it out of play at the end of the pass, no longer an `Item`, so `forget_removed_items` drops it from every bag and slot, and off the map, and `bury_spent` despawns it in `Last`'s `EndOfFrame::Bury`, beside the dead.
 Absent, the thing survives every moment, which is what a tool is, and a thing with charges and no trigger for a moment still spends, which is how a plain wand's shot costs one.
-`recharge_charges` counts the clock's time into a refilling thing's `Recharge` and gives back a charge for each full period.
+`recharge_charges` counts the clock's time into a refilling thing's `Recharge` and gives back a charge for each full period. An `Attuned` thing refills only while worn, and `attune` empties it each time it is put on.
 `drop_what_the_dead_carried` lets a dead non-player's bag fall where it died, and `forget_removed_items` drops a despawned item from every bag and every slot.
 `perceive_belongings` tells the mind holding the turn what it carries that it could throw and what lies in sight worth having, and only a mind with the wits to pick up or put on is told the second.
-`InventoryView` is the player's bag as plain data: an `ItemRow` per item with its label, glyph, count, the slot it is worn in and the slots it could go in by name, how far it flies and what it strikes for thrown, its armor, its blow, its shot, its extra strikes, what it bestows by the stat's name, its tags, its charges and whether it is empty, and the facets a game pushed.
+`InventoryView` is the player's bag as plain data: an `ItemRow` per item with its label, glyph, count, the slot it is worn in and the slots it could go in by name, how far it flies and what it strikes for thrown, its armor, its blow, its shot, its extra strikes, what it bestows by the stat's name, its tags, its charges, whether it is empty, when its next charge is due and whether it is attuned, and the facets a game pushed. The bag reads an empty attuned thing off the body as `charges only while worn` and a charging one as `ready in N turns`.
 Every number on a row is the item's own component, the one `Loadout` reads, so an item spawned to fight is described for free and a game says nothing twice.
 `used` is what its triggers say of themselves in the registries' names, one line per effect led by its moment, `use: mends 5` or `on landing: 3 kinetic in a burst of 1`, and `usable()` says whether the use key does anything, read off the `use` trigger and the charges rather than off the description so a terse effect does not lose the key that uses it.
 `InventoryPanel` is a modal the engine runs end to end: `InventoryKeys` opens and closes it and wears, drops, uses and throws the row picked out, and the footer offers only the keys that do something to that row.

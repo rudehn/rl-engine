@@ -69,6 +69,11 @@ pub struct ItemRow {
     pub charges: Option<(u16, u16)>,
     /// Whether it is a consumable with nothing left in the unit in hand.
     pub empty: bool,
+    /// Whole turns until the next charge comes back, for a thing that
+    /// refills, is not full, and whose clock is running.
+    pub ready_in: Option<u32>,
+    /// Whether its charges come back only while it is worn.
+    pub attuned: bool,
     /// What it does to registered stats while worn, by the stat's name.
     pub bestows: Vec<(String, Op)>,
     /// What it counts as, by the tags' registered names.
@@ -143,8 +148,9 @@ type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
-/// What an item does at its moments, what a use costs it, and its clock.
-type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>);
+/// What an item does at its moments, what a use costs it, its clock, and
+/// whether its charges come back only while worn.
+type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
@@ -183,7 +189,8 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse))) = items.get(item)
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned))) =
+            items.get(item)
         else {
             continue;
         };
@@ -202,6 +209,11 @@ pub fn collect_inventory(
                 used.extend(trigger.effects.describe(registries).into_iter().map(|line| format!("{lead}: {line}{area}")));
             }
         }
+        let clock_runs = !attuned || slot.is_some();
+        let ready_in = consumable
+            .filter(|c| c.left < c.max && clock_runs)
+            .and_then(|c| c.recharge)
+            .map(|r| (r.every - r.progress.min(r.every)).div_ceil(rl_core::turn::BASE_ACTION_COST));
         view.rows.push(ItemRow {
             entity: item,
             used,
@@ -225,6 +237,8 @@ pub fn collect_inventory(
                 .unwrap_or_default(),
             tags: tagged.map(|t| t.0.iter().map(|tag| registries.map(|r| r.tags.name(*tag).to_string()).unwrap_or_default()).collect()).unwrap_or_default(),
             facets: Vec::new(),
+            ready_in,
+            attuned,
         });
     }
 }

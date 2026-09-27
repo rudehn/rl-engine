@@ -57,7 +57,7 @@ pub use combat::{
     MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use consumable::{AddSpending, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
+pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
@@ -122,7 +122,7 @@ pub mod prelude {
         MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    pub use crate::consumable::{AddSpending, Consumable, ConsumablesPlugin, WhenEmpty};
+    pub use crate::consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, WhenEmpty};
     pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent, Open};
     pub use crate::effects::{

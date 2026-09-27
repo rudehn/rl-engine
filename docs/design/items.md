@@ -92,6 +92,11 @@ An empty thing is refused before the turn is spent, so pressing use on a dry wan
 `Consumable` counts charges: `left` of `max`, `WhenEmpty::Destroyed` or `Kept` at zero, and an optional `Recharge` that gives one back for each period of the clock.
 A stim holds one; a wand holds five and is kept when empty, refilling as the turns pass.
 
+A worn thing that holds charges may be `Attuned`: it refills only while worn and is emptied each time it is put on.
+That is the anti-swap rule, and it is on the thing rather than on the wearer because it is a fact about the thing: a plate that cloaks its wearer is earned by wearing it.
+Equip time was the other candidate, and it was rejected as the rule because time alone still lets a player swap between fights.
+A pulse is attuned by nature, since its clock only runs while worn.
+
 Using, landing and firing spend a charge, and a game may mark a moment of its own as spending.
 A hit does not, since one shot can strike and a flaming blade is not used up by landing a blow.
 At zero a stack of more than one loses a unit and the next starts full; otherwise the thing is destroyed or kept empty.
