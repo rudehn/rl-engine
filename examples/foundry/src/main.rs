@@ -30,7 +30,11 @@ const RAIL: i32 = 30;
 /// is aimed, the range, the target, the chance, and up to four lines of it.
 const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals and to gear; the rest is what is nearby.
-const VITALS_ROWS: i32 = 7;
+/// Vitals is its heading, the name, health, armor, seen and lit, noise,
+/// and a last row for the badges: blank most turns, which sets the gear
+/// off from the gauges as the blank under the gear sets it off from the
+/// nearby list.
+const VITALS_ROWS: i32 = 8;
 const GEAR_ROWS: i32 = 9;
 
 /// The screen, cut up once so every panel and the map agree on it.
@@ -296,6 +300,23 @@ mod tests {
         let palette = app.world().resource::<Palette>();
         let bad = rl_engine::rl_ui::readable(palette.get(Tones::BAD), palette);
         assert_eq!(app.world().resource::<Terminal>().get(x, y).unwrap().fg, bad);
+    }
+
+    /// A status's badge has a row of its own on the vitals strip, under
+    /// the noise gauge and above the worn gear, so the cloak's `%` is on
+    /// screen for as long as the commando is cloaked.
+    #[test]
+    fn a_status_badge_is_drawn_on_the_vitals_strip_above_the_worn_gear() {
+        let mut app = on_screen(RunSeed(7));
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
+        app.world_mut().write_message(Afflict { target: me, status: cloaked, turns: 10, by: None });
+        app.update();
+        app.update();
+        let rail = |y: i32| row(&app, y).chars().skip((COLS - RAIL) as usize).collect::<String>().trim_end().to_string();
+        let vitals: Vec<String> = (0..VITALS_ROWS).map(rail).collect();
+        assert!(vitals.iter().any(|r| r == "%"), "the badge, on a row of its own: {vitals:#?}");
+        assert!(rail(VITALS_ROWS).starts_with("Worn"), "and the gear still under it: {:?}", rail(VITALS_ROWS));
     }
 
     /// The log reads in the order things happened: a probe that spots the
