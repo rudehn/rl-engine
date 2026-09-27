@@ -148,9 +148,9 @@ type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
-/// What an item does at its moments, what a use costs it, its clock, and
-/// whether its charges come back only while worn.
-type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>);
+/// What an item does at its moments, what a use costs it, its clock,
+/// whether its charges come back only while worn, and its enchant level.
+type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>, Option<&'static rl_bevy::Enchant>);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
@@ -189,7 +189,7 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned))) =
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned, enchant))) =
             items.get(item)
         else {
             continue;
@@ -206,7 +206,8 @@ pub fn collect_inventory(
                     rl_rules::Area::Here => String::new(),
                     rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
                 };
-                used.extend(trigger.effects.describe(registries).into_iter().map(|line| format!("{lead}: {line}{area}")));
+                let level = enchant.map_or(0, |e| e.level);
+                used.extend(trigger.effects.describe(registries, level).into_iter().map(|line| format!("{lead}: {line}{area}")));
             }
         }
         let clock_runs = !attuned || slot.is_some();

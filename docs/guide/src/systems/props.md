@@ -14,7 +14,7 @@
             crates/rl-render/src/map_view.rs
             crates/rl-ui/src/interact.rs
             crates/rl-save/src/run.rs
-     fingerprint: e8addbe2 -->
+     fingerprint: 34fc9147 -->
 
 # Props
 

@@ -1,6 +1,9 @@
 //! The effects the engine ships: what an effect list can ask of the
 //! subsystems the engine owns.
 //!
+//! `Harm`, `Mend` and `Inflict` grow with the enchant level of what landed
+//! them, through `per_level`; the others do the same thing at any level.
+//!
 //! [`Harm`] and [`Mend`] ask combat's damage pipeline, [`Inflict`] and
 //! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move
 //! an actor through [`EffectWorld`]; [`AddEngineEffects`] registers those
@@ -32,20 +35,30 @@ use crate::status::{Afflict, Cure};
 pub struct Harm {
     /// What kind of damage.
     pub kind: DamageKindId,
-    /// How much, rolled per target.
+    /// How much, rolled per target, at level zero.
     pub roll: DiceRoll,
+    /// Added to the roll for each enchant level of what landed it.
+    pub per_level: i32,
+}
+
+impl Harm {
+    /// The roll at `level`; a level below one adds nothing.
+    pub fn roll_at(&self, level: i32) -> DiceRoll {
+        DiceRoll { bonus: self.roll.bonus + self.per_level * level.max(0), ..self.roll }
+    }
 }
 
 impl Effect for Harm {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let roll = self.roll_at(landing.level);
         for target in &landing.targets {
-            let amount = self.roll.roll_at_least(&mut **world.rng, 0);
+            let amount = roll.roll_at_least(&mut **world.rng, 0);
             world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, amount)));
         }
     }
 
-    fn describe(&self, registries: &Registries) -> String {
-        format!("{} {}", self.roll, registries.damage_kinds.name(self.kind))
+    fn describe(&self, registries: &Registries, level: i32) -> String {
+        format!("{} {}", self.roll_at(level), registries.damage_kinds.name(self.kind))
     }
 }
 
@@ -57,9 +70,11 @@ impl FromArgs for Harm {
         struct Args {
             kind: String,
             roll: String,
+            #[serde(default)]
+            per_level: i32,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
+        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))?, per_level: a.per_level })
     }
 }
 
@@ -72,20 +87,30 @@ impl FromArgs for Harm {
 pub struct Mend {
     /// The kind healing counts as.
     pub kind: DamageKindId,
-    /// How much, rolled per target.
+    /// How much, rolled per target, at level zero.
     pub roll: DiceRoll,
+    /// Added to the roll for each enchant level of what landed it.
+    pub per_level: i32,
+}
+
+impl Mend {
+    /// The roll at `level`; a level below one adds nothing.
+    pub fn roll_at(&self, level: i32) -> DiceRoll {
+        DiceRoll { bonus: self.roll.bonus + self.per_level * level.max(0), ..self.roll }
+    }
 }
 
 impl Effect for Mend {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let roll = self.roll_at(landing.level);
         for target in &landing.targets {
-            let amount = self.roll.roll_at_least(&mut **world.rng, 0);
+            let amount = roll.roll_at_least(&mut **world.rng, 0);
             world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, -amount)));
         }
     }
 
-    fn describe(&self, registries: &Registries) -> String {
-        format!("mends {} {}", self.roll, registries.damage_kinds.name(self.kind))
+    fn describe(&self, registries: &Registries, level: i32) -> String {
+        format!("mends {} {}", self.roll_at(level), registries.damage_kinds.name(self.kind))
     }
 }
 
@@ -97,9 +122,11 @@ impl FromArgs for Mend {
         struct Args {
             kind: String,
             roll: String,
+            #[serde(default)]
+            per_level: i32,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
+        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))?, per_level: a.per_level })
     }
 }
 
@@ -111,19 +138,28 @@ impl FromArgs for Mend {
 pub struct Inflict {
     /// Which status.
     pub status: StatusId,
-    /// For how many whole turns.
+    /// For how many whole turns, at level zero.
     pub turns: u32,
+    /// Turns added for each enchant level of what landed it.
+    pub per_level: u32,
+}
+
+impl Inflict {
+    /// The turns at `level`; a level below one adds nothing.
+    pub fn turns_at(&self, level: i32) -> u32 {
+        self.turns + self.per_level * level.max(0) as u32
+    }
 }
 
 impl Effect for Inflict {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in &landing.targets {
-            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns, by: Some(landing.user) });
+            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns_at(landing.level), by: Some(landing.user) });
         }
     }
 
-    fn describe(&self, registries: &Registries) -> String {
-        format!("{} for {} turns", registries.statuses.name(self.status), self.turns)
+    fn describe(&self, registries: &Registries, level: i32) -> String {
+        format!("{} for {} turns", registries.statuses.name(self.status), self.turns_at(level))
     }
 }
 
@@ -135,9 +171,11 @@ impl FromArgs for Inflict {
         struct Args {
             status: String,
             turns: u32,
+            #[serde(default)]
+            per_level: u32,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { status: names.status(&a.status)?, turns: a.turns })
+        Ok(Self { status: names.status(&a.status)?, turns: a.turns, per_level: a.per_level })
     }
 }
 
@@ -149,7 +187,7 @@ pub struct Cleanse {
 }
 
 impl Effect for Cleanse {
-    fn describe(&self, registries: &Registries) -> String {
+    fn describe(&self, registries: &Registries, _: i32) -> String {
         format!("cures {}", registries.statuses.name(self.status))
     }
 
@@ -185,7 +223,7 @@ pub struct Shove {
 }
 
 impl Effect for Shove {
-    fn describe(&self, _: &Registries) -> String {
+    fn describe(&self, _: &Registries, _: i32) -> String {
         format!("shoves {} back", cells(self.cells))
     }
 
@@ -219,7 +257,7 @@ pub struct Pull {
 }
 
 impl Effect for Pull {
-    fn describe(&self, _: &Registries) -> String {
+    fn describe(&self, _: &Registries, _: i32) -> String {
         format!("pulls {} closer", cells(self.cells))
     }
 
@@ -253,7 +291,7 @@ impl FromArgs for Pull {
 pub struct Teleport;
 
 impl Effect for Teleport {
-    fn describe(&self, _: &Registries) -> String {
+    fn describe(&self, _: &Registries, _: i32) -> String {
         "moves you there".to_string()
     }
 
@@ -290,7 +328,7 @@ impl Effect for Ignite {
         }
     }
 
-    fn describe(&self, _: &Registries) -> String {
+    fn describe(&self, _: &Registries, _: i32) -> String {
         format!("sets the ground alight for {} turns", self.turns)
     }
 }
@@ -331,7 +369,7 @@ impl Effect for Emit {
         }
     }
 
-    fn describe(&self, registries: &Registries) -> String {
+    fn describe(&self, registries: &Registries, _: i32) -> String {
         format!("gives off {}", registries.gases.name(self.gas))
     }
 }
@@ -376,5 +414,37 @@ impl AddEngineEffects for App {
             .add_effect::<Shove>()
             .add_effect::<Pull>()
             .add_effect::<Teleport>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What a level adds: a point on the roll per level for harm and a
+    /// mend, a turn per level for a status, and nothing at all below `+1`.
+    #[test]
+    fn each_level_adds_its_per_level_and_a_plain_thing_adds_nothing() {
+        let kind = DamageKindId::from_raw(0);
+        let mend = Mend { kind, roll: DiceRoll::flat(1), per_level: 2 };
+        assert_eq!((mend.roll_at(0), mend.roll_at(3)), (DiceRoll::flat(1), DiceRoll::flat(7)));
+        let harm = Harm { kind, roll: DiceRoll::new(2, 6), per_level: 1 };
+        assert_eq!(harm.roll_at(2), DiceRoll { num: 2, sides: 6, bonus: 2 });
+        let cloak = Inflict { status: StatusId::from_raw(0), turns: 5, per_level: 1 };
+        assert_eq!((cloak.turns_at(0), cloak.turns_at(2), cloak.turns_at(-1)), (5, 7, 5), "a negative level is plain, never shorter");
+    }
+
+    /// The arguments read `per_level` when it is written and nought when
+    /// it is not, so every content file written before this still loads.
+    #[test]
+    fn per_level_is_read_when_written_and_nought_when_not() {
+        let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("care")]).unwrap();
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked")]).unwrap();
+        let names = Names::new().damage_kinds(&kinds).statuses(&statuses);
+        let args = |text: &str| rl_rules::ability::parse_args(text).unwrap();
+        let old = Mend::from_args(&args(r#"(kind: "care", roll: "4")"#), &names).unwrap();
+        assert_eq!(old.per_level, 0);
+        let new = Inflict::from_args(&args(r#"(status: "cloaked", turns: 5, per_level: 1)"#), &names).unwrap();
+        assert_eq!(new.per_level, 1);
     }
 }

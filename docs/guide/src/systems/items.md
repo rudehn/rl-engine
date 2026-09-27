@@ -19,7 +19,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 3df412a1 -->
+     fingerprint: 6293e69e -->
 
 # Items and equipment
 
@@ -69,7 +69,7 @@ Absent, the thing survives every moment, which is what a tool is, and a thing wi
 `perceive_belongings` tells the mind holding the turn what it carries that it could throw and what lies in sight worth having, and only a mind with the wits to pick up or put on is told the second.
 `InventoryView` is the player's bag as plain data: an `ItemRow` per item with its label, glyph, count, the slot it is worn in and the slots it could go in by name, how far it flies and what it strikes for thrown, its armor, its blow, its shot, its extra strikes, what it bestows by the stat's name, its tags, its charges, whether it is empty, when its next charge is due and whether it is attuned, and the facets a game pushed. The bag reads an empty attuned thing off the body as `charges only while worn` and a charging one as `ready in N turns`.
 Every number on a row is the item's own component, the one `Loadout` reads, so an item spawned to fight is described for free and a game says nothing twice.
-`used` is what its triggers say of themselves in the registries' names, one line per effect led by its moment, `use: mends 5` or `on landing: 3 kinetic in a burst of 1`, and `usable()` says whether the use key does anything, read off the `use` trigger and the charges rather than off the description so a terse effect does not lose the key that uses it.
+`used` is what its triggers say of themselves in the registries' names, one line per effect led by its moment, `use: mends 5` or `on landing: 3 kinetic in a burst of 1`, described at the item's own `Enchant` level so a `+2` thing says what it does at `+2`, and `usable()` says whether the use key does anything, read off the `use` trigger and the charges rather than off the description so a terse effect does not lose the key that uses it.
 `InventoryPanel` is a modal the engine runs end to end: `InventoryKeys` opens and closes it and wears, drops, uses and throws the row picked out, and the footer offers only the keys that do something to that row.
 The use key uses a thing where the player stands, and a row with no `use` trigger or no charge left is not offered it; aiming is the throw key's, which opens the targeting cursor, and firing is combat's.
 The screen does not read a key in the frame it opened, so a game that opens the bag on one of the bag's own keys, as Foundry's `t` does, opens it and no more.

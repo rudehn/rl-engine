@@ -136,7 +136,17 @@ Effect lists are never saved: a game rebuilds them from its definitions when it 
 
 A prop restored before `PropEffects` is built carries its saved firings as `PendingFires`, which `arm_props` applies when it arms the prop, since a load can come before the first frame builds the triggers.
 
-## 8. The roads not taken
+## 8. Effects at a level
+
+An enchanted thing's effects grow with its level, and the level reaches them on the `Landing`.
+`land_triggers` reads it off the carrier's `Enchant`; an ability and an offer land at nought.
+`Harm` and `Mend` add `per_level` to the roll's bonus per level and `Inflict` adds `per_level` turns, each nought unless written, so every file written before this loads unchanged.
+`describe` takes the level too, so the bag says what a `+2` thing does at `+2`.
+
+The level is on the landing rather than baked into the effects at spawn because the effects are built once per definition and shared by every copy behind an `Arc`, and because the arguments are text the engine does not understand: rewriting them per level would silently skip a field that is not a number.
+What is a number on the thing rather than in an effect, a pulse's period or a plate's armor, is written by the game at spawn with the level applied, as `Bestows` already is.
+
+## 9. The roads not taken
 
 - **A. One component per moment**, `OnUse`, `OnLand`, `OnHit`, each landed by the plugin that owns the moment. Typed and plain, but "find the list, build the area, land it, spend a charge" would be written once per moment and again for props, and a game could not add a moment without another component and another system.
 - **C. Items as offers**, the shape props' `open` uses. It brings a verb, a time cost and refusal reasons in words, but only for a use: a landing or a hit is not an act anyone chooses, so every item file would be offers plus A's fields. The refusal reasons are the part worth taking later, on the `use` trigger.

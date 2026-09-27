@@ -585,4 +585,15 @@ mod tests {
         wait_until(&mut app, player, 500);
         assert_eq!(health(&app, player), 10, "five of its pulses came round, and none of them landed on the player standing here");
     }
+
+    /// A thing enchanted to `+3` lands its effects at its level: a mend of
+    /// four with two a level mends ten.
+    #[test]
+    fn an_enchanted_thing_lands_its_effects_at_its_level() {
+        let mends = r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "4", per_level: 2))])]"#;
+        let (mut app, player, item) = rig(None, None, mends);
+        app.world_mut().entity_mut(item).insert(crate::items::Enchant(rl_rules::Enchanted { level: 3, affixes: Vec::new() }));
+        use_it(&mut app, player, item);
+        assert_eq!(health(&app, player), 20, "four and two for each of three levels");
+    }
 }

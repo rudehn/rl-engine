@@ -259,7 +259,7 @@ impl Abilities {
     /// with its chance in front when it is not certain: what a menu lists
     /// under an ability.
     pub fn describe(&self, id: AbilityId, registries: &crate::registries::Registries) -> Vec<String> {
-        self.built[id.index()].describe(registries)
+        self.built[id.index()].describe(registries, 0)
     }
 
     /// The id named `name`, if there is one.
@@ -382,7 +382,7 @@ impl Bystanders<'_, '_> {
                 }
             }
         }
-        Landed { landing: Landing { user, source: Source::Ability(ability), origin, aim, cells, path, landed_at: landing, targets }, refused }
+        Landed { landing: Landing { user, source: Source::Ability(ability), origin, aim, cells, path, landed_at: landing, targets, level: 0 }, refused }
     }
 }
 

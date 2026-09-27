@@ -58,7 +58,7 @@ pub fn player_grants(abilities: &Abilities) -> Grants {
 pub struct Plunder;
 
 impl Effect for Plunder {
-    fn describe(&self, _: &Registries) -> String {
+    fn describe(&self, _: &Registries, _: i32) -> String {
         "spills its purse at its feet".to_string()
     }
 
