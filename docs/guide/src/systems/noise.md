@@ -13,7 +13,7 @@
             crates/rl-bevy/src/items.rs
             crates/rl-ui/src/view/nearby.rs
             crates/rl-ui/src/panel/nearby.rs
-     fingerprint: f30b2199 -->
+     fingerprint: 8742a1a3 -->
 
 # Noise
 

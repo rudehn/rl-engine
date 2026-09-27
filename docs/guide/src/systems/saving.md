@@ -11,7 +11,7 @@
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 9616e0d9 -->
+     fingerprint: 70ab79c8 -->
 
 # Saving and the ending screen
 
@@ -42,7 +42,7 @@ Remains are saved as whatever they were, and a prop kind a game laid on a body a
 `RunSave` is the result: a `format`, the `EngineSave`, a `KindSave` per kind holding each entry's own RON, the `EntityState` of each, and the game's resources by name.
 `RunSave::capture` walks the kinds in registration order and each kind's living entities still in play in spawn order, leaving out the dead and the spent the frame keeps only so the log can name them, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources and whose `Seed` the game has already inserted.
 `RunSave::state::<R>` reads one resource out of a save before anything is restored, for the part of a start that runs before the world exists, and `count_of` and `turn` are for a line in the log.
-`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and which sites it has found, each saved entity's pools and cooldowns, its charges and what refills them, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
+`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and which sites it has found, each saved entity's pools and cooldowns, its charges and what refills them, the progress towards a worn thing's next pulse, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
 `EngineSave::restore` puts every one of those back except the `seed`, which it only carries: a game reads `save.engine.seed` itself and inserts the `Seed` before it builds the world the continued run stands in.
 Whoever held the turn is out of the queue when a save is taken, so it is put back at the front of the present and dealt first on the run that continues.
 An `Entity` means nothing in another process, so a save numbers entities as `SaveId`, handed out densely by `EntityRemap` while capturing and bound to fresh entities while restoring; a queue entry or a bag slot naming an id nobody bound is dropped rather than guessed at.

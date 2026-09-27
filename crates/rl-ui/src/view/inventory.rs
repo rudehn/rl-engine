@@ -143,13 +143,13 @@ type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
-/// What an item does at its moments, and what a use costs it.
-type Does = (Option<&'static Triggers>, Option<&'static Consumable>);
+/// What an item does at its moments, what a use costs it, and its clock.
+type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
-/// name for one a game registered.
-fn lead_in(moment: MomentId, moments: Option<&Moments>) -> String {
+/// name for one a game registered. A pulse says how often it comes round.
+fn lead_in(moment: MomentId, moments: Option<&Moments>, pulse: Option<&rl_bevy::Pulse>) -> String {
     match moment {
         m if m == Moments::USE => "use".to_string(),
         // Not "thrown": the row already says how far it flies, and the
@@ -157,6 +157,10 @@ fn lead_in(moment: MomentId, moments: Option<&Moments>) -> String {
         m if m == Moments::LAND => "on landing".to_string(),
         m if m == Moments::HIT => "on a hit".to_string(),
         m if m == Moments::FIRE => "when fired".to_string(),
+        m if m == Moments::PULSE => match pulse {
+            Some(p) => format!("every {} turns worn", p.every.div_ceil(rl_core::turn::BASE_ACTION_COST)),
+            None => "worn".to_string(),
+        },
         m => moments.map(|all| all.name(m).to_string()).unwrap_or_default(),
     }
 }
@@ -179,7 +183,8 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable))) = items.get(item) else {
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse))) = items.get(item)
+        else {
             continue;
         };
         let slot = worn.and_then(|w| w.slot_of(item));
@@ -189,7 +194,7 @@ pub fn collect_inventory(
         let mut used = Vec::new();
         if let (Some(triggers), Some(registries)) = (triggers, registries) {
             for trigger in &triggers.0 {
-                let lead = lead_in(trigger.on, moments);
+                let lead = lead_in(trigger.on, moments, pulse);
                 let area = match trigger.area {
                     rl_rules::Area::Here => String::new(),
                     rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
@@ -310,5 +315,14 @@ mod tests {
         stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(plate, &EquipShape::in_slot(torso)).unwrap();
         stage.tick();
         assert!(stage.app.world().resource::<InventoryView>().rows[0].usable(), "worn, it is");
+    }
+
+    /// A pulse's lead-in says how often it comes round, in whole turns
+    /// rounded up, so it never promises a mend before its clock has come
+    /// round.
+    #[test]
+    fn a_pulse_is_introduced_by_how_often_it_comes_round() {
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(800))), "every 8 turns worn");
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(750))), "every 8 turns worn", "a part turn rounds up, never promising early");
     }
 }

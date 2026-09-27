@@ -40,6 +40,8 @@ The first game that wants a moment the engine did not think of, a blaster that d
 A content file names a moment as a string.
 It is resolved when the triggers are built, and a name nobody registered fails that build with the name in the message, the way an unregistered effect kind does, so a typo is caught while the file is read rather than by a trap that quietly never fires.
 
+`pulse` is the seventh built-in moment, a worn thing's clock coming round, appended so the six before it keep their ids.
+
 ## 3. `Triggers`, and the potion model
 
 `TriggerSpec` is the authored form, in `rl-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `Area`, an optional count of `fires`, and an optional effect list.
@@ -78,6 +80,7 @@ It does not find the triggers, build the footprint or land anything, so the rule
 | `hit` | combat, at the struck actor's cell | `ResolveSet::Act`, `LandSet::Shot` | the same pass |
 | `entered` | props, on a step onto an armed prop's cell | `ResolveSet::Travel`, after every step, swap and warp | the same pass |
 | `destroyed` | props, on the prop's death | `TurnSet::React` | the next pass |
+| `pulse` | items, for each worn `Pulse` whose period came round, on the current map | `ResolveSet::Triggers`, before `land_triggers` | the same pass |
 
 `land_triggers` runs in `ResolveSet::Triggers`, a stage of its own between `Act` and `Fields`.
 It reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any whose `fires` is spent, lands the effects on the area with every actor in the area as a target, the one who set it off included, and counts `fires` down.
@@ -127,7 +130,7 @@ That is a departure from the usual `depends_on`, which only reports: a game that
 ## 7. What is saved
 
 Only what changes in play.
-`EngineSave` keeps a consumable's `left` and recharge progress, and each trigger's remaining `fires`, beside the pools and cooldowns it already kept.
+`EngineSave` keeps a consumable's `left` and recharge progress, a worn thing's pulse progress, and each trigger's remaining `fires`, beside the pools and cooldowns it already kept.
 A prop's firings stay with the prop's own save, as its old count did, so each fact has one owner.
 Effect lists are never saved: a game rebuilds them from its definitions when it spawns the thing.
 

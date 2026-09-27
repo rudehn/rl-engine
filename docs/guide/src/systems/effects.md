@@ -11,7 +11,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-rules/src/ability.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 2d1ab974 -->
+     fingerprint: a9714d9c -->
 
 # Effects
 
@@ -36,12 +36,12 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 `Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them.
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.
-`Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered` and `destroyed` first so their ids are constants on the type.
+`Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed` and `pulse` first so their ids are constants on the type.
 `TriggerSpec`, in `rl-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; and `look`, what shows over the cells it lands on.
 `Triggers::build(specs, shared, moments, kinds, names)` builds a definition's triggers once, sharing each list through an `Arc`, and fails on a moment nobody registered, naming it.
 A spec with no list takes the definition's `shared` one, and a spec with neither fails, since a trigger that does nothing is a typo.
 `Triggers` is the component, and each copy counts its own `fires`, so springing one cable spends nothing of another.
-`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing and `hit` at the struck actor's cell, and props report `entered` and `destroyed`.
+`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing and `hit` at the struck actor's cell, and props report `entered` and `destroyed`.
 `land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a blast over the cells for one with a `look`, going out from the cell the moment happened on, lands the list over `area_cells`, the one cell or the burst `rl_grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
 The landing's user, who a hit is credited to, is `by`, or the carrier itself when it is `LandsAsItself`, which every armed prop is.
 A `Remnant` is a carrier that lands its triggers once and is despawned, for something gone by the time they land: it holds its moment, `by` and `at` as data, and `report_remnants` writes its `Fired` in the pass that lands it, so a pass held back while something is shown loses nothing.

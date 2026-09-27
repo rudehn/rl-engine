@@ -71,8 +71,8 @@ pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flamm
 pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
-    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack,
-    Tagged, Unequip, UseItem, Wearable,
+    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Pulse,
+    Stack, Tagged, Unequip, UseItem, Wearable,
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
@@ -133,8 +133,8 @@ pub mod prelude {
     pub use crate::fov::FovPlugin;
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
     pub use crate::items::{
-        Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged, Unequip,
-        UseItem, Wearable,
+        Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Pulse, Stack, Tagged,
+        Unequip, UseItem, Wearable,
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};

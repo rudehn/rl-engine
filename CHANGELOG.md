@@ -93,6 +93,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 - A heal's `DamageDealt::dealt` is the health it restored, so a mend at full health reports nought and the narrator says nothing; it was the amount offered. A game that read a heal's `dealt` as what was offered reads it off the `DamageEvent` instead.
 - A thing that can be worn is used only while it is worn: `UseItem` of a `Wearable` not in the user's `Equipped` is refused for free, and `ItemRow::usable` is false for it. No game shipped a wearable thing with a `use` trigger, so nothing changes for one that did not.
+- A worn thing can do something on its own clock: `Pulse { every, progress }` on an item reports the new built-in `pulse` moment every `every` hundredths of a step it is worn, on its wearer's cell, and starts from nothing each time it is put on; its `pulse` trigger says what it does. `Moments::BUILT_IN` has seven names, `pulse` last, so every earlier id is unchanged. `rl-save` keeps a pulse's progress.
 
 ## 0.3.0
 

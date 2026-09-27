@@ -322,6 +322,46 @@ mod tests {
         app.world().get::<Health>(who).expect("health").current
     }
 
+    /// Gives the player one slot and makes `item` wearable in it.
+    fn a_slot_for(app: &mut App, player: Entity, item: Entity) {
+        let slot = rl_rules::SlotId::from_raw(0);
+        app.world_mut().entity_mut(item).insert(crate::items::Wearable(rl_rules::EquipShape::in_slot(slot)));
+        app.world_mut().entity_mut(player).insert(crate::items::Equipped(rl_rules::Equipment::with_slot_count(1)));
+    }
+
+    /// Puts `item` on through the engine's own intent.
+    fn put_on(app: &mut App, player: Entity, item: Entity) {
+        app.world_mut().write_message(Intent::new(player, crate::items::Equip(item)));
+        app.update();
+    }
+
+    /// Takes `item` off through the engine's own intent.
+    fn take_off(app: &mut App, player: Entity, item: Entity) {
+        app.world_mut().write_message(Intent::new(player, crate::items::Unequip(item)));
+        app.update();
+    }
+
+    /// Waits until the clock reads at least `until`.
+    fn wait_until(app: &mut App, player: Entity, until: u32) {
+        while app.world().resource::<Turns>().now() < until {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+    }
+
+    /// A trigger list that mends one on each pulse.
+    const MEND_ON_PULSE: &str = r#"[(on: "pulse", effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]"#;
+
+    /// `text`'s triggers, built against the rig's moments and effect kinds,
+    /// the way the rig builds its own item's.
+    fn triggers_of(app: &App, text: &str) -> Triggers {
+        let specs: Vec<rl_rules::TriggerSpec> =
+            ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(text).expect("the triggers parse");
+        let world = app.world();
+        Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
+            .expect("the triggers build")
+    }
+
     /// Using it lands its use trigger, on the one who used it, in the pass
     /// that spent the turn: no ability, nothing known, nothing aimed. And a
     /// thing that is not consumable survives being used.
@@ -391,5 +431,69 @@ mod tests {
         let (mut app, player, item) = rig(Some(Consumable::new(2, WhenEmpty::Kept)), None, both);
         use_it(&mut app, player, item);
         assert_eq!(health(&app, player), 13, "mended three, and the land trigger did not go off");
+    }
+
+    /// A worn thing's pulse mends its wearer once for every period it has
+    /// been worn, counted from the moment it went on, and not at all while
+    /// it sits in the bag.
+    #[test]
+    fn a_worn_pulse_lands_once_a_period_from_when_it_went_on_and_never_from_the_bag() {
+        let (mut app, player, plate) = rig(None, None, MEND_ON_PULSE);
+        app.world_mut().entity_mut(plate).insert(crate::items::Pulse::every(800));
+        a_slot_for(&mut app, player, plate);
+        wait_until(&mut app, player, 1000);
+        assert_eq!(health(&app, player), 10, "ten turns in the bag and nothing");
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, on + 700);
+        assert_eq!(health(&app, player), 10, "seven turns worn, not yet");
+        wait_until(&mut app, player, on + 800);
+        assert_eq!(health(&app, player), 11, "eight turns worn, one mended");
+        wait_until(&mut app, player, on + 1600);
+        assert_eq!(health(&app, player), 12, "and one more eight turns on");
+    }
+
+    /// Taking a worn thing off and putting it back starts its clock again:
+    /// seven turns worn, off, and on again is not one turn from a mend.
+    #[test]
+    fn putting_a_pulsing_thing_back_on_starts_its_clock_again() {
+        let (mut app, player, plate) = rig(None, None, MEND_ON_PULSE);
+        app.world_mut().entity_mut(plate).insert(crate::items::Pulse::every(800));
+        a_slot_for(&mut app, player, plate);
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, on + 700);
+        take_off(&mut app, player, plate);
+        let again = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, again + 700);
+        assert_eq!(health(&app, player), 10, "the seven turns before it came off counted for nothing");
+        wait_until(&mut app, player, again + 800);
+        assert_eq!(health(&app, player), 11);
+    }
+
+    /// A wearer on a map that is not the current one has its pulse land on
+    /// nobody: a pulse is landed by who stands on the wearer's cell, and on
+    /// this map that is somebody else, standing at the same coordinates.
+    #[test]
+    fn a_pulse_on_a_wearer_elsewhere_lands_on_nobody_here() {
+        let (mut app, player, _) = rig(None, None, MEND_ON_USE);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let pulsing = triggers_of(&app, MEND_ON_PULSE);
+        let plate = app.world_mut().spawn((Item, pulsing, crate::items::Pulse::every(100))).id();
+        let slot = rl_rules::SlotId::from_raw(0);
+        let mut worn = rl_rules::Equipment::with_slot_count(1);
+        worn.equip(plate, &rl_rules::EquipShape::in_slot(slot)).unwrap();
+        // Elsewhere: on another map, at the player's own coordinates.
+        app.world_mut().spawn((
+            Actor,
+            Position(at),
+            crate::places::OnMap(crate::places::MapId(7)),
+            Health::full(30),
+            Inventory { items: vec![plate] },
+            crate::items::Equipped(worn),
+        ));
+        wait_until(&mut app, player, 500);
+        assert_eq!(health(&app, player), 10, "five of its pulses came round, and none of them landed on the player standing here");
     }
 }

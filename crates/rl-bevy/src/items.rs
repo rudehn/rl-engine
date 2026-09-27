@@ -34,7 +34,7 @@ use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::status::StatBlock;
 use crate::throwing::Throwable;
-use crate::turn::{Action, Intent, Resolution};
+use crate::turn::{Action, Intent, Resolution, Turns};
 use crate::world::WorldMap;
 
 /// An item.
@@ -117,6 +117,32 @@ pub struct Stack {
     pub key: u64,
     /// How many.
     pub count: u32,
+}
+
+/// A worn thing's own clock: its `pulse` moment comes round every `every`
+/// hundredths of a step it is worn, with `progress` counted towards the
+/// next.
+///
+/// What a pulse does is the thing's `pulse` trigger, landed on whoever
+/// stands on the wearer's cell, which is the wearer: a plate that knits
+/// wounds is a pulse that mends. The clock runs only while the thing is
+/// worn and starts again from nothing each time it is put on, so a wearer
+/// cannot wear it most of a period, swap, and swap back for a pulse on the
+/// next turn. The game writes `every` when it spawns the thing, with the
+/// thing's enchant already applied, as it writes [`Bestows`].
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pulse {
+    /// Hundredths of a step between pulses.
+    pub every: u32,
+    /// Hundredths counted towards the next.
+    pub progress: u32,
+}
+
+impl Pulse {
+    /// A clock coming round every `every` hundredths, with nothing counted yet.
+    pub fn every(every: u32) -> Self {
+        Self { every, progress: 0 }
+    }
 }
 
 /// What happened to an item, for narration and for the game's own
@@ -446,6 +472,61 @@ pub fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<Equippe
     }
 }
 
+/// Counts each worn [`Pulse`] on by the time that passed since the last
+/// pass, and reports its `pulse` moment for each full period, on the thing,
+/// by its wearer, at the wearer's cell.
+///
+/// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers) before
+/// the triggers land, so a pulse lands in the pass whose clock brought it.
+/// Reads the clock rather than counting passes, as a recharge does, and a
+/// clock that went backwards, a new run, counts as no time. Only wearers on
+/// the current map: a moment lands on whoever stands on its cell here, and
+/// a wearer on another map would mend a stranger at the same coordinates.
+pub fn pulse_worn(
+    turns: Res<Turns>,
+    mut last: Local<Option<u32>>,
+    map: Res<WorldMap>,
+    wearers: Query<(Entity, &Position, Option<&OnMap>, &Equipped)>,
+    mut pulses: Query<&mut Pulse>,
+    mut fired: MessageWriter<crate::effects::Fired>,
+) {
+    let now = turns.now();
+    let passed = now.saturating_sub(last.unwrap_or(now));
+    *last = Some(now);
+    if passed == 0 {
+        return;
+    }
+    let here = map.current();
+    for (wearer, pos, on, worn) in &wearers {
+        if on.map_or(MapId::SURFACE, |m| m.0) != here {
+            continue;
+        }
+        for (_, item) in worn.0.worn() {
+            let Ok(mut pulse) = pulses.get_mut(item) else { continue };
+            let every = pulse.every.max(1);
+            pulse.progress += passed;
+            while pulse.progress >= every {
+                pulse.progress -= every;
+                fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::PULSE, by: Some(wearer), at: pos.0 });
+            }
+        }
+    }
+}
+
+/// Starts a [`Pulse`] from nothing whenever its thing is put on.
+///
+/// In [`TurnSet::React`](crate::plugin::TurnSet::React), after the pass
+/// counted whatever time it counted, so the thing's first period is a whole
+/// one from the pass it went on in.
+pub fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&mut Pulse>) {
+    for ev in events.read() {
+        let ItemEvent::Equipped { item, .. } = *ev else { continue };
+        if let Ok(mut pulse) = pulses.get_mut(item) {
+            pulse.progress = 0;
+        }
+    }
+}
+
 /// Drops despawned items from every bag and every slot.
 pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: Query<(&mut Inventory, Option<&mut Equipped>)>) {
     let gone: Vec<Entity> = removed.read().collect();
@@ -560,6 +641,8 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
 /// way [`StatusPlugin`](crate::status::StatusPlugin) gives one, so a
 /// wearer in a game with gear stats and no statuses still has somewhere
 /// for them to land.
+///
+/// A worn [`Pulse`] reports its `pulse` moment on its own clock.
 pub struct ItemsPlugin;
 
 impl Plugin for ItemsPlugin {
@@ -585,9 +668,13 @@ impl Plugin for ItemsPlugin {
             .add_message::<crate::effects::Fired>()
             .add_systems(Turn, perceive_belongings.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, resolve_items.in_set(ResolveSet::Act))
+            // Before the triggers land, so a pulse lands in the pass that
+            // brought it; a game with no effects has nothing to land it.
+            .add_systems(Turn, pulse_worn.in_set(ResolveSet::Triggers).before(crate::effects::land_triggers))
             // In the pass the slots changed in, so gear counts from the
             // moment it is worn.
             .add_systems(Turn, fold_gear.in_set(TurnSet::React))
+            .add_systems(Turn, restart_pulses.in_set(TurnSet::React))
             .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
     }

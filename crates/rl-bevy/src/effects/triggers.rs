@@ -24,7 +24,8 @@ use crate::cue::{Anchor, Cue, Cued, LookOf};
 use crate::world::WorldMap;
 
 /// What sets a trigger off: a thing used, a throw come to rest, an attack
-/// made or landed, a cell stepped on, a prop broken, or one a game names.
+/// made or landed, a cell stepped on, a prop broken, a worn thing's clock,
+/// or one a game names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Moment;
 
@@ -52,9 +53,12 @@ impl Moments {
     pub const ENTERED: MomentId = MomentId::from_raw(4);
     /// A prop was broken.
     pub const DESTROYED: MomentId = MomentId::from_raw(5);
+    /// A worn thing's own clock came round: see
+    /// [`Pulse`](crate::items::Pulse).
+    pub const PULSE: MomentId = MomentId::from_raw(6);
 
     /// The engine's moments, in the order their ids are handed out.
-    pub const BUILT_IN: [&'static str; 6] = ["use", "land", "fire", "hit", "entered", "destroyed"];
+    pub const BUILT_IN: [&'static str; 7] = ["use", "land", "fire", "hit", "entered", "destroyed", "pulse"];
 
     /// The id for `name`, assigning a new one if it is unseen.
     pub fn declare(&mut self, name: &str) -> MomentId {
@@ -558,5 +562,15 @@ mod tests {
 
     fn keep_dealt(mut dealt: MessageReader<DamageDealt>, mut log: ResMut<DealtLog>) {
         log.0.extend(dealt.read().map(|d| d.dealt));
+    }
+
+    /// The pulse is the engine's seventh moment, added at the end so every
+    /// moment before it keeps the id a save or a content file already has.
+    #[test]
+    fn the_pulse_is_a_built_in_moment_after_the_six_that_came_first() {
+        let moments = Moments::default();
+        assert_eq!(moments.get("pulse"), Some(Moments::PULSE));
+        assert_eq!(Moments::PULSE, MomentId::from_raw(6));
+        assert_eq!(moments.get("destroyed"), Some(Moments::DESTROYED), "the old ids did not move");
     }
 }
