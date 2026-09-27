@@ -7,9 +7,10 @@
 //! commando has seen. Foundry says only what each kind of thing it spawns
 //! is: the commando and whether its lamp was lit, a droid by its
 //! definition, an item by its definition, its level and its heat, a lift
-//! by how it is drawn. What Foundry keeps of a run outside its entities, the upgrades
-//! taken and the deepest deck reached, goes through [`SaveableState`], and
-//! the mission's tracker and ledger are the engine's to save.
+//! by how it is drawn. What Foundry keeps of a run outside its entities,
+//! the upgrades taken and the deepest deck reached, goes through
+//! [`SaveableState`], and the mission's tracker and ledger are the
+//! engine's to save.
 //!
 //! The run is written on the way out, by the engine's stash when the
 //! window closes or the menu quits, and on every deck arrival, so a crash

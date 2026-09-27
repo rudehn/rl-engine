@@ -372,9 +372,9 @@ pub struct ItemKind(pub Id<ItemDef>);
 /// Spawns `id` as an item entity carrying every component its definition
 /// implies: what it is called and drawn as, what it counts as, and, for
 /// something worn, its shape, its armor, its resistances and whatever it
-/// strikes or shoots with. `Heat` and `Ammo` are attached the same way
-/// Tasks 6 and 7 will give them behaviour for. A stackable item spawns as
-/// a stack of one; the caller merges or grows it as it likes.
+/// strikes or shoots with, and the `Heat` or `Ammo` it runs on. A
+/// stackable item spawns as a stack of one; the caller merges or grows it
+/// as it likes.
 ///
 /// At `level`, which names it `cloak plate +2`, lands its effects at that
 /// level and writes its clock with the level applied; a thing that names
