@@ -25,7 +25,9 @@ makes a reference worse than no reference.
 import hashlib
 import pathlib
 import re
+import subprocess
 import sys
+from typing import Optional
 
 SYSTEMS = pathlib.Path("docs/guide/src/systems")
 CRATES = pathlib.Path("crates")
@@ -81,6 +83,29 @@ def fingerprint(paths: list[str]) -> str:
     for path in paths:
         digest.update(pathlib.Path(path).read_bytes())
     return digest.hexdigest()[:8]
+
+
+def confirmed_in(page: pathlib.Path, stamp: str) -> Optional[str]:
+    """The commit that wrote `stamp` into `page`, which is when it was blessed.
+
+    A page is re-read once per branch rather than once per commit, so by
+    then the code under it may have moved in a dozen commits. "Something
+    changed" is not enough to re-read by; the diff since this commit is.
+    None when the stamp was never committed, or this is not a checkout.
+    """
+    try:
+        found = subprocess.run(
+            ["git", "log", "-1", "-m", "--format=%h", "-S", f"fingerprint: {stamp}", "--", str(page)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    # `-m`, because a merge that resolved two branches' stamps is the commit
+    # that wrote the one standing, and it prints once per parent.
+    lines = found.stdout.split()
+    return lines[0] if lines else None
 
 
 def pages() -> list[pathlib.Path]:
@@ -156,10 +181,13 @@ def main() -> int:
             continue
         fresh = fingerprint(fields["files"])
         if fresh != fields["fingerprint"][0]:
+            since = confirmed_in(page, fields["fingerprint"][0])
+            moved = f"    What moved:   git diff {since} -- {' '.join(fields['files'])}\n" if since else ""
             problems.append(
                 f"{page}: the code it documents has changed since the page was last confirmed.\n"
                 f"    It documents: {', '.join(fields['files'])}\n"
-                f"    Re-read the page. If it is still true:  scripts/check-systems.py --bless {page.stem}\n"
+                f"{moved}"
+                f"    Re-read the page against that. If it is still true:  scripts/check-systems.py --bless {page.stem}\n"
                 f"    If it is not, fix the page first."
             )
 
