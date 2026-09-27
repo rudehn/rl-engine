@@ -393,10 +393,11 @@ impl LevelTable {
         if let [(level, _)] = row.levels.as_slice() {
             return *level;
         }
-        let total: u32 = row.levels.iter().map(|(_, w)| w).sum();
+        let total: u64 = row.levels.iter().map(|(_, w)| u64::from(*w)).sum();
         let mut pick = rng.random_range(0..total);
         for (level, weight) in &row.levels {
-            if pick < *weight {
+            let weight = u64::from(*weight);
+            if pick < weight {
                 return *level;
             }
             pick -= weight;
@@ -755,6 +756,18 @@ mod tests {
         assert_eq!(t.roll(1, &mut a), 0);
         assert_eq!(LevelTable::default().roll(1, &mut a), 0);
         assert_eq!(a.random::<u64>(), b.random::<u64>(), "the stream is where it was");
+    }
+
+    /// Weights past what a `u32` holds still sum and draw correctly, rather
+    /// than wrapping the total and drawing from the wrong span.
+    #[test]
+    fn a_rows_weights_summing_past_a_u32_still_draw_both_levels() {
+        let t = LevelTable::new(vec![LevelRow { bands: (1, 1), levels: vec![(1, u32::MAX), (2, u32::MAX)] }]).expect("a sound table");
+        let mut rng = StdRng::seed_from_u64(11);
+        let levels: Vec<i32> = (0..200).map(|_| t.roll(1, &mut rng)).collect();
+        assert!(levels.contains(&1), "level 1 never drawn: {levels:?}");
+        assert!(levels.contains(&2), "level 2 never drawn: {levels:?}");
+        assert!(levels.iter().all(|l| [1, 2].contains(l)), "an unexpected level: {levels:?}");
     }
 
     #[test]
