@@ -202,8 +202,12 @@ impl Watchers<'_, '_> {
         if !at_odds(self.rules.as_deref(), faction, theirs) {
             return false;
         }
-        if let Some(aware) = aware {
-            return aware.knows(subject);
+        if aware.is_some() {
+            // `at_odds` was already asked above; asking again here through
+            // `remembers` is the price of the two answering by construction
+            // from the same rule, which the Unseen check above is the only
+            // difference left between them.
+            return !self.unseen.contains(subject) && self.remembers(watcher, subject);
         }
         let here = map.current();
         if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || subject_on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here {
@@ -776,6 +780,34 @@ mod tests {
         assert!(!field.aware().knows(player), "a memory of three turns, and it forgot");
     }
 
+    /// A watcher alert to the player that loses it to the unseen does not
+    /// stand still or wander: `filter_unseen` clears the player from its
+    /// enemies the same as it would anything else out of sight, so
+    /// `SearchLastKnown` reads the trail and it closes on where it last
+    /// knew of them.
+    ///
+    /// The brain here drops `Hunt`, which would otherwise chase the same
+    /// cell for the same reason `SearchLastKnown` does, the player never
+    /// having moved: without `filter_unseen` clearing the enemy from the
+    /// snapshot, `SearchLastKnown`'s own guard, that the enemies list is
+    /// empty, would refuse to run at all, and this is the test that would
+    /// fail if it did.
+    #[test]
+    fn a_watcher_that_lost_the_unseen_walks_toward_where_it_last_knew_of_them() {
+        let mut field = Field::new(keen(), 5, 10, true, None);
+        let brain = Brain::new().then(SearchLastKnown).then(Wander { chance_pct: 0 });
+        field.app.world_mut().entity_mut(field.watcher).insert(Mind(Arc::new(brain)));
+        field.wait();
+        assert!(field.aware().knows(field.player), "noticed first");
+        let last_known = field.aware().0.get(&field.player).and_then(|a| a.last_known()).expect("alert to somewhere");
+        field.app.world_mut().entity_mut(field.player).insert(Unseen);
+        let before = rl_core::geometry::chebyshev(field.at(field.watcher), last_known);
+        field.wait();
+        field.wait();
+        let after = rl_core::geometry::chebyshev(field.at(field.watcher), last_known);
+        assert!(after < before, "closed on the cell it last knew of them: {before} to {after}");
+    }
+
     /// Without awareness, a mind that sees on sight still does not see the
     /// unseen.
     #[test]
@@ -1038,5 +1070,86 @@ mod tests {
         field.app.update();
         assert!(!unseen(&field), "taken off, and seen again");
         assert_eq!(field.app.world().resource::<Swings>().0, 1, "and swung at on the watcher's very next turn");
+    }
+
+    /// `filter_unseen` clears the unseen out of a mind's allies and others
+    /// just as it does its enemies: the roster sorts by relation alone, so
+    /// without this an unseen ally or bystander would still be told about,
+    /// which the vitals strip's own question already shows is wrong for an
+    /// enemy.
+    ///
+    /// Read through the snapshot the minds build, the way
+    /// `a_mind_is_told_the_bodies_it_can_see_and_whose_they_were` in
+    /// `remains.rs` reaches it: a system recording it right after the
+    /// filter chain runs, in the same set.
+    #[test]
+    fn filter_unseen_clears_an_unseen_actor_from_allies_and_others_as_well_as_enemies() {
+        use crate::plugin::{PerceiveSet, Turn};
+        use crate::turn::{Intent, Wait};
+
+        /// What the watcher's snapshot held of each roster, after the
+        /// filter chain ran.
+        #[derive(Resource, Default)]
+        struct Told {
+            enemies: Vec<Entity>,
+            allies: Vec<Entity>,
+            others: Vec<Entity>,
+        }
+
+        fn record(thinking: Res<Thinking>, mut told: ResMut<Told>) {
+            if let Some(snapshot) = thinking.snapshot() {
+                told.enemies = snapshot.enemies.iter().map(|e| e.id).collect();
+                told.allies = snapshot.allies.iter().map(|e| e.id).collect();
+                told.others = snapshot.others.iter().map(|e| e.id).collect();
+            }
+        }
+
+        let mut app = headless_app();
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin, StreamingPlugin))
+            .init_resource::<Told>()
+            .add_systems(Turn, record.in_set(PerceiveSet::Filter).after(filter_unnoticed));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+
+        // The player only needs to wait so the watcher, standing close
+        // enough to be admitted to play, gets a turn of its own; it is the
+        // player's own side, so it counts as one more enemy of the watcher
+        // besides `enemy_seen`, which the assertions below allow for.
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(10), Health::full(30), Armor(0), Faction(sides.ours))).id();
+        let watcher = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(3, 0)),
+                Health::full(30),
+                Faction(sides.theirs),
+                Perception(10),
+                Viewshed::new(10),
+                Mind(Arc::new(Brain::new())),
+            ))
+            .id();
+        // An enemy of the watcher (the player's own side), an ally (the
+        // watcher's own side) and an other (no side at all), each seen and
+        // each unseen, all standing close enough for the roster to sort.
+        let enemy_seen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 0)), Health::full(10), Faction(sides.ours))).id();
+        let enemy_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 1)), Health::full(10), Faction(sides.ours), Unseen)).id();
+        let ally_seen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(10), Faction(sides.theirs))).id();
+        let ally_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 1)), Health::full(10), Faction(sides.theirs), Unseen)).id();
+        let other_seen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 1)), Health::full(10))).id();
+        let other_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, -1)), Health::full(10), Unseen)).id();
+
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+
+        let told = app.world().resource::<Told>();
+        assert!(told.enemies.contains(&enemy_seen), "the seen enemy stays: {:?}", told.enemies);
+        assert!(!told.enemies.contains(&enemy_unseen), "and the unseen one is gone: {:?}", told.enemies);
+        assert!(told.allies.contains(&ally_seen), "the seen ally stays: {:?}", told.allies);
+        assert!(!told.allies.contains(&ally_unseen), "and the unseen one is gone: {:?}", told.allies);
+        assert_eq!(told.others, vec![other_seen], "the seen other stays and the unseen one is gone");
+        let _ = (other_unseen, watcher);
     }
 }
