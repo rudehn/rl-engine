@@ -864,8 +864,9 @@ mod tests {
         assert_eq!(field.app.world().resource::<Swings>().0, 0, "hidden on the player's turn, and not swung at on the watcher's");
     }
 
-    /// Harm credited to the unseen that was no attack, a status it put on
-    /// earlier ticking, does not give it away: only an attack does.
+    /// Harm credited to the unseen that was no attack, such as a thing it
+    /// used hurting those around it, does not give it away: only an attack
+    /// does.
     #[test]
     fn harm_that_is_no_attack_does_not_give_the_unseen_away() {
         let mut field = Field::new(blind(), 5, 10, true, None);
@@ -877,27 +878,93 @@ mod tests {
         assert!(!field.aware().knows(player), "hurt by something it never saw, and none the wiser");
     }
 
-    /// Throwing and an ability aimed at someone else end it as a blow does;
-    /// an ability on oneself does not.
-    #[test]
-    fn a_throw_and_an_ability_at_another_end_it_and_one_on_yourself_does_not() {
-        use crate::ability::AbilityEvent;
-        let (mut field, hidden) = hiding_field(blind(), 6);
-        let (player, watcher) = (field.player, field.watcher);
-        let ability = rl_rules::ability::AbilityId::from_raw(0);
-        let at = field.at(player);
-        hide(&mut field, hidden);
-        field.app.world_mut().write_message(AbilityEvent::Used { user: player, ability, aim: at, targets: vec![player] });
+    /// A hiding field that can also throw and use abilities: `jab`, a bolt
+    /// that harms whoever it reaches, and `steady`, which mends its user
+    /// and touches nobody else, both granted to the player.
+    fn armed_field(gap: i32) -> (Field, rl_rules::StatusId) {
+        let mut field = Field::build(blind(), gap, 10, true, None, |app| {
+            use crate::effects::AddEngineEffects;
+            app.add_plugins((crate::status::StatusPlugin, crate::items::ItemsPlugin, crate::throwing::ThrowingPlugin, crate::ability::AbilitiesPlugin));
+            app.add_engine_effects();
+            // `two_sides` registers `kinetic` as the only damage kind, so the
+            // same one-kind registry here resolves to the same id; the
+            // abilities have to be in before play begins, which checks them.
+            let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("kinetic")]).unwrap();
+            let names = rl_rules::Names::new().damage_kinds(&kinds);
+            let abilities = crate::ability::Abilities::load(
+                r#"[
+                    (name: "jab", mode: Bolt(range: 8), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "1"))]),
+                    (name: "steady", aim: SelfOnly, mode: Own, effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))]),
+                ]"#,
+                app.world().resource::<crate::effects::EffectKinds>(),
+                &names,
+            )
+            .expect("the abilities load");
+            app.insert_resource(abilities);
+        });
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden").unseen()]).unwrap();
+        let hidden = statuses.expect("hidden");
+        field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
+        let known = {
+            let abilities = field.app.world().resource::<crate::ability::Abilities>();
+            vec![abilities.expect("jab"), abilities.expect("steady")]
+        };
+        let player = field.player;
+        field.app.world_mut().entity_mut(player).insert((crate::ability::Grants(known), crate::items::Inventory::default()));
         field.wait();
-        assert!(field.app.world().get::<Unseen>(player).is_some(), "a stim in the arm is not an attack");
-        field.app.world_mut().write_message(AbilityEvent::Used { user: player, ability, aim: at, targets: vec![watcher] });
-        field.wait();
-        assert!(field.app.world().get::<Unseen>(player).is_none(), "one aimed at another is");
+        (field, hidden)
+    }
 
+    fn unseen(field: &Field) -> bool {
+        field.app.world().get::<Unseen>(field.player).is_some()
+    }
+
+    /// An ability used on oneself is no attack and leaves its user unseen;
+    /// one used on another ends it, in the pass it lands, before the harm
+    /// does, so the one hit wakes to where it came from.
+    #[test]
+    fn an_ability_used_on_another_ends_it_and_one_used_on_yourself_does_not() {
+        let (mut field, hidden) = armed_field(6);
+        let (player, watcher) = (field.player, field.watcher);
+        let (jab, steady) = {
+            let abilities = field.app.world().resource::<crate::ability::Abilities>();
+            (abilities.expect("jab"), abilities.expect("steady"))
+        };
         hide(&mut field, hidden);
-        let thing = field.app.world_mut().spawn(crate::items::Item).id();
-        field.app.world_mut().write_message(crate::items::ItemEvent::Thrown { actor: player, item: thing, at: Position(at), struck: None });
-        field.wait();
-        assert!(field.app.world().get::<Unseen>(player).is_none(), "and so is a throw, whatever it hit");
+        let here = field.at(player);
+        field.app.world_mut().write_message(Intent::new(player, crate::ability::Use { ability: steady, aim: here }));
+        field.app.update();
+        assert!(unseen(&field), "a stim in the arm is not an attack");
+
+        let there = field.at(watcher);
+        field.app.world_mut().write_message(Intent::new(player, crate::ability::Use { ability: jab, aim: there }));
+        field.app.update();
+        assert!(!unseen(&field), "one aimed at another is");
+        assert!(field.aware().knows(player), "and the one it hit knows where from");
+    }
+
+    /// A throw ends it when it lands, not when it leaves the hand: watched,
+    /// the flight holds the turn, and the user stays unseen until the pass
+    /// the thing comes down, which is the pass the one it hit wakes to it.
+    #[test]
+    fn a_throw_ends_it_in_the_pass_it_lands_even_after_a_watched_flight() {
+        let (mut field, hidden) = armed_field(4);
+        let (player, watcher) = (field.player, field.watcher);
+        let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
+        let knife = field.app.world_mut().spawn((crate::items::Item, crate::throwing::Throwable::new(6, Some((kind, DiceRoll::flat(1)))))).id();
+        field.app.world_mut().get_mut::<crate::items::Inventory>(player).unwrap().items.push(knife);
+        hide(&mut field, hidden);
+        field.app.world_mut().resource_mut::<crate::cue::TurnHold>().watch();
+
+        let there = field.at(watcher);
+        field.app.world_mut().write_message(Intent::new(player, crate::throwing::Throw { item: knife, at: there }));
+        field.app.update();
+        assert!(field.app.world().resource::<crate::cue::TurnHold>().in_flight(), "the knife is in the air");
+        assert!(unseen(&field), "and its thrower is still unseen while it flies");
+
+        field.app.world_mut().resource_mut::<crate::cue::TurnHold>().release();
+        field.app.update();
+        assert!(!unseen(&field), "it landed, and the throw ended it");
+        assert!(field.aware().knows(player), "and the one it hit knows where from");
     }
 }

@@ -1181,6 +1181,33 @@ mod tests {
         assert_eq!(fg(&app), Some(crate::run::COMMANDO), "and white once it wore off");
     }
 
+    /// A stim is no attack and leaves a cloaked commando unseen; a frag
+    /// grenade thrown at a droid is one, and the commando is seen again in
+    /// the pass it bursts, through the same throw the pack's key makes.
+    #[test]
+    fn a_stim_leaves_the_commando_cloaked_and_a_grenade_thrown_at_a_droid_ends_it() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 4, 4);
+        let frags = carry(&mut app, player, "frag grenade", 1);
+        crate::testing::pick(&mut app, player, crate::upgrades::Upgrade::Stims);
+        let stims = app.world().resource::<Abilities>().expect("stims");
+        let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
+        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 10, by: None });
+        crate::testing::pass_turns(&mut app, 1);
+        assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
+
+        let here = at(&app, player);
+        app.world_mut().write_message(Intent::new(player, Use { ability: stims, aim: here }));
+        crate::testing::settle(&mut app);
+        let cooling = app.world().get::<Cooldowns>(player).map(|c| c.ready_at(stims));
+        assert!(cooling.is_some_and(|t| t > 0), "the stim was taken, so it is cooling: {cooling:?}");
+        assert!(app.world().get::<Unseen>(player).is_some(), "a stim in the arm is not an attack");
+
+        let aim = at(&app, droid);
+        throw_grenade(&mut app, player, frags, aim);
+        assert!(app.world().get::<Unseen>(player).is_none(), "a grenade at a droid is");
+    }
+
     #[test]
     fn a_weapon_naming_both_heat_and_ammo_fails_to_validate() {
         let r = crate::content::registries();
