@@ -436,10 +436,13 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// a turn's consequences land, and inside the pass, so the monster that was
 /// struck already knows where from when it next decides.
 ///
-/// Not by an attacker still [`Unseen`]: a blow has ended that before the
-/// damage lands, so what is left is harm credited to it that was no
-/// attack, a status it put on earlier ticking, and that gives nothing
-/// away.
+/// Not by an attacker still [`Unseen`]: every attack [`reveal_attackers`]
+/// reads has ended that before the damage lands, so harm credited to one
+/// still unseen came from something that is not on its list, a thing it
+/// used whose `use` trigger hurt those around it, a worn thing pulsing, or
+/// a trap it set off, and that gives nothing away. Whether a use that
+/// harms others should end the unseen is open. A status ticking carries
+/// no attacker and wakes nobody whoever is unseen.
 pub fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
     mut missed: MessageReader<crate::accuracy::Missed>,

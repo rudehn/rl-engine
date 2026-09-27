@@ -14,7 +14,7 @@
             crates/rl-rules/src/events/ledger.rs
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
-     fingerprint: 9353be14 -->
+     fingerprint: dcc7f40d -->
 
 # Statuses
 
@@ -88,7 +88,7 @@ A fact is the game's reading of an engine message, which is the only translation
 
 ## The line
 
-The engine acts on two things a status says and nothing else: it installs and removes the stat modifiers, and it turns the tick into a hit; `unseen` is the one flag another plugin acts on, because who can see whom is stealth's question.
+The status plugin acts on two things a status says: it installs and removes the stat modifiers, and it turns the tick into a hit; `unseen` is read by stealth, because who can see whom is stealth's question.
 Everything richer is the game's, keyed by the id: a status that silences an ability, one that walls a door, one that turns a body to stone is a system reading `StatusEvent` or `Afflicted` and doing the rest.
 Whether anything is inflicted at all is the game's too, and the shape the randomness rule points at is a system reading `DamageDealt` and writing `Afflict` with a chance drawn from the game's own stream, never the engine's, so a rule a game adds cannot shift the dice of the blows the engine has yet to throw.
 The engine also never decides that a status is worth saying out loud: it writes the three events and a game turns the ones about its player into words, which is why every phrase about an affliction lives in a game or in the narrator's table.

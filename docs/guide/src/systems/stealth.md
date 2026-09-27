@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: ebf7c971 -->
+     fingerprint: ae15716b -->
 
 # Stealth
 
@@ -60,7 +60,7 @@ It is kept from `Changed<Afflicted>` after the statuses are applied, ticked and 
 `filter_unseen` takes the unseen out of the enemies, allies and others of every mind, noticing or not, and `update_awareness` counts one out of view, so an observer that was alert to it searches where it last saw it for its memory and forgets.
 `reveal_attackers` reads `Struck`, written for every blow or shot before the accuracy roll, `ItemEvent::Thrown`, and `AbilityEvent::Used` with a target other than the user, and writes a `Cure` for every unseen status each attacker holds.
 It runs before `resolve_afflictions` in the same pass, so the marker is gone before the damage lands and `wake_on_damage` points the one struck at an attacker it can see.
-`wake_on_damage` wakes nobody to an attacker still unseen, since what is left once an attack has ended it is harm that was no attack, a status it put on earlier ticking.
+`wake_on_damage` wakes nobody to an attacker still unseen, which is harm from something `reveal_attackers` does not read: a thing used whose `use` trigger hurt those around it, a worn thing pulsing, or a trap its holder set off; a status ticking carries no attacker and wakes nobody at all.
 
 ## Using it
 
@@ -132,5 +132,5 @@ What the player reads off it is `Alert::Hunting` on a nearby row, and hunting ou
 That is what lets the properties be proved rather than watched: that light widens the certain radius by exactly its bonus and by nothing else, that `quiet` narrows it and the floor of one holds against any stack of gear, and that `lost` returns to `Unaware` on exactly the turn the memory passes while a sighting in between resets the count.
 Both stat blocks are serde-ready, so an observer's attention and a subject's quiet are written in a bestiary file rather than in Rust.
 `rl-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems and the system parameters that answer whether stealth is running and who is watching.
-The unseen is part of stealth rather than a plugin of its own because it answers stealth's question, who can see whom, and two plugins would leave a game ordering their filters by hand.
+`StatusDef::unseen` is a flag on a tier 1 definition, so which status hides its holder is a line in a status file that loads and is checked without an `App`, and what hiding does is left to `stealth.rs`.
 `Watchers` lives there rather than in a panel because the vitals strip and the nearby rail must read the same answer the minds act on, and the bug that put it there was a strip reading hidden while a cutthroat cut the player down.

@@ -196,6 +196,7 @@ Noise is still heard, since hearing is not sight.
 A blow or a shot, landed or not, a throw, or an ability landed on anyone but its user ends every unseen status its maker holds, in the same pass and before the damage lands, so the one struck wakes to an attacker it can see; being hurt does not end it.
 It is part of stealth rather than a plugin of its own because it answers stealth's question, who can see whom, and two plugins would make a game order their filters by hand.
 Radar sees nothing either; whether it should is an open question, and so is what a mind that walks into an unseen actor learns.
+A thing used whose `use` trigger harms those around its user does not end it either, since a use is not on the list above; whether it should is open too, and meanwhile the harm wakes nobody to an attacker it cannot see.
 
 ## 9. What is not in this slice
 

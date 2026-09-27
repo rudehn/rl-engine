@@ -181,6 +181,10 @@ These were settled in conversation and are not reopened here.
 - **Walking into the unseen.** A searching mind that steps into an unseen actor's cell is refused the step and learns nothing today.
 - **An unseen non-player on the player's screen.** Nothing hides a cloaked droid from the map yet; the stealth design names this as a render slice.
 - **Sneak-attack damage** from the unseen, which the stealth design already defers.
+- **A use that harms others.**
+  The reveals in section 6 are a blow or shot, a throw, and an ability landed on another; a thing used whose `use` trigger harms those around its user is not among them.
+  So setting something off on a crowd leaves its user unseen, and the harm wakes nobody to them.
+  Whether a use should end the unseen when its landing reaches anyone but the user is undecided, and `docs/TODO.md` section 9 tracks it.
 - **Equip time per item**, on top of attunement.
 - **Enchantable plates, helmets and weapons**, and what a level buys each.
 - **More effects that scale**: `Shove`, `Pull`, `Emit`, `Ignite`.
