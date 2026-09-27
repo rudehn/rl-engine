@@ -368,9 +368,15 @@ impl LevelTable {
             }
         }
         rows.sort_by_key(|r| r.bands);
-        for pair in rows.windows(2) {
-            if pair[1].bands.0 <= pair[0].bands.1 {
-                errors.push(format!("bands {:?} and {:?} overlap", pair[0].bands, pair[1].bands));
+        // Every pair, not only neighbours once sorted: a row spanning two
+        // others sorts beside only the first. A backwards range is already
+        // reported and overlaps nothing.
+        for (i, a) in rows.iter().enumerate() {
+            for b in &rows[i + 1..] {
+                let sound = a.bands.0 <= a.bands.1 && b.bands.0 <= b.bands.1;
+                if sound && b.bands.0 <= a.bands.1 {
+                    errors.push(format!("bands {:?} and {:?} overlap", a.bands, b.bands));
+                }
             }
         }
         if errors.is_empty() { Ok(Self { rows }) } else { Err(errors) }
@@ -779,6 +785,19 @@ mod tests {
         ])
         .expect_err("five problems");
         assert_eq!(errors.len(), 5, "an overlap, an empty row, a backwards range, a negative level, a weight of nothing: {errors:#?}");
+    }
+
+    /// A row that spans two others overlaps both, and both are said, not
+    /// only the one that sorts beside it.
+    #[test]
+    fn a_row_containing_two_others_is_reported_against_each() {
+        let errors = LevelTable::new(vec![
+            LevelRow { bands: (1, 10), levels: vec![(0, 1)] },
+            LevelRow { bands: (2, 3), levels: vec![(0, 1)] },
+            LevelRow { bands: (5, 6), levels: vec![(0, 1)] },
+        ])
+        .expect_err("two overlaps");
+        assert_eq!(errors, vec!["bands (1, 10) and (2, 3) overlap".to_string(), "bands (1, 10) and (5, 6) overlap".to_string()]);
     }
 
     #[test]
