@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 3986874b -->
+     fingerprint: 426af997 -->
 
 # Stealth
 
@@ -55,6 +55,7 @@ Noise offers its own to the same place, the freshest becomes `Snapshot::last_kno
 `wake_on_damage` wakes whoever takes a blow from something carrying `Stealth` and points it at the attacker's cell: a mend is not a blow, a blow armor stopped at zero still wakes it, and so does a rolled attack that missed, read from `Missed`, so a hider cannot fire at a sleeper until one lands.
 `StealthRunning` answers whether the plugin was added, asked of its message rather than of the components, because `Notice` brings an `Aware` with it and a game that authored observers without the plugin would otherwise have monsters that notice nothing forever.
 `Watchers` answers who is watching whom by the rule the minds act on: an observer that keeps an `Aware` watches what it knows about, one that does not watches whatever its own sight reaches, and neither watches anything it is not at odds with or anything unseen.
+`Watchers::remembers` answers whether an observer still has a subject in mind, watching it or not, and the two part only for the unseen.
 `StatusDef::unseen`, `unseen: true` in a status file, is a status whose holder nothing sees while it lasts, and `Unseen` is the marker `mark_unseen` keeps on whoever holds one.
 It is kept from `Changed<Afflicted>` after the statuses are applied, ticked and cured, so it lasts exactly as long as the status, a continued run gets it back from the statuses it saved, and the pass a status goes on is the pass the next mind to decide cannot see its holder.
 `filter_unseen` takes the unseen out of the enemies, allies and others of every mind, noticing or not, and `update_awareness` counts one out of view, so an observer that was alert to it searches where it last saw it for its memory and forgets.
@@ -124,6 +125,7 @@ A `Perception` is still the hard cap on how far an actor notices anything at all
 Light is the one exposure term the engine ships, and it is one number, so a creature with `lit_bonus: 0` is one that hunts by something other than the eye without the engine learning a word for it.
 Hearing is a separate lever that this never reads: it brings a monster close, and close is where the roll is likely to land.
 What the player reads off it is `Alert::Hunting` on a nearby row, and hunting outranks searching, since something that has seen you is not still wondering about a noise.
+Something that had you and lost you to the unseen reads `Alert::Searching`, since it is on its way to where it last knew of you, and neither hunting, since nothing sees the unseen, nor idle, since it has not forgotten.
 `Aware` is not saved, so a monster that had noticed you has forgotten by the time a continued run begins.
 
 ## Where it lives

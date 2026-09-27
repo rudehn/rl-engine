@@ -13,7 +13,7 @@
             crates/rl-bevy/src/items.rs
             crates/rl-ui/src/view/nearby.rs
             crates/rl-ui/src/panel/nearby.rs
-     fingerprint: d180ecce -->
+     fingerprint: 7ac8071c -->
 
 # Noise
 
@@ -114,7 +114,7 @@ Hearing and stealth are two levers that never read each other: `Stealth::quiet` 
 What follows a sound is a tactic reading `last_known`: `SearchLastKnown` walks to the place, `Keep::enemies` keeps station on it once nothing is in sight and `Hover` holds while it is remembered, each of them only for a mind whose `Wits` hold `SEARCHES`, so a mind without the wit, or with none of those tactics in its brain, hears the sound and does nothing with it.
 Nothing here persists between turns: a noise never outlives the pass it was made in, so there is no field to step and nothing to save, and `Heard` is lost on load the way awareness is, which is a monster on its way to look at a sound forgetting it.
 A game that adds the plugin and authors no `Hearing` anywhere hears nothing at all, which is the right way round and the likely first report.
-What the player reads off it is `Alert::Searching` on a nearby row, which is exactly this: something on its way to a noise that has not seen you, named in the game's own words through `AlertWords`.
+What the player reads off it is `Alert::Searching` on a nearby row: something on its way to a noise that has not seen you, named in the game's own words through `AlertWords`, and the same reading stealth gives something on its way to where it lost you to the unseen.
 Per-weapon loudness and per-tile deadening are not here: a knife and a pistol are both `strike`, and a thick carpet is a `TileProps` field on the day a game asks for one.
 
 ## Where it lives

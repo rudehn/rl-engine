@@ -178,6 +178,18 @@ impl Watchers<'_, '_> {
         self.watchers.iter().any(|w| self.judge(w, subject))
     }
 
+    /// Whether `watcher` still has `subject` in mind, watching it or not:
+    /// alert to it and not yet forgotten. The two part only for the
+    /// [`Unseen`], whom nobody watches while a watcher that had them walks
+    /// to where it last knew of them; a panel reads that as looking for
+    /// someone rather than as knowing of nothing. Never true of a watcher
+    /// with no [`Aware`], which has no memory to go by.
+    pub fn remembers(&self, watcher: Entity, subject: Entity) -> bool {
+        let Ok((_, _, faction, _, _, aware, _)) = self.watchers.get(watcher) else { return false };
+        let theirs = self.subjects.get(subject).ok().and_then(|(_, f, _)| f);
+        watcher != subject && at_odds(self.rules.as_deref(), faction, theirs) && aware.is_some_and(|a| a.knows(subject))
+    }
+
     fn judge(&self, (watcher, pos, faction, perception, sight, aware, on): Watcher<'_>, subject: Entity) -> bool {
         if watcher == subject || self.unseen.contains(subject) {
             return false;
