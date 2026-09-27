@@ -31,7 +31,7 @@ Every draw comes from a stream the engine derives from the run's seed, and which
 
 - A place's floor is scattered from a stream derived for that place alone, a region's for that region, and a container's for its cell. What lies on deck four never depends on how many kills happened on deck three, and a region streamed in second draws what it would have drawn first.
 - What the dead leave comes from `LootRng`, one stream kept from kill to kill, so the second kill rolls on from where the first left off. It is never combat's stream, so a kill's loot never shifts a blow that has not been struck.
-- Whatever the game rolls on the thing it makes, a quality or an enchant, comes from the stream the engine hands `make`, so it is as deterministic as the rest.
+- Whatever the game rolls on the thing it makes, a quality or an enchant, comes from the stream the engine hands `make`, so it is as deterministic as the rest, and at the band the engine hands it, in `Provenance` beside why it is being made, so a crate two bands down stocks better-enchanted things than one on the floor above it.
 
 Both games had these rules already, written separately, and one of them had drawn drops from combat's stream until a review caught it.
 
@@ -70,7 +70,7 @@ A game with containers but no loot plugin still answers fixed items itself, and 
 
 - **The engine owning item definitions.** Every game's item has fields no other game's does: Foundry's heat and ammunition, Corsair's affixes and enchant levels. An engine item type would be either too small for any real game or an extension mechanism larger than the trait, and `docs/design/items.md` already settled that the engine reads components off whatever the game spawned.
 - **Names on every request.** See section 1.
-- **A rarity or quality system in the engine.** Corsair rolls quality and Foundry does not; `Found` tells the game why a thing is made and hands it a stream, which is all either needs.
+- **A rarity or quality system in the engine.** Corsair rolls quality and Foundry does not; `Provenance` tells the game why a thing is made and at what band, and hands it a stream, which is all either needs.
 - **Floor scatter on every place for every game.** Corsair's caves are stocked by hand at a vault's marks and must not also scatter loose finds; `ItemMaker::loose` lets a game say an area gets none, rather than the engine growing a switch per place kind.
 
 ## 6. Not here

@@ -20,7 +20,7 @@
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_bevy::{Found, ItemMaker, LootArea};
+use rl_engine::rl_bevy::{ItemMaker, LootArea, Provenance};
 use rl_engine::rl_core::{DiceRoll, Id};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::{DamageKind, EquipShape, LootTable, NameRef, Named, Registry, Resistances, ScatterRules, SlotDef, TagDef, TagId};
@@ -391,7 +391,7 @@ pub fn spawn_items(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, co
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<ItemDef>, count: u32, _: Found, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
+    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<ItemDef>, count: u32, _: Provenance, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
         spawn_items(commands, self, def, count, registries)
     }
 

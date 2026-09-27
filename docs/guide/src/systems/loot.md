@@ -5,7 +5,7 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/props.rs
             crates/rl-save/src/run.rs
-     fingerprint: 5f08f453 -->
+     fingerprint: b3168a16 -->
 
 # Loot
 
@@ -26,7 +26,7 @@ As play begins it refuses, by name, a container holding an item the game has no 
 
 `ItemMaker` is the game's side, and all of it: `make` turns an item id and a count into entities, placed nowhere, one stack for a thing that stacks and that many of anything else; `id_of` finds a definition by name; `table` is the game's `LootTable`; `scatter` gives its `ScatterRules`; `band` says how deep a `LootArea` is; and `loose` may overrule how many loose items an area gets.
 `LootArea` is a place by `MapId` or a region of the streamed surface by its coordinates, and a band is the game's own number for how deep, far or dangerous that is.
-`Found` tells `make` why something is being made, `Scatter`, `Drop`, `Container` or `Placed` at a prefab's slot by `PrefabPlugin`, and `make` is handed the engine's stream for whatever it rolls on the thing, a quality or an enchant.
+`make` is handed a `Provenance { found, band }`: `found` is why something is being made, `Scatter`, `Drop`, `Container` or `Placed` at a prefab's slot by `PrefabPlugin`, and `band` is the one the draw was asked at, a place's or a region's for its floor, a container's plus its row's offset, a prefab slot's plus its own, and for a drop the band of the place the actor died in; `make` is also handed the engine's stream for whatever it rolls on the thing, a quality or an enchant.
 `LootTable` is built by `loot::load` from a spawn file of rows, each an item, the bands it applies at, a weight and an optional group; its rows are sorted by item name, so the order they are written in draws nothing.
 `pick` draws a row that applies at a band by weight and how many are found together; `pick_tagged` draws only among items carrying a tag, and when nothing carrying it applies as deep as asked, `band_for` falls back to the nearest band above that has something, so a request past the deepest row gets the deepest thing.
 `ScatterRules` puts a count beside each place mark of a tag, a range of loose items, and more for each band; `plan_scatter` lays them on free cells over a `Layout` of marks and bounds, beside a mark and never on it, one to a cell.
@@ -47,7 +47,7 @@ A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<ItemDef>, count: u32, _: Found, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
+    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<ItemDef>, count: u32, _: Provenance, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
         spawn_items(commands, self, def, count, registries)
     }
 

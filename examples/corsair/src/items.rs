@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_bevy::{Found, ItemMaker, LootArea};
+use rl_engine::rl_bevy::{ItemMaker, LootArea, Provenance};
 use rl_engine::rl_core::{DiceRoll, Id, Point, geometry};
 use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::damage::DamageKind;
@@ -341,7 +341,7 @@ impl Armory {
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, count: u32, _: Found, rng: &mut rand::rngs::StdRng) -> Vec<Entity> {
+    fn make(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, count: u32, _: Provenance, rng: &mut rand::rngs::StdRng) -> Vec<Entity> {
         if self.defs.get(def).stack {
             return vec![self.spawn_with(commands, def, count, None, Enchanted::plain())];
         }
