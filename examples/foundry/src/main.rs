@@ -1,4 +1,4 @@
-//! Foundry: a commando fighting down three decks of a droid foundry, with
+//! Foundry: a commando fighting down ten decks of a droid foundry, with
 //! weapons that run hot or run dry, droids that shoot and raise the alarm,
 //! and a reactor charge that ends in a choice of upgrade. This binary
 //! opens the window, cuts the screen and adds the panels; the game itself,
@@ -249,6 +249,9 @@ mod tests {
     fn the_opening_screen_names_the_first_deck_in_the_log_and_the_way_to_the_controls_in_the_rail() {
         let app = on_screen(RunSeed(7));
         let log: Vec<String> = (ROWS - LOG_ROWS..ROWS).map(|y| row(&app, y)).collect();
+        // Where the first charge is set, which holds of the ten-deck
+        // foundry wherever the run starts.
+        assert!(log.iter().any(|l| l.starts_with("Seed 7. The drop ship is gone. The first reactor is on deck three.")), "{log:#?}");
         assert!(log.iter().any(|l| l.starts_with("Deck 1: the upper assembly hall.")), "{log:#?}");
         assert!(log.iter().any(|l| l.starts_with("Press ? for the controls.")), "{log:#?}");
         assert!(row(&app, ROWS - 1).trim_end().ends_with("? controls"), "the rail's last row: {:?}", row(&app, ROWS - 1));

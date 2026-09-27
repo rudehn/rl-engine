@@ -150,7 +150,7 @@ pub fn start(
     prepare(&mut commands, &seed, &registries);
     let player = spawn_commando(&mut commands, &registries);
     let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
-    begin.log.notice(format!("Seed {}. The drop ship is gone. The reactor is three decks down.", seed.0.0), 0);
+    begin.log.notice(format!("Seed {}. The drop ship is gone. The first reactor is on deck three.", seed.0.0), 0);
     begin.warps.write(WarpRequest::into_place(player, map_of(deck)));
     begin.next.set(EngineState::Playing);
 }
