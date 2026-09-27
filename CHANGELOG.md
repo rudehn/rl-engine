@@ -90,6 +90,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Foundry rolls to hit: five points a tile past a weapon's effective range, sixteen against a target in dim light and thirty in the dark. Short guns reach further than they aim well: the hand blaster and ion pistol aim to 3 and reach 8, the slug pistol 3 and 9, the heavy repeater 4 and 10, the blaster carbine 6 and 12, the slug rifle 7 and 14, and a thrown monoblade 2 and 5. Its fingerprint tripwire is re-baselined, since shots now roll and a missed droid now wakes.
 
 - A prefab mark can paint the ground under it: `Prefab::parse_cells` takes a legend to `Cell`, `Tile`, `Mark(Option<TileId>)` or `Clear`, and `parse` is unchanged. A piece can be `keyed`, and its stamp reports the key as `Stamped::prefab`, carried to `Spot::prefab`. Breaking only for a struct literal: `Stamped { .., prefab: None }` and `Spot { .., prefab: None }`.
+- Putting the look cursor away, with Escape or its own key, lets go of what it was on, as putting an aim away already did. Before, the row stayed lit in the nearby list and the cell stayed marked on the map until a second Escape. A game that read `Focus` after the look cursor closed to find what was looked at no longer finds it there.
 
 ## 0.3.0
 

@@ -140,7 +140,7 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mu
         return;
     }
     if toggled {
-        modals.close_one(modal);
+        close(&mut modals, modal, &mut look.focus);
         return;
     }
     // Steered on a copy, so the list can be borrowed while the focus moves,
@@ -151,10 +151,20 @@ pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mu
         *look.focus = focus;
     }
     match steer {
-        Steer::Close => modals.close_one(modal),
+        Steer::Close => close(&mut modals, modal, &mut look.focus),
         // Looking spends nothing, so there is nothing to confirm.
         Steer::Confirm | Steer::Moved | Steer::Stay => {}
     }
+}
+
+/// Puts the cursor away and lets go of what it was on, by either key.
+///
+/// Letting go rather than leaving it picked out, as putting an aim away
+/// does: a row still lit in the rail and ticks still round a cell read as a
+/// cursor that did not close, and cost a second Escape to clear.
+fn close(modals: &mut Modals, modal: ModalId, focus: &mut Focus) {
+    modals.close_one(modal);
+    focus.clear();
 }
 
 /// Everything the forecast reads.
@@ -335,6 +345,21 @@ mod tests {
         assert!(stage.app.world().resource::<InspectView>().subject.is_none(), "a closed cursor describes nothing");
     }
 
+    /// Closing the cursor lets go of what it was on, the way putting an aim
+    /// away does: one Escape, and nothing is left picked out in the rail or
+    /// marked on the map.
+    #[test]
+    fn closing_the_cursor_leaves_nothing_picked_out() {
+        let mut stage = stage();
+        stage.actor("near one", 'n', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        assert!(stage.app.world().resource::<Focus>().get().is_some(), "the cursor picks out what it is on");
+        stage.press(CursorKeys::default().close);
+        assert!(!stage.app.world().resource::<Modals>().any_open());
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "and one Escape lets go of it");
+    }
+
     #[test]
     fn cycling_walks_the_actors_in_sight_by_distance_and_comes_back_round() {
         let mut stage = stage();
@@ -380,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cursor_opens_on_the_row_picked_out_and_leaves_picked_out_what_it_was_on() {
+    fn the_cursor_opens_on_the_row_picked_out_and_lets_go_of_it_when_closed() {
         let mut stage = Stage::new((InspectViewPlugin, crate::NearbyViewPlugin));
         stage.actor("near one", 'n', 2, 0);
         let far = stage.actor("far one", 'f', 6, 0);
@@ -393,7 +418,7 @@ mod tests {
         stage.press(keys.look);
         assert_eq!(stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.as_str()), Some("far one"), "opened on the row picked out");
         stage.press(keys.close);
-        assert_eq!(stage.app.world().resource::<Focus>().get(), Some(far), "closing keeps it picked out");
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "closing lets go of it");
 
         stage.press(keys.look);
         stage.press(KeyCode::ArrowRight);
