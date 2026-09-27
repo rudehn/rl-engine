@@ -16,7 +16,7 @@
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: b84964d4 -->
+     fingerprint: bac350a5 -->
 
 # Statuses
 
@@ -46,7 +46,7 @@ The definition is never deserialized as it stands, because its ids index registr
 `Afflict { target, status, turns, by, held_by }` puts one on and `Cure { target, status }` takes one off, and each answers with a `StatusEvent`: `Applied` for a fresh one, a refresh or an extension, `Expired` when the time ran out, `Cured` when it was lifted.
 `Statuses::apply` installs the definition's modifiers under a `Source::Status` tagged with the id and the instance, which is what makes removal exact when the same status stacks three deep.
 `Statuses::apply_held` does the same held by a thing, and a refresh or an extension it makes is held by that thing from then on, while one by `apply` leaves the holder as it was.
-The status plugin never reads the holder: the items plugin's `end_unworn_holds` writes a `Cure` for every held status whose thing its holder is not wearing, in `ResolveSet::Effects` before `resolve_afflictions`, so it ends in the pass the thing comes off, and one landed on somebody not wearing the thing ends on the next pass.
+The status plugin never acts on the holder, only `resolve_afflictions` reads it to choose `apply_held` over `apply`: the items plugin's `end_unworn_holds` writes a `Cure` for every held status whose thing its holder is not wearing, in `ResolveSet::Effects` before `resolve_afflictions`, so it ends in the pass the thing comes off, and one landed on somebody not wearing the thing ends on the next pass.
 `Statuses::tick` collects what every status deals into a `TickReport`, then takes a turn off each and strips the modifiers of whatever ran out.
 `tick_statuses` runs it once per `TurnEnd` and only for actors on the current map, so a monster on a floor nobody is standing on does not burn down while the player is elsewhere.
 Its damage becomes a `DamageEvent` carrying `Hit::from_status`, which names the status and credits whoever applied it but leaves `attacker` empty, so a poison tick cannot set off the riders a blow would.

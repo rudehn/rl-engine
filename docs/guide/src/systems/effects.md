@@ -11,7 +11,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-rules/src/ability.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: a8c02300 -->
+     fingerprint: 4b8f7a8d -->
 
 # Effects
 
@@ -36,6 +36,7 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 `Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, and the enchant level of whatever landed it, nought for an ability or an offer.
 `Harm` and `Mend` add their `per_level` to the roll's bonus for each level and `Inflict` adds its `per_level` in turns, so a `+3` thing's mend rolls three times its `per_level` higher and its status lasts three times its `per_level` turns longer; every other engine effect ignores the level.
 `Inflict` also takes `while_worn`, false unless written: landed by a trigger, its `Afflict` is then held by the thing the trigger is on, and the status ends when that thing is no longer worn; landed by an ability or an offer, it is not held.
+It is meant for a trigger that only ever lands on its own wearer, since a held refresh reaching an area's or a hit's bystander who already carries the status unheld takes their instance over and the very next pass cures it for not wearing the thing.
 It describes itself with ` while worn` after the turns, so the bag says so under the thing.
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.

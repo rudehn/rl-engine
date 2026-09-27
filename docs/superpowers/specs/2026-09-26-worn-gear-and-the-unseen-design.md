@@ -77,6 +77,8 @@ These were settled in conversation and are not reopened here.
     It is also the other half of decision 3: attunement stops a charged plate being swapped to, and holding stops a used one being swapped from, since without it the commando could cloak, swap to the nanite plate, and keep both.
     A held status landed on somebody not wearing the thing, an area use reaching a bystander, is held by a thing its holder does not wear, so it ends on the next pass.
     A held application that refreshes or extends an instance makes it held by the new thing; an unheld one leaves it held.
+    That includes a bystander who already carries the same status unheld: a held refresh reaching them takes their instance over, and since they do not wear the thing, the very next pass cures it.
+    `while_worn` is therefore meant for a trigger that only ever lands on its own wearer, a `use` on oneself, not one that reaches an area or a `hit`.
 
 ### The approaches weighed
 

@@ -144,8 +144,16 @@ pub struct Inflict {
     pub per_level: u32,
     /// Whether the status lasts only while the thing that landed it is
     /// worn. Read only when a trigger landed it, since only a thing can be
-    /// worn: the [`Afflict`] is then held by the thing, and an ability or
-    /// an offer lands the status as if this were false.
+    /// worn: the [`Afflict`] is then held by the thing, held for every
+    /// target under the footprint alike, and an ability or an offer lands
+    /// the status as if this were false.
+    ///
+    /// Meant for a trigger that only ever lands on its own wearer, a `use`
+    /// on oneself: a held refresh reaching a bystander who already carries
+    /// the same status unheld takes their instance over, and since the
+    /// bystander does not wear the thing, the very next pass cures it, so
+    /// writing this true on an area or a `hit` ends the status early on
+    /// anyone it was not meant to hold for.
     pub while_worn: bool,
 }
 

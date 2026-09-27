@@ -50,7 +50,11 @@ pub struct Afflict {
     /// somebody who is not wearing the thing, as an area use reaching a
     /// bystander, ends in the pass after it goes on. A refresh or an
     /// extension by a held request is held by the new thing, and one by an
-    /// unheld request stays held by the old.
+    /// unheld request stays held by the old, which is why a held refresh
+    /// reaching a bystander who already carries the same status unheld
+    /// takes their instance over and cures it the very next pass: `held_by`
+    /// is meant for a trigger that only ever lands on its own wearer, a
+    /// `use` on oneself, not one that reaches an area or a `hit`.
     pub held_by: Option<Entity>,
 }
 
