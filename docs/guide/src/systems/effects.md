@@ -11,7 +11,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-rules/src/ability.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: a0a72160 -->
+     fingerprint: b9508ab7 -->
 
 # Effects
 
@@ -34,7 +34,7 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, level)` a menu reads at that level, and `FromArgs` builds one from the text arguments a content file gave it.
 `EffectKinds` files each under its `KIND`, and `Effects::build` turns a list of `EffectSpec` into built effects or reports every spec that would not build.
 `Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, and the enchant level of whatever landed it, nought for an ability or an offer.
-`Harm` and `Mend` add their `per_level` to the roll's bonus for each level and `Inflict` adds its `per_level` in turns, so a `+3` cloak's mend or its status outlasts a plain one's by three of them; every other engine effect ignores the level.
+`Harm` and `Mend` add their `per_level` to the roll's bonus for each level and `Inflict` adds its `per_level` in turns, so a `+3` thing's mend rolls three times its `per_level` higher and its status lasts three times its `per_level` turns longer; every other engine effect ignores the level.
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.
 `Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed` and `pulse` first so their ids are constants on the type.

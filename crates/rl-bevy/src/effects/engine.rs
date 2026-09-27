@@ -430,8 +430,8 @@ mod tests {
         assert_eq!((mend.roll_at(0), mend.roll_at(3)), (DiceRoll::flat(1), DiceRoll::flat(7)));
         let harm = Harm { kind, roll: DiceRoll::new(2, 6), per_level: 1 };
         assert_eq!(harm.roll_at(2), DiceRoll { num: 2, sides: 6, bonus: 2 });
-        let cloak = Inflict { status: StatusId::from_raw(0), turns: 5, per_level: 1 };
-        assert_eq!((cloak.turns_at(0), cloak.turns_at(2), cloak.turns_at(-1)), (5, 7, 5), "a negative level is plain, never shorter");
+        let hiding = Inflict { status: StatusId::from_raw(0), turns: 5, per_level: 1 };
+        assert_eq!((hiding.turns_at(0), hiding.turns_at(2), hiding.turns_at(-1)), (5, 7, 5), "a negative level is plain, never shorter");
     }
 
     /// The arguments read `per_level` when it is written and nought when
@@ -439,12 +439,12 @@ mod tests {
     #[test]
     fn per_level_is_read_when_written_and_nought_when_not() {
         let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("care")]).unwrap();
-        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked")]).unwrap();
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
         let names = Names::new().damage_kinds(&kinds).statuses(&statuses);
         let args = |text: &str| rl_rules::ability::parse_args(text).unwrap();
         let old = Mend::from_args(&args(r#"(kind: "care", roll: "4")"#), &names).unwrap();
         assert_eq!(old.per_level, 0);
-        let new = Inflict::from_args(&args(r#"(status: "cloaked", turns: 5, per_level: 1)"#), &names).unwrap();
+        let new = Inflict::from_args(&args(r#"(status: "hidden", turns: 5, per_level: 1)"#), &names).unwrap();
         assert_eq!(new.per_level, 1);
     }
 }

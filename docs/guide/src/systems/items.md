@@ -19,7 +19,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 0c648c45 -->
+     fingerprint: 679fcb31 -->
 
 # Items and equipment
 

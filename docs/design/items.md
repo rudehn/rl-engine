@@ -93,7 +93,7 @@ An empty thing is refused before the turn is spent, so pressing use on a dry wan
 A stim holds one; a wand holds five and is kept when empty, refilling as the turns pass.
 
 A worn thing that holds charges may be `Attuned`: it refills only while worn and is emptied each time it is put on.
-That is the anti-swap rule, and it is on the thing rather than on the wearer because it is a fact about the thing: a plate that cloaks its wearer is earned by wearing it.
+That is the anti-swap rule, and it is on the thing rather than on the wearer because it is a fact about the thing: a worn thing that hides its wearer is earned by wearing it.
 Equip time was the other candidate, and it was rejected as the rule because time alone still lets a player swap between fights.
 A pulse is attuned by nature, since its clock only runs while worn.
 

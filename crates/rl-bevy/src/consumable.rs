@@ -90,9 +90,9 @@ impl Consumable {
 /// A worn thing whose charges come back only while it is worn, and which
 /// is emptied each time it is put on.
 ///
-/// The rule that makes swapping gear cost something: a plate that cloaks
-/// its wearer cannot be carried charged and put on for the one turn it is
-/// needed, nor kept charging in the bag while another plate is worn. What
+/// The rule that makes swapping gear cost something: a worn thing that
+/// hides its wearer cannot be carried charged and put on for the one turn
+/// it is needed, nor kept charging in the bag while another plate is worn. What
 /// it holds is earned by wearing it. Only a thing that can be worn means
 /// anything by it.
 #[derive(Component, Debug, Clone, Copy, Default)]

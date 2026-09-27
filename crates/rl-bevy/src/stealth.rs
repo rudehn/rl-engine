@@ -258,8 +258,8 @@ impl Plugin for StealthPlugin {
 /// whoever no longer does.
 ///
 /// In [`ResolveSet::Effects`](crate::plugin::ResolveSet::Effects) after the
-/// statuses are applied, ticked and cured, so the pass a cloak goes on is
-/// the pass its wearer vanishes, and the pass a blow ends it is the pass
+/// statuses are applied, ticked and cured, so the pass the status goes on
+/// is the pass its holder vanishes, and the pass a blow ends it is the pass
 /// it is seen again.
 pub fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, actors: Query<(Entity, &Afflicted, Has<Unseen>), Changed<Afflicted>>) {
     let Some(registries) = registries else { return };
@@ -792,19 +792,19 @@ mod tests {
         assert_eq!(field.app.world().resource::<Watched>().0, Some(false));
     }
 
-    /// The field, with statuses on and a `cloaked` status registered as
+    /// The field, with statuses on and a `hidden` status registered as
     /// unseen, returned with its id.
-    fn cloaking_field(notice: NoticeStats, gap: i32) -> (Field, rl_rules::StatusId) {
+    fn hiding_field(notice: NoticeStats, gap: i32) -> (Field, rl_rules::StatusId) {
         let mut field = Field::build(notice, gap, 10, true, None, |app| {
             app.add_plugins(crate::status::StatusPlugin);
         });
-        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked").unseen()]).unwrap();
-        let cloaked = statuses.expect("cloaked");
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden").unseen()]).unwrap();
+        let hidden = statuses.expect("hidden");
         field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
-        (field, cloaked)
+        (field, hidden)
     }
 
-    fn cloak(field: &mut Field, status: rl_rules::StatusId) {
+    fn hide(field: &mut Field, status: rl_rules::StatusId) {
         let player = field.player;
         field.app.world_mut().write_message(crate::status::Afflict { target: player, status, turns: 5, by: None });
         field.wait();
@@ -814,8 +814,8 @@ mod tests {
     /// seen again.
     #[test]
     fn an_unseen_status_marks_its_holder_while_it_lasts() {
-        let (mut field, cloaked) = cloaking_field(blind(), 6);
-        cloak(&mut field, cloaked);
+        let (mut field, hidden) = hiding_field(blind(), 6);
+        hide(&mut field, hidden);
         assert!(field.app.world().get::<Unseen>(field.player).is_some());
         for _ in 0..6 {
             field.wait();
@@ -832,9 +832,9 @@ mod tests {
     /// with the player still unseen and swung at nothing.
     #[test]
     fn striking_from_the_unseen_ends_it_and_wakes_the_one_struck() {
-        let (mut field, cloaked) = cloaking_field(blind(), 1);
+        let (mut field, hidden) = hiding_field(blind(), 1);
         field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
-        cloak(&mut field, cloaked);
+        hide(&mut field, hidden);
         let (player, watcher) = (field.player, field.watcher);
         let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
         field.app.world_mut().entity_mut(player).insert(MeleeAttack::new(kind, DiceRoll::flat(1)));
@@ -850,15 +850,15 @@ mod tests {
     /// already cannot see it.
     #[test]
     fn a_status_hides_its_holder_from_the_very_next_mind_to_decide() {
-        let (mut field, cloaked) = cloaking_field(blind(), 1);
+        let (mut field, hidden) = hiding_field(blind(), 1);
         field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
         let watcher = field.watcher;
         field.app.world_mut().entity_mut(watcher).remove::<(Notice, Aware)>();
         field.wait();
         assert!(field.app.world().resource::<Swings>().0 > 0, "seen, adjacent, it swings: the test can fail");
         field.app.world_mut().resource_mut::<Swings>().0 = 0;
-        cloak(&mut field, cloaked);
-        assert_eq!(field.app.world().resource::<Swings>().0, 0, "cloaked on the player's turn, and not swung at on the watcher's");
+        hide(&mut field, hidden);
+        assert_eq!(field.app.world().resource::<Swings>().0, 0, "hidden on the player's turn, and not swung at on the watcher's");
     }
 
     /// Harm credited to the unseen that was no attack, a status it put on
@@ -879,11 +879,11 @@ mod tests {
     #[test]
     fn a_throw_and_an_ability_at_another_end_it_and_one_on_yourself_does_not() {
         use crate::ability::AbilityEvent;
-        let (mut field, cloaked) = cloaking_field(blind(), 6);
+        let (mut field, hidden) = hiding_field(blind(), 6);
         let (player, watcher) = (field.player, field.watcher);
         let ability = rl_rules::ability::AbilityId::from_raw(0);
         let at = field.at(player);
-        cloak(&mut field, cloaked);
+        hide(&mut field, hidden);
         field.app.world_mut().write_message(AbilityEvent::Used { user: player, ability, aim: at, targets: vec![player] });
         field.wait();
         assert!(field.app.world().get::<Unseen>(player).is_some(), "a stim in the arm is not an attack");
@@ -891,7 +891,7 @@ mod tests {
         field.wait();
         assert!(field.app.world().get::<Unseen>(player).is_none(), "one aimed at another is");
 
-        cloak(&mut field, cloaked);
+        hide(&mut field, hidden);
         let thing = field.app.world_mut().spawn(crate::items::Item).id();
         field.app.world_mut().write_message(crate::items::ItemEvent::Thrown { actor: player, item: thing, at: Position(at), struck: None });
         field.wait();

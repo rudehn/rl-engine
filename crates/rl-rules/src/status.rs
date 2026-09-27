@@ -403,10 +403,10 @@ mod tests {
     #[test]
     fn a_status_can_be_written_unseen_and_is_seen_unless_it_says_so() {
         let names = Names::new();
-        let loaded = load(r#"[(name: "cloaked", unseen: true), (name: "dazed")]"#, &names).expect("it loads");
-        assert!(loaded.get(loaded.expect("cloaked")).unseen);
+        let loaded = load(r#"[(name: "hidden", unseen: true), (name: "dazed")]"#, &names).expect("it loads");
+        assert!(loaded.get(loaded.expect("hidden")).unseen);
         assert!(!loaded.get(loaded.expect("dazed")).unseen);
-        assert!(StatusDef::new("cloaked").unseen().unseen);
+        assert!(StatusDef::new("hidden").unseen().unseen);
     }
 
     #[test]
