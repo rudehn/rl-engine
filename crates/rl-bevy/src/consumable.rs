@@ -17,11 +17,12 @@
 //! [`AddSpending::spends_on`]. A hit never spends: one shot can strike, and
 //! a flaming blade is not used up by landing a blow.
 //!
-//! **What is not here.** Nothing about wearing. What a worn thing does is
-//! declarative and needs no effects: [`Armor`](crate::combat::Armor),
-//! [`Resists`](crate::combat::Resists), an attack, [`Bestows`](crate::items::Bestows)
-//! for the registered stats. An `on_equip` trigger would be one-shot where
-//! wearing is a standing state, and waits for a game that wants one.
+//! **Worn things.** Wearing is declarative and needs no effects:
+//! [`Armor`](crate::combat::Armor), [`Resists`](crate::combat::Resists), an
+//! attack, [`Bestows`](crate::items::Bestows). What is here is the one rule
+//! about charges and wearing: an [`Attuned`] thing refills only while it is
+//! worn and is emptied each time it is put on, so a charge is earned by
+//! wearing the thing rather than by carrying it.
 
 use bevy::prelude::*;
 
@@ -85,6 +86,17 @@ impl Consumable {
         self.left == 0
     }
 }
+
+/// A worn thing whose charges come back only while it is worn, and which
+/// is emptied each time it is put on.
+///
+/// The rule that makes swapping gear cost something: a worn thing that
+/// hides its wearer cannot be carried charged and put on for the one turn
+/// it is needed, nor kept charging in the bag while another plate is worn. What
+/// it holds is earned by wearing it. Only a thing that can be worn means
+/// anything by it.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Attuned;
 
 /// The moments that spend a charge from whatever they happened to.
 ///
@@ -196,15 +208,25 @@ pub fn bury_spent(mut commands: Commands, spent: Query<Entity, With<Spent>>) {
 ///
 /// Reads the clock rather than counting passes, because a pass is one
 /// actor's turn and the clock is what a refill is written in. A clock that
-/// went backwards, a new run, counts as no time.
-pub fn recharge_charges(turns: Res<Turns>, mut last: Local<Option<u32>>, mut things: Query<&mut Consumable>) {
+/// went backwards, a new run, counts as no time. An [`Attuned`] thing that
+/// nobody is wearing counts nothing.
+pub fn recharge_charges(
+    turns: Res<Turns>,
+    mut last: Local<Option<u32>>,
+    mut things: Query<(Entity, &mut Consumable, Has<Attuned>)>,
+    wearers: Query<&crate::items::Equipped>,
+) {
     let now = turns.now();
     let passed = now.saturating_sub(last.unwrap_or(now));
     *last = Some(now);
     if passed == 0 {
         return;
     }
-    for mut c in &mut things {
+    let worn: Vec<Entity> = wearers.iter().flat_map(|w| w.0.worn().map(|(_, item)| item)).collect();
+    for (thing, mut c, attuned) in &mut things {
+        if attuned && !worn.contains(&thing) {
+            continue;
+        }
         let (left, max) = (c.left, c.max);
         let Some(r) = c.recharge.as_mut() else { continue };
         if left >= max {
@@ -220,6 +242,22 @@ pub fn recharge_charges(turns: Res<Turns>, mut last: Local<Option<u32>>, mut thi
             r.progress = 0;
         }
         c.left = (left + gained).min(max);
+    }
+}
+
+/// Empties an [`Attuned`] thing, charges and progress both, whenever it is
+/// put on.
+///
+/// After [`recharge_charges`] in the same set, so the pass it went on in
+/// counts nothing towards it.
+pub fn attune(mut events: MessageReader<crate::items::ItemEvent>, mut things: Query<&mut Consumable, With<Attuned>>) {
+    for ev in events.read() {
+        let crate::items::ItemEvent::Equipped { item, .. } = *ev else { continue };
+        let Ok(mut c) = things.get_mut(item) else { continue };
+        c.left = 0;
+        if let Some(r) = c.recharge.as_mut() {
+            r.progress = 0;
+        }
     }
 }
 
@@ -239,7 +277,7 @@ impl Plugin for ConsumablesPlugin {
             // After the triggers land, in the same set, so the last charge's
             // effects are in before the thing goes.
             .add_systems(Turn, spend_charges.in_set(ResolveSet::Triggers).after(crate::effects::land_triggers))
-            .add_systems(Turn, recharge_charges.in_set(TurnSet::React))
+            .add_systems(Turn, (recharge_charges, attune).chain().in_set(TurnSet::React))
             .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove))
             // With the dead, before a restart tears the run down, so what
             // the last pass spent goes with the run it was spent in.
@@ -276,6 +314,13 @@ mod tests {
     /// On a real streamed surface with the state set to playing, because a
     /// use is an action and an action wants a turn to be dealt.
     fn rig(consumable: Option<Consumable>, stack: Option<u32>, triggers: &str) -> (App, Entity, Entity) {
+        rig_with(consumable, stack, triggers, |_| {})
+    }
+
+    /// [`rig`], with `extra` run on the app once its plugins and
+    /// registries are in and before the thing's triggers are built, so a
+    /// test can add a plugin and the content its triggers name.
+    fn rig_with(consumable: Option<Consumable>, stack: Option<u32>, triggers: &str, extra: impl FnOnce(&mut App)) -> (App, Entity, Entity) {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, ItemsPlugin, ConsumablesPlugin));
         app.add_engine_effects();
@@ -284,6 +329,7 @@ mod tests {
         app.insert_resource(crate::combat::CombatRules::new(&sides));
         app.insert_resource(Registries { damage_kinds: kinds, factions: sides, ..Registries::default() });
         app.insert_resource(Seed(TEST_SEED));
+        extra(&mut app);
         let start = crate::testing::surface(&mut app);
         let triggers = {
             let specs: Vec<rl_rules::TriggerSpec> =
@@ -320,6 +366,46 @@ mod tests {
 
     fn health(app: &App, who: Entity) -> i32 {
         app.world().get::<Health>(who).expect("health").current
+    }
+
+    /// Gives the player one slot and makes `item` wearable in it.
+    fn a_slot_for(app: &mut App, player: Entity, item: Entity) {
+        let slot = rl_rules::SlotId::from_raw(0);
+        app.world_mut().entity_mut(item).insert(crate::items::Wearable(rl_rules::EquipShape::in_slot(slot)));
+        app.world_mut().entity_mut(player).insert(crate::items::Equipped(rl_rules::Equipment::with_slot_count(1)));
+    }
+
+    /// Puts `item` on through the engine's own intent.
+    fn put_on(app: &mut App, player: Entity, item: Entity) {
+        app.world_mut().write_message(Intent::new(player, crate::items::Equip(item)));
+        app.update();
+    }
+
+    /// Takes `item` off through the engine's own intent.
+    fn take_off(app: &mut App, player: Entity, item: Entity) {
+        app.world_mut().write_message(Intent::new(player, crate::items::Unequip(item)));
+        app.update();
+    }
+
+    /// Waits until the clock reads at least `until`.
+    fn wait_until(app: &mut App, player: Entity, until: u32) {
+        while app.world().resource::<Turns>().now() < until {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+    }
+
+    /// A trigger list that mends one on each pulse.
+    const MEND_ON_PULSE: &str = r#"[(on: "pulse", effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]"#;
+
+    /// `text`'s triggers, built against the rig's moments and effect kinds,
+    /// the way the rig builds its own item's.
+    fn triggers_of(app: &App, text: &str) -> Triggers {
+        let specs: Vec<rl_rules::TriggerSpec> =
+            ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(text).expect("the triggers parse");
+        let world = app.world();
+        Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
+            .expect("the triggers build")
     }
 
     /// Using it lands its use trigger, on the one who used it, in the pass
@@ -391,5 +477,229 @@ mod tests {
         let (mut app, player, item) = rig(Some(Consumable::new(2, WhenEmpty::Kept)), None, both);
         use_it(&mut app, player, item);
         assert_eq!(health(&app, player), 13, "mended three, and the land trigger did not go off");
+    }
+
+    /// A worn thing's pulse mends its wearer once for every period it has
+    /// been worn, counted from the moment it went on, and not at all while
+    /// it sits in the bag.
+    #[test]
+    fn a_worn_pulse_lands_once_a_period_from_when_it_went_on_and_never_from_the_bag() {
+        let (mut app, player, plate) = rig(None, None, MEND_ON_PULSE);
+        app.world_mut().entity_mut(plate).insert(crate::items::Pulse::every(800));
+        a_slot_for(&mut app, player, plate);
+        wait_until(&mut app, player, 1000);
+        assert_eq!(health(&app, player), 10, "ten turns in the bag and nothing");
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, on + 700);
+        assert_eq!(health(&app, player), 10, "seven turns worn, not yet");
+        wait_until(&mut app, player, on + 800);
+        assert_eq!(health(&app, player), 11, "eight turns worn, one mended");
+        wait_until(&mut app, player, on + 1600);
+        assert_eq!(health(&app, player), 12, "and one more eight turns on");
+    }
+
+    /// Taking a worn thing off and putting it back starts its clock again:
+    /// seven turns worn, off, and on again is not one turn from a mend.
+    #[test]
+    fn putting_a_pulsing_thing_back_on_starts_its_clock_again() {
+        let (mut app, player, plate) = rig(None, None, MEND_ON_PULSE);
+        app.world_mut().entity_mut(plate).insert(crate::items::Pulse::every(800));
+        a_slot_for(&mut app, player, plate);
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, on + 700);
+        take_off(&mut app, player, plate);
+        let again = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, again + 700);
+        assert_eq!(health(&app, player), 10, "the seven turns before it came off counted for nothing");
+        wait_until(&mut app, player, again + 800);
+        assert_eq!(health(&app, player), 11);
+    }
+
+    /// An attuned thing is empty the moment it is put on and refills only
+    /// while it is worn: forty turns in the bag buy nothing, and a charge
+    /// comes back one period after it went on.
+    #[test]
+    fn an_attuned_thing_is_empty_when_put_on_and_charges_only_while_worn() {
+        let (mut app, player, plate) = rig(Some(Consumable::new(1, WhenEmpty::Kept).recharging(400)), None, MEND_ON_USE);
+        app.world_mut().entity_mut(plate).insert(Attuned);
+        a_slot_for(&mut app, player, plate);
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(0), "full in the bag, empty once on");
+        wait_until(&mut app, player, on + 300);
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(0), "three turns worn, still charging");
+        wait_until(&mut app, player, on + 400);
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(1), "four turns worn, ready");
+    }
+
+    /// Put on, off, and on again: each putting-on empties it, and the turns
+    /// it spent in the bag between refilled nothing.
+    #[test]
+    fn an_attuned_thing_taken_off_gains_nothing_and_is_empty_again_when_put_back_on() {
+        let (mut app, player, plate) = rig(Some(Consumable::new(1, WhenEmpty::Kept).recharging(400)), None, MEND_ON_USE);
+        app.world_mut().entity_mut(plate).insert(Attuned);
+        a_slot_for(&mut app, player, plate);
+        let on = app.world().resource::<Turns>().now();
+        put_on(&mut app, player, plate);
+        wait_until(&mut app, player, on + 300);
+        take_off(&mut app, player, plate);
+        let off = app.world().resource::<Turns>().now();
+        wait_until(&mut app, player, off + 2000);
+        let c = app.world().get::<Consumable>(plate).copied().unwrap();
+        assert_eq!((c.left, c.recharge.map(|r| r.progress)), (0, Some(300)), "twenty turns off the body counted for nothing");
+        put_on(&mut app, player, plate);
+        let c = app.world().get::<Consumable>(plate).copied().unwrap();
+        // Progress starts over from nothing, not from the 300 it carried
+        // into the bag, but the pass that puts it on is itself a whole
+        // action's worth of the clock, credited the same way the first
+        // test's own put-on pass is: reset to nothing, then one turn's
+        // worth of worn time, not the three hundred left over from before.
+        assert_eq!((c.left, c.recharge.map(|r| r.progress)), (0, Some(100)), "and back on, it starts over");
+    }
+
+    /// A thing that is not attuned refills in the bag as it always has.
+    #[test]
+    fn a_thing_that_is_not_attuned_refills_in_the_bag() {
+        let empty = Consumable { left: 0, ..Consumable::new(1, WhenEmpty::Kept).recharging(400) };
+        let (mut app, player, wand) = rig(Some(empty), None, MEND_ON_USE);
+        wait_until(&mut app, player, 400);
+        assert_eq!(app.world().get::<Consumable>(wand).map(|c| c.left), Some(1));
+    }
+
+    /// A wearer on a map that is not the current one has its pulse land on
+    /// nobody: a pulse is landed by who stands on the wearer's cell, and on
+    /// this map that is somebody else, standing at the same coordinates.
+    #[test]
+    fn a_pulse_on_a_wearer_elsewhere_lands_on_nobody_here() {
+        let (mut app, player, _) = rig(None, None, MEND_ON_USE);
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let pulsing = triggers_of(&app, MEND_ON_PULSE);
+        let plate = app.world_mut().spawn((Item, pulsing, crate::items::Pulse::every(100))).id();
+        let slot = rl_rules::SlotId::from_raw(0);
+        let mut worn = rl_rules::Equipment::with_slot_count(1);
+        worn.equip(plate, &rl_rules::EquipShape::in_slot(slot)).unwrap();
+        // Elsewhere: on another map, at the player's own coordinates.
+        app.world_mut().spawn((
+            Actor,
+            Position(at),
+            crate::places::OnMap(crate::places::MapId(7)),
+            Health::full(30),
+            Inventory { items: vec![plate] },
+            crate::items::Equipped(worn),
+        ));
+        wait_until(&mut app, player, 500);
+        assert_eq!(health(&app, player), 10, "five of its pulses came round, and none of them landed on the player standing here");
+    }
+
+    /// A thing enchanted to `+3` lands its effects at its level: a mend of
+    /// four with two a level mends ten.
+    #[test]
+    fn an_enchanted_thing_lands_its_effects_at_its_level() {
+        let mends = r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "4", per_level: 2))])]"#;
+        let (mut app, player, item) = rig(None, None, mends);
+        app.world_mut().entity_mut(item).insert(crate::items::Enchant(rl_rules::Enchanted { level: 3, affixes: Vec::new() }));
+        use_it(&mut app, player, item);
+        assert_eq!(health(&app, player), 20, "four and two for each of three levels");
+    }
+
+    /// Every status event, recorded by a reader, since a headless app may
+    /// swap its message buffers before a test can peek at them.
+    #[derive(Resource, Default)]
+    struct Heard(Vec<crate::status::StatusEvent>);
+
+    fn hear(mut events: MessageReader<crate::status::StatusEvent>, mut heard: ResMut<Heard>) {
+        heard.0.extend(events.read().copied());
+    }
+
+    /// A worn thing whose use puts `hidden` on its wearer for twenty turns,
+    /// held by the thing when `while_worn`, worn in the player's one slot
+    /// and used once; with statuses on and every status event heard.
+    fn used_while_worn(while_worn: bool) -> (App, Entity, Entity, rl_rules::StatusId) {
+        let uses = format!(r#"[(on: "use", effects: [(kind: "Inflict", args: (status: "hidden", turns: 20, while_worn: {while_worn}))])]"#);
+        let (mut app, player, plate) = rig_with(None, None, &uses, |app| {
+            app.add_plugins(crate::status::StatusPlugin);
+            app.world_mut().resource_mut::<Registries>().statuses = Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
+            app.init_resource::<Heard>().add_systems(PostUpdate, hear);
+        });
+        let hidden = app.world().resource::<Registries>().statuses.expect("hidden");
+        a_slot_for(&mut app, player, plate);
+        put_on(&mut app, player, plate);
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        app.update();
+        assert!(hides(&app, player, hidden), "used while worn, and it went on");
+        (app, player, plate, hidden)
+    }
+
+    fn hides(app: &App, player: Entity, hidden: rl_rules::StatusId) -> bool {
+        app.world().get::<crate::status::Afflicted>(player).is_some_and(|a| a.has(hidden))
+    }
+
+    fn cured(app: &App, player: Entity, hidden: rl_rules::StatusId) -> usize {
+        let cure = crate::status::StatusEvent::Cured { target: player, status: hidden };
+        app.world().resource::<Heard>().0.iter().filter(|e| **e == cure).count()
+    }
+
+    /// A status a worn thing holds lasts while it is worn and ends,
+    /// cured, in the pass it is taken off, with nineteen of its twenty
+    /// turns still to run.
+    #[test]
+    fn a_status_held_by_a_worn_thing_lasts_while_it_is_worn_and_is_cured_when_it_comes_off() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        let now = app.world().resource::<Turns>().now();
+        wait_until(&mut app, player, now + 300);
+        assert!(hides(&app, player, hidden), "three turns on, still worn, still held");
+        take_off(&mut app, player, plate);
+        assert!(!hides(&app, player, hidden), "off the body, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1, "through the cure, once");
+    }
+
+    /// The same status landed without `while_worn` runs its time whatever
+    /// becomes of the thing.
+    #[test]
+    fn a_status_a_worn_thing_does_not_hold_outlasts_taking_it_off() {
+        let (mut app, player, plate, hidden) = used_while_worn(false);
+        take_off(&mut app, player, plate);
+        let now = app.world().resource::<Turns>().now();
+        wait_until(&mut app, player, now + 300);
+        assert!(hides(&app, player, hidden), "off the body and still on");
+        assert_eq!(cured(&app, player, hidden), 0);
+    }
+
+    /// Dropping the thing is taking it off, and ends what it holds.
+    #[test]
+    fn dropping_a_worn_thing_ends_what_it_holds() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        app.world_mut().write_message(Intent::new(player, crate::items::DropItem(plate)));
+        app.update();
+        assert!(!hides(&app, player, hidden), "on the floor, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1);
+    }
+
+    /// Putting another thing on in its slot displaces it, and ends what it
+    /// holds, even though the wearer still carries it.
+    #[test]
+    fn a_worn_thing_displaced_by_another_in_its_slot_ends_what_it_holds() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        let slot = rl_rules::SlotId::from_raw(0);
+        let other = app.world_mut().spawn((Item, crate::items::Wearable(rl_rules::EquipShape::in_slot(slot)))).id();
+        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(other);
+        put_on(&mut app, player, other);
+        assert!(app.world().get::<Inventory>(player).is_some_and(|b| b.contains(plate)), "still carried");
+        assert!(!hides(&app, player, hidden), "but no longer worn, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1);
+    }
+
+    /// A thing that is gone, used up or despawned, holds nothing either.
+    #[test]
+    fn a_worn_thing_that_is_despawned_ends_what_it_holds() {
+        let (mut app, player, plate, hidden) = used_while_worn(true);
+        app.world_mut().despawn(plate);
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+        assert!(!hides(&app, player, hidden), "gone, and it ended");
+        assert_eq!(cured(&app, player, hidden), 1);
     }
 }

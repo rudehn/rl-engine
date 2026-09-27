@@ -285,7 +285,7 @@ mod tests {
         let mut stage = stage();
         let player = stage.player;
         let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
-        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None });
+        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None, held_by: None });
         stage.tick();
         assert!(stage.rows().iter().all(|r| r.is_empty()), "nothing drawn until the key");
 

@@ -24,7 +24,8 @@ use crate::cue::{Anchor, Cue, Cued, LookOf};
 use crate::world::WorldMap;
 
 /// What sets a trigger off: a thing used, a throw come to rest, an attack
-/// made or landed, a cell stepped on, a prop broken, or one a game names.
+/// made or landed, a cell stepped on, a prop broken, a worn thing's clock,
+/// or one a game names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Moment;
 
@@ -52,9 +53,12 @@ impl Moments {
     pub const ENTERED: MomentId = MomentId::from_raw(4);
     /// A prop was broken.
     pub const DESTROYED: MomentId = MomentId::from_raw(5);
+    /// A worn thing's own clock came round: see
+    /// [`Pulse`](crate::items::Pulse).
+    pub const PULSE: MomentId = MomentId::from_raw(6);
 
     /// The engine's moments, in the order their ids are handed out.
-    pub const BUILT_IN: [&'static str; 6] = ["use", "land", "fire", "hit", "entered", "destroyed"];
+    pub const BUILT_IN: [&'static str; 7] = ["use", "land", "fire", "hit", "entered", "destroyed", "pulse"];
 
     /// The id for `name`, assigning a new one if it is unseen.
     pub fn declare(&mut self, name: &str) -> MomentId {
@@ -256,6 +260,10 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
     }
 }
 
+/// What a carrier is, for [`land_triggers`]: its triggers, whether it is a
+/// remnant or lands as itself, and its enchant level if it has one.
+type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<&'static crate::items::Enchant>);
+
 /// Lands every carrier's triggers for each moment reported this pass.
 ///
 /// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers), after
@@ -264,17 +272,19 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
 /// the pass that set it off. Every actor under the footprint is a target,
 /// the one who set it off included: a grenade does not ask whose it was.
 /// The user is whoever set it off, or the carrier when it is
-/// [`LandsAsItself`] or nobody did.
+/// [`LandsAsItself`] or nobody did. An enchanted carrier lands its effects
+/// at its level.
 pub fn land_triggers(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
-    mut carriers: Query<(&mut Triggers, Has<Remnant>, Has<LandsAsItself>)>,
+    mut carriers: Query<Carrier>,
     alive: Query<(), (With<crate::combat::Health>, Without<crate::combat::Dead>)>,
     mut world: EffectWorld,
 ) {
     for f in fired.read() {
-        let Ok((mut triggers, remnant, itself)) = carriers.get_mut(f.on) else { continue };
+        let Ok((mut triggers, remnant, itself, enchant)) = carriers.get_mut(f.on) else { continue };
         let user = if itself { f.on } else { f.by.unwrap_or(f.on) };
+        let level = enchant.map_or(0, |e| e.level);
         for trigger in triggers.0.iter_mut().filter(|t| t.on == f.moment) {
             if trigger.fires == Some(0) {
                 continue;
@@ -297,6 +307,7 @@ pub fn land_triggers(
                 path: Vec::new(),
                 landed_at: Some(f.at),
                 targets,
+                level,
             };
             // Cued before any effect runs, as an ability's burst is, so a
             // cue an effect adds plays after it.
@@ -558,5 +569,15 @@ mod tests {
 
     fn keep_dealt(mut dealt: MessageReader<DamageDealt>, mut log: ResMut<DealtLog>) {
         log.0.extend(dealt.read().map(|d| d.dealt));
+    }
+
+    /// The pulse is the engine's seventh moment, added at the end so every
+    /// moment before it keeps the id a save or a content file already has.
+    #[test]
+    fn the_pulse_is_a_built_in_moment_after_the_six_that_came_first() {
+        let moments = Moments::default();
+        assert_eq!(moments.get("pulse"), Some(Moments::PULSE));
+        assert_eq!(Moments::PULSE, MomentId::from_raw(6));
+        assert_eq!(moments.get("destroyed"), Some(Moments::DESTROYED), "the old ids did not move");
     }
 }

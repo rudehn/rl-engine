@@ -41,7 +41,7 @@ use rl_rules::prefab::{Pick, PrefabDef, Slot};
 use rl_rules::prop::Stock;
 use rl_rules::role::{self, RoleDef};
 
-use crate::loot::{Found, ItemMaker, LootArea, draw_stock, lay, stream_for};
+use crate::loot::{Found, ItemMaker, LootArea, Provenance, draw_stock, lay, stream_for};
 use crate::minds::Post;
 use crate::places::{MapId, PlaceEntered};
 use crate::props::spawn_prop;
@@ -167,7 +167,7 @@ where
 /// What one slot drew, before it is decided whether it is spawned.
 enum Drawn<A, I> {
     Prop(rl_rules::prop::PropId),
-    Items(Vec<(Id<I>, u32)>),
+    Items(Vec<(Id<I>, u32)>, i32),
     Monster(Id<A>),
     Nothing,
 }
@@ -198,7 +198,7 @@ where
                 Slot::Item(roll) => {
                     let count = if roll.min >= roll.max { roll.max } else { rng.random_range(roll.min..=roll.max) };
                     let band = items.band(LootArea::Place(ev.map)) + roll.band;
-                    Drawn::Items(draw_stock(&**items, &roll.what, count, band, &mut rng))
+                    Drawn::Items(draw_stock(&**items, &roll.what, count, band, &mut rng), band)
                 }
                 Slot::Monster { pick, band } => match pick {
                     Pick::Kind(id) => Drawn::Monster(*id),
@@ -216,16 +216,16 @@ where
                 Drawn::Prop(id) => {
                     spawn_prop(&mut commands, registries, id, spot.at, ev.map);
                 }
-                Drawn::Items(made) if !made.is_empty() => {
+                Drawn::Items(made, band) if !made.is_empty() => {
                     for (def, count) in made {
-                        lay(&mut commands, &**items, registries, (def, count, spot.at), ev.map, Found::Placed, &mut rng);
+                        lay(&mut commands, &**items, registries, (def, count, spot.at), ev.map, Provenance { found: Found::Placed, band }, &mut rng);
                     }
                 }
                 Drawn::Monster(def) => {
                     let monster = actors.make(&mut commands, registries, def, spot.at, ev.map, &mut rng);
                     commands.entity(monster).insert(Post(spot.at));
                 }
-                Drawn::Items(_) | Drawn::Nothing => continue,
+                Drawn::Items(..) | Drawn::Nothing => continue,
             }
             filled.insert(spot.at);
         }
@@ -487,7 +487,7 @@ mod tests {
         let mut props = world.query::<(&PropKind, &Position, &OnMap)>();
         found.extend(props.iter(world).filter(|(.., on)| on.0 == map).map(|(k, at, _)| (at.0, format!("prop {}", registries.props.get(k.0).name))));
         let mut items = world.query_filtered::<(&Name, &FoundAs, &Position, &OnMap), With<Item>>();
-        found.extend(items.iter(world).filter(|(.., on)| on.0 == map).map(|(n, f, at, _)| (at.0, format!("item {} ({:?})", n.as_str(), f.0))));
+        found.extend(items.iter(world).filter(|(.., on)| on.0 == map).map(|(n, f, at, _)| (at.0, format!("item {} ({:?})", n.as_str(), f.0.found))));
         let mut actors = world.query::<(&ToyKind, &Position, &OnMap)>();
         let named: Vec<(Point, Id<Beast>)> = actors.iter(world).filter(|(.., on)| on.0 == map).map(|(k, at, _)| (at.0, k.0)).collect();
         let beasts = world.resource::<Beasts>();

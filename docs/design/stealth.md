@@ -186,11 +186,25 @@ It goes in the view rather than arriving as a facet because it is engine-knowabl
 The nearby rail then shows which of the things in sight have noticed you, which is the readout that makes the mechanic playable rather than mysterious.
 The vitals strip reads hidden or seen off the same data.
 
+## 8b. The unseen
+
+A status registered as `unseen` hides its holder from everything: no mind perceives it and no observer notices it, at any distance, adjacency included.
+This departs on purpose from the rule in section 2 that no stack of gear makes somebody standing next to you invisible.
+That rule is about `Stealth`'s quiet, which is for good; the unseen is a status that lasts turns and ends the moment its holder attacks.
+An observer that was alert loses the unseen as it loses anything out of sight, and searches where it last saw it for its memory.
+Noise is still heard, since hearing is not sight.
+One a worn thing holds also ends when the thing is no longer worn, through the same cure, in the pass it comes off; the items plugin writes that cure, since wearing is its to know, and stealth only reads the status going.
+A blow or a shot, landed or not, a throw, or an ability landed on anyone but its user ends every unseen status its maker holds, in the same pass and before the damage lands, so the one struck wakes to an attacker it can see; being hurt does not end it.
+It is part of stealth rather than a plugin of its own because it answers stealth's question, who can see whom, and two plugins would make a game order their filters by hand.
+Radar sees nothing either; whether it should is an open question, and so is what a mind that walks into an unseen actor learns.
+A thing used whose `use` trigger harms those around its user does not end it either, since a use is not on the list above; whether it should is open too, and meanwhile the harm wakes nobody to an attacker it cannot see.
+
 ## 9. What is not in this slice
 
 - **Two-way stealth: monsters hiding from the player.**
   The model is symmetric and the components would work, but the player has no mind to consult an `Aware`, and a hidden monster has to be kept off the map view as well as out of the panel.
   That is a render change and a separate slice.
+  The same is true of an unseen monster: the minds already cannot see one, and the player's screen still can.
 - **Squad alerting.**
   The `Noticed` message is the seam; the propagation is the game's.
 - **Sneak attack damage.**

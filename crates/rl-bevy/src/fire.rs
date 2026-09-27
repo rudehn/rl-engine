@@ -286,7 +286,7 @@ pub fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>, blaze
             if on_here(on) && fire.is_burning(pos.0) {
                 events.write(FireEvent::Scorched { entity, at: pos.0 });
                 if let Some((status, turns)) = rules.inflicts {
-                    afflict.write(Afflict { target: entity, status, turns, by: None });
+                    afflict.write(Afflict { target: entity, status, turns, by: None, held_by: None });
                 }
             }
         }

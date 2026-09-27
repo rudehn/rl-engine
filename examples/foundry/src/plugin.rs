@@ -73,6 +73,9 @@ impl Plugin for FoundryPlugin {
 
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
         app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));
+        // The commando fades while a cloak hides them, in the pass it went
+        // on or came off.
+        app.add_systems(Turn, crate::run::fade_the_unseen.in_set(TurnSet::React));
         // The alarm is a sound of Foundry's own, declared once so
         // `sound_alarm` finds it by name.
         app.add_sound(crate::droids::ALARM_SOUND);

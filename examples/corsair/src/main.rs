@@ -180,10 +180,7 @@ fn main() -> AppExit {
             // the run ends on.
             GameMenuPanel::new(screen.menu).title("Corsair").died("The sea takes you.").won("The sea is yours."),
         ))
-        // The engine narrates the fight, the doors and what changes hands;
-        // Corsair keeps its own words for its statuses, since venom reads as
-        // poisoned, so those three phrases are silenced.
-        .add_plugins(NarratorPlugin::default().silence(Phrase::YouAreAfflicted).silence(Phrase::YouAreNoLonger).silence(Phrase::YourAfflictionPasses))
+        .add_plugins(narrator())
         // `c` shuts a door here, so the sheet is on `@`.
         .insert_resource(SheetKeys { toggle: Chord::shift(KeyCode::Digit2), close: KeyCode::Escape })
         .insert_resource(Seed(seed))
@@ -229,6 +226,19 @@ fn main() -> AppExit {
 
 /// What Corsair keeps of a run that the engine does not: whether to resume
 /// a save, and which coves have their mouths.
+/// The engine's narrator, as Corsair speaks through it: the fight, the
+/// doors and what changes hands. Corsair keeps its own words for its
+/// statuses, since venom reads as poisoned, so every phrase the engine
+/// says a status on the player with is silenced, and
+/// [`statuses::narrate_statuses`] says them instead, each once.
+fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default()
+        .silence(Phrase::YouAreAfflicted)
+        .silence(Phrase::YouGainABoon)
+        .silence(Phrase::YouAreNoLonger)
+        .silence(Phrase::YourAfflictionPasses)
+}
+
 fn forget_run(mut options: ResMut<StartOptions>, mut entrances: ResMut<places::Entrances>) {
     options.resume = false;
     entrances.0.clear();

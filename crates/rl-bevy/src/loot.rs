@@ -26,8 +26,9 @@
 //!
 //! A band is how deep, far or dangerous somewhere is, and only the game
 //! knows, so [`ItemMaker::band`] answers it for a [`LootArea`]. Whatever is
-//! made is told why, as [`Found`], so a game that rolls quality rolls a
-//! hoard's differently from a floor's, from the stream it is handed.
+//! made is told why and at what band, as [`Provenance`], so a game that
+//! rolls quality rolls a hoard's differently from a floor's, from the
+//! stream it is handed.
 //!
 //! Two games did all of this by hand before it moved here, and wrote it the
 //! same way; `docs/design/loot.md` has the reasoning.
@@ -75,6 +76,22 @@ pub enum Found {
     Placed,
 }
 
+/// Why something is being made, and at what band: what a game rolls a
+/// thing's quality or enchant from.
+///
+/// The band is the one the draw was asked at: a place's or a region's for
+/// its floor, a container's plus its row's offset, a prefab slot's plus
+/// its own, and for a drop the band of the place the actor died in. Two
+/// facts beside each other rather than a band inside [`Found`], because a
+/// game compares `Found` as a plain value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Provenance {
+    /// Why it is being made.
+    pub found: Found,
+    /// How deep, far or dangerous where it will be found is.
+    pub band: i32,
+}
+
 /// A game's item registry, as the engine asks it for things.
 ///
 /// Implemented on the resource that holds a game's item definitions, which
@@ -87,9 +104,11 @@ pub trait ItemMaker: Resource {
     /// Makes `count` of `def`, found as `found`, and returns every entity
     /// made, placed nowhere: the engine puts them on the floor or into a
     /// container. A thing that stacks is one stack of `count`; anything
-    /// else is `count` entities. `rng` is the engine's stream for what is
-    /// being made, for whatever the game rolls on the thing itself.
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<Self::Def>, count: u32, found: Found, rng: &mut StdRng) -> Vec<Entity>;
+    /// else is `count` entities. `from` says why it is being made and at
+    /// what band, and `rng` is the engine's stream for what is being made,
+    /// for whatever the game rolls on the thing itself, a quality or an
+    /// enchant.
+    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<Self::Def>, count: u32, from: Provenance, rng: &mut StdRng) -> Vec<Entity>;
 
     /// The definition called `name`, which a container names its fixed
     /// contents by.
@@ -175,7 +194,7 @@ fn standing(props: &Query<(&Position, Option<&OnMap>), With<Prop>>, map: MapId) 
     props.iter().filter(|(_, on)| on.map_or(MapId::SURFACE, |m| m.0) == map).map(|(at, _)| at.0).collect()
 }
 
-/// Makes what a plan or a slot put down, found as `found`, and lays it on
+/// Makes what a plan or a slot put down, found as `from`, and lays it on
 /// the floor of `map`.
 pub(crate) fn lay<M: ItemMaker>(
     commands: &mut Commands,
@@ -183,11 +202,11 @@ pub(crate) fn lay<M: ItemMaker>(
     registries: &Registries,
     what: (Id<M::Def>, u32, Point),
     map: MapId,
-    found: Found,
+    from: Provenance,
     rng: &mut StdRng,
 ) {
     let (def, count, at) = what;
-    for item in maker.make(commands, registries, def, count, found, rng) {
+    for item in maker.make(commands, registries, def, count, from, rng) {
         let mut e = commands.entity(item);
         e.insert(Position(at));
         if map != MapId::SURFACE {
@@ -222,7 +241,7 @@ pub fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: Message
         let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
         let loose = maker.loose(area, rules.loose_count(band, &mut rng));
         for placed in plan_scatter(maker.table(), band, &rules, Layout { marks: &marks, bounds: place.terrain.bounds() }, loose, &mut free, &mut rng) {
-            lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), ev.map, Found::Scatter, &mut rng);
+            lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), ev.map, Provenance { found: Found::Scatter, band }, &mut rng);
         }
     }
 }
@@ -250,7 +269,15 @@ pub fn scatter_regions<M: ItemMaker>(
         let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
         let loose = maker.loose(area, rules.loose_count(band, &mut rng));
         for placed in plan_scatter(maker.table(), band, &rules, Layout { marks: &[], bounds: world.0.region_tiles(ev.region) }, loose, &mut free, &mut rng) {
-            lay(&mut commands, &**maker, registries, (placed.item, placed.count, placed.at), MapId::SURFACE, Found::Scatter, &mut rng);
+            lay(
+                &mut commands,
+                &**maker,
+                registries,
+                (placed.item, placed.count, placed.at),
+                MapId::SURFACE,
+                Provenance { found: Found::Scatter, band },
+                &mut rng,
+            );
         }
     }
 }
@@ -266,13 +293,16 @@ pub fn drop_on_death<M: ItemMaker>(
     maker: Res<M>,
     registries: Res<Registries>,
     rng: Option<ResMut<LootRng>>,
+    world: Option<Res<WorldRes>>,
     carriers: Query<(&Drops<M::Def>, Option<&OnMap>)>,
 ) {
     let Some(mut rng) = rng else { return };
     for death in deaths.read() {
         let Ok((drops, on)) = carriers.get(death.entity) else { continue };
+        let map = on.map_or(MapId::SURFACE, |m| m.0);
+        let band = maker.band(area_of(map, death.at, world.as_deref()));
         for (def, count) in drops.0.roll(&mut rng.0) {
-            for item in maker.make(&mut commands, &registries, def, count, Found::Drop, &mut rng.0) {
+            for item in maker.make(&mut commands, &registries, def, count, Provenance { found: Found::Drop, band }, &mut rng.0) {
                 let mut e = commands.entity(item);
                 e.insert(Position(death.at));
                 if let Some(on) = on {
@@ -349,7 +379,7 @@ pub fn fill_containers<M: ItemMaker>(mut commands: Commands, mut asks: MessageRe
         let band = maker.band(area_of(map, at.0, world.as_deref())) + ask.band;
         let mut made = Vec::new();
         for (def, count) in draw_stock(&*maker, &ask.what, ask.count, band, &mut rng) {
-            made.extend(maker.make(&mut commands, &registries, def, count, Found::Container, &mut rng));
+            made.extend(maker.make(&mut commands, &registries, def, count, Provenance { found: Found::Container, band }, &mut rng));
         }
         if let Ok(mut bag) = bags.get_mut(ask.prop) {
             bag.items.extend(made);
@@ -455,9 +485,10 @@ pub(crate) mod tests {
         }
     }
 
-    /// How a made thing was found, so a test can see what the engine said.
+    /// How a made thing was found and at what band, so a test can see what
+    /// the engine said.
     #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-    pub(crate) struct FoundAs(pub(crate) Found);
+    pub(crate) struct FoundAs(pub(crate) Provenance);
 
     /// A test game's item registry: blades that improve with the band,
     /// plate from band two, and slugs in handfuls. The band of a place is
@@ -472,9 +503,9 @@ pub(crate) mod tests {
     impl ItemMaker for Toys {
         type Def = Toy;
 
-        fn make(&self, commands: &mut Commands, _: &Registries, def: Id<Toy>, count: u32, found: Found, _: &mut StdRng) -> Vec<Entity> {
+        fn make(&self, commands: &mut Commands, _: &Registries, def: Id<Toy>, count: u32, from: Provenance, _: &mut StdRng) -> Vec<Entity> {
             let toy = self.defs.get(def);
-            let made = (Item, Name::new(toy.name), FoundAs(found));
+            let made = (Item, Name::new(toy.name), FoundAs(from));
             if toy.stack {
                 vec![commands.spawn((made, Stack { key: u64::from(def.raw()), count })).id()]
             } else {
@@ -592,7 +623,10 @@ pub(crate) mod tests {
         assert!(laid.iter().all(|(name, _, _)| ["saber", "plate", "slug"].contains(&name.as_str())), "only what applies at band five: {laid:?}");
         assert!(laid.iter().filter(|(n, ..)| n == "slug").all(|(.., count)| (2..=4).contains(count)), "slugs in their handfuls: {laid:?}");
         let world = app.world_mut();
-        assert!(world.query::<&FoundAs>().iter(world).all(|f| f.0 == Found::Scatter), "made as found on a floor");
+        assert!(
+            world.query::<&FoundAs>().iter(world).all(|f| f.0.found == Found::Scatter && f.0.band == deck.0 as i32),
+            "made as found on a floor, at the place's band"
+        );
 
         arrive(&mut app, deck, false);
         assert_eq!(floor(&mut app, deck).len(), 3, "a revisit scatters nothing");
@@ -613,7 +647,7 @@ pub(crate) mod tests {
         app.world_mut().run_schedule(Turn);
         assert_eq!(floor(&mut app, MapId(2)), vec![("slug".to_string(), at, 3)], "a stack of three where it fell, and no plate");
         let world = app.world_mut();
-        assert!(world.query::<&FoundAs>().iter(world).all(|f| f.0 == Found::Drop));
+        assert!(world.query::<&FoundAs>().iter(world).all(|f| f.0 == Provenance { found: Found::Drop, band: 2 }), "made at the band of the place it died in");
     }
 
     /// A container asks for kinds of thing: a weapon two bands deeper than
@@ -636,7 +670,10 @@ pub(crate) mod tests {
             let mut names: Vec<(String, u32)> =
                 held.iter().map(|i| (world.get::<Name>(*i).unwrap().as_str().to_string(), world.get::<Stack>(*i).map_or(1, |s| s.count))).collect();
             names.sort();
-            assert!(held.iter().all(|i| world.get::<FoundAs>(*i).map(|f| f.0) == Some(Found::Container)));
+            assert!(held.iter().all(|i| world.get::<FoundAs>(*i).map(|f| f.0.found) == Some(Found::Container)));
+            let bands: Vec<i32> = held.iter().filter_map(|i| world.get::<FoundAs>(*i)).map(|f| f.0.band).collect();
+            assert!(bands.contains(&(map.0 as i32 + 2)), "the weapon row was made at the container's band plus its offset: {bands:?}");
+            assert!(bands.contains(&(map.0 as i32)), "and the armor at the container's own: {bands:?}");
             names
         };
         assert_eq!(

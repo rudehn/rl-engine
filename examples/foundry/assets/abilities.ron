@@ -16,7 +16,8 @@
 //                which sets the ground alight; Emit(gas:, amount:), which gives gas
 //                off on every cell. The damage kinds are "kinetic" | "energy" |
 //                "ion" | "electricity" | "thermal" | "care", the statuses
-//                "sensors down" | "mending" | "scorched", the one gas "smoke"
+//                "sensors down" | "mending" | "scorched" | "cloaked", the one
+//                gas "smoke"
 #![enable(implicit_some)]
 [
     (

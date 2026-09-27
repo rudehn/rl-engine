@@ -69,6 +69,11 @@ pub struct ItemRow {
     pub charges: Option<(u16, u16)>,
     /// Whether it is a consumable with nothing left in the unit in hand.
     pub empty: bool,
+    /// Whole turns until the next charge comes back, for a thing that
+    /// refills, is not full, and whose clock is running.
+    pub ready_in: Option<u32>,
+    /// Whether its charges come back only while it is worn.
+    pub attuned: bool,
     /// What it does to registered stats while worn, by the stat's name.
     pub bestows: Vec<(String, Op)>,
     /// What it counts as, by the tags' registered names.
@@ -88,14 +93,15 @@ impl ItemRow {
         !self.goes_on.is_empty()
     }
 
-    /// Whether the use key does anything to it: a `use` trigger, and a
-    /// charge to spend when it counts them.
+    /// Whether the use key does anything to it: a `use` trigger, a charge
+    /// to spend when it counts them, and, for a thing that can be worn,
+    /// being worn, which is when the items resolver lets it be used.
     ///
     /// A thing whose effects all keep quiet about themselves is still used:
     /// the row reads it off the component, not off the description, so a
     /// game that wrote a terse effect does not lose the key that uses it.
     pub fn usable(&self) -> bool {
-        self.uses_something && !self.empty
+        self.uses_something && !self.empty && (!self.wearable() || self.worn())
     }
 }
 
@@ -142,13 +148,14 @@ type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
-/// What an item does at its moments, and what a use costs it.
-type Does = (Option<&'static Triggers>, Option<&'static Consumable>);
+/// What an item does at its moments, what a use costs it, its clock,
+/// whether its charges come back only while worn, and its enchant level.
+type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>, Option<&'static rl_bevy::Enchant>);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
-/// name for one a game registered.
-fn lead_in(moment: MomentId, moments: Option<&Moments>) -> String {
+/// name for one a game registered. A pulse says how often it comes round.
+fn lead_in(moment: MomentId, moments: Option<&Moments>, pulse: Option<&rl_bevy::Pulse>) -> String {
     match moment {
         m if m == Moments::USE => "use".to_string(),
         // Not "thrown": the row already says how far it flies, and the
@@ -156,6 +163,12 @@ fn lead_in(moment: MomentId, moments: Option<&Moments>) -> String {
         m if m == Moments::LAND => "on landing".to_string(),
         m if m == Moments::HIT => "on a hit".to_string(),
         m if m == Moments::FIRE => "when fired".to_string(),
+        m if m == Moments::PULSE => match pulse {
+            // "Every 1 turn" is a count nobody says aloud.
+            Some(p) if p.every <= rl_core::turn::BASE_ACTION_COST => "every turn worn".to_string(),
+            Some(p) => format!("every {} worn", crate::view::ability::turns(p.every)),
+            None => "worn".to_string(),
+        },
         m => moments.map(|all| all.name(m).to_string()).unwrap_or_default(),
     }
 }
@@ -178,7 +191,9 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable))) = items.get(item) else {
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned, enchant))) =
+            items.get(item)
+        else {
             continue;
         };
         let slot = worn.and_then(|w| w.slot_of(item));
@@ -188,14 +203,20 @@ pub fn collect_inventory(
         let mut used = Vec::new();
         if let (Some(triggers), Some(registries)) = (triggers, registries) {
             for trigger in &triggers.0 {
-                let lead = lead_in(trigger.on, moments);
+                let lead = lead_in(trigger.on, moments, pulse);
                 let area = match trigger.area {
                     rl_rules::Area::Here => String::new(),
                     rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
                 };
-                used.extend(trigger.effects.describe(registries).into_iter().map(|line| format!("{lead}: {line}{area}")));
+                let level = enchant.map_or(0, |e| e.level);
+                used.extend(trigger.effects.describe(registries, level).into_iter().map(|line| format!("{lead}: {line}{area}")));
             }
         }
+        let clock_runs = !attuned || slot.is_some();
+        let ready_in = consumable
+            .filter(|c| c.left < c.max && clock_runs)
+            .and_then(|c| c.recharge)
+            .map(|r| (r.every - r.progress.min(r.every)).div_ceil(rl_core::turn::BASE_ACTION_COST));
         view.rows.push(ItemRow {
             entity: item,
             used,
@@ -219,6 +240,8 @@ pub fn collect_inventory(
                 .unwrap_or_default(),
             tags: tagged.map(|t| t.0.iter().map(|tag| registries.map(|r| r.tags.name(*tag).to_string()).unwrap_or_default()).collect()).unwrap_or_default(),
             facets: Vec::new(),
+            ready_in,
+            attuned,
         });
     }
 }
@@ -284,5 +307,41 @@ mod tests {
         let hat = &view.rows[2];
         assert!(!hat.worn() && hat.wearable());
         assert_eq!((hat.goes_on.as_slice(), hat.armor), (["head".to_string()].as_slice(), 1));
+    }
+
+    /// The bag offers the use key for a worn thing only while it is on,
+    /// the rule the items resolver refuses it by.
+    #[test]
+    fn a_wearable_thing_is_usable_only_while_it_is_worn() {
+        let mut stage = Stage::new_with(InventoryViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("torso")]).unwrap();
+        });
+        let player = stage.player;
+        let torso = stage.app.world().resource::<Registries>().slots.expect("torso");
+        let on_use = rl_bevy::Trigger {
+            on: rl_bevy::Moments::USE,
+            area: rl_rules::Area::Here,
+            fires: None,
+            effects: std::sync::Arc::new(rl_bevy::Effects::default()),
+            look: None,
+        };
+        let plate = stage.app.world_mut().spawn((Item, Name::new("plate"), Wearable(EquipShape::in_slot(torso)), rl_bevy::Triggers(vec![on_use]))).id();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![plate] }, Equipped(Equipment::with_slot_count(1))));
+        stage.tick();
+        assert!(!stage.app.world().resource::<InventoryView>().rows[0].usable(), "in the bag, the use key is not offered");
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(plate, &EquipShape::in_slot(torso)).unwrap();
+        stage.tick();
+        assert!(stage.app.world().resource::<InventoryView>().rows[0].usable(), "worn, it is");
+    }
+
+    /// A pulse's lead-in says how often it comes round, in whole turns
+    /// rounded up, so it never promises a mend before its clock has come
+    /// round.
+    #[test]
+    fn a_pulse_is_introduced_by_how_often_it_comes_round() {
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(800))), "every 8 turns worn");
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(750))), "every 8 turns worn", "a part turn rounds up, never promising early");
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(100))), "every turn worn", "one turn is no count at all");
+        assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(50))), "every turn worn", "nor is less than one");
     }
 }

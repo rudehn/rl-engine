@@ -8,7 +8,7 @@
 
 use bevy::prelude::*;
 use rl_bevy::{
-    Consumable, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, PropKind, SavedField, Seed, Triggers, Turns, WorldMap, WorldMapSave,
+    Consumable, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, PropKind, Pulse, SavedField, Seed, Triggers, Turns, WorldMap, WorldMapSave,
 };
 use rl_core::RunSeed;
 use rl_rules::ability::AbilityId;
@@ -36,8 +36,9 @@ pub struct EngineSave {
     /// Empty in a save written before abilities were saved.
     #[serde(default)]
     pub abilities: Vec<(SaveId, AbilityState)>,
-    /// What each saved entity has left of its charges and its triggers'
-    /// firings. Empty in a save written before triggers were saved.
+    /// What each saved entity has left of its charges, the progress
+    /// towards a worn thing's next pulse, and its triggers' firings. Empty
+    /// in a save written before triggers were saved.
     #[serde(default)]
     pub effects: Vec<(SaveId, EffectState)>,
     /// Every burning cell and every cell with gas in it, on every map.
@@ -98,32 +99,37 @@ impl AbilityState {
     }
 }
 
-/// What a thing's charges and triggers have left, as a save holds it.
+/// What a thing's charges, triggers and pulse have left, as a save holds it.
 ///
 /// Only what play changes: the charges left in the unit in hand and the
-/// progress towards the next, and each trigger's firings left. The most a
-/// thing holds, how it refills and what its triggers do are content, and
-/// come back from the definition the game respawns the thing from, so a
-/// save written before a file changed can never bring back a stale maximum.
-/// A prop's firings are saved with the prop itself, by its own kind.
+/// progress towards the next, each trigger's firings left, and the
+/// progress towards a worn thing's next pulse. The most a thing holds, how
+/// it refills and what its triggers do are content, and come back from the
+/// definition the game respawns the thing from, so a save written before a
+/// file changed can never bring back a stale maximum. A prop's firings are
+/// saved with the prop itself, by its own kind.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EffectState {
     /// Charges left and progress to the next, for a consumable.
     pub consumable: Option<(u16, u32)>,
+    /// Progress towards the next pulse, for a worn thing with a clock.
+    #[serde(default)]
+    pub pulse: Option<u32>,
     /// Each trigger's firings left, in list order; `None` for every time.
     pub fires: Vec<Option<u32>>,
 }
 
 impl EffectState {
     /// What `entity` has, or `None` when it has nothing worth saving: no
-    /// consumable, and no trigger that counts its firings.
+    /// consumable, no pulse, and no trigger that counts its firings.
     fn of(world: &World, entity: Entity) -> Option<Self> {
         let consumable = world.get::<Consumable>(entity).map(|c| (c.left, c.recharge.map_or(0, |r| r.progress)));
+        let pulse = world.get::<Pulse>(entity).map(|p| p.progress);
         let fires: Vec<Option<u32>> = match (world.get::<Triggers>(entity), world.get::<PropKind>(entity)) {
             (Some(triggers), None) if triggers.0.iter().any(|t| t.fires.is_some()) => triggers.0.iter().map(|t| t.fires).collect(),
             _ => Vec::new(),
         };
-        (consumable.is_some() || !fires.is_empty()).then_some(Self { consumable, fires })
+        (consumable.is_some() || pulse.is_some() || !fires.is_empty()).then_some(Self { consumable, pulse, fires })
     }
 
     /// Puts this back onto the components the game respawned `entity`
@@ -136,6 +142,9 @@ impl EffectState {
             if let Some(r) = c.recharge.as_mut() {
                 r.progress = progress;
             }
+        }
+        if let (Some(progress), Some(mut p)) = (self.pulse, target.get_mut::<Pulse>()) {
+            p.progress = progress.min(p.every.saturating_sub(1));
         }
         if let Some(mut triggers) = target.get_mut::<Triggers>() {
             for (trigger, fires) in triggers.0.iter_mut().zip(&self.fires) {
@@ -388,5 +397,28 @@ mod tests {
         assert_eq!((c.left, c.max, c.recharge.map(|r| r.progress)), (2, 6, Some(130)), "what was spent and counted, over what the definition says");
         let fires: Vec<Option<u32>> = w.get::<Triggers>(wand2).expect("its triggers").0.iter().map(|t| t.fires).collect();
         assert_eq!(fires, vec![Some(1), None], "the limited trigger kept its one firing left");
+    }
+
+    /// A worn thing's pulse comes back with the progress it had, since
+    /// seven eighths of a mend is seven turns a player already spent. Its
+    /// period comes from what the game respawned, as a wand's maximum does.
+    #[test]
+    fn a_pulse_comes_back_with_its_progress() {
+        let (mut app, _) = fresh();
+        let plate = app.world_mut().spawn(Pulse { every: 800, progress: 700 }).id();
+        let mut remap = EntityRemap::new();
+        let p_id = remap.save_id(plate);
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
+        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        let plate2 = app2.world_mut().spawn(Pulse::every(800)).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(p_id, plate2);
+        back.restore(app2.world_mut(), &remap2);
+        assert_eq!(app2.world().get::<Pulse>(plate2).map(|p| p.progress), Some(700));
     }
 }

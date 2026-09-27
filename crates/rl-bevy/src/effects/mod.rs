@@ -113,6 +113,10 @@ pub struct Landing {
     /// An effect that means to hit whoever is standing in the fire reads
     /// this; one that means to change the ground reads `cells`.
     pub targets: Vec<Entity>,
+    /// The enchant level of what landed it: a worn or thrown thing's
+    /// [`Enchant`](crate::items::Enchant), and nought for an ability, an
+    /// offer, or anything plain. An effect that grows with it reads it here.
+    pub level: i32,
 }
 
 /// What an effect may do to the world.
@@ -236,12 +240,12 @@ pub trait Effect: Send + Sync + 'static {
     /// What this does to `landing`.
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>);
 
-    /// What this does, in a few words for a menu, with every id named
-    /// through `registries`: `3d6 fire`, `scorched for 4 turns`. Empty
+    /// What this does at `level`, in a few words for a menu, with every id
+    /// named through `registries`: `3d6 fire`, `scorched for 4 turns`. Empty
     /// means the menu says nothing about it, which is the default so an
     /// effect a game writes in a hurry still loads.
-    fn describe(&self, registries: &crate::registries::Registries) -> String {
-        let _ = registries;
+    fn describe(&self, registries: &crate::registries::Registries, level: i32) -> String {
+        let _ = (registries, level);
         String::new()
     }
 }
@@ -379,17 +383,17 @@ impl Effects {
         }
     }
 
-    /// What these do, one line per effect that has something to say, with
-    /// its chance in front when it is not certain.
+    /// What these do at `level`, one line per effect that has something to
+    /// say, with its chance in front when it is not certain.
     ///
     /// What a menu lists under an ability, and what a screen could list
     /// under a prop's offer or a thing in the bag: the list can say what it
     /// is without anyone knowing what carries it.
-    pub fn describe(&self, registries: &Registries) -> Vec<String> {
+    pub fn describe(&self, registries: &Registries, level: i32) -> Vec<String> {
         self.0
             .iter()
             .filter_map(|b| {
-                let what = b.effect.describe(registries);
+                let what = b.effect.describe(registries, level);
                 match (what.is_empty(), b.chance >= 100) {
                     (true, _) => None,
                     (false, true) => Some(what),
@@ -407,7 +411,7 @@ impl Effects {
     /// one cell, so a footprint is not invented for something that never
     /// flew.
     pub fn land_on(&self, source: Source, user: Entity, at: Point, targets: Vec<Entity>, world: &mut EffectWorld<'_, '_>) {
-        let landing = Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets };
+        let landing = Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, level: 0 };
         self.land(&landing, world);
     }
 }

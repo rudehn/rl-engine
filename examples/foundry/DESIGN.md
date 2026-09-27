@@ -251,6 +251,8 @@ A commando carrying only ion walks the droid decks safely and meets the salvage 
 | Rangefinder helmet | Head | A point of armor, and six tiles of dark sight | exists |
 | Scrap plate | Torso | A point of armor | exists |
 | Composite plate | Torso | Two points, and it resists energy | exists |
+| Nanite plate | Torso | A point of armor, and mends a point every ten turns worn, a turn quicker per level | exists |
+| Cloak plate | Torso | A point of armor, and used worn hides the commando for ten turns, two more per level, recharging over forty turns worn | exists |
 | Combat gauntlets | Arms | A point of armor | exists |
 | Armored greaves | Legs | A point of armor | exists |
 | Insulated suit | Torso | Resists electricity, so live cables and a salvager's arc thrower both tell less | planned |

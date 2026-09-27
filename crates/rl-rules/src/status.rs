@@ -58,6 +58,15 @@ pub struct StatusDef {
     pub tick_damage: Option<(DamageKindId, i32)>,
     /// Glyph for a badge, if the game wants one.
     pub badge: Option<char>,
+    /// Whether nothing sees whoever holds it while it lasts. What that
+    /// means is stealth's to say: no mind perceives the holder and no
+    /// observer notices it, and an attack it makes ends it.
+    pub unseen: bool,
+    /// Whether holding it is good for the holder, a cloak or a mend rather
+    /// than a poison. The rules never read it; it is what a narrator tells
+    /// good news from bad by, so a game's log does not announce a gift in
+    /// the tone of a wound.
+    pub boon: bool,
 }
 
 fn refresh() -> Stacking {
@@ -67,7 +76,7 @@ fn refresh() -> Stacking {
 impl StatusDef {
     /// A status with no effects.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None }
+        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None, unseen: false, boon: false }
     }
 
     /// Sets the stacking rule.
@@ -86,6 +95,18 @@ impl StatusDef {
     /// through the same pipeline, so regeneration is a status like poison.
     pub fn ticks(mut self, kind: DamageKindId, amount: i32) -> Self {
         self.tick_damage = Some((kind, amount));
+        self
+    }
+
+    /// Makes whoever holds it unseen while it lasts.
+    pub fn unseen(mut self) -> Self {
+        self.unseen = true;
+        self
+    }
+
+    /// Marks it good for whoever holds it.
+    pub fn boon(mut self) -> Self {
+        self.boon = true;
         self
     }
 }
@@ -111,6 +132,10 @@ struct Authored {
     ticks: Option<(String, i32)>,
     #[serde(default)]
     badge: Option<char>,
+    #[serde(default)]
+    unseen: bool,
+    #[serde(default)]
+    boon: bool,
 }
 
 impl Named for Authored {
@@ -133,6 +158,10 @@ impl Named for Authored {
 /// - `ticks`: `(damage kind, amount)` dealt every whole turn. A negative
 ///   amount mends.
 /// - `badge`: one character a panel may draw beside a health bar.
+/// - `unseen`: `true` for a status whose holder nothing can see while it
+///   lasts; `false`, the default, otherwise.
+/// - `boon`: `true` for a status that is good for its holder, which a
+///   narrator tells as good news; `false`, the default, otherwise.
 ///
 /// Reports every unknown name in the file at once.
 pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, ContentError> {
@@ -154,7 +183,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
                 None
             }
         });
-        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge });
+        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge, unseen: a.unseen, boon: a.boon });
     }
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
@@ -171,6 +200,13 @@ pub struct ActiveStatus {
     pub turns: u32,
     /// Who applied it, for credit on a tick. Opaque.
     pub source: Option<u64>,
+    /// The worn thing it lasts only while, if one holds it. Opaque, like
+    /// `source`: the rules never read it, and whoever answers wearing ends
+    /// the instance the pass its holder is not worn. Absent in a save
+    /// written before a status could be held, which reads as held by
+    /// nothing.
+    #[serde(default)]
+    pub held_by: Option<u64>,
 }
 
 /// Damage one status dealt on a tick.
@@ -216,7 +252,27 @@ impl Statuses {
     /// Applies `id` for `turns`, following the definition's stacking rule,
     /// and installs its modifiers into `stats`. Returns whether anything
     /// changed.
+    ///
+    /// Held by nothing; a refresh or an extension of an instance a worn
+    /// thing holds leaves it held, since a second source of the same status
+    /// is no reason for the thing's to outlast the thing.
     pub fn apply(&mut self, id: StatusId, turns: u32, source: Option<u64>, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
+        self.put(id, turns, source, None, defs, stats)
+    }
+
+    /// As [`apply`](Self::apply), held by `holder`: the instance lasts only
+    /// while that thing is worn.
+    ///
+    /// An instance it refreshes or extends is taken over by `holder`,
+    /// whether or not its time changed, so what holds a status is always
+    /// the thing that last put it on. The return value still says only
+    /// whether the time or the instances changed, which is what a narrator
+    /// tells.
+    pub fn apply_held(&mut self, id: StatusId, turns: u32, source: Option<u64>, holder: u64, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
+        self.put(id, turns, source, Some(holder), defs, stats)
+    }
+
+    fn put(&mut self, id: StatusId, turns: u32, source: Option<u64>, held_by: Option<u64>, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
         let def = defs.get(id);
         let existing = self.active.iter_mut().find(|s| s.id == id);
         match (def.stacking, existing) {
@@ -224,10 +280,12 @@ impl Statuses {
             (Stacking::Refresh, Some(s)) => {
                 let changed = turns > s.turns;
                 s.turns = s.turns.max(turns);
+                s.held_by = held_by.or(s.held_by);
                 changed
             }
             (Stacking::Extend, Some(s)) => {
                 s.turns = s.turns.saturating_add(turns);
+                s.held_by = held_by.or(s.held_by);
                 true
             }
             _ => {
@@ -236,7 +294,7 @@ impl Statuses {
                 for m in &def.modifiers {
                     stats.add(crate::stats::Modifier::new(m.stat, m.op, tag));
                 }
-                self.active.push(ActiveStatus { id, turns, source });
+                self.active.push(ActiveStatus { id, turns, source, held_by });
                 true
             }
         }
@@ -362,6 +420,50 @@ mod tests {
         (stats, kinds)
     }
 
+    fn held_by(st: &Statuses, id: StatusId) -> Vec<Option<u64>> {
+        st.iter().filter(|s| s.id == id).map(|s| s.held_by).collect()
+    }
+
+    #[test]
+    fn a_status_applied_with_a_holder_records_it_and_one_applied_without_has_none() {
+        let (_, defs) = world();
+        let (slowed, burning) = (defs.expect("slowed"), defs.expect("burning"));
+        let mut stats = Stats::new();
+        let mut st = Statuses::new();
+        assert!(st.apply_held(slowed, 3, Some(9), 42, &defs, &mut stats));
+        assert!(st.apply(burning, 3, Some(9), &defs, &mut stats));
+        assert_eq!(held_by(&st, slowed), vec![Some(42)]);
+        assert_eq!(held_by(&st, burning), vec![None]);
+    }
+
+    #[test]
+    fn a_held_application_takes_over_what_it_refreshes_or_extends_and_an_unheld_one_leaves_the_holder() {
+        let (_, defs) = world();
+        let (slowed, burning) = (defs.expect("slowed"), defs.expect("burning"));
+        let mut stats = Stats::new();
+        let mut st = Statuses::new();
+        st.apply(slowed, 3, None, &defs, &mut stats);
+        st.apply_held(slowed, 2, None, 7, &defs, &mut stats);
+        assert_eq!(held_by(&st, slowed), vec![Some(7)], "a shorter held refresh still takes the instance over");
+        st.apply_held(slowed, 5, None, 8, &defs, &mut stats);
+        assert_eq!(held_by(&st, slowed), vec![Some(8)], "held by the newest holder");
+        st.apply(slowed, 9, None, &defs, &mut stats);
+        assert_eq!(held_by(&st, slowed), vec![Some(8)], "an unheld refresh leaves it held");
+        assert_eq!(st.iter().find(|s| s.id == slowed).map(|s| s.turns), Some(9));
+        st.apply(burning, 2, None, &defs, &mut stats);
+        st.apply_held(burning, 2, None, 7, &defs, &mut stats);
+        st.apply(burning, 2, None, &defs, &mut stats);
+        assert_eq!(held_by(&st, burning), vec![Some(7)], "extend follows the same rule");
+        assert_eq!(st.iter().find(|s| s.id == burning).map(|s| s.turns), Some(6));
+    }
+
+    /// A save written before a status could be held still reads.
+    #[test]
+    fn a_status_saved_without_a_holder_reads_as_held_by_nothing() {
+        let old: ActiveStatus = ron::from_str("(id: 3, turns: 4, source: None)").expect("an old status reads");
+        assert_eq!(old.held_by, None);
+    }
+
     #[test]
     fn a_status_file_is_written_in_names_and_loaded_as_ids() {
         let (stats, kinds) = vocabulary();
@@ -384,6 +486,24 @@ mod tests {
         assert_eq!(r.get(r.expect("venom")).tick_damage, Some((kinds.expect("bite"), 1)));
         assert_eq!(r.get(r.expect("mending")).tick_damage, Some((kinds.expect("care"), -2)), "a negative tick mends");
         assert_eq!(r.get(r.expect("stunned")).stacking, Stacking::Ignore);
+    }
+
+    #[test]
+    fn a_status_can_be_written_unseen_and_is_seen_unless_it_says_so() {
+        let names = Names::new();
+        let loaded = load(r#"[(name: "hidden", unseen: true), (name: "dazed")]"#, &names).expect("it loads");
+        assert!(loaded.get(loaded.expect("hidden")).unseen);
+        assert!(!loaded.get(loaded.expect("dazed")).unseen);
+        assert!(StatusDef::new("hidden").unseen().unseen);
+    }
+
+    #[test]
+    fn a_status_can_be_written_a_boon_and_is_not_one_unless_it_says_so() {
+        let names = Names::new();
+        let loaded = load(r#"[(name: "hearty", boon: true), (name: "dazed")]"#, &names).expect("it loads");
+        assert!(loaded.get(loaded.expect("hearty")).boon);
+        assert!(!loaded.get(loaded.expect("dazed")).boon);
+        assert!(StatusDef::new("hearty").boon().boon);
     }
 
     #[test]

@@ -36,6 +36,7 @@ use crate::modal::{ModalId, Modals};
 use crate::panel::sheet::plain_op;
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
+use crate::view::ability::turns;
 use crate::view::inventory::{InventoryView, InventoryViewPlugin, ItemRow};
 use crate::view::sheet::Strike;
 use crate::view::target::AimThrow;
@@ -332,8 +333,15 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     if let Some((left, max)) = row.charges {
         say(format!("{left}/{max} charges"), Tones::MUTED);
     }
-    if row.empty {
-        say("empty".to_string(), Tones::MUTED);
+    // An attuned thing off the body, charged or not, says the whole rule:
+    // a charge it holds is lost going back on, which is the one thing a
+    // player swapping plates needs to know. One whose clock runs says when
+    // it will be ready; anything else empty is simply empty.
+    match (row.attuned && !row.worn(), row.empty, row.ready_in) {
+        (true, _, _) => say("empties when put on; charges only while worn".to_string(), Tones::MUTED),
+        (false, true, Some(whole)) => say(format!("ready in {}", turns(whole * rl_core::turn::BASE_ACTION_COST)), Tones::MUTED),
+        (false, true, None) => say("empty".to_string(), Tones::MUTED),
+        (false, false, _) => {}
     }
     for facet in &row.facets {
         say(facet.text.clone(), facet.tone);
@@ -662,5 +670,53 @@ mod tests {
         assert!(rows[0].usable() && !rows[1].usable(), "a live wand is used and a dead one is not");
         stage.press(KeyCode::KeyU);
         assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "so the use key does nothing on it");
+    }
+
+    /// Two attuned plates, one worn and a quarter charged and one spare in
+    /// the bag: the worn one says when it will be ready, and the spare says
+    /// why it never will be while it stays there, and that putting it on
+    /// starts it from nothing.
+    #[test]
+    fn a_charging_plate_says_when_it_is_ready_and_a_spare_says_it_charges_only_worn() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        stage.app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("torso")]).unwrap();
+        let player = stage.player;
+        let torso = stage.app.world().resource::<Registries>().slots.expect("torso");
+        let charging = Consumable { left: 0, recharge: Some(rl_bevy::Recharge { every: 4000, progress: 1000 }), ..Consumable::new(1, WhenEmpty::Kept) };
+        let plate = |name: &str| (Item, Name::new(name.to_string()), triggers.clone(), charging, rl_bevy::Attuned, Wearable(EquipShape::in_slot(torso)));
+        let worn_plate = stage.app.world_mut().spawn(plate("plate")).id();
+        let spare = stage.app.world_mut().spawn(plate("spare")).id();
+        let charged = stage.app.world_mut().spawn(plate("charged")).id();
+        stage.app.world_mut().get_mut::<Consumable>(charged).unwrap().left = 1;
+        let mut worn = Equipped(Equipment::with_slot_count(1));
+        worn.equip(worn_plate, &EquipShape::in_slot(torso)).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![worn_plate, spare, charged] }, worn));
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert!(detail(&stage).iter().any(|l| l == "ready in 30 turns"), "{:?}", detail(&stage));
+        stage.press(KeyCode::ArrowDown);
+        assert!(detail(&stage).iter().any(|l| l == "empties when put on; charges only while worn"), "{:?}", detail(&stage));
+        assert!(!detail(&stage).iter().any(|l| l == "empty"), "the reason, not the bare fact: {:?}", detail(&stage));
+        stage.press(KeyCode::ArrowDown);
+        assert!(
+            detail(&stage).iter().any(|l| l == "empties when put on; charges only while worn"),
+            "a charged one taken off loses its charge going back on, and says so: {:?}",
+            detail(&stage)
+        );
+    }
+
+    /// The last turn of a charge is one turn, not one turns.
+    #[test]
+    fn a_plate_a_turn_from_ready_says_one_turn() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        let player = stage.player;
+        let nearly = Consumable { left: 0, recharge: Some(rl_bevy::Recharge { every: 4000, progress: 3950 }), ..Consumable::new(1, WhenEmpty::Kept) };
+        let wand = stage.app.world_mut().spawn((Item, Name::new("wand"), triggers, nearly)).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![wand] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert!(detail(&stage).iter().any(|l| l == "ready in 1 turn"), "{:?}", detail(&stage));
     }
 }

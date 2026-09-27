@@ -25,6 +25,10 @@
 //! loot: a count beside each kind of mark a [`ScatterRules`] names, and a
 //! number more on free floor.
 //!
+//! [`LevelTable`], how good a thing found at a band is, loaded with
+//! [`load_levels`], rolls an enchant level by band; a game's own `make`
+//! consults it for the things it knows are enchantable.
+//!
 //! Everything draws from a generator the caller hands in: which stream it
 //! is, and so what a kill or a place's loot may never nudge, is the Bevy
 //! layer's to decide.
@@ -313,6 +317,123 @@ impl<K: Copy> DropTable<K> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+}
+
+/// One row of a level table: the bands it covers, both included, and the
+/// levels a thing found there may have, each with its weight.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LevelRow {
+    /// The shallowest and deepest band it covers.
+    pub bands: (i32, i32),
+    /// Each level and how often it is drawn against the others.
+    pub levels: Vec<(i32, u32)>,
+}
+
+/// How good a thing found at a band is: an enchant level drawn by weight
+/// from the row covering the band.
+///
+/// The engine owns the arithmetic and the game owns the rest: which things
+/// are enchantable, the most any one of them reaches, and what a level
+/// does to it. Rows never share a band, since two answers for one depth is
+/// a typo rather than a choice. A band no row covers is read from the
+/// nearest shallower row, else the nearest deeper one, as a tagged loot
+/// draw falls back, so a crate two bands past the deepest row is as good
+/// as the deepest row and never plain. A row with one level draws nothing,
+/// so a table whose shallow bands are all `+0` moves no stream there.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LevelTable {
+    rows: Vec<LevelRow>,
+}
+
+impl LevelTable {
+    /// A table of `rows`, sorted by band, or every problem with them.
+    pub fn new(mut rows: Vec<LevelRow>) -> Result<Self, Vec<String>> {
+        let mut errors = Vec::new();
+        for (i, r) in rows.iter().enumerate() {
+            let at = format!("row {}", i + 1);
+            if r.bands.0 > r.bands.1 {
+                errors.push(format!("{at}: bands {} to {} is no range at all", r.bands.0, r.bands.1));
+            }
+            if r.levels.is_empty() {
+                errors.push(format!("{at}: no levels to draw"));
+            }
+            for (level, weight) in &r.levels {
+                if *level < 0 {
+                    errors.push(format!("{at}: level {level} is below plain"));
+                }
+                if *weight == 0 {
+                    errors.push(format!("{at}: level {level} has a weight of nothing; leave it out instead"));
+                }
+            }
+        }
+        rows.sort_by_key(|r| r.bands);
+        // Every pair, not only neighbours once sorted: a row spanning two
+        // others sorts beside only the first. A backwards range is already
+        // reported and overlaps nothing.
+        for (i, a) in rows.iter().enumerate() {
+            for b in &rows[i + 1..] {
+                let sound = a.bands.0 <= a.bands.1 && b.bands.0 <= b.bands.1;
+                if sound && b.bands.0 <= a.bands.1 {
+                    errors.push(format!("bands {:?} and {:?} overlap", a.bands, b.bands));
+                }
+            }
+        }
+        if errors.is_empty() { Ok(Self { rows }) } else { Err(errors) }
+    }
+
+    /// The rows, shallowest first.
+    pub fn rows(&self) -> &[LevelRow] {
+        &self.rows
+    }
+
+    /// The row a draw at `band` is made from.
+    pub fn row_for(&self, band: i32) -> Option<&LevelRow> {
+        let covers = |r: &&LevelRow| (r.bands.0..=r.bands.1).contains(&band);
+        self.rows.iter().find(covers).or_else(|| self.rows.iter().rev().find(|r| r.bands.1 < band)).or_else(|| self.rows.iter().find(|r| r.bands.0 > band))
+    }
+
+    /// A level for a thing found at `band`; plain for an empty table.
+    pub fn roll(&self, band: i32, rng: &mut impl Rng) -> i32 {
+        let Some(row) = self.row_for(band) else { return 0 };
+        if let [(level, _)] = row.levels.as_slice() {
+            return *level;
+        }
+        let total: u64 = row.levels.iter().map(|(_, w)| u64::from(*w)).sum();
+        let mut pick = rng.random_range(0..total);
+        for (level, weight) in &row.levels {
+            let weight = u64::from(*weight);
+            if pick < weight {
+                return *level;
+            }
+            pick -= weight;
+        }
+        0
+    }
+}
+
+/// Loads a level table from RON, a list of rows.
+///
+/// Every field of a row:
+///
+/// - `bands`: `(shallowest, deepest)`, both included; no two rows share a band.
+/// - `levels`: `[(level, weight)]`, each level at or above nought and each
+///   weight above nought; only the ratio of the weights matters.
+///
+/// Every problem in the file is reported at once.
+///
+/// ```
+/// use rl_rules::loot;
+/// use rand::SeedableRng;
+///
+/// let table = loot::load_levels("[(bands: (1, 3), levels: [(0, 1)]), (bands: (4, 9), levels: [(1, 1), (2, 1)])]").unwrap();
+/// let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+/// assert_eq!(table.roll(2, &mut rng), 0);
+/// assert!((1..=2).contains(&table.roll(12, &mut rng)), "past the table, its deepest row");
+/// ```
+pub fn load_levels(text: &str) -> Result<LevelTable, ContentError> {
+    let rows: Vec<LevelRow> = ron::from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
+    LevelTable::new(rows).map_err(ContentError::Invalid)
 }
 
 /// How a place's loot is laid out when it is first built: how many items
@@ -604,5 +725,85 @@ mod tests {
         }
         let err = load(r#"[(item: "slugg", bands: (1, 2), weight: 1)]"#, &names, &things, |_| Vec::new()).expect_err("an unknown item").to_string();
         assert!(err.contains("slugg"), "{err}");
+    }
+
+    fn levels() -> LevelTable {
+        LevelTable::new(vec![
+            LevelRow { bands: (1, 2), levels: vec![(0, 1)] },
+            LevelRow { bands: (3, 5), levels: vec![(0, 3), (1, 1)] },
+            LevelRow { bands: (9, 10), levels: vec![(2, 1), (3, 1)] },
+        ])
+        .expect("a sound table")
+    }
+
+    #[test]
+    fn a_band_rolls_from_its_row_and_one_past_the_table_from_the_nearest() {
+        let t = levels();
+        assert_eq!(t.row_for(4).map(|r| r.bands), Some((3, 5)));
+        assert_eq!(t.row_for(7).map(|r| r.bands), Some((3, 5)), "a gap falls back to the nearest shallower row");
+        assert_eq!(t.row_for(12).map(|r| r.bands), Some((9, 10)), "past the table, the deepest row");
+        assert_eq!(t.row_for(-3).map(|r| r.bands), Some((1, 2)), "before it, the shallowest");
+        assert_eq!(LevelTable::default().row_for(4), None);
+    }
+
+    #[test]
+    fn levels_are_drawn_by_weight_over_a_span_of_seeds() {
+        let t = levels();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(3);
+        let ones = (0..400).filter(|_| t.roll(4, &mut rng) == 1).count();
+        assert!((60..=140).contains(&ones), "one in four at weight three to one: {ones} of 400");
+        assert!((0..200).all(|_| (2..=3).contains(&t.roll(20, &mut rng))), "past the table, the deepest row's levels");
+    }
+
+    #[test]
+    fn a_row_with_one_level_draws_nothing_from_the_stream() {
+        let t = levels();
+        let (mut a, mut b) = (rand::rngs::StdRng::seed_from_u64(9), rand::rngs::StdRng::seed_from_u64(9));
+        assert_eq!(t.roll(1, &mut a), 0);
+        assert_eq!(LevelTable::default().roll(1, &mut a), 0);
+        assert_eq!(a.random::<u64>(), b.random::<u64>(), "the stream is where it was");
+    }
+
+    /// Weights past what a `u32` holds still sum and draw correctly, rather
+    /// than wrapping the total and drawing from the wrong span.
+    #[test]
+    fn a_rows_weights_summing_past_a_u32_still_draw_both_levels() {
+        let t = LevelTable::new(vec![LevelRow { bands: (1, 1), levels: vec![(1, u32::MAX), (2, u32::MAX)] }]).expect("a sound table");
+        let mut rng = StdRng::seed_from_u64(11);
+        let levels: Vec<i32> = (0..200).map(|_| t.roll(1, &mut rng)).collect();
+        assert!(levels.contains(&1), "level 1 never drawn: {levels:?}");
+        assert!(levels.contains(&2), "level 2 never drawn: {levels:?}");
+        assert!(levels.iter().all(|l| [1, 2].contains(l)), "an unexpected level: {levels:?}");
+    }
+
+    #[test]
+    fn a_table_with_overlapping_bands_or_empty_rows_is_refused_with_every_problem() {
+        let errors = LevelTable::new(vec![
+            LevelRow { bands: (1, 4), levels: vec![(0, 1)] },
+            LevelRow { bands: (3, 6), levels: vec![] },
+            LevelRow { bands: (8, 7), levels: vec![(-1, 0)] },
+        ])
+        .expect_err("five problems");
+        assert_eq!(errors.len(), 5, "an overlap, an empty row, a backwards range, a negative level, a weight of nothing: {errors:#?}");
+    }
+
+    /// A row that spans two others overlaps both, and both are said, not
+    /// only the one that sorts beside it.
+    #[test]
+    fn a_row_containing_two_others_is_reported_against_each() {
+        let errors = LevelTable::new(vec![
+            LevelRow { bands: (1, 10), levels: vec![(0, 1)] },
+            LevelRow { bands: (2, 3), levels: vec![(0, 1)] },
+            LevelRow { bands: (5, 6), levels: vec![(0, 1)] },
+        ])
+        .expect_err("two overlaps");
+        assert_eq!(errors, vec!["bands (1, 10) and (2, 3) overlap".to_string(), "bands (1, 10) and (5, 6) overlap".to_string()]);
+    }
+
+    #[test]
+    fn a_level_file_loads_the_table_it_writes() {
+        let t = load_levels("[(bands: (1, 2), levels: [(0, 1)]), (bands: (3, 5), levels: [(0, 3), (1, 1)])]").expect("it loads");
+        assert_eq!(t.rows().len(), 2);
+        assert_eq!(t.rows()[1].levels, vec![(0, 3), (1, 1)]);
     }
 }

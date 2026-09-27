@@ -6,10 +6,12 @@
 //   modifies:  optional; stat changes while it lasts, each (stat, op): stat "armor" | "attack", op Add(n) | MulPct(n) | AtLeast(n) | AtMost(n)
 //   ticks:     optional; (damage kind, amount) dealt every whole turn: kind "cutlass" | "pistol" | "bite" | "claw" | "fist" | "fire"
 //   badge:     optional; one character for the status line
+//   unseen:    optional; true when nothing sees whoever holds it while it lasts, until it strikes (false, default)
+//   boon:      optional; true when holding it is good for the holder, told in the log as good news (false, default)
 #![enable(implicit_some)]
 [
     (name: "venom", ticks: ("bite", 1), badge: 'v'),
     (name: "bleeding", stacking: Extend, ticks: ("claw", 1), badge: 'b'),
-    (name: "hearty", modifies: [("armor", Add(1))], badge: 'h'),
+    (name: "hearty", modifies: [("armor", Add(1))], badge: 'h', boon: true),
     (name: "deafened", badge: 'd'),
 ]

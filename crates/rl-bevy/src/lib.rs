@@ -57,7 +57,7 @@ pub use combat::{
     MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use consumable::{AddSpending, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
+pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
@@ -71,12 +71,12 @@ pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flamm
 pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
-    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack,
-    Tagged, Unequip, UseItem, Wearable,
+    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Pulse,
+    Stack, Tagged, Unequip, UseItem, Wearable,
 };
 pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
-pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Scattered};
+pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight, Thinking,
     a_mind_holds_the_turn,
@@ -101,7 +101,7 @@ pub use rl_grid::LightBand;
 pub use seed::{AddStream, Seed, Stream};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
-pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Watchers};
+pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
@@ -122,7 +122,7 @@ pub mod prelude {
         MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    pub use crate::consumable::{AddSpending, Consumable, ConsumablesPlugin, WhenEmpty};
+    pub use crate::consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, WhenEmpty};
     pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent, Open};
     pub use crate::effects::{
@@ -133,12 +133,12 @@ pub mod prelude {
     pub use crate::fov::FovPlugin;
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
     pub use crate::items::{
-        Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Stack, Tagged, Unequip,
-        UseItem, Wearable,
+        Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Pulse, Stack, Tagged,
+        Unequip, UseItem, Wearable,
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
-    pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Scattered};
+    pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
     pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, Sounds};
     pub use crate::places::{
@@ -158,7 +158,7 @@ pub mod prelude {
     pub use crate::seed::{AddStream, Seed};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
-    pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Watchers};
+    pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};

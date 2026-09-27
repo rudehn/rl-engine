@@ -7,10 +7,14 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/components.rs
+            crates/rl-bevy/src/status.rs
+            crates/rl-bevy/src/items.rs
+            crates/rl-bevy/src/ability.rs
+            crates/rl-rules/src/status.rs
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 04994ae4 -->
+     fingerprint: 8aac07e3 -->
 
 # Stealth
 
@@ -18,10 +22,12 @@ Without this a mind acts on everything its own sight reaches the turn it first r
 Stealth is the layer between "could be seen" and "has been seen": a roll to notice, and a memory that decays.
 Noticing is two knobs rather than a radius, because a radius alone is a hard line the player learns to stand behind and a chance alone is a lottery with no readable edge.
 What an observer knows is per observer and per subject, so a monster may be unaware of you and perfectly aware of the thief beside it, and one that loses you searches where it last saw you before it forgets.
+A status can go further and make its holder unseen, hidden from every mind at any distance until it runs out or its holder attacks, or, for one a worn thing holds, until the thing comes off.
 
 ## Turning it on
 
-`StealthPlugin` adds three systems, and the message and the stream they need, and nothing else: `update_awareness` in `DecideSet::Notice`, before a mind decides; `filter_unnoticed` in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; and `wake_on_damage` in `TurnSet::React`, where a turn's consequences land.
+`StealthPlugin` adds six systems, and the messages and the stream they need, and nothing else: `update_awareness` in `DecideSet::Notice`, before a mind decides; `filter_unseen` then `filter_unnoticed` in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; `reveal_attackers` and `mark_unseen` in `ResolveSet::Effects`, either side of the statuses' own two; and `wake_on_damage` in `TurnSet::React`, where a turn's consequences land.
+It registers `Cure` and declares that it reads `Struck`, `ItemEvent` and `AbilityEvent`, so a game with stealth and no statuses, items or abilities has nothing to reveal on rather than a panic; without `StatusPlugin` nothing holds a status, and nothing is ever unseen.
 It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on, and the stream is `StealthRng`, so a tactic added to a brain or a blow struck elsewhere cannot shift which turn a guard spots you on.
 Both sides have to be authored before anything changes: a `Notice` absent means the observer sees on sight, which is the behaviour before stealth existed, and a `Stealth` absent means the subject never hides.
 That is the right way round, and it is why "I added the plugin and nothing happened" is the likely first report.
@@ -48,7 +54,15 @@ What "could be seen" means is the observer's own `Viewshed` and `within_reach` o
 Noise offers its own to the same place, the freshest becomes `Snapshot::last_known`, and `SearchLastKnown` walks to it.
 `wake_on_damage` wakes whoever takes a blow from something carrying `Stealth` and points it at the attacker's cell: a mend is not a blow, a blow armor stopped at zero still wakes it, and so does a rolled attack that missed, read from `Missed`, so a hider cannot fire at a sleeper until one lands.
 `StealthRunning` answers whether the plugin was added, asked of its message rather than of the components, because `Notice` brings an `Aware` with it and a game that authored observers without the plugin would otherwise have monsters that notice nothing forever.
-`Watchers` answers who is watching whom by the rule the minds act on: an observer that keeps an `Aware` watches what it knows about, one that does not watches whatever its own sight reaches, and neither watches anything it is not at odds with.
+`Watchers` answers who is watching whom by the rule the minds act on: an observer that keeps an `Aware` watches what it knows about, one that does not watches whatever its own sight reaches, and neither watches anything it is not at odds with or anything unseen.
+`Watchers::remembers` answers whether an observer still has a subject in mind, watching it or not, and the two part only for the unseen.
+`StatusDef::unseen`, `unseen: true` in a status file, is a status whose holder nothing sees while it lasts, and `Unseen` is the marker `mark_unseen` keeps on whoever holds one.
+It is kept from `Changed<Afflicted>` after the statuses are applied, ticked and cured, so it lasts exactly as long as the status, a continued run gets it back from the statuses it saved, and the pass a status goes on is the pass the next mind to decide cannot see its holder.
+An unseen status a worn thing holds ends by the items plugin's `Cure`, written in the same stage before the statuses resolve, so the marker comes off in the pass the thing does and the next mind to decide sees its wearer.
+`filter_unseen` takes the unseen out of the enemies, allies and others of every mind, noticing or not, and `update_awareness` counts one out of view, so an observer that was alert to it searches where it last saw it for its memory and forgets.
+`reveal_attackers` reads `Struck`, written for every blow or shot before the accuracy roll, `ItemEvent::Thrown`, and `AbilityEvent::Used` with a target other than the user, and writes a `Cure` for every unseen status each attacker holds.
+It runs before `resolve_afflictions` in the same pass, so the marker is gone before the damage lands and `wake_on_damage` points the one struck at an attacker it can see.
+`wake_on_damage` wakes nobody to an attacker still unseen, which is harm from something `reveal_attackers` does not read: a thing used whose `use` trigger hurt those around it, a worn thing pulsing, or a trap its holder set off; a status ticking carries no attacker and wakes nobody at all.
 
 ## Using it
 
@@ -104,11 +118,15 @@ The engine decides who has noticed whom; a game decides what that is worth.
 Propagation is deliberately absent: what a shout carries, how far it goes and who it reaches are content, so a game that wants a squad writes a dozen lines over `Noticed` rather than accepting the engine's idea of a squad.
 Sneak damage is absent for the same reason, since a multiplier is balance.
 Stealth hides a subject from minds and from nothing else: the drawing is untouched, so a monster is never hidden from the player, and two-way stealth would be a render change rather than another component.
+The engine decides that the unseen is seen by nothing and that attacking ends it; the game decides which status is unseen, for how long, what grants it, and whether it lasts only while the thing that granted it is worn.
+The unseen departs on purpose from the floor of one: that floor is about `Stealth`'s quiet, which is for good, and the unseen is a status that lasts turns and ends the moment its holder strikes.
+Being hurt does not end it, and hearing is untouched, so a mind that hears the unseen still goes to look and finds nothing there to see.
 A `Perception` is still the hard cap on how far an actor notices anything at all, and `Notice` is only the curve inside it, which is how a game gives a guard long sight and poor attention.
 `notices` takes a `lit` flag rather than a `Lighting`, so it stays pure and a game is free to decide exposure means standing in water, or on open ground, or having shouted a moment ago.
 Light is the one exposure term the engine ships, and it is one number, so a creature with `lit_bonus: 0` is one that hunts by something other than the eye without the engine learning a word for it.
 Hearing is a separate lever that this never reads: it brings a monster close, and close is where the roll is likely to land.
 What the player reads off it is `Alert::Hunting` on a nearby row, and hunting outranks searching, since something that has seen you is not still wondering about a noise.
+Something that had you and lost you to the unseen reads `Alert::Searching`, since it is on its way to where it last knew of you, and neither hunting, since nothing sees the unseen, nor idle, since it has not forgotten.
 `Aware` is not saved, so a monster that had noticed you has forgotten by the time a continued run begins.
 
 ## Where it lives
@@ -116,5 +134,6 @@ What the player reads off it is `Alert::Hunting` on a nearby row, and hunting ou
 `rl-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the two stat blocks, the three functions over them and the state machine, with the caller doing the rolling and the caller deciding what lit means.
 That is what lets the properties be proved rather than watched: that light widens the certain radius by exactly its bonus and by nothing else, that `quiet` narrows it and the floor of one holds against any stack of gear, and that `lost` returns to `Unaware` on exactly the turn the memory passes while a sighting in between resets the count.
 Both stat blocks are serde-ready, so an observer's attention and a subject's quiet are written in a bestiary file rather than in Rust.
-`rl-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, the stream, the three systems and the system parameters that answer whether stealth is running and who is watching.
+`rl-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems and the system parameters that answer whether stealth is running and who is watching.
+`StatusDef::unseen` is a flag on a tier 1 definition, so which status hides its holder is a line in a status file that loads and is checked without an `App`, and what hiding does is left to `stealth.rs`.
 `Watchers` lives there rather than in a panel because the vitals strip and the nearby rail must read the same answer the minds act on, and the bug that put it there was a strip reading hidden while a cutthroat cut the player down.

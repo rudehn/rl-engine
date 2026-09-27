@@ -14,7 +14,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
-     fingerprint: 3c86299e -->
+     fingerprint: e38a4e93 -->
 
 # Minds
 
@@ -45,7 +45,7 @@ A `Tactic` is a `name` for that trace and an `evaluate` returning a `Decision` o
 `Snapshot` carries `me`, `enemies`, `allies`, `others`, `items`, `props`, `missiles`, `usable`, `reach`, `last_known`, `came_from`, `wits` and the game's own `senses`.
 An `ActorView` holds `health` and `faction` as options, so a civilian in a game with no combat is still someone a mind sees and steps round, and `is_hurt` is false when health is unknown rather than true.
 `Thinking` is that snapshot while it is being filled, plus `mark_hazard` for a cell no mind will step on and `offer_trail` for something worth walking to, the freshest offer becoming `last_known` when the snapshot closes.
-The four phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in sight into the three lists by the faction matrix, `Filter` is where stealth drops the hiders the mind has not noticed and offers what it lost, and `Annotate` is where combat says how far its own shot carries, items what it carries and sees lying about, abilities what it may use, props what stands about, fire where not to step, hearing where a sound came from and `sense_posts` where the mind's post is.
+The four phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in sight into the three lists by the faction matrix, `Filter` is where stealth drops the unseen and the hiders the mind has not noticed and offers what it lost, and `Annotate` is where combat says how far its own shot carries, items what it carries and sees lying about, abilities what it may use, props what stands about, fire where not to step, hearing where a sound came from and `sense_posts` where the mind's post is.
 `decide_minds` sorts the snapshot once, there and nowhere else, so the order the contributors ran in cannot reach a tactic.
 `TacticCtx` then offers `step_toward` and `step_away_from` over `FlowFields`, keyed by the goal cells, the movement class, whether the walker opens doors and which way it is going, stamped with the map's cost epoch and capped at `FIELD_CACHE`: fifty hunters after one player cost one flood.
 It also offers `can_step`, which refuses an occupied cell and any cell marked a hazard, `blocks_shot` and `blocks_burst`, the two predicates the ability resolver flies and bursts by, and the turn's stream.

@@ -82,7 +82,7 @@ pub fn spawn_commando(commands: &mut Commands, registries: &Registries) -> Entit
         .spawn((
             (Actor, Player, Commando, Blocks, Position(Point::ZERO), Viewshed::new(20), RevealsMap),
             (Health::full(30), Armor(0), Faction(commando), Resists(resistances(Profile::Organic, registries)), crate::light::SHOULDER_LAMP),
-            (MeleeAttack::new(kinetic, DiceRoll::new(1, 3)), Name::new("you"), Glyph::new('@', Color::WHITE).on_layer(10)),
+            (MeleeAttack::new(kinetic, DiceRoll::new(1, 3)), Name::new("you"), Glyph::new('@', COMMANDO).on_layer(10)),
             // Noticeable, not sneaky: no skill at hiding, but a subject a
             // droid has to notice rather than one it sees the instant it
             // comes into view. Without it nothing ever notices the
@@ -102,6 +102,26 @@ pub fn spawn_commando(commands: &mut Commands, registries: &Registries) -> Entit
     // lies somewhere on it most runs.
     commands.entity(player).insert((Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len()))));
     player
+}
+
+/// How the commando is drawn: white, and faded while nothing can see them,
+/// so the player sees the cloak working on the map and not only in a badge.
+pub const COMMANDO: Color = Color::WHITE;
+/// The commando while unseen.
+pub const COMMANDO_UNSEEN: Color = Color::srgb(0.45, 0.5, 0.6);
+
+/// Draws the commando faded while unseen and white otherwise.
+///
+/// In `TurnSet::React` rather than a drawing layer: the glyph's colour is
+/// the run's state, set in the pass the cloak went on or came off, and the
+/// map draws whatever it is.
+pub fn fade_the_unseen(mut commando: Query<(&mut Glyph, Has<Unseen>), With<Commando>>) {
+    for (mut glyph, unseen) in &mut commando {
+        let fg = if unseen { COMMANDO_UNSEEN } else { COMMANDO };
+        if glyph.fg != fg {
+            glyph.fg = fg;
+        }
+    }
 }
 
 /// Builds the foundry, spawns the commando and warps it onto deck one, or
@@ -130,7 +150,7 @@ pub fn start(
     prepare(&mut commands, &seed, &registries);
     let player = spawn_commando(&mut commands, &registries);
     let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
-    begin.log.notice(format!("Seed {}. The drop ship is gone. The reactor is three decks down.", seed.0.0), 0);
+    begin.log.notice(format!("Seed {}. The drop ship is gone. The first reactor is on deck three.", seed.0.0), 0);
     begin.warps.write(WarpRequest::into_place(player, map_of(deck)));
     begin.next.set(EngineState::Playing);
 }

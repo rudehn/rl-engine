@@ -136,9 +136,13 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
         // Hunting outranks searching: something that has seen you is not
         // still wondering about a noise. Neither reading at all is a game
         // with neither stealth nor noise, or a thing that does not notice.
+        // Something that had you and lost you to the unseen searches too:
+        // it is on its way to where it last knew of you.
         if sighting.actor {
-            let hunts = around.watchers.running() && around.watchers.is_watcher(sighting.entity) && around.watchers.sees(sighting.entity, me);
-            let searches = around.noise.get() && around.heard.get(sighting.entity).is_ok_and(|h| h.is_alert());
+            let watching = around.watchers.running() && around.watchers.is_watcher(sighting.entity);
+            let hunts = watching && around.watchers.sees(sighting.entity, me);
+            let searches = (around.noise.get() && around.heard.get(sighting.entity).is_ok_and(|h| h.is_alert()))
+                || (watching && around.watchers.remembers(sighting.entity, me));
             let knows_how =
                 (around.watchers.running() && around.watchers.is_watcher(sighting.entity)) || (around.noise.get() && around.heard.get(sighting.entity).is_ok());
             row.alert = match (hunts, searches, knows_how) {
@@ -216,6 +220,27 @@ mod tests {
         plain.actor("anyone", 'a', 2, 0);
         plain.tick();
         assert_eq!(plain.app.world().resource::<NearbyView>().actors[0].alert, None, "no stealth, no reading");
+    }
+
+    /// Something that had the player and lost it to the unseen is going to
+    /// where it last knew of it: searching, not hunting, since nothing sees
+    /// the unseen, and not idle, since it has not forgotten.
+    #[test]
+    fn a_row_that_lost_an_unseen_player_reads_searching_until_it_forgets() {
+        let mut stage = Stage::new((NearbyViewPlugin, rl_bevy::MindsPlugin, rl_bevy::StealthPlugin));
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert((Stealth::default(), rl_bevy::Unseen));
+        let lost = stage.actor("lost", 'l', 2, 0);
+        stage.app.world_mut().entity_mut(lost).insert(Notice(rl_rules::NoticeStats { certain: 1, chance_pct: 0, lit_bonus: 0, memory: 6 }));
+        let at = stage.at;
+        stage.app.world_mut().get_mut::<Aware>(lost).unwrap().0.insert(player, rl_rules::Awareness::Alert { at, stale_turns: 0 });
+        stage.tick();
+
+        let alert = |stage: &Stage| stage.app.world().resource::<NearbyView>().actors[0].alert;
+        assert_eq!(alert(&stage), Some(Alert::Searching), "it has not forgotten, and it cannot see");
+        stage.app.world_mut().get_mut::<Aware>(lost).unwrap().0.insert(player, rl_rules::Awareness::Unaware);
+        stage.tick();
+        assert_eq!(alert(&stage), Some(Alert::Unaware), "and once it has forgotten, it knows of nothing");
     }
 
     #[test]

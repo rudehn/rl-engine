@@ -341,6 +341,13 @@ None of them is in the order above and none is scheduled: take one when its file
 - **The gear panel shows nothing for an empty single-charge kept thing, where the bag says it is empty.**
   `collect_gear` shows charges only for a thing that holds more than one.
 
+Left over from the worn gear and unseen slice on 2026-09-27, the same way.
+
+- **A use that harms others does not end the unseen.**
+  `reveal_attackers` in `crates/rl-bevy/src/stealth.rs` ends it on a blow or shot, a throw, and an ability landed on another, which is the list the slice's spec gave; a thing used whose `use` trigger harms those around its user is not on it, and `wake_on_damage` wakes nobody to an attacker still unseen.
+  A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read `Landing::targets` of a `use` trigger the way it reads an ability's.
+  No shipped content harms others from a `use` trigger, so it waits for one that does.
+
 ## Tracked elsewhere
 
 - The plan's "Next" line: nights on Corsair's surface, scripted encounters, Bevy UI presenters over the panel views, and the living-world-rogue conversion.

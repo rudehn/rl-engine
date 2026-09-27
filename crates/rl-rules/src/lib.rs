@@ -21,7 +21,8 @@
 //!   moment a prop or a thing answers and where its effects land.
 //! - [`loot`]: where items turn up and how often, keyed by a game's own
 //!   item ids: a banded table drawn by weight, by group and by tag, what
-//!   the dead leave, and a place's scatter.
+//!   the dead leave, a place's scatter, and how good a found thing is by
+//!   band.
 //! - [`prop`]: what stands on a map that is neither an actor nor an item,
 //!   as data: a look, what it offers, what it holds, what sets it off and
 //!   how hard it is to spot.
@@ -88,7 +89,7 @@ pub use faction::{FactionId, Factions, Relation};
 pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
 pub use gas::{Breath, GasDef, GasId};
-pub use loot::{DropRow, DropTable, Layout, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
+pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use names::{NameRef, Names};
 pub use prefab::{Coverage, CoverageRow, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
@@ -116,7 +117,7 @@ pub mod prelude {
     pub use crate::fire::Tinder;
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
     pub use crate::gas::{Breath, GasDef, GasId};
-    pub use crate::loot::{DropRow, DropTable, Layout, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
+    pub use crate::loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
     pub use crate::names::{NameRef, Names};
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};

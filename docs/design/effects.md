@@ -40,6 +40,8 @@ The first game that wants a moment the engine did not think of, a blaster that d
 A content file names a moment as a string.
 It is resolved when the triggers are built, and a name nobody registered fails that build with the name in the message, the way an unregistered effect kind does, so a typo is caught while the file is read rather than by a trap that quietly never fires.
 
+`pulse` is the seventh built-in moment, a worn thing's clock coming round, appended so the six before it keep their ids.
+
 ## 3. `Triggers`, and the potion model
 
 `TriggerSpec` is the authored form, in `rl-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `Area`, an optional count of `fires`, and an optional effect list.
@@ -78,6 +80,7 @@ It does not find the triggers, build the footprint or land anything, so the rule
 | `hit` | combat, at the struck actor's cell | `ResolveSet::Act`, `LandSet::Shot` | the same pass |
 | `entered` | props, on a step onto an armed prop's cell | `ResolveSet::Travel`, after every step, swap and warp | the same pass |
 | `destroyed` | props, on the prop's death | `TurnSet::React` | the next pass |
+| `pulse` | items, for each worn `Pulse` whose period came round, on the current map | `ResolveSet::Triggers`, before `land_triggers` | the same pass |
 
 `land_triggers` runs in `ResolveSet::Triggers`, a stage of its own between `Act` and `Fields`.
 It reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any whose `fires` is spent, lands the effects on the area with every actor in the area as a target, the one who set it off included, and counts `fires` down.
@@ -127,13 +130,23 @@ That is a departure from the usual `depends_on`, which only reports: a game that
 ## 7. What is saved
 
 Only what changes in play.
-`EngineSave` keeps a consumable's `left` and recharge progress, and each trigger's remaining `fires`, beside the pools and cooldowns it already kept.
+`EngineSave` keeps a consumable's `left` and recharge progress, a worn thing's pulse progress, and each trigger's remaining `fires`, beside the pools and cooldowns it already kept.
 A prop's firings stay with the prop's own save, as its old count did, so each fact has one owner.
 Effect lists are never saved: a game rebuilds them from its definitions when it spawns the thing.
 
 A prop restored before `PropEffects` is built carries its saved firings as `PendingFires`, which `arm_props` applies when it arms the prop, since a load can come before the first frame builds the triggers.
 
-## 8. The roads not taken
+## 8. Effects at a level
+
+An enchanted thing's effects grow with its level, and the level reaches them on the `Landing`.
+`land_triggers` reads it off the carrier's `Enchant`; an ability and an offer land at nought.
+`Harm` and `Mend` add `per_level` to the roll's bonus per level and `Inflict` adds `per_level` turns, each nought unless written, so every file written before this loads unchanged.
+`describe` takes the level too, so the bag says what a `+2` thing does at `+2`.
+
+The level is on the landing rather than baked into the effects at spawn because the effects are built once per definition and shared by every copy behind an `Arc`, and because the arguments are text the engine does not understand: rewriting them per level would silently skip a field that is not a number.
+What is a number on the thing rather than in an effect, a pulse's period or a plate's armor, is written by the game at spawn with the level applied, as `Bestows` already is.
+
+## 9. The roads not taken
 
 - **A. One component per moment**, `OnUse`, `OnLand`, `OnHit`, each landed by the plugin that owns the moment. Typed and plain, but "find the list, build the area, land it, spend a charge" would be written once per moment and again for props, and a game could not add a moment without another component and another system.
 - **C. Items as offers**, the shape props' `open` uses. It brings a verb, a time cost and refusal reasons in words, but only for a use: a landing or a hit is not an act anyone chooses, so every item file would be offers plus A's fields. The refusal reasons are the part worth taking later, on the `use` trigger.

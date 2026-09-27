@@ -79,6 +79,7 @@ Two consequences worth stating:
 `land_triggers` lands it in `ResolveSet::Triggers`, after every action and before damage, so a stim at one hit point is applied in the pass that spent the turn and beats the blow already queued behind it.
 
 The user is the only target and their own cell the only cell.
+A thing that can be worn is used only while it is worn: a plate carried in the bag and used would let a wearer keep one plate on and spend another's charge, which is the swap the attunement in section 5 exists to prevent.
 A thing that should land somewhere else is thrown or fired.
 
 The narrator says a use of a thing with a `use` trigger, `You use a stim.`, and says nothing of a use of anything else.
@@ -91,6 +92,13 @@ An empty thing is refused before the turn is spent, so pressing use on a dry wan
 `Consumable` counts charges: `left` of `max`, `WhenEmpty::Destroyed` or `Kept` at zero, and an optional `Recharge` that gives one back for each period of the clock.
 A stim holds one; a wand holds five and is kept when empty, refilling as the turns pass.
 
+A worn thing that holds charges may be `Attuned`: it refills only while worn and is emptied each time it is put on.
+That is the anti-swap rule, and it is on the thing rather than on the wearer because it is a fact about the thing: a worn thing that hides its wearer is earned by wearing it.
+Equip time was the other candidate, and it was rejected as the rule because time alone still lets a player swap between fights.
+A pulse is attuned by nature, since its clock only runs while worn.
+A status a worn thing's trigger puts on its wearer may be held by the thing, written `while_worn` on the `Inflict`, and then it ends in the pass the thing is no longer worn, however it came off.
+That is the other half of the rule: attunement stops a charged thing being swapped to, and holding stops a used one being swapped from, so a plate that hides its wearer cannot be used and traded for one that mends while the hiding runs on.
+
 Using, landing and firing spend a charge, and a game may mark a moment of its own as spending.
 A hit does not, since one shot can strike and a flaming blade is not used up by landing a blow.
 At zero a stack of more than one loses a unit and the next starts full; otherwise the thing is destroyed or kept empty.
@@ -101,8 +109,8 @@ A thing spent to nothing is marked `Spent` and kept, as the dead are, until the 
 
 ## 6. What is deliberately not here
 
-- **`on_equip` effects.** Effects are one-shot; wearing is a standing state. What a worn thing does is already declarative and needs no list: `Armor`, `Resists`, an attack, `Bestows` for the registered stats. A one-shot when something goes on, a cursed plate that bites, is a real case and a small one; it waits for a game that wants it, and would be one more moment.
-- **"Hold a status while worn."** The insulated suit that reads as arc-resistant. Today that is a game's own system, as Foundry's `WornDarkSight` and `sync_dark_sight` are. By the rule in `CLAUDE.md`, the second game to write it is the signal it belongs in the engine.
+- **`on_equip` effects.** Effects are one-shot; wearing is a standing state. A worn thing's clock is the other half, and it exists: a [`Pulse`] reports the `pulse` moment every period its thing is worn, so a plate that knits wounds is a trigger, not a system. What a worn thing does is already declarative and needs no list: `Armor`, `Resists`, an attack, `Bestows` for the registered stats. A one-shot when something goes on, a cursed plate that bites, is a real case and a small one; it waits for a game that wants it, and would be one more moment.
+- **"Hold a status while worn."** The insulated suit that reads as arc-resistant from the moment it goes on. A status a trigger puts on can already be held by the thing (section 5); one held for as long as the thing is worn, with no trigger to land it, is still a game's own system, as Foundry's `WornDarkSight` and `sync_dark_sight` are. By the rule in `CLAUDE.md`, the second game to write it is the signal it belongs in the engine.
 - **An engine item schema.** `triggers`, `consumable`, `throw` and the rest are Foundry's own field names in Foundry's own file; Corsair's happen to match and need not. What is shared is the components and the authored effect and trigger forms, never the file.
 - **Items as offers.** A crate you open and a medkit you use are nearly the same shape, and props' offers already carry a verb, a time cost and a refusal reason in words. Only a use is chosen, though; a landing or a hit is not, so it would carry half of what an item does. The refusal reasons are the part worth taking later, onto the `use` trigger.
 

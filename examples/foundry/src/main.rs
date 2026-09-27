@@ -1,4 +1,4 @@
-//! Foundry: a commando fighting down three decks of a droid foundry, with
+//! Foundry: a commando fighting down ten decks of a droid foundry, with
 //! weapons that run hot or run dry, droids that shoot and raise the alarm,
 //! and a reactor charge that ends in a choice of upgrade. This binary
 //! opens the window, cuts the screen and adds the panels; the game itself,
@@ -30,7 +30,11 @@ const RAIL: i32 = 30;
 /// is aimed, the range, the target, the chance, and up to four lines of it.
 const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals and to gear; the rest is what is nearby.
-const VITALS_ROWS: i32 = 7;
+/// Vitals is its heading with the rule under it, the name, health, armor,
+/// seen and lit, noise, and a last row for the badges: blank most turns,
+/// which sets the gear off from the gauges as the blank under the gear
+/// sets it off from the nearby list.
+const VITALS_ROWS: i32 = 8;
 const GEAR_ROWS: i32 = 9;
 
 /// The screen, cut up once so every panel and the map agree on it.
@@ -111,8 +115,10 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // or a blow next door reads about a third of it, and a probe's
         // klaxon, at eight times a shot, pegs it and then falls away over
         // the turns after. Scaled to the shot alone, everything pegged and
-        // the bar said only "something happened".
-        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals").noise("noise", 3000),
+        // the bar said only "something happened". No turn and position:
+        // the strip's last row is the badges', and a line that showed only
+        // while no status did would come and go.
+        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals").noise("noise", 3000).without_whereabouts(),
         // What is worn, with each blaster's heat as a facet on its row.
         GearPanel::new(screen.gear),
         // One mark for every cell a screen points at: the rail's tab
@@ -245,6 +251,9 @@ mod tests {
     fn the_opening_screen_names_the_first_deck_in_the_log_and_the_way_to_the_controls_in_the_rail() {
         let app = on_screen(RunSeed(7));
         let log: Vec<String> = (ROWS - LOG_ROWS..ROWS).map(|y| row(&app, y)).collect();
+        // Where the first charge is set, which holds of the ten-deck
+        // foundry wherever the run starts.
+        assert!(log.iter().any(|l| l.starts_with("Seed 7. The drop ship is gone. The first reactor is on deck three.")), "{log:#?}");
         assert!(log.iter().any(|l| l.starts_with("Deck 1: the upper assembly hall.")), "{log:#?}");
         assert!(log.iter().any(|l| l.starts_with("Press ? for the controls.")), "{log:#?}");
         assert!(row(&app, ROWS - 1).trim_end().ends_with("? controls"), "the rail's last row: {:?}", row(&app, ROWS - 1));
@@ -296,6 +305,38 @@ mod tests {
         let palette = app.world().resource::<Palette>();
         let bad = rl_engine::rl_ui::readable(palette.get(Tones::BAD), palette);
         assert_eq!(app.world().resource::<Terminal>().get(x, y).unwrap().fg, bad);
+    }
+
+    /// A status's badge has a row of its own on the vitals strip, under
+    /// the noise gauge and above the worn gear, so the cloak's `%` is on
+    /// screen for as long as the commando is cloaked; with no badge the
+    /// row is blank, never the turn and position, which would come and go
+    /// with every status.
+    #[test]
+    fn a_status_badge_is_drawn_on_the_vitals_strip_above_the_worn_gear() {
+        let mut app = on_screen(RunSeed(7));
+        let rail = |app: &App, y: i32| row(app, y).chars().skip((COLS - RAIL) as usize).collect::<String>().trim_end().to_string();
+        assert_eq!(rail(&app, VITALS_ROWS - 1), "", "blank with no badge to show");
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
+        app.world_mut().write_message(Afflict { target: me, status: cloaked, turns: 10, by: None, held_by: None });
+        app.update();
+        app.update();
+        assert_eq!(rail(&app, VITALS_ROWS - 1), "%", "the badge, on the last row of the strip");
+        assert!(rail(&app, VITALS_ROWS).starts_with("Worn"), "and the gear still under it: {:?}", rail(&app, VITALS_ROWS));
+    }
+
+    /// The pack says the cloak plate's cloak lasts only while it is worn,
+    /// under the plate, in the words the effect describes itself with.
+    #[test]
+    fn the_pack_says_the_cloak_plate_cloaks_only_while_worn() {
+        let mut app = on_screen(RunSeed(7));
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let plate = foundry::testing::equip_new(&mut app, me, "cloak plate");
+        app.update();
+        let view = app.world().resource::<InventoryView>();
+        let row = view.rows.iter().find(|r| r.entity == plate).expect("the plate in the pack");
+        assert!(row.used.contains(&"use: cloaked for 10 turns while worn".to_string()), "{:?}", row.used);
     }
 
     /// The log reads in the order things happened: a probe that spots the

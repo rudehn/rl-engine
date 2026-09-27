@@ -9,7 +9,8 @@
 //! trigger, landed by the effects subsystem, and what a use costs it is its
 //! [`Consumable`](crate::consumable::Consumable); a use is reported both as
 //! [`ItemEvent::Used`], for the game, and as the `use` moment, for the
-//! triggers. An item never lends an ability.
+//! triggers. An item never lends an ability. A thing that can be worn is
+//! used only while it is worn.
 //!
 //! What wearing an item does is the item's to say and the engine's to
 //! apply. Its combat components are read straight off it by
@@ -17,7 +18,9 @@
 //! and what it [`Bestows`] on the registered stats is folded into the
 //! wearer's [`StatBlock`] by [`fold_gear`] the moment its slots change.
 //! Nothing is copied onto the wearer and nothing has to be remembered
-//! when it comes off.
+//! when it comes off. A status a worn thing's trigger put on its wearer
+//! may be held by the thing, and [`end_unworn_holds`] cures it in the pass
+//! the thing is no longer worn.
 //!
 //! Throwing one is [`throwing`](crate::throwing), which needs combat as well.
 
@@ -31,9 +34,9 @@ use crate::combat::DeathEvent;
 use crate::components::{Actor, MyTurn, Position};
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
-use crate::status::StatBlock;
+use crate::status::{Afflicted, Cure, StatBlock};
 use crate::throwing::Throwable;
-use crate::turn::{Action, Intent, Resolution};
+use crate::turn::{Action, Intent, Resolution, Turns};
 use crate::world::WorldMap;
 
 /// An item.
@@ -116,6 +119,32 @@ pub struct Stack {
     pub key: u64,
     /// How many.
     pub count: u32,
+}
+
+/// A worn thing's own clock: its `pulse` moment comes round every `every`
+/// hundredths of a step it is worn, with `progress` counted towards the
+/// next.
+///
+/// What a pulse does is the thing's `pulse` trigger, landed on whoever
+/// stands on the wearer's cell, which is the wearer: a plate that knits
+/// wounds is a pulse that mends. The clock runs only while the thing is
+/// worn and starts again from nothing each time it is put on, so a wearer
+/// cannot wear it most of a period, swap, and swap back for a pulse on the
+/// next turn. The game writes `every` when it spawns the thing, with the
+/// thing's enchant already applied, as it writes [`Bestows`].
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pulse {
+    /// Hundredths of a step between pulses.
+    pub every: u32,
+    /// Hundredths counted towards the next.
+    pub progress: u32,
+}
+
+impl Pulse {
+    /// A clock coming round every `every` hundredths, with nothing counted yet.
+    pub fn every(every: u32) -> Self {
+        Self { every, progress: 0 }
+    }
 }
 
 /// What happened to an item, for narration and for the game's own
@@ -233,7 +262,8 @@ impl Action for Unequip {}
 /// The engine charges the turn, reports [`ItemEvent::Used`] and the `use`
 /// moment, and the item's triggers do the rest. A use of an empty
 /// [`Consumable`](crate::consumable::Consumable) is refused, and the
-/// player keeps the turn.
+/// player keeps the turn. A thing that can be worn is used only while it
+/// is worn, and a use of one in the bag is refused the same way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseItem(pub Entity);
 impl Action for UseItem {}
@@ -392,12 +422,16 @@ pub fn resolve_items(
                     taken_off
                 }
                 Which::Use(item) => {
-                    let Ok((pos, bag, _)) = carriers.get_mut(actor) else { break 'attempt false };
+                    let Ok((pos, bag, worn)) = carriers.get_mut(actor) else { break 'attempt false };
                     // An empty wand is still a wand, and using one is a
                     // mistake the player keeps the turn for, as for any
                     // impossible item action.
                     let empty = consumables.get(item).is_ok_and(|c| c.is_empty());
-                    if bag.contains(item) && !empty {
+                    // A thing that can be worn is used by wearing it: one
+                    // used from the bottom of the bag would let a wearer
+                    // keep one plate on and spend another's charge.
+                    let off_the_body = wearables.contains(item) && !worn.is_some_and(|w| w.slot_of(item).is_some());
+                    if bag.contains(item) && !empty && !off_the_body {
                         events.write(ItemEvent::Used { actor, item });
                         fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at: pos.0 });
                         true
@@ -435,6 +469,97 @@ pub fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<Equippe
             let Ok(bestows) = items.get(item) else { continue };
             for (stat, op) in &bestows.0 {
                 stats.0.add(Modifier::new(*stat, *op, Source::Item(item.to_bits())));
+            }
+        }
+    }
+}
+
+/// Counts each worn [`Pulse`] on by the time that passed since the last
+/// pass, and reports its `pulse` moment for each full period, on the thing,
+/// by its wearer, at the wearer's cell.
+///
+/// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers) before
+/// the triggers land, so a pulse lands in the pass whose clock brought it.
+/// Reads the clock rather than counting passes, as a recharge does, and a
+/// clock that went backwards, a new run, counts as no time. Only wearers on
+/// the current map: a moment lands on whoever stands on its cell here, and
+/// a wearer on another map would mend a stranger at the same coordinates.
+pub fn pulse_worn(
+    turns: Res<Turns>,
+    mut last: Local<Option<u32>>,
+    map: Res<WorldMap>,
+    wearers: Query<(Entity, &Position, Option<&OnMap>, &Equipped)>,
+    mut pulses: Query<&mut Pulse>,
+    mut fired: MessageWriter<crate::effects::Fired>,
+) {
+    let now = turns.now();
+    let passed = now.saturating_sub(last.unwrap_or(now));
+    *last = Some(now);
+    if passed == 0 {
+        return;
+    }
+    let here = map.current();
+    for (wearer, pos, on, worn) in &wearers {
+        if on.map_or(MapId::SURFACE, |m| m.0) != here {
+            continue;
+        }
+        for (_, item) in worn.0.worn() {
+            let Ok(mut pulse) = pulses.get_mut(item) else { continue };
+            let every = pulse.every.max(1);
+            pulse.progress += passed;
+            while pulse.progress >= every {
+                pulse.progress -= every;
+                fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::PULSE, by: Some(wearer), at: pos.0 });
+            }
+        }
+    }
+}
+
+/// Starts a [`Pulse`] from nothing whenever its thing is put on.
+///
+/// In [`TurnSet::React`](crate::plugin::TurnSet::React), after the pass
+/// counted whatever time it counted, so the thing's first period is a whole
+/// one from the pass it went on in.
+pub fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&mut Pulse>) {
+    for ev in events.read() {
+        let ItemEvent::Equipped { item, .. } = *ev else { continue };
+        if let Ok(mut pulse) = pulses.get_mut(item) {
+            pulse.progress = 0;
+        }
+    }
+}
+
+/// Ends every status a worn thing holds on anyone not wearing that very
+/// thing, through the ordinary [`Cure`].
+///
+/// A status is held when the [`Afflict`](crate::status::Afflict) that put
+/// it on named a holder, which an `Inflict` written `while_worn` does for
+/// the thing whose trigger landed it. Nothing here asks how the thing came
+/// off: taken off, dropped, displaced by another in its slot, used up or
+/// despawned, the question is only whether the holder still wears it, so
+/// a way of losing a thing added later is covered without a line here.
+/// A cure takes a status off whole, so a status that stacks loses an
+/// unheld instance beside the held one; no game stacks a held status, and
+/// a cure that picked one instance is a change to the status model this
+/// does not need yet.
+///
+/// In [`ResolveSet::Effects`](crate::plugin::ResolveSet::Effects) before
+/// the statuses resolve, so in the pass the thing comes off, which
+/// resolved in [`ResolveSet::Act`](crate::plugin::ResolveSet::Act), the
+/// cure lands, [`StatusEvent::Cured`](crate::status::StatusEvent) is
+/// written, and a status that hid its holder stops hiding it before the
+/// next actor decides. Here rather than in the status plugin because
+/// wearing is this plugin's to know; statuses never learn what an item
+/// is. A game with items and no statuses has no [`Afflicted`] to look at
+/// and the queue it writes stays empty.
+pub fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>, items: Query<(), With<Item>>, mut cure: MessageWriter<Cure>) {
+    for (who, afflicted, worn) in &holders {
+        for status in afflicted.iter() {
+            let Some(bits) = status.held_by else { continue };
+            let item = Entity::try_from_bits(bits);
+            let worn = item.is_some_and(|item| items.contains(item) && worn.is_some_and(|w| w.slot_of(item).is_some()));
+            if !worn {
+                cure.write(Cure { target: who, status: status.id });
             }
         }
     }
@@ -554,6 +679,10 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
 /// way [`StatusPlugin`](crate::status::StatusPlugin) gives one, so a
 /// wearer in a game with gear stats and no statuses still has somewhere
 /// for them to land.
+///
+/// A worn [`Pulse`] reports its `pulse` moment on its own clock, and a
+/// status a worn thing holds ends when it is no longer worn, in
+/// [`end_unworn_holds`].
 pub struct ItemsPlugin;
 
 impl Plugin for ItemsPlugin {
@@ -579,9 +708,20 @@ impl Plugin for ItemsPlugin {
             .add_message::<crate::effects::Fired>()
             .add_systems(Turn, perceive_belongings.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, resolve_items.in_set(ResolveSet::Act))
+            // Before the triggers land, so a pulse lands in the pass that
+            // brought it; a game with no effects has nothing to land it.
+            .add_systems(Turn, pulse_worn.in_set(ResolveSet::Triggers).before(crate::effects::land_triggers))
+            // What ending a held status writes, registered here as well as
+            // by the status plugin, since a game may have items and no
+            // statuses, and then nobody is afflicted and nothing is written.
+            .add_message::<Cure>()
+            // Before the statuses resolve, so a held status ends in the pass
+            // its thing came off; see `end_unworn_holds`.
+            .add_systems(Turn, end_unworn_holds.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions))
             // In the pass the slots changed in, so gear counts from the
             // moment it is worn.
             .add_systems(Turn, fold_gear.in_set(TurnSet::React))
+            .add_systems(Turn, restart_pulses.in_set(TurnSet::React))
             .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
     }
@@ -712,6 +852,20 @@ mod tests {
         assert_eq!(r.app.world().resource::<Turns>().now(), before + 100, "using is the game's, the turn is ours");
     }
 
+    /// A thing that is worn is used by wearing it: in the bag its use is
+    /// refused and costs nothing, and once it is on the use goes through.
+    #[test]
+    fn a_wearable_thing_is_used_only_while_it_is_worn() {
+        let mut r = rig();
+        let plate = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
+        act(&mut r, PickUp);
+        let before = r.app.world().resource::<Turns>().now();
+        assert!(act(&mut r, UseItem(plate)).is_empty(), "in the bag, it is not used");
+        assert_eq!(r.app.world().resource::<Turns>().now(), before, "and the refusal is free");
+        act(&mut r, Equip(plate));
+        assert_eq!(act(&mut r, UseItem(plate)), vec![ItemEvent::Used { actor: r.player, item: plate }], "worn, it is");
+    }
+
     #[test]
     fn a_despawned_item_leaves_the_bag_and_the_slots() {
         let mut r = rig();
@@ -774,7 +928,7 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Equip(ring)));
         app.update();
         assert_eq!(might_of(&app, player), Some(15), "the ring's five, folded the pass it went on");
-        app.world_mut().write_message(crate::status::Afflict { target: player, status: weak, turns: 9, by: None });
+        app.world_mut().write_message(crate::status::Afflict { target: player, status: weak, turns: 9, by: None, held_by: None });
         app.update();
         assert_eq!(might_of(&app, player), Some(12), "and the status's three off");
 

@@ -47,8 +47,8 @@ use crate::facet::{Facet, FacetId};
 /// What something in sight is doing about the player.
 ///
 /// Three states and no more, because three is what the engine can say
-/// without guessing: it has noticed you, it is going to look at something
-/// it heard, or it knows of nothing. A game that wants a finer reading, a
+/// without guessing: it has noticed you, it is going to look for you, or
+/// it knows of nothing. A game that wants a finer reading, a
 /// droid winding up or a beast feeding, pushes a [`Facet`].
 ///
 /// What each is *called* is a panel's, not this: one game's monsters
@@ -57,7 +57,8 @@ use crate::facet::{Facet, FacetId};
 pub enum Alert {
     /// It knows of nothing: it has not noticed you and has heard nothing.
     Unaware,
-    /// It heard something and is going to look, without having seen you.
+    /// It is going to look without seeing you: at something it heard, or
+    /// at where it last knew of you before you went unseen.
     Searching,
     /// It has noticed you.
     Hunting,

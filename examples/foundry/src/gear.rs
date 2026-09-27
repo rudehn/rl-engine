@@ -5,7 +5,9 @@
 //!
 //! The [`Armory`] is Foundry's [`ItemMaker`]: the engine's `LootPlugin`
 //! decides what lies on a deck, what a kill leaves and what a crate holds,
-//! and asks the armory to make each thing.
+//! and asks the armory to make each thing, rolling a level from
+//! `levels.ron` at the band it is found at for a thing that names an
+//! `enchant`: a found plate is better the deeper it lay.
 //!
 //! An [`ItemDef`] is the file's own vocabulary: everything a game needs
 //! to know about a weapon or a suit of plate, named rather than typed, so
@@ -20,10 +22,12 @@
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_bevy::{Found, ItemMaker, LootArea};
+use rl_engine::rl_bevy::{ItemMaker, LootArea, Provenance};
 use rl_engine::rl_core::{DiceRoll, Id};
 use rl_engine::rl_render::Glyph;
-use rl_engine::rl_rules::{DamageKind, EquipShape, LootTable, NameRef, Named, Registry, Resistances, ScatterRules, SlotDef, TagDef, TagId};
+use rl_engine::rl_rules::{
+    AffixDef, DamageKind, Enchanted, EquipShape, LevelTable, LootTable, NameRef, Named, Registry, Resistances, ScatterRules, SlotDef, TagDef, TagId,
+};
 use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
 use serde::Deserialize;
 
@@ -33,6 +37,7 @@ use crate::heat::Heat;
 
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
 const ITEM_SPAWNS_RON: &str = include_str!("../assets/item_spawns.ron");
+const LEVELS_RON: &str = include_str!("../assets/levels.ron");
 
 /// One kind of item, as authored in `items.ron`.
 #[derive(Debug, Clone, Deserialize)]
@@ -99,6 +104,18 @@ pub struct ItemDef {
     /// Tiles seen without light, while worn.
     #[serde(default)]
     pub dark_sight: Option<i32>,
+    /// A clock that comes round while it is worn, for a thing whose `pulse`
+    /// trigger does something on it.
+    #[serde(default)]
+    pub pulse: Option<PulseDef>,
+    /// True for a thing whose charges come back only while it is worn, and
+    /// which is empty each time it is put on.
+    #[serde(default)]
+    pub attuned: bool,
+    /// How far a thing found about the decks may be enchanted; absent, it
+    /// is always plain.
+    #[serde(default)]
+    pub enchant: Option<EnchantDef>,
     /// Whether copies merge into one counted entry rather than one item
     /// each.
     #[serde(default)]
@@ -131,6 +148,33 @@ pub struct ThrowDef {
     pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
 }
 
+/// A worn thing's clock as `items.ron` writes it: hundredths of a step per
+/// pulse at `+0`, what each level adds, and the shortest period any level
+/// reaches.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct PulseDef {
+    /// Hundredths per pulse at `+0`.
+    pub every: u32,
+    /// Hundredths added per level; negative for a clock that quickens.
+    pub per_level: i32,
+    /// The shortest period any level reaches.
+    pub fastest: u32,
+}
+
+impl PulseDef {
+    /// The period at `level`.
+    pub fn at(&self, level: i32) -> u32 {
+        (self.every as i32 + self.per_level * level.max(0)).max(self.fastest as i32).max(1) as u32
+    }
+}
+
+/// How far a thing may be enchanted where it is found.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct EnchantDef {
+    /// The most any one of it is found at.
+    pub most: i32,
+}
+
 impl Named for ItemDef {
     fn name(&self) -> &str {
         &self.name
@@ -160,6 +204,9 @@ pub struct Armory {
     /// What can be found on a deck, drawn by band, where the band is the
     /// deck number: `item_spawns.ron`, through the engine's loader.
     pub table: LootTable<Id<ItemDef>>,
+    /// How good a found thing is at each deck, for the things that name an
+    /// `enchant`: `levels.ron`.
+    pub levels: LevelTable,
     /// Each definition's triggers, built once and shared by every item
     /// spawned from it.
     ///
@@ -192,6 +239,18 @@ fn validate_def(d: &ItemDef, _: &Registry<ItemDef>) -> Result<(), String> {
     if d.throw.is_none() && d.triggers.iter().any(|t| t.on == "land") {
         return Err("a land trigger on a thing that cannot be thrown never lands".into());
     }
+    if d.slot.is_none() && (d.pulse.is_some() || d.attuned || d.enchant.is_some()) {
+        return Err("a pulse, an attunement or an enchant on a thing that is never worn does nothing".into());
+    }
+    if d.pulse.is_some() != d.triggers.iter().any(|t| t.on == "pulse") {
+        return Err("a pulse needs a pulse trigger to do something, and a pulse trigger needs a pulse to come round".into());
+    }
+    if d.attuned && d.consumable.and_then(|c| c.recharge).is_none() {
+        return Err("attuned, and nothing that refills".into());
+    }
+    if d.enchant.is_some_and(|e| e.most < 1) {
+        return Err("an enchant that reaches no level".into());
+    }
     Ok(())
 }
 
@@ -212,6 +271,7 @@ impl Armory {
         let table =
             rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &names.clone().with("item", &defs), &defs, |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect())
                 .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
+        let levels = rl_engine::rl_rules::loot::load_levels(LEVELS_RON).unwrap_or_else(|e| panic!("assets/levels.ron: {e}"));
         // ANCHOR: triggers
         // Each definition's triggers, built once against the moments and
         // effect kinds the run registered, and every problem in the file
@@ -229,7 +289,7 @@ impl Armory {
         }
         assert!(errors.is_empty(), "assets/items.ron: {}", errors.join("; "));
         // ANCHOR_END: triggers
-        Self { defs, table, triggers }
+        Self { defs, table, levels, triggers }
     }
 }
 
@@ -312,12 +372,24 @@ pub struct ItemKind(pub Id<ItemDef>);
 /// Spawns `id` as an item entity carrying every component its definition
 /// implies: what it is called and drawn as, what it counts as, and, for
 /// something worn, its shape, its armor, its resistances and whatever it
-/// strikes or shoots with. `Heat` and `Ammo` are attached the same way
-/// Tasks 6 and 7 will give them behaviour for. A stackable item spawns as
-/// a stack of one; the caller merges or grows it as it likes.
-pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, registries: &Registries) -> Entity {
+/// strikes or shoots with, and the `Heat` or `Ammo` it runs on. A
+/// stackable item spawns as a stack of one; the caller merges or grows it
+/// as it likes.
+///
+/// At `level`, which names it `cloak plate +2`, lands its effects at that
+/// level and writes its clock with the level applied; a thing that names
+/// no `enchant` is plain whatever `level` says, and one that does is held
+/// between plain and its `most`, so a save written before the file
+/// lowered a `most` never brings back a thing the file no longer allows.
+pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let d = armory.defs.get(id);
-    let mut e = commands.spawn((Item, ItemKind(id), Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
+    let level = d.enchant.map_or(0, |e| level.clamp(0, e.most));
+    let enchanted = Enchanted { level, affixes: Vec::new() };
+    let name = enchanted.display_name(&d.name, &Registry::<AffixDef>::default());
+    let mut e = commands.spawn((Item, ItemKind(id), Name::new(name), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
+    if d.enchant.is_some() {
+        e.insert(Enchant(enchanted));
+    }
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));
     }
@@ -367,10 +439,22 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, reg
     if let Some(n) = d.dark_sight {
         e.insert(WornDarkSight(n));
     }
+    if let Some(pulse) = d.pulse {
+        e.insert(Pulse::every(pulse.at(level)));
+    }
+    if d.attuned {
+        e.insert(Attuned);
+    }
     if d.stack {
         e.insert(Stack { key: id.index() as u64, count: 1 });
     }
     e.id()
+}
+
+/// Spawns `id` plain, at `+0`: what the cheat menu puts in the pack, what
+/// a stack is made as, and what a test hands the commando.
+pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, registries: &Registries) -> Entity {
+    spawn_item_at(commands, armory, id, 0, registries)
 }
 
 /// Spawns `count` of `id`: one stack of `count` for a thing that stacks,
@@ -387,12 +471,32 @@ pub fn spawn_items(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, co
 // ANCHOR: maker
 /// The engine's loot is made here: what lies on a deck when it is first
 /// entered, what a kill leaves, and what a crate or a locker holds. A
-/// deck's band is its number, and Foundry has no streamed surface.
+/// deck's band is its number, and Foundry has no streamed surface. The
+/// armory makes each thing, rolling a level from `levels.ron` at the band
+/// it is found at for a thing that names an `enchant`.
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<ItemDef>, count: u32, _: Found, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
-        spawn_items(commands, self, def, count, registries)
+    fn make(
+        &self,
+        commands: &mut Commands,
+        registries: &Registries,
+        def: Id<ItemDef>,
+        count: u32,
+        from: Provenance,
+        rng: &mut rand::rngs::StdRng,
+    ) -> Vec<Entity> {
+        let d = self.defs.get(def);
+        if d.stack {
+            return spawn_items(commands, self, def, count, registries);
+        }
+        // Each its own roll: two plates from one crate are two finds.
+        (0..count)
+            .map(|_| {
+                let level = d.enchant.map_or(0, |e| self.levels.roll(from.band, rng).min(e.most));
+                spawn_item_at(commands, self, def, level, registries)
+            })
+            .collect()
     }
 
     fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {
@@ -467,7 +571,7 @@ mod tests {
     fn every_item_loads_and_every_spawn_band_on_the_first_three_decks_has_something() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
-        assert_eq!(armory.defs.len(), 22, "fourteen things to carry, a slug, a keycard, a stim, a medkit and four grenades");
+        assert_eq!(armory.defs.len(), 24, "sixteen things to carry, a slug, a keycard, a stim, a medkit and four grenades");
         assert!(armory.table.gaps(1..=3).is_empty(), "a deck with nothing to find");
     }
 
@@ -596,7 +700,7 @@ mod tests {
     /// A definition with fields left at their most inert: no slot, no
     /// attack, no economy, nothing to spawn with. Tests that care about one
     /// property override just that field, rather than restating all
-    /// fifteen every time.
+    /// twenty-three every time.
     fn blank_def(name: &str) -> ItemDef {
         ItemDef {
             name: name.to_string(),
@@ -618,6 +722,9 @@ mod tests {
             heat: None,
             ammo: None,
             dark_sight: None,
+            pulse: None,
+            attuned: false,
+            enchant: None,
             stack: false,
         }
     }
@@ -881,6 +988,385 @@ mod tests {
         let stim = armory.defs.get(armory.defs.expect("stim"));
         assert!(stim.throw.is_none());
         assert_eq!(stim.triggers.iter().map(|t| t.on.as_str()).collect::<Vec<_>>(), vec!["use"]);
+    }
+
+    #[test]
+    fn the_plates_load_with_their_clock_their_charge_and_their_level() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let nanite = armory.defs.get(armory.defs.expect("nanite plate"));
+        assert_eq!(nanite.pulse.map(|p| (p.every, p.per_level, p.fastest)), Some((1000, -100, 100)));
+        assert_eq!(nanite.enchant.map(|e| e.most), Some(9));
+        let cloak = armory.defs.get(armory.defs.expect("cloak plate"));
+        assert!(cloak.attuned);
+        assert_eq!(cloak.consumable.and_then(|c| c.recharge), Some(4000));
+    }
+
+    #[test]
+    fn a_pulse_or_an_attunement_or_an_enchant_on_a_thing_never_worn_fails_to_validate() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let mut d = blank_def("loose pulse");
+        d.pulse = Some(PulseDef { every: 800, per_level: 0, fastest: 800 });
+        assert!(validate_def(&d, &armory.defs).is_err(), "a pulse on nothing worn");
+        let mut d = blank_def("loose attunement");
+        d.attuned = true;
+        assert!(validate_def(&d, &armory.defs).is_err(), "attuned and never worn");
+        let mut d = blank_def("loose enchant");
+        d.enchant = Some(EnchantDef { most: 2 });
+        assert!(validate_def(&d, &armory.defs).is_err(), "an enchant on nothing worn");
+        // An enchant on a stack is refused either way it is written: worn,
+        // a worn thing cannot stack; not worn, the enchant does nothing.
+        let mut d = blank_def("a stack of fine things");
+        (d.enchant, d.stack) = (Some(EnchantDef { most: 2 }), true);
+        assert!(validate_def(&d, &armory.defs).is_err(), "an enchanted stack, not worn");
+        d.slot = Some(rl_engine::rl_core::Id::from_raw(0).into());
+        assert!(validate_def(&d, &armory.defs).is_err(), "an enchanted stack, worn");
+    }
+
+    /// Worn, each still has to hold up its own end: a clock with nothing
+    /// to do on it, a pulse trigger with no clock to fire it, an attunement
+    /// on a thing that never refills, and an enchant that reaches no level
+    /// are each a typo in the file rather than a plate.
+    #[test]
+    fn a_worn_pulse_without_its_trigger_or_an_attunement_with_nothing_to_refill_fails_to_validate() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let worn = |name: &str| ItemDef { slot: Some(rl_engine::rl_core::Id::from_raw(0).into()), ..blank_def(name) };
+        let mut d = worn("idle clock");
+        d.pulse = Some(PulseDef { every: 800, per_level: 0, fastest: 800 });
+        assert!(validate_def(&d, &armory.defs).is_err(), "a pulse and no pulse trigger");
+        let mut d = worn("no clock");
+        d.triggers = armory.defs.get(armory.defs.expect("nanite plate")).triggers.clone();
+        assert!(validate_def(&d, &armory.defs).is_err(), "a pulse trigger and no pulse");
+        let mut d = worn("never refills");
+        d.attuned = true;
+        d.consumable = Some(ConsumableDef { charges: 1, when_empty: WhenEmpty::Kept, recharge: None });
+        assert!(validate_def(&d, &armory.defs).is_err(), "attuned and nothing that refills");
+        let mut d = worn("plain for good");
+        d.enchant = Some(EnchantDef { most: 0 });
+        assert!(validate_def(&d, &armory.defs).is_err(), "an enchant that reaches no level");
+        let mut d = worn("a fine plate");
+        d.enchant = Some(EnchantDef { most: 3 });
+        assert!(validate_def(&d, &armory.defs).is_ok(), "and a worn enchant that reaches a level is fine");
+    }
+
+    /// The nanite plate knits a point back every ten turns worn, counted
+    /// from when it went on.
+    #[test]
+    fn the_nanite_plate_mends_a_point_every_ten_turns_worn() {
+        let (mut app, player) = alone_and_wounded(11, 10);
+        let before = health(&app, player);
+        crate::testing::equip_new(&mut app, player, "nanite plate");
+        crate::testing::pass_turns(&mut app, 8);
+        assert_eq!(health(&app, player), before, "not yet");
+        crate::testing::pass_turns(&mut app, 2);
+        assert_eq!(health(&app, player), before + 1, "a point in ten turns");
+    }
+
+    /// Every `DamageDealt` on anyone, recorded as it is written: a headless
+    /// app rotates its message buffers on wall time, so draining the queue
+    /// afterwards can find it already empty and prove nothing.
+    #[derive(Resource, Default)]
+    struct Dealt(Vec<(Entity, i32)>);
+
+    fn record_dealt(mut dealt: MessageReader<DamageDealt>, mut out: ResMut<Dealt>) {
+        out.0.extend(dealt.read().map(|d| (d.target, d.dealt)));
+    }
+
+    /// Worn at full health it mends nothing and says nothing: a whole
+    /// commando's log is not a list of mends.
+    #[test]
+    fn the_nanite_plate_on_a_whole_commando_says_nothing() {
+        let (mut app, player) = alone_and_wounded(12, 0);
+        app.init_resource::<Dealt>().add_systems(PostUpdate, record_dealt);
+        crate::testing::equip_new(&mut app, player, "nanite plate");
+        crate::testing::pass_turns(&mut app, 21);
+        let mine: Vec<i32> = app.world().resource::<Dealt>().0.iter().filter(|(t, _)| *t == player).map(|(_, d)| *d).collect();
+        assert_eq!(mine.len(), 2, "two pulses came round in twenty-one turns: {mine:?}");
+        assert!(mine.iter().all(|d| *d == 0), "and each mended nothing, so the narrator says nothing: {mine:?}");
+    }
+
+    /// A `+2` nanite plate comes round every eight turns, a `+9` one every
+    /// turn, and nothing past `+9` any faster.
+    #[test]
+    fn a_nanite_plate_quickens_with_its_level_to_every_turn_at_plus_nine() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let nanite = armory.defs.get(armory.defs.expect("nanite plate")).pulse.unwrap();
+        assert_eq!((nanite.at(0), nanite.at(2), nanite.at(9), nanite.at(12)), (1000, 800, 100, 100));
+    }
+
+    /// Every attacker's swing, recorded as it is written: a miss spends no
+    /// health, and a test that read health would take a miss for a droid
+    /// that never swung.
+    #[derive(Resource, Default)]
+    struct Swung(Vec<Entity>);
+
+    fn record_swings(mut struck: MessageReader<Struck>, mut swung: ResMut<Swung>) {
+        swung.0.extend(struck.read().map(|s| s.attacker));
+    }
+
+    /// The cloak plate is empty when it goes on and charged forty turns
+    /// later; used then, a droid alert to the commando one step away never
+    /// swings at them while it lasts.
+    #[test]
+    fn the_cloak_plate_hides_the_commando_from_an_adjacent_droid_once_it_has_charged() {
+        let (mut app, player) = alone_and_wounded(15, 0);
+        let plate = crate::testing::equip_new(&mut app, player, "cloak plate");
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(0), "empty when it went on");
+        crate::testing::pass_turns(&mut app, 40);
+        assert_eq!(app.world().get::<Consumable>(plate).map(|c| c.left), Some(1), "charged after forty turns worn");
+        // Only now the droid, so forty turns of waiting are not forty turns
+        // of being hit.
+        let (droid, _) = crate::testing::droid_facing_player(&mut app, "line droid", 1);
+        crate::testing::alert(&mut app, droid, player);
+        app.init_resource::<Swung>().add_systems(PostUpdate, record_swings);
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        crate::testing::settle(&mut app);
+        assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
+        crate::testing::pass_turns(&mut app, 3);
+        assert!(!app.world().resource::<Swung>().0.contains(&droid), "never swung at while cloaked");
+    }
+
+    /// How many turns the commando stays unseen after using a charged
+    /// cloak plate at `level`, alone on a quiet deck so nothing ends it
+    /// early, counted in waits until `Unseen` is gone.
+    fn turns_cloaked_by_a_plate_at(level: i32) -> u32 {
+        let (mut app, player) = alone_and_wounded(13, 0);
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = crate::testing::armory_of(&app);
+        let plate = {
+            let mut queue = CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, app.world_mut());
+            let plate = spawn_item_at(&mut commands, &armory, armory.defs.expect("cloak plate"), level, &registries);
+            queue.apply(app.world_mut());
+            plate
+        };
+        let named = if level == 0 { "cloak plate".to_string() } else { format!("cloak plate +{level}") };
+        assert_eq!(app.world().get::<Name>(plate).map(|n| n.as_str().to_string()), Some(named));
+        app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(plate);
+        app.world_mut().write_message(Intent::new(player, Equip(plate)));
+        app.update();
+        app.world_mut().get_mut::<Consumable>(plate).unwrap().left = 1;
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        crate::testing::settle(&mut app);
+        assert!(app.world().get::<Unseen>(player).is_some(), "unseen once the plate is used");
+        let mut turns = 0;
+        while app.world().get::<Unseen>(player).is_some() {
+            assert!(turns < 60, "a +{level} cloak that never wore off");
+            crate::testing::pass_turns(&mut app, 1);
+            turns += 1;
+        }
+        turns
+    }
+
+    /// Each level of a cloak plate hides the commando two turns longer: a
+    /// `+2` lasts four turns past a plain one's ten.
+    ///
+    /// Counted as waits after the use settles, the plain plate's ten come
+    /// to nine: the status ticks once in the pass it lands, which is the
+    /// use's own turn, so the tenth turn is the one it was used on.
+    #[test]
+    fn a_cloak_plates_level_adds_two_turns_each() {
+        let plain = turns_cloaked_by_a_plate_at(0);
+        let plus_two = turns_cloaked_by_a_plate_at(2);
+        assert_eq!(plain, 9, "a plain cloak's ten turns, the first of them the use's own");
+        assert_eq!(plus_two, plain + 4, "two more turns for each of two levels");
+    }
+
+    /// The commando's `@` fades the pass the cloak goes on and is white
+    /// again the pass it wears off.
+    #[test]
+    fn the_commando_is_drawn_faded_while_unseen() {
+        let (mut app, player) = alone_and_wounded(14, 0);
+        let fg = |app: &App| app.world().get::<Glyph>(player).map(|g| g.fg);
+        assert_eq!(fg(&app), Some(crate::run::COMMANDO));
+        let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
+        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 2, by: None, held_by: None });
+        crate::testing::pass_turns(&mut app, 1);
+        assert_eq!(fg(&app), Some(crate::run::COMMANDO_UNSEEN), "faded while unseen");
+        crate::testing::pass_turns(&mut app, 3);
+        assert_eq!(fg(&app), Some(crate::run::COMMANDO), "and white once it wore off");
+    }
+
+    /// The cloak lasts only while the plate is worn: used charged and then
+    /// taken off, the commando is seen again and drawn white in the pass it
+    /// comes off, and the log says so once, and never again when the ten
+    /// turns it would have run are up.
+    #[test]
+    fn taking_the_cloak_plate_off_ends_the_cloak_and_says_so_once() {
+        let (mut app, player) = alone_and_wounded(13, 0);
+        let plate = crate::testing::equip_new(&mut app, player, "cloak plate");
+        app.world_mut().get_mut::<Consumable>(plate).unwrap().left = 1;
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        crate::testing::settle(&mut app);
+        let fg = |app: &App| app.world().get::<Glyph>(player).map(|g| g.fg);
+        assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
+        assert_eq!(fg(&app), Some(crate::run::COMMANDO_UNSEEN));
+
+        crate::testing::unequip(&mut app, player, plate);
+        assert!(app.world().get::<Unseen>(player).is_none(), "the plate is off, and so is the cloak");
+        assert_eq!(fg(&app), Some(crate::run::COMMANDO), "drawn white again");
+        crate::testing::pass_turns(&mut app, 12);
+        let said = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
+        assert_eq!(said, 1, "said once, when it came off");
+    }
+
+    /// The exploit held statuses close: cloak with the cloak plate, then
+    /// put the nanite plate on over it, displacing the cloak plate from the
+    /// same torso slot. Without holding, the commando would keep both, seen
+    /// as neither: still cloaked and now mending. Held, the swap is the
+    /// same as taking the plate off, in the same update, and the log says
+    /// so once.
+    #[test]
+    fn swapping_the_cloak_plate_for_the_nanite_plate_ends_the_cloak_and_says_so_once() {
+        let (mut app, player) = alone_and_wounded(13, 0);
+        let plate = crate::testing::equip_new(&mut app, player, "cloak plate");
+        app.world_mut().get_mut::<Consumable>(plate).unwrap().left = 1;
+        app.world_mut().write_message(Intent::new(player, UseItem(plate)));
+        crate::testing::settle(&mut app);
+        assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
+
+        crate::testing::equip_new(&mut app, player, "nanite plate");
+        assert!(app.world().get::<Unseen>(player).is_none(), "the nanite plate displaced it, and the commando is seen again in that update");
+        crate::testing::pass_turns(&mut app, 12);
+        let said = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
+        assert_eq!(said, 1, "said once, when the nanite plate came on over it");
+    }
+
+    /// A stim is no attack and leaves a cloaked commando unseen; a frag
+    /// grenade thrown at a droid is one, and the commando is seen again in
+    /// the pass it bursts, through the same throw the pack's key makes.
+    #[test]
+    fn a_stim_leaves_the_commando_cloaked_and_a_grenade_thrown_at_a_droid_ends_it() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (droid, player) = crate::testing::droid_down_a_lane(&mut app, "line droid", 4, 4);
+        let frags = carry(&mut app, player, "frag grenade", 1);
+        crate::testing::pick(&mut app, player, crate::upgrades::Upgrade::Stims);
+        let stims = app.world().resource::<Abilities>().expect("stims");
+        let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
+        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 10, by: None, held_by: None });
+        crate::testing::pass_turns(&mut app, 1);
+        assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
+
+        let here = at(&app, player);
+        app.world_mut().write_message(Intent::new(player, Use { ability: stims, aim: here }));
+        crate::testing::settle(&mut app);
+        let cooling = app.world().get::<Cooldowns>(player).map(|c| c.ready_at(stims));
+        assert!(cooling.is_some_and(|t| t > 0), "the stim was taken, so it is cooling: {cooling:?}");
+        assert!(app.world().get::<Unseen>(player).is_some(), "a stim in the arm is not an attack");
+
+        let aim = at(&app, droid);
+        throw_grenade(&mut app, player, frags, aim);
+        assert!(app.world().get::<Unseen>(player).is_none(), "a grenade at a droid is");
+    }
+
+    /// What `make` hands back, each thing with the level it was made at,
+    /// read off its `Enchant`, and its name.
+    fn made(armory: &Armory, registries: &Registries, name: &str, count: u32, band: i32, rng: &mut rand::rngs::StdRng) -> Vec<(Option<i32>, String)> {
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let from = Provenance { found: rl_engine::rl_bevy::Found::Container, band };
+        let things = {
+            let mut commands = Commands::new(&mut queue, &world);
+            armory.make(&mut commands, registries, armory.defs.expect(name), count, from, rng)
+        };
+        queue.apply(&mut world);
+        things
+            .into_iter()
+            .map(|e| (world.get::<Enchant>(e).map(|x| x.0.level), world.get::<Name>(e).map(|n| n.as_str().to_string()).unwrap_or_default()))
+            .collect()
+    }
+
+    /// A cloak plate found at band 10, over a span of seeds, is always
+    /// `+2` to `+5`, every one of the four turns up, and it carries its
+    /// level on it and in its name.
+    #[test]
+    fn a_plate_made_at_band_ten_is_plus_two_to_plus_five_and_says_so() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..200 {
+            let mut rng = rand::SeedableRng::seed_from_u64(seed);
+            let [(level, name)] = made(&armory, &r, "cloak plate", 1, 10, &mut rng).try_into().expect("one plate");
+            let level = level.expect("an enchantable thing carries its level");
+            assert!((2..=5).contains(&level), "seed {seed}: +{level} at band 10");
+            assert_eq!(name, format!("cloak plate +{level}"));
+            seen.insert(level);
+        }
+        assert_eq!(seen.into_iter().collect::<Vec<_>>(), vec![2, 3, 4, 5], "every level the row names turns up");
+    }
+
+    /// Two plates from one `make` are two finds, each rolled for itself.
+    #[test]
+    fn two_plates_made_together_roll_their_levels_apart() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let differ = (0..50).any(|seed| {
+            let mut rng = rand::SeedableRng::seed_from_u64(seed);
+            let pair = made(&armory, &r, "cloak plate", 2, 10, &mut rng);
+            pair[0].0 != pair[1].0
+        });
+        assert!(differ, "fifty pairs and never two levels: the pair shares one roll");
+    }
+
+    /// A thing's `most` caps what the table hands it: a plate that reaches
+    /// only `+2` is never found better, even where the row runs to `+5`.
+    #[test]
+    fn a_things_most_caps_the_level_it_is_made_at() {
+        let r = crate::content::registries();
+        let mut armory = crate::testing::armory(&r);
+        let defs = armory
+            .defs
+            .iter()
+            .map(|(_, d)| {
+                let mut d = d.clone();
+                if d.name == "cloak plate" {
+                    d.enchant = Some(EnchantDef { most: 2 });
+                }
+                d
+            })
+            .collect();
+        armory.defs = Registry::from_defs(defs).expect("the same names");
+        let levels: Vec<i32> = (0..100)
+            .map(|seed| {
+                let mut rng = rand::SeedableRng::seed_from_u64(seed);
+                made(&armory, &r, "cloak plate", 1, 10, &mut rng)[0].0.expect("a level")
+            })
+            .collect();
+        assert!(levels.iter().all(|l| *l == 2), "capped at +2: {levels:?}");
+    }
+
+    /// A thing that names no enchant, or a stack, is made plain and draws
+    /// nothing from the stream, so adding enchants to plates did not shift
+    /// what every other find on a deck rolls.
+    #[test]
+    fn a_plain_or_stacking_thing_is_made_without_drawing_from_the_stream() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let (mut a, mut b): (rand::rngs::StdRng, rand::rngs::StdRng) = (rand::SeedableRng::seed_from_u64(4), rand::SeedableRng::seed_from_u64(4));
+        let pistols = made(&armory, &r, "slug pistol", 2, 10, &mut a);
+        let stims = made(&armory, &r, "stim", 3, 10, &mut a);
+        assert!(pistols.iter().chain(&stims).all(|(level, _)| level.is_none()), "plain: {pistols:?} {stims:?}");
+        assert_eq!(rand::Rng::random::<u64>(&mut a), rand::Rng::random::<u64>(&mut b), "the stream is where it was");
+    }
+
+    /// A level past a thing's `most`, such as one a save wrote before the
+    /// file lowered it, comes back at the most the file allows.
+    #[test]
+    fn a_level_past_most_is_spawned_at_most() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let plate = {
+            let mut commands = Commands::new(&mut queue, &world);
+            spawn_item_at(&mut commands, &armory, armory.defs.expect("cloak plate"), 12, &r)
+        };
+        queue.apply(&mut world);
+        assert_eq!(world.get::<Enchant>(plate).map(|e| e.0.level), Some(9));
+        assert_eq!(world.get::<Name>(plate).map(|n| n.as_str().to_string()), Some("cloak plate +9".to_string()));
     }
 
     #[test]

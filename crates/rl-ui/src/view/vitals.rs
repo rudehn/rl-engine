@@ -351,8 +351,8 @@ mod tests {
         let (venom, quiet) = (defs.expect("venom"), defs.expect("quiet"));
         stage.app.world_mut().resource_mut::<Registries>().statuses = defs;
         let player = stage.player;
-        stage.app.world_mut().write_message(Afflict { target: player, status: venom, turns: 5, by: None });
-        stage.app.world_mut().write_message(Afflict { target: player, status: quiet, turns: 5, by: None });
+        stage.app.world_mut().write_message(Afflict { target: player, status: venom, turns: 5, by: None, held_by: None });
+        stage.app.world_mut().write_message(Afflict { target: player, status: quiet, turns: 5, by: None, held_by: None });
         stage.tick();
         stage.tick();
 
