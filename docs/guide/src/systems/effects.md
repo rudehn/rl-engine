@@ -36,7 +36,7 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 ## The model
 
 `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, and `FromArgs` builds one from the text arguments a content file gave it.
-Every engine effect's arguments refuse a field they do not name, so a typo, or a `per_level` left from before, fails the load naming it.
+Every engine effect's arguments refuse a field they do not name, so a typo fails the load naming it rather than leaving a number at its default.
 `EffectKinds` files each under its `KIND`, and `Effects::build` turns a list of `EffectSpec` into built effects or reports every spec that would not build.
 `Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, and `bonus`, the `EffectBonus` of whatever landed it, which `land_triggers` copies off the carrier and which is the default, adding nothing, for an ability, an offer or a plain thing.
 `EffectBonus { turns, amount }` is a component the game writes on a thing when it spawns it, whatever made it stronger already applied, as it writes `Armor` and `Bestows`: `Harm` and `Mend` add its `amount` to the roll's bonus through `roll_with` and `Inflict` adds its `turns` through `turns_with`, and every other engine effect ignores it, so the engine never learns what a level is.
@@ -114,7 +114,9 @@ A burst stops at walls and not at whoever stands in it, and it is the call an ab
 A trap lands in the pass it was stepped on, and a prop's `destroyed` trigger a pass after the blow, since a death is known only after damage.
 A trap's harm is the trap's own and not the doing of whoever stepped on it, so the log never says they hurt themselves; who stepped on it is still on the report.
 Charges are not here: a game with triggers and no costs adds no `ConsumablesPlugin`, and `spend_charges` reads `Fired` after `land_triggers` so what the last charge did lands before the thing is gone.
+The engine carries a bonus on the carrier and never learns what a level is: the game writes the `EffectBonus` with the level applied when it spawns the thing, and an effect adds it without asking where it came from, so an enchant, a blessing and a curse are one number to the engine and three rules to the game.
 Only what changes in play is saved, a trigger's fires left beside a consumable's charges, and the lists are rebuilt from the definitions.
+A carrier's `EffectBonus` is not saved either: the game's spawn writes it again from whatever the game saved, a level, the way it wrote it the first time.
 
 ## Where it lives
 

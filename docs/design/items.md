@@ -125,7 +125,8 @@ Foundry writes it in the item's `enchant` block, the one place a reader looks to
 The item's own numbers stay where they are and are what it is at `+0`.
 Armor and damage are inferred, +1 a level on a thing that has any, because that is what a reader expects of a `+2` plate or blade; every other key is nought unless written, because a reader cannot tell a helmet's dark sight grows unless the file says so.
 Balance is set by `max`, 3 for plain armor, 5 for a weapon and 9 for the two plates that do something worn, rather than by a slower rate, since the standard rate is the one a reader expects.
-Each key is refused on a thing with nothing it adds to, `armor` and `damage` written even as nought included, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less.
+Each key is refused on a thing with nothing it adds to, `armor` and `damage` written even as nought included, `turns` on a thing with no `Inflict` among its effects and `amount` on one with no `Harm` or `Mend`, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less.
+A level never quickens a pulse past a turn, since a plate pulsing several times each time its wearer acts is a rule nobody wrote on purpose, but the floor is on what the level changes: a period written below a turn is the thing at `+0` and stays so, because the base numbers stay where they are.
 What only a worn thing has is written where it belongs rather than at the item's top level: a pulse's period on its pulse trigger's `every`, and a charge that refills only while worn on its charges, `recharge: (every:, while_worn: true)`, which spawns the thing `Attuned`.
 
 The approaches weighed, on 2026-09-27, are in `docs/superpowers/specs/2026-09-27-enchant-model-design.md`.
