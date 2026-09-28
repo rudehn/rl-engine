@@ -15,7 +15,11 @@
 //              ability's effects are in abilities.ron: landed by any trigger with no list of
 //              its own, so a thing says what it holds once and each trigger delivers it; an
 //              Inflict a worn thing's trigger lands may say while_worn: true, and then the
-//              status ends the moment the thing is no longer worn
+//              status ends the moment the thing is no longer worn; a Noise,
+//              (kind: "Noise", args: (sound:, loudness:)), is heard where it lands, loudness
+//              in steps of open deck, sound "blast" | "hiss" | "alarm" or one of the engine's
+//              ("step" | "strike" | "door" | "landing"); no effect carries a level rule, which
+//              is the enchant block's
 //   triggers:  optional; [(on:, area:, fires:, effects:, look:, every:)] what it does at its
 //              moments: on is "use" (used from the pack, or while worn for a thing that is
 //              worn; lands on the user where they stand) | "land" (a throw comes to rest) |
@@ -25,10 +29,14 @@
 //              may go off, every time when left out; effects is its own list, the thing's
 //              shared effects when left out; look is optional, (glyph:, color: (r:, g:, b:))
 //              shown over every cell it lands on; every is hundredths of a step between
-//              pulses, required on a "pulse" trigger and refused on any other
+//              pulses at +0, required on a "pulse" trigger and refused on any other, and a
+//              "pulse" trigger is only for a thing that is worn
 //   consumable: optional; (charges:, when_empty:, recharge:) what a use, a landing or a shot
 //              costs it: charges a fresh unit holds, Destroyed | Kept at the last, and
-//              recharge, optional, hundredths of a step per charge regained
+//              recharge, optional, (every:, while_worn:) with every the hundredths of a step
+//              per charge regained, and while_worn optional, false when left out, true for a
+//              worn thing whose charges come back only while it is worn and which is empty
+//              each time it is put on
 //   armor:     optional; flat armor while worn
 //   resists:   optional; [(damage kind, percent removed)] while worn: "kinetic" | "energy" |
 //              "ion" | "electricity" | "thermal"
@@ -46,29 +54,42 @@
 //   heat:      optional; (per shot, vent per quiet turn); the weapon locks at 100 until it cools to 0
 //   ammo:      optional; the tag of what one shot spends, as "slug"
 //   dark_sight: optional; tiles seen without light while worn
-//   pulse:     optional; (every:, per_level:, fastest:) a clock that comes round while it is
-//              worn, every `every` hundredths of a step at +0, `per_level` added per level,
-//              never shorter than `fastest`; what it does is its "pulse" trigger, and a
-//              thing with one must have the other
-//   attuned:   optional; true for a worn thing whose charges come back only while it is
-//              worn and which is empty each time it is put on
-//   enchant:   optional; (most:) a worn thing found about the decks rolls a level from
-//              levels.ron at the deck it is found on, at most `most`; absent, always plain
+//   enchant:   optional; (max:, armor:, damage:, dark_sight:, pulse:, turns:, amount:) that
+//              it takes levels, and everything a level changes. The rule: base numbers stay
+//              where they are, and are what it is at +0; everything a level changes lives
+//              here, as what one level adds. A worn thing that names it rolls a level from
+//              levels.ron at the deck it is found on, at most max; absent, always plain.
+//                max:        required; the highest level it is found at, 1 or more
+//                armor:      optional; armor added per level; default +1 when the item has
+//                            armor of its own, else 0
+//                damage:     optional; added per level to its own attack rolls, its melee,
+//                            its ranged and its throw's strike alike; default +1 when it has
+//                            any of them, else 0
+//                dark_sight: optional; tiles of dark sight added per level; default 0, never
+//                            inferred, and only on a thing with dark_sight of its own
+//                pulse:      optional; hundredths added per level to its "pulse" trigger's
+//                            every, negative to quicken, never below 100 (a turn); default 0,
+//                            and only on a thing with a "pulse" trigger
+//                turns:      optional; turns added per level to every status its effects
+//                            inflict; default 0, and only on a thing with effects
+//                amount:     optional; added per level to every Harm or Mend roll its
+//                            effects make; default 0, and only on a thing with effects
+//              refused on a thing that is never worn or that stacks
 //   stack:     optional; whether copies merge into one counted entry
 #![enable(implicit_some)]
 [
-    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d6+1", kind: "kinetic"), throw: (range: 5, effective: 2, strike: ("1d6", "kinetic")), cost: 100),
-    (name: "mono-axe", glyph: '/', color: (0.7, 0.75, 0.8), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6+1", kind: "kinetic"), cost: 140),
-    (name: "hand blaster", glyph: '}', color: (0.95, 0.4, 0.3), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 8, effective: 3, roll: "1d6", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 80, heat: (15, 20)),
-    (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 12, effective: 6, roll: "1d8+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 100, heat: (22, 22)),
-    (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 8, effective: 3, roll: "1d6", kind: "ion", look: (glyph: '~', color: (r: 89, g: 166, b: 255))), cost: 90, heat: (25, 20)),
-    (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 9, effective: 3, roll: "1d8", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
+    (name: "monoblade", glyph: '/', color: (0.8, 0.85, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d6+1", kind: "kinetic"), throw: (range: 5, effective: 2, strike: ("1d6", "kinetic")), cost: 100, enchant: (max: 5)),
+    (name: "mono-axe", glyph: '/', color: (0.7, 0.75, 0.8), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6+1", kind: "kinetic"), cost: 140, enchant: (max: 5, damage: 2)),
+    (name: "hand blaster", glyph: '}', color: (0.95, 0.4, 0.3), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 8, effective: 3, roll: "1d6", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 80, heat: (15, 20), enchant: (max: 5)),
+    (name: "blaster carbine", glyph: '}', color: (0.9, 0.3, 0.25), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 12, effective: 6, roll: "1d8+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 100, heat: (22, 22), enchant: (max: 5)),
+    (name: "ion pistol", glyph: '}', color: (0.4, 0.7, 1.0), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 8, effective: 3, roll: "1d6", kind: "ion", look: (glyph: '~', color: (r: 89, g: 166, b: 255))), cost: 90, heat: (25, 20), enchant: (max: 5)),
+    (name: "slug pistol", glyph: '}', color: (0.6, 0.55, 0.45), slot: "main hand", either: true, tags: ["weapon"], ranged: (range: 9, effective: 3, roll: "1d8", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug", enchant: (max: 5)),
     // The pistol's economy at a rifle's reach: past the lamp, so it kills
     // what the commando cannot yet see, and dry the moment the bag is.
-    (name: "slug rifle", glyph: '}', color: (0.55, 0.5, 0.4), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 14, effective: 7, roll: "1d10+1", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug"),
+    (name: "slug rifle", glyph: '}', color: (0.55, 0.5, 0.4), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 14, effective: 7, roll: "1d10+1", kind: "kinetic", look: (glyph: 'o', color: (r: 242, g: 204, b: 115))), cost: 100, ammo: "slug", enchant: (max: 5, damage: 2)),
     // Two shots to a step: its five-shot burst is gone in half the time a
     // carbine's is, and then it is five quiet turns like anything else.
-    (name: "heavy repeater", glyph: '}', color: (1.0, 0.55, 0.3), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 10, effective: 4, roll: "1d8+2", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 50, heat: (20, 20)),
+    (name: "heavy repeater", glyph: '}', color: (1.0, 0.55, 0.3), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 10, effective: 4, roll: "1d8+2", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), cost: 50, heat: (20, 20), enchant: (max: 5)),
     (name: "slug", glyph: ',', color: (0.7, 0.65, 0.5), tags: ["slug"], stack: true),
     // What opens an armory locker, and is spent doing it. A droid carries
     // one because the foundry's own machines open its own lockers.
@@ -88,28 +109,29 @@
     // a frag burst off a droid; an ion burst undoes a chassis and blinds
     // every radar in it, and barely touches flesh. Smoke is thirty cells'
     // worth, more than its burst holds, so it spills past it: a room of
-    // cover in the open, a long plume down a corridor.
+    // cover in the open, a long plume down a corridor. Each is heard where
+    // it lands: a burst fourteen steps down open deck, smoke's hiss six.
     (name: "frag grenade", glyph: '*', color: (0.7, 0.72, 0.45), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6"))])]),
+     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6")), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
     (name: "smoke grenade", glyph: '*', color: (0.75, 0.75, 0.75), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 590))])]),
+     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 590)), (kind: "Noise", args: (sound: "hiss", loudness: 6))])]),
     (name: "ion grenade", glyph: '*', color: (0.4, 0.7, 1.0), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4"))])]),
+     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4")), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
     (name: "incendiary grenade", glyph: '*', color: (0.95, 0.45, 0.2), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 110, b: 40)), effects: [(kind: "Harm", args: (kind: "thermal", roll: "2d4")), (kind: "Ignite", args: (turns: 4))])]),
+     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 110, b: 40)), effects: [(kind: "Harm", args: (kind: "thermal", roll: "2d4")), (kind: "Ignite", args: (turns: 4)), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
     // ANCHOR_END: grenades
-    (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), slot: "head", tags: ["armor"], armor: 1),
-    (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6),
-    (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1),
-    (name: "composite plate", glyph: '[', color: (0.9, 0.9, 0.85), slot: "torso", tags: ["armor"], armor: 2, resists: [("energy", 10)]),
-    (name: "combat gauntlets", glyph: '[', color: (0.7, 0.7, 0.7), slot: "arms", tags: ["armor"], armor: 1),
-    (name: "armored greaves", glyph: '[', color: (0.65, 0.65, 0.6), slot: "legs", tags: ["armor"], armor: 1),
+    (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), slot: "head", tags: ["armor"], armor: 1, enchant: (max: 3)),
+    (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6, enchant: (max: 3, dark_sight: 1)),
+    (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1, enchant: (max: 3)),
+    (name: "composite plate", glyph: '[', color: (0.9, 0.9, 0.85), slot: "torso", tags: ["armor"], armor: 2, resists: [("energy", 10)], enchant: (max: 3)),
+    (name: "combat gauntlets", glyph: '[', color: (0.7, 0.7, 0.7), slot: "arms", tags: ["armor"], armor: 1, enchant: (max: 3)),
+    (name: "armored greaves", glyph: '[', color: (0.65, 0.65, 0.6), slot: "legs", tags: ["armor"], armor: 1, enchant: (max: 3)),
     // Knits its wearer's wounds, a point every ten turns while it is
     // worn, and a turn quicker for every level, to a point every turn at
     // +9. The clock starts when it goes on, so it is a plate to live in,
-    // not to swap to.
+    // not to swap to. A level adds no armor: the clock is what it is for.
     (name: "nanite plate", glyph: '[', color: (0.55, 0.9, 0.7), slot: "torso", tags: ["armor"], armor: 1,
-     pulse: (every: 1000, per_level: -100, fastest: 100), enchant: (most: 9),
+     enchant: (max: 9, armor: 0, pulse: -100),
      triggers: [(on: "pulse", every: 1000, effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]),
     // Used while worn, nothing sees the commando for ten turns, two more
     // for every level, until they strike or until the plate comes off.
@@ -117,8 +139,10 @@
     // each time it goes on, so it cannot be carried charged and swapped
     // to, and the cloak ends with the plate, so it cannot be used and
     // swapped from either: cloaked in this and mending in the nanite
-    // plate is one plate too many.
+    // plate is one plate too many. A level adds no armor: the cloak is
+    // what it is for.
     (name: "cloak plate", glyph: '[', color: (0.5, 0.55, 0.8), slot: "torso", tags: ["armor"], armor: 1,
-     attuned: true, consumable: (charges: 1, when_empty: Kept, recharge: 4000), enchant: (most: 9),
+     enchant: (max: 9, armor: 0, turns: 2),
+     consumable: (charges: 1, when_empty: Kept, recharge: (every: 4000, while_worn: true)),
      triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "cloaked", turns: 10, while_worn: true))])]),
 ]

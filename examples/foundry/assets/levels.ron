@@ -1,6 +1,6 @@
 // How good a thing is where it is found: the enchant level a worn thing
 // that names `enchant` in items.ron rolls at the deck it is found on, or
-// the deck a crate or a slot draws at, capped at the thing's own `most`.
+// the deck a crate or a slot draws at, capped at the thing's own `max`.
 //
 // Every field:
 //   bands:  (first, last), the decks the row covers, both included; no two

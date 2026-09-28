@@ -77,8 +77,14 @@ impl Plugin for FoundryPlugin {
         // on or came off.
         app.add_systems(Turn, crate::run::fade_the_unseen.in_set(TurnSet::React));
         // The alarm is a sound of Foundry's own, declared once so
-        // `sound_alarm` finds it by name.
+        // `sound_alarm` finds it by name, and the grenades' after it, so
+        // `items.ron` names them where the armory loads it. In this order,
+        // which is the order `gear::sounds` declares them in for an armory
+        // loaded with no app.
         app.add_sound(crate::droids::ALARM_SOUND);
+        for sound in crate::gear::GRENADE_SOUNDS {
+            app.add_sound(sound);
+        }
         // Chained, and in this order: the engine's own `schedule`
         // (crates/rl-bevy/src/turn.rs) can write a `TurnEnd` and deal the
         // next actor's turn in the same pass, so `TurnSet::React` can see

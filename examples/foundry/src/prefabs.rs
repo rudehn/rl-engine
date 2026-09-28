@@ -63,7 +63,7 @@ pub fn coverage_report() -> Coverage {
     let roster = Roster::load(&registries);
     // The armory as the running game loads it; the moments are the
     // engine's, since Foundry registers none of its own.
-    let armory = crate::gear::Armory::load(&registries, &crate::gear::effect_kinds(), &Moments::default());
+    let armory = crate::gear::Armory::load(&registries, &crate::gear::effect_kinds(), &Moments::default(), &crate::gear::sounds());
     let prefabs = Foundry::new(RunSeed(0)).prefabs().clone();
     let sources = Sources { roles: prefabs.roles(), monsters: &roster.table, items: &armory.table, tags: &registries.tags };
     prefab::coverage(prefabs.defs().iter().map(|(_, def)| def), &sources, 1..=DECKS as i32)
