@@ -61,10 +61,11 @@
 //              levels.ron at the deck it is found on, at most max; absent, always plain.
 //                max:        required; the highest level it is found at, 1 or more
 //                armor:      optional; armor added per level; default +1 when the item has
-//                            armor of its own, else 0
+//                            armor of its own, else 0, and written only on a thing that
+//                            has armor, 0 to keep it from growing
 //                damage:     optional; added per level to its own attack rolls, its melee,
 //                            its ranged and its throw's strike alike; default +1 when it has
-//                            any of them, else 0
+//                            any of them, else 0, and written only on a thing that attacks
 //                dark_sight: optional; tiles of dark sight added per level; default 0, never
 //                            inferred, and only on a thing with dark_sight of its own
 //                pulse:      optional; hundredths added per level to its "pulse" trigger's

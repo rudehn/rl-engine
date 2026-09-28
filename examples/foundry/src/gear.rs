@@ -190,12 +190,12 @@ pub struct EnchantDef {
     /// makes it take levels at all.
     pub max: i32,
     /// Armor added per level; absent, 1 on a thing with armor of its own
-    /// and 0 on anything else.
+    /// and 0 on anything else. Refused, even as 0, on a thing with none.
     #[serde(default)]
     pub armor: Option<i32>,
     /// Added per level to its own attack rolls, its blow, its shot and its
     /// thrown strike alike; absent, 1 on a thing that attacks and 0 on
-    /// anything else.
+    /// anything else. Refused, even as 0, on a thing that does not attack.
     #[serde(default)]
     pub damage: Option<i32>,
     /// Tiles of dark sight added per level; 0 unless written.
@@ -226,9 +226,14 @@ impl EnchantDef {
     /// when it strikes a blow, fires a shot or strikes when thrown, else
     /// nothing.
     pub fn damage_per_level(&self, def: &ItemDef) -> i32 {
-        let attacks = def.melee.is_some() || def.ranged.is_some() || def.throw.is_some_and(|t| t.strike.is_some());
-        self.damage.unwrap_or(i32::from(attacks))
+        self.damage.unwrap_or(i32::from(attacks(def)))
     }
+}
+
+/// Whether `def` makes an attack roll of its own a level could add to: a
+/// blow, a shot, or a strike when thrown.
+fn attacks(def: &ItemDef) -> bool {
+    def.melee.is_some() || def.ranged.is_some() || def.throw.is_some_and(|t| t.strike.is_some())
 }
 
 impl Named for ItemDef {
@@ -320,6 +325,15 @@ fn validate_enchant(d: &ItemDef, e: EnchantDef) -> Result<(), String> {
     }
     if e.max < 1 {
         return Err("an enchant that reaches no level".into());
+    }
+    // Written at all, even as 0, where nothing reads it: an explicit
+    // number is a claim about one the thing has, and a reader who finds
+    // it on a helmet goes looking for the helmet's blow.
+    if e.armor.is_some() && d.armor == 0 {
+        return Err("armor in the enchant, on a thing with no armor of its own".into());
+    }
+    if e.damage.is_some() && !attacks(d) {
+        return Err("damage in the enchant, on a thing that does not attack".into());
     }
     if e.dark_sight != 0 && d.dark_sight.is_none() {
         return Err("dark_sight in the enchant, on a thing with no dark sight of its own".into());
@@ -1152,6 +1166,10 @@ mod tests {
             (ItemDef { enchant: Some(EnchantDef { pulse: -100, ..enchant_to(9) }), ..worn("idle clock") }, "no pulse trigger"),
             (ItemDef { enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }), ..worn("nothing to lengthen") }, "no effects"),
             (ItemDef { enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }), ..worn("nothing to strengthen") }, "no effects"),
+            (ItemDef { enchant: Some(EnchantDef { damage: Some(2), ..enchant_to(5) }), ..worn("harmless edge") }, "does not attack"),
+            (ItemDef { enchant: Some(EnchantDef { damage: Some(0), ..enchant_to(5) }), ..worn("harmless and says so") }, "does not attack"),
+            (ItemDef { enchant: Some(EnchantDef { armor: Some(1), ..enchant_to(3) }), ..worn("paper shirt") }, "no armor of its own"),
+            (ItemDef { enchant: Some(EnchantDef { armor: Some(0), ..enchant_to(3) }), ..worn("paper shirt that says so") }, "no armor of its own"),
             (
                 ItemDef {
                     consumable: Some(ConsumableDef { charges: 1, when_empty: WhenEmpty::Kept, recharge: Some(RechargeDef { every: 4000, while_worn: true }) }),
@@ -1522,7 +1540,7 @@ mod tests {
 
     /// Everything about a spawned thing that a level can change: its
     /// armor, its blow, its shot and its thrown strike, its dark sight,
-    /// its clock, and whether it carries a bonus for its effects.
+    /// its clock, and the bonus it carries for its effects, if any.
     #[derive(Debug, Default, PartialEq, Eq)]
     struct Leveled {
         armor: Option<i32>,
@@ -1531,7 +1549,7 @@ mod tests {
         thrown: Option<String>,
         dark_sight: Option<i32>,
         pulse: Option<u32>,
-        bonus: bool,
+        bonus: Option<EffectBonus>,
     }
 
     /// `name` spawned at `level` into a world of its own, and what it
@@ -1551,7 +1569,7 @@ mod tests {
             thrown: world.get::<Throwable>(e).and_then(|t| t.strike).map(|(_, dice)| dice.to_string()),
             dark_sight: world.get::<WornDarkSight>(e).map(|d| d.0),
             pulse: world.get::<Pulse>(e).map(|p| p.every),
-            bonus: world.get::<EffectBonus>(e).is_some(),
+            bonus: world.get::<EffectBonus>(e).copied(),
         }
     }
 
@@ -1616,7 +1634,8 @@ mod tests {
         assert_eq!(at("rangefinder helmet", 2).dark_sight, Some(8), "dark_sight: 1, so two more at +2");
         assert_eq!(at("rangefinder helmet", 2).armor, Some(3), "and its armor by the default");
         let cloak = at("cloak plate", 2);
-        assert_eq!((cloak.armor, cloak.bonus), (Some(1), true), "armor: 0 keeps it at 1; its turns go on its effects");
+        assert_eq!(cloak.armor, Some(1), "armor: 0 keeps it at 1");
+        assert_eq!(cloak.bonus, Some(EffectBonus { turns: 4, amount: 0 }), "turns: 2, so four more on its effects at +2");
     }
 
     /// Every `NoiseHeard`, recorded as it is written: a headless app
@@ -1632,11 +1651,16 @@ mod tests {
     /// thrown `grenade` lands, down one straight lane of open deck, each
     /// heard the `sound` it makes. Nothing is in the burst, so nothing is
     /// struck and the grenade's own sound is the only one.
+    ///
+    /// Thrown on deck two with the shoulder lamp off, so it lands in the
+    /// dark where the commando cannot see it: what the droids learn of it
+    /// they learn by ear, never because anyone watched it land.
     fn heard_down_the_lane(grenade: &str, sound: &str, near: i32, far: i32) -> (bool, bool) {
         let mut app = crate::testing::headless(RunSeed(1));
-        crate::testing::settle(&mut app);
+        crate::testing::arrive_on(&mut app, 2);
         crate::testing::clear_droids(&mut app, &[]);
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        app.world_mut().entity_mut(player).remove::<LightSource>();
         let from = at(&app, player);
         // Thrown three steps down the lane, and the lane run past both
         // droids, so each is exactly as many steps from the landing as
@@ -1663,6 +1687,8 @@ mod tests {
             droids
         };
         let grenade = carry(&mut app, player, grenade, 1);
+        let sight = app.world().get::<Viewshed>(player).expect("the commando sees");
+        assert!(sight.in_line(aim) && !sight.can_see(aim), "the landing is in the commando's line and too dark to see");
         app.init_resource::<Earful>().add_systems(PostUpdate, record_heard);
         throw_grenade(&mut app, player, grenade, aim);
         crate::testing::pass_turns(&mut app, 1);
@@ -1672,13 +1698,13 @@ mod tests {
         (heard(droids[0]), heard(droids[1]))
     }
 
-    /// A grenade is heard where it lands: a blast by a droid fourteen
-    /// steps off and not by one a step further, smoke's hiss six steps off
-    /// and not seven. The commando threw it, so the commando does not hear
-    /// it: the engine never tells a noise to its own maker, and the
-    /// noise meter reads only what the commando hears.
+    /// A grenade thrown into the dark is heard where it lands: a blast by
+    /// a droid fourteen steps off and not by one a step further, smoke's
+    /// hiss six steps off and not seven. The commando threw it, so the
+    /// commando does not hear it: the engine never tells a noise to its
+    /// own maker, and the noise meter reads only what the commando hears.
     #[test]
-    fn a_grenade_is_heard_as_far_as_its_noise_carries_and_no_further() {
+    fn a_grenade_thrown_out_of_sight_is_heard_as_far_as_its_noise_carries_and_no_further() {
         assert_eq!(heard_down_the_lane("frag grenade", "blast", 14, 15), (true, false), "a blast carries fourteen steps");
         assert_eq!(heard_down_the_lane("smoke grenade", "hiss", 6, 7), (true, false), "a hiss carries six");
     }
