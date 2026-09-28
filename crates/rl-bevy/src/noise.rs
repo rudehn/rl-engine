@@ -22,12 +22,18 @@
 //! pass's reactions, so a noise a game writes in `React` is heard in the
 //! same pass as the engine's own. Nothing persists between turns except
 //! what each listener remembers, which is not saved, as awareness is not.
+//!
+//! Content makes a noise with the [`Noise`](crate::effects::Noise) effect
+//! this plugin registers, a grenade going off where it lands, and names its
+//! sound; [`SoundNames`] puts the sounds in scope where effects are built,
+//! so a sound nobody declared fails the load rather than a throw.
 
 use std::cmp::Reverse;
 
 use bevy::prelude::*;
 use rl_core::{Grid2D, Id, Interner, Point, Rect, geometry};
 use rl_grid::{CostSource, DijkstraMap, PathRules};
+use rl_rules::Names;
 use rl_rules::ai::awareness::Awareness;
 use rl_rules::ai::hearing::{self, HearingStats};
 
@@ -108,6 +114,26 @@ impl AddSound for App {
         self.init_resource::<Sounds>();
         self.world_mut().resource_mut::<Sounds>().declare(name);
         self
+    }
+}
+
+/// Puts the sounds in play in scope for a content load, so an effect that
+/// makes one names it and a typo fails at load, naming it.
+///
+/// A sound is interned while the app is built, by the engine and by
+/// [`AddSound::add_sound`], rather than loaded from a file, so it is not in
+/// [`Registries`](crate::Registries) and not in its
+/// [`names`](crate::Registries::names): a game with noise chains this onto
+/// those wherever it builds effects, `registries.names().sounds(&sounds)`,
+/// as the engine does for props.
+pub trait SoundNames<'a> {
+    /// These names with every sound declared so far beside them.
+    fn sounds(self, sounds: &'a Sounds) -> Self;
+}
+
+impl<'a> SoundNames<'a> for Names<'a> {
+    fn sounds(self, sounds: &'a Sounds) -> Self {
+        self.interned("sound", &sounds.0)
     }
 }
 
@@ -272,6 +298,7 @@ impl NoisePlugin {
 
 impl Plugin for NoisePlugin {
     fn build(&self, app: &mut App) {
+        use crate::effects::AddEffect;
         use crate::plugin::{DecideSet, PerceiveSet, Turn, TurnSet};
         // What the engine's sources read exists whether or not the game
         // added combat or items; registering one twice is what
@@ -283,6 +310,7 @@ impl Plugin for NoisePlugin {
             .add_message::<NoiseHeard>()
             .add_message::<DamageEvent>()
             .add_message::<ItemEvent>()
+            .add_effect::<crate::effects::Noise>()
             .add_systems(Turn, age_heard.in_set(DecideSet::Notice))
             .add_systems(Turn, follow_heard.in_set(PerceiveSet::Annotate))
             .add_systems(Turn, (make_engine_noise, resolve_noise).chain().in_set(TurnSet::Listen));
@@ -442,6 +470,7 @@ mod tests {
 
     use super::*;
     use crate::components::{Actor, Blocks, RevealsMap, Viewshed};
+    use crate::effects::{AddEngineEffects, EffectKinds, Fired, Moments, Triggers};
     use crate::fov::FovPlugin;
     use crate::minds::{Mind, MindsPlugin, Perception};
     use crate::plugin::headless_app;
@@ -463,16 +492,18 @@ mod tests {
 
     impl Field {
         fn new(rules: NoiseRules) -> Field {
-            Field::with(Some(rules))
+            Field::with(Some(rules), |_| {})
         }
 
-        /// The field with hearing only if `rules` are given.
-        fn with(rules: Option<NoiseRules>) -> Field {
+        /// The field with hearing only if `rules` are given, and whatever
+        /// else `setup` adds before it first runs.
+        fn with(rules: Option<NoiseRules>, setup: impl FnOnce(&mut App)) -> Field {
             let mut app = headless_app();
             app.add_plugins((FovPlugin, MindsPlugin, StreamingPlugin));
             if let Some(rules) = rules {
                 app.add_plugins(NoisePlugin::new(rules));
             }
+            setup(&mut app);
             let start = crate::testing::surface(&mut app);
             app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
             let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(16), RevealsMap)).id();
@@ -687,11 +718,105 @@ mod tests {
 
     #[test]
     fn without_the_plugin_a_listener_hears_nothing_however_close() {
-        let mut field = Field::with(None);
+        let mut field = Field::with(None, |_| {});
         let listener = field.listener(2, 0, 0, 1);
         field.step(rl_core::Direction::East);
         field.wait();
         assert!(!field.heard(listener).is_alert(), "no NoisePlugin, no noise");
+    }
+
+    /// Every `MakeNoise` written, by a reader that sees each once.
+    #[derive(Resource, Default)]
+    struct Made(Vec<MakeNoise>);
+
+    fn keep_made(mut made: MessageReader<MakeNoise>, mut kept: ResMut<Made>) {
+        kept.0.extend(made.read().copied());
+    }
+
+    /// `text`'s triggers, built against the effects `app` registered and
+    /// the sounds it declared, as a game's loader builds them.
+    fn triggers(app: &App, text: &str) -> Result<Triggers, Vec<String>> {
+        let specs: Vec<rl_rules::TriggerSpec> = Names::new().load_list(text).expect("the triggers parse");
+        let world = app.world();
+        let names = match world.get_resource::<Sounds>() {
+            Some(sounds) => Names::new().sounds(sounds),
+            None => Names::new(),
+        };
+        Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names)
+    }
+
+    /// A thing that makes a noise when it comes down, in a sound the game
+    /// declared.
+    const THUD: &str = r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "thud", loudness: 6))])]"#;
+
+    /// Effects beside hearing, and the one sound the tests below name.
+    fn with_effects(app: &mut App) {
+        app.add_plugins(crate::effects::EffectsPlugin).add_sound("thud");
+    }
+
+    #[test]
+    fn a_trigger_making_a_noise_makes_one_where_it_lands_by_its_user_heard_in_range_and_not_out_of_it() {
+        let mut field = Field::with(Some(RULES), with_effects);
+        field.app.init_resource::<Made>().add_systems(PostUpdate, keep_made);
+        field.app.init_resource::<Told>().add_systems(PostUpdate, tell);
+        let near = field.listener(4, 0, 0, 1);
+        let far = field.listener(0, 9, 0, 1);
+        let thud = field.app.world().resource::<Sounds>().get("thud").expect("declared");
+        let built = triggers(&field.app, THUD).expect("a declared sound builds");
+        let carrier = field.app.world_mut().spawn(built).id();
+        let (player, at) = (field.player, field.start.offset(1, 0));
+        field.app.world_mut().write_message(Fired { on: carrier, moment: Moments::LAND, by: Some(player), at });
+        field.wait();
+
+        let made: Vec<MakeNoise> = field.app.world().resource::<Made>().0.iter().filter(|n| n.sound == thud).copied().collect();
+        assert_eq!(made, vec![MakeNoise { at, loudness: 6, sound: thud, maker: Some(player) }], "one noise, where it landed, by whoever threw it");
+        let told = &field.app.world().resource::<Told>().0;
+        assert!(
+            told.iter().any(|h| (h.listener, h.at, h.sound, h.maker) == (near, at, thud, Some(player))),
+            "three steps off, a loudness of six is heard: {told:?}"
+        );
+        assert!(told.iter().all(|h| h.listener != far), "nine off, it is not: {told:?}");
+        assert_eq!(field.heard(near).last_known(), Some(at), "and the one that heard it knows where");
+        assert!(!field.heard(far).is_alert());
+    }
+
+    #[test]
+    fn a_noise_naming_a_sound_nobody_declared_fails_the_build_naming_it() {
+        let mut app = App::new();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        let errs = triggers(&app, THUD).expect_err("no game declared a thud");
+        assert_eq!(errs, vec!["unknown sound \"thud\"".to_string()]);
+        let engines = r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "landing", loudness: 3))])]"#;
+        assert!(triggers(&app, engines).is_ok(), "the engine's own sounds are there to name");
+    }
+
+    /// Names built without the sounds are the loader's mistake, not the
+    /// file's, and the failure says where the loader puts them in.
+    #[test]
+    fn a_noise_built_against_names_without_the_sounds_says_how_to_give_them() {
+        let mut app = App::new();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        let specs: Vec<rl_rules::TriggerSpec> = Names::new().load_list(THUD).expect("the triggers parse");
+        let world = app.world();
+        let errs = Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &Names::new()).expect_err("no sounds");
+        assert!(errs.iter().any(|e| e.contains("\"thud\"") && e.contains("SoundNames::sounds")), "{errs:?}");
+    }
+
+    #[test]
+    fn a_noise_with_an_argument_it_does_not_take_is_refused_naming_it() {
+        let mut app = App::new();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        let typo = r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "step", loudness: 3, volume: 3))])]"#;
+        let errs = triggers(&app, typo).expect_err("an argument nobody reads is a typo");
+        assert!(errs.iter().any(|e| e.contains("volume")), "{errs:?}");
+    }
+
+    #[test]
+    fn a_game_without_noise_that_names_a_noise_fails_the_build_because_nothing_registered_it() {
+        let mut app = App::new();
+        app.add_sound("thud").init_resource::<Moments>().add_engine_effects();
+        let errs = triggers(&app, THUD).expect_err("no NoisePlugin, no Noise");
+        assert!(errs.iter().any(|e| e.contains("no effect is registered as \"Noise\"")), "{errs:?}");
     }
 
     #[test]

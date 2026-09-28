@@ -13,13 +13,19 @@
 //! second lookup at spawn, and no string that could still be wrong. A file
 //! of rows that name content without being content, a spawn table, loads
 //! the same way with [`Names::load_list`].
+//!
+//! Not every vocabulary is a registry loaded from a file. Some are names a
+//! subsystem interns while the app is built, such as the sounds a game
+//! declares beside the engine's own, and [`Names::interned`] puts one of
+//! those in scope, so content names them the same way and a typo fails the
+//! same way.
 
 use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use rl_core::Id;
+use rl_core::{Id, Interner};
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
@@ -49,6 +55,16 @@ impl<T> Table for Registry<T> {
 
     fn raw(&self, name: &str) -> Option<u32> {
         self.id(name).map(Id::raw)
+    }
+}
+
+impl<T> Table for Interner<T> {
+    fn entries(&self) -> Vec<(String, u32)> {
+        self.iter().map(|(id, name)| (name.to_string(), id.raw())).collect()
+    }
+
+    fn raw(&self, name: &str) -> Option<u32> {
+        self.get(name).map(Id::raw)
     }
 }
 
@@ -101,10 +117,24 @@ impl<'a> Names<'a> {
     /// is called in a message: `with("item", &items)`.
     ///
     /// A second registry of the same type replaces the first.
-    pub fn with<T: 'static>(mut self, what: &'static str, registry: &'a Registry<T>) -> Self {
-        let kind = TypeId::of::<T>();
+    pub fn with<T: 'static>(self, what: &'static str, registry: &'a Registry<T>) -> Self {
+        self.shelve(TypeId::of::<T>(), what, registry)
+    }
+
+    /// Names interned while the app was built rather than loaded from a
+    /// file, with what one is called in a message: `interned("sound",
+    /// &sounds)`. Looked up with [`id`](Self::id) and read as a
+    /// [`NameRef`], exactly as a registry's are.
+    ///
+    /// A second set of the same type replaces the first, and replaces a
+    /// registry of it too: one type has one place its names are looked up.
+    pub fn interned<T: 'static>(self, what: &'static str, names: &'a Interner<T>) -> Self {
+        self.shelve(TypeId::of::<T>(), what, names)
+    }
+
+    fn shelve(mut self, kind: TypeId, what: &'static str, table: &'a dyn Table) -> Self {
         self.shelves.retain(|s| s.kind != kind);
-        self.shelves.push(Shelf { kind, what, table: registry });
+        self.shelves.push(Shelf { kind, what, table });
         self
     }
 
@@ -506,6 +536,29 @@ mod tests {
         assert_eq!(errs.len(), 2, "{errs:#?}");
         assert!(errs.contains(&"entry 1: unknown item \"pelt\"".to_string()), "{errs:#?}");
         assert!(errs.iter().any(|e| e.starts_with("entry 3: ")), "{errs:#?}");
+    }
+
+    /// A vocabulary a subsystem interns, rather than loads, is looked up
+    /// the way a registry is, in a plain lookup and in a file alike, and a
+    /// name it never interned is reported under what it is called.
+    #[test]
+    fn a_name_an_interner_issued_resolves_as_a_registrys_does() {
+        struct Chime;
+        let mut chimes: Interner<Chime> = Interner::new();
+        chimes.intern("low");
+        let high = chimes.intern("high");
+        let names = Names::new().interned("chime", &chimes);
+        assert_eq!(names.id::<Chime>("high"), Ok(high));
+        assert_eq!(names.id::<Chime>("middle"), Err("unknown chime \"middle\"".to_string()));
+
+        #[derive(Deserialize)]
+        struct Ring {
+            chime: NameRef<Chime>,
+        }
+        let rows: Vec<Ring> = names.load_list(r#"[(chime: "high")]"#).expect("the file loads");
+        assert_eq!(rows[0].chime.id(), high);
+        let Err(ContentError::Invalid(errs)) = names.load_list::<Ring>(r#"[(chime: "middle")]"#) else { panic!("an unknown chime loaded") };
+        assert_eq!(errs, vec!["entry 1: unknown chime \"middle\"".to_string()]);
     }
 
     #[test]

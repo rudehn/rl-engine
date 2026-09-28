@@ -64,6 +64,10 @@ pub struct Registries {
 
 impl Registries {
     /// Every registry, to load content against.
+    ///
+    /// Not the sounds, which are declared while the app is built rather
+    /// than filled in here: a game whose effects make a noise chains
+    /// [`SoundNames::sounds`](crate::noise::SoundNames::sounds) onto these.
     pub fn names(&self) -> Names<'_> {
         Names::new()
             .damage_kinds(&self.damage_kinds)

@@ -7,12 +7,12 @@
 //! [`Harm`] and [`Mend`] ask combat's damage pipeline, [`Inflict`] and
 //! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move
 //! an actor through [`EffectWorld`]; [`AddEngineEffects`] registers those
-//! seven. [`Ignite`] asks fire and [`Emit`] asks gas, and each is registered
-//! by the plugin that answers it, so a content file naming one works exactly
-//! when the game has that subsystem. Here, rather than each in the module
-//! that owns its mechanic, so the dependency runs one way: effects are built
-//! on combat, statuses, fire and gas, and none of those has to know an
-//! effect list exists.
+//! seven. [`Ignite`] asks fire, [`Emit`] asks gas and [`Noise`] asks
+//! hearing, and each is registered by the plugin that answers it, so a
+//! content file naming one works exactly when the game has that subsystem.
+//! Here, rather than each in the module that owns its mechanic, so the
+//! dependency runs one way: effects are built on combat, statuses, fire,
+//! gas and noise, and none of those has to know an effect list exists.
 
 use bevy::prelude::*;
 use rl_core::{DiceRoll, Point};
@@ -406,6 +406,62 @@ impl FromArgs for Emit {
         }
         let a: Args = read_args(args)?;
         Ok(Self { gas: names.gas(&a.gas)?, amount: a.amount })
+    }
+}
+
+/// Make a noise where it landed, as its user making it: a grenade going
+/// off, a trap's alarm, a dropped thing clattering.
+///
+/// One noise, at the cell a projectile stopped in or else the cell aimed
+/// at, however many cells the footprint covers, because a burst is one
+/// sound and not one per cell. Heard as any other
+/// [`MakeNoise`](crate::noise::MakeNoise) is: its user does not hear it,
+/// and a listener goes to see.
+///
+/// Registered by [`NoisePlugin`](crate::noise::NoisePlugin), which is what
+/// answers it, so content naming it builds exactly when the game has
+/// hearing. Written `(kind: "Noise", args: (sound: "name", loudness: N))`,
+/// the sound one the engine or the game declared; the names it is built
+/// against carry them through [`SoundNames`](crate::noise::SoundNames).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Noise {
+    /// What it sounds like.
+    pub sound: crate::noise::SoundId,
+    /// How far it carries over open ground, in whole steps.
+    pub loudness: i32,
+}
+
+impl Effect for Noise {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let at = landing.landed_at.unwrap_or(landing.aim);
+        world.commands.write_message(crate::noise::MakeNoise { at, loudness: self.loudness, sound: self.sound, maker: Some(landing.user) });
+    }
+
+    // `describe` is left to say nothing: a noise is not something a thing
+    // does to anyone, and a bag line reading "makes a noise" under every
+    // grenade would crowd out what it does.
+}
+
+impl FromArgs for Noise {
+    const KIND: &'static str = "Noise";
+
+    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            sound: String,
+            loudness: i32,
+        }
+        use crate::noise::{Sound, Sounds};
+        let a: Args = read_args(args)?;
+        // The engine's first sound is in every `Sounds`, so names that
+        // cannot find it were built without any, which is the loader's
+        // mistake rather than the file's, and the message says where to fix it.
+        let sound = names.id::<Sound>(&a.sound).map_err(|e| match names.id::<Sound>(Sounds::BUILT_IN[0]) {
+            Ok(_) => e,
+            Err(_) => format!("{e}; the names effects are built against carry the sounds through `SoundNames::sounds`"),
+        })?;
+        Ok(Self { sound, loudness: a.loudness })
     }
 }
 
