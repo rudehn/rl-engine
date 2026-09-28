@@ -396,7 +396,7 @@ mod tests {
     }
 
     /// A trigger list that mends one on each pulse.
-    const MEND_ON_PULSE: &str = r#"[(on: "pulse", effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]"#;
+    const MEND_ON_PULSE: &str = r#"[(on: "pulse", every: 1000, effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]"#;
 
     /// `text`'s triggers, built against the rig's moments and effect kinds,
     /// the way the rig builds its own item's.

@@ -275,6 +275,12 @@ pub struct TriggerSpec {
     /// grenade, where the burst is the point.
     #[serde(default)]
     pub look: Option<Look>,
+    /// Hundredths of a step between pulses, for a `pulse` trigger only: a
+    /// worn thing's own clock, not the turn a use spends. Required there
+    /// and refused on any other moment, since nothing else comes round on
+    /// its own.
+    #[serde(default)]
+    pub every: Option<u32>,
 }
 
 /// An ability, as the engine reads it.
@@ -627,13 +633,13 @@ mod tests {
     #[test]
     fn a_trigger_reads_bare_or_with_an_area_a_fire_count_and_a_list_of_its_own() {
         let bare: TriggerSpec = ron::from_str(r#"(on: "use")"#).unwrap();
-        assert_eq!((bare.on.as_str(), bare.area, bare.fires), ("use", Area::Here, None));
+        assert_eq!((bare.on.as_str(), bare.area, bare.fires, bare.every), ("use", Area::Here, None, None));
         assert!(bare.effects.is_none(), "no list of its own: it takes the shared one");
         let full: TriggerSpec = Options::default()
             .with_default_extension(Extensions::IMPLICIT_SOME)
-            .from_str(r#"(on: "land", area: Burst(radius: 2), fires: 3, effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4"))])"#)
+            .from_str(r#"(on: "pulse", area: Burst(radius: 2), fires: 3, every: 1000, effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4"))])"#)
             .unwrap();
-        assert_eq!((full.area, full.fires), (Area::Burst { radius: 2 }, Some(3)));
+        assert_eq!((full.area, full.fires, full.every), (Area::Burst { radius: 2 }, Some(3), Some(1000)));
         assert_eq!(full.effects.as_ref().map(|e| e[0].kind.as_str()), Some("Harm"));
     }
     use crate::damage::DamageKind;

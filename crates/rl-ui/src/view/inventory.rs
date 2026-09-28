@@ -325,6 +325,7 @@ mod tests {
             fires: None,
             effects: std::sync::Arc::new(rl_bevy::Effects::default()),
             look: None,
+            every: None,
         };
         let plate = stage.app.world_mut().spawn((Item, Name::new("plate"), Wearable(EquipShape::in_slot(torso)), rl_bevy::Triggers(vec![on_use]))).id();
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![plate] }, Equipped(Equipment::with_slot_count(1))));
@@ -361,7 +362,8 @@ mod tests {
         let args = rl_rules::ability::parse_args(r#"(status: "cloaked", turns: 10)"#).unwrap();
         let specs = vec![rl_rules::EffectSpec { kind: "Inflict".to_string(), chance: 100, args }];
         let effects = Effects::build(&specs, &kinds, &registries.names()).unwrap();
-        let trigger = rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires: None, effects: std::sync::Arc::new(effects), look: None };
+        let trigger =
+            rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires: None, effects: std::sync::Arc::new(effects), look: None, every: None };
         let plate = stage.app.world_mut().spawn((Item, Name::new("cloak plate"), Triggers(vec![trigger]), EffectBonus { turns: 4, amount: 0 })).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![plate] });
         stage.tick();

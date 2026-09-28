@@ -116,6 +116,10 @@ pub struct Trigger {
     pub effects: Arc<Effects>,
     /// What shows over the cells it lands on, if anything does.
     pub look: Option<rl_rules::ability::Look>,
+    /// Hundredths of a step between pulses, `Some` on a `pulse` trigger and
+    /// nowhere else. A game reads its carrier's base period back off it
+    /// rather than keeping a second copy.
+    pub every: Option<u32>,
 }
 
 /// Written by hand, since the effects themselves are boxed trait objects:
@@ -123,7 +127,13 @@ pub struct Trigger {
 /// failed assertion needs.
 impl std::fmt::Debug for Trigger {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Trigger").field("on", &self.on).field("area", &self.area).field("fires", &self.fires).field("look", &self.look).finish_non_exhaustive()
+        f.debug_struct("Trigger")
+            .field("on", &self.on)
+            .field("area", &self.area)
+            .field("fires", &self.fires)
+            .field("look", &self.look)
+            .field("every", &self.every)
+            .finish_non_exhaustive()
     }
 }
 
@@ -161,6 +171,15 @@ impl Triggers {
                 errors.push(format!("no moment is registered as {:?}; the engine's are {}", spec.on, Moments::BUILT_IN.join(", ")));
                 continue;
             };
+            if on == Moments::PULSE {
+                match spec.every {
+                    None => errors.push("a pulse trigger needs `every`, the hundredths between pulses".to_string()),
+                    Some(0) => errors.push("a pulse trigger's `every` of 0 would never come round again".to_string()),
+                    Some(_) => {}
+                }
+            } else if spec.every.is_some() {
+                errors.push(format!("the trigger on {:?} carries an `every`; `every` is only for a pulse trigger", spec.on));
+            }
             let effects = match (&spec.effects, &shared) {
                 (Some(own), _) => match Effects::build(own, kinds, names) {
                     Ok(e) => Arc::new(e),
@@ -175,7 +194,7 @@ impl Triggers {
                     continue;
                 }
             };
-            built.push(Trigger { on, area: spec.area, fires: spec.fires, effects, look: spec.look });
+            built.push(Trigger { on, area: spec.area, fires: spec.fires, effects, look: spec.look, every: spec.every });
         }
         if errors.is_empty() { Ok(Self(built)) } else { Err(errors) }
     }
@@ -183,6 +202,14 @@ impl Triggers {
     /// The triggers on `moment`, in the order they were written.
     pub fn on(&self, moment: MomentId) -> impl Iterator<Item = &Trigger> {
         self.0.iter().filter(move |t| t.on == moment)
+    }
+
+    /// The first pulse trigger's period, for a game that builds a
+    /// [`Pulse`](crate::items::Pulse) from its carrier's own triggers rather
+    /// than keeping a second copy of the number. `None` when the carrier has
+    /// no pulse trigger at all.
+    pub fn pulse_every(&self) -> Option<u32> {
+        self.0.iter().find(|t| t.on == Moments::PULSE).and_then(|t| t.every)
     }
 }
 
@@ -581,5 +608,54 @@ mod tests {
         assert_eq!(moments.get("pulse"), Some(Moments::PULSE));
         assert_eq!(Moments::PULSE, MomentId::from_raw(6));
         assert_eq!(moments.get("destroyed"), Some(Moments::DESTROYED), "the old ids did not move");
+    }
+
+    #[test]
+    fn a_pulse_trigger_with_no_every_fails_the_build_naming_the_reason() {
+        let (app, _) = floor();
+        let errs = build(&app, r#"[(on: "pulse")]"#, &harm("1")).expect_err("a pulse with no period refuses");
+        assert!(errs.iter().any(|e| e.contains("needs `every`")), "{errs:?}");
+    }
+
+    #[test]
+    fn an_every_on_any_trigger_but_a_pulse_fails_the_build_naming_the_reason() {
+        let (app, _) = floor();
+        let errs = build(&app, r#"[(on: "use", every: 1000)]"#, &harm("1")).expect_err("every belongs only to a pulse");
+        assert!(errs.iter().any(|e| e.contains("only for a pulse trigger")), "{errs:?}");
+    }
+
+    #[test]
+    fn a_pulse_trigger_with_an_every_of_zero_fails_the_build_naming_the_reason() {
+        let (app, _) = floor();
+        let errs = build(&app, r#"[(on: "pulse", every: 0)]"#, &harm("1")).expect_err("zero never waits");
+        assert!(errs.iter().any(|e| e.contains("never come round again")), "{errs:?}");
+    }
+
+    /// Every problem in one item is reported at once, the three `every`
+    /// mistakes included: fixing one at a time is how a morning goes.
+    #[test]
+    fn the_three_every_mistakes_are_reported_together_with_the_items_other_errors() {
+        let (app, _) = floor();
+        let errs =
+            build(&app, r#"[(on: "pulse"), (on: "use", every: 500), (on: "pulse", every: 0), (on: "explode")]"#, &harm("1")).expect_err("four mistakes refuse");
+        assert!(errs.iter().any(|e| e.contains("needs `every`")), "{errs:?}");
+        assert!(errs.iter().any(|e| e.contains("only for a pulse trigger")), "{errs:?}");
+        assert!(errs.iter().any(|e| e.contains("never come round again")), "{errs:?}");
+        assert!(errs.iter().any(|e| e.contains("\"explode\"")), "{errs:?}");
+        assert_eq!(errs.len(), 4, "{errs:?}");
+    }
+
+    #[test]
+    fn a_pulse_trigger_with_an_every_builds_and_pulse_every_returns_its_period() {
+        let (app, _) = floor();
+        let triggers = build(&app, r#"[(on: "pulse", every: 1000)]"#, &harm("1")).expect("a pulse trigger with its period builds");
+        assert_eq!(triggers.pulse_every(), Some(1000));
+    }
+
+    #[test]
+    fn a_carrier_with_no_pulse_trigger_has_no_pulse_period() {
+        let (app, _) = floor();
+        let triggers = build(&app, r#"[(on: "use")]"#, &harm("1")).unwrap();
+        assert_eq!(triggers.pulse_every(), None);
     }
 }
