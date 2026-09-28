@@ -35,10 +35,16 @@ const TARGET_ROWS: i32 = 10;
 /// which sets the gear off from the gauges as the blank under the gear
 /// sets it off from the nearby list.
 const VITALS_ROWS: i32 = 8;
-/// Two more than the six slots: the heading and its rule take two of the
-/// panel's rows, and a two-hander shown on both hands can wrap its facet
-/// under its name on each, one row apiece.
-const GEAR_ROWS: i32 = 10;
+/// Two for the heading and its rule, one apiece for the six slots, one more
+/// for each of the worst two that can wrap (a dry pistol in each hand: the
+/// gear panel says an item's facet once, on the hand it was equipped into,
+/// so a two-hander's claimed hand never wraps, only its own), and a last
+/// row so the panel still sets itself off from the nearby list under it
+/// even when both hands do. With nothing wrapped that leaves three blank
+/// rows rather than one; that is a gap this rail can spare, and it grows
+/// and shrinks with how much wrapped rather than jumping between one
+/// number and another the way a tighter fit did.
+const GEAR_ROWS: i32 = 11;
 
 /// The screen, cut up once so every panel and the map agree on it.
 struct Screen {

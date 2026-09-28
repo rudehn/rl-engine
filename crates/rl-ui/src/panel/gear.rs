@@ -95,7 +95,12 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
             Some(item) => {
                 terminal.print_on(x, y, &item.glyph.ch.to_string(), item.glyph.fg, bg);
                 let label_x = x + 2;
-                let lines = labelled(&item.label, slot.charges, &item.facets, room.saturating_sub(2), &palette);
+                // A claimed slot (a two-hander's off hand) is the same
+                // item worn twice over: whatever a game noted about it
+                // already reads on the slot it was equipped into, so a
+                // second copy here would only say it again.
+                let (charges, facets): (Option<(u16, u16)>, &[Facet]) = if slot.primary { (slot.charges, &item.facets) } else { (None, &[]) };
+                let lines = labelled(&item.label, charges, facets, room.saturating_sub(2), &palette);
                 for (i, line) in lines.iter().enumerate() {
                     let row_y = y + i as i32;
                     if row_y >= inner.bottom() {
@@ -277,5 +282,41 @@ mod tests {
 
         assert_eq!(stage.row(2), "main hand } an implausibl\u{2026}", "the name alone still gives way");
         assert_eq!(stage.row(3), "", "no orphaned facet under a name that could not fit either");
+    }
+
+    /// A two-hander's facet, pushed onto both the row the engine built for
+    /// its own slot and the row it built for the slot the item only
+    /// claims, reads once: on the hand it was equipped into. The claimed
+    /// hand still names the weapon, just not what it is out of, so `dry`
+    /// is not said twice for one gun.
+    #[test]
+    fn a_two_handers_facet_reads_once_on_the_hand_it_was_equipped_into() {
+        let slots = || rl_rules::Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap();
+        let (main, off) = {
+            let s = slots();
+            (s.expect("main hand"), s.expect("off hand"))
+        };
+        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 30, 6)), move |app| {
+            app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
+            app.add_systems(
+                Update,
+                (|mut view: ResMut<GearView>, mut facets: ResMut<crate::Facets>| {
+                    for row in view.rows_mut() {
+                        row.facets.push(facets.facet("ammo", "dry").toned(Tones::BAD));
+                    }
+                })
+                .in_set(crate::ViewSet::Annotate),
+            );
+        })
+        .screen(30, 6);
+        let rifle = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("slug rifle"), rl_render::Glyph::new('}', Color::WHITE))).id();
+        let mut worn = rl_bevy::Equipped(rl_rules::Equipment::with_slot_count(2));
+        worn.equip(rifle, &EquipShape::in_slot(main).and_claims(off)).expect("the slot exists");
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        assert_eq!(stage.row(2), "main hand } slug rifle \u{00b7} dry", "the primary hand carries the facet");
+        assert_eq!(stage.row(3), "off hand  } slug rifle", "the claimed hand names the gun and stops there");
     }
 }
