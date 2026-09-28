@@ -50,6 +50,7 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("heat::heat_on_struck", id(heat::heat_on_struck)),
         ("heat::note_heat", id(heat::note_heat)),
         ("ammo::note_ammo", id(ammo::note_ammo)),
+        ("gear::note_the_pack", id(gear::note_the_pack)),
         ("ammo::spend_ammo", id(ammo::spend_ammo)),
         ("ammo::sync_ammo", id(ammo::sync_ammo)),
         ("droids::populate_deck", id(droids::populate_deck)),

@@ -35,6 +35,8 @@ use rl_engine::rl_rules::{
     AffixDef, DamageKind, Enchanted, EquipShape, LevelTable, LootTable, NameRef, Named, Registry, Resistances, ScatterRules, SlotDef, TagDef, TagId,
 };
 use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
+use rl_engine::rl_ui::view::Strike;
+use rl_engine::rl_ui::{Facets, InventoryView, Tones};
 use serde::Deserialize;
 
 use crate::ammo::Ammo;
@@ -252,6 +254,46 @@ impl Named for ItemDef {
 /// whether either is jammed.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WornDarkSight(pub i32);
+
+/// Notes on each pack row what the engine's row cannot read off the
+/// thing: how far it sees in the dark, and the attack a weapon has put by
+/// while it cannot use it, with why, `dry` of ammunition or `locked` by
+/// its heat.
+///
+/// The engine reads a row's blow and shot off `MeleeAttack` and
+/// `RangedAttack`, which a weapon that cannot fire has moved into
+/// [`Stowed`](crate::heat::Stowed) so the loadout finds nothing, and
+/// without this a slug rifle carried with no slugs, `+2` or not, reads as
+/// nothing but where it goes. Its numbers go back in the row's own `blow`
+/// or `shot`, so the pack says them in its own words, and the reason in
+/// a facet under them.
+///
+/// `InventoryView` is `None` until a game adds a pack panel: absence means
+/// no pack to annotate, not that anything is wrong.
+pub fn note_the_pack(
+    view: Option<ResMut<InventoryView>>,
+    mut facets: ResMut<Facets>,
+    registries: Res<Registries>,
+    things: Query<(Option<&WornDarkSight>, Option<&crate::heat::Stowed>, Has<crate::ammo::Dry>)>,
+) {
+    use crate::heat::Stowed;
+    let Some(mut view) = view else { return };
+    let kind = |kind| registries.damage_kinds.name(kind).to_string();
+    for row in view.rows.iter_mut() {
+        let Ok((sight, stowed, dry)) = things.get(row.entity) else { continue };
+        if let Some(stowed) = stowed {
+            match *stowed {
+                Stowed::Melee(a) => row.blow = Some(Strike { kind: kind(a.kind), dice: a.dice, range: None }),
+                Stowed::Ranged(a) => row.shot = Some(Strike { kind: kind(a.kind), dice: a.dice, range: Some(a.range) }),
+            }
+            let why = if dry { facets.facet("ammo", "dry") } else { facets.facet("heat", "locked") };
+            row.facets.push(why.toned(Tones::BAD));
+        }
+        if let Some(sight) = sight {
+            row.facets.push(facets.facet("dark sight", format!("sees {} in the dark", sight.0)));
+        }
+    }
+}
 
 /// The item definitions and the table of what lies on which deck, loaded
 /// once, in `PreStartup`, by [`load_armory`].

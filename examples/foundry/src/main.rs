@@ -194,6 +194,7 @@ fn main() -> AppExit {
         // Fire and smoke, for the grenades: each registers the effect its
         // grenade names, `Ignite` and `Emit`, before the abilities load.
         .add_plugins((FirePlugin, GasPlugin))
+        // Hearing, which registers the `Noise` every grenade is heard by.
         .add_plugins(NoisePlugin::new(foundry::droids::NOISE))
         .add_plugins(foundry::plugin::narrator())
         // The engine's own effects: `Mend`, for `stims`, and `Harm` for
@@ -337,6 +338,54 @@ mod tests {
         let view = app.world().resource::<InventoryView>();
         let row = view.rows.iter().find(|r| r.entity == plate).expect("the plate in the pack");
         assert!(row.used.contains(&"use: cloaked for 10 turns while worn".to_string()), "{:?}", row.used);
+    }
+
+    /// `name` made at `level` and put in the commando's pack, and a pass
+    /// run so the pack's rows are read again.
+    fn in_the_pack(app: &mut App, name: &str, level: i32) -> Entity {
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = foundry::testing::armory_of(app);
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let item = {
+            let mut commands = Commands::new(&mut queue, app.world());
+            foundry::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect(name), level, &registries)
+        };
+        queue.apply(app.world_mut());
+        app.world_mut().get_mut::<Inventory>(me).expect("the commando has a pack").items.push(item);
+        app.update();
+        app.update();
+        item
+    }
+
+    /// The pack row of `item`, as the pack draws it.
+    fn pack_row(app: &App, item: Entity) -> rl_engine::rl_ui::ItemRow {
+        app.world().resource::<InventoryView>().rows.iter().find(|r| r.entity == item).expect("in the pack").clone()
+    }
+
+    /// A slug rifle with no slugs to feed it still says in the pack what
+    /// it shoots, at its level, and that it is dry: the shot put by while
+    /// it cannot fire is the one a player weighing a `+2` wants to read.
+    #[test]
+    fn the_pack_says_what_a_dry_gun_shoots_at_its_level_and_that_it_is_dry() {
+        let mut app = on_screen(RunSeed(7));
+        let rifle = in_the_pack(&mut app, "slug rifle", 2);
+        assert!(app.world().get::<foundry::ammo::Dry>(rifle).is_some(), "no slugs in the pack, so it is dry");
+        let row = pack_row(&app, rifle);
+        assert_eq!(row.shot.map(|s| s.dice.to_string()).as_deref(), Some("1d10+5"), "damage: 2, so four more at +2");
+        assert!(row.facets.iter().any(|f| f.text == "dry"), "{:?}", row.facets);
+    }
+
+    /// A rangefinder helmet says in the pack how far it sees in the dark,
+    /// with its level's tiles added, since that is what it is for.
+    #[test]
+    fn the_pack_says_how_far_a_rangefinder_sees_in_the_dark_at_its_level() {
+        let mut app = on_screen(RunSeed(7));
+        let plain = in_the_pack(&mut app, "rangefinder helmet", 0);
+        let fine = in_the_pack(&mut app, "rangefinder helmet", 2);
+        let sees = |row: rl_engine::rl_ui::ItemRow| row.facets.iter().map(|f| f.text.clone()).find(|t| t.contains("dark"));
+        assert_eq!(sees(pack_row(&app, plain)).as_deref(), Some("sees 6 in the dark"));
+        assert_eq!(sees(pack_row(&app, fine)).as_deref(), Some("sees 8 in the dark"));
     }
 
     /// The log reads in the order things happened: a probe that spots the

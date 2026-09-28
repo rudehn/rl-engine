@@ -99,6 +99,10 @@ impl Plugin for FoundryPlugin {
         // other: no weapon carries both `Heat` and `Ammo`, so no row ever
         // gets a facet from both.
         app.add_systems(Update, (crate::heat::note_heat, crate::ammo::note_ammo).in_set(ViewSet::Annotate));
+        // The pack's rows, the same way, with or without a pack panel.
+        // After the gear notes, which fill another view but intern the
+        // same facet keys, so each key is declared in one order every run.
+        app.add_systems(Update, crate::gear::note_the_pack.after(crate::heat::note_heat).after(crate::ammo::note_ammo).in_set(ViewSet::Annotate));
         // Ammunition's own economy, chained in this order: `spend_ammo`
         // takes a slug off the bag a `Struck` just fired from, and
         // `sync_ammo` reads whatever bag every `Ammo` item's wielder now
