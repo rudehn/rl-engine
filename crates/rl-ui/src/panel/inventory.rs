@@ -17,9 +17,10 @@
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
-//! to armor or a stat, what it resists, how far it flies, where it is worn or could be, what
-//! it does at each of its moments, how many charges are left, and whatever
-//! the game pushed onto it in [`ViewSet::Annotate`](crate::ViewSet).
+//! to armor or a stat, what it resists, how far it flies, where it is worn
+//! or could be and what else it takes, what it does at each of its
+//! moments, how many charges are left, and whatever the game pushed onto
+//! it in [`ViewSet::Annotate`](crate::ViewSet).
 //!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
@@ -328,10 +329,15 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         (None, Some(range)) => say(format!("thrown to {range}"), Tones::TEXT),
         (None, None) => {}
     }
+    // A two-hander names the hand it empties as well, since putting it on
+    // takes whatever is there off.
+    let also = row.also_takes.iter().map(|slot| format!("the {slot}")).collect::<Vec<_>>().join(" and ");
     if row.worn() {
-        say(format!("worn on the {}", row.slot_name), Tones::MUTED);
+        let also = if also.is_empty() { also } else { format!(" and {also}") };
+        say(format!("worn on the {}{also}", row.slot_name), Tones::MUTED);
     } else if row.wearable() {
-        say(format!("goes on the {}", row.goes_on.join(" or the ")), Tones::MUTED);
+        let also = if also.is_empty() { also } else { format!(", and takes {also}") };
+        say(format!("goes on the {}{also}", row.goes_on.join(" or the ")), Tones::MUTED);
     }
     for what in &row.used {
         say(what.clone(), Tones::TEXT);
@@ -471,6 +477,31 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![blade, hat, knives] }, worn));
         stage.tick();
         (stage, blade, hat, knives)
+    }
+
+    /// A two-hander says the second slot it takes, in the bag and worn,
+    /// since putting it on empties that hand too.
+    #[test]
+    fn a_thing_that_takes_a_second_slot_says_so_in_the_bag_and_worn() {
+        let mut stage = Stage::new_with(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"), |app| {
+            app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap();
+        })
+        .screen(52, 14);
+        let (player, kind) = (stage.player, stage.kind);
+        let (main, off) = {
+            let r = stage.app.world().resource::<Registries>();
+            (r.slots.expect("main hand"), r.slots.expect("off hand"))
+        };
+        let shape = EquipShape::in_slot(main).and_claims(off);
+        let axe = stage.app.world_mut().spawn((Item, Name::new("an axe"), Wearable(shape.clone()), MeleeAttack::new(kind, DiceRoll::new(2, 6)))).id();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![axe] }, Equipped(Equipment::with_slot_count(2))));
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        assert_eq!(inside(&stage, 4), "goes on the main hand, and takes the off hand");
+
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(axe, &shape).unwrap();
+        stage.tick();
+        assert_eq!(inside(&stage, 4), "worn on the main hand and the off hand");
     }
 
     /// The text inside the frame on row `y`, border and padding cut off.

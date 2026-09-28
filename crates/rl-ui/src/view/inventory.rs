@@ -45,6 +45,9 @@ pub struct ItemRow {
     /// Where it would go if put on: the registered names of the slots it
     /// may take, empty for something that cannot be worn.
     pub goes_on: Vec<String>,
+    /// The slots it takes as well wherever it goes, by their registered
+    /// names: a two-hander's off hand. Empty for most things.
+    pub also_takes: Vec<String>,
     /// How far it flies if thrown, when it can be.
     pub throw_range: Option<i32>,
     /// What it strikes for when thrown, when a throw is a blow.
@@ -244,6 +247,7 @@ pub fn collect_inventory(
             slot,
             slot_name: slot.map(slot_name).unwrap_or_default(),
             goes_on: wearable.map(|w| w.0.any_of.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
+            also_takes: wearable.map(|w| w.0.also.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
             throw_range: throwable.map(|t| t.range),
             thrown: throwable.and_then(|t| t.strike.map(|s| strike(s, Some(t.range)))),
             armor: armor.map_or(0, |a| a.0),
