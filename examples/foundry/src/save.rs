@@ -523,15 +523,18 @@ mod tests {
         assert_eq!((back.every, back.progress), (pulse.every, pulse.progress), "the same period and as far round");
     }
 
-    /// A `+2` mono-axe in the pack and a `+2` rangefinder worn come back
-    /// swinging and seeing as a `+2` does: the save keeps the level, and
-    /// what the level adds is rebuilt from the file's enchant block.
+    /// A `+2` mono-axe and a `+2` cloak plate in the pack and a `+2`
+    /// rangefinder worn come back swinging, cloaking and seeing as a `+2`
+    /// does: the save keeps the level and no bonus, and what the level adds,
+    /// the cloak's `EffectBonus` among it, is rebuilt from the file's
+    /// enchant block.
     #[test]
     fn a_continued_run_keeps_what_each_things_level_adds() {
         let mut app = crate::testing::headless(RunSeed(4));
         crate::testing::settle(&mut app);
         let me = player(&mut app);
         carried_at(&mut app, me, "mono-axe", 2);
+        carried_at(&mut app, me, "cloak plate", 2);
         let helmet = carried_at(&mut app, me, "rangefinder helmet", 2);
         app.world_mut().write_message(Intent::new(me, Equip(helmet)));
         app.update();
@@ -545,8 +548,10 @@ mod tests {
         let me = player(&mut continued);
         let axe = in_pack(&continued, me, "mono-axe +2");
         let helmet = in_pack(&continued, me, "rangefinder helmet +2");
+        let cloak = in_pack(&continued, me, "cloak plate +2");
         let world = continued.world();
         assert_eq!(world.get::<MeleeAttack>(axe).map(|m| m.dice.to_string()).as_deref(), Some("2d6+5"), "the axe's two levels of two");
+        assert_eq!(world.get::<EffectBonus>(cloak).copied(), Some(EffectBonus { turns: 4, amount: 0 }), "the cloak's two levels of two turns");
         assert_eq!(world.get::<crate::gear::WornDarkSight>(helmet).map(|d| d.0), Some(8));
         assert_eq!(world.get::<DarkSight>(me).map(|d| d.0), Some(8), "and the commando sees by it again");
     }
