@@ -40,6 +40,7 @@ const GEAR_ROWS: i32 = 9;
 /// The screen, cut up once so every panel and the map agree on it.
 struct Screen {
     map: Rect,
+    gutter: Rect,
     log: Rect,
     vitals: Rect,
     gear: Rect,
@@ -61,6 +62,9 @@ struct Screen {
 impl Screen {
     fn new() -> Self {
         let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        // A column of nothing between the map and the rail, so a room on a
+        // deck's east edge does not run its wall into the rail's words.
+        let (left, gutter) = panel::split_right(left, 1);
         let (map, log) = panel::split_bottom(left, LOG_ROWS);
         let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
@@ -73,6 +77,7 @@ impl Screen {
         let centred = |w: i32, y: i32, h: i32| Rect::new(map.x + (map.width - w) / 2, map.y + y, w, h);
         Self {
             map,
+            gutter,
             log,
             vitals,
             gear,
@@ -110,6 +115,13 @@ impl Screen {
 /// window draws. The narrator that fills the log is added beside the
 /// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
+    // The gutter belongs to no panel, so it is painted blank with the
+    // chrome each frame, or the title screen's works would show through it.
+    let gutter = screen.gutter;
+    app.add_systems(
+        Update,
+        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| panel::clear(&mut terminal, gutter, &palette)).in_set(PresentSet::Chrome),
+    );
     app.add_plugins((
         // Three thousand hundredths of a step is the gauge's full: a shot
         // or a blow next door reads about a third of it, and a probe's
@@ -338,6 +350,26 @@ mod tests {
         let view = app.world().resource::<InventoryView>();
         let row = view.rows.iter().find(|r| r.entity == plate).expect("the plate in the pack");
         assert!(row.used.contains(&"use: cloaked for 10 turns while worn".to_string()), "{:?}", row.used);
+    }
+
+    /// The map and the log stop a column short of the rail, so a wall on
+    /// a deck's east edge never runs into the rail's words.
+    #[test]
+    fn a_blank_column_stands_between_the_map_and_the_rail() {
+        let screen = Screen::new();
+        let rail = COLS - RAIL;
+        assert_eq!((screen.map.right(), screen.log.right()), (rail - 1, rail - 1), "one column clear of the rail at {rail}");
+        assert_eq!(screen.vitals.x, rail, "and the rail where it was");
+
+        // Painted blank every frame, since nothing else owns it: whatever
+        // was on the terminal before, the title screen's works included,
+        // does not show through.
+        let mut app = on_screen(RunSeed(7));
+        let dirt = rl_engine::rl_render::Cell::new('x', Color::WHITE);
+        app.world_mut().resource_mut::<Terminal>().fill(Rect::new(rail - 1, 0, 1, ROWS), dirt);
+        app.update();
+        let column: String = (0..ROWS).map(|y| app.world().resource::<Terminal>().get(rail - 1, y).map_or('?', |c| c.glyph)).collect();
+        assert_eq!(column.trim(), "", "the gutter: {column:?}");
     }
 
     /// `name` made at `level` and put in the commando's pack, and a pass
