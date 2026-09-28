@@ -35,7 +35,10 @@ const TARGET_ROWS: i32 = 10;
 /// which sets the gear off from the gauges as the blank under the gear
 /// sets it off from the nearby list.
 const VITALS_ROWS: i32 = 8;
-const GEAR_ROWS: i32 = 9;
+/// Two more than the six slots: the heading and its rule take two of the
+/// panel's rows, and a two-hander shown on both hands can wrap its facet
+/// under its name on each, one row apiece.
+const GEAR_ROWS: i32 = 10;
 
 /// The screen, cut up once so every panel and the map agree on it.
 struct Screen {
@@ -301,9 +304,10 @@ mod tests {
     }
 
     /// The heat facet is the one thing on the rail the engine could not
-    /// have drawn by itself: a blaster fired until it locks says so on its
-    /// gear row, in full and in the palette's warning tone, however long
-    /// the slot and the name ahead of it.
+    /// have drawn by itself: a blaster fired until it locks says so, in
+    /// full and in the palette's warning tone. The name and the facet do
+    /// not both fit the rail's width beside the slot, so the facet wraps
+    /// to the line under the name rather than clip either one.
     #[test]
     fn a_blaster_fired_until_it_locks_reads_locked_in_the_warning_tone_on_the_gear_panel() {
         let mut app = on_screen(RunSeed(7));
@@ -311,13 +315,14 @@ mod tests {
         foundry::testing::fire_at_a_target(&mut app, me, 7);
         app.update();
         let y = (0..ROWS).find(|y| row(&app, *y).contains("main hand")).expect("a gear row for the main hand");
-        let line = row(&app, y);
-        assert!(line.trim_end().ends_with("\u{00b7} locked"), "{line:?}");
+        assert!(row(&app, y).trim_end().ends_with("hand blaster"), "the name stays whole: {:?}", row(&app, y));
+        let line = row(&app, y + 1);
+        assert!(line.trim_end().ends_with("locked"), "the facet wraps under it: {line:?}");
         // The last letter of "locked", wherever the row ends.
-        let x = (0..COLS).rev().find(|x| app.world().resource::<Terminal>().get(*x, y).is_some_and(|c| c.glyph == 'd')).unwrap();
+        let x = (0..COLS).rev().find(|x| app.world().resource::<Terminal>().get(*x, y + 1).is_some_and(|c| c.glyph == 'd')).unwrap();
         let palette = app.world().resource::<Palette>();
         let bad = rl_engine::rl_ui::readable(palette.get(Tones::BAD), palette);
-        assert_eq!(app.world().resource::<Terminal>().get(x, y).unwrap().fg, bad);
+        assert_eq!(app.world().resource::<Terminal>().get(x, y + 1).unwrap().fg, bad);
     }
 
     /// A status's badge has a row of its own on the vitals strip, under

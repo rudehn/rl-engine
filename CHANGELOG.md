@@ -117,6 +117,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Foundry leaves a blank column between the map and the rail, painted each frame, so a room on a deck's east edge no longer runs its wall into the rail's words.
 - The bag says what else a thing takes: `ItemRow::also_takes`, the registered names of its `EquipShape::also`, so a two-hander reads `goes on the main hand, and takes the off hand` in the bag and `worn on the main hand and the off hand` once on. A game that builds an `ItemRow` by hand adds `also_takes: Vec::new()`.
 - A game's facet in the bag reads under the thing's own numbers and above where it goes, where it read last, under the muted placement line and what the thing does: Foundry's `sees 8 in the dark` sits under a helmet's armor, and `dry` under the shot it stops. Nothing a game writes changes.
+- `GearPanel` no longer truncates a worn thing's name to fit its charges or its facets: where the two do not both fit the row, the name is kept whole and the tail moves to a line under it, indented to the name's own column, so a `+2` at the end of a long name stays on screen; only a name wider than the whole row still gives way, clipped as before. A game whose rectangle was sized to fit exactly one row per slot may need one more row for a slot that wraps.
 
 ## 0.3.0
 

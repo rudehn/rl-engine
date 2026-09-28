@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 905c7892 -->
+     fingerprint: 84183185 -->
 
 # Panels
 
@@ -97,7 +97,7 @@ The view also holds the `AimRange`, how far the aim reaches against how far the 
 A presenter reads a view, reads the `Palette`, and writes cells to the `Terminal`; it owns no state and makes no decision a game might want made differently.
 `panel::split_right`, `split_bottom` and `split_top` hand back both halves of a cut, which is the whole of the engine's opinion about layout: no resource holds every panel's rectangle.
 `clear`, `frame`, `section` and `bar` are public so a game taking the view and drawing its own does not rewrite a box-drawing routine, and `ListMenu` is the selection a screen keeps.
-A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read.
+A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read; the gear panel's one exception moves a name's facet to the line under it rather than cut the name that carries a level.
 
 ## Using it
 
