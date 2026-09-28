@@ -261,8 +261,9 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
 }
 
 /// What a carrier is, for [`land_triggers`]: its triggers, whether it is a
-/// remnant or lands as itself, and its enchant level if it has one.
-type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<&'static crate::items::Enchant>);
+/// remnant or lands as itself, and its [`EffectBonus`](super::EffectBonus)
+/// if it has one.
+type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<&'static super::EffectBonus>);
 
 /// Lands every carrier's triggers for each moment reported this pass.
 ///
@@ -272,8 +273,9 @@ type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<
 /// the pass that set it off. Every actor under the footprint is a target,
 /// the one who set it off included: a grenade does not ask whose it was.
 /// The user is whoever set it off, or the carrier when it is
-/// [`LandsAsItself`] or nobody did. An enchanted carrier lands its effects
-/// at its level.
+/// [`LandsAsItself`] or nobody did. A carrier with an
+/// [`EffectBonus`](super::EffectBonus) lands its effects with it added,
+/// and a plain one adds nothing.
 pub fn land_triggers(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
@@ -282,9 +284,9 @@ pub fn land_triggers(
     mut world: EffectWorld,
 ) {
     for f in fired.read() {
-        let Ok((mut triggers, remnant, itself, enchant)) = carriers.get_mut(f.on) else { continue };
+        let Ok((mut triggers, remnant, itself, bonus)) = carriers.get_mut(f.on) else { continue };
         let user = if itself { f.on } else { f.by.unwrap_or(f.on) };
-        let level = enchant.map_or(0, |e| e.level);
+        let bonus = bonus.copied().unwrap_or_default();
         for trigger in triggers.0.iter_mut().filter(|t| t.on == f.moment) {
             if trigger.fires == Some(0) {
                 continue;
@@ -307,7 +309,7 @@ pub fn land_triggers(
                 path: Vec::new(),
                 landed_at: Some(f.at),
                 targets,
-                level,
+                bonus,
             };
             // Cued before any effect runs, as an ability's burst is, so a
             // cue an effect adds plays after it.

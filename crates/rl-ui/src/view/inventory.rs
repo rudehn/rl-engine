@@ -149,8 +149,9 @@ type Looks =
 /// What an item does when worn: the same components [`Loadout`] reads.
 type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
 /// What an item does at its moments, what a use costs it, its clock,
-/// whether its charges come back only while worn, and its enchant level.
-type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>, Option<&'static rl_bevy::Enchant>);
+/// whether its charges come back only while worn, and its `EffectBonus`.
+type Does =
+    (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>, Option<&'static rl_bevy::EffectBonus>);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
@@ -191,7 +192,7 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned, enchant))) =
+        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned, bonus))) =
             items.get(item)
         else {
             continue;
@@ -208,8 +209,8 @@ pub fn collect_inventory(
                     rl_rules::Area::Here => String::new(),
                     rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
                 };
-                let level = enchant.map_or(0, |e| e.level);
-                used.extend(trigger.effects.describe(registries, level).into_iter().map(|line| format!("{lead}: {line}{area}")));
+                let bonus = bonus.copied().unwrap_or_default();
+                used.extend(trigger.effects.describe(registries, bonus).into_iter().map(|line| format!("{lead}: {line}{area}")));
             }
         }
         let clock_runs = !attuned || slot.is_some();
@@ -343,5 +344,28 @@ mod tests {
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(750))), "every 8 turns worn", "a part turn rounds up, never promising early");
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(100))), "every turn worn", "one turn is no count at all");
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(50))), "every turn worn", "nor is less than one");
+    }
+
+    /// A row's effects are described with its item's own `EffectBonus`
+    /// added: a plain `Inflict` of ten turns and a carrier bonus of four
+    /// reads fourteen.
+    #[test]
+    fn a_rows_effects_are_described_with_its_effectbonus_added() {
+        let mut stage = Stage::new_with(InventoryViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().statuses = Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked")]).unwrap();
+        });
+        let player = stage.player;
+        let registries = stage.app.world().resource::<Registries>().clone();
+        let mut kinds = EffectKinds::default();
+        kinds.declare::<rl_bevy::Inflict>();
+        let args = rl_rules::ability::parse_args(r#"(status: "cloaked", turns: 10)"#).unwrap();
+        let specs = vec![rl_rules::EffectSpec { kind: "Inflict".to_string(), chance: 100, args }];
+        let effects = Effects::build(&specs, &kinds, &registries.names()).unwrap();
+        let trigger = rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires: None, effects: std::sync::Arc::new(effects), look: None };
+        let plate = stage.app.world_mut().spawn((Item, Name::new("cloak plate"), Triggers(vec![trigger]), EffectBonus { turns: 4, amount: 0 })).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![plate] });
+        stage.tick();
+        let view = stage.app.world().resource::<InventoryView>();
+        assert!(view.rows[0].used.iter().any(|line| line == "use: cloaked for 14 turns"), "{:?}", view.rows[0].used);
     }
 }

@@ -376,11 +376,13 @@ pub struct ItemKind(pub Id<ItemDef>);
 /// stackable item spawns as a stack of one; the caller merges or grows it
 /// as it likes.
 ///
-/// At `level`, which names it `cloak plate +2`, lands its effects at that
-/// level and writes its clock with the level applied; a thing that names
-/// no `enchant` is plain whatever `level` says, and one that does is held
-/// between plain and its `most`, so a save written before the file
-/// lowered a `most` never brings back a thing the file no longer allows.
+/// At `level`, which names it `cloak plate +2` and writes its clock with
+/// the level applied; a thing that names no `enchant` is plain whatever
+/// `level` says, and one that does is held between plain and its `most`,
+/// so a save written before the file lowered a `most` never brings back a
+/// thing the file no longer allows. The cloak plate alone also gets an
+/// `EffectBonus` from its level, by name, until a later slice folds this
+/// into every item's own `enchant` block.
 pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let d = armory.defs.get(id);
     let level = d.enchant.map_or(0, |e| level.clamp(0, e.most));
@@ -389,6 +391,9 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
     let mut e = commands.spawn((Item, ItemKind(id), Name::new(name), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
     if d.enchant.is_some() {
         e.insert(Enchant(enchanted));
+    }
+    if d.name == "cloak plate" {
+        e.insert(EffectBonus { turns: (2 * level) as u32, amount: 0 });
     }
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));

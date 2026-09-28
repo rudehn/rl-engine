@@ -51,7 +51,7 @@ impl Effect for Drain {
         }
     }
 
-    fn describe(&self, registries: &Registries, _: i32) -> String {
+    fn describe(&self, registries: &Registries, _: EffectBonus) -> String {
         format!("gives you back {} {}", self.amount, registries.stats.name(self.pool))
     }
 }

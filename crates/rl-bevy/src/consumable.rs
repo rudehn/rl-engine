@@ -594,15 +594,14 @@ mod tests {
         assert_eq!(health(&app, player), 10, "five of its pulses came round, and none of them landed on the player standing here");
     }
 
-    /// A thing enchanted to `+3` lands its effects at its level: a mend of
-    /// four with two a level mends ten.
+    /// A carrier's `EffectBonus` reaches what it lands: a mend of four
+    /// with an amount of six mends ten.
     #[test]
-    fn an_enchanted_thing_lands_its_effects_at_its_level() {
-        let mends = r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "4", per_level: 2))])]"#;
-        let (mut app, player, item) = rig(None, None, mends);
-        app.world_mut().entity_mut(item).insert(crate::items::Enchant(rl_rules::Enchanted { level: 3, affixes: Vec::new() }));
+    fn a_carriers_effectbonus_reaches_what_it_lands() {
+        let (mut app, player, item) = rig(None, None, MEND_ON_USE);
+        app.world_mut().entity_mut(item).insert(crate::effects::EffectBonus { turns: 0, amount: 6 });
         use_it(&mut app, player, item);
-        assert_eq!(health(&app, player), 20, "four and two for each of three levels");
+        assert_eq!(health(&app, player), 20, "four plus six");
     }
 
     /// Every status event, recorded by a reader, since a headless app may

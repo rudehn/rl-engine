@@ -30,7 +30,7 @@ use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::MyTurn;
 use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
-use crate::effects::{EffectKinds, EffectWorld, Landing, Source};
+use crate::effects::{EffectBonus, EffectKinds, EffectWorld, Landing, Source};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
@@ -259,7 +259,7 @@ impl Abilities {
     /// with its chance in front when it is not certain: what a menu lists
     /// under an ability.
     pub fn describe(&self, id: AbilityId, registries: &crate::registries::Registries) -> Vec<String> {
-        self.built[id.index()].describe(registries, 0)
+        self.built[id.index()].describe(registries, EffectBonus::default())
     }
 
     /// The id named `name`, if there is one.
@@ -382,7 +382,10 @@ impl Bystanders<'_, '_> {
                 }
             }
         }
-        Landed { landing: Landing { user, source: Source::Ability(ability), origin, aim, cells, path, landed_at: landing, targets, level: 0 }, refused }
+        Landed {
+            landing: Landing { user, source: Source::Ability(ability), origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default() },
+            refused,
+        }
     }
 }
 
