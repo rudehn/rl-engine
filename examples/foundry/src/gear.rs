@@ -204,15 +204,18 @@ pub struct EnchantDef {
     #[serde(default)]
     pub dark_sight: i32,
     /// Hundredths added per level to its pulse trigger's period, negative
-    /// for a clock that quickens, never below one turn; 0 unless written.
+    /// for a clock that quickens; a level never takes a period below one
+    /// turn, and one written below a turn stays as written. 0 unless
+    /// written.
     #[serde(default)]
     pub pulse: i32,
     /// Turns added per level to every status its effects inflict; 0 unless
-    /// written.
+    /// written, and refused on a thing with no `Inflict` among its effects.
     #[serde(default)]
     pub turns: u32,
     /// Added per level to every harm or mend roll its effects make; 0
-    /// unless written.
+    /// unless written, and refused on a thing with no `Harm` or `Mend`
+    /// among its effects.
     #[serde(default)]
     pub amount: i32,
 }
@@ -383,11 +386,24 @@ fn validate_enchant(d: &ItemDef, e: EnchantDef) -> Result<(), String> {
     if e.pulse != 0 && !d.triggers.iter().any(|t| t.on == "pulse") {
         return Err("pulse in the enchant, on a thing with no pulse trigger".into());
     }
-    let effects = !d.effects.is_empty() || d.triggers.iter().any(|t| t.effects.as_ref().is_some_and(|e| !e.is_empty()));
-    if (e.turns != 0 || e.amount != 0) && !effects {
-        return Err("turns or amount in the enchant, on a thing with no effects".into());
+    // `turns` reaches only an `Inflict` and `amount` only a `Harm` or a
+    // `Mend`, the three engine effects that read a bonus; Foundry registers
+    // no effect of its own, so the authored kind names are the whole
+    // answer.
+    if e.turns != 0 && !lands_any(d, &["Inflict"]) {
+        return Err("turns in the enchant, on a thing whose effects inflict no status".into());
+    }
+    if e.amount != 0 && !lands_any(d, &["Harm", "Mend"]) {
+        return Err("amount in the enchant, on a thing whose effects neither harm nor mend".into());
     }
     Ok(())
+}
+
+/// Whether any effect `d` holds, shared or on one of its triggers' own
+/// lists, is one of `kinds`.
+fn lands_any(d: &ItemDef, kinds: &[&str]) -> bool {
+    let own = d.triggers.iter().filter_map(|t| t.effects.as_deref()).flatten();
+    d.effects.iter().chain(own).any(|spec| kinds.contains(&spec.kind.as_str()))
 }
 
 impl Armory {
@@ -620,17 +636,28 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
         e.insert(WornDarkSight(n + enchant.dark_sight * level));
     }
     // The clock is the pulse trigger's own period, read off the triggers
-    // the armory built rather than kept twice, and a level never takes it
-    // below a turn: a plate that mended faster than its wearer acts would
-    // be mending for nothing.
+    // the armory built rather than kept twice.
     if let Some(every) = armory.triggers.get(id.index()).and_then(Triggers::pulse_every) {
-        let turn = rl_engine::rl_core::turn::BASE_ACTION_COST as i32;
-        e.insert(Pulse::every((every as i32 + enchant.pulse * level).max(turn) as u32));
+        e.insert(Pulse::every(pulse_period(every, enchant.pulse, level)));
     }
     if d.stack {
         e.insert(Stack { key: id.index() as u64, count: 1 });
     }
     e.id()
+}
+
+/// A pulse trigger's period `every` at `level`, moved `per_level`
+/// hundredths a level.
+///
+/// A level never takes it below a turn, since a plate that pulsed several
+/// times each time its wearer acts is a level rule nobody wrote on purpose.
+/// The floor is on what the level changes and not on `every`: a period the
+/// file wrote below a turn is what the thing does at `+0`, the base number
+/// staying where it is, and a level never takes it lower still.
+fn pulse_period(every: u32, per_level: i32, level: i32) -> u32 {
+    let turn = rl_engine::rl_core::turn::BASE_ACTION_COST as i32;
+    let every = every as i32;
+    (every + per_level * level).max(every.min(turn)) as u32
 }
 
 /// Spawns `id` plain, at `+0`: what the cheat menu puts in the pack, what
@@ -1200,14 +1227,29 @@ mod tests {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
         let worn = |name: &str| ItemDef { slot: Some(rl_engine::rl_core::Id::from_raw(0).into()), ..blank_def(name) };
+        let nanite = armory.defs.get(armory.defs.expect("nanite plate"));
+        let cloak = armory.defs.get(armory.defs.expect("cloak plate"));
         let cases: Vec<(ItemDef, &str)> = vec![
             (ItemDef { enchant: Some(enchant_to(2)), ..blank_def("loose enchant") }, "never worn"),
             (ItemDef { enchant: Some(enchant_to(2)), stack: true, ..blank_def("a stack of fine things") }, "cannot stack"),
             (ItemDef { enchant: Some(enchant_to(0)), ..worn("plain for good") }, "reaches no level"),
             (ItemDef { enchant: Some(EnchantDef { dark_sight: 1, ..enchant_to(3) }), ..worn("blind helmet") }, "no dark sight of its own"),
             (ItemDef { enchant: Some(EnchantDef { pulse: -100, ..enchant_to(9) }), ..worn("idle clock") }, "no pulse trigger"),
-            (ItemDef { enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }), ..worn("nothing to lengthen") }, "no effects"),
-            (ItemDef { enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }), ..worn("nothing to strengthen") }, "no effects"),
+            (ItemDef { enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }), ..worn("nothing to lengthen") }, "inflict no status"),
+            (
+                ItemDef { enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }), triggers: nanite.triggers.clone(), ..worn("a mend that lasts") },
+                "inflict no status",
+            ),
+            (ItemDef { enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }), ..worn("nothing to strengthen") }, "neither harm nor mend"),
+            (
+                ItemDef {
+                    enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }),
+                    consumable: cloak.consumable,
+                    triggers: cloak.triggers.clone(),
+                    ..worn("a stronger cloak")
+                },
+                "neither harm nor mend",
+            ),
             (ItemDef { enchant: Some(EnchantDef { damage: Some(2), ..enchant_to(5) }), ..worn("harmless edge") }, "does not attack"),
             (ItemDef { enchant: Some(EnchantDef { damage: Some(0), ..enchant_to(5) }), ..worn("harmless and says so") }, "does not attack"),
             (ItemDef { enchant: Some(EnchantDef { armor: Some(1), ..enchant_to(3) }), ..worn("paper shirt") }, "no armor of its own"),
@@ -1227,6 +1269,15 @@ mod tests {
         }
         let d = ItemDef { enchant: Some(enchant_to(3)), ..worn("a fine plate") };
         assert!(validate_def(&d, &armory.defs).is_ok(), "and a worn enchant that reaches a level is fine");
+        let d = ItemDef {
+            enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }),
+            consumable: cloak.consumable,
+            triggers: cloak.triggers.clone(),
+            ..worn("a longer cloak")
+        };
+        assert!(validate_def(&d, &armory.defs).is_ok(), "turns on a thing that inflicts a status is fine");
+        let d = ItemDef { enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }), triggers: nanite.triggers.clone(), ..worn("a stronger mend") };
+        assert!(validate_def(&d, &armory.defs).is_ok(), "and amount on a thing that mends is fine");
     }
 
     /// An item written the old way, a clock or an attunement at the top of
@@ -1290,6 +1341,18 @@ mod tests {
         let every = |level| leveled(&armory, &r, "nanite plate", level).pulse;
         assert_eq!((every(0), every(2), every(9), every(12)), (Some(1000), Some(800), Some(100), Some(100)));
         assert_eq!(leveled(&armory, &r, "nanite plate", 9).armor, Some(1), "and its armor stays as written, its enchant saying armor: 0");
+    }
+
+    /// A level moves a pulse by its enchant's `pulse` and never takes it
+    /// below a turn, while a period written below a turn is what the thing
+    /// does at `+0` and at every level after, since the floor is on what a
+    /// level changes and not on the number the file wrote.
+    #[test]
+    fn a_level_never_quickens_a_pulse_past_a_turn_and_never_moves_a_period_written_below_one() {
+        assert_eq!((pulse_period(1000, -100, 0), pulse_period(1000, -100, 2), pulse_period(1000, -100, 9)), (1000, 800, 100));
+        assert_eq!(pulse_period(1000, -100, 12), 100, "a level past a turn stops at one");
+        assert_eq!((pulse_period(50, 0, 0), pulse_period(50, -100, 0), pulse_period(50, -100, 3)), (50, 50, 50), "a half-turn clock stays as written");
+        assert_eq!(pulse_period(50, 100, 2), 250, "and a level that slows it still does");
     }
 
     /// Every attacker's swing, recorded as it is written: a miss spends no

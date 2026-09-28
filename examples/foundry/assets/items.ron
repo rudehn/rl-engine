@@ -69,12 +69,15 @@
 //                dark_sight: optional; tiles of dark sight added per level; default 0, never
 //                            inferred, and only on a thing with dark_sight of its own
 //                pulse:      optional; hundredths added per level to its "pulse" trigger's
-//                            every, negative to quicken, never below 100 (a turn); default 0,
-//                            and only on a thing with a "pulse" trigger
+//                            every, negative to quicken; a level never takes it below 100
+//                            (a turn), and an every written below 100 stays as written;
+//                            default 0, and only on a thing with a "pulse" trigger
 //                turns:      optional; turns added per level to every status its effects
-//                            inflict; default 0, and only on a thing with effects
+//                            inflict; default 0, and only on a thing with an Inflict among
+//                            its effects, shared or a trigger's own
 //                amount:     optional; added per level to every Harm or Mend roll its
-//                            effects make; default 0, and only on a thing with effects
+//                            effects make; default 0, and only on a thing with a Harm or a
+//                            Mend among its effects, shared or a trigger's own
 //              refused on a thing that is never worn or that stacks
 //   stack:     optional; whether copies merge into one counted entry
 #![enable(implicit_some)]
