@@ -23,7 +23,7 @@ use rl_rules::SlotId;
 use rl_rules::stats::Op;
 
 use crate::facet::Facet;
-use crate::view::sheet::Strike;
+use crate::view::sheet::{ResistLine, Strike};
 
 /// One carried item, as a bag screen reads it.
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +51,10 @@ pub struct ItemRow {
     pub thrown: Option<Strike>,
     /// Flat armor while worn.
     pub armor: i32,
+    /// What it resists while worn, a percentage by damage kind, negative
+    /// for what it leaves its wearer weaker to; nothing for a thing that
+    /// resists nothing.
+    pub resists: Vec<ResistLine>,
     /// The blow it is swung with, if wielding it strikes.
     pub blow: Option<Strike>,
     /// The shot it fires, if wielding it shoots.
@@ -147,7 +151,14 @@ impl Plugin for InventoryViewPlugin {
 type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
-type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
+type Arms = (
+    Option<&'static Armor>,
+    Option<&'static Resists>,
+    Option<&'static MeleeAttack>,
+    Option<&'static RangedAttack>,
+    Option<&'static Strikes>,
+    Option<&'static Bestows>,
+);
 /// What an item does at its moments, what a use costs it, its clock,
 /// whether its charges come back only while worn, and its `EffectBonus`.
 type Does =
@@ -192,8 +203,11 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned, bonus))) =
-            items.get(item)
+        let Ok((
+            (name, glyph, stack, wearable, throwable, tagged),
+            (armor, resists, melee, ranged, strikes, bestows),
+            (triggers, consumable, pulse, attuned, bonus),
+        )) = items.get(item)
         else {
             continue;
         };
@@ -233,6 +247,15 @@ pub fn collect_inventory(
             throw_range: throwable.map(|t| t.range),
             thrown: throwable.and_then(|t| t.strike.map(|s| strike(s, Some(t.range)))),
             armor: armor.map_or(0, |a| a.0),
+            resists: match (resists, registries) {
+                (Some(r), Some(registries)) => registries
+                    .damage_kinds
+                    .iter()
+                    .filter(|(kind, _)| r.0.get(*kind) != 0)
+                    .map(|(kind, def)| ResistLine { kind, name: def.name.clone(), pct: r.0.get(kind) })
+                    .collect(),
+                _ => Vec::new(),
+            },
             blow: melee.map(|m| strike((m.kind, m.dice), None)),
             shot: ranged.map(|r| strike((r.kind, r.dice), Some(r.range))),
             strikes: strikes.map(|s| s.0.iter().map(|hit| strike(*hit, None)).collect()).unwrap_or_default(),
@@ -281,7 +304,9 @@ mod tests {
                 Bestows(vec![(might, Op::Add(2))]),
             ))
             .id();
-        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
+        let mut resists = rl_rules::Resistances::new();
+        resists.set(kind, 10);
+        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1), Resists(resists))).id();
         let knives =
             stage.app.world_mut().spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(5, Some((kind, DiceRoll::new(1, 4)))))).id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
@@ -308,6 +333,8 @@ mod tests {
         let hat = &view.rows[2];
         assert!(!hat.worn() && hat.wearable());
         assert_eq!((hat.goes_on.as_slice(), hat.armor), (["head".to_string()].as_slice(), 1));
+        assert_eq!(hat.resists.iter().map(|r| (r.name.as_str(), r.pct)).collect::<Vec<_>>(), vec![("kinetic", 10)], "by the kind's name");
+        assert!(blade.resists.is_empty(), "and nothing for a thing that resists nothing");
     }
 
     /// The bag offers the use key for a worn thing only while it is on,

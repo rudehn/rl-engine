@@ -17,7 +17,7 @@
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
-//! to armor or a stat, how far it flies, where it is worn or could be, what
+//! to armor or a stat, what it resists, how far it flies, where it is worn or could be, what
 //! it does at each of its moments, how many charges are left, and whatever
 //! the game pushed onto it in [`ViewSet::Annotate`](crate::ViewSet).
 //!
@@ -314,6 +314,12 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     if row.armor != 0 {
         say(format!("armor {:+}", row.armor), Tones::TEXT);
     }
+    for r in &row.resists {
+        match r.pct {
+            pct if pct < 0 => say(format!("weak to {} {}%", r.name, -pct), Tones::TEXT),
+            pct => say(format!("resists {} {pct}%", r.name), Tones::TEXT),
+        }
+    }
     for (stat, op) in &row.bestows {
         say(format!("{stat} {}", plain_op(*op)), Tones::TEXT);
     }
@@ -455,7 +461,9 @@ mod tests {
                 MeleeAttack::new(kind, DiceRoll::new(1, 6)),
             ))
             .id();
-        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
+        let mut resists = rl_rules::Resistances::new();
+        resists.set(kind, 10);
+        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1), Resists(resists))).id();
         let knives =
             stage.app.world_mut().spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(5, Some((kind, DiceRoll::new(1, 4)))))).id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
@@ -486,7 +494,8 @@ mod tests {
 
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "armor +1");
-        assert_eq!(inside(&stage, 6), "goes on the head");
+        assert_eq!(inside(&stage, 6), "resists kinetic 10%", "what it resists, under its armor");
+        assert_eq!(inside(&stage, 7), "goes on the head");
         assert!(stage.row(13).contains("e wear \u{2022} d drop \u{2022} esc"), "the hat goes on: {:?}", stage.row(13));
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "thrown 1d4 kinetic to 5");
