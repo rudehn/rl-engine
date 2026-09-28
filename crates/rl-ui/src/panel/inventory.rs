@@ -298,8 +298,8 @@ fn strike(s: &Strike) -> String {
     }
 }
 
-/// The lines describing `row`: its numbers, then where it goes, then what
-/// the game added.
+/// The lines describing `row`: its numbers and what the game added, then
+/// where it goes, then what it does and has left.
 fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     let mut lines: Vec<(String, ToneId)> = Vec::new();
     let mut say = |text: String, tone: ToneId| lines.extend(wrap(&text, width).into_iter().map(|l| (l, tone)));
@@ -329,6 +329,12 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         (None, Some(range)) => say(format!("thrown to {range}"), Tones::TEXT),
         (None, None) => {}
     }
+    // What the game added is a fact about the thing the engine could not
+    // know, a sight it lends or why a gun cannot fire, so it reads with the
+    // numbers rather than under what the thing does and has left.
+    for facet in &row.facets {
+        say(facet.text.clone(), facet.tone);
+    }
     // A two-hander names the hand it empties as well, since putting it on
     // takes whatever is there off.
     let also = row.also_takes.iter().map(|slot| format!("the {slot}")).collect::<Vec<_>>().join(" and ");
@@ -354,9 +360,6 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         (false, true, Some(whole)) => say(format!("ready in {}", turns(whole * rl_core::turn::BASE_ACTION_COST)), Tones::MUTED),
         (false, true, None) => say("empty".to_string(), Tones::MUTED),
         (false, false, _) => {}
-    }
-    for facet in &row.facets {
-        say(facet.text.clone(), facet.tone);
     }
     lines
 }
@@ -538,6 +541,28 @@ mod tests {
 
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open());
+    }
+
+    /// A game's facet reads with the thing's own numbers, since it is a
+    /// fact about the thing the engine could not know, and the muted line
+    /// saying where it goes stays under everything the thing is, as it
+    /// does for a thing with no facet.
+    #[test]
+    fn a_games_facet_reads_under_the_things_numbers_and_above_where_it_goes() {
+        let (mut stage, _, hat, _) = staged();
+        stage.app.add_systems(
+            Update,
+            (move |mut view: ResMut<InventoryView>, mut facets: ResMut<crate::Facets>| {
+                for row in view.rows.iter_mut().filter(|r| r.entity == hat) {
+                    row.facets.push(facets.facet("dark sight", "sees 8 in the dark"));
+                }
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::ArrowDown);
+        assert_eq!(detail(&stage)[4..8], ["armor +1", "resists kinetic 10%", "sees 8 in the dark", "goes on the head"], "{:?}", detail(&stage));
     }
 
     /// Each key writes the engine's own intent for the row picked out and

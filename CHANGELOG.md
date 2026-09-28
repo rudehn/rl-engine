@@ -116,6 +116,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - Foundry's pack says what a gun that cannot fire shoots, at its level, and why, `dry` of slugs or `locked` by its heat, where before a slug rifle carried with no slugs read as nothing but where it goes; and it says how far a rangefinder helmet sees in the dark, `sees 8 in the dark` at `+2`.
 - Foundry leaves a blank column between the map and the rail, painted each frame, so a room on a deck's east edge no longer runs its wall into the rail's words.
 - The bag says what else a thing takes: `ItemRow::also_takes`, the registered names of its `EquipShape::also`, so a two-hander reads `goes on the main hand, and takes the off hand` in the bag and `worn on the main hand and the off hand` once on. A game that builds an `ItemRow` by hand adds `also_takes: Vec::new()`.
+- A game's facet in the bag reads under the thing's own numbers and above where it goes, where it read last, under the muted placement line and what the thing does: Foundry's `sees 8 in the dark` sits under a helmet's armor, and `dry` under the shot it stops. Nothing a game writes changes.
 
 ## 0.3.0
 
