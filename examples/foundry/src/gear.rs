@@ -396,19 +396,19 @@ pub fn effect_kinds() -> EffectKinds {
     std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
 }
 
-/// The sounds `items.ron` names: a grenade bursting, and smoke hissing
-/// out of one. Declared by [`FoundryPlugin`](crate::plugin::FoundryPlugin)
-/// after the alarm's, in this order.
-pub const GRENADE_SOUNDS: [&str; 2] = ["blast", "hiss"];
+/// The sounds Foundry declares beside the engine's, in the order
+/// [`FoundryPlugin`](crate::plugin::FoundryPlugin) declares them: the
+/// alarm's, then the two `items.ron` names, a grenade bursting and smoke
+/// hissing out of one. One list, walked by the plugin and by [`sounds`],
+/// so the ids an armory loaded with no app gives them are the app's.
+pub const SOUNDS: [&str; 3] = [crate::droids::ALARM_SOUND, "blast", "hiss"];
 
 /// The sounds a Foundry app declares, for loading an [`Armory`] where no
 /// app is running, as [`effect_kinds`] is for its effects: the engine's
-/// own, then the alarm's and the grenades', in the order
-/// [`FoundryPlugin`](crate::plugin::FoundryPlugin) declares them, so an
-/// armory loaded here names each sound by the id the app gives it.
+/// own, then [`SOUNDS`].
 pub fn sounds() -> Sounds {
     let mut sounds = Sounds::default();
-    for name in std::iter::once(crate::droids::ALARM_SOUND).chain(GRENADE_SOUNDS) {
+    for name in SOUNDS {
         sounds.declare(name);
     }
     sounds
@@ -1681,6 +1681,19 @@ mod tests {
     fn a_grenade_is_heard_as_far_as_its_noise_carries_and_no_further() {
         assert_eq!(heard_down_the_lane("frag grenade", "blast", 14, 15), (true, false), "a blast carries fourteen steps");
         assert_eq!(heard_down_the_lane("smoke grenade", "hiss", 6, 7), (true, false), "a hiss carries six");
+    }
+
+    /// An armory loaded with no app, as `foundry --prefabs` and a test
+    /// with no world load one, names every sound by the id the app gives
+    /// it, so a grenade's `blast` is the same sound in either.
+    #[test]
+    fn the_sounds_built_with_no_app_have_the_ids_the_app_gives_them() {
+        let app = crate::testing::headless(RunSeed(1));
+        let (theirs, mine) = (app.world().resource::<Sounds>(), sounds());
+        for name in Sounds::BUILT_IN.into_iter().chain(SOUNDS) {
+            assert!(mine.get(name).is_some(), "{name} is declared with no app");
+            assert_eq!(mine.get(name), theirs.get(name), "{name} has one id with an app and without");
+        }
     }
 
     #[test]

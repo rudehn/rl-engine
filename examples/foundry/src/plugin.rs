@@ -76,13 +76,11 @@ impl Plugin for FoundryPlugin {
         // The commando fades while a cloak hides them, in the pass it went
         // on or came off.
         app.add_systems(Turn, crate::run::fade_the_unseen.in_set(TurnSet::React));
-        // The alarm is a sound of Foundry's own, declared once so
-        // `sound_alarm` finds it by name, and the grenades' after it, so
-        // `items.ron` names them where the armory loads it. In this order,
-        // which is the order `gear::sounds` declares them in for an armory
-        // loaded with no app.
-        app.add_sound(crate::droids::ALARM_SOUND);
-        for sound in crate::gear::GRENADE_SOUNDS {
+        // Foundry's own sounds, the alarm's that `sound_alarm` finds by
+        // name and the grenades' that `items.ron` names, declared from the
+        // one list `gear::sounds` also walks for an armory loaded with no
+        // app, so each has the same id in both.
+        for sound in crate::gear::SOUNDS {
             app.add_sound(sound);
         }
         // Chained, and in this order: the engine's own `schedule`
