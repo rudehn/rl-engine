@@ -755,10 +755,13 @@ mod tests {
     }
 
     #[test]
-    fn a_trigger_making_a_noise_makes_one_where_it_lands_by_its_user_heard_in_range_and_not_out_of_it() {
+    fn a_trigger_making_a_noise_makes_one_where_it_lands_by_its_user_heard_in_range_and_not_out_of_it_nor_by_its_user() {
         let mut field = Field::with(Some(RULES), with_effects);
         field.app.init_resource::<Made>().add_systems(PostUpdate, keep_made);
         field.app.init_resource::<Told>().add_systems(PostUpdate, tell);
+        // The thrower can hear, and stands a step from where it lands, so
+        // only being its maker keeps it from hearing its own noise.
+        field.app.world_mut().entity_mut(field.player).insert(Hearing(HearingStats { threshold: 0, memory: 3 }));
         let near = field.listener(4, 0, 0, 1);
         let far = field.listener(0, 9, 0, 1);
         let thud = field.app.world().resource::<Sounds>().get("thud").expect("declared");
@@ -776,6 +779,7 @@ mod tests {
             "three steps off, a loudness of six is heard: {told:?}"
         );
         assert!(told.iter().all(|h| h.listener != far), "nine off, it is not: {told:?}");
+        assert!(told.iter().all(|h| (h.listener, h.sound) != (player, thud)), "its thrower, a step off, does not hear its own: {told:?}");
         assert_eq!(field.heard(near).last_known(), Some(at), "and the one that heard it knows where");
         assert!(!field.heard(far).is_alert());
     }
@@ -809,6 +813,21 @@ mod tests {
         let typo = r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "step", loudness: 3, volume: 3))])]"#;
         let errs = triggers(&app, typo).expect_err("an argument nobody reads is a typo");
         assert!(errs.iter().any(|e| e.contains("volume")), "{errs:?}");
+    }
+
+    /// A noise of nought or less carries to nobody, so writing one is a
+    /// mistake the load names rather than a grenade that lands in silence.
+    #[test]
+    fn a_noise_too_quiet_to_carry_a_step_is_refused_naming_its_loudness() {
+        let mut app = App::new();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        for loudness in [0, -2] {
+            let silent = format!(r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "step", loudness: {loudness}))])]"#);
+            let errs = triggers(&app, &silent).expect_err("a noise nobody can hear refuses");
+            assert!(errs.iter().any(|e| e.contains("loudness") && e.contains(&loudness.to_string())), "{errs:?}");
+        }
+        let quietest = r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "step", loudness: 1))])]"#;
+        assert!(triggers(&app, quietest).is_ok(), "a loudness of one carries a step, and builds");
     }
 
     #[test]

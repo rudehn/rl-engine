@@ -427,7 +427,8 @@ impl FromArgs for Emit {
 pub struct Noise {
     /// What it sounds like.
     pub sound: crate::noise::SoundId,
-    /// How far it carries over open ground, in whole steps.
+    /// How far it carries over open ground, in whole steps; at least one,
+    /// since a content file asking for less is refused at load.
     pub loudness: i32,
 }
 
@@ -454,6 +455,12 @@ impl FromArgs for Noise {
         }
         use crate::noise::{Sound, Sounds};
         let a: Args = read_args(args)?;
+        // Refused rather than loaded, as a pulse's `every` of 0 is: a noise
+        // that carries no step is heard by nobody, and a grenade written
+        // that way would land in a silence nothing explains.
+        if a.loudness < 1 {
+            return Err(format!("a noise's `loudness` of {} carries no step; it is at least 1", a.loudness));
+        }
         // The engine's first sound is in every `Sounds`, so names that
         // cannot find it were built without any, which is the loader's
         // mistake rather than the file's, and the message says where to fix it.
