@@ -3,6 +3,10 @@
 Status: design, agreed in conversation on 2026-09-26 against `main` at `f2229bd`.
 Nothing here is built yet.
 
+Superseded in part on 2026-09-27 by `docs/superpowers/specs/2026-09-27-enchant-model-design.md`, and kept as it was agreed.
+`Landing::level` and the `per_level` arguments of `Harm`, `Mend` and `Inflict` below are gone: a carrier's `EffectBonus` reaches its effects instead, and the engine never learns what a level is.
+Foundry's top-level `pulse:` and `attuned:` and its `enchant: (most:)` are gone too: a pulse's period is its trigger's `every`, a charge that refills only while worn is `recharge: (every:, while_worn: true)`, and everything a level changes is written in one `enchant` block with its `max`.
+
 ## 1. What this is for
 
 Foundry's armor is a number: plate is armor and a resistance, a helmet is armor and dark sight.

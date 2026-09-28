@@ -52,7 +52,7 @@ One ability for you, one for the ratlings, and both of them written in a file ra
 ```
 
 An aim, a shape, what it costs, how long before it may be used again, and a list of effects.
-The engine ships seven effects and a game registers its own beside them with `add_effect`, so `add_engine_effects` is what makes `Harm` and `Mend` names this file may use.
+`add_engine_effects` registers the engine's seven effects that need no other subsystem, and a game registers its own beside them with `add_effect`, so it is what makes `Harm` and `Mend` names this file may use.
 
 The shape is the engine's targeting footprint: `Ball(range, radius)` here, and `Bolt`, `Beam`, `Cone`, `Adjacent` and `Own` beside it.
 Nothing about the shape is written twice, because the cursor previews with the same footprint the resolver lands the effects with.

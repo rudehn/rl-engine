@@ -13,9 +13,10 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/gas.rs
+            crates/rl-bevy/src/noise.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: fdf6ee7d -->
+     fingerprint: 8c5ec8cc -->
 
 # Abilities
 
@@ -32,7 +33,7 @@ It adds `EffectsPlugin` if the game has not, whose `EffectRng` is the stream eve
 It adds `offer_abilities` in `DecideSet::Offer`, `perceive_abilities` in `PerceiveSet::Annotate`, `refresh_known` in `TurnSet::React`, and `land_abilities` in `LandSet::Ability` chained ahead of `resolve_abilities` in `ResolveSet::Act`, because what is already in the air comes down before anything else is loosed.
 `EffectsPlugin` registers `Afflict`, `Cure` and `DamageEvent`: `EffectWorld` writes all three, a writer for an unregistered message fails its system at startup, and a game with abilities should not have to add the status and combat plugins to find that out.
 Every `Actor` is given an empty `Known`, `Pools` and `Cooldowns` as it is spawned, so an actor carrying nothing but `Grants` can use what it was granted.
-The engine's own effects are registered separately, by `add_engine_effects()` for the seven that need no subsystem and by `FirePlugin` and `GasPlugin` for the two that do, so an ability file naming `Ignite` or `Emit` loads exactly when the game has fire or gas.
+The engine's own effects are registered separately, by `add_engine_effects()` for the seven that need no subsystem and by `FirePlugin`, `GasPlugin` and `NoisePlugin` for the three that do, so an ability file naming `Ignite`, `Emit` or `Noise` loads exactly when the game has fire, gas or hearing.
 `ThrowingPlugin` is its own opt-in and depends on items and combat both, because a throw is an item leaving a bag and a blow down the damage pipeline, and neither of those plugins has to know the other exists.
 
 ## The model
@@ -53,17 +54,17 @@ A refusal costs the player nothing and keeps the turn, and costs anyone else the
 A `Ball` flies as a bolt and bursts where it lands with `rl_grid::burst`, which stops at walls and not at whoever stands in the way, and bursts on the near side of a wall it flew into.
 `Bystanders::land` is the one answer to where a use goes, and `aim_blocked` the other half of the gate: whether an ability may be used at all against whether it may be used *here*.
 The targeting cursor previews through that same call, so the cells it paints are the cells that will be hit, and a projectile stopped short of where it was pointed is `Blocked::OutOfReach` rather than a burst on a spot nobody chose.
-`Landing` is the result: the user, the ability, the origin, the aim, every cell covered, the flight path, where a projectile stopped, everyone under it the aim wanted there, and a level, nought for an ability, which is only ever nonzero for a worn or thrown thing's [Enchant](items.md).
+`Landing` is the result: the user, the ability, the origin, the aim, every cell covered, the flight path, where a projectile stopped, everyone under it the aim wanted there, and a `bonus`, the default `EffectBonus` that adds nothing for an ability, which only a thing's own carries more than, as [Effects](effects.md) says.
 Its `source` says what landed it, `Source::Ability`, `Trigger` or `Offer`, so an effect can tell a spell from a trap without assuming either, and only an ability has a look to fly.
 An ability with a look bursts over its footprint as a blast going out from where its projectile stopped, or from its user when it had none, so a ball goes off where it lands and a nova, a cone or a line goes out from whoever cast it.
-An `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, level)` a menu reads at that level, and `FromArgs` is its constructor, kept separate so the trait a game writes stays object-safe.
+An `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, and `FromArgs` is its constructor, kept separate so the trait a game writes stays object-safe.
 `EffectWorld` asks for what another subsystem owns rather than doing it: damage, a status on, a status off, along with the effect stream, cues, and `Commands` for whatever the engine never thought of.
 Asking is what keeps a fireball mitigated by the same armor a sword is, and moving an actor is the one exception, since no other subsystem owns it: `position`, `sight_of`, `is_free`, `place` and `slide` are methods on it, and `slide` is what keeps a shove out of a wall.
 `app.add_effect::<E>()` files `E` under its `KIND` in `EffectKinds`, and an `EffectSpec` is the `(kind, chance, args)` every content file that lands effects is read for, its arguments left as text for whoever registered the kind and a chance above 100 refused at load as the typo it is wherever it appears.
 `Effects` is a list of those built, and the one thing three carriers share: an ability an actor knows, an offer a prop makes, and the triggers a prop or an item carries, which [Effects](effects.md) describes.
 `Effects::build` builds every spec or reports every one that would not build, and `Abilities::build` runs it once per ability, keeps the results as a `Vec<Effects>` parallel to the ids and puts the ability's name in front of each failure.
-`Effects::land` rolls each entry against its own chance from `EffectRng` before applying it, so a trap and a stim are dealt from the same deck a spell is, and `Effects::describe` is the fold a menu prints: one line per effect that has something to say, with its chance in front when it is not certain; `Abilities::describe` reads it at level nought, since an ability's own numbers are not an enchant's to grow.
-The effects module holds `Effects` and nine effects: `add_engine_effects()` registers the seven that need no subsystem, `Harm`, `Mend`, `Inflict`, `Cleanse`, `Shove`, `Pull` and `Teleport`, and `Ignite` and `Emit` sit beside them to be registered by fire and gas instead; all nine live in that one module rather than each in the module it asks, so effects depend on combat, statuses, fire and gas and none of the four depends back.
+`Effects::land` rolls each entry against its own chance from `EffectRng` before applying it, so a trap and a stim are dealt from the same deck a spell is, and `Effects::describe` is the fold a menu prints: one line per effect that has something to say, with its chance in front when it is not certain; `Abilities::describe` reads it with the default bonus, since an ability's own numbers are not a thing's to grow.
+The effects module holds `Effects` and ten effects: `add_engine_effects()` registers the seven that need no subsystem, `Harm`, `Mend`, `Inflict`, `Cleanse`, `Shove`, `Pull` and `Teleport`, and `Ignite`, `Emit` and `Noise` sit beside them to be registered by fire, gas and hearing instead; all ten live in that one module rather than each in the module it asks, so effects depend on combat, statuses, fire, gas and noise and none of the five depends back.
 `Known` is the set of abilities an actor knows, rebuilt every `TurnSet::React` from its own `Grants` and nothing else: a thing in the bag never lends an ability, because what an item does is its own triggers.
 `Offered` is the turn-holder's abilities sorted into `usable` and `refused` once a pass by the gate the resolver uses, read through `usable_by` and `why_for`, which answer only for the actor it was worked out for.
 `perceive_abilities` copies `usable` into `Snapshot::usable` as `Usable { ability, aim, mode }`, everything the `UseAbility` tactic needs to score a footprint and nothing about what the ability does.
@@ -88,7 +89,7 @@ A verb the engine does not ship is a type with two impls and one registration li
 pub struct Plunder;
 
 impl Effect for Plunder {
-    fn describe(&self, _: &Registries, _: i32) -> String {
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
         "spills its purse at its feet".to_string()
     }
 
@@ -138,7 +139,7 @@ What an ability was called on for is never asked; a use is an `AbilityEvent`, an
 
 `rl-rules` is tier 1 and has no Bevy in it: `ability.rs` decides and never acts, answering whether a use is permitted over borrowed views of the user, so the whole gate is tested against a `Gates` and a `Purse` filled by hand with no `App` anywhere.
 `Aim`'s five predicates live there too, which is what lets the resolver, the cursor's preview and the scoring in `tactics.rs` share one rule rather than drifting four ways apart.
-`rl-bevy` is tier 2 and owns everything that touches the world: `ability.rs` is the action, the resolver and the state a use spends, and the effects module is the seam every effect is registered through, `Effects`, and the nine the engine ships through that seam.
+`rl-bevy` is tier 2 and owns everything that touches the world: `ability.rs` is the action, the resolver and the state a use spends, and the effects module is the seam every effect is registered through, `Effects`, and the ten the engine ships through that seam.
 The seam sits there rather than in `ability.rs` because an ability is not the only thing that lands a list: what an ability, a prop and an item share is how a list is built, rolled and described, never when it lands or on whom, and that much was written three times before it was written once.
 The effects sit in a module of their own rather than each in the subsystem it asks, because `Harm` in `combat.rs` would make combat depend on abilities to implement a trait, and the dependency is meant to run the other way.
 `throwing.rs` is beside them rather than inside items or combat, for that same reason in two directions at once.

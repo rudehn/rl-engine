@@ -92,7 +92,7 @@ An empty thing is refused before the turn is spent, so pressing use on a dry wan
 `Consumable` counts charges: `left` of `max`, `WhenEmpty::Destroyed` or `Kept` at zero, and an optional `Recharge` that gives one back for each period of the clock.
 A stim holds one; a wand holds five and is kept when empty, refilling as the turns pass.
 
-A worn thing that holds charges may be `Attuned`: it refills only while worn and is emptied each time it is put on.
+A worn thing that holds charges may be `Attuned`: it refills only while worn and is emptied each time it is put on, which Foundry writes on its charges as `recharge: (every:, while_worn: true)`.
 That is the anti-swap rule, and it is on the thing rather than on the wearer because it is a fact about the thing: a worn thing that hides its wearer is earned by wearing it.
 Equip time was the other candidate, and it was rejected as the rule because time alone still lets a player swap between fights.
 A pulse is attuned by nature, since its clock only runs while worn.
@@ -114,9 +114,26 @@ A thing spent to nothing is marked `Spent` and kept, as the dead are, until the 
 - **An engine item schema.** `triggers`, `consumable`, `throw` and the rest are Foundry's own field names in Foundry's own file; Corsair's happen to match and need not. What is shared is the components and the authored effect and trigger forms, never the file.
 - **Items as offers.** A crate you open and a medkit you use are nearly the same shape, and props' offers already carry a verb, a time cost and a refusal reason in words. Only a use is chosen, though; a landing or a hit is not, so it would carry half of what an item does. The refusal reasons are the part worth taking later, onto the `use` trigger.
 
-## 7. Where the pieces are
+## 7. A level, and the one place a game writes what it does
 
-- `crates/rl-bevy/src/effects/`: `Effects`, the engine's effects, `Moments`, `Triggers`, `Fired` and `land_triggers`.
+A `+2` thing is the same definition as a `+0` one, spawned stronger.
+`Enchant` records the level and its rolled affixes, and no system of the engine's reads it; the affix model's level-scaled grants are functions the game calls while it spawns the thing.
+Everything a level changes is a component the game writes when it spawns the thing, the level already applied: `Armor`, an attack's dice, `Bestows`, a `Pulse`'s period, and `EffectBonus` for what its effects land, which `docs/design/effects.md` section 8 has.
+So what a level does is the game's rule, written once where the game chooses, and the engine never learns the word.
+
+Foundry writes it in the item's `enchant` block, the one place a reader looks to learn what a `+2` is: `max`, the highest level it is found at, and what one level adds, `armor`, `damage`, `dark_sight`, `pulse`, `turns` and `amount`.
+The item's own numbers stay where they are and are what it is at `+0`.
+Armor and damage are inferred, +1 a level on a thing that has any, because that is what a reader expects of a `+2` plate or blade; every other key is nought unless written, because a reader cannot tell a helmet's dark sight grows unless the file says so.
+Balance is set by `max`, 3 for plain armor, 5 for a weapon and 9 for the two plates that do something worn, rather than by a slower rate, since the standard rate is the one a reader expects.
+Each key is refused on a thing with nothing it adds to, `armor` and `damage` written even as nought included, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less.
+What only a worn thing has is written where it belongs rather than at the item's top level: a pulse's period on its pulse trigger's `every`, and a charge that refills only while worn on its charges, `recharge: (every:, while_worn: true)`, which spawns the thing `Attuned`.
+
+The approaches weighed, on 2026-09-27, are in `docs/superpowers/specs/2026-09-27-enchant-model-design.md`.
+Scaling written on the number where it is used, `turns: (base: 10, per_level: 2)`, keeps level rules on the triggers, which is the scatter this removed; inferring every numeric key hides from a reader what grows; and the first build's `per_level` in an effect's arguments, with the level on the `Landing`, put the rule where no reader of an item looked.
+
+## 8. Where the pieces are
+
+- `crates/rl-bevy/src/effects/`: `Effects`, the engine's effects, `EffectBonus`, `Moments`, `Triggers`, `Fired` and `land_triggers`.
 - `crates/rl-bevy/src/consumable.rs`: `Consumable`, which moments spend, `spend_charges` and `recharge_charges`.
 - `crates/rl-bevy/src/items.rs`: the actions, `ItemEvent`, `Bestows` and the gear fold.
 - `crates/rl-bevy/src/ability.rs`: `Grants` and `Known`, an actor's own.

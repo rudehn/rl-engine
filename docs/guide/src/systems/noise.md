@@ -11,9 +11,11 @@
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/doors.rs
             crates/rl-bevy/src/items.rs
+            crates/rl-bevy/src/effects/engine.rs
+            crates/rl-bevy/src/props.rs
             crates/rl-ui/src/view/nearby.rs
             crates/rl-ui/src/panel/nearby.rs
-     fingerprint: 3a7e2246 -->
+     fingerprint: 039d7a3f -->
 
 # Noise
 
@@ -30,6 +32,7 @@ It chains `make_engine_noise` and `resolve_noise` in `TurnSet::Listen`, which si
 `age_heard` goes in `DecideSet::Notice`, beside stealth's own aging, so a sound and a sighting grow stale at one point in a turn, and `follow_heard` in `PerceiveSet::Annotate`, where a mind's knowledge is filled in.
 It declares `depends_on::<CorePlugin>` and nothing else: the `Thinking` it annotates, the `Stepped` the move resolver writes and the `DoorEvent` a door writes are all `CorePlugin`'s.
 It registers `DamageEvent` and `ItemEvent` itself, because a game may have added neither combat nor items, and then those queues stay empty rather than panicking a reader.
+It registers the `Noise` effect as well, so content that makes a sound loads exactly when the game can hear one.
 Without the plugin nothing is heard however close it is made, and a `Hearing` on an actor sits there doing nothing.
 
 ## The model
@@ -42,6 +45,8 @@ Without the plugin nothing is heard however close it is made, and a `Hearing` on
 The engine reads `maker` for one thing only, that its maker does not hear it: its own step is the one sound a listener knows the source of, and without that a listener walking toward a fight hears its own foot louder than the fight and forgets the fight for it.
 `NoiseHeard { listener, at, sound, maker, left }` is written for every listener a sound reached, the player included, and `left` is what was still on it when it arrived, in hundredths of a step, so the same shout arrives louder next door than across a deck.
 `SoundId` is interned by `Sounds`, the engine's four first as `Sounds::STEP`, `STRIKE`, `DOOR` and `LANDING`; a game declares its own with `app.add_sound("shout")` and finds it again by name with `Sounds::get`, so there is no closed list of what can make a noise.
+`SoundNames` puts every sound declared so far in scope where content is loaded, `registries.names().sounds(&sounds)`, since a sound is interned while the app is built and is not in `Registries`; the engine's prop loader chains it on itself, and a game with noise chains it wherever it builds its items' or abilities' effects.
+`Noise { sound, loudness }` is the effect content makes a sound with, `(kind: "Noise", args: (sound: "blast", loudness: 14))`: one `MakeNoise` by the landing's user where a projectile stopped, else where it was aimed, one sound however wide the burst, and a sound nobody declared or a `loudness` below one refused at load.
 `make_engine_noise` writes those four: every `Stepped` the move resolver let through, at the cell stepped to; one sound per attacker per pass however many strikes its `DamageEvent`s carried, at the attacker's cell, with a mend and damage that has no attacker making none; a `DoorEvent` opened or closed, at the door; and an `ItemEvent::Thrown` where the thing came to rest.
 `resolve_noise` then floods each one.
 It skips a noise no listener on this map is within `loudness` Chebyshev tiles of, since no flood carries further than that, and otherwise builds `Earshot`, a single `DijkstraMap` reused by every flood so hearing allocates nothing once it has grown, over a square of side `2 * loudness + 1` clipped to the loaded window.
@@ -109,6 +114,7 @@ pub const NOISE: NoiseRules = NoiseRules { step: 0, strike: 10, door: 0, landing
 ## The line
 
 The engine decides how far a sound carries and who it reaches; a game decides what is worth making a sound about, and how loud.
+A thing that makes a sound where it lands, a grenade or an alarm plate, says so in its content through `Noise` rather than in a system of the game's, so its loudness sits in the file beside what else it does and its thrower, as its maker, does not hear it.
 A listener is told a place, and the engine tells it nothing about what happened there: `sound` and `maker` ride along for a game's own reactions and the engine reads neither, except to spare a listener its own.
 Hearing and stealth are two levers that never read each other: `Stealth::quiet` is how hard you are to see and `Footfall` is how loud you are to walk, and all hearing does for noticing is bring a monster close, where the notice roll is likely to land.
 What follows a sound is a tactic reading `last_known`: `SearchLastKnown` walks to the place, `Keep::enemies` keeps station on it once nothing is in sight and `Hover` holds while it is remembered, each of them only for a mind whose `Wits` hold `SEARCHES`, so a mind without the wit, or with none of those tactics in its brain, hears the sound and does nothing with it.
