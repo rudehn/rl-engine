@@ -660,8 +660,8 @@ fn pulse_period(every: u32, per_level: i32, level: i32) -> u32 {
     (every + per_level * level).max(every.min(turn)) as u32
 }
 
-/// Spawns `id` plain, at `+0`: what the cheat menu puts in the pack, what
-/// a stack is made as, and what a test hands the commando.
+/// Spawns `id` plain, at `+0`: what a stack is made as and what a test
+/// hands the commando.
 pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, registries: &Registries) -> Entity {
     spawn_item_at(commands, armory, id, 0, registries)
 }

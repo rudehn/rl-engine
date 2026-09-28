@@ -4,11 +4,11 @@
 //! `\` opens it over a run. Each row is a key as well as a row: `r` reveals
 //! the deck, `h` heals, `g` is godmode, `n` and `p` take the lift a deck
 //! down or up, and `s` searches the armory by name and puts what is picked
-//! in the pack. Two of them are toggles held in [`Cheats`] and kept true by
-//! a system each rather than done once, so they outlast a deck change and a
-//! new run: [`keep_godmode`] keeps the engine's
-//! [`Invulnerable`] on the commando, and
-//! [`reveal_the_deck`] marks every deck the commando stands on as seen.
+//! in the pack, at the level the arrows across set. Two of them are toggles
+//! held in [`Cheats`] and kept true by a system each rather than done once,
+//! so they outlast a deck change and a new run: [`keep_godmode`] keeps the
+//! engine's [`Invulnerable`] on the commando, and [`reveal_the_deck`] marks
+//! every deck the commando stands on as seen.
 //!
 //! Nothing here reaches past the engine's own doors. Godmode is the
 //! engine's marker, so a hit still lands and says it had no effect; a deck
@@ -26,7 +26,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_core::{Id, Rect};
 
 use crate::decks::{DECKS, deck_of, map_of};
-use crate::gear::{Content, ItemDef, spawn_item};
+use crate::gear::{Content, ItemDef, spawn_item_at};
 use crate::input::Binds;
 
 /// The name the menu's modal is declared under.
@@ -111,6 +111,9 @@ pub struct CheatScreen {
     search: ListMenu,
     query: String,
     matches: Vec<Id<ItemDef>>,
+    /// The level the search makes a thing at, set with the arrows across;
+    /// a thing is still made no higher than its own `max`.
+    level: i32,
 }
 
 impl CheatScreen {
@@ -129,8 +132,9 @@ impl CheatScreen {
         let mut found: Vec<(Id<ItemDef>, String)> =
             armory.defs.iter().filter(|(_, d)| d.name.to_lowercase().contains(&query)).map(|(id, d)| (id, d.name.clone())).collect();
         found.sort_by(|a, b| a.1.cmp(&b.1));
-        self.search.title = format!("Add to pack: {}_", self.query);
-        self.search.hints = "type to search \u{2022} \u{2191}\u{2193} pick \u{2022} enter take \u{2022} esc back".to_string();
+        let at = if self.level > 0 { format!(" at +{}", self.level) } else { String::new() };
+        self.search.title = format!("Add to pack{at}: {}_", self.query);
+        self.search.hints = "type \u{2022} \u{2191}\u{2193} pick \u{2022} \u{2190}\u{2192} level \u{2022} enter take \u{2022} esc back".to_string();
         self.search.empty = "Nothing by that name.".to_string();
         self.search.set_rows(found.iter().map(|(_, name)| MenuRow::new(name.clone())).collect());
         self.matches = found.into_iter().map(|(id, _)| id).collect();
@@ -215,11 +219,12 @@ impl Acts<'_, '_> {
         false
     }
 
-    /// Puts one `id` in the commando's pack, merged into a stack of it if
-    /// there is one, the way a pickup merges it.
-    fn give(&mut self, id: Id<ItemDef>) {
+    /// Puts one `id` in the commando's pack at `level`, or its `max` if
+    /// lower, merged into a stack of it if there is one, the way a pickup
+    /// merges it.
+    fn give(&mut self, id: Id<ItemDef>, level: i32) {
         let armory = self.content.armory();
-        let item = spawn_item(&mut self.commands, armory, id, self.content.registries());
+        let item = spawn_item_at(&mut self.commands, armory, id, level, self.content.registries());
         let Ok((me, _, mut bag)) = self.player.single_mut() else { return };
         let stacking = armory.defs.get(id).stack;
         let key = id.index() as u64;
@@ -339,6 +344,18 @@ pub fn search_keys(input: Res<ButtonInput<KeyCode>>, modals: Res<Modals>, mut sc
     }
     if screen.query != before {
         screen.search.selected = 0;
+    }
+    let level = screen.level;
+    if input.just_pressed(KeyCode::ArrowRight) {
+        // No higher than the highest `max` in the armory, so the title
+        // never promises a level nothing is made at.
+        let most = acts.content.armory().defs.iter().filter_map(|(_, d)| d.enchant.map(|e| e.max)).max().unwrap_or(0);
+        screen.level = (level + 1).min(most);
+    }
+    if input.just_pressed(KeyCode::ArrowLeft) {
+        screen.level = (level - 1).max(0);
+    }
+    if screen.query != before || screen.level != level {
         screen.filter(&acts.content);
     }
     if input.just_pressed(KeyCode::ArrowUp) {
@@ -349,7 +366,8 @@ pub fn search_keys(input: Res<ButtonInput<KeyCode>>, modals: Res<Modals>, mut sc
     }
     let take = input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::NumpadEnter);
     if take && let Some(id) = screen.matches.get(screen.search.selected).copied() {
-        acts.give(id);
+        let level = screen.level;
+        acts.give(id, level);
     }
 }
 
@@ -546,6 +564,26 @@ mod tests {
         assert_eq!(said, ["You pick up a frag grenade.", "You pick up 2 frag grenades."], "and the narrator says what arrived, once for each");
         press(&mut app, KeyCode::Escape);
         assert_eq!(top(&app), Some(MENU), "escape steps back to the menu");
+    }
+
+    /// The arrows across set the level the search makes a thing at, said
+    /// in its title, so a `+2` rifle can be tried without finding one; a
+    /// thing is still made no higher than its own `max`, and a thing that
+    /// takes no levels is made plain.
+    #[test]
+    fn left_and_right_set_the_level_the_search_makes_a_thing_at() {
+        let (mut app, me) = playing();
+        keys(&mut app, &[KeyCode::Backslash, KeyCode::KeyS, KeyCode::ArrowRight, KeyCode::ArrowRight, KeyCode::ArrowRight, KeyCode::ArrowLeft]);
+        assert!(app.world().resource::<CheatScreen>().search.title.starts_with("Add to pack at +2"), "{}", app.world().resource::<CheatScreen>().search.title);
+        keys(&mut app, &[KeyCode::KeyR, KeyCode::KeyI, KeyCode::KeyF, KeyCode::KeyL, KeyCode::KeyE, KeyCode::Enter]);
+        keys(&mut app, &[KeyCode::ArrowRight; 9]);
+        keys(&mut app, &[KeyCode::Enter]);
+        keys(&mut app, &[KeyCode::Backspace; 5]);
+        keys(&mut app, &[KeyCode::KeyF, KeyCode::KeyR, KeyCode::KeyA, KeyCode::KeyG, KeyCode::Enter]);
+        crate::testing::settle(&mut app);
+        let bag = app.world().get::<Inventory>(me).unwrap().items.clone();
+        let names: Vec<&str> = bag.iter().map(|i| app.world().get::<Name>(*i).unwrap().as_str()).collect();
+        assert_eq!(names, ["slug rifle +2", "slug rifle +5", "frag grenade"], "at +2, at its max past it, and a grenade plain");
     }
 
     /// What is typed into the search is typed, not played: `l` is a step
