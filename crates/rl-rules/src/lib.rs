@@ -33,6 +33,8 @@
 //!   but a fixed item's resolved at load; the terrain and the stamp are
 //!   `rl-mapgen`'s.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
+//! - [`work`]: one thing an actor does across many turns, counted in its
+//!   own turns, and the one cell it reaches its target from.
 //! - [`events`]: facts, counters and quests as data over what happened.
 //! - [`balance`]: threat scoring and the spawn-band report, so content is
 //!   checked from the command line.
@@ -72,6 +74,7 @@ pub mod prop;
 pub mod role;
 pub mod stats;
 pub mod status;
+pub mod work;
 
 pub use ability::{AbilityDef, AbilityId, Aim, Area, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, TriggerSpec, blocked, read_args};
 pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot, range_penalty};
@@ -96,6 +99,7 @@ pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, 
 pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
+pub use work::{Work, WorkKind, WorkKindId};
 
 /// The names most callers want in scope.
 pub mod prelude {
