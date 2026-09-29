@@ -20,7 +20,7 @@ use crate::panel::nearby::relation_tone;
 use crate::panel::{bar, clear, clip, frame};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::inspect::inspect_modal;
-use crate::view::{InspectView, InspectViewPlugin};
+use crate::view::{InspectView, InspectViewPlugin, WorkRow};
 
 /// Where the inspect panel is drawn.
 #[derive(Resource, Debug, Clone)]
@@ -36,6 +36,13 @@ pub struct InspectLayout {
     /// How the cell the cursor sits on is marked. Four ASCII ticks round
     /// it by default, breathing, so the cell keeps its own glyph.
     pub cursor: CursorStyle,
+    /// What someone at work on something is said to be doing: `{doing}`
+    /// is the kind's word, `{target}` what it is working on, `{left}` the
+    /// turns left counted ("4 turns", "1 turn") and `{n}` the bare number.
+    /// The first letter is capitalised.
+    pub working: String,
+    /// The same, for work done to nothing in particular.
+    pub working_alone: String,
 }
 
 /// Draws [`InspectView`] and the cursor on the map.
@@ -52,7 +59,16 @@ impl InspectPanel {
             hints: "move \u{2022} tab next \u{2022} esc close".into(),
             empty: "Nothing here.".into(),
             cursor: CursorStyle::ticks(),
+            working: "{doing} the {target}, {left} left".into(),
+            working_alone: "{doing}, {left} left".into(),
         })
+    }
+
+    /// Sets how work is described: with a target, and without one.
+    pub fn working(mut self, with_target: impl Into<String>, alone: impl Into<String>) -> Self {
+        self.0.working = with_target.into();
+        self.0.working_alone = alone.into();
+        self
     }
 
     /// Sets the title in the top border.
@@ -101,6 +117,21 @@ pub fn outlook_tone(outlook: Outlook) -> ToneId {
         Outlook::Even => Tones::NOTICE,
         Outlook::Grim => Tones::BAD,
         Outlook::Deadly => Tones::BAD,
+    }
+}
+
+/// One line saying what someone is working at, from a template.
+pub fn working_line(template: &str, work: &WorkRow) -> String {
+    let left = if work.left == 1 { "1 turn".to_string() } else { format!("{} {}", work.left, rl_core::noun::plural("turn")) };
+    let line = template
+        .replace("{doing}", &work.doing)
+        .replace("{target}", work.target.as_deref().unwrap_or(""))
+        .replace("{left}", &left)
+        .replace("{n}", &work.left.to_string());
+    let mut chars = line.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => line,
     }
 }
 
@@ -167,6 +198,13 @@ pub fn draw_inspect(
     if y < inner.bottom() {
         let whereabouts = if ground.is_empty() { format!("{} tiles away", subject.distance) } else { format!("{} tiles away, on {ground}", subject.distance) };
         terminal.print_on(inner.x, y, &clip(&whereabouts, width), palette.get(Tones::MUTED), bg);
+        y += 1;
+    }
+    if let Some(work) = &subject.work
+        && y < inner.bottom()
+    {
+        let template = if work.target.is_some() { &layout.working } else { &layout.working_alone };
+        terminal.print_on(inner.x, y, &clip(&working_line(template, work), width), palette.get(Tones::NOTICE), bg);
         y += 1;
     }
     if let Some(duel) = view.duel
@@ -282,5 +320,15 @@ mod tests {
         stage.press(CursorKeys::default().next);
         let rows = stage.rows();
         assert!(rows.iter().any(|r| r.contains("2 tiles away, on floor")), "{rows:#?}");
+    }
+
+    #[test]
+    fn the_working_line_reads_as_a_sentence_and_counts_turns_right() {
+        let work = |target: Option<&str>, left| crate::view::WorkRow { doing: "mending".into(), target: target.map(String::from), left };
+        let layout = InspectPanel::new(Rect::new(0, 0, 30, 12)).0;
+        assert_eq!(working_line(&layout.working, &work(Some("rag doll"), 4)), "Mending the rag doll, 4 turns left");
+        assert_eq!(working_line(&layout.working, &work(Some("rag doll"), 1)), "Mending the rag doll, 1 turn left");
+        assert_eq!(working_line(&layout.working_alone, &work(None, 2)), "Mending, 2 turns left");
+        assert_eq!(working_line("{doing}: {n} cycles", &work(None, 2)), "Mending: 2 cycles", "a game's own template, with the bare number");
     }
 }

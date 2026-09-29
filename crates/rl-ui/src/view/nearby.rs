@@ -113,6 +113,7 @@ pub struct Around<'w, 's> {
     noise: rl_bevy::NoiseRunning<'w>,
     heard: Query<'w, 's, &'static rl_bevy::Heard>,
     stacks: Query<'w, 's, &'static Stack>,
+    work: crate::view::Workings<'w, 's>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
@@ -151,6 +152,7 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
                 (false, false, true) => Some(Alert::Unaware),
                 _ => None,
             };
+            row.work = around.work.row(sighting.entity);
         }
         if sighting.actor { view.actors.push(row) } else { view.things.push(row) }
     }
@@ -343,5 +345,23 @@ mod tests {
         stage.tick();
         stage.tick();
         assert_eq!(stage.app.world().resource::<NearbyView>().focused, None, "out of sight, so nothing is highlighted");
+    }
+
+    #[test]
+    fn a_row_says_what_an_actor_is_working_on_and_how_long_it_has_left() {
+        let mut stage = Stage::new_with((NearbyViewPlugin, rl_bevy::WorkPlugin), |app| {
+            rl_bevy::AddWork::add_work(app, "mending");
+        });
+        let kind = stage.app.world().resource::<rl_bevy::WorkKinds>().get("mending").unwrap();
+        let mender = stage.actor("mender", 'm', 2, 0);
+        let rag = stage.actor("rag doll", 'r', 3, 0);
+        let mut work = rl_rules::Work::new(kind, 10).on(rag);
+        work.done = 6;
+        stage.app.world_mut().entity_mut(mender).insert(rl_bevy::Working(work));
+        stage.tick();
+        let view = stage.app.world().resource::<NearbyView>();
+        let row = view.actors.iter().find(|r| r.entity == mender).unwrap();
+        assert_eq!(row.work, Some(crate::view::WorkRow { doing: "mending".into(), target: Some("rag doll".into()), left: 4 }));
+        assert_eq!(view.actors.iter().find(|r| r.entity == rag).unwrap().work, None, "and nothing on one not at work");
     }
 }
