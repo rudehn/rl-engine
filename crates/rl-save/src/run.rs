@@ -33,10 +33,10 @@
 use bevy::prelude::*;
 use rl_bevy::{
     Afflict, Afflicted, Counters, Dead, Emptied, EndOfFrame, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap, PlaceEntered,
-    Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, Wearable,
+    Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::Point;
-use rl_rules::Equipment;
+use rl_rules::{Equipment, Work};
 use ron::value::RawValue;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -380,6 +380,24 @@ pub struct EntityState {
     /// walks back to its cell after a load.
     #[serde(default)]
     pub post: Option<Point>,
+    /// What it was in the middle of, for an actor at work.
+    #[serde(default)]
+    pub working: Option<SavedWork>,
+}
+
+/// Work an actor was in the middle of, as a save keeps it: the kind by its
+/// word, so the order kinds were declared in never matters, and the target
+/// by save id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedWork {
+    /// The word the kind was declared by.
+    pub kind: String,
+    /// What it was done to, if anything.
+    pub target: Option<SaveId>,
+    /// Turns done.
+    pub done: u16,
+    /// Turns it takes.
+    pub needed: u16,
 }
 
 impl EntityState {
@@ -414,6 +432,12 @@ impl EntityState {
             (Some(_), Some(kind), Some(registries)) => Some(registries.props.name(kind.0).to_string()),
             _ => None,
         };
+        let working = match (e.get::<Working>(), world.get_resource::<WorkKinds>()) {
+            (Some(w), Some(kinds)) => {
+                Some(SavedWork { kind: kinds.name(w.0.kind).to_string(), target: w.0.target.map(|t| remap.save_id(t)), done: w.0.done, needed: w.0.needed })
+            }
+            _ => None,
+        };
         Self {
             at,
             health,
@@ -426,6 +450,7 @@ impl EntityState {
             remains,
             remains_as,
             post: e.get::<Post>().map(|p| p.0),
+            working,
         }
     }
 
@@ -457,6 +482,17 @@ impl EntityState {
             }
             worn
         });
+        // Work on something that did not come back is dropped: there is
+        // nothing left to work on. A kind the game no longer declares is
+        // dropped the same way, since nothing would ever finish it.
+        let working = self.working.as_ref().and_then(|saved| {
+            let kind = world.get_resource::<WorkKinds>()?.get(&saved.kind)?;
+            let target = match saved.target {
+                Some(id) => Some(remap.entity(id)?),
+                None => None,
+            };
+            Some(Working(Work { kind, target, done: saved.done, needed: saved.needed }))
+        });
         let Ok(mut target) = world.get_entity_mut(entity) else { return };
         if let Some((at, map)) = self.at {
             target.insert((Position(at), OnMap(map)));
@@ -480,6 +516,9 @@ impl EntityState {
         }
         if let Some(at) = self.post {
             target.insert(Post(at));
+        }
+        if let Some(working) = working {
+            target.insert(working);
         }
         // Last, and after the health a kind's own spawn gave it: a game
         // writes down what a thing is, never that it is dead, so what
@@ -884,7 +923,8 @@ mod tests {
 
     fn game_with(saves: Saves, plugin: SavePlugin) -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin));
+        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin, rl_bevy::WorkPlugin));
+        rl_bevy::AddWork::add_work(&mut app, "mending");
         let start = rl_bevy::testing::surface(&mut app);
         rl_bevy::testing::two_sides(&mut app);
         {
@@ -1077,6 +1117,44 @@ mod tests {
         back.update();
         assert_eq!(back.world().get::<Health>(ada2).map(|h| h.current), Some(10));
         assert!(back.world().get::<Actor>(ada2).is_some(), "an actor again");
+    }
+
+    /// Work saved is work continued, on the same target and as far along;
+    /// work on a target that was not saved is dropped, since there is
+    /// nothing left to work on.
+    #[test]
+    fn work_saved_is_work_continued_and_work_on_something_unsaved_is_dropped() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        let kind = app.world().resource::<rl_bevy::WorkKinds>().get("mending").unwrap();
+        let bo = app.world_mut().spawn((Actor, Blocks, Person("Bo".into()), Position(start.offset(1, 3)), Health::full(20))).id();
+        let loose = app.world_mut().spawn(Position(start.offset(4, 4))).id();
+        let mut work = rl_rules::Work::new(kind, 9).on(bo);
+        work.done = 4;
+        let ada = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), rl_bevy::Working(work))).id();
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Person("Cy".into()),
+            Position(start.offset(4, 3)),
+            Health::full(20),
+            rl_bevy::Working(rl_rules::Work::new(kind, 9).on(loose)),
+        ));
+        play(&mut app);
+        // However far play carried it, what comes back is what was saved.
+        let saved = app.world().get::<rl_bevy::Working>(ada).expect("Ada is at work when saved").0;
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        let w = back.world_mut();
+        let people: Vec<(Entity, String)> = w.query::<(Entity, &Person)>().iter(w).map(|(e, p)| (e, p.0.clone())).collect();
+        let who = |name: &str| people.iter().find(|(_, n)| n == name).unwrap().0;
+        let w = back.world();
+        let ada = w.get::<rl_bevy::Working>(who("Ada")).expect("Ada is still at work").0;
+        assert_eq!((ada.kind, ada.target, ada.done, ada.needed), (kind, Some(who("Bo")), saved.done, 9), "on Bo, as far in as when saved");
+        assert!(w.get::<rl_bevy::Working>(who("Cy")).is_none(), "Cy's work was on something that was not saved");
     }
 
     /// An actor posted somewhere is posted there again after a load, by
