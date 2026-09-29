@@ -331,6 +331,39 @@ mod tests {
         assert_eq!(app.world().resource::<Terminal>().get(x, y + 1).unwrap().fg, bad);
     }
 
+    /// The Worn panel is sized for its worst case: two independent
+    /// one-handed guns, each long enough once leveled that its name and
+    /// its own facet cannot share a row, one worn in each hand, both
+    /// wrapping at once. Every slot still draws, `legs` last, and one
+    /// blank row still stands over the nearby list under it, the same gap
+    /// every other pair of panels on the rail leaves.
+    #[test]
+    fn both_hands_wrapping_at_once_still_shows_every_slot_and_the_gap_under_it() {
+        let mut app = on_screen(RunSeed(7));
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let first = in_the_pack(&mut app, "slug pistol", 2);
+        app.world_mut().write_message(Intent::new(me, Equip(first)));
+        app.update();
+        app.update();
+        let second = in_the_pack(&mut app, "slug pistol", 2);
+        app.world_mut().write_message(Intent::new(me, Equip(second)));
+        app.update();
+        app.update();
+
+        let rail = |app: &App, y: i32| row(app, y).chars().skip((COLS - RAIL) as usize).collect::<String>().trim_end().to_string();
+        let main_y = (0..ROWS).find(|y| rail(&app, *y).contains("main hand")).expect("a gear row for the main hand");
+        assert!(rail(&app, main_y).ends_with("slug pistol +2"), "the main hand's name stays whole: {:?}", rail(&app, main_y));
+        assert!(rail(&app, main_y + 1).ends_with("dry"), "and wraps its own dry under it: {:?}", rail(&app, main_y + 1));
+        let off_y = (0..ROWS).find(|y| rail(&app, *y).contains("off hand")).expect("a gear row for the off hand");
+        assert_eq!(off_y, main_y + 2, "no row lost between the two wrapped hands");
+        assert!(rail(&app, off_y).ends_with("slug pistol +2"), "{:?}", rail(&app, off_y));
+        assert!(rail(&app, off_y + 1).ends_with("dry"), "the off hand wraps its own dry too: {:?}", rail(&app, off_y + 1));
+
+        let legs = (0..ROWS).find(|y| rail(&app, *y).trim_start().starts_with("legs")).expect("legs still draws, however much wrapped above it");
+        assert_eq!(rail(&app, legs + 1), "", "one blank row still stands over the nearby list");
+        assert!(rail(&app, legs + 2).starts_with("On the deck"), "and then the nearby heading: {:?}", rail(&app, legs + 2));
+    }
+
     /// A status's badge has a row of its own on the vitals strip, under
     /// the noise gauge and above the worn gear, so the cloak's `%` is on
     /// screen for as long as the commando is cloaked; with no badge the
