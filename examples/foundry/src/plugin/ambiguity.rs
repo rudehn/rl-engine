@@ -251,19 +251,19 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_takes),
             id(throwing::resolve_throws),
-            &[&claims[..], &["Messages<ItemEvent>", "Inventory", "Stack"]].concat(),
+            &[&claims[..], &["Messages<ItemEvent>", "Equipped", "Inventory", "Stack"]].concat(),
             "one action a pass: taking out of a crate and throwing are never resolved in the same one",
         ),
         pair(
             id(engine_props::resolve_takes),
             id(ability::resolve_abilities),
-            &[&claims[..], &["Position", "Inventory", "Stack"]].concat(),
+            &[&claims[..], &["Position", "Equipped", "Inventory", "Stack"]].concat(),
             "one action a pass: taking out of a crate and using an ability are never resolved in the same one",
         ),
         pair(
             id(engine_props::resolve_takes),
             id(items::resolve_items),
-            &[&claims[..], &["Messages<ItemEvent>", "Inventory"]].concat(),
+            &[&claims[..], &["Messages<ItemEvent>", "Equipped", "Inventory"]].concat(),
             "one action a pass: taking out of a crate and picking up are never resolved in the same one",
         ),
         // The title screen's keys, against everything else that reads or
@@ -311,7 +311,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_takes),
             id(throwing::land_throws),
-            &["Messages<ItemEvent>", "Inventory", "Stack"],
+            &["Messages<ItemEvent>", "Equipped", "Inventory", "Stack"],
             "a throw lands in a pass nothing is taken in",
         ),
         // A trap springs on the one who stepped, or on what broke. Every
