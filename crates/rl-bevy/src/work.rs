@@ -9,17 +9,23 @@
 //! [`resolve_toil`] spends the turn as a wait costs and counts it. On the
 //! last it writes [`WorkDone`], which is where a game says what finishing
 //! means; [`resolve_begins`] is what turns a mind's decision into work.
-//! [`WorkBegan`] is written when work starts. What a kind of work is
+//! [`WorkBegan`] is written when work starts. [`break_work`] breaks it off
+//! with a [`WorkBroken`] and its [`BreakReason`] when the worker is hurt or
+//! dies, when its target is gone or out of reach, or when another worker
+//! finishes the same target; a game stops it with [`Works::stop`]. What a
+//! kind of work is
 //! called is interned by [`WorkKinds`] from the word a panel shows,
 //! through [`AddWork::add_work`]. [`WorkPlugin`] is opt-in.
 
 use bevy::prelude::*;
 use rl_core::Interner;
 use rl_core::turn::BASE_ACTION_COST;
-use rl_rules::work::{Progress, Work, WorkKind, WorkKindId};
+use rl_rules::work::{Progress, Work, WorkKind, WorkKindId, in_reach};
 
-use crate::components::{MyTurn, Player};
-use crate::plugin::{DecideSet, ResolveSet, Turn};
+use crate::combat::{DamageDealt, DeathEvent};
+use crate::components::{MyTurn, Player, Position};
+use crate::places::{MapId, OnMap};
+use crate::plugin::{DecideSet, Reads, ResolveSet, Turn, TurnSet};
 use crate::turn::{Acting, Action, AddAction, Intent, Resolution};
 
 /// Every kind of work in play, by the word a panel shows for it.
@@ -100,12 +106,49 @@ pub struct WorkDone {
     pub target: Option<Entity>,
 }
 
-/// Begins work, for anything that is not a mind's decision.
+/// Why work was broken off.
+///
+/// Closed, because each is a thing the engine itself detects; a rule of
+/// a game's own stops work with [`Works::stop`] and reads as `Stopped`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BreakReason {
+    /// The worker was harmed: any damage that landed, even a hit healed in
+    /// the same pass, since the hit is what breaks concentration.
+    Hurt,
+    /// The worker died. A killing blow is harm too, and reads as this.
+    Died,
+    /// The target is gone, or it and the worker are further apart than
+    /// [`REACH`](rl_rules::work::REACH).
+    OutOfReach,
+    /// Another worker finished work on the same target.
+    DoneByAnother,
+    /// The game stopped it.
+    Stopped,
+}
+
+/// Work was broken off, this pass, and everything done on it is lost.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkBroken {
+    /// Who.
+    pub actor: Entity,
+    /// What kind.
+    pub kind: WorkKindId,
+    /// On what, if anything.
+    pub target: Option<Entity>,
+    /// Turns it had done, for a game that wants a half-done job remembered.
+    pub done: u16,
+    /// Why.
+    pub reason: BreakReason,
+}
+
+/// Begins and stops work, for anything that is not a mind's decision.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Works<'w, 's> {
     commands: Commands<'w, 's>,
     began: MessageWriter<'w, WorkBegan>,
     done: MessageWriter<'w, WorkDone>,
+    broken: MessageWriter<'w, WorkBroken>,
+    working: Query<'w, 's, &'static Working>,
 }
 
 impl Works<'_, '_> {
@@ -122,6 +165,64 @@ impl Works<'_, '_> {
                 self.commands.entity(actor).insert(Working(work));
             }
         }
+    }
+
+    /// Stops `actor`'s work, if it has any, as a rule of the game's own.
+    pub fn stop(&mut self, actor: Entity) {
+        let Ok(work) = self.working.get(actor) else { return };
+        self.commands.entity(actor).remove::<Working>();
+        self.broken.write(WorkBroken { actor, kind: work.0.kind, target: work.0.target, done: work.0.done, reason: BreakReason::Stopped });
+    }
+}
+
+/// Breaks off work for every reason the engine detects, once per worker,
+/// the gravest reason first.
+///
+/// In `TurnSet::React`, which the turn loop runs after the whole resolve
+/// chain: after damage has landed, and after `RemainsPlugin` has kept a
+/// twin of anyone who died, so a worker stood back up comes back at its
+/// work. Harm and death are read from the one place each lands, not
+/// watched for; reach is asked of where things are now, so every way of
+/// moving a worker or its target is covered by one question, and it is
+/// asked every pass so a panel never shows work that can no longer be done.
+pub fn break_work(
+    mut commands: Commands,
+    mut hurt: MessageReader<DamageDealt>,
+    mut deaths: MessageReader<DeathEvent>,
+    mut finished: MessageReader<WorkDone>,
+    mut broken: MessageWriter<WorkBroken>,
+    working: Query<(Entity, &Working, &Position, Option<&OnMap>)>,
+    places: Query<(&Position, Option<&OnMap>)>,
+) {
+    fn note(reasons: &mut Vec<(Entity, BreakReason)>, actor: Entity, reason: BreakReason) {
+        if !reasons.iter().any(|(a, _)| *a == actor) {
+            reasons.push((actor, reason));
+        }
+    }
+    let map_of = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+    let mut reasons: Vec<(Entity, BreakReason)> = Vec::new();
+    for death in deaths.read() {
+        note(&mut reasons, death.entity, BreakReason::Died);
+    }
+    for harm in hurt.read().filter(|h| h.dealt > 0) {
+        note(&mut reasons, harm.target, BreakReason::Hurt);
+    }
+    let done: Vec<(Entity, Option<Entity>)> = finished.read().map(|d| (d.actor, d.target)).collect();
+    for (actor, work, pos, on) in &working {
+        let Some(target) = work.0.target else { continue };
+        if done.iter().any(|(finisher, t)| *finisher != actor && *t == Some(target)) {
+            note(&mut reasons, actor, BreakReason::DoneByAnother);
+            continue;
+        }
+        let reachable = places.get(target).is_ok_and(|(there, target_on)| map_of(target_on) == map_of(on) && in_reach(pos.0, there.0));
+        if !reachable {
+            note(&mut reasons, actor, BreakReason::OutOfReach);
+        }
+    }
+    for (actor, reason) in reasons {
+        let Ok((_, work, _, _)) = working.get(actor) else { continue };
+        commands.entity(actor).remove::<Working>();
+        broken.write(WorkBroken { actor, kind: work.0.kind, target: work.0.target, done: work.0.done, reason });
     }
 }
 
@@ -184,6 +285,12 @@ impl Plugin for WorkPlugin {
         app.init_resource::<WorkKinds>()
             .add_message::<WorkBegan>()
             .add_message::<WorkDone>()
+            .add_message::<WorkBroken>()
+            // Harm and death are combat's; without combat nothing is ever
+            // hurt, and an empty queue says so.
+            .reads::<DamageDealt>()
+            .reads::<DeathEvent>()
+            .add_systems(Turn, break_work.in_set(TurnSet::React))
             .add_action::<BeginWork>()
             .add_action::<Toil>()
             .add_systems(Turn, continue_work.in_set(DecideSet::Sense))
@@ -222,9 +329,11 @@ mod tests {
         let kind = app.world().resource::<WorkKinds>().get("mending").expect("declared");
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);
+        app.insert_resource(TheSides(sides));
         let player =
             app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), crate::combat::Faction(sides.ours))).id();
         app.init_resource::<Finished>().add_systems(Turn, record_finished.in_set(TurnSet::Cleanup));
+        app.init_resource::<Broken>().add_systems(Turn, record_broken.in_set(TurnSet::Cleanup));
         app.init_resource::<Opened>().add_systems(Turn, count_openings.in_set(PerceiveSet::Annotate));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -330,5 +439,129 @@ mod tests {
         pass(&mut app, player);
         assert!(!app.world().resource::<Finished>().0.is_empty(), "done at once");
         assert!(app.world().get::<Working>(mender).is_none(), "with no work left hanging");
+    }
+
+    /// The sides `arena` made, for a test that needs a faction or a damage
+    /// kind.
+    #[derive(Resource, Clone, Copy)]
+    struct TheSides(crate::testing::Sides);
+
+    /// Every `WorkBroken`, in order.
+    #[derive(Resource, Default)]
+    struct Broken(Vec<WorkBroken>);
+
+    fn record_broken(mut broken: MessageReader<WorkBroken>, mut seen: ResMut<Broken>) {
+        seen.0.extend(broken.read().copied());
+    }
+
+    /// A worker three cells from the player, working on a thing beside it,
+    /// and the kind of damage to hurt it with.
+    fn at_work() -> (App, Entity, Entity, Entity, rl_rules::damage::DamageKindId) {
+        let (mut app, start, player, kind) = arena();
+        let sides = app.world().resource::<TheSides>().0;
+        let thing = app.world_mut().spawn(Position(start.offset(4, 0))).id();
+        let worker = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(10), crate::combat::Faction(sides.theirs))).id();
+        app.world_mut().entity_mut(worker).insert(Working(Work::new(kind, 50).on(thing)));
+        app.update();
+        (app, player, worker, thing, sides.kind)
+    }
+
+    fn reasons(app: &App) -> Vec<BreakReason> {
+        app.world().resource::<Broken>().0.iter().map(|b| b.reason).collect()
+    }
+
+    #[test]
+    fn a_worker_that_is_hurt_breaks_off_even_when_healed_in_the_same_pass() {
+        let (mut app, player, worker, _, damage) = at_work();
+        app.world_mut().write_message(crate::combat::DamageEvent::new(worker, rl_rules::Hit::from_source(None, damage, 2)));
+        app.world_mut().write_message(crate::combat::DamageEvent::new(worker, rl_rules::Hit::from_source(None, damage, -2)));
+        pass(&mut app, player);
+        assert_eq!(reasons(&app), vec![BreakReason::Hurt]);
+        assert!(app.world().get::<Working>(worker).is_none());
+    }
+
+    #[test]
+    fn a_worker_killed_at_work_breaks_off_as_dead_not_hurt() {
+        let (mut app, player, worker, _, damage) = at_work();
+        app.world_mut().write_message(crate::combat::DamageEvent::new(worker, rl_rules::Hit::from_source(None, damage, 99)));
+        pass(&mut app, player);
+        assert_eq!(reasons(&app), vec![BreakReason::Died]);
+    }
+
+    #[test]
+    fn a_worker_moved_out_of_reach_breaks_off_and_one_moved_within_reach_does_not() {
+        let (mut app, player, worker, thing, _) = at_work();
+        let there = app.world().get::<Position>(thing).unwrap().0;
+        // Swapped to the other side of it, still beside it.
+        app.world_mut().get_mut::<Position>(worker).unwrap().0 = there.offset(1, 1);
+        pass(&mut app, player);
+        assert!(reasons(&app).is_empty(), "still within reach");
+        app.world_mut().get_mut::<Position>(worker).unwrap().0 = there.offset(3, 0);
+        pass(&mut app, player);
+        assert_eq!(reasons(&app), vec![BreakReason::OutOfReach], "shoved off");
+    }
+
+    #[test]
+    fn work_on_a_target_carried_off_or_gone_breaks_off() {
+        let (mut app, player, _, thing, _) = at_work();
+        app.world_mut().get_mut::<Position>(thing).unwrap().0.x += 3;
+        pass(&mut app, player);
+        assert_eq!(reasons(&app), vec![BreakReason::OutOfReach], "carried off");
+
+        let (mut app, player, _, thing, _) = at_work();
+        app.world_mut().despawn(thing);
+        pass(&mut app, player);
+        assert_eq!(reasons(&app), vec![BreakReason::OutOfReach], "gone");
+    }
+
+    #[test]
+    fn when_one_worker_finishes_a_target_every_other_on_it_breaks_off() {
+        let (mut app, player, slow, thing, _) = at_work();
+        let kind = app.world().resource::<WorkKinds>().get("mending").unwrap();
+        let at = app.world().get::<Position>(thing).unwrap().0;
+        let quick = app.world_mut().spawn((Actor, Blocks, Position(at.offset(0, 1)), Health::full(10))).id();
+        app.world_mut().entity_mut(quick).insert(Working(Work::new(kind, 2).on(thing)));
+        for _ in 0..4 {
+            pass(&mut app, player);
+        }
+        let broken = &app.world().resource::<Broken>().0;
+        assert_eq!(broken.len(), 1);
+        assert_eq!((broken[0].actor, broken[0].reason), (slow, BreakReason::DoneByAnother));
+    }
+
+    #[derive(Resource)]
+    struct StopNow(Entity);
+
+    fn stop_it(stop: Option<Res<StopNow>>, mut works: Works) {
+        if let Some(stop) = stop {
+            works.stop(stop.0);
+        }
+    }
+
+    #[test]
+    fn a_game_can_stop_work_and_says_so() {
+        let (mut app, player, worker, _, _) = at_work();
+        app.add_systems(Turn, stop_it.in_set(TurnSet::React));
+        app.insert_resource(StopNow(worker));
+        pass(&mut app, player);
+        assert_eq!(reasons(&app), vec![BreakReason::Stopped]);
+        assert!(app.world().get::<Working>(worker).is_none());
+    }
+
+    /// The twin is taken before the work breaks, so an actor stood back up
+    /// comes back doing what it was doing, and breaks off at once if what
+    /// it was working on has gone.
+    #[test]
+    fn an_actor_revived_comes_back_at_the_work_it_died_doing() {
+        let (mut app, player, worker, thing, damage) = at_work();
+        app.world_mut().entity_mut(worker).insert(crate::remains::LeavesRemains);
+        app.world_mut().write_message(crate::combat::DamageEvent::new(worker, rl_rules::Hit::from_source(None, damage, 99)));
+        pass(&mut app, player);
+        assert!(crate::remains::revive(app.world_mut(), worker, 5));
+        assert!(app.world().get::<Working>(worker).is_some(), "back at its work");
+
+        app.world_mut().despawn(thing);
+        pass(&mut app, player);
+        assert_eq!(reasons(&app).last(), Some(&BreakReason::OutOfReach), "which it drops once the thing is gone");
     }
 }

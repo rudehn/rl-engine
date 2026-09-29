@@ -105,7 +105,7 @@ pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin}
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
-pub use work::{AddWork, BeginWork, Toil, WorkBegan, WorkDone, WorkKinds, WorkPlugin, Working, Works};
+pub use work::{AddWork, BeginWork, BreakReason, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPlugin, Working, Works};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names a game writes.
