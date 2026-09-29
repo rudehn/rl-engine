@@ -47,6 +47,7 @@ pub mod stealth;
 pub mod testing;
 pub mod throwing;
 pub mod turn;
+pub mod work;
 pub mod world;
 
 pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
@@ -104,6 +105,7 @@ pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin}
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+pub use work::{AddWork, BeginWork, Toil, WorkBegan, WorkDone, WorkKinds, WorkPlugin, Working, Works};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names a game writes.
@@ -161,6 +163,7 @@ pub mod prelude {
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+    pub use crate::work::{AddWork, WorkDone, WorkKinds, WorkPlugin, Working};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
     pub use rl_grid::LightBand;
 }

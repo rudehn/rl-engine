@@ -7,6 +7,7 @@ use rand::rngs::StdRng;
 use rl_core::{Point, Rect};
 
 use crate::ability::AbilityId;
+use crate::work::Work;
 
 use crate::ai::snapshot::Snapshot;
 
@@ -58,6 +59,10 @@ pub enum Decision<A: Copy> {
     /// game, which turns it into the action it stands for, so a game's
     /// tactic can sit anywhere in the priority list beside the engine's.
     Own(Box<dyn Choice>),
+    /// Begin work of many turns. The engine spends this turn as its first
+    /// and every turn of the actor's after it on the rest, without asking
+    /// the brain again, until it is done or broken.
+    Work(Work<A>),
 }
 
 impl<A: Copy> Decision<A> {
@@ -77,6 +82,7 @@ impl<A: Copy + PartialEq> PartialEq for Decision<A> {
             (Decision::EquipFromGround(a), Decision::EquipFromGround(b)) => a == b,
             (Decision::Throw { item: a, at: p }, Decision::Throw { item: b, at: q }) => a == b && p == q,
             (Decision::Own(a), Decision::Own(b)) => a.name() == b.name(),
+            (Decision::Work(a), Decision::Work(b)) => a == b,
             _ => false,
         }
     }
@@ -205,5 +211,20 @@ impl<A: Copy> Brain<A> {
     /// The tactic names in priority order.
     pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.tactics.iter().map(|t| t.name())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::work::WorkKindId;
+
+    #[test]
+    fn two_decisions_to_work_are_equal_only_when_the_work_is() {
+        let kind = WorkKindId::from_raw(0);
+        let a: Decision<u32> = Decision::Work(Work::new(kind, 4).on(7));
+        assert_eq!(a, Decision::Work(Work::new(kind, 4).on(7)));
+        assert_ne!(a, Decision::Work(Work::new(kind, 5).on(7)));
+        assert_ne!(a, Decision::Work(Work::new(kind, 4).on(8)));
     }
 }

@@ -545,6 +545,7 @@ pub struct MindIntents<'w> {
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     equips: MessageWriter<'w, Intent<EquipFromGround>>,
     throws: MessageWriter<'w, Intent<Throw>>,
+    begins: MessageWriter<'w, Intent<crate::work::BeginWork>>,
     chose: MessageWriter<'w, MindChose>,
 }
 
@@ -630,6 +631,9 @@ pub fn decide_minds(
         Decision::Throw { item, at } => {
             intents.throws.write(Intent::new(thinker, Throw { item, at }));
         }
+        Decision::Work(work) => {
+            intents.begins.write(Intent::new(thinker, crate::work::BeginWork(work)));
+        }
         // The game's own: hand it back and let the game act on it.
         Decision::Own(choice) => {
             intents.chose.write(MindChose { actor: thinker, choice });
@@ -669,6 +673,9 @@ impl Plugin for MindsPlugin {
             // A blow a mind decides in a game without combat is refused,
             // not left to hang; combat's own registration is the same one.
             .add_action::<Attack>()
+            // Work a mind decides in a game without `WorkPlugin` is refused,
+            // not left to hang, for the same reason as a blow.
+            .add_action::<crate::work::BeginWork>()
             .add_stream::<MindRng>("MindsPlugin")
             .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
