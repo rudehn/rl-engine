@@ -478,18 +478,18 @@ pub fn resolve_takes(
     mut events: MessageWriter<crate::items::ItemEvent>,
     mut resolution: Resolution,
     mut takers: Query<(&Position, &mut Inventory), Without<Container>>,
-    mut held: Query<(&Position, &mut Inventory), With<Container>>,
+    mut held: Query<(&Position, &mut Inventory, Option<&mut crate::items::Equipped>), With<Container>>,
     stacks: Query<&crate::items::Stack>,
 ) {
     for intent in intents.read() {
         let actor = intent.actor;
         let Ok((at, _)) = takers.get(actor) else { continue };
-        let Ok((chest, _)) = held.get(intent.action.from) else { continue };
+        let Ok((chest, _, _)) = held.get(intent.action.from) else { continue };
         if chest.0 != at.0 && !geometry::is_adjacent(at.0, chest.0) {
             continue;
         }
         let taking: Vec<Entity> = {
-            let Ok((_, contents)) = held.get(intent.action.from) else { continue };
+            let Ok((_, contents, _)) = held.get(intent.action.from) else { continue };
             match intent.action.item {
                 Some(one) => contents.items.iter().copied().filter(|i| *i == one).collect(),
                 None => contents.items.clone(),
@@ -498,8 +498,16 @@ pub fn resolve_takes(
         if taking.is_empty() || !resolution.claim(actor) {
             continue;
         }
-        if let Ok((_, mut contents)) = held.get_mut(intent.action.from) {
+        if let Ok((_, mut contents, worn)) = held.get_mut(intent.action.from) {
             contents.items.retain(|i| !taking.contains(i));
+            // What a thing wears is what it still carries: a worn thing taken
+            // out of a body comes off it, or the body goes on listing armor
+            // that is now in someone's bag, and a body stood back up wears it.
+            if let Some(mut worn) = worn {
+                for item in &taking {
+                    worn.unequip(*item);
+                }
+            }
         }
         if let Ok((_, mut bag)) = takers.get_mut(actor) {
             for item in taking {
@@ -1244,6 +1252,23 @@ mod containers {
         // Two slugs went in, and they are one stack of two.
         let carried: Vec<u32> = bag_of(&it.app, it.player).iter().filter_map(|i| it.app.world().get::<Stack>(*i).map(|s| s.count)).collect();
         assert_eq!(carried, vec![2], "the stacks merged, as they do off the ground");
+    }
+
+    /// A worn thing taken out of a body comes off it: what a body wears
+    /// is what it still carries, so nothing looted is still worn by what
+    /// it was looted from, and nothing brought back to life wears it.
+    #[test]
+    fn a_worn_thing_taken_from_a_container_is_no_longer_worn_by_it() {
+        let mut it = chest("supply crate");
+        let first = bag_of(&it.app, it.prop)[0];
+        let mut worn = rl_rules::Equipment::with_slot_count(1);
+        worn.equip(first, &rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))).expect("one empty slot");
+        it.app.world_mut().entity_mut(it.prop).insert(crate::items::Equipped(worn));
+        it.app.world_mut().write_message(Intent::new(it.player, Take { from: it.prop, item: Some(first) }));
+        it.app.update();
+        assert_eq!(bag_of(&it.app, it.player), vec![first], "taken");
+        let still = it.app.world().get::<crate::items::Equipped>(it.prop).expect("the container still has its slots");
+        assert!(!still.contains(first), "and no longer worn by what it was taken from");
     }
 
     /// A crate that can show it is done stops offering; one that cannot
