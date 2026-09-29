@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 905c7892 -->
+     fingerprint: 03ac2462 -->
 
 # Panels
 
@@ -82,7 +82,7 @@ The rail highlights it, the look cursor opens on it and an aim opens on it when 
 An aim put away, fired or not, leaves nothing picked out, so the rail is not left pointing at what a grenade already landed on; what it was fired at is kept apart as `LastAimed`, and the next aim opens there when nothing is picked out.
 `VitalsView` is the player: a label, a list of `Bar`s, armor, status badges, game facets, the turn, the position, whether the player is seen, the `LightBand` it stands in, and how loud it has been.
 `exposure` is `None` without lighting, and the strip prints it beside seen or hidden, since the same band decides how well a watcher sees the player and how hard it is to hit.
-`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one.
+`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one and `primary` false only on a two-hander's claimed hand, whose row is the same item worn twice.
 `InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it and a `Duel` fought at the distance the cursor stands from the player.
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
 Each side's chance of landing what it would attack with from there comes from `Marksmanship::at_distance` and scales its `Combatant` through `hitting`, and the player's own is kept as `odds` for the panel to print under the forecast, the same lines the targeting cursor prints.
@@ -97,7 +97,7 @@ The view also holds the `AimRange`, how far the aim reaches against how far the 
 A presenter reads a view, reads the `Palette`, and writes cells to the `Terminal`; it owns no state and makes no decision a game might want made differently.
 `panel::split_right`, `split_bottom` and `split_top` hand back both halves of a cut, which is the whole of the engine's opinion about layout: no resource holds every panel's rectangle.
 `clear`, `frame`, `section` and `bar` are public so a game taking the view and drawing its own does not rewrite a box-drawing routine, and `ListMenu` is the selection a screen keeps.
-A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read.
+A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read; the gear panel's one exception moves a name's facet to the line under it rather than cut the name that carries a level.
 
 ## Using it
 

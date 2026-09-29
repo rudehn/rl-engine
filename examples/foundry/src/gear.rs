@@ -9,6 +9,12 @@
 //! `levels.ron` at the band it is found at for a thing that names an
 //! `enchant`: a found plate is better the deeper it lay.
 //!
+//! What a level does to a thing is written in one place, its
+//! [`EnchantDef`]: the item's own numbers are what it is at `+0`, and the
+//! enchant block says what each level adds to them. Nothing a trigger or
+//! an effect carries knows about levels; the level reaches an effect as an
+//! [`EffectBonus`] on the thing, written here when it is spawned.
+//!
 //! An [`ItemDef`] is the file's own vocabulary: everything a game needs
 //! to know about a weapon or a suit of plate, named rather than typed, so
 //! a new weapon is a line in the file and nothing here changes. What
@@ -29,6 +35,8 @@ use rl_engine::rl_rules::{
     AffixDef, DamageKind, Enchanted, EquipShape, LevelTable, LootTable, NameRef, Named, Registry, Resistances, ScatterRules, SlotDef, TagDef, TagId,
 };
 use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
+use rl_engine::rl_ui::view::Strike;
+use rl_engine::rl_ui::{Facets, InventoryView, Tones};
 use serde::Deserialize;
 
 use crate::ammo::Ammo;
@@ -40,7 +48,12 @@ const ITEM_SPAWNS_RON: &str = include_str!("../assets/item_spawns.ron");
 const LEVELS_RON: &str = include_str!("../assets/levels.ron");
 
 /// One kind of item, as authored in `items.ron`.
+///
+/// Unknown fields are refused, so a level rule left where an older file
+/// wrote it, a top-level `pulse` or `attuned`, fails the load naming it
+/// rather than loading a plate that quietly does less.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ItemDef {
     /// Unique; spawn tables and, later, drop tables refer to it.
     pub name: String,
@@ -104,16 +117,8 @@ pub struct ItemDef {
     /// Tiles seen without light, while worn.
     #[serde(default)]
     pub dark_sight: Option<i32>,
-    /// A clock that comes round while it is worn, for a thing whose `pulse`
-    /// trigger does something on it.
-    #[serde(default)]
-    pub pulse: Option<PulseDef>,
-    /// True for a thing whose charges come back only while it is worn, and
-    /// which is empty each time it is put on.
-    #[serde(default)]
-    pub attuned: bool,
-    /// How far a thing found about the decks may be enchanted; absent, it
-    /// is always plain.
+    /// That it takes levels, how far, and everything a level changes;
+    /// absent, it is always plain.
     #[serde(default)]
     pub enchant: Option<EnchantDef>,
     /// Whether copies merge into one counted entry rather than one item
@@ -124,14 +129,32 @@ pub struct ItemDef {
 
 /// A thing's charges as `items.ron` writes them.
 #[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConsumableDef {
     /// What a fresh unit holds.
     pub charges: u16,
     /// What happens at the last.
     pub when_empty: WhenEmpty,
-    /// Hundredths of a step per charge regained, for a thing that refills.
+    /// How it refills, for a thing that does.
     #[serde(default)]
-    pub recharge: Option<u32>,
+    pub recharge: Option<RechargeDef>,
+}
+
+/// How a thing's charges come back, as `items.ron` writes them.
+///
+/// Whether it refills only while worn is written here, on the charges it
+/// is about, rather than at the top of the item, where it sat beside
+/// fields a thing that is never worn also has.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RechargeDef {
+    /// Hundredths of a step per charge regained.
+    pub every: u32,
+    /// True for a thing whose charges come back only while it is worn, and
+    /// which is empty each time it is put on, so it cannot be carried
+    /// charged and swapped to. Absent, false: it refills in the pack.
+    #[serde(default)]
+    pub while_worn: bool,
 }
 
 /// A throw as `items.ron` writes it: how far, and the blow it strikes, if
@@ -148,31 +171,74 @@ pub struct ThrowDef {
     pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
 }
 
-/// A worn thing's clock as `items.ron` writes it: hundredths of a step per
-/// pulse at `+0`, what each level adds, and the shortest period any level
-/// reaches.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct PulseDef {
-    /// Hundredths per pulse at `+0`.
-    pub every: u32,
-    /// Hundredths added per level; negative for a clock that quickens.
-    pub per_level: i32,
-    /// The shortest period any level reaches.
-    pub fastest: u32,
+/// Everything a level does to a thing, as `items.ron` writes it: the one
+/// place a reader looks to learn what a `+2` is.
+///
+/// The item's own numbers stay where they are and are what it is at `+0`;
+/// each key here is what one level adds. Armor and damage are inferred,
+/// +1 a level on a thing that has any, because that is what a reader
+/// expects of a `+2` plate or blade; everything else is `0` unless
+/// written, because a reader cannot tell a helmet's dark sight grows
+/// unless the file says so. Balance is set by `max`, not by a slower
+/// rate.
+///
+/// `turns` and `amount` reach every effect of their kind the thing lands,
+/// through the [`EffectBonus`] it is spawned with; a thing wanting two
+/// statuses to grow at different rates cannot say so, and none does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnchantDef {
+    /// The highest level it is found at; the block being there is what
+    /// makes it take levels at all.
+    pub max: i32,
+    /// Armor added per level; absent, 1 on a thing with armor of its own
+    /// and 0 on anything else. Refused, even as 0, on a thing with none.
+    #[serde(default)]
+    pub armor: Option<i32>,
+    /// Added per level to its own attack rolls, its blow, its shot and its
+    /// thrown strike alike; absent, 1 on a thing that attacks and 0 on
+    /// anything else. Refused, even as 0, on a thing that does not attack.
+    #[serde(default)]
+    pub damage: Option<i32>,
+    /// Tiles of dark sight added per level; 0 unless written.
+    #[serde(default)]
+    pub dark_sight: i32,
+    /// Hundredths added per level to its pulse trigger's period, negative
+    /// for a clock that quickens; a level never takes a period below one
+    /// turn, and one written below a turn stays as written. 0 unless
+    /// written.
+    #[serde(default)]
+    pub pulse: i32,
+    /// Turns added per level to every status its effects inflict; 0 unless
+    /// written, and refused on a thing with no `Inflict` among its effects.
+    #[serde(default)]
+    pub turns: u32,
+    /// Added per level to every harm or mend roll its effects make; 0
+    /// unless written, and refused on a thing with no `Harm` or `Mend`
+    /// among its effects.
+    #[serde(default)]
+    pub amount: i32,
 }
 
-impl PulseDef {
-    /// The period at `level`.
-    pub fn at(&self, level: i32) -> u32 {
-        (self.every as i32 + self.per_level * level.max(0)).max(self.fastest as i32).max(1) as u32
+impl EnchantDef {
+    /// Armor each level adds to `def`: as written, else 1 when it has
+    /// armor of its own, else nothing.
+    pub fn armor_per_level(&self, def: &ItemDef) -> i32 {
+        self.armor.unwrap_or(i32::from(def.armor != 0))
+    }
+
+    /// Damage each level adds to `def`'s attack rolls: as written, else 1
+    /// when it strikes a blow, fires a shot or strikes when thrown, else
+    /// nothing.
+    pub fn damage_per_level(&self, def: &ItemDef) -> i32 {
+        self.damage.unwrap_or(i32::from(attacks(def)))
     }
 }
 
-/// How far a thing may be enchanted where it is found.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct EnchantDef {
-    /// The most any one of it is found at.
-    pub most: i32,
+/// Whether `def` makes an attack roll of its own a level could add to: a
+/// blow, a shot, or a strike when thrown.
+fn attacks(def: &ItemDef) -> bool {
+    def.melee.is_some() || def.ranged.is_some() || def.throw.is_some_and(|t| t.strike.is_some())
 }
 
 impl Named for ItemDef {
@@ -191,6 +257,46 @@ impl Named for ItemDef {
 /// whether either is jammed.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WornDarkSight(pub i32);
+
+/// Notes on each pack row what the engine's row cannot read off the
+/// thing: how far it sees in the dark, and the attack a weapon has put by
+/// while it cannot use it, with why, `dry` of ammunition or `locked` by
+/// its heat.
+///
+/// The engine reads a row's blow and shot off `MeleeAttack` and
+/// `RangedAttack`, which a weapon that cannot fire has moved into
+/// [`Stowed`](crate::heat::Stowed) so the loadout finds nothing, and
+/// without this a slug rifle carried with no slugs, `+2` or not, reads as
+/// nothing but where it goes. Its numbers go back in the row's own `blow`
+/// or `shot`, so the pack says them in its own words, and the reason in
+/// a facet under them.
+///
+/// `InventoryView` is `None` until a game adds a pack panel: absence means
+/// no pack to annotate, not that anything is wrong.
+pub fn note_the_pack(
+    view: Option<ResMut<InventoryView>>,
+    mut facets: ResMut<Facets>,
+    registries: Res<Registries>,
+    things: Query<(Option<&WornDarkSight>, Option<&crate::heat::Stowed>, Has<crate::ammo::Dry>)>,
+) {
+    use crate::heat::Stowed;
+    let Some(mut view) = view else { return };
+    let kind = |kind| registries.damage_kinds.name(kind).to_string();
+    for row in view.rows.iter_mut() {
+        let Ok((sight, stowed, dry)) = things.get(row.entity) else { continue };
+        if let Some(stowed) = stowed {
+            match *stowed {
+                Stowed::Melee(a) => row.blow = Some(Strike { kind: kind(a.kind), dice: a.dice, range: None }),
+                Stowed::Ranged(a) => row.shot = Some(Strike { kind: kind(a.kind), dice: a.dice, range: Some(a.range) }),
+            }
+            let why = if dry { facets.facet("ammo", "dry") } else { facets.facet("heat", "locked") };
+            row.facets.push(why.toned(Tones::BAD));
+        }
+        if let Some(sight) = sight {
+            row.facets.push(facets.facet("dark sight", format!("sees {} in the dark", sight.0)));
+        }
+    }
+}
 
 /// The item definitions and the table of what lies on which deck, loaded
 /// once, in `PreStartup`, by [`load_armory`].
@@ -239,34 +345,81 @@ fn validate_def(d: &ItemDef, _: &Registry<ItemDef>) -> Result<(), String> {
     if d.throw.is_none() && d.triggers.iter().any(|t| t.on == "land") {
         return Err("a land trigger on a thing that cannot be thrown never lands".into());
     }
-    if d.slot.is_none() && (d.pulse.is_some() || d.attuned || d.enchant.is_some()) {
-        return Err("a pulse, an attunement or an enchant on a thing that is never worn does nothing".into());
+    let pulses = d.triggers.iter().any(|t| t.on == "pulse");
+    if d.slot.is_none() && pulses {
+        return Err("a pulse trigger on a thing that is never worn never comes round".into());
     }
-    if d.pulse.is_some() != d.triggers.iter().any(|t| t.on == "pulse") {
-        return Err("a pulse needs a pulse trigger to do something, and a pulse trigger needs a pulse to come round".into());
+    if d.slot.is_none() && d.consumable.and_then(|c| c.recharge).is_some_and(|r| r.while_worn) {
+        return Err("a charge that refills only while worn, on a thing that is never worn".into());
     }
-    if d.attuned && d.consumable.and_then(|c| c.recharge).is_none() {
-        return Err("attuned, and nothing that refills".into());
-    }
-    if d.enchant.is_some_and(|e| e.most < 1) {
-        return Err("an enchant that reaches no level".into());
+    if let Some(e) = d.enchant {
+        validate_enchant(d, e)?;
     }
     Ok(())
+}
+
+/// The enchant block's own rules: each key is refused where nothing on
+/// the thing would read it, since a level rule nothing reads is a typo
+/// and a player finding a `+5` that is no better than plain.
+fn validate_enchant(d: &ItemDef, e: EnchantDef) -> Result<(), String> {
+    if d.stack {
+        return Err("an enchanted thing cannot stack: each one is its own find at its own level".into());
+    }
+    if d.slot.is_none() {
+        return Err("an enchant on a thing that is never worn does nothing".into());
+    }
+    if e.max < 1 {
+        return Err("an enchant that reaches no level".into());
+    }
+    // Written at all, even as 0, where nothing reads it: an explicit
+    // number is a claim about one the thing has, and a reader who finds
+    // it on a helmet goes looking for the helmet's blow.
+    if e.armor.is_some() && d.armor == 0 {
+        return Err("armor in the enchant, on a thing with no armor of its own".into());
+    }
+    if e.damage.is_some() && !attacks(d) {
+        return Err("damage in the enchant, on a thing that does not attack".into());
+    }
+    if e.dark_sight != 0 && d.dark_sight.is_none() {
+        return Err("dark_sight in the enchant, on a thing with no dark sight of its own".into());
+    }
+    if e.pulse != 0 && !d.triggers.iter().any(|t| t.on == "pulse") {
+        return Err("pulse in the enchant, on a thing with no pulse trigger".into());
+    }
+    // `turns` reaches only an `Inflict` and `amount` only a `Harm` or a
+    // `Mend`, the three engine effects that read a bonus; Foundry registers
+    // no effect of its own, so the authored kind names are the whole
+    // answer.
+    if e.turns != 0 && !lands_any(d, &["Inflict"]) {
+        return Err("turns in the enchant, on a thing whose effects inflict no status".into());
+    }
+    if e.amount != 0 && !lands_any(d, &["Harm", "Mend"]) {
+        return Err("amount in the enchant, on a thing whose effects neither harm nor mend".into());
+    }
+    Ok(())
+}
+
+/// Whether any effect `d` holds, shared or on one of its triggers' own
+/// lists, is one of `kinds`.
+fn lands_any(d: &ItemDef, kinds: &[&str]) -> bool {
+    let own = d.triggers.iter().filter_map(|t| t.effects.as_deref()).flatten();
+    d.effects.iter().chain(own).any(|spec| kinds.contains(&spec.kind.as_str()))
 }
 
 impl Armory {
     /// Loads `items.ron` against `registries`, validates it, builds every
     /// item's triggers against the effect `kinds` and `moments` registered
-    /// for the run, and builds the spawn table from `item_spawns.ron`;
-    /// panics with every problem either file has, since a broken item file
-    /// is a game that cannot start.
+    /// for the run, with the `sounds` declared for it in scope so a
+    /// grenade's noise names its sound, and builds the spawn table from
+    /// `item_spawns.ron`; panics with every problem either file has, since
+    /// a broken item file is a game that cannot start.
     ///
     /// The triggers are built here rather than when an item is spawned, so
     /// a grenade naming an effect or a moment nobody registered is caught
     /// while the file is read rather than by a grenade that quietly does
     /// nothing in the middle of a run.
-    pub fn load(registries: &Registries, kinds: &EffectKinds, moments: &Moments) -> Self {
-        let names = registries.names();
+    pub fn load(registries: &Registries, kinds: &EffectKinds, moments: &Moments, sounds: &Sounds) -> Self {
+        let names = registries.names().sounds(sounds);
         let defs = load_defs(registries);
         let table =
             rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &names.clone().with("item", &defs), &defs, |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect())
@@ -304,24 +457,43 @@ pub fn load_defs(registries: &Registries) -> Registry<ItemDef> {
 
 /// The effect kinds a Foundry app has, for loading an [`Armory`] where no
 /// app is running, as `foundry --prefabs` does and a test with no world
-/// does: whatever `add_engine_effects` declares, and the `Ignite` and
-/// `Emit` that `FirePlugin` and `GasPlugin` declare for the grenades,
-/// which is what `main.rs` gives the real load. The throwaway `App` is
-/// there for that and nothing else.
+/// does: whatever `add_engine_effects` declares, the `Ignite` and `Emit`
+/// that `FirePlugin` and `GasPlugin` declare for the grenades, and the
+/// `Noise` that `NoisePlugin` declares for them to be heard by, which is
+/// what `main.rs` gives the real load. The throwaway `App` is there for
+/// that and nothing else.
 pub fn effect_kinds() -> EffectKinds {
     let mut app = App::new();
-    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
+    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>().add_effect::<rl_engine::rl_bevy::Noise>();
     std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
 }
 
+/// The sounds Foundry declares beside the engine's, in the order
+/// [`FoundryPlugin`](crate::plugin::FoundryPlugin) declares them: the
+/// alarm's, then the two `items.ron` names, a grenade bursting and smoke
+/// hissing out of one. One list, walked by the plugin and by [`sounds`],
+/// so the ids an armory loaded with no app gives them are the app's.
+pub const SOUNDS: [&str; 3] = [crate::droids::ALARM_SOUND, "blast", "hiss"];
+
+/// The sounds a Foundry app declares, for loading an [`Armory`] where no
+/// app is running, as [`effect_kinds`] is for its effects: the engine's
+/// own, then [`SOUNDS`].
+pub fn sounds() -> Sounds {
+    let mut sounds = Sounds::default();
+    for name in SOUNDS {
+        sounds.declare(name);
+    }
+    sounds
+}
+
 /// Loads the [`Armory`] once, in `PreStartup`, before any run begins or is
-/// continued, against the effects and moments the app registered.
+/// continued, against the effects, moments and sounds the app registered.
 ///
 /// Once rather than per use: every deck's scatter, every kill and every
 /// crate used to read `items.ron` and build its triggers afresh, and the
 /// save refreshed every turn needs it too.
-pub fn load_armory(mut commands: Commands, registries: Res<Registries>, kinds: Res<EffectKinds>, moments: Res<Moments>) {
-    commands.insert_resource(Armory::load(&registries, &kinds, &moments));
+pub fn load_armory(mut commands: Commands, registries: Res<Registries>, kinds: Res<EffectKinds>, moments: Res<Moments>, sounds: Res<Sounds>) {
+    commands.insert_resource(Armory::load(&registries, &kinds, &moments, &sounds));
 }
 
 /// The armory and the registries it was read against, for the systems that
@@ -376,19 +548,34 @@ pub struct ItemKind(pub Id<ItemDef>);
 /// stackable item spawns as a stack of one; the caller merges or grows it
 /// as it likes.
 ///
-/// At `level`, which names it `cloak plate +2`, lands its effects at that
-/// level and writes its clock with the level applied; a thing that names
-/// no `enchant` is plain whatever `level` says, and one that does is held
-/// between plain and its `most`, so a save written before the file
-/// lowered a `most` never brings back a thing the file no longer allows.
+/// At `level`, which names it `cloak plate +2` and writes every number its
+/// [`EnchantDef`] says a level changes with the level applied: its armor,
+/// its attack rolls, its dark sight, its clock, and the [`EffectBonus`]
+/// its effects land with. A thing that names no `enchant` is plain
+/// whatever `level` says, and one that does is held between plain and its
+/// `max`, so a save written before the file lowered a `max` never brings
+/// back a thing the file no longer allows.
+///
+/// The level is applied here, once, rather than read by whatever uses the
+/// thing: a save keeps only the level, and a continued run's `+2` is this
+/// same function run again.
 pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let d = armory.defs.get(id);
-    let level = d.enchant.map_or(0, |e| level.clamp(0, e.most));
+    let level = d.enchant.map_or(0, |e| level.clamp(0, e.max));
+    // What the enchant block adds at this level; all nought for a plain
+    // thing, so it spawns exactly as its own numbers say.
+    let plain = EnchantDef { max: 0, armor: Some(0), damage: Some(0), dark_sight: 0, pulse: 0, turns: 0, amount: 0 };
+    let enchant = d.enchant.unwrap_or(plain);
+    let damage = enchant.damage_per_level(d) * level;
     let enchanted = Enchanted { level, affixes: Vec::new() };
     let name = enchanted.display_name(&d.name, &Registry::<AffixDef>::default());
     let mut e = commands.spawn((Item, ItemKind(id), Name::new(name), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(2)));
     if d.enchant.is_some() {
         e.insert(Enchant(enchanted));
+    }
+    let bonus = EffectBonus { turns: enchant.turns * level as u32, amount: enchant.amount * level };
+    if bonus.turns != 0 || bonus.amount != 0 {
+        e.insert(bonus);
     }
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect::<Vec<TagId>>()));
@@ -403,16 +590,20 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
     if let Some(c) = d.consumable {
         let charges = Consumable::new(c.charges, c.when_empty);
         e.insert(match c.recharge {
-            Some(every) => charges.recharging(every),
+            Some(r) => charges.recharging(r.every),
             None => charges,
         });
+        if c.recharge.is_some_and(|r| r.while_worn) {
+            e.insert(Attuned);
+        }
     }
     // ANCHOR_END: use
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
     }
-    if d.armor != 0 {
-        e.insert(Armor(d.armor));
+    let armor = d.armor + enchant.armor_per_level(d) * level;
+    if armor != 0 {
+        e.insert(Armor(armor));
     }
     if !d.resists.is_empty() {
         let mut r = Resistances::new();
@@ -421,14 +612,19 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
         }
         e.insert(Resists(r));
     }
+    // A level's damage goes on each of its own rolls alike, so a thrown
+    // blade at `+2` strikes two harder as its blow does.
+    let plus = |dice: DiceRoll| DiceRoll { bonus: dice.bonus + damage, ..dice };
     if let Some(melee) = d.melee {
-        e.insert(MeleeAttack { cost: d.cost, ..melee.attack() });
+        let attack = melee.attack();
+        e.insert(MeleeAttack { cost: d.cost, dice: plus(attack.dice), ..attack });
     }
     if let Some(ranged) = d.ranged {
-        e.insert(RangedAttack { cost: d.cost, ..ranged.attack() });
+        let attack = ranged.attack();
+        e.insert(RangedAttack { cost: d.cost, dice: plus(attack.dice), ..attack });
     }
     if let Some(throw) = d.throw {
-        e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), dice))) });
+        e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), plus(dice)))) });
     }
     if let Some((per_shot, vent)) = d.heat {
         e.insert(Heat::new(per_shot, vent));
@@ -437,13 +633,12 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
         e.insert(Ammo { tag: tag.id() });
     }
     if let Some(n) = d.dark_sight {
-        e.insert(WornDarkSight(n));
+        e.insert(WornDarkSight(n + enchant.dark_sight * level));
     }
-    if let Some(pulse) = d.pulse {
-        e.insert(Pulse::every(pulse.at(level)));
-    }
-    if d.attuned {
-        e.insert(Attuned);
+    // The clock is the pulse trigger's own period, read off the triggers
+    // the armory built rather than kept twice.
+    if let Some(every) = armory.triggers.get(id.index()).and_then(Triggers::pulse_every) {
+        e.insert(Pulse::every(pulse_period(every, enchant.pulse, level)));
     }
     if d.stack {
         e.insert(Stack { key: id.index() as u64, count: 1 });
@@ -451,8 +646,22 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
     e.id()
 }
 
-/// Spawns `id` plain, at `+0`: what the cheat menu puts in the pack, what
-/// a stack is made as, and what a test hands the commando.
+/// A pulse trigger's period `every` at `level`, moved `per_level`
+/// hundredths a level.
+///
+/// A level never takes it below a turn, since a plate that pulsed several
+/// times each time its wearer acts is a level rule nobody wrote on purpose.
+/// The floor is on what the level changes and not on `every`: a period the
+/// file wrote below a turn is what the thing does at `+0`, the base number
+/// staying where it is, and a level never takes it lower still.
+fn pulse_period(every: u32, per_level: i32, level: i32) -> u32 {
+    let turn = rl_engine::rl_core::turn::BASE_ACTION_COST as i32;
+    let every = every as i32;
+    (every + per_level * level).max(every.min(turn)) as u32
+}
+
+/// Spawns `id` plain, at `+0`: what a stack is made as and what a test
+/// hands the commando.
 pub fn spawn_item(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, registries: &Registries) -> Entity {
     spawn_item_at(commands, armory, id, 0, registries)
 }
@@ -493,7 +702,7 @@ impl ItemMaker for Armory {
         // Each its own roll: two plates from one crate are two finds.
         (0..count)
             .map(|_| {
-                let level = d.enchant.map_or(0, |e| self.levels.roll(from.band, rng).min(e.most));
+                let level = d.enchant.map_or(0, |e| self.levels.roll(from.band, rng).min(e.max));
                 spawn_item_at(commands, self, def, level, registries)
             })
             .collect()
@@ -722,11 +931,15 @@ mod tests {
             heat: None,
             ammo: None,
             dark_sight: None,
-            pulse: None,
-            attuned: false,
             enchant: None,
             stack: false,
         }
+    }
+
+    /// An enchant block reaching `max` and saying nothing else, so a
+    /// level adds only what is inferred.
+    fn enchant_to(max: i32) -> EnchantDef {
+        EnchantDef { max, armor: None, damage: None, dark_sight: 0, pulse: 0, turns: 0, amount: 0 }
     }
 
     /// The commando, wounded by `hurt`, alone on a quiet deck one: the
@@ -990,65 +1203,97 @@ mod tests {
         assert_eq!(stim.triggers.iter().map(|t| t.on.as_str()).collect::<Vec<_>>(), vec!["use"]);
     }
 
+    /// The two plates read as the file writes them: the nanite plate's
+    /// clock is its pulse trigger's, and what a level does to it is its
+    /// enchant block's; the cloak plate's charge refills only while worn,
+    /// and each level adds two turns to what it inflicts.
     #[test]
-    fn the_plates_load_with_their_clock_their_charge_and_their_level() {
+    fn the_plates_load_with_their_clock_on_the_trigger_and_their_levels_in_the_enchant_block() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
         let nanite = armory.defs.get(armory.defs.expect("nanite plate"));
-        assert_eq!(nanite.pulse.map(|p| (p.every, p.per_level, p.fastest)), Some((1000, -100, 100)));
-        assert_eq!(nanite.enchant.map(|e| e.most), Some(9));
+        assert_eq!(nanite.triggers.iter().find(|t| t.on == "pulse").and_then(|t| t.every), Some(1000));
+        assert_eq!(nanite.enchant.map(|e| (e.max, e.armor, e.pulse)), Some((9, Some(0), -100)));
         let cloak = armory.defs.get(armory.defs.expect("cloak plate"));
-        assert!(cloak.attuned);
-        assert_eq!(cloak.consumable.and_then(|c| c.recharge), Some(4000));
+        assert_eq!(cloak.consumable.and_then(|c| c.recharge).map(|r| (r.every, r.while_worn)), Some((4000, true)));
+        assert_eq!(cloak.enchant.map(|e| (e.max, e.armor, e.turns)), Some((9, Some(0), 2)));
     }
 
+    /// Each rule of the enchant block, and of a charge that refills while
+    /// worn, refuses its own case with its own message: a level rule
+    /// nothing reads is a typo in the file rather than a plate.
     #[test]
-    fn a_pulse_or_an_attunement_or_an_enchant_on_a_thing_never_worn_fails_to_validate() {
-        let r = crate::content::registries();
-        let armory = crate::testing::armory(&r);
-        let mut d = blank_def("loose pulse");
-        d.pulse = Some(PulseDef { every: 800, per_level: 0, fastest: 800 });
-        assert!(validate_def(&d, &armory.defs).is_err(), "a pulse on nothing worn");
-        let mut d = blank_def("loose attunement");
-        d.attuned = true;
-        assert!(validate_def(&d, &armory.defs).is_err(), "attuned and never worn");
-        let mut d = blank_def("loose enchant");
-        d.enchant = Some(EnchantDef { most: 2 });
-        assert!(validate_def(&d, &armory.defs).is_err(), "an enchant on nothing worn");
-        // An enchant on a stack is refused either way it is written: worn,
-        // a worn thing cannot stack; not worn, the enchant does nothing.
-        let mut d = blank_def("a stack of fine things");
-        (d.enchant, d.stack) = (Some(EnchantDef { most: 2 }), true);
-        assert!(validate_def(&d, &armory.defs).is_err(), "an enchanted stack, not worn");
-        d.slot = Some(rl_engine::rl_core::Id::from_raw(0).into());
-        assert!(validate_def(&d, &armory.defs).is_err(), "an enchanted stack, worn");
-    }
-
-    /// Worn, each still has to hold up its own end: a clock with nothing
-    /// to do on it, a pulse trigger with no clock to fire it, an attunement
-    /// on a thing that never refills, and an enchant that reaches no level
-    /// are each a typo in the file rather than a plate.
-    #[test]
-    fn a_worn_pulse_without_its_trigger_or_an_attunement_with_nothing_to_refill_fails_to_validate() {
+    fn each_misplaced_level_rule_fails_to_validate_with_its_own_message() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
         let worn = |name: &str| ItemDef { slot: Some(rl_engine::rl_core::Id::from_raw(0).into()), ..blank_def(name) };
-        let mut d = worn("idle clock");
-        d.pulse = Some(PulseDef { every: 800, per_level: 0, fastest: 800 });
-        assert!(validate_def(&d, &armory.defs).is_err(), "a pulse and no pulse trigger");
-        let mut d = worn("no clock");
-        d.triggers = armory.defs.get(armory.defs.expect("nanite plate")).triggers.clone();
-        assert!(validate_def(&d, &armory.defs).is_err(), "a pulse trigger and no pulse");
-        let mut d = worn("never refills");
-        d.attuned = true;
-        d.consumable = Some(ConsumableDef { charges: 1, when_empty: WhenEmpty::Kept, recharge: None });
-        assert!(validate_def(&d, &armory.defs).is_err(), "attuned and nothing that refills");
-        let mut d = worn("plain for good");
-        d.enchant = Some(EnchantDef { most: 0 });
-        assert!(validate_def(&d, &armory.defs).is_err(), "an enchant that reaches no level");
-        let mut d = worn("a fine plate");
-        d.enchant = Some(EnchantDef { most: 3 });
+        let nanite = armory.defs.get(armory.defs.expect("nanite plate"));
+        let cloak = armory.defs.get(armory.defs.expect("cloak plate"));
+        let cases: Vec<(ItemDef, &str)> = vec![
+            (ItemDef { enchant: Some(enchant_to(2)), ..blank_def("loose enchant") }, "never worn"),
+            (ItemDef { enchant: Some(enchant_to(2)), stack: true, ..blank_def("a stack of fine things") }, "cannot stack"),
+            (ItemDef { enchant: Some(enchant_to(0)), ..worn("plain for good") }, "reaches no level"),
+            (ItemDef { enchant: Some(EnchantDef { dark_sight: 1, ..enchant_to(3) }), ..worn("blind helmet") }, "no dark sight of its own"),
+            (ItemDef { enchant: Some(EnchantDef { pulse: -100, ..enchant_to(9) }), ..worn("idle clock") }, "no pulse trigger"),
+            (ItemDef { enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }), ..worn("nothing to lengthen") }, "inflict no status"),
+            (
+                ItemDef { enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }), triggers: nanite.triggers.clone(), ..worn("a mend that lasts") },
+                "inflict no status",
+            ),
+            (ItemDef { enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }), ..worn("nothing to strengthen") }, "neither harm nor mend"),
+            (
+                ItemDef {
+                    enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }),
+                    consumable: cloak.consumable,
+                    triggers: cloak.triggers.clone(),
+                    ..worn("a stronger cloak")
+                },
+                "neither harm nor mend",
+            ),
+            (ItemDef { enchant: Some(EnchantDef { damage: Some(2), ..enchant_to(5) }), ..worn("harmless edge") }, "does not attack"),
+            (ItemDef { enchant: Some(EnchantDef { damage: Some(0), ..enchant_to(5) }), ..worn("harmless and says so") }, "does not attack"),
+            (ItemDef { enchant: Some(EnchantDef { armor: Some(1), ..enchant_to(3) }), ..worn("paper shirt") }, "no armor of its own"),
+            (ItemDef { enchant: Some(EnchantDef { armor: Some(0), ..enchant_to(3) }), ..worn("paper shirt that says so") }, "no armor of its own"),
+            (
+                ItemDef {
+                    consumable: Some(ConsumableDef { charges: 1, when_empty: WhenEmpty::Kept, recharge: Some(RechargeDef { every: 4000, while_worn: true }) }),
+                    ..blank_def("loose charge")
+                },
+                "refills only while worn",
+            ),
+            (ItemDef { triggers: armory.defs.get(armory.defs.expect("nanite plate")).triggers.clone(), ..blank_def("loose clock") }, "never comes round"),
+        ];
+        for (d, says) in cases {
+            let err = validate_def(&d, &armory.defs).expect_err(&d.name);
+            assert!(err.contains(says), "{}: {err:?} does not say {says:?}", d.name);
+        }
+        let d = ItemDef { enchant: Some(enchant_to(3)), ..worn("a fine plate") };
         assert!(validate_def(&d, &armory.defs).is_ok(), "and a worn enchant that reaches a level is fine");
+        let d = ItemDef {
+            enchant: Some(EnchantDef { turns: 2, ..enchant_to(9) }),
+            consumable: cloak.consumable,
+            triggers: cloak.triggers.clone(),
+            ..worn("a longer cloak")
+        };
+        assert!(validate_def(&d, &armory.defs).is_ok(), "turns on a thing that inflicts a status is fine");
+        let d = ItemDef { enchant: Some(EnchantDef { amount: 1, ..enchant_to(9) }), triggers: nanite.triggers.clone(), ..worn("a stronger mend") };
+        assert!(validate_def(&d, &armory.defs).is_ok(), "and amount on a thing that mends is fine");
+    }
+
+    /// An item written the old way, a clock or an attunement at the top of
+    /// the item or a `most` in its enchant, fails to load rather than
+    /// loading plain and quietly doing less.
+    #[test]
+    fn an_item_with_its_level_rules_in_the_old_places_fails_to_load() {
+        let r = crate::content::registries();
+        for (field, item) in [
+            ("pulse", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), slot: "torso", pulse: (every: 1000, per_level: -100, fastest: 100))]"#),
+            ("attuned", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), slot: "torso", attuned: true)]"#),
+            ("most", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), slot: "torso", enchant: (most: 9))]"#),
+        ] {
+            let err = r.names().load::<ItemDef>(item).map(|_| ()).expect_err(field);
+            assert!(err.to_string().contains(field), "{err} does not name {field:?}");
+        }
     }
 
     /// The nanite plate knits a point back every ten turns worn, counted
@@ -1088,13 +1333,26 @@ mod tests {
     }
 
     /// A `+2` nanite plate comes round every eight turns, a `+9` one every
-    /// turn, and nothing past `+9` any faster.
+    /// turn, and a `+12` one, held at its `max`, no faster.
     #[test]
     fn a_nanite_plate_quickens_with_its_level_to_every_turn_at_plus_nine() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
-        let nanite = armory.defs.get(armory.defs.expect("nanite plate")).pulse.unwrap();
-        assert_eq!((nanite.at(0), nanite.at(2), nanite.at(9), nanite.at(12)), (1000, 800, 100, 100));
+        let every = |level| leveled(&armory, &r, "nanite plate", level).pulse;
+        assert_eq!((every(0), every(2), every(9), every(12)), (Some(1000), Some(800), Some(100), Some(100)));
+        assert_eq!(leveled(&armory, &r, "nanite plate", 9).armor, Some(1), "and its armor stays as written, its enchant saying armor: 0");
+    }
+
+    /// A level moves a pulse by its enchant's `pulse` and never takes it
+    /// below a turn, while a period written below a turn is what the thing
+    /// does at `+0` and at every level after, since the floor is on what a
+    /// level changes and not on the number the file wrote.
+    #[test]
+    fn a_level_never_quickens_a_pulse_past_a_turn_and_never_moves_a_period_written_below_one() {
+        assert_eq!((pulse_period(1000, -100, 0), pulse_period(1000, -100, 2), pulse_period(1000, -100, 9)), (1000, 800, 100));
+        assert_eq!(pulse_period(1000, -100, 12), 100, "a level past a turn stops at one");
+        assert_eq!((pulse_period(50, 0, 0), pulse_period(50, -100, 0), pulse_period(50, -100, 3)), (50, 50, 50), "a half-turn clock stays as written");
+        assert_eq!(pulse_period(50, 100, 2), 250, "and a level that slows it still does");
     }
 
     /// Every attacker's swing, recorded as it is written: a miss spends no
@@ -1172,7 +1430,7 @@ mod tests {
         let plain = turns_cloaked_by_a_plate_at(0);
         let plus_two = turns_cloaked_by_a_plate_at(2);
         assert_eq!(plain, 9, "a plain cloak's ten turns, the first of them the use's own");
-        assert_eq!(plus_two, plain + 4, "two more turns for each of two levels");
+        assert_eq!(plus_two, plain + 4, "two more turns for each of two levels, fourteen in all");
     }
 
     /// The commando's `@` fades the pass the cloak goes on and is white
@@ -1311,10 +1569,10 @@ mod tests {
         assert!(differ, "fifty pairs and never two levels: the pair shares one roll");
     }
 
-    /// A thing's `most` caps what the table hands it: a plate that reaches
+    /// A thing's `max` caps what the table hands it: a plate that reaches
     /// only `+2` is never found better, even where the row runs to `+5`.
     #[test]
-    fn a_things_most_caps_the_level_it_is_made_at() {
+    fn a_things_max_caps_the_level_it_is_made_at() {
         let r = crate::content::registries();
         let mut armory = crate::testing::armory(&r);
         let defs = armory
@@ -1323,7 +1581,7 @@ mod tests {
             .map(|(_, d)| {
                 let mut d = d.clone();
                 if d.name == "cloak plate" {
-                    d.enchant = Some(EnchantDef { most: 2 });
+                    d.enchant = Some(EnchantDef { max: 2, ..d.enchant.expect("the cloak plate is enchantable") });
                 }
                 d
             })
@@ -1338,24 +1596,40 @@ mod tests {
         assert!(levels.iter().all(|l| *l == 2), "capped at +2: {levels:?}");
     }
 
-    /// A thing that names no enchant, or a stack, is made plain and draws
-    /// nothing from the stream, so adding enchants to plates did not shift
-    /// what every other find on a deck rolls.
+    /// A helmet found on deck ten, where the row runs `+2` to `+5`, is
+    /// made at its own `max` of `+3` whenever the row hands it more: the
+    /// file's helmet, not a test's.
     #[test]
-    fn a_plain_or_stacking_thing_is_made_without_drawing_from_the_stream() {
+    fn a_helmet_found_where_the_row_runs_past_its_max_is_made_at_its_max() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let levels: std::collections::BTreeSet<i32> = (0..100)
+            .map(|seed| {
+                let mut rng = rand::SeedableRng::seed_from_u64(seed);
+                made(&armory, &r, "commando helmet", 1, 10, &mut rng)[0].0.expect("a helmet is enchantable")
+            })
+            .collect();
+        assert_eq!(levels.into_iter().collect::<Vec<_>>(), vec![2, 3], "+2, and every +3 to +5 the row hands it made at +3");
+    }
+
+    /// A stack is made plain and draws nothing from the stream, so a
+    /// scatter of slugs and stims does not shift what the plate beside it
+    /// rolls.
+    #[test]
+    fn a_stacking_thing_is_made_without_drawing_from_the_stream() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
         let (mut a, mut b): (rand::rngs::StdRng, rand::rngs::StdRng) = (rand::SeedableRng::seed_from_u64(4), rand::SeedableRng::seed_from_u64(4));
-        let pistols = made(&armory, &r, "slug pistol", 2, 10, &mut a);
+        let slugs = made(&armory, &r, "slug", 2, 10, &mut a);
         let stims = made(&armory, &r, "stim", 3, 10, &mut a);
-        assert!(pistols.iter().chain(&stims).all(|(level, _)| level.is_none()), "plain: {pistols:?} {stims:?}");
+        assert!(slugs.iter().chain(&stims).all(|(level, _)| level.is_none()), "plain: {slugs:?} {stims:?}");
         assert_eq!(rand::Rng::random::<u64>(&mut a), rand::Rng::random::<u64>(&mut b), "the stream is where it was");
     }
 
-    /// A level past a thing's `most`, such as one a save wrote before the
+    /// A level past a thing's `max`, such as one a save wrote before the
     /// file lowered it, comes back at the most the file allows.
     #[test]
-    fn a_level_past_most_is_spawned_at_most() {
+    fn a_level_past_max_is_spawned_at_max() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
         let mut world = World::new();
@@ -1367,6 +1641,190 @@ mod tests {
         queue.apply(&mut world);
         assert_eq!(world.get::<Enchant>(plate).map(|e| e.0.level), Some(9));
         assert_eq!(world.get::<Name>(plate).map(|n| n.as_str().to_string()), Some("cloak plate +9".to_string()));
+    }
+
+    /// Everything about a spawned thing that a level can change: its
+    /// armor, its blow, its shot and its thrown strike, its dark sight,
+    /// its clock, and the bonus it carries for its effects, if any.
+    #[derive(Debug, Default, PartialEq, Eq)]
+    struct Leveled {
+        armor: Option<i32>,
+        blow: Option<String>,
+        shot: Option<String>,
+        thrown: Option<String>,
+        dark_sight: Option<i32>,
+        pulse: Option<u32>,
+        bonus: Option<EffectBonus>,
+    }
+
+    /// `name` spawned at `level` into a world of its own, and what it
+    /// carries that a level can change.
+    fn leveled(armory: &Armory, registries: &Registries, name: &str, level: i32) -> Leveled {
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let e = {
+            let mut commands = Commands::new(&mut queue, &world);
+            spawn_item_at(&mut commands, armory, armory.defs.expect(name), level, registries)
+        };
+        queue.apply(&mut world);
+        Leveled {
+            armor: world.get::<Armor>(e).map(|a| a.0),
+            blow: world.get::<MeleeAttack>(e).map(|m| m.dice.to_string()),
+            shot: world.get::<RangedAttack>(e).map(|r| r.dice.to_string()),
+            thrown: world.get::<Throwable>(e).and_then(|t| t.strike).map(|(_, dice)| dice.to_string()),
+            dark_sight: world.get::<WornDarkSight>(e).map(|d| d.0),
+            pulse: world.get::<Pulse>(e).map(|p| p.every),
+            bonus: world.get::<EffectBonus>(e).copied(),
+        }
+    }
+
+    /// Every item at `+0` is what it was before the enchant block said
+    /// what a level does: the table is `items.ron` as it stood then, so a
+    /// plain thing found on deck one is the same thing it always was.
+    #[test]
+    fn every_item_at_plus_nought_is_what_it_was_before_levels_reached_it() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let plain = Leveled::default;
+        let blow = |d: &str| Leveled { blow: Some(d.into()), ..plain() };
+        let shot = |d: &str| Leveled { shot: Some(d.into()), ..plain() };
+        let armor = |a: i32| Leveled { armor: Some(a), ..plain() };
+        let table: Vec<(&str, Leveled)> = vec![
+            ("monoblade", Leveled { thrown: Some("1d6".into()), ..blow("1d6+1") }),
+            ("mono-axe", blow("2d6+1")),
+            ("hand blaster", shot("1d6")),
+            ("blaster carbine", shot("1d8+1")),
+            ("ion pistol", shot("1d6")),
+            ("slug pistol", shot("1d8")),
+            ("slug rifle", shot("1d10+1")),
+            ("heavy repeater", shot("1d8+2")),
+            ("slug", plain()),
+            ("keycard", plain()),
+            ("stim", plain()),
+            ("medkit", plain()),
+            ("frag grenade", plain()),
+            ("smoke grenade", plain()),
+            ("ion grenade", plain()),
+            ("incendiary grenade", plain()),
+            ("commando helmet", armor(1)),
+            ("rangefinder helmet", Leveled { dark_sight: Some(6), ..armor(1) }),
+            ("scrap plate", armor(1)),
+            ("composite plate", armor(2)),
+            ("combat gauntlets", armor(1)),
+            ("armored greaves", armor(1)),
+            ("nanite plate", Leveled { pulse: Some(1000), ..armor(1) }),
+            ("cloak plate", armor(1)),
+        ];
+        assert_eq!(table.len(), armory.defs.len(), "every definition in the table");
+        for (name, was) in table {
+            assert_eq!(leveled(&armory, &r, name, 0), was, "{name} at +0");
+        }
+    }
+
+    /// A level adds what the enchant block says, and armor and damage by
+    /// default: plate its armor, a weapon its blow, its shot and its
+    /// thrown strike alike, a heavy weapon twice as fast, and a helmet's
+    /// dark sight only because its block says so.
+    #[test]
+    fn a_level_adds_to_armor_damage_and_dark_sight_as_the_enchant_block_says() {
+        let r = crate::content::registries();
+        let armory = crate::testing::armory(&r);
+        let at = |name, level| leveled(&armory, &r, name, level);
+        assert_eq!(at("composite plate", 3).armor, Some(5), "+1 armor a level, inferred");
+        assert_eq!(at("mono-axe", 2).blow.as_deref(), Some("2d6+5"), "damage: 2, so +4 at +2");
+        let blade = at("monoblade", 2);
+        assert_eq!((blade.blow.as_deref(), blade.thrown.as_deref()), (Some("1d6+3"), Some("1d6+2")), "the blow and the throw both gain 2");
+        assert_eq!(at("slug rifle", 2).shot.as_deref(), Some("1d10+5"), "damage: 2");
+        assert_eq!(at("hand blaster", 2).shot.as_deref(), Some("1d6+2"), "+1 damage a level, inferred");
+        assert_eq!(at("rangefinder helmet", 2).dark_sight, Some(8), "dark_sight: 1, so two more at +2");
+        assert_eq!(at("rangefinder helmet", 2).armor, Some(3), "and its armor by the default");
+        let cloak = at("cloak plate", 2);
+        assert_eq!(cloak.armor, Some(1), "armor: 0 keeps it at 1");
+        assert_eq!(cloak.bonus, Some(EffectBonus { turns: 4, amount: 0 }), "turns: 2, so four more on its effects at +2");
+    }
+
+    /// Every `NoiseHeard`, recorded as it is written: a headless app
+    /// rotates its message buffers on wall time.
+    #[derive(Resource, Default)]
+    struct Earful(Vec<(Entity, SoundId)>);
+
+    fn record_heard(mut heard: MessageReader<NoiseHeard>, mut out: ResMut<Earful>) {
+        out.0.extend(heard.read().map(|h| (h.listener, h.sound)));
+    }
+
+    /// Whether a line droid `near` steps and one `far` steps past where a
+    /// thrown `grenade` lands, down one straight lane of open deck, each
+    /// heard the `sound` it makes. Nothing is in the burst, so nothing is
+    /// struck and the grenade's own sound is the only one.
+    ///
+    /// Thrown on deck two with the shoulder lamp off, so it lands in the
+    /// dark where the commando cannot see it: what the droids learn of it
+    /// they learn by ear, never because anyone watched it land.
+    fn heard_down_the_lane(grenade: &str, sound: &str, near: i32, far: i32) -> (bool, bool) {
+        let mut app = crate::testing::headless(RunSeed(1));
+        crate::testing::arrive_on(&mut app, 2);
+        crate::testing::clear_droids(&mut app, &[]);
+        let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        app.world_mut().entity_mut(player).remove::<LightSource>();
+        let from = at(&app, player);
+        // Thrown three steps down the lane, and the lane run past both
+        // droids, so each is exactly as many steps from the landing as
+        // it is cells.
+        let aim = from.offset(3, 0);
+        let floor = app.world().resource::<WorldMap>().tile(from).expect("the commando's tile is loaded");
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            for dx in 1..=3 + far {
+                map.set_tile(from.offset(dx, 0), floor);
+            }
+            // Or the far droid's silence would be a lane off the deck.
+            assert_eq!(map.tile(aim.offset(far, 0)), Some(floor), "the lane reaches the far droid");
+        }
+        let registries = app.world().resource::<Registries>().clone();
+        let roster = crate::droids::Roster::load(&registries);
+        let deck = app.world().resource::<WorldMap>().current();
+        let droids = {
+            let mut queue = CommandQueue::default();
+            let mut commands = Commands::new(&mut queue, app.world_mut());
+            let line = roster.defs.expect("line droid");
+            let droids = [near, far].map(|d| crate::droids::spawn_monster(&mut commands, &roster, line, aim.offset(d, 0), deck, &registries));
+            queue.apply(app.world_mut());
+            droids
+        };
+        let grenade = carry(&mut app, player, grenade, 1);
+        let sight = app.world().get::<Viewshed>(player).expect("the commando sees");
+        assert!(sight.in_line(aim) && !sight.can_see(aim), "the landing is in the commando's line and too dark to see");
+        app.init_resource::<Earful>().add_systems(PostUpdate, record_heard);
+        throw_grenade(&mut app, player, grenade, aim);
+        crate::testing::pass_turns(&mut app, 1);
+        let sound = app.world().resource::<Sounds>().get(sound).expect("Foundry declares it");
+        let earful = &app.world().resource::<Earful>().0;
+        let heard = |droid: Entity| earful.contains(&(droid, sound));
+        (heard(droids[0]), heard(droids[1]))
+    }
+
+    /// A grenade thrown into the dark is heard where it lands: a blast by
+    /// a droid fourteen steps off and not by one a step further, smoke's
+    /// hiss six steps off and not seven. The commando threw it, so the
+    /// commando does not hear it: the engine never tells a noise to its
+    /// own maker, and the noise meter reads only what the commando hears.
+    #[test]
+    fn a_grenade_thrown_out_of_sight_is_heard_as_far_as_its_noise_carries_and_no_further() {
+        assert_eq!(heard_down_the_lane("frag grenade", "blast", 14, 15), (true, false), "a blast carries fourteen steps");
+        assert_eq!(heard_down_the_lane("smoke grenade", "hiss", 6, 7), (true, false), "a hiss carries six");
+    }
+
+    /// An armory loaded with no app, as `foundry --prefabs` and a test
+    /// with no world load one, names every sound by the id the app gives
+    /// it, so a grenade's `blast` is the same sound in either.
+    #[test]
+    fn the_sounds_built_with_no_app_have_the_ids_the_app_gives_them() {
+        let app = crate::testing::headless(RunSeed(1));
+        let (theirs, mine) = (app.world().resource::<Sounds>(), sounds());
+        for name in Sounds::BUILT_IN.into_iter().chain(SOUNDS) {
+            assert!(mine.get(name).is_some(), "{name} is declared with no app");
+            assert_eq!(mine.get(name), theirs.get(name), "{name} has one id with an app and without");
+        }
     }
 
     #[test]

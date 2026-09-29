@@ -1,18 +1,18 @@
 //! The effects the engine ships: what an effect list can ask of the
 //! subsystems the engine owns.
 //!
-//! `Harm`, `Mend` and `Inflict` grow with the enchant level of what landed
-//! them, through `per_level`; the others do the same thing at any level.
+//! `Harm`, `Mend` and `Inflict` grow with their carrier's `EffectBonus`;
+//! the others ignore it.
 //!
 //! [`Harm`] and [`Mend`] ask combat's damage pipeline, [`Inflict`] and
 //! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move
 //! an actor through [`EffectWorld`]; [`AddEngineEffects`] registers those
-//! seven. [`Ignite`] asks fire and [`Emit`] asks gas, and each is registered
-//! by the plugin that answers it, so a content file naming one works exactly
-//! when the game has that subsystem. Here, rather than each in the module
-//! that owns its mechanic, so the dependency runs one way: effects are built
-//! on combat, statuses, fire and gas, and none of those has to know an
-//! effect list exists.
+//! seven. [`Ignite`] asks fire, [`Emit`] asks gas and [`Noise`] asks
+//! hearing, and each is registered by the plugin that answers it, so a
+//! content file naming one works exactly when the game has that subsystem.
+//! Here, rather than each in the module that owns its mechanic, so the
+//! dependency runs one way: effects are built on combat, statuses, fire,
+//! gas and noise, and none of those has to know an effect list exists.
 
 use bevy::prelude::*;
 use rl_core::{DiceRoll, Point};
@@ -21,7 +21,7 @@ use rl_rules::damage::DamageKindId;
 use rl_rules::gas::GasId;
 use rl_rules::{Hit, Names, StatusId};
 
-use super::{AddEffect, Effect, EffectWorld, FromArgs, Landing};
+use super::{AddEffect, Effect, EffectBonus, EffectWorld, FromArgs, Landing};
 use crate::combat::DamageEvent;
 use crate::registries::Registries;
 use crate::status::{Afflict, Cure};
@@ -35,30 +35,28 @@ use crate::status::{Afflict, Cure};
 pub struct Harm {
     /// What kind of damage.
     pub kind: DamageKindId,
-    /// How much, rolled per target, at level zero.
+    /// How much, rolled per target, before any bonus.
     pub roll: DiceRoll,
-    /// Added to the roll for each enchant level of what landed it.
-    pub per_level: i32,
 }
 
 impl Harm {
-    /// The roll at `level`; a level below one adds nothing.
-    pub fn roll_at(&self, level: i32) -> DiceRoll {
-        DiceRoll { bonus: self.roll.bonus + self.per_level * level.max(0), ..self.roll }
+    /// The roll with `bonus`'s amount added.
+    pub fn roll_with(&self, bonus: EffectBonus) -> DiceRoll {
+        DiceRoll { bonus: self.roll.bonus + bonus.amount, ..self.roll }
     }
 }
 
 impl Effect for Harm {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let roll = self.roll_at(landing.level);
+        let roll = self.roll_with(landing.bonus);
         for target in &landing.targets {
             let amount = roll.roll_at_least(&mut **world.rng, 0);
             world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, amount)));
         }
     }
 
-    fn describe(&self, registries: &Registries, level: i32) -> String {
-        format!("{} {}", self.roll_at(level), registries.damage_kinds.name(self.kind))
+    fn describe(&self, registries: &Registries, bonus: EffectBonus) -> String {
+        format!("{} {}", self.roll_with(bonus), registries.damage_kinds.name(self.kind))
     }
 }
 
@@ -67,14 +65,13 @@ impl FromArgs for Harm {
 
     fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             kind: String,
             roll: String,
-            #[serde(default)]
-            per_level: i32,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))?, per_level: a.per_level })
+        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
     }
 }
 
@@ -87,30 +84,28 @@ impl FromArgs for Harm {
 pub struct Mend {
     /// The kind healing counts as.
     pub kind: DamageKindId,
-    /// How much, rolled per target, at level zero.
+    /// How much, rolled per target, before any bonus.
     pub roll: DiceRoll,
-    /// Added to the roll for each enchant level of what landed it.
-    pub per_level: i32,
 }
 
 impl Mend {
-    /// The roll at `level`; a level below one adds nothing.
-    pub fn roll_at(&self, level: i32) -> DiceRoll {
-        DiceRoll { bonus: self.roll.bonus + self.per_level * level.max(0), ..self.roll }
+    /// The roll with `bonus`'s amount added.
+    pub fn roll_with(&self, bonus: EffectBonus) -> DiceRoll {
+        DiceRoll { bonus: self.roll.bonus + bonus.amount, ..self.roll }
     }
 }
 
 impl Effect for Mend {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let roll = self.roll_at(landing.level);
+        let roll = self.roll_with(landing.bonus);
         for target in &landing.targets {
             let amount = roll.roll_at_least(&mut **world.rng, 0);
             world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, -amount)));
         }
     }
 
-    fn describe(&self, registries: &Registries, level: i32) -> String {
-        format!("mends {} {}", self.roll_at(level), registries.damage_kinds.name(self.kind))
+    fn describe(&self, registries: &Registries, bonus: EffectBonus) -> String {
+        format!("mends {} {}", self.roll_with(bonus), registries.damage_kinds.name(self.kind))
     }
 }
 
@@ -119,14 +114,13 @@ impl FromArgs for Mend {
 
     fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             kind: String,
             roll: String,
-            #[serde(default)]
-            per_level: i32,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))?, per_level: a.per_level })
+        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
     }
 }
 
@@ -138,10 +132,8 @@ impl FromArgs for Mend {
 pub struct Inflict {
     /// Which status.
     pub status: StatusId,
-    /// For how many whole turns, at level zero.
+    /// For how many whole turns, before any bonus.
     pub turns: u32,
-    /// Turns added for each enchant level of what landed it.
-    pub per_level: u32,
     /// Whether the status lasts only while the thing that landed it is
     /// worn. Read only when a trigger landed it, since only a thing can be
     /// worn: the [`Afflict`] is then held by the thing, held for every
@@ -158,9 +150,9 @@ pub struct Inflict {
 }
 
 impl Inflict {
-    /// The turns at `level`; a level below one adds nothing.
-    pub fn turns_at(&self, level: i32) -> u32 {
-        self.turns + self.per_level * level.max(0) as u32
+    /// The turns with `bonus`'s turns added.
+    pub fn turns_with(&self, bonus: EffectBonus) -> u32 {
+        self.turns + bonus.turns
     }
 }
 
@@ -171,13 +163,13 @@ impl Effect for Inflict {
             _ => None,
         };
         for target in &landing.targets {
-            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns_at(landing.level), by: Some(landing.user), held_by });
+            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns_with(landing.bonus), by: Some(landing.user), held_by });
         }
     }
 
-    fn describe(&self, registries: &Registries, level: i32) -> String {
+    fn describe(&self, registries: &Registries, bonus: EffectBonus) -> String {
         let held = if self.while_worn { " while worn" } else { "" };
-        format!("{} for {} turns{held}", registries.statuses.name(self.status), self.turns_at(level))
+        format!("{} for {} turns{held}", registries.statuses.name(self.status), self.turns_with(bonus))
     }
 }
 
@@ -186,16 +178,15 @@ impl FromArgs for Inflict {
 
     fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             status: String,
             turns: u32,
             #[serde(default)]
-            per_level: u32,
-            #[serde(default)]
             while_worn: bool,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { status: names.status(&a.status)?, turns: a.turns, per_level: a.per_level, while_worn: a.while_worn })
+        Ok(Self { status: names.status(&a.status)?, turns: a.turns, while_worn: a.while_worn })
     }
 }
 
@@ -207,7 +198,7 @@ pub struct Cleanse {
 }
 
 impl Effect for Cleanse {
-    fn describe(&self, registries: &Registries, _: i32) -> String {
+    fn describe(&self, registries: &Registries, _: EffectBonus) -> String {
         format!("cures {}", registries.statuses.name(self.status))
     }
 
@@ -223,6 +214,7 @@ impl FromArgs for Cleanse {
 
     fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             status: String,
         }
@@ -243,7 +235,7 @@ pub struct Shove {
 }
 
 impl Effect for Shove {
-    fn describe(&self, _: &Registries, _: i32) -> String {
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
         format!("shoves {} back", cells(self.cells))
     }
 
@@ -261,6 +253,7 @@ impl FromArgs for Shove {
 
     fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             cells: i32,
         }
@@ -277,7 +270,7 @@ pub struct Pull {
 }
 
 impl Effect for Pull {
-    fn describe(&self, _: &Registries, _: i32) -> String {
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
         format!("pulls {} closer", cells(self.cells))
     }
 
@@ -294,6 +287,7 @@ impl FromArgs for Pull {
 
     fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             cells: i32,
         }
@@ -311,7 +305,7 @@ impl FromArgs for Pull {
 pub struct Teleport;
 
 impl Effect for Teleport {
-    fn describe(&self, _: &Registries, _: i32) -> String {
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
         "moves you there".to_string()
     }
 
@@ -348,7 +342,7 @@ impl Effect for Ignite {
         }
     }
 
-    fn describe(&self, _: &Registries, _: i32) -> String {
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
         format!("sets the ground alight for {} turns", self.turns)
     }
 }
@@ -358,6 +352,7 @@ impl FromArgs for Ignite {
 
     fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             turns: u8,
         }
@@ -389,7 +384,7 @@ impl Effect for Emit {
         }
     }
 
-    fn describe(&self, registries: &Registries, _: i32) -> String {
+    fn describe(&self, registries: &Registries, _: EffectBonus) -> String {
         format!("gives off {}", registries.gases.name(self.gas))
     }
 }
@@ -404,12 +399,76 @@ impl FromArgs for Emit {
 
     fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Args {
             gas: String,
             amount: u16,
         }
         let a: Args = read_args(args)?;
         Ok(Self { gas: names.gas(&a.gas)?, amount: a.amount })
+    }
+}
+
+/// Make a noise where it landed, as its user making it: a grenade going
+/// off, a trap's alarm, a dropped thing clattering.
+///
+/// One noise, at the cell a projectile stopped in or else the cell aimed
+/// at, however many cells the footprint covers, because a burst is one
+/// sound and not one per cell. Heard as any other
+/// [`MakeNoise`](crate::noise::MakeNoise) is: its user does not hear it,
+/// and a listener goes to see.
+///
+/// Registered by [`NoisePlugin`](crate::noise::NoisePlugin), which is what
+/// answers it, so content naming it builds exactly when the game has
+/// hearing. Written `(kind: "Noise", args: (sound: "name", loudness: N))`,
+/// the sound one the engine or the game declared; the names it is built
+/// against carry them through [`SoundNames`](crate::noise::SoundNames).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Noise {
+    /// What it sounds like.
+    pub sound: crate::noise::SoundId,
+    /// How far it carries over open ground, in whole steps; at least one,
+    /// since a content file asking for less is refused at load.
+    pub loudness: i32,
+}
+
+impl Effect for Noise {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let at = landing.landed_at.unwrap_or(landing.aim);
+        world.commands.write_message(crate::noise::MakeNoise { at, loudness: self.loudness, sound: self.sound, maker: Some(landing.user) });
+    }
+
+    // `describe` is left to say nothing: a noise is not something a thing
+    // does to anyone, and a bag line reading "makes a noise" under every
+    // grenade would crowd out what it does.
+}
+
+impl FromArgs for Noise {
+    const KIND: &'static str = "Noise";
+
+    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            sound: String,
+            loudness: i32,
+        }
+        use crate::noise::{Sound, Sounds};
+        let a: Args = read_args(args)?;
+        // Refused rather than loaded, as a pulse's `every` of 0 is: a noise
+        // that carries no step is heard by nobody, and a grenade written
+        // that way would land in a silence nothing explains.
+        if a.loudness < 1 {
+            return Err(format!("a noise's `loudness` of {} carries no step; it is at least 1", a.loudness));
+        }
+        // The engine's first sound is in every `Sounds`, so names that
+        // cannot find it were built without any, which is the loader's
+        // mistake rather than the file's, and the message says where to fix it.
+        let sound = names.id::<Sound>(&a.sound).map_err(|e| match names.id::<Sound>(Sounds::BUILT_IN[0]) {
+            Ok(_) => e,
+            Err(_) => format!("{e}; the names effects are built against carry the sounds through `SoundNames::sounds`"),
+        })?;
+        Ok(Self { sound, loudness: a.loudness })
     }
 }
 
@@ -441,36 +500,52 @@ impl AddEngineEffects for App {
 mod tests {
     use super::*;
 
-    /// What a level adds: a point on the roll per level for harm and a
-    /// mend, a turn per level for a status, and nothing at all below `+1`.
+    /// A bonus adds its amount to a harm and a mend roll and its turns to
+    /// an inflicted status, and a default bonus, what a plain carrier
+    /// reads, adds nothing at all.
     #[test]
-    fn each_level_adds_its_per_level_and_a_plain_thing_adds_nothing() {
+    fn a_bonus_adds_its_amount_to_harm_and_mend_and_its_turns_to_a_status_and_a_default_adds_nothing() {
         let kind = DamageKindId::from_raw(0);
-        let mend = Mend { kind, roll: DiceRoll::flat(1), per_level: 2 };
-        assert_eq!((mend.roll_at(0), mend.roll_at(3)), (DiceRoll::flat(1), DiceRoll::flat(7)));
-        let harm = Harm { kind, roll: DiceRoll::new(2, 6), per_level: 1 };
-        assert_eq!(harm.roll_at(2), DiceRoll { num: 2, sides: 6, bonus: 2 });
-        let hiding = Inflict { status: StatusId::from_raw(0), turns: 5, per_level: 1, while_worn: false };
-        assert_eq!((hiding.turns_at(0), hiding.turns_at(2), hiding.turns_at(-1)), (5, 7, 5), "a negative level is plain, never shorter");
+        let bonus = EffectBonus { turns: 2, amount: 3 };
+        let mend = Mend { kind, roll: DiceRoll::flat(1) };
+        assert_eq!((mend.roll_with(EffectBonus::default()), mend.roll_with(bonus)), (DiceRoll::flat(1), DiceRoll::flat(4)));
+        let harm = Harm { kind, roll: DiceRoll::new(2, 6) };
+        assert_eq!(harm.roll_with(bonus), DiceRoll { num: 2, sides: 6, bonus: 3 });
+        let hiding = Inflict { status: StatusId::from_raw(0), turns: 5, while_worn: false };
+        assert_eq!((hiding.turns_with(EffectBonus::default()), hiding.turns_with(bonus)), (5, 7));
     }
 
-    /// The arguments read `per_level` when it is written and nought when
-    /// it is not, so every content file written before this still loads.
+    /// A `per_level` left in a `Harm`, a `Mend` or an `Inflict`'s
+    /// arguments, which the engine no longer reads, is refused at load,
+    /// naming the field, rather than silently ignored.
     #[test]
-    fn per_level_is_read_when_written_and_nought_when_not() {
+    fn per_level_in_harm_mend_or_inflict_args_is_refused_naming_it() {
         let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("care")]).unwrap();
         let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
         let names = Names::new().damage_kinds(&kinds).statuses(&statuses);
         let args = |text: &str| rl_rules::ability::parse_args(text).unwrap();
-        let old = Mend::from_args(&args(r#"(kind: "care", roll: "4")"#), &names).unwrap();
-        assert_eq!(old.per_level, 0);
-        let new = Inflict::from_args(&args(r#"(status: "hidden", turns: 5, per_level: 1)"#), &names).unwrap();
-        assert_eq!(new.per_level, 1);
+        let harm = Harm::from_args(&args(r#"(kind: "care", roll: "4", per_level: 1)"#), &names).expect_err("per_level is gone from Harm");
+        assert!(harm.contains("per_level"), "{harm}");
+        let mend = Mend::from_args(&args(r#"(kind: "care", roll: "4", per_level: 1)"#), &names).expect_err("per_level is gone from Mend");
+        assert!(mend.contains("per_level"), "{mend}");
+        let inflict = Inflict::from_args(&args(r#"(status: "hidden", turns: 5, per_level: 1)"#), &names).expect_err("per_level is gone from Inflict");
+        assert!(inflict.contains("per_level"), "{inflict}");
+    }
+
+    /// A typo'd argument on another engine effect is refused the same way,
+    /// naming it, rather than parsed away as a field nobody asked for.
+    #[test]
+    fn a_typod_argument_on_another_engine_effect_is_refused_naming_it() {
+        let names = Names::new();
+        let args = rl_rules::ability::parse_args(r#"(cells: 2, cellz: 1)"#).unwrap();
+        let err = Shove::from_args(&args, &names).expect_err("an unknown field is a typo");
+        assert!(err.contains("cellz"), "{err}");
     }
 
     /// `while_worn` is read when written and false when not, and a held
     /// status says so where it is described, which is the line the bag
-    /// shows under the thing.
+    /// shows under the thing; the bonus reaches the turns it names there
+    /// too.
     #[test]
     fn while_worn_is_read_when_written_and_said_where_the_effect_is_described() {
         let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
@@ -478,10 +553,10 @@ mod tests {
         let args = |text: &str| rl_rules::ability::parse_args(text).unwrap();
         let plain = Inflict::from_args(&args(r#"(status: "hidden", turns: 5)"#), &names).unwrap();
         assert!(!plain.while_worn);
-        let held = Inflict::from_args(&args(r#"(status: "hidden", turns: 10, per_level: 2, while_worn: true)"#), &names).unwrap();
+        let held = Inflict::from_args(&args(r#"(status: "hidden", turns: 10, while_worn: true)"#), &names).unwrap();
         assert!(held.while_worn);
         let registries = Registries { statuses, ..Default::default() };
-        assert_eq!(plain.describe(&registries, 0), "hidden for 5 turns");
-        assert_eq!(held.describe(&registries, 2), "hidden for 14 turns while worn");
+        assert_eq!(plain.describe(&registries, EffectBonus::default()), "hidden for 5 turns");
+        assert_eq!(held.describe(&registries, EffectBonus { turns: 4, amount: 0 }), "hidden for 14 turns while worn");
     }
 }

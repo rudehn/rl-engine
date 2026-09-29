@@ -23,7 +23,7 @@ use rl_rules::SlotId;
 use rl_rules::stats::Op;
 
 use crate::facet::Facet;
-use crate::view::sheet::Strike;
+use crate::view::sheet::{ResistLine, Strike};
 
 /// One carried item, as a bag screen reads it.
 #[derive(Debug, Clone, PartialEq)]
@@ -45,12 +45,19 @@ pub struct ItemRow {
     /// Where it would go if put on: the registered names of the slots it
     /// may take, empty for something that cannot be worn.
     pub goes_on: Vec<String>,
+    /// The slots it takes as well wherever it goes, by their registered
+    /// names: a two-hander's off hand. Empty for most things.
+    pub also_takes: Vec<String>,
     /// How far it flies if thrown, when it can be.
     pub throw_range: Option<i32>,
     /// What it strikes for when thrown, when a throw is a blow.
     pub thrown: Option<Strike>,
     /// Flat armor while worn.
     pub armor: i32,
+    /// What it resists while worn, a percentage by damage kind, negative
+    /// for what it leaves its wearer weaker to; nothing for a thing that
+    /// resists nothing.
+    pub resists: Vec<ResistLine>,
     /// The blow it is swung with, if wielding it strikes.
     pub blow: Option<Strike>,
     /// The shot it fires, if wielding it shoots.
@@ -147,10 +154,18 @@ impl Plugin for InventoryViewPlugin {
 type Looks =
     (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Wearable>, Option<&'static Throwable>, Option<&'static Tagged>);
 /// What an item does when worn: the same components [`Loadout`] reads.
-type Arms = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>, Option<&'static Bestows>);
+type Arms = (
+    Option<&'static Armor>,
+    Option<&'static Resists>,
+    Option<&'static MeleeAttack>,
+    Option<&'static RangedAttack>,
+    Option<&'static Strikes>,
+    Option<&'static Bestows>,
+);
 /// What an item does at its moments, what a use costs it, its clock,
-/// whether its charges come back only while worn, and its enchant level.
-type Does = (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>, Option<&'static rl_bevy::Enchant>);
+/// whether its charges come back only while worn, and its `EffectBonus`.
+type Does =
+    (Option<&'static Triggers>, Option<&'static Consumable>, Option<&'static rl_bevy::Pulse>, Has<rl_bevy::Attuned>, Option<&'static rl_bevy::EffectBonus>);
 
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
@@ -191,8 +206,11 @@ pub fn collect_inventory(
     let slot_name = |slot| registries.map(|r| r.slots.name(slot).to_string()).unwrap_or_default();
     let strike = |(kind, dice): (rl_rules::damage::DamageKindId, rl_core::DiceRoll), range: Option<i32>| Strike { kind: kind_name(kind), dice, range };
     for &item in &bag.items {
-        let Ok(((name, glyph, stack, wearable, throwable, tagged), (armor, melee, ranged, strikes, bestows), (triggers, consumable, pulse, attuned, enchant))) =
-            items.get(item)
+        let Ok((
+            (name, glyph, stack, wearable, throwable, tagged),
+            (armor, resists, melee, ranged, strikes, bestows),
+            (triggers, consumable, pulse, attuned, bonus),
+        )) = items.get(item)
         else {
             continue;
         };
@@ -208,8 +226,8 @@ pub fn collect_inventory(
                     rl_rules::Area::Here => String::new(),
                     rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
                 };
-                let level = enchant.map_or(0, |e| e.level);
-                used.extend(trigger.effects.describe(registries, level).into_iter().map(|line| format!("{lead}: {line}{area}")));
+                let bonus = bonus.copied().unwrap_or_default();
+                used.extend(trigger.effects.describe(registries, bonus).into_iter().map(|line| format!("{lead}: {line}{area}")));
             }
         }
         let clock_runs = !attuned || slot.is_some();
@@ -229,9 +247,19 @@ pub fn collect_inventory(
             slot,
             slot_name: slot.map(slot_name).unwrap_or_default(),
             goes_on: wearable.map(|w| w.0.any_of.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
+            also_takes: wearable.map(|w| w.0.also.iter().map(|s| slot_name(*s)).collect()).unwrap_or_default(),
             throw_range: throwable.map(|t| t.range),
             thrown: throwable.and_then(|t| t.strike.map(|s| strike(s, Some(t.range)))),
             armor: armor.map_or(0, |a| a.0),
+            resists: match (resists, registries) {
+                (Some(r), Some(registries)) => registries
+                    .damage_kinds
+                    .iter()
+                    .filter(|(kind, _)| r.0.get(*kind) != 0)
+                    .map(|(kind, def)| ResistLine { kind, name: def.name.clone(), pct: r.0.get(kind) })
+                    .collect(),
+                _ => Vec::new(),
+            },
             blow: melee.map(|m| strike((m.kind, m.dice), None)),
             shot: ranged.map(|r| strike((r.kind, r.dice), Some(r.range))),
             strikes: strikes.map(|s| s.0.iter().map(|hit| strike(*hit, None)).collect()).unwrap_or_default(),
@@ -280,7 +308,9 @@ mod tests {
                 Bestows(vec![(might, Op::Add(2))]),
             ))
             .id();
-        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
+        let mut resists = rl_rules::Resistances::new();
+        resists.set(kind, 10);
+        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1), Resists(resists))).id();
         let knives =
             stage.app.world_mut().spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(5, Some((kind, DiceRoll::new(1, 4)))))).id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
@@ -307,6 +337,8 @@ mod tests {
         let hat = &view.rows[2];
         assert!(!hat.worn() && hat.wearable());
         assert_eq!((hat.goes_on.as_slice(), hat.armor), (["head".to_string()].as_slice(), 1));
+        assert_eq!(hat.resists.iter().map(|r| (r.name.as_str(), r.pct)).collect::<Vec<_>>(), vec![("kinetic", 10)], "by the kind's name");
+        assert!(blade.resists.is_empty(), "and nothing for a thing that resists nothing");
     }
 
     /// The bag offers the use key for a worn thing only while it is on,
@@ -324,6 +356,7 @@ mod tests {
             fires: None,
             effects: std::sync::Arc::new(rl_bevy::Effects::default()),
             look: None,
+            every: None,
         };
         let plate = stage.app.world_mut().spawn((Item, Name::new("plate"), Wearable(EquipShape::in_slot(torso)), rl_bevy::Triggers(vec![on_use]))).id();
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![plate] }, Equipped(Equipment::with_slot_count(1))));
@@ -343,5 +376,29 @@ mod tests {
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(750))), "every 8 turns worn", "a part turn rounds up, never promising early");
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(100))), "every turn worn", "one turn is no count at all");
         assert_eq!(lead_in(Moments::PULSE, None, Some(&rl_bevy::Pulse::every(50))), "every turn worn", "nor is less than one");
+    }
+
+    /// A row's effects are described with its item's own `EffectBonus`
+    /// added: a plain `Inflict` of ten turns and a carrier bonus of four
+    /// reads fourteen.
+    #[test]
+    fn a_rows_effects_are_described_with_its_effectbonus_added() {
+        let mut stage = Stage::new_with(InventoryViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().statuses = Registry::from_defs(vec![rl_rules::StatusDef::new("cloaked")]).unwrap();
+        });
+        let player = stage.player;
+        let registries = stage.app.world().resource::<Registries>().clone();
+        let mut kinds = EffectKinds::default();
+        kinds.declare::<rl_bevy::Inflict>();
+        let args = rl_rules::ability::parse_args(r#"(status: "cloaked", turns: 10)"#).unwrap();
+        let specs = vec![rl_rules::EffectSpec { kind: "Inflict".to_string(), chance: 100, args }];
+        let effects = Effects::build(&specs, &kinds, &registries.names()).unwrap();
+        let trigger =
+            rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires: None, effects: std::sync::Arc::new(effects), look: None, every: None };
+        let plate = stage.app.world_mut().spawn((Item, Name::new("cloak plate"), Triggers(vec![trigger]), EffectBonus { turns: 4, amount: 0 })).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![plate] });
+        stage.tick();
+        let view = stage.app.world().resource::<InventoryView>();
+        assert!(view.rows[0].used.iter().any(|line| line == "use: cloaked for 14 turns"), "{:?}", view.rows[0].used);
     }
 }

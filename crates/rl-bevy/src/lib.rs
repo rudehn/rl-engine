@@ -61,9 +61,9 @@ pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Rechar
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
-    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FromArgs, Harm, Ignite,
-    Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers, area_cells, land_triggers,
-    report_remnants,
+    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FromArgs,
+    Harm, Ignite, Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers,
+    area_cells, land_triggers, report_remnants,
 };
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::{MapFields, SavedField};
@@ -81,7 +81,9 @@ pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight, Thinking,
     a_mind_holds_the_turn,
 };
-pub use noise::{AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, Sounds};
+pub use noise::{
+    AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds,
+};
 pub use places::{
     Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
 };
@@ -126,7 +128,8 @@ pub mod prelude {
     pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent, Open};
     pub use crate::effects::{
-        AddEffect, AddEngineEffects, AddMoment, Effect, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, Moments, Triggers,
+        AddEffect, AddEngineEffects, AddMoment, Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, Moments,
+        Triggers,
     };
     pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
@@ -140,7 +143,7 @@ pub mod prelude {
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
     pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
-    pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, Sounds};
+    pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
     };

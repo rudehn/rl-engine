@@ -29,9 +29,9 @@ The Systems pages are the reference for the rest, one per system, and each tease
 
 - **Add** `AbilitiesPlugin`.
 - **You supply** abilities as data: an aim, a shape from the targeting footprints, costs, requirements, a cooldown and a list of named effects.
-  The engine ships seven effects and a game registers its own with `add_effect`.
+  The engine ships ten effects, seven registered together by `add_engine_effects` and three by the fire, gas and noise plugins, and a game registers its own with `add_effect`.
 - **You get** a key that writes `AimAt`, a cursor the engine opens, a preview of what the shot would cover, and the turn spent.
-  An item that `Grants` an ability lends it to whoever carries it, and a `Charge` cost is spent from the item, so a potion is a line of RON.
+  An item never lends an ability: what a potion does is its own triggers, which the engine lands when it is drunk or thrown, so a potion is a line of RON.
 - **Worked examples** `delve` has five, `corsair` four, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
 - **Reference** [Abilities](systems/abilities.md).
 - **Design** [`docs/design/abilities.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/abilities.md).

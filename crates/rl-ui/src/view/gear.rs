@@ -30,6 +30,12 @@ pub struct GearSlot {
     /// than one: a wand. On the slot rather than the row because the row is
     /// every panel's and a count of charges is gear's.
     pub charges: Option<(u16, u16)>,
+    /// Whether this is the slot the item was equipped into, rather than one
+    /// it also claims: false only on a two-hander's off hand. A claimed
+    /// slot's [`Row`] is a second copy of the same item, so a game's
+    /// annotate system that notes something on every row (a gun's ammo, a
+    /// blaster's heat) notes it twice; a presenter reads this to say it once.
+    pub primary: bool,
 }
 
 /// Every slot, in the order the game registered them.
@@ -84,13 +90,17 @@ pub fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, pla
     let worn = player.single().ok();
     for (slot, def) in registries.slots.iter() {
         let entity = worn.and_then(|w| w.in_slot(slot));
+        let primary = match entity {
+            Some(e) => worn.is_some_and(|w| w.slot_of(e) == Some(slot)),
+            None => true,
+        };
         let (name, glyph, stack, consumable) = entity.and_then(|e| items.get(e).ok()).unwrap_or((None, None, None, None));
         let item = entity.map(|entity| {
             let shown = name.map(|n| rl_core::noun::listed(n.as_str(), stack.map_or(1, |s| s.count))).unwrap_or_default();
             Row::new(entity, shown, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE)))
         });
         let charges = consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max));
-        view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges });
+        view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges, primary });
     }
 }
 
@@ -167,5 +177,27 @@ mod tests {
 
         let view = stage.app.world().resource::<GearView>();
         assert_eq!(view.by_name("main hand").unwrap().item.as_ref().unwrap().label, "7 darts", "the count first, and the name for many");
+    }
+
+    /// A two-hander's own slot reads as its primary one and the hand it
+    /// only claims does not, so a presenter can tell the same item worn
+    /// twice from the one slot it was actually put in.
+    #[test]
+    fn a_two_handers_claimed_slot_is_not_primary_and_its_own_slot_is() {
+        let hand = slots().expect("main hand");
+        let body = slots().expect("body");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let axe = stage.app.world_mut().spawn((Item, Name::new("mono-axe"), Glyph::new('/', Color::WHITE))).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(2));
+        worn.equip(axe, &EquipShape::in_slot(hand).and_claims(body)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        assert!(view.by_name("main hand").unwrap().primary, "the slot it was equipped into");
+        assert!(!view.by_name("body").unwrap().primary, "the slot it only claims");
     }
 }

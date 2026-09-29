@@ -89,6 +89,23 @@ impl Landing {
     }
 }
 
+/// What a carrier's effects land stronger by: turns added to every status
+/// they inflict and an amount added to every harm or mend roll.
+///
+/// Written by the game when it spawns the thing, whatever made it
+/// stronger (an enchant level, a blessing) already applied, as
+/// [`Bestows`](crate::items::Bestows) and [`Armor`](crate::combat::Armor)
+/// are; the engine never learns why. A carrier with none is read as
+/// [`EffectBonus::default`], which adds nothing, so a plain thing behaves
+/// exactly as it did before this component existed.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EffectBonus {
+    /// Whole turns added to every status an effect inflicts.
+    pub turns: u32,
+    /// Added to every harm or mend roll's bonus.
+    pub amount: i32,
+}
+
 /// One use, resolved: where it went and what was under it.
 #[derive(Debug, Clone)]
 pub struct Landing {
@@ -113,10 +130,11 @@ pub struct Landing {
     /// An effect that means to hit whoever is standing in the fire reads
     /// this; one that means to change the ground reads `cells`.
     pub targets: Vec<Entity>,
-    /// The enchant level of what landed it: a worn or thrown thing's
-    /// [`Enchant`](crate::items::Enchant), and nought for an ability, an
-    /// offer, or anything plain. An effect that grows with it reads it here.
-    pub level: i32,
+    /// What landed it grows its effects by: a worn or thrown thing's own
+    /// [`EffectBonus`], copied here, and the default, which adds nothing,
+    /// for an ability, an offer, or anything plain. An effect that grows
+    /// with it reads it here.
+    pub bonus: EffectBonus,
 }
 
 /// What an effect may do to the world.
@@ -240,12 +258,12 @@ pub trait Effect: Send + Sync + 'static {
     /// What this does to `landing`.
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>);
 
-    /// What this does at `level`, in a few words for a menu, with every id
-    /// named through `registries`: `3d6 fire`, `scorched for 4 turns`. Empty
-    /// means the menu says nothing about it, which is the default so an
-    /// effect a game writes in a hurry still loads.
-    fn describe(&self, registries: &crate::registries::Registries, level: i32) -> String {
-        let _ = (registries, level);
+    /// What this does with `bonus` added, in a few words for a menu, with
+    /// every id named through `registries`: `3d6 fire`, `scorched for 4
+    /// turns`. Empty means the menu says nothing about it, which is the
+    /// default so an effect a game writes in a hurry still loads.
+    fn describe(&self, registries: &crate::registries::Registries, bonus: EffectBonus) -> String {
+        let _ = (registries, bonus);
         String::new()
     }
 }
@@ -383,17 +401,17 @@ impl Effects {
         }
     }
 
-    /// What these do at `level`, one line per effect that has something to
-    /// say, with its chance in front when it is not certain.
+    /// What these do with `bonus` added, one line per effect that has
+    /// something to say, with its chance in front when it is not certain.
     ///
     /// What a menu lists under an ability, and what a screen could list
     /// under a prop's offer or a thing in the bag: the list can say what it
     /// is without anyone knowing what carries it.
-    pub fn describe(&self, registries: &Registries, level: i32) -> Vec<String> {
+    pub fn describe(&self, registries: &Registries, bonus: EffectBonus) -> Vec<String> {
         self.0
             .iter()
             .filter_map(|b| {
-                let what = b.effect.describe(registries, level);
+                let what = b.effect.describe(registries, bonus);
                 match (what.is_empty(), b.chance >= 100) {
                     (true, _) => None,
                     (false, true) => Some(what),
@@ -411,7 +429,7 @@ impl Effects {
     /// one cell, so a footprint is not invented for something that never
     /// flew.
     pub fn land_on(&self, source: Source, user: Entity, at: Point, targets: Vec<Entity>, world: &mut EffectWorld<'_, '_>) {
-        let landing = Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, level: 0 };
+        let landing = Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, bonus: EffectBonus::default() };
         self.land(&landing, world);
     }
 }

@@ -1,7 +1,7 @@
 # Noise and hearing
 
-Status: built 2026-09-17, phases A to E, against `main` at `56a60eb`.
-Section 14 records where the build differs from this design.
+Status: built 2026-09-17, phases A to E, against `main` at `56a60eb`; the `Noise` effect added 2026-09-27.
+Section 14 records where the build differs from this design, and section 15 the effect.
 
 ## 0. Summary
 
@@ -134,6 +134,7 @@ The engine writes a `MakeNoise` for each of these, from messages the turn alread
 - **A landing**, from `ItemEvent::Thrown`, where the thing came to rest.
 
 The plugin registers each message it reads, so it works whether or not a game added doors, items or throwing.
+A fifth source is content's own, a thing that makes a noise where it lands through the `Noise` effect; section 15 has it.
 
 ## 4. Propagation
 
@@ -285,3 +286,24 @@ Descending now takes only a step the flood would, and a property test over a see
 - **The heist's lines about sound follow the narrator's.**
   The clatter was logged before "You throw" in the old heist as well, since it was written in `React` and the narrator speaks later.
   The heist now narrates what was heard after `ViewSet::Speak`, and gives the thief `Hearing`, so a door or a scuffle out of sight is told with the way it came from.
+
+## 15. Content that makes a noise
+
+A grenade bursting in a corridor made no sound, because the only noises were the engine's four and whatever a game wrote from a system of its own.
+A game could have read `Fired` for its grenades and written a `MakeNoise`, but that is a system in every game for a line of content, and the loudness would live in code while the rest of what a grenade does lives in its file.
+
+So hearing answers an effect, `Noise { sound, loudness }`, written `(kind: "Noise", args: (sound: "blast", loudness: 14))`.
+`NoisePlugin` registers it, as `FirePlugin` registers `Ignite`, so content naming it loads exactly when the game can hear.
+It lives beside the engine's other effects rather than here, so the dependency runs one way: effects know hearing, and hearing knows nothing of effect lists beyond registering one.
+
+It makes one `MakeNoise` per landing, however many cells the burst covers, because a burst is one sound and a noise per cell would be heard as many times as it had cells.
+It is made where a projectile stopped, else where the landing was aimed, which for a trigger is the cell the moment happened on.
+Its maker is the landing's user, so the thrower does not hear their own grenade, by the rule section 14 gave every noise; a trap, which lands as itself, is its own maker and every listener hears it.
+It describes itself as nothing, since a bag line saying a grenade makes a noise would crowd out what it does to whoever is in it.
+
+A sound is resolved at load, so a typo fails the file rather than a throw.
+Sounds are interned while the app is built, by the engine and by `add_sound`, not loaded into `Registries` from a file, so `Registries::names` cannot carry them.
+`SoundNames::sounds` chains them onto a `Names`, over `Names::interned`, which puts any interned vocabulary in scope the way `with` puts a registry, and the engine's prop loader does it itself.
+Moving `Sounds` into `Registries` was the alternative, and was rejected: it would make a plugin's `add_sound`, called while the app is built, write into a resource the game inserts later, and every game would fill a registry it never wrote.
+Names built without the sounds are the loader's mistake rather than the file's, and the message says so, found by asking for the engine's own first sound, which every `Sounds` holds; asking `Names` directly whether a vocabulary is in scope would be public surface in tier 1 with one caller, answering what the probe already answers exactly.
+A `loudness` below one carries no step and is refused at load, as a pulse's `every` of nought is, since a grenade that lands in silence is a mistake nothing would explain.

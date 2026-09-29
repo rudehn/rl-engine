@@ -76,9 +76,13 @@ impl Plugin for FoundryPlugin {
         // The commando fades while a cloak hides them, in the pass it went
         // on or came off.
         app.add_systems(Turn, crate::run::fade_the_unseen.in_set(TurnSet::React));
-        // The alarm is a sound of Foundry's own, declared once so
-        // `sound_alarm` finds it by name.
-        app.add_sound(crate::droids::ALARM_SOUND);
+        // Foundry's own sounds, the alarm's that `sound_alarm` finds by
+        // name and the grenades' that `items.ron` names, declared from the
+        // one list `gear::sounds` also walks for an armory loaded with no
+        // app, so each has the same id in both.
+        for sound in crate::gear::SOUNDS {
+            app.add_sound(sound);
+        }
         // Chained, and in this order: the engine's own `schedule`
         // (crates/rl-bevy/src/turn.rs) can write a `TurnEnd` and deal the
         // next actor's turn in the same pass, so `TurnSet::React` can see
@@ -95,6 +99,10 @@ impl Plugin for FoundryPlugin {
         // other: no weapon carries both `Heat` and `Ammo`, so no row ever
         // gets a facet from both.
         app.add_systems(Update, (crate::heat::note_heat, crate::ammo::note_ammo).in_set(ViewSet::Annotate));
+        // The pack's rows, the same way, with or without a pack panel.
+        // After the gear notes, which fill another view but intern the
+        // same facet keys, so each key is declared in one order every run.
+        app.add_systems(Update, crate::gear::note_the_pack.after(crate::heat::note_heat).after(crate::ammo::note_ammo).in_set(ViewSet::Annotate));
         // Ammunition's own economy, chained in this order: `spend_ammo`
         // takes a slug off the bag a `Struck` just fired from, and
         // `sync_ammo` reads whatever bag every `Ammo` item's wielder now

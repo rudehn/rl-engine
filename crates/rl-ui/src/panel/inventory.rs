@@ -17,9 +17,10 @@
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
-//! to armor or a stat, how far it flies, where it is worn or could be, what
-//! it does at each of its moments, how many charges are left, and whatever
-//! the game pushed onto it in [`ViewSet::Annotate`](crate::ViewSet).
+//! to armor or a stat, what it resists, how far it flies, where it is worn
+//! or could be and what else it takes, what it does at each of its
+//! moments, how many charges are left, and whatever the game pushed onto
+//! it in [`ViewSet::Annotate`](crate::ViewSet).
 //!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
@@ -297,8 +298,8 @@ fn strike(s: &Strike) -> String {
     }
 }
 
-/// The lines describing `row`: its numbers, then where it goes, then what
-/// the game added.
+/// The lines describing `row`: its numbers and what the game added, then
+/// where it goes, then what it does and has left.
 fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     let mut lines: Vec<(String, ToneId)> = Vec::new();
     let mut say = |text: String, tone: ToneId| lines.extend(wrap(&text, width).into_iter().map(|l| (l, tone)));
@@ -314,6 +315,12 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     if row.armor != 0 {
         say(format!("armor {:+}", row.armor), Tones::TEXT);
     }
+    for r in &row.resists {
+        match r.pct {
+            pct if pct < 0 => say(format!("weak to {} {}%", r.name, -pct), Tones::TEXT),
+            pct => say(format!("resists {} {pct}%", r.name), Tones::TEXT),
+        }
+    }
     for (stat, op) in &row.bestows {
         say(format!("{stat} {}", plain_op(*op)), Tones::TEXT);
     }
@@ -322,10 +329,21 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         (None, Some(range)) => say(format!("thrown to {range}"), Tones::TEXT),
         (None, None) => {}
     }
+    // What the game added is a fact about the thing the engine could not
+    // know, a sight it lends or why a gun cannot fire, so it reads with the
+    // numbers rather than under what the thing does and has left.
+    for facet in &row.facets {
+        say(facet.text.clone(), facet.tone);
+    }
+    // A two-hander names the hand it empties as well, since putting it on
+    // takes whatever is there off.
+    let also = row.also_takes.iter().map(|slot| format!("the {slot}")).collect::<Vec<_>>().join(" and ");
     if row.worn() {
-        say(format!("worn on the {}", row.slot_name), Tones::MUTED);
+        let also = if also.is_empty() { also } else { format!(" and {also}") };
+        say(format!("worn on the {}{also}", row.slot_name), Tones::MUTED);
     } else if row.wearable() {
-        say(format!("goes on the {}", row.goes_on.join(" or the ")), Tones::MUTED);
+        let also = if also.is_empty() { also } else { format!(", and takes {also}") };
+        say(format!("goes on the {}{also}", row.goes_on.join(" or the ")), Tones::MUTED);
     }
     for what in &row.used {
         say(what.clone(), Tones::TEXT);
@@ -342,9 +360,6 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
         (false, true, Some(whole)) => say(format!("ready in {}", turns(whole * rl_core::turn::BASE_ACTION_COST)), Tones::MUTED),
         (false, true, None) => say("empty".to_string(), Tones::MUTED),
         (false, false, _) => {}
-    }
-    for facet in &row.facets {
-        say(facet.text.clone(), facet.tone);
     }
     lines
 }
@@ -455,7 +470,9 @@ mod tests {
                 MeleeAttack::new(kind, DiceRoll::new(1, 6)),
             ))
             .id();
-        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1))).id();
+        let mut resists = rl_rules::Resistances::new();
+        resists.set(kind, 10);
+        let hat = stage.app.world_mut().spawn((Item, Name::new("a hat"), Wearable(EquipShape::in_slot(head)), Armor(1), Resists(resists))).id();
         let knives =
             stage.app.world_mut().spawn((Item, Name::new("knife"), Stack { key: 1, count: 3 }, Throwable::new(5, Some((kind, DiceRoll::new(1, 4)))))).id();
         let mut worn = Equipped(Equipment::with_slot_count(2));
@@ -463,6 +480,31 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![blade, hat, knives] }, worn));
         stage.tick();
         (stage, blade, hat, knives)
+    }
+
+    /// A two-hander says the second slot it takes, in the bag and worn,
+    /// since putting it on empties that hand too.
+    #[test]
+    fn a_thing_that_takes_a_second_slot_says_so_in_the_bag_and_worn() {
+        let mut stage = Stage::new_with(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"), |app| {
+            app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand")]).unwrap();
+        })
+        .screen(52, 14);
+        let (player, kind) = (stage.player, stage.kind);
+        let (main, off) = {
+            let r = stage.app.world().resource::<Registries>();
+            (r.slots.expect("main hand"), r.slots.expect("off hand"))
+        };
+        let shape = EquipShape::in_slot(main).and_claims(off);
+        let axe = stage.app.world_mut().spawn((Item, Name::new("an axe"), Wearable(shape.clone()), MeleeAttack::new(kind, DiceRoll::new(2, 6)))).id();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![axe] }, Equipped(Equipment::with_slot_count(2))));
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        assert_eq!(inside(&stage, 4), "goes on the main hand, and takes the off hand");
+
+        stage.app.world_mut().get_mut::<Equipped>(player).unwrap().equip(axe, &shape).unwrap();
+        stage.tick();
+        assert_eq!(inside(&stage, 4), "worn on the main hand and the off hand");
     }
 
     /// The text inside the frame on row `y`, border and padding cut off.
@@ -486,7 +528,8 @@ mod tests {
 
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "armor +1");
-        assert_eq!(inside(&stage, 6), "goes on the head");
+        assert_eq!(inside(&stage, 6), "resists kinetic 10%", "what it resists, under its armor");
+        assert_eq!(inside(&stage, 7), "goes on the head");
         assert!(stage.row(13).contains("e wear \u{2022} d drop \u{2022} esc"), "the hat goes on: {:?}", stage.row(13));
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "thrown 1d4 kinetic to 5");
@@ -498,6 +541,28 @@ mod tests {
 
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open());
+    }
+
+    /// A game's facet reads with the thing's own numbers, since it is a
+    /// fact about the thing the engine could not know, and the muted line
+    /// saying where it goes stays under everything the thing is, as it
+    /// does for a thing with no facet.
+    #[test]
+    fn a_games_facet_reads_under_the_things_numbers_and_above_where_it_goes() {
+        let (mut stage, _, hat, _) = staged();
+        stage.app.add_systems(
+            Update,
+            (move |mut view: ResMut<InventoryView>, mut facets: ResMut<crate::Facets>| {
+                for row in view.rows.iter_mut().filter(|r| r.entity == hat) {
+                    row.facets.push(facets.facet("dark sight", "sees 8 in the dark"));
+                }
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::ArrowDown);
+        assert_eq!(detail(&stage)[4..8], ["armor +1", "resists kinetic 10%", "sees 8 in the dark", "goes on the head"], "{:?}", detail(&stage));
     }
 
     /// Each key writes the engine's own intent for the row picked out and

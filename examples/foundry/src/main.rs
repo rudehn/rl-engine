@@ -35,11 +35,21 @@ const TARGET_ROWS: i32 = 10;
 /// which sets the gear off from the gauges as the blank under the gear
 /// sets it off from the nearby list.
 const VITALS_ROWS: i32 = 8;
-const GEAR_ROWS: i32 = 9;
+/// Two for the heading and its rule, one apiece for the six slots, one more
+/// for each of the worst two that can wrap (a dry pistol in each hand: the
+/// gear panel says an item's facet once, on the hand it was equipped into,
+/// so a two-hander's claimed hand never wraps, only its own), and a last
+/// row so the panel still sets itself off from the nearby list under it
+/// even when both hands do. With nothing wrapped that leaves three blank
+/// rows rather than one; that is a gap this rail can spare, and it grows
+/// and shrinks with how much wrapped rather than jumping between one
+/// number and another the way a tighter fit did.
+const GEAR_ROWS: i32 = 11;
 
 /// The screen, cut up once so every panel and the map agree on it.
 struct Screen {
     map: Rect,
+    gutter: Rect,
     log: Rect,
     vitals: Rect,
     gear: Rect,
@@ -61,6 +71,9 @@ struct Screen {
 impl Screen {
     fn new() -> Self {
         let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        // A column of nothing between the map and the rail, so a room on a
+        // deck's east edge does not run its wall into the rail's words.
+        let (left, gutter) = panel::split_right(left, 1);
         let (map, log) = panel::split_bottom(left, LOG_ROWS);
         let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
@@ -73,6 +86,7 @@ impl Screen {
         let centred = |w: i32, y: i32, h: i32| Rect::new(map.x + (map.width - w) / 2, map.y + y, w, h);
         Self {
             map,
+            gutter,
             log,
             vitals,
             gear,
@@ -110,6 +124,13 @@ impl Screen {
 /// window draws. The narrator that fills the log is added beside the
 /// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
+    // The gutter belongs to no panel, so it is painted blank with the
+    // chrome each frame, or the title screen's works would show through it.
+    let gutter = screen.gutter;
+    app.add_systems(
+        Update,
+        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| panel::clear(&mut terminal, gutter, &palette)).in_set(PresentSet::Chrome),
+    );
     app.add_plugins((
         // Three thousand hundredths of a step is the gauge's full: a shot
         // or a blow next door reads about a third of it, and a probe's
@@ -194,6 +215,7 @@ fn main() -> AppExit {
         // Fire and smoke, for the grenades: each registers the effect its
         // grenade names, `Ignite` and `Emit`, before the abilities load.
         .add_plugins((FirePlugin, GasPlugin))
+        // Hearing, which registers the `Noise` every grenade is heard by.
         .add_plugins(NoisePlugin::new(foundry::droids::NOISE))
         .add_plugins(foundry::plugin::narrator())
         // The engine's own effects: `Mend`, for `stims`, and `Harm` for
@@ -288,9 +310,10 @@ mod tests {
     }
 
     /// The heat facet is the one thing on the rail the engine could not
-    /// have drawn by itself: a blaster fired until it locks says so on its
-    /// gear row, in full and in the palette's warning tone, however long
-    /// the slot and the name ahead of it.
+    /// have drawn by itself: a blaster fired until it locks says so, in
+    /// full and in the palette's warning tone. The name and the facet do
+    /// not both fit the rail's width beside the slot, so the facet wraps
+    /// to the line under the name rather than clip either one.
     #[test]
     fn a_blaster_fired_until_it_locks_reads_locked_in_the_warning_tone_on_the_gear_panel() {
         let mut app = on_screen(RunSeed(7));
@@ -298,13 +321,47 @@ mod tests {
         foundry::testing::fire_at_a_target(&mut app, me, 7);
         app.update();
         let y = (0..ROWS).find(|y| row(&app, *y).contains("main hand")).expect("a gear row for the main hand");
-        let line = row(&app, y);
-        assert!(line.trim_end().ends_with("\u{00b7} locked"), "{line:?}");
+        assert!(row(&app, y).trim_end().ends_with("hand blaster"), "the name stays whole: {:?}", row(&app, y));
+        let line = row(&app, y + 1);
+        assert!(line.trim_end().ends_with("locked"), "the facet wraps under it: {line:?}");
         // The last letter of "locked", wherever the row ends.
-        let x = (0..COLS).rev().find(|x| app.world().resource::<Terminal>().get(*x, y).is_some_and(|c| c.glyph == 'd')).unwrap();
+        let x = (0..COLS).rev().find(|x| app.world().resource::<Terminal>().get(*x, y + 1).is_some_and(|c| c.glyph == 'd')).unwrap();
         let palette = app.world().resource::<Palette>();
         let bad = rl_engine::rl_ui::readable(palette.get(Tones::BAD), palette);
-        assert_eq!(app.world().resource::<Terminal>().get(x, y).unwrap().fg, bad);
+        assert_eq!(app.world().resource::<Terminal>().get(x, y + 1).unwrap().fg, bad);
+    }
+
+    /// The Worn panel is sized for its worst case: two independent
+    /// one-handed guns, each long enough once leveled that its name and
+    /// its own facet cannot share a row, one worn in each hand, both
+    /// wrapping at once. Every slot still draws, `legs` last, and one
+    /// blank row still stands over the nearby list under it, the same gap
+    /// every other pair of panels on the rail leaves.
+    #[test]
+    fn both_hands_wrapping_at_once_still_shows_every_slot_and_the_gap_under_it() {
+        let mut app = on_screen(RunSeed(7));
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let first = in_the_pack(&mut app, "slug pistol", 2);
+        app.world_mut().write_message(Intent::new(me, Equip(first)));
+        app.update();
+        app.update();
+        let second = in_the_pack(&mut app, "slug pistol", 2);
+        app.world_mut().write_message(Intent::new(me, Equip(second)));
+        app.update();
+        app.update();
+
+        let rail = |app: &App, y: i32| row(app, y).chars().skip((COLS - RAIL) as usize).collect::<String>().trim_end().to_string();
+        let main_y = (0..ROWS).find(|y| rail(&app, *y).contains("main hand")).expect("a gear row for the main hand");
+        assert!(rail(&app, main_y).ends_with("slug pistol +2"), "the main hand's name stays whole: {:?}", rail(&app, main_y));
+        assert!(rail(&app, main_y + 1).ends_with("dry"), "and wraps its own dry under it: {:?}", rail(&app, main_y + 1));
+        let off_y = (0..ROWS).find(|y| rail(&app, *y).contains("off hand")).expect("a gear row for the off hand");
+        assert_eq!(off_y, main_y + 2, "no row lost between the two wrapped hands");
+        assert!(rail(&app, off_y).ends_with("slug pistol +2"), "{:?}", rail(&app, off_y));
+        assert!(rail(&app, off_y + 1).ends_with("dry"), "the off hand wraps its own dry too: {:?}", rail(&app, off_y + 1));
+
+        let legs = (0..ROWS).find(|y| rail(&app, *y).trim_start().starts_with("legs")).expect("legs still draws, however much wrapped above it");
+        assert_eq!(rail(&app, legs + 1), "", "one blank row still stands over the nearby list");
+        assert!(rail(&app, legs + 2).starts_with("On the deck"), "and then the nearby heading: {:?}", rail(&app, legs + 2));
     }
 
     /// A status's badge has a row of its own on the vitals strip, under
@@ -337,6 +394,74 @@ mod tests {
         let view = app.world().resource::<InventoryView>();
         let row = view.rows.iter().find(|r| r.entity == plate).expect("the plate in the pack");
         assert!(row.used.contains(&"use: cloaked for 10 turns while worn".to_string()), "{:?}", row.used);
+    }
+
+    /// The map and the log stop a column short of the rail, so a wall on
+    /// a deck's east edge never runs into the rail's words.
+    #[test]
+    fn a_blank_column_stands_between_the_map_and_the_rail() {
+        let screen = Screen::new();
+        let rail = COLS - RAIL;
+        assert_eq!((screen.map.right(), screen.log.right()), (rail - 1, rail - 1), "one column clear of the rail at {rail}");
+        assert_eq!(screen.vitals.x, rail, "and the rail where it was");
+
+        // Painted blank every frame, since nothing else owns it: whatever
+        // was on the terminal before, the title screen's works included,
+        // does not show through.
+        let mut app = on_screen(RunSeed(7));
+        let dirt = rl_engine::rl_render::Cell::new('x', Color::WHITE);
+        app.world_mut().resource_mut::<Terminal>().fill(Rect::new(rail - 1, 0, 1, ROWS), dirt);
+        app.update();
+        let column: String = (0..ROWS).map(|y| app.world().resource::<Terminal>().get(rail - 1, y).map_or('?', |c| c.glyph)).collect();
+        assert_eq!(column.trim(), "", "the gutter: {column:?}");
+    }
+
+    /// `name` made at `level` and put in the commando's pack, and a pass
+    /// run so the pack's rows are read again.
+    fn in_the_pack(app: &mut App, name: &str, level: i32) -> Entity {
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
+        let registries = app.world().resource::<Registries>().clone();
+        let armory = foundry::testing::armory_of(app);
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let item = {
+            let mut commands = Commands::new(&mut queue, app.world());
+            foundry::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect(name), level, &registries)
+        };
+        queue.apply(app.world_mut());
+        app.world_mut().get_mut::<Inventory>(me).expect("the commando has a pack").items.push(item);
+        app.update();
+        app.update();
+        item
+    }
+
+    /// The pack row of `item`, as the pack draws it.
+    fn pack_row(app: &App, item: Entity) -> rl_engine::rl_ui::ItemRow {
+        app.world().resource::<InventoryView>().rows.iter().find(|r| r.entity == item).expect("in the pack").clone()
+    }
+
+    /// A slug rifle with no slugs to feed it still says in the pack what
+    /// it shoots, at its level, and that it is dry: the shot put by while
+    /// it cannot fire is the one a player weighing a `+2` wants to read.
+    #[test]
+    fn the_pack_says_what_a_dry_gun_shoots_at_its_level_and_that_it_is_dry() {
+        let mut app = on_screen(RunSeed(7));
+        let rifle = in_the_pack(&mut app, "slug rifle", 2);
+        assert!(app.world().get::<foundry::ammo::Dry>(rifle).is_some(), "no slugs in the pack, so it is dry");
+        let row = pack_row(&app, rifle);
+        assert_eq!(row.shot.map(|s| s.dice.to_string()).as_deref(), Some("1d10+5"), "damage: 2, so four more at +2");
+        assert!(row.facets.iter().any(|f| f.text == "dry"), "{:?}", row.facets);
+    }
+
+    /// A rangefinder helmet says in the pack how far it sees in the dark,
+    /// with its level's tiles added, since that is what it is for.
+    #[test]
+    fn the_pack_says_how_far_a_rangefinder_sees_in_the_dark_at_its_level() {
+        let mut app = on_screen(RunSeed(7));
+        let plain = in_the_pack(&mut app, "rangefinder helmet", 0);
+        let fine = in_the_pack(&mut app, "rangefinder helmet", 2);
+        let sees = |row: rl_engine::rl_ui::ItemRow| row.facets.iter().map(|f| f.text.clone()).find(|t| t.contains("dark"));
+        assert_eq!(sees(pack_row(&app, plain)).as_deref(), Some("sees 6 in the dark"));
+        assert_eq!(sees(pack_row(&app, fine)).as_deref(), Some("sees 8 in the dark"));
     }
 
     /// The log reads in the order things happened: a probe that spots the

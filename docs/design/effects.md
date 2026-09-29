@@ -5,7 +5,7 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/it
 
 ## 0. Summary
 
-An effect is one thing that happens to a cell or an actor: harm, a mend, a status, a shove, a fire, a cloud of gas.
+An effect is one thing that happens to a cell or an actor: harm, a mend, a status, a shove, a fire, a cloud of gas, a noise.
 Three kinds of thing land effects: an ability an actor knows, a prop in the world, and an item in a bag.
 Until this slice the machinery lived in `ability.rs`, so props and items reached into abilities to land anything, and each plugin registered the ability stream for itself.
 
@@ -41,10 +41,11 @@ A content file names a moment as a string.
 It is resolved when the triggers are built, and a name nobody registered fails that build with the name in the message, the way an unregistered effect kind does, so a typo is caught while the file is read rather than by a trap that quietly never fires.
 
 `pulse` is the seventh built-in moment, a worn thing's clock coming round, appended so the six before it keep their ids.
+Its period is written on the trigger it sets off, `(on: "pulse", every: 1000, ...)`, required there and refused on any other moment, since nothing else comes round on its own; the clock is the trigger's, so an item has nothing worn-only at its top level.
 
 ## 3. `Triggers`, and the potion model
 
-`TriggerSpec` is the authored form, in `rl-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `Area`, an optional count of `fires`, and an optional effect list.
+`TriggerSpec` is the authored form, in `rl-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `Area`, an optional count of `fires`, an optional effect list, and a pulse trigger's `every`.
 `Triggers::build(specs, shared, moments, kinds, names)` turns a definition's specs into the `Triggers` component once, and every copy of that item or prop shares each list through an `Arc`.
 `fires` is per entity: the list is shared, the count is not, so springing one cable does not spend another.
 
@@ -138,13 +139,22 @@ A prop restored before `PropEffects` is built carries its saved firings as `Pend
 
 ## 8. Effects at a level
 
-An enchanted thing's effects grow with its level, and the level reaches them on the `Landing`.
-`land_triggers` reads it off the carrier's `Enchant`; an ability and an offer land at nought.
-`Harm` and `Mend` add `per_level` to the roll's bonus per level and `Inflict` adds `per_level` turns, each nought unless written, so every file written before this loads unchanged.
-`describe` takes the level too, so the bag says what a `+2` thing does at `+2`.
+An enchanted thing's effects grow with its level, and the engine never learns what a level is.
+The game writes `EffectBonus { turns, amount }` on the thing when it spawns it, whatever made it stronger already applied, as it writes `Armor` and `Bestows`.
+`land_triggers` copies it onto `Landing::bonus`, and an ability, an offer or a plain thing lands with the default, which adds nothing.
+`Harm` and `Mend` add `amount` to the roll's bonus, `Inflict` adds `turns`, and every other effect ignores it.
+`describe` takes the bonus too, so the bag says what a `+2` thing does as it is.
 
-The level is on the landing rather than baked into the effects at spawn because the effects are built once per definition and shared by every copy behind an `Arc`, and because the arguments are text the engine does not understand: rewriting them per level would silently skip a field that is not a number.
-What is a number on the thing rather than in an effect, a pulse's period or a plate's armor, is written by the game at spawn with the level applied, as `Bestows` already is.
+The bonus rides on the landing rather than being baked into the effects at spawn because the effects are built once per definition and shared by every copy behind an `Arc`, and because the arguments are text the engine does not understand: rewriting them per level would silently skip a field that is not a number.
+It is a number the game already worked out, rather than a level the effects multiply, because what a level does is a rule, and a rule belongs in one place the game chooses.
+Foundry's is an item's `enchant` block, where `turns: 2` says what a level adds to every status the thing inflicts; a game whose shrines bless gear writes its rule wherever blessings live, and neither teaches the engine a word.
+What is a number on the thing rather than in an effect, a pulse's period or a plate's armor, is written by the game at spawn with the level applied, as `Bestows` already is; a pulse's base period is its trigger's `every`, which `Triggers::pulse_every` reads back so the game keeps no second copy.
+A carrier has one bonus, so turns and amount reach every effect of their kind it lands, and a thing that wanted two statuses to grow at different rates could not say so; none does, and that is the day to give the bonus a second shape.
+
+The first build, merged with the worn gear and never released, carried the level itself: `Landing::level`, read off the carrier's `Enchant`, and a `per_level` in the arguments of `Harm`, `Mend` and `Inflict`.
+It was replaced on 2026-09-27 because it put level rules in the effects where a reader of an item could not find them: the cloak plate's `+2` was a `per_level` inside an `Inflict`, its pulse a `per_level` in a clock at the top of the item, and its armor nowhere at all.
+`docs/superpowers/specs/2026-09-27-enchant-model-design.md` has the approaches weighed.
+Every engine effect's arguments now refuse a field they do not name, so a `per_level` left in a file fails the load naming it rather than loading plain.
 
 ## 9. The roads not taken
 

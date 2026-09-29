@@ -120,17 +120,18 @@ pub fn effect_kinds() -> EffectKinds {
 }
 
 /// The armory, for a test that has an `App`: the same three tables the
-/// running game loads it from.
+/// running game loads it from, against the effects, moments and sounds
+/// the app declared.
 pub fn armory_of(app: &App) -> crate::gear::Armory {
     let world = app.world();
-    crate::gear::Armory::load(world.resource::<Registries>(), world.resource::<EffectKinds>(), world.resource::<Moments>())
+    crate::gear::Armory::load(world.resource::<Registries>(), world.resource::<EffectKinds>(), world.resource::<Moments>(), world.resource::<Sounds>())
 }
 
 /// The armory, for a test that has `Registries` and no `App` at all: the
-/// effect kinds are built on the spot, and the moments are the engine's,
-/// since Foundry registers none of its own.
+/// effect kinds and the sounds are built on the spot, and the moments are
+/// the engine's, since Foundry registers none of its own.
 pub fn armory(registries: &Registries) -> crate::gear::Armory {
-    crate::gear::Armory::load(registries, &effect_kinds(), &Moments::default())
+    crate::gear::Armory::load(registries, &effect_kinds(), &Moments::default(), &crate::gear::sounds())
 }
 
 /// `Struck` messages copied out as they are written, the way the engine's

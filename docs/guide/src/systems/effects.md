@@ -9,9 +9,13 @@
             crates/rl-bevy/src/throwing.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/props.rs
+            crates/rl-bevy/src/fire.rs
+            crates/rl-bevy/src/gas.rs
+            crates/rl-bevy/src/noise.rs
+            crates/rl-bevy/src/registries.rs
             crates/rl-rules/src/ability.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 4b8f7a8d -->
+     fingerprint: f0a56e88 -->
 
 # Effects
 
@@ -26,23 +30,27 @@ What an effect costs the thing that carried it is not here; that is `Consumables
 It initializes `EffectKinds` and `Moments`, takes the `EffectRng` stream, registers `Fired` and the `DamageEvent`, `Afflict` and `Cure` every landing may write, reads `Cued`, and runs `report_remnants` then `land_triggers` in `ResolveSet::Triggers`.
 It is not unique and builds once, so a game that adds it by hand as well gets one copy and no error.
 That stage sits between `ResolveSet::Act` and `ResolveSet::Fields`: after every action that reports a moment, and before fire, gas, statuses and damage, so a grenade's fire spreads and a stim's mend is applied in the pass that set them off.
-`add_engine_effects()` registers the seven effects that need no subsystem, and `FirePlugin` and `GasPlugin` register `Ignite` and `Emit`, so a content file naming either loads exactly when the game has fire or gas.
+`add_engine_effects()` registers the seven effects that need no subsystem, and `FirePlugin`, `GasPlugin` and `NoisePlugin` register `Ignite`, `Emit` and `Noise`, so a content file naming one loads exactly when the game has fire, gas or hearing.
 A game registers an effect of its own with `app.add_effect::<E>()` and a moment of its own with `app.add_moment(name)`, both while the app is built.
 
 ## The model
 
-`Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, level)` a menu reads at that level, and `FromArgs` builds one from the text arguments a content file gave it.
+`Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, and `FromArgs` builds one from the text arguments a content file gave it.
+Every engine effect's arguments refuse a field they do not name, so a typo fails the load naming it rather than leaving a number at its default.
 `EffectKinds` files each under its `KIND`, and `Effects::build` turns a list of `EffectSpec` into built effects or reports every spec that would not build.
-`Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, and the enchant level of whatever landed it, nought for an ability or an offer.
-`Harm` and `Mend` add their `per_level` to the roll's bonus for each level and `Inflict` adds its `per_level` in turns, so a `+3` thing's mend rolls three times its `per_level` higher and its status lasts three times its `per_level` turns longer; every other engine effect ignores the level.
+`Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, and `bonus`, the `EffectBonus` of whatever landed it, which `land_triggers` copies off the carrier and which is the default, adding nothing, for an ability, an offer or a plain thing.
+`EffectBonus { turns, amount }` is a component the game writes on a thing when it spawns it, whatever made it stronger already applied, as it writes `Armor` and `Bestows`: `Harm` and `Mend` add its `amount` to the roll's bonus through `roll_with` and `Inflict` adds its `turns` through `turns_with`, and every other engine effect ignores it, so the engine never learns what a level is.
+`Noise { sound, loudness }` makes one `MakeNoise` by the landing's user where a projectile stopped, else where it was aimed, however many cells the footprint covers, and describes itself as nothing, since a bag line saying a grenade makes a noise would crowd out what it does.
+Its sound is resolved at load against the names it is built with, and those carry the sounds only when a loader chains `SoundNames::sounds` onto them, since sounds are interned while the app is built and `Registries::names` has none; a sound nobody declared, or a `loudness` below one, is a load error naming it.
 `Inflict` also takes `while_worn`, false unless written: landed by a trigger, its `Afflict` is then held by the thing the trigger is on, and the status ends when that thing is no longer worn; landed by an ability or an offer, it is not held.
 It is meant for a trigger that only ever lands on its own wearer, since a held refresh reaching an area's or a hit's bystander who already carries the status unheld takes their instance over and the very next pass cures it for not wearing the thing.
 It describes itself with ` while worn` after the turns, so the bag says so under the thing.
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.
 `Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed` and `pulse` first so their ids are constants on the type.
-`TriggerSpec`, in `rl-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; and `look`, what shows over the cells it lands on.
-`Triggers::build(specs, shared, moments, kinds, names)` builds a definition's triggers once, sharing each list through an `Arc`, and fails on a moment nobody registered, naming it.
+`TriggerSpec`, in `rl-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; `look`, what shows over the cells it lands on; and `every`, the hundredths between pulses, which a `pulse` trigger must carry and no other may.
+`Triggers::build(specs, shared, moments, kinds, names)` builds a definition's triggers once, sharing each list through an `Arc`, and fails on a moment nobody registered, a pulse with no `every` or an `every` of nought, and an `every` on any other moment, naming each.
+The built `Trigger` keeps its `every`, and `Triggers::pulse_every` reads a carrier's back, so a game building a worn thing's `Pulse` takes its period from the trigger rather than keeping a second copy.
 A spec with no list takes the definition's `shared` one, and a spec with neither fails, since a trigger that does nothing is a typo.
 `Triggers` is the component, and each copy counts its own `fires`, so springing one cable spends nothing of another.
 `Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing and `hit` at the struck actor's cell, and props report `entered` and `destroyed`.
@@ -53,7 +61,7 @@ A broken prop leaves one for its `destroyed` moment, and a watched shot from a t
 
 ## Using it
 
-A trigger is a moment, an area and a list, and Foundry's grenades are four of them, each a burst where the grenade comes down.
+A trigger is a moment, an area and a list, and Foundry's grenades are four of them, each a burst where the grenade comes down and a noise heard from there.
 
 <!-- include: ../../../../examples/foundry/assets/items.ron:grenades -->
 ```ron
@@ -62,18 +70,19 @@ A trigger is a moment, an area and a list, and Foundry's grenades are four of th
     // a frag burst off a droid; an ion burst undoes a chassis and blinds
     // every radar in it, and barely touches flesh. Smoke is thirty cells'
     // worth, more than its burst holds, so it spills past it: a room of
-    // cover in the open, a long plume down a corridor.
+    // cover in the open, a long plume down a corridor. Each is heard where
+    // it lands: a burst fourteen steps down open deck, smoke's hiss six.
     (name: "frag grenade", glyph: '*', color: (0.7, 0.72, 0.45), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6"))])]),
+     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 200, b: 90)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3d6")), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
     (name: "smoke grenade", glyph: '*', color: (0.75, 0.75, 0.75), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 590))])]),
+     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 200, g: 200, b: 200)), effects: [(kind: "Emit", args: (gas: "smoke", amount: 590)), (kind: "Noise", args: (sound: "hiss", loudness: 6))])]),
     (name: "ion grenade", glyph: '*', color: (0.4, 0.7, 1.0), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4"))])]),
+     triggers: [(on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 90, g: 170, b: 255)), effects: [(kind: "Harm", args: (kind: "ion", roll: "1d4")), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
     (name: "incendiary grenade", glyph: '*', color: (0.95, 0.45, 0.2), stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 110, b: 40)), effects: [(kind: "Harm", args: (kind: "thermal", roll: "2d4")), (kind: "Ignite", args: (turns: 4))])]),
+     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 110, b: 40)), effects: [(kind: "Harm", args: (kind: "thermal", roll: "2d4")), (kind: "Ignite", args: (turns: 4)), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
 ```
 
-A game builds its definitions' triggers once when it reads the file, against the moments and kinds the run registered, so a typo is a startup failure and not a grenade that lands nothing.
+A game builds its definitions' triggers once when it reads the file, against the moments and kinds the run registered and names with its sounds chained on, so a typo is a startup failure and not a grenade that lands nothing.
 
 <!-- include: ../../../../examples/foundry/src/gear.rs:triggers -->
 ```rust,no_run
@@ -105,11 +114,13 @@ A burst stops at walls and not at whoever stands in it, and it is the call an ab
 A trap lands in the pass it was stepped on, and a prop's `destroyed` trigger a pass after the blow, since a death is known only after damage.
 A trap's harm is the trap's own and not the doing of whoever stepped on it, so the log never says they hurt themselves; who stepped on it is still on the report.
 Charges are not here: a game with triggers and no costs adds no `ConsumablesPlugin`, and `spend_charges` reads `Fired` after `land_triggers` so what the last charge did lands before the thing is gone.
+The engine carries a bonus on the carrier and never learns what a level is: the game writes the `EffectBonus` with the level applied when it spawns the thing, and an effect adds it without asking where it came from, so an enchant, a blessing and a curse are one number to the engine and three rules to the game.
 Only what changes in play is saved, a trigger's fires left beside a consumable's charges, and the lists are rebuilt from the definitions.
+A carrier's `EffectBonus` is not saved either: the game's spawn writes it again from whatever the game saved, a level, the way it wrote it the first time.
 
 ## Where it lives
 
 `rl-rules` is tier 1 and has no Bevy in it: `EffectSpec` and `TriggerSpec` are the authored forms any game's own file can deserialize, so a content file is checked for shape without an `App`.
-`rl-bevy` is tier 2 and holds the rest in one module, because an effect needs the world to land: the machinery and the plugin, the engine's nine effects beside it, and the triggers with the moments they answer.
-The effects sit in their own module rather than each in the subsystem it asks, so combat, statuses, fire and gas never depend on the code that asks them, and abilities, props and items depend on effects rather than on each other.
+`rl-bevy` is tier 2 and holds the rest in one module, because an effect needs the world to land: the machinery and the plugin, the engine's ten effects beside it, and the triggers with the moments they answer.
+The effects sit in their own module rather than each in the subsystem it asks, so combat, statuses, fire, gas and hearing never depend on the code that asks them, and abilities, props and items depend on effects rather than on each other.
 That split is what let a prop's trap stop reaching into abilities to land anything, and what lets a triggers test build a floor, report a moment by hand and read the damage without an ability, a prop or an item anywhere.

@@ -359,7 +359,7 @@ mod tests {
     /// none, landing nothing: the shape a save has to carry, whatever they do.
     fn two_triggers() -> Triggers {
         let nothing = std::sync::Arc::new(rl_bevy::Effects::default());
-        let one = |fires| rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires, effects: nothing.clone(), look: None };
+        let one = |fires| rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires, effects: nothing.clone(), look: None, every: None };
         Triggers(vec![one(Some(3)), one(None)])
     }
 

@@ -5,7 +5,7 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/props.rs
             crates/rl-save/src/run.rs
-     fingerprint: a12d620e -->
+     fingerprint: 74aec4ad -->
 
 # Loot
 
@@ -38,7 +38,7 @@ A container's `ContentRoll` is `Stock::Item`, a named item in a count, or `Stock
 
 ## Using it
 
-A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's band is its number, its floor has one item beside every armory mark, two beside every store and `3 + deck` more, and a thing that can be enchanted rolls its level from the armory's `LevelTable` at the band it is found at.
+A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's band is its number, its floor has one item beside every armory mark, two beside every store and `3 + deck` more, and a thing whose definition names an `enchant`, every weapon and piece of armor, rolls its level from the armory's `LevelTable` at the band it is found at, capped at the block's `max`.
 
 <!-- include: ../../../../examples/foundry/src/gear.rs:maker -->
 ```rust,no_run
@@ -66,7 +66,7 @@ impl ItemMaker for Armory {
         // Each its own roll: two plates from one crate are two finds.
         (0..count)
             .map(|_| {
-                let level = d.enchant.map_or(0, |e| self.levels.roll(from.band, rng).min(e.most));
+                let level = d.enchant.map_or(0, |e| self.levels.roll(from.band, rng).min(e.max));
                 spawn_item_at(commands, self, def, level, registries)
             })
             .collect()

@@ -14,7 +14,7 @@
             crates/rl-render/src/map_view.rs
             crates/rl-ui/src/interact.rs
             crates/rl-save/src/run.rs
-     fingerprint: 8c585b3e -->
+     fingerprint: a4efca6e -->
 
 # Props
 
@@ -53,7 +53,7 @@ With `LootPlugin` the engine answers it, drawing a tag from the game's loot tabl
 `Take { from, item }` moves one or all into the taker's bag, merging stacks and writing `ItemEvent::PickedUp` the way the ground does, and costs one turn either way.
 `close_emptied_containers` marks a container `Emptied` only when its definition gives an opened look, so a crate that cannot show it is done goes on offering and the screen says it is empty.
 Each trigger is the `TriggerSpec` an item's are, an `on` moment by name, an `Area`, an optional `fires` count and effects, and a prop answers two of the engine's moments, `entered` and `destroyed`.
-`build_prop_effects` builds every trigger and every offer once on the first frame, after the last game-registered effect and moment are in, and reports every spec that would not build with the prop's name and which list it was in, because a trap that silently does nothing is the worst kind of trap.
+`build_prop_effects` builds every trigger and every offer once on the first frame, after the last game-registered effect and moment are in, with the game's sounds in scope when it has any, so an alarm plate names its sound as it names a status, and reports every spec that would not build with the prop's name and which list it was in, because a trap that silently does nothing is the worst kind of trap.
 `arm_props` puts its kind's `Triggers` and `LandsAsItself` on each new prop, so a trap strikes as itself and not as whoever stepped on it, the lists shared and the count of fires left the prop's own, since a definition is shared by every plate of its kind; `PendingFires` carries a restored prop's count until it is armed.
 `report_entered` reads `Stepped`, which the move resolver writes for every step it lets through, so anything that walks sets off a plate, and it lands in the same pass, before damage.
 `report_destroyed` reads `DeathEvent`, which a prop with `Health` raises like anything else, and since the prop is gone by the end of the frame it leaves a `Remnant` carrying its triggers and its name, reported and landed a pass later; a prop with nothing to do when broken leaves none.

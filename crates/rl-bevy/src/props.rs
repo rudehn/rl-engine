@@ -570,11 +570,18 @@ pub fn build_prop_effects(
     registries: Res<Registries>,
     kinds: Option<Res<crate::effects::EffectKinds>>,
     moments: Option<Res<crate::effects::Moments>>,
+    sounds: Option<Res<crate::noise::Sounds>>,
 ) {
     if built.is_some() {
         return;
     }
-    let names = registries.names();
+    use crate::noise::SoundNames;
+    // With the sounds in play when the game has any, so a plate that
+    // sounds an alarm names its sound as it names a status.
+    let names = match sounds.as_deref() {
+        Some(sounds) => registries.names().sounds(sounds),
+        None => registries.names(),
+    };
     let (no_kinds, no_moments) = (crate::effects::EffectKinds::default(), crate::effects::Moments::default());
     let kinds = kinds.as_deref().unwrap_or(&no_kinds);
     let moments = moments.as_deref().unwrap_or(&no_moments);
@@ -947,6 +954,29 @@ mod tests {
         app.update();
         app.update();
         assert_eq!(app.world().resource::<Occupancy>().first_at(at), Some(supply), "the crate holds the cell");
+    }
+
+    /// A prop's trigger that makes a noise is built against the sounds the
+    /// game declared, so a plate that sounds an alarm is armed like any
+    /// other, where a sound nobody declared would leave it unarmed.
+    #[test]
+    fn a_props_trigger_naming_a_declared_sound_builds_when_the_game_has_noise() {
+        let mut app = headless_app();
+        let rules = crate::noise::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::world::StreamingPlugin, crate::noise::NoisePlugin::new(rules)));
+        crate::noise::AddSound::add_sound(&mut app, "chime");
+        crate::testing::surface(&mut app);
+        let text = r#"#![enable(implicit_some)] [(name: "alarm plate", glyph: '^', color: (r: 1, g: 2, b: 3),
+            triggers: [(on: "entered", effects: [(kind: "Noise", args: (sound: "chime", loudness: 9))])])]"#;
+        let props = rl_rules::prop::load(text, &Names::new()).expect("the props load");
+        let plate = props.expect("alarm plate");
+        app.insert_resource(Registries { props, ..Default::default() });
+        app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        app.world_mut().resource_mut::<NextState<crate::state::EngineState>>().set(crate::state::EngineState::Playing);
+        app.update();
+        app.update();
+        let built = app.world().resource::<PropEffects>().triggers.get(plate.index()).map(|t| t.0.len());
+        assert_eq!(built, Some(1), "the plate's one trigger is built");
     }
 
     /// A prop nothing can name is a prop the player never sees, so it is
