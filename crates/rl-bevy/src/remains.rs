@@ -6,14 +6,21 @@
 //! [`LeavesRemains`] stays, so a game leaves wrecks behind its robots and
 //! nothing behind its ghosts without a second plugin.
 //!
-//! The remains are the dead actor itself, kept. Nothing is copied and
-//! nothing is spawned: whatever the game put on that actor, its name, its
-//! look, its drop table, its side, is still on the entity, under the same
-//! save kind the game already registered for it. What the engine takes
-//! off is only what it put on and what means "this is alive and acting":
-//! the turn queue, the occupancy index, [`Actor`], `Blocks`, `Health`,
-//! and the mind, so a corpse never thinks, never blocks a doorway and can
-//! never be struck a second time.
+//! The remains are the dead actor itself, kept: whatever the game put on
+//! that actor, its name, its look, its drop table, its side, is still on
+//! the entity, under the same save kind the game already registered for
+//! it. What the engine takes off is only what it put on and what means
+//! "this is alive and acting": the turn queue, the occupancy index,
+//! [`Actor`], `Blocks`, `Health`, and the mind, so a corpse never thinks,
+//! never blocks a doorway and can never be struck a second time.
+//!
+//! Beside the body the engine keeps a twin of the actor as it lived, for a
+//! game that stands bodies back up. [`keep_life`] takes it the moment the
+//! actor dies, through [`take_twin`], which copies every component onto an
+//! entity no ordinary query sees and names, through [`uncopied`], any it
+//! could not. [`Life`] links the two, and the twin lasts exactly as long
+//! as the body is remains. [`lay_down`] is the one lay-down a death and a
+//! continued save both go through.
 //!
 //! What the engine will not say is what remains *are*. There is no name,
 //! no glyph, no rot timer, no loot, and no answer to whether they can be
@@ -27,10 +34,15 @@
 //! way. What it is called comes from [`RemainsNaming`], the one place the
 //! wording lives.
 //!
-//! The engine never removes remains. A game that wants a body to fade
-//! despawns it, because how long the dead linger is a rule about a world,
-//! not about an engine.
+//! The engine never removes remains of its own accord. A game that wants a
+//! body to fade despawns it, because how long the dead linger is a rule
+//! about a world, not about an engine.
 
+use bevy::ecs::component::ComponentId;
+use bevy::ecs::entity::EntityCloner;
+use bevy::ecs::entity_disabling::Disabled;
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use rl_core::Point;
 
@@ -53,11 +65,108 @@ pub struct LeavesRemains;
 /// to know about a body it holds in its own components, on this same
 /// entity.
 #[derive(Component, Debug, Clone, Copy)]
+#[component(on_remove = end_life)]
 pub struct Remains {
     /// What the clock read when it died.
     pub since: u32,
     /// Who killed it, when anyone did and it is still in the world.
     pub credit: Option<Entity>,
+}
+
+/// The living actor as it was the moment it died, kept on a twin no
+/// query sees, for a game to stand it back up from.
+///
+/// On the body rather than in [`Remains`], because the copy is taken the
+/// pass the actor dies, before it is laid down, and a body despawned in
+/// between must still take its twin with it. Its hook is that guarantee:
+/// whatever takes this off the body, or despawns the body, despawns the
+/// twin, so no path through the engine or a game leaves one behind.
+#[derive(Component, Debug, Clone, Copy)]
+#[component(on_remove = despawn_twin)]
+pub struct Life(pub Entity);
+
+fn despawn_twin(mut world: DeferredWorld, ctx: HookContext) {
+    if let Some(twin) = world.get::<Life>(ctx.entity).map(|l| l.0) {
+        world.commands().entity(twin).try_despawn();
+    }
+}
+
+/// A body that stops being remains, however, stops keeping a life to
+/// return to.
+fn end_life(mut world: DeferredWorld, ctx: HookContext) {
+    world.commands().entity(ctx.entity).try_remove::<Life>();
+}
+
+/// What `from` has that `to` does not, by name: the components a copy
+/// from one to the other could not carry.
+///
+/// Bevy copies a component only if it is `Clone` and skips one that is
+/// not without a word, which would leave a revived actor quietly short of
+/// something. Named rather than counted, so the report says what to fix.
+pub fn uncopied(world: &World, from: Entity, to: Entity) -> Vec<String> {
+    let copied: Vec<ComponentId> = world.entity(to).archetype().components().to_vec();
+    world
+        .entity(from)
+        .archetype()
+        .components()
+        .iter()
+        .filter(|c| !copied.contains(c))
+        .filter_map(|c| world.components().get_name(*c))
+        .map(|name| name.to_string())
+        .collect()
+}
+
+/// Copies `entity`, as it is this moment, onto a twin that is `Disabled`,
+/// and links it with [`Life`].
+///
+/// Every component is copied and none is named, so one added to the
+/// engine or to a game next year comes back from a revival without anyone
+/// remembering to list it. A second call on a body that already has a twin
+/// does nothing: a death takes one, and laying the body down afterwards
+/// must not take a second of what is by then a body.
+pub fn take_twin(world: &mut World, entity: Entity) {
+    if world.get_entity(entity).is_err() || world.get::<Life>(entity).is_some() {
+        return;
+    }
+    let twin = world.spawn(Disabled).id();
+    EntityCloner::build_opt_out(world).clone_entity(entity, twin);
+    let lost = uncopied(world, entity, twin);
+    if !lost.is_empty() {
+        error!("{} cannot come back to life: derive `Clone` on it", lost.join(", "));
+    }
+    world.entity_mut(entity).insert(Life(twin));
+}
+
+/// Keeps a twin of every actor that will leave remains, the moment it dies.
+///
+/// In `ResolveSet::Damage` straight after `apply_damage`, which is where
+/// the death is written: before `TurnSet::React`, where a game answers a
+/// death and may take its own components off, and before
+/// `CleanupSet::Remove`, where the engine takes the actor out of the world.
+/// The same test as [`leave_remains`] decides who, so every body has a
+/// twin and nothing else does.
+pub fn keep_life(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, leaves: Query<(), With<LeavesRemains>>) {
+    for death in deaths.read() {
+        if death.was_player || leaves.get(death.entity).is_err() {
+            continue;
+        }
+        let entity = death.entity;
+        commands.queue(move |world: &mut World| take_twin(world, entity));
+    }
+}
+
+/// Lays `entity` down as remains: takes a twin if it has none, takes the
+/// life off, makes it a prop and names it as what is left of it.
+///
+/// One function, used by a death and by a save continued, so a body from
+/// a save has a twin as surely as one that just fell. On the second path
+/// the twin is the living thing the game's own record just spawned, which
+/// is all a save knows.
+pub fn lay_down(world: &mut World, entity: Entity, since: u32, credit: Option<Entity>) {
+    take_twin(world, entity);
+    let Ok(mut body) = world.get_entity_mut(entity) else { return };
+    body.remove::<WasLiving>().insert((crate::props::Prop, Remains { since, credit }));
+    name_as_remains(world, entity);
 }
 
 /// An actor became remains, this pass.
@@ -177,11 +286,10 @@ pub fn leave_remains(
         // A body is a prop: something standing in a cell that is neither an
         // actor nor an item, which is what lets a mind walk to one, a game
         // offer a verb on one, and every panel list one, with no second
-        // mechanism for bodies.
-        let becomes = (Position(death.at), crate::props::Prop, Remains { since: turns.now(), credit: death.credit });
-        commands.entity(death.entity).remove::<WasLiving>().insert(becomes);
-        let entity = death.entity;
-        commands.queue(move |world: &mut World| name_as_remains(world, entity));
+        // mechanism for bodies. It lies where it fell, which death took off.
+        commands.entity(death.entity).insert(Position(death.at));
+        let (entity, since, credit) = (death.entity, turns.now(), death.credit);
+        commands.queue(move |world: &mut World| lay_down(world, entity, since, credit));
         left.write(RemainsLeft { entity: death.entity, at: death.at });
     }
 }
@@ -219,6 +327,7 @@ impl Plugin for RemainsPlugin {
         use crate::plugin::{CleanupSet, Turn};
         app.add_message::<RemainsLeft>()
             .init_resource::<RemainsNaming>()
+            .add_systems(Turn, keep_life.in_set(crate::plugin::ResolveSet::Damage).after(crate::combat::apply_damage))
             .add_systems(Turn, leave_remains.in_set(CleanupSet::Remove).after(crate::combat::process_deaths));
     }
 
@@ -235,8 +344,30 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::testing::{self, Sides};
+    use bevy::ecs::entity_disabling::Disabled;
     use rl_core::DiceRoll;
     use rl_rules::Hit;
+
+    /// A game's own component, which the game's own death takes off.
+    #[derive(Component, Debug, Clone, PartialEq)]
+    struct Patrol(i32);
+
+    /// The game's answer to a death: its patrol ends.
+    fn end_patrols(mut commands: Commands, mut deaths: MessageReader<DeathEvent>) {
+        for death in deaths.read() {
+            commands.entity(death.entity).remove::<Patrol>();
+        }
+    }
+
+    /// A component a game forgot to make `Clone`.
+    #[derive(Component)]
+    struct Unclonable;
+
+    /// Every twin in the world, which a query sees only by naming `Disabled`.
+    fn twins(app: &mut App) -> usize {
+        let world = app.world_mut();
+        world.query_filtered::<Entity, With<Disabled>>().iter(world).count()
+    }
 
     /// An arena with combat and remains, and a world to stand in.
     fn arena() -> (App, Point, Sides) {
@@ -453,5 +584,62 @@ mod tests {
         kill(&mut app, player, sides);
         assert!(app.world().get::<Remains>(player).is_none(), "the engine left the player alone");
         assert!(app.world().get::<Health>(player).is_some(), "including its health, which the game may still show");
+    }
+
+    /// The copy is taken the moment the actor dies, before anything takes
+    /// anything off it: a component the game's own death system removes is
+    /// on the twin, and no query that does not ask for disabled entities
+    /// ever sees the twin.
+    #[test]
+    fn a_dying_actor_is_kept_whole_on_a_twin_no_query_sees() {
+        let (mut app, start, sides) = arena();
+        app.add_systems(crate::plugin::Turn, end_patrols.in_set(crate::plugin::TurnSet::React));
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        app.world_mut().entity_mut(dead).insert(Patrol(3));
+        kill(&mut app, dead, sides);
+
+        let twin = app.world().get::<Life>(dead).expect("the body keeps a life to return to").0;
+        let world = app.world();
+        assert_eq!(world.get::<Patrol>(twin), Some(&Patrol(3)), "what the game's death took off is on the twin");
+        assert!(world.get::<Patrol>(dead).is_none(), "and off the body");
+        assert!(world.get::<Actor>(twin).is_some() && world.get::<Health>(twin).is_some(), "the twin is the actor as it lived");
+        let world = app.world_mut();
+        let actors: Vec<Entity> = world.query_filtered::<Entity, With<Actor>>().iter(world).collect();
+        assert!(!actors.contains(&twin), "no ordinary query sees the twin");
+    }
+
+    /// The twin lives exactly as long as its body is remains: despawning
+    /// the body or taking `Remains` off it takes the twin too.
+    #[test]
+    fn no_twin_outlives_its_body_however_the_body_stops_being_remains() {
+        let (mut app, start, sides) = arena();
+        let despawned = victim(&mut app, start.offset(2, 0), sides, true);
+        let stripped = victim(&mut app, start.offset(3, 0), sides, true);
+        kill(&mut app, despawned, sides);
+        kill(&mut app, stripped, sides);
+        assert_eq!(twins(&mut app), 2, "one twin a body");
+
+        app.world_mut().despawn(despawned);
+        app.update();
+        assert_eq!(twins(&mut app), 1, "a body despawned takes its twin");
+
+        app.world_mut().entity_mut(stripped).remove::<Remains>();
+        app.update();
+        assert_eq!(twins(&mut app), 0, "and one that stops being remains does too");
+        assert!(app.world().get::<Life>(stripped).is_none());
+    }
+
+    /// Bevy copies only what is `Clone` and skips the rest without a word,
+    /// so the engine compares the two and names what did not come across.
+    #[test]
+    fn a_component_that_cannot_be_copied_is_named() {
+        let (mut app, start, sides) = arena();
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        app.world_mut().entity_mut(dead).insert(Unclonable);
+        kill(&mut app, dead, sides);
+        let twin = app.world().get::<Life>(dead).unwrap().0;
+        let lost = uncopied(app.world(), dead, twin);
+        assert!(lost.iter().any(|n| n.contains("Unclonable")), "{lost:?}");
+        assert!(!lost.iter().any(|n| n.contains("Health")), "and nothing that was copied: {lost:?}");
     }
 }

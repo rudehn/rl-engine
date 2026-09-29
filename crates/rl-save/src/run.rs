@@ -33,7 +33,7 @@
 use bevy::prelude::*;
 use rl_bevy::{
     Afflict, Afflicted, Counters, Dead, Emptied, EndOfFrame, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap, PlaceEntered,
-    Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, WasLiving, Wearable,
+    Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, Wearable,
 };
 use rl_core::Point;
 use rl_rules::Equipment;
@@ -489,12 +489,10 @@ impl EntityState {
         // alive for.
         if let Some((since, credit)) = self.remains {
             let credit = credit.and_then(|id| remap.entity(id));
-            if let Ok(mut target) = world.get_entity_mut(entity) {
-                target.remove::<WasLiving>().insert((rl_bevy::Prop, Remains { since, credit }));
-            }
-            // And named as what is left of what it was, from the one place
-            // the wording lives: a game's record says what it was.
-            rl_bevy::remains::name_as_remains(world, entity);
+            // The one lay-down a death also goes through, so the body keeps
+            // a twin to be stood back up from, and is named as what is left
+            // of what it was from the one place the wording lives.
+            rl_bevy::remains::lay_down(world, entity, since, credit);
             // Then dressed as the prop the game made of it, which it was
             // saved as part of the remains rather than as a second kind.
             let dressed = self.remains_as.as_deref().and_then(|name| world.get_resource::<Registries>()?.props.id(name));
@@ -1052,6 +1050,7 @@ mod tests {
         assert_eq!(at, start.offset(0, 3), "lying where she fell");
         assert!(w.get::<Health>(ada2).is_none(), "and not brought back to life by her own record of herself");
         assert!(w.get::<Actor>(ada2).is_none(), "nor dealt turns again");
+        assert!(w.get::<rl_bevy::remains::Life>(ada2).is_some(), "and she keeps a life to return to, taken as she was laid down again");
     }
 
     /// An actor posted somewhere is posted there again after a load, by

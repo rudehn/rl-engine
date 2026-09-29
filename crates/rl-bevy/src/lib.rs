@@ -95,7 +95,7 @@ pub use props::{
     PropsPlugin, Refused, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
 };
 pub use registries::Registries;
-pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
+pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
 pub use replay::{Pressed, Recording};
 pub use rl_grid::LightBand;
 pub use seed::{AddStream, Seed, Stream};

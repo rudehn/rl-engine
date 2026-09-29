@@ -57,6 +57,9 @@ bevy = { version = "0.19", default-features = false, features = [
     "x11",
     "wayland",
     "std",
+    # Component names read as their types rather than a placeholder, so a
+    # component that cannot be copied onto a body's twin is named.
+    "debug",
     "async_executor",
 ] }
 criterion = { version = "0.5", features = ["html_reports"] }
