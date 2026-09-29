@@ -20,7 +20,10 @@
 //! entity no ordinary query sees and names, through [`uncopied`], any it
 //! could not. [`Life`] links the two, and the twin lasts exactly as long
 //! as the body is remains. [`lay_down`] is the one lay-down a death and a
-//! continued save both go through.
+//! continued save both go through. [`revive`], or
+//! [`ReviveCommands::revive`] from a system, stands a body back up from
+//! its twin, on its own cell or the nearest free one within
+//! [`STANDING_ROOM`], and writes [`Revived`].
 //!
 //! What the engine will not say is what remains *are*. There is no name,
 //! no glyph, no rot timer, no loot, and no answer to whether they can be
@@ -47,8 +50,12 @@ use bevy::prelude::*;
 use rl_core::Point;
 
 use crate::combat::{Dead, DeathEvent, Health};
-use crate::components::{Actor, Blocks, Position};
+use crate::components::{Actor, Blocks, MyTurn, Position, Viewshed};
+use crate::items::{Equipped, Inventory};
 use crate::minds::{Mind, Perception};
+use crate::places::{MapId, OnMap};
+use crate::turn::Occupancy;
+use crate::world::WorldMap;
 
 /// Spawned on an actor whose death should leave something behind.
 ///
@@ -152,6 +159,117 @@ pub fn keep_life(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, 
         }
         let entity = death.entity;
         commands.queue(move |world: &mut World| take_twin(world, entity));
+    }
+}
+
+/// A body was stood back up, this pass, by [`revive`].
+///
+/// For a game to say so, or to take away what it wants a revived actor to
+/// have forgotten; the engine itself restores the actor as it died.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct Revived {
+    /// The actor, which is the entity that was the body.
+    pub entity: Entity,
+}
+
+/// How far from its body a revived actor may stand when something stands
+/// on the body: far enough to find room in a crowd, near enough that it
+/// is plainly the same one getting up.
+pub const STANDING_ROOM: i32 = 2;
+
+/// Stands `body` back up with `health`, and says whether it could.
+///
+/// The body is given back the shape of its twin (see [`Life`]): every
+/// component the twin has and the body lacks is put back, which is
+/// everything death took off, named nowhere; every component the body
+/// gained as a body is taken off, `Remains` and `Prop` and whatever the
+/// game added; and a component on both keeps the body's value, because
+/// that is what has happened since. `Name` is the exception, because the
+/// engine itself renamed the body. What it carries is never taken from
+/// the twin, whose bag lists items that may since be anywhere: a looted
+/// body comes back without what was taken, one whose bag was taken away
+/// comes back with none, and a bag it gained as a body is emptied onto the
+/// floor before it goes. `MyTurn` is never put back either; the turn queue
+/// deals it turns again when it is admitted.
+///
+/// Refused, with a warning, for anything that is not remains with a twin,
+/// and for a body with someone on it and no free cell within
+/// [`STANDING_ROOM`].
+pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
+    let Some(twin) = world.get::<Life>(body).map(|l| l.0) else {
+        warn!("{body:?} cannot be revived: it is not remains, or `RemainsPlugin` kept no twin of it");
+        return false;
+    };
+    let Some(at) = standing_room(world, body) else {
+        warn!("{body:?} cannot be revived: something stands on it and nothing within {STANDING_ROOM} cells is free");
+        return false;
+    };
+    let never = [world.component_id::<Disabled>(), world.component_id::<Inventory>(), world.component_id::<Equipped>(), world.component_id::<MyTurn>()];
+    let body_has: Vec<ComponentId> = world.entity(body).archetype().components().to_vec();
+    let twin_has: Vec<ComponentId> = world.entity(twin).archetype().components().to_vec();
+    let missing: Vec<ComponentId> = twin_has.iter().copied().filter(|c| !body_has.contains(c) && !never.contains(&Some(*c))).collect();
+    let gained: Vec<ComponentId> = body_has.iter().copied().filter(|c| !twin_has.contains(c)).collect();
+    if world.component_id::<Inventory>().is_some_and(|bag| gained.contains(&bag)) {
+        spill(world, body, at);
+    }
+    EntityCloner::build_opt_in(world).allow_by_ids(missing).clone_entity(twin, body);
+    let name = world.get::<Name>(twin).cloned();
+    let max = world.get::<Health>(twin).map_or(health.max(1), |h| h.max);
+    let mut stood = world.entity_mut(body);
+    stood.remove_by_ids(&gained).insert((Health { current: health.clamp(1, max), max }, Position(at)));
+    if let Some(name) = name {
+        stood.insert(name);
+    }
+    if let Some(mut sight) = stood.get_mut::<Viewshed>() {
+        sight.dirty = true;
+    }
+    world.write_message(Revived { entity: body });
+    true
+}
+
+/// Where a revived body stands: where it lies, or, when something now
+/// stands there, the nearest free cell, ring by ring in reading order so
+/// the same world always gives the same cell.
+fn standing_room(world: &World, body: Entity) -> Option<Point> {
+    let at = world.get::<Position>(body)?.0;
+    let occupancy = world.resource::<Occupancy>();
+    let on = world.get::<OnMap>(body).map(|m| m.0).unwrap_or(MapId::SURFACE);
+    if on != occupancy.current() || !occupancy.is_occupied(at) {
+        return Some(at);
+    }
+    let map = world.resource::<WorldMap>();
+    (1..=STANDING_ROOM).find_map(|r| {
+        (-r..=r)
+            .flat_map(|dy| (-r..=r).map(move |dx| (dx, dy)))
+            .filter(|(dx, dy)| dx.abs().max(dy.abs()) == r)
+            .map(|(dx, dy)| at.offset(dx, dy))
+            .find(|p| map.is_walkable(*p) && !occupancy.is_occupied(*p))
+    })
+}
+
+/// Empties a bag the body gained as a body onto the floor at `at`, so a
+/// revival never destroys an item.
+fn spill(world: &mut World, body: Entity, at: Point) {
+    let items = world.get::<Inventory>(body).map(|b| b.items.clone()).unwrap_or_default();
+    let map = world.get::<OnMap>(body).map(|m| m.0).unwrap_or(MapId::SURFACE);
+    for item in items {
+        if let Ok(mut thing) = world.get_entity_mut(item) {
+            thing.insert((Position(at), OnMap(map)));
+        }
+    }
+}
+
+/// Stands a body up from inside a system, at the next sync point.
+pub trait ReviveCommands {
+    /// Queues [`revive`] of `body` with `health`.
+    fn revive(&mut self, body: Entity, health: i32);
+}
+
+impl ReviveCommands for Commands<'_, '_> {
+    fn revive(&mut self, body: Entity, health: i32) {
+        self.queue(move |world: &mut World| {
+            revive(world, body, health);
+        });
     }
 }
 
@@ -326,6 +444,7 @@ impl Plugin for RemainsPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{CleanupSet, Turn};
         app.add_message::<RemainsLeft>()
+            .add_message::<Revived>()
             .init_resource::<RemainsNaming>()
             .add_systems(Turn, keep_life.in_set(crate::plugin::ResolveSet::Damage).after(crate::combat::apply_damage))
             .add_systems(Turn, leave_remains.in_set(CleanupSet::Remove).after(crate::combat::process_deaths));
@@ -641,5 +760,147 @@ mod tests {
         let lost = uncopied(app.world(), dead, twin);
         assert!(lost.iter().any(|n| n.contains("Unclonable")), "{lost:?}");
         assert!(!lost.iter().any(|n| n.contains("Health")), "and nothing that was copied: {lost:?}");
+    }
+
+    /// A player at `start`: what streams the map in around it, and what the
+    /// turns wait on, so a test that needs walkable ground or a turn dealt
+    /// has both.
+    fn watcher(app: &mut App, start: Point, sides: Sides) -> Entity {
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        player
+    }
+
+    /// The player waits once, so the turns run a round.
+    fn take_a_turn(app: &mut App, player: Entity) {
+        if app.world().get::<crate::components::MyTurn>(player).is_some() {
+            app.world_mut().write_message(crate::turn::Intent::new(player, crate::turn::Wait));
+        }
+        app.update();
+        app.update();
+    }
+
+    /// Stands `body` up with `health`, the way a game does, and runs the
+    /// frame that admits it.
+    fn stand_up(app: &mut App, body: Entity, health: i32) -> bool {
+        let stood = revive(app.world_mut(), body, health);
+        app.update();
+        stood
+    }
+
+    /// A revived actor has exactly the components it had when it died,
+    /// less none and plus none, whoever took what off in between.
+    #[test]
+    fn a_revived_actor_has_exactly_what_it_had_when_it_died() {
+        let (mut app, start, sides) = arena();
+        app.add_systems(crate::plugin::Turn, end_patrols.in_set(crate::plugin::TurnSet::React));
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        app.world_mut().entity_mut(dead).insert((Patrol(3), Name::new("line droid")));
+        // Playing, so everything play puts on an actor (its `OnMap`) is on
+        // it before the set is taken.
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let turn_state = app.world().components().component_id::<crate::components::MyTurn>();
+        let set = |app: &App| -> Vec<ComponentId> {
+            let mut ids: Vec<ComponentId> = app.world().entity(dead).archetype().components().iter().copied().filter(|c| Some(*c) != turn_state).collect();
+            ids.sort();
+            ids
+        };
+        let before = set(&app);
+        kill(&mut app, dead, sides);
+        assert!(stand_up(&mut app, dead, 3));
+
+        assert_eq!(set(&app), before, "the same components it had alive");
+        let world = app.world();
+        assert_eq!(world.get::<Patrol>(dead), Some(&Patrol(3)), "the game's own, which its death took off, is back");
+        assert_eq!(world.get::<Name>(dead).map(|n| n.as_str().to_string()), Some("line droid".into()), "and its own name, not a body's");
+        assert_eq!(world.get::<Health>(dead).map(|h| (h.current, h.max)), Some((3, 4)), "with the health it was given");
+        assert_eq!(twins(&mut app), 0, "and no twin left behind");
+    }
+
+    /// Stood up, it is an actor again in every way that matters: dealt
+    /// turns, in the way, able to be hurt, and able to die and leave
+    /// remains a second time.
+    #[test]
+    fn a_revived_actor_is_dealt_turns_blocks_and_can_die_again_leaving_remains_again() {
+        let (mut app, start, sides) = arena();
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        kill(&mut app, dead, sides);
+        let player = watcher(&mut app, start, sides);
+        assert!(stand_up(&mut app, dead, 2));
+        take_a_turn(&mut app, player);
+        assert!(app.world().resource::<crate::turn::Turns>().contains(dead), "back in the queue");
+        assert!(app.world().resource::<crate::turn::Occupancy>().is_occupied(start.offset(2, 0)), "and in the way");
+        assert!(app.world().get::<Remains>(dead).is_none() && app.world().get::<crate::props::Prop>(dead).is_none(), "and no longer a body");
+
+        kill(&mut app, dead, sides);
+        assert!(app.world().get::<Remains>(dead).is_some(), "it died again, and lies there again");
+        assert_eq!(twins(&mut app), 1, "with a twin of its second life");
+    }
+
+    /// A looted body comes back without what was taken, worn or carried;
+    /// one whose bag was taken away comes back with none; and a bag it
+    /// gained as a body is left on the floor rather than lost.
+    #[test]
+    fn a_revived_body_carries_only_what_it_still_holds_and_no_item_is_in_two_bags() {
+        use crate::items::{Equipped, Inventory, Item};
+        let (mut app, start, sides) = arena();
+        let kept = app.world_mut().spawn(Item).id();
+        let looted = app.world_mut().spawn(Item).id();
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        let mut worn = rl_rules::Equipment::with_slot_count(1);
+        worn.equip(looted, &rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))).unwrap();
+        app.world_mut().entity_mut(dead).insert((Inventory { items: vec![kept, looted] }, Equipped(worn)));
+        kill(&mut app, dead, sides);
+        // Looting, as `resolve_takes` does it.
+        app.world_mut().get_mut::<Inventory>(dead).unwrap().remove(looted);
+        app.world_mut().get_mut::<Equipped>(dead).unwrap().unequip(looted);
+        assert!(stand_up(&mut app, dead, 2));
+        assert_eq!(app.world().get::<Inventory>(dead).map(|b| b.items.clone()), Some(vec![kept]), "only what it still held");
+        assert!(!app.world().get::<Equipped>(dead).unwrap().contains(looted), "and it wears nothing it lost");
+
+        let bagless = victim(&mut app, start.offset(3, 0), sides, true);
+        app.world_mut().entity_mut(bagless).insert(Inventory { items: vec![] });
+        kill(&mut app, bagless, sides);
+        app.world_mut().entity_mut(bagless).remove::<Inventory>();
+        assert!(stand_up(&mut app, bagless, 2));
+        assert!(app.world().get::<Inventory>(bagless).is_none(), "a bag taken away is not handed back from the twin");
+
+        let gained = victim(&mut app, start.offset(4, 0), sides, true);
+        kill(&mut app, gained, sides);
+        let loot = app.world_mut().spawn(Item).id();
+        app.world_mut().entity_mut(gained).insert(Inventory { items: vec![loot] });
+        assert!(stand_up(&mut app, gained, 2));
+        assert!(app.world().get::<Inventory>(gained).is_none(), "a bag gained as a body goes");
+        assert_eq!(app.world().get::<Position>(loot).map(|p| p.0), Some(start.offset(4, 0)), "and what was in it is on the floor where it stood");
+    }
+
+    /// Something standing on a body when it stands up is not stood on: the
+    /// body takes the nearest free cell.
+    #[test]
+    fn a_body_revived_where_someone_stands_stands_up_beside_them() {
+        let (mut app, start, sides) = arena();
+        let player = watcher(&mut app, start, sides);
+        let at = start.offset(3, 0);
+        let dead = victim(&mut app, at, sides, true);
+        kill(&mut app, dead, sides);
+        let blocker = app.world_mut().spawn((Actor, Blocks, Position(at), Health::full(4), Faction(sides.ours))).id();
+        take_a_turn(&mut app, player);
+        assert!(stand_up(&mut app, dead, 2));
+        let stood = app.world().get::<Position>(dead).unwrap().0;
+        assert_ne!(stood, at, "not on top of whoever was there");
+        assert!(rl_core::geometry::is_adjacent(stood, at), "but beside them");
+        assert_eq!(app.world().get::<Position>(blocker).unwrap().0, at, "who did not move");
+    }
+
+    /// Only remains can be stood up.
+    #[test]
+    fn nothing_but_remains_can_be_revived() {
+        let (mut app, start, sides) = arena();
+        let alive = victim(&mut app, start.offset(2, 0), sides, true);
+        assert!(!revive(app.world_mut(), alive, 3), "a living actor has no life to return to");
     }
 }

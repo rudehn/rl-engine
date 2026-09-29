@@ -1053,6 +1053,32 @@ mod tests {
         assert!(w.get::<rl_bevy::remains::Life>(ada2).is_some(), "and she keeps a life to return to, taken as she was laid down again");
     }
 
+    /// A body continued from a save stands up as surely as one that just
+    /// fell, from the living thing the game's own record respawned.
+    #[test]
+    fn a_body_continued_from_a_save_can_be_revived() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let me = app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30))).id();
+        let ada = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20), LeavesRemains)).id();
+        play(&mut app);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        app.world_mut().write_message(DamageEvent::new(ada, rl_rules::Hit::by(me, kind, 99)));
+        app.update();
+        app.update();
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let ada2 = w.query_filtered::<Entity, With<Person>>().single(w).expect("Ada came back");
+        assert!(rl_bevy::remains::revive(back.world_mut(), ada2, 10), "and can be stood up");
+        back.update();
+        assert_eq!(back.world().get::<Health>(ada2).map(|h| h.current), Some(10));
+        assert!(back.world().get::<Actor>(ada2).is_some(), "an actor again");
+    }
+
     /// An actor posted somewhere is posted there again after a load, by
     /// the engine: the game's own record of it says nothing of a post, and
     /// a guard that forgot its cell would wander off the first time it
