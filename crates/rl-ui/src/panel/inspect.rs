@@ -7,10 +7,19 @@
 //! there, and the panel and the cursor never disagree about what is being
 //! described. The ticks are ASCII because a browser build draws with
 //! Bevy's built-in font alone, which has no arrows worth the name.
+//!
+//! The panel sits over the map, so it moves out of the way of what it
+//! describes: when the cursor or a tick round it would fall under the
+//! panel, the panel is drawn in its other place, the game's
+//! [`InspectPanel::else_at`] or its rectangle mirrored top for bottom in
+//! the map. It stays there until the cursor goes under it again rather
+//! than going back as soon as it can, because a panel that swapped sides
+//! on every step across the middle of the map would be read in two
+//! places. A fresh look starts where the game put it.
 
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
-use rl_core::Rect;
+use rl_core::{Point, Rect};
 use rl_render::{MapView, Terminal};
 use rl_rules::forecast::Outlook;
 
@@ -27,6 +36,10 @@ use crate::view::{InspectView, InspectViewPlugin};
 pub struct InspectLayout {
     /// The terminal cells it occupies, border included.
     pub rect: Rect,
+    /// Where it goes while the cursor is under `rect`. `None` mirrors
+    /// `rect` top for bottom within the map, which suits a panel along
+    /// either edge; a game names a place when its panel is not there.
+    pub elsewhere: Option<Rect>,
     /// The title in the top border.
     pub title: String,
     /// The key hints in the bottom border.
@@ -48,11 +61,19 @@ impl InspectPanel {
     pub fn new(rect: Rect) -> Self {
         Self(InspectLayout {
             rect,
+            elsewhere: None,
             title: "Looking at".into(),
             hints: "move \u{2022} tab next \u{2022} esc close".into(),
             empty: "Nothing here.".into(),
             cursor: CursorStyle::ticks(),
         })
+    }
+
+    /// Sets where the panel goes while the cursor is under its rectangle,
+    /// in place of the mirror of it.
+    pub fn else_at(mut self, rect: Rect) -> Self {
+        self.0.elsewhere = Some(rect);
+        self
     }
 
     /// Sets the title in the top border.
@@ -85,7 +106,9 @@ impl Plugin for InspectPanel {
         if !app.is_plugin_added::<InspectViewPlugin>() {
             app.add_plugins(InspectViewPlugin);
         }
-        app.insert_resource(self.0.clone()).add_systems(Update, draw_inspect.in_set(PresentSet::Overlay));
+        app.insert_resource(self.0.clone())
+            .init_resource::<InspectPlacement>()
+            .add_systems(Update, (place_inspect, draw_inspect).chain().in_set(PresentSet::Overlay));
     }
 }
 
@@ -104,19 +127,51 @@ pub fn outlook_tone(outlook: Outlook) -> ToneId {
     }
 }
 
+/// Where the inspect panel is drawn this frame: `None` while the look
+/// cursor is down, and otherwise its rectangle or the place it moved to.
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
+pub struct InspectPlacement(pub Option<Rect>);
+
+/// Picks where the panel goes this frame, moving it off the cursor.
+///
+/// Without a [`MapView`] there is no cursor on screen to keep clear, so
+/// the panel stays where the game put it.
+pub fn place_inspect(
+    layout: Res<InspectLayout>,
+    view: Res<InspectView>,
+    modals: Res<Modals>,
+    map_view: Option<Res<MapView>>,
+    mut placed: ResMut<InspectPlacement>,
+) {
+    if !modals.is_open(inspect_modal(&modals)) {
+        placed.0 = None;
+        return;
+    }
+    let Some(map_view) = map_view else {
+        placed.0 = Some(layout.rect);
+        return;
+    };
+    // Recomputed every frame rather than kept, so a map resized while the
+    // panel is moved takes it to the new mirror.
+    let elsewhere = layout.elsewhere.unwrap_or_else(|| mirrored(layout.rect, map_view.viewport));
+    let moved = placed.0.is_some_and(|rect| rect != layout.rect);
+    let (here, there) = if moved { (elsewhere, layout.rect) } else { (layout.rect, elsewhere) };
+    let marked = marked(&map_view, view.cursor);
+    let moved = moved != (hides(here, &marked) && !hides(there, &marked));
+    placed.0 = Some(if moved { elsewhere } else { layout.rect });
+}
+
 /// Paints the cursor and the panel, while the cursor is open.
 pub fn draw_inspect(
     mut terminal: ResMut<Terminal>,
     layout: Res<InspectLayout>,
+    placed: Res<InspectPlacement>,
     view: Res<InspectView>,
     palette: Res<Palette>,
-    modals: Res<Modals>,
     map_view: Option<Res<MapView>>,
     time: Res<Time>,
 ) {
-    if !modals.is_open(inspect_modal(&modals)) {
-        return;
-    }
+    let Some(rect) = placed.0 else { return };
     // However the game marks a cell it is pointing at, drawn where the
     // cursor is: one style, shared with the nearby rail's highlight and
     // the targeting cursor, so a player learns one mark.
@@ -124,7 +179,6 @@ pub fn draw_inspect(
         crate::cursor::mark(&mut terminal, &map_view, view.cursor, layout.cursor, &palette, time.elapsed_secs());
     }
 
-    let rect = layout.rect;
     if rect.width < 12 || rect.height < 4 {
         return;
     }
@@ -207,6 +261,24 @@ pub fn draw_inspect(
     }
 }
 
+/// `rect` turned top for bottom within `map`, so a panel along the
+/// bottom edge lands along the top one the same distance in.
+fn mirrored(rect: Rect, map: Rect) -> Rect {
+    Rect::new(rect.x, map.y + map.bottom() - rect.bottom(), rect.width, rect.height)
+}
+
+/// The terminal cells the cursor must keep in sight: its own and the four
+/// beside it, where ticks go. A glowing cursor marks only its own, but the
+/// cells round it are what a player reads it against, so it keeps them
+/// too.
+fn marked(map: &MapView, cursor: Point) -> Vec<Point> {
+    [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)].into_iter().filter_map(|(dx, dy)| map.to_screen(cursor.offset(dx, dy))).collect()
+}
+
+fn hides(rect: Rect, cells: &[Point]) -> bool {
+    cells.iter().any(|&p| rect.contains(p))
+}
+
 /// How far off the thing under the cursor is, and what it stands on when
 /// the ground has a name: `1 tile away`, `3 tiles away, on floor`.
 fn whereabouts(distance: i32, ground: &str) -> String {
@@ -219,7 +291,6 @@ mod tests {
     use super::*;
     use crate::cursor::CursorKeys;
     use crate::harness::Stage;
-    use rl_core::Point;
 
     /// A stage with the map drawn under the panel, so the pointers land on
     /// real cells.
@@ -257,6 +328,74 @@ mod tests {
         let screen = map.to_screen(at.offset(-1, 0)).unwrap();
         assert_eq!(stage.app.world().resource::<Terminal>().get(screen.x, screen.y).map(|c| c.fg), Some(expected), "on the pulse");
         assert!((0.0..=1.0).contains(&crate::cursor::pulse(0.37)));
+    }
+
+    /// The panel over the bottom of the map, where every game puts it.
+    fn overlaid() -> Stage {
+        Stage::new_with(InspectPanel::new(Rect::new(1, 12, 30, 7)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 20)
+    }
+
+    fn title_row(stage: &Stage) -> Option<i32> {
+        stage.rows().iter().position(|r| r.contains("Looking at")).map(|y| y as i32)
+    }
+
+    /// Something under the panel is looked at with the panel moved off it,
+    /// so the cell and all four ticks show.
+    #[test]
+    fn looking_at_something_under_the_panel_moves_the_panel_to_the_other_side_of_the_map() {
+        let mut stage = overlaid();
+        stage.press(CursorKeys::default().look);
+        assert_eq!(title_row(&stage), Some(12), "where the game put it, while the cursor is clear of it");
+        stage.actor("crab", 'c', 0, 5);
+        stage.tick();
+        stage.press(CursorKeys::default().next);
+        let at = stage.at.offset(0, 5);
+        assert_eq!(glyph_at(&stage, at), Some('c'), "the crab shows");
+        assert_eq!(glyph_at(&stage, at.offset(0, 1)), Some('|'), "and so does the tick below it");
+        assert_eq!(title_row(&stage), Some(1), "mirrored top for bottom in the map");
+    }
+
+    /// The panel stays on the side it moved to until the cursor goes under
+    /// it there, so it does not jump with every step across the middle.
+    #[test]
+    fn the_panel_stays_where_it_moved_to_until_the_cursor_goes_under_it_again() {
+        let mut stage = overlaid();
+        let crab = stage.actor("crab", 'c', 0, 5);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        stage.press(CursorKeys::default().next);
+        assert_eq!(title_row(&stage), Some(1), "moved off the crab");
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::ArrowUp);
+        assert_eq!(title_row(&stage), Some(1), "clear of the panel where it is now, so it stays");
+        for _ in 0..6 {
+            stage.press(KeyCode::ArrowUp);
+        }
+        assert_eq!(title_row(&stage), Some(12), "under it at the top, so back to the bottom");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(title_row(&stage), Some(1), "back on the crab, so at the top");
+        stage.press(CursorKeys::default().close);
+        stage.app.world_mut().despawn(crab);
+        stage.press(CursorKeys::default().look);
+        assert_eq!(title_row(&stage), Some(12), "a fresh look on the player's own tile starts where the game put it");
+    }
+
+    /// A game that wants the panel somewhere other than the mirror says so.
+    #[test]
+    fn a_game_can_name_where_the_panel_goes_instead() {
+        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(1, 12, 30, 7)).else_at(Rect::new(8, 3, 30, 7)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 20);
+        stage.actor("crab", 'c', 0, 5);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        stage.press(CursorKeys::default().next);
+        assert_eq!(title_row(&stage), Some(3));
     }
 
     /// The ground is named whether or not something stands on it.
