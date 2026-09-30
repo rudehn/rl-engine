@@ -6,6 +6,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `Drops<D>` is `Clone` whatever `D` is: a derived `Clone` asked a game's item type to be `Clone` too, so a body's twin could not carry its drop table and a revived actor would have dropped nothing the second time it died.
 - Foundry has a repair drone, from deck three: it walks to a droid wreck it can see, rebuilds it over its `repairs` turns plus one for every two points of the wreck's health, and the droid stands back up at half its health; the rail reads `repair drone (repairing)`, and a drone shot at half health or worse stops the work and runs. `monsters.ron` gains `repairs`.
 - A row says what an actor is working at: `Row::work`, a `WorkRow` of the kind's word, the target's name and the turns left, filled by the nearby and inspect collectors through `Workings`. The nearby rail writes the work's word where it would write the alert word, so a drone at work reads `(mending)` rather than `(hunting)`. Inspect adds a line, "Mending the rag doll, 4 turns left", from templates a game replaces with `InspectPanel::working(with_target, alone)`. A `Row` built by hand gains the field.
 - `rl-save` keeps an actor's work, the kind by its word and the target by save id, and drops it on load when the target was not saved. A save written before this loads with no one at work.
