@@ -54,6 +54,8 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("ammo::sync_ammo", id(ammo::sync_ammo)),
         ("droids::populate_deck", id(droids::populate_deck)),
         ("droids::sound_alarm", id(droids::sound_alarm)),
+        ("droids::sense_wrecks", id(droids::sense_wrecks)),
+        ("droids::rebuild_wrecks", id(droids::rebuild_wrecks)),
         ("droids::shout_alarm", id(droids::shout_alarm)),
         ("droids::unjam_sensors", id(droids::unjam_sensors)),
         ("droids::jam_sensors", id(droids::jam_sensors)),
@@ -368,6 +370,20 @@ fn allowed(world: &World) -> Vec<Allowed> {
         },
         Allowed {
             a: Some(id(mission::answer_charge)),
+            b: None,
+            on: on(&["Messages<Tell>"]),
+            why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
+        },
+        // The repair drone: a sense of its own, and a line when a wreck
+        // stands back up.
+        Allowed {
+            a: Some(id(droids::sense_wrecks)),
+            b: None,
+            on: on(&["Thinking"]),
+            why: "one contributor per field of the snapshot: the drone's sense pushes `Wrecks`, a sense of its own type, and nothing else, and it is sorted once after them all",
+        },
+        Allowed {
+            a: Some(id(droids::rebuild_wrecks)),
             b: None,
             on: on(&["Messages<Tell>"]),
             why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",

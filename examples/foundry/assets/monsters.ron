@@ -41,6 +41,9 @@
 //               bulkhead takes three off; absent means deaf. Only a monster whose wits
 //               include "searches" goes to what it heard
 //   drops:      optional; [(item name, percent chance)] rolled on death
+//   repairs:    optional; the turns it takes to rebuild a wreck of its own side, plus one for every
+//               two points of the wrecked kind's hp; a monster with it walks to such wrecks it can
+//               see and rebuilds them rather than hunting, and the droid stands up at half its hp
 #![enable(implicit_some)]
 [
     (name: "line droid", glyph: 'd', color: (0.85, 0.75, 0.55), hp: 8, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches", "opens_doors"],
@@ -54,6 +57,9 @@
      perception: 8, melee: (roll: "1d3", kind: "kinetic"), ranged: (range: 4, roll: "1d6", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 100, flee_at: 0, hearing: (threshold: 0, memory: 8), drops: [("hand blaster", 30), ("keycard", 12)]),
     (name: "heavy droid", glyph: 'D', color: (0.6, 0.6, 0.7), hp: 18, armor: 2, profile: "chassis", faction: "droids", wits: ["mindless", "searches", "opens_doors"],
      perception: 8, melee: (roll: "1d4", kind: "kinetic"), ranged: (range: 6, roll: "1d6+1", kind: "energy", look: (glyph: '*', color: (r: 255, g: 77, b: 38))), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 90, flee_at: 0, hearing: (threshold: 0, memory: 8), drops: [("blaster carbine", 10), ("composite plate", 10), ("keycard", 20)]),
+    // Rebuilds what the commando wrecks, and runs when shot at.
+    (name: "repair drone", glyph: 'u', color: (0.55, 0.8, 0.75), hp: 6, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "flees", "opens_doors"],
+     perception: 8, dark_sight: 4, notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 100, flee_at: 50, hearing: (threshold: 0, memory: 8), drops: [("slug", 10)], repairs: 4),
     (name: "coolant rat", glyph: 'r', color: (0.6, 0.7, 0.75), hp: 4, armor: 0, profile: "organic", faction: "vermin", wits: "animal",
      perception: 6, melee: (roll: "1d3", kind: "kinetic"), speed: 110, flee_at: 50),
     // A shell off the scrap heaps, harder to crack than a rat and slower

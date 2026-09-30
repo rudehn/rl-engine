@@ -16,8 +16,8 @@
 //! `main.rs` cuts for them, which a headless test has no screen to cut.
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
-use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddSound, AddVerb, ConsumablesPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
+use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, Turn, TurnSet};
+use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, ConsumablesPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin, WorkPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
 
 /// The narrator as Foundry words it, for `main.rs` and
@@ -53,6 +53,11 @@ impl Plugin for FoundryPlugin {
         // Foundry says where one stands, what goes in a container, and that
         // a wreck is worth opening.
         app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
+        // Work, for the repair drone: the engine keeps its turns and its
+        // row; `droids::repair` says which wrecks and what finishing means.
+        app.add_plugins(WorkPlugin).add_work(crate::droids::REPAIRING);
+        app.add_systems(Turn, crate::droids::sense_wrecks.in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, crate::droids::rebuild_wrecks.in_set(TurnSet::React));
         // Loot is the engine's: what lies on a deck when it is first
         // entered, what a kill leaves and what a crate holds, each made by
         // the armory, which is loaded once before any run begins.
