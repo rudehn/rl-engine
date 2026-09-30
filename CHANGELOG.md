@@ -6,6 +6,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A revived actor's gear bonuses are folded again from what it wears when it stands up; in a game with items, death has already let fall everything it carried and wore, so it stands up with nothing and none of what that gear lent. `revive` refuses an actor still dying, which has a twin from the pass it died in but is not remains until it is laid down.
 - A revived actor has its twin's values for everything but what it carries and where it lies, so it stands up looking as it did alive: before, a component on both the body and the twin kept the body's value, and a body dressed as a prop came back drawn as one.
 - `Drops<D>` is `Clone` whatever `D` is: a derived `Clone` asked a game's item type to be `Clone` too, so a body's twin could not carry its drop table and a revived actor would have dropped nothing the second time it died.
 - Foundry has a repair drone, from deck three: it walks to a droid wreck it can see, rebuilds it over its `repairs` turns plus one for every two points of the wreck's health, and the droid stands back up at half its health; the rail reads `repair drone (repairing)`, and a drone shot at half health or worse stops the work and runs. `monsters.ron` gains `repairs`.

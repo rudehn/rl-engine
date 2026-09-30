@@ -146,6 +146,10 @@ As designed, a component on both kept the body's value, with `Name` the one exce
 Seeing it in Foundry turned that round: a revived line droid stood up drawn as its wreck, because dressing a body writes its look into the component the living actor's look was in.
 The rule was only ever protecting what a body carries, which is handled on its own below, so the twin wins everywhere else and `Name` needs no exception.
 
+In a game with items, death has already let fall everything the actor carried and wore: `drop_what_the_dead_carried` empties the bag and the slots onto the cell, for bodies as for everything else, so a revived actor stands up with nothing and its gear at its feet.
+What its gear lent is folded again from what it wears now, since the twin's stats still hold the bonuses of everything worn at death.
+The rules below are for a bag a game kept or put on a body, and they held as designed; the review of the built branch found that with `ItemsPlugin` no body keeps its own.
+
 What it carries is the one place the twin is never trusted, because the twin's bag is a list of item entities that may since have gone anywhere.
 `Inventory` and `Equipped` are never put back from the twin, even when the body has lost them:
 

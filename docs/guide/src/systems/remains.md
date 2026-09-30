@@ -7,7 +7,7 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-rules/src/ai/snapshot.rs
             crates/rl-save/src/run.rs
-     fingerprint: 443188d2 -->
+     fingerprint: 95b89e9e -->
 
 # Remains
 
@@ -49,6 +49,8 @@ A body is seen by a mind as a `PropView` in `Snapshot::props`, filled by `percei
 A save lays a body down through the same `lay_down`, so a body from a save has a twin too, of the living thing the game's record respawned.
 `revive(world, body, health)`, or `commands.revive(body, health)` through `ReviveCommands`, makes the body its twin again: every component the twin has comes back with the twin's value, everything the body gained as a body comes off, and only what the world did to the body stays the body's, where it lies and what it carries.
 A looted body comes back without what was taken, a body whose bag was taken away comes back with none, and a bag it gained as a body is emptied onto the floor first.
+In a game with items, death has already let fall everything the actor carried and wore, so it stands up with nothing and its gear at its feet, and what its gear lent is folded again from what it wears now.
+An actor still dying is refused: it has a twin from the pass it died in, but it is not remains until it is laid down.
 A body with something standing on it stands up on the nearest free cell within `STANDING_ROOM`, and `Revived { entity }` is sent.
 
 ## Using it

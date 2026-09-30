@@ -189,14 +189,22 @@ pub const STANDING_ROOM: i32 = 2;
 /// bag lists items that may since be anywhere, so a looted body comes
 /// back without what was taken, one whose bag was taken away comes back
 /// with none, and a bag it gained as a body is emptied onto the floor
-/// before it goes. `MyTurn` is never put back; the turn queue deals it
-/// turns again when it is admitted.
+/// before it goes. In a game with items, death has already let fall
+/// everything the actor carried and wore, so a revived actor stands up
+/// with nothing, and what its gear lent is folded again from what it
+/// wears now; the rules for a bag are for one a game kept or put on the
+/// body. `MyTurn` is never put back; the turn queue deals it turns again
+/// when it is admitted. An actor still dying is refused: it has a twin
+/// from the pass it died in, but it is not remains until it is laid down.
 ///
 /// Refused, with a warning, for anything that is not remains with a twin,
 /// and for a body with someone on it and no free cell within
 /// [`STANDING_ROOM`].
 pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
-    let Some(twin) = world.get::<Life>(body).map(|l| l.0) else {
+    // `Life` goes on in the pass an actor dies and `Remains` only once it is
+    // laid down, so an actor still dying has a twin and is not yet a body:
+    // standing it up then would be undone by its own death a moment later.
+    let Some(twin) = world.get::<Life>(body).filter(|_| world.get::<Remains>(body).is_some()).map(|l| l.0) else {
         warn!("{body:?} cannot be revived: it is not remains, or `RemainsPlugin` kept no twin of it");
         return false;
     };
@@ -226,6 +234,12 @@ pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
     stood.remove_by_ids(&gained).insert((Health { current: health.clamp(1, max), max }, Position(at)));
     if let Some(mut sight) = stood.get_mut::<Viewshed>() {
         sight.dirty = true;
+    }
+    // What its gear lends is folded from what it wears, and the twin's
+    // stats hold the bonuses of everything worn at death; what it wears now
+    // is the body's, so the fold runs again from that.
+    if let Some(mut worn) = stood.get_mut::<Equipped>() {
+        worn.set_changed();
     }
     world.write_message(Revived { entity: body });
     true
@@ -914,6 +928,69 @@ mod tests {
         app.world_mut().entity_mut(dead).insert(Patrol(9));
         assert!(stand_up(&mut app, dead, 2));
         assert_eq!(app.world().get::<Patrol>(dead), Some(&Patrol(3)), "the actor's own value, not the body's");
+    }
+
+    /// Who died this pass, and what a game's answer got back from trying to
+    /// revive each.
+    #[derive(Resource, Default)]
+    struct Tried(Vec<Entity>, Vec<bool>);
+
+    fn note_the_dying(mut deaths: MessageReader<DeathEvent>, mut tried: ResMut<Tried>) {
+        tried.0.extend(deaths.read().map(|d| d.entity));
+    }
+
+    /// A game that tries to stand a dying actor straight back up, in the
+    /// pass it dies, before it is remains.
+    fn revive_the_dying(world: &mut World) {
+        let dying = std::mem::take(&mut world.resource_mut::<Tried>().0);
+        for entity in dying {
+            let stood = revive(world, entity, 2);
+            world.resource_mut::<Tried>().1.push(stood);
+        }
+    }
+
+    /// Something dying is not yet remains, whatever the engine has already
+    /// kept of it: it is refused, and lies down as remains like any other.
+    #[test]
+    fn an_actor_in_the_pass_it_dies_is_not_yet_remains_and_cannot_be_revived() {
+        let (mut app, start, sides) = arena();
+        app.init_resource::<Tried>().add_systems(crate::plugin::Turn, (note_the_dying, revive_the_dying).chain().in_set(crate::plugin::TurnSet::React));
+        watcher(&mut app, start, sides);
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        kill(&mut app, dead, sides);
+        assert_eq!(app.world().resource::<Tried>().1, vec![false], "refused while it was dying");
+        assert!(app.world().get::<Remains>(dead).is_some(), "and it lies down as remains");
+    }
+
+    /// In a game with items, death lets fall what the actor carried, so a
+    /// revived actor stands up without it, and without what it lent: a
+    /// bonus from armor it no longer wears does not come back with it.
+    #[test]
+    fn a_revived_actor_stands_up_without_what_death_dropped_or_the_bonus_it_gave() {
+        use crate::items::{Bestows, Equipped, Inventory, Item, ItemsPlugin};
+        use crate::status::StatBlock;
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, RemainsPlugin, crate::world::StreamingPlugin, ItemsPlugin));
+        let start = testing::surface(&mut app);
+        let sides = testing::two_sides(&mut app);
+        let player = watcher(&mut app, start, sides);
+        let stat = rl_rules::StatId::from_raw(0);
+        let plate = app.world_mut().spawn((Item, Bestows(vec![(stat, rl_rules::Op::Add(2))]))).id();
+        let at = start.offset(2, 0);
+        let dead = victim(&mut app, at, sides, true);
+        let mut worn = rl_rules::Equipment::with_slot_count(1);
+        worn.equip(plate, &rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))).unwrap();
+        app.world_mut().entity_mut(dead).insert((Inventory { items: vec![plate] }, Equipped(worn), StatBlock(rl_rules::Stats::new())));
+        let from_gear = |app: &App| app.world().get::<StatBlock>(dead).map_or(0, |s| s.0.modifiers().iter().filter(|m| m.source.is_item()).count());
+        take_a_turn(&mut app, player);
+        assert_eq!(from_gear(&app), 1, "worn, the plate lends its bonus");
+
+        kill(&mut app, dead, sides);
+        assert!(stand_up(&mut app, dead, 2));
+        take_a_turn(&mut app, player);
+        assert_eq!(from_gear(&app), 0, "stood up without the plate, and without its bonus");
+        assert!(app.world().get::<Inventory>(dead).is_none_or(|b| b.items.is_empty()), "carrying nothing");
+        assert_eq!(app.world().get::<Position>(plate).map(|p| p.0), Some(at), "the plate lies where it fell");
     }
 
     /// Only remains can be stood up.
