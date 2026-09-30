@@ -47,6 +47,7 @@ pub mod stealth;
 pub mod testing;
 pub mod throwing;
 pub mod turn;
+pub mod work;
 pub mod world;
 
 pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
@@ -97,7 +98,7 @@ pub use props::{
     PropsPlugin, Refused, Scenery, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
 };
 pub use registries::Registries;
-pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
+pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived, WasLiving, revive};
 pub use replay::{Pressed, Recording};
 pub use rl_grid::LightBand;
 pub use seed::{AddStream, Seed, Stream};
@@ -106,6 +107,7 @@ pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin}
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+pub use work::{AddWork, BeginWork, BreakReason, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPlugin, Working, Works};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names a game writes.
@@ -157,13 +159,14 @@ pub mod prelude {
         Spotted, Take, VerbId, Verbs, spawn_prop,
     };
     pub use crate::registries::Registries;
-    pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin};
+    pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived};
     pub use crate::seed::{AddStream, Seed};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+    pub use crate::work::{AddWork, WorkDone, WorkKinds, WorkPlugin, Working};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
     pub use rl_grid::LightBand;
 }

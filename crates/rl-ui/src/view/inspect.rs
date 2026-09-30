@@ -190,6 +190,8 @@ pub struct Duelists<'w, 's> {
     props: Query<'w, 's, (), With<rl_bevy::Prop>>,
     /// The odds either side lands, by the call the resolver rolls with.
     marks: Marksmanship<'w, 's>,
+    /// What the subject is working at.
+    work: crate::view::Workings<'w, 's>,
 }
 
 /// What a side of a duel is made of, apart from what its [`Loadout`] says.
@@ -241,6 +243,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     if let (Some(mine_f), Some((_, Some(theirs_f)))) = (my_faction, theirs) {
         row.relation = Some(duelists.rules.factions.relation(mine_f.0, theirs_f.0));
     }
+    row.work = duelists.work.row(entity);
     view.subject = Some(row);
 
     // A prop is never duelled, whatever health it carries. A crate has

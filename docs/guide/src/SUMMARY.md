@@ -33,6 +33,7 @@
   - [Items and equipment](systems/items.md)
   - [Loot](systems/loot.md)
   - [Minds](systems/minds.md)
+  - [Work](systems/work.md)
 - [What it perceives]()
   - [Sight and lighting](systems/sight.md)
   - [Noise](systems/noise.md)

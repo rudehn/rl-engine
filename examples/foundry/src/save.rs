@@ -313,6 +313,11 @@ mod tests {
         let mut wrecks = Vec::new();
         let mut lamps = 0;
         for e in world.iter_entities() {
+            // A body's twin is the actor as it died, kept for a revival and
+            // seen by no query; it is not a droid on the deck.
+            if e.contains::<bevy::ecs::entity_disabling::Disabled>() {
+                continue;
+            }
             if let (Some(kind), Some(health), None) = (e.get::<crate::droids::Kind>(), e.get::<Health>(), e.get::<rl_engine::rl_bevy::Remains>()) {
                 droids.push((roster.defs.name(kind.0).to_string(), health.current));
             }

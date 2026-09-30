@@ -141,8 +141,18 @@ pub trait ItemMaker: Resource {
 ///
 /// Put on by the game when it spawns the actor, from whatever its own
 /// bestiary says; the engine rolls it on the death.
-#[derive(Component, Debug, Clone, PartialEq, Eq)]
+#[derive(Component, Debug, PartialEq, Eq)]
 pub struct Drops<D: Send + Sync + 'static>(pub DropTable<Id<D>>);
+
+// By hand, because a derived `Clone` asks `D` to be `Clone` too, and a
+// game's item definition rarely is; the table is only ids. A `Drops` that
+// is not `Clone` is one the twin kept of a dying actor cannot carry, so a
+// revived actor would drop nothing the second time it died.
+impl<D: Send + Sync + 'static> Clone for Drops<D> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 /// The engine's stream for what the dead leave.
 ///
@@ -724,5 +734,19 @@ pub(crate) mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
+    }
+
+    /// A drop table is ids, which copy whatever the game's item type is,
+    /// so the twin kept of a dying actor keeps what it drops and a revived
+    /// one still drops it. A game's item definition is rarely `Clone`, and
+    /// a derived `Clone` asked it to be.
+    #[test]
+    fn a_dying_actors_twin_keeps_its_drops_whatever_the_items_are() {
+        struct NotClone;
+        let mut world = World::new();
+        let actor = world.spawn(Drops::<NotClone>(DropTable(Vec::new()))).id();
+        crate::remains::take_twin(&mut world, actor);
+        let twin = world.get::<crate::remains::Life>(actor).expect("a twin").0;
+        assert!(world.get::<Drops<NotClone>>(twin).is_some(), "the twin carries the drop table: {:?}", crate::remains::uncopied(&world, actor, twin));
     }
 }

@@ -16,6 +16,7 @@
 //! its own.
 
 mod alarm;
+mod repair;
 mod sensors;
 mod spawns;
 
@@ -30,6 +31,7 @@ use rl_engine::rl_rules::{DropRow, DropTable};
 use serde::Deserialize;
 
 pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, shout_alarm, sound_alarm};
+pub use repair::{REPAIRING, RepairWrecks, Wrecks, rebuild_wrecks, sense_wrecks};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub(crate) use spawns::MIN_DISTANCE_FROM_ENTRY;
 pub use spawns::populate_deck;
@@ -98,6 +100,10 @@ pub struct MonsterDef {
     /// `(item name, percent chance)`, each rolled on its own death.
     #[serde(default)]
     pub drops: Vec<(String, u32)>,
+    /// The turns it takes to rebuild a wreck of its own side, before the
+    /// wreck's own share; present, it rebuilds wrecks rather than hunting.
+    #[serde(default)]
+    pub repairs: Option<u16>,
 }
 
 impl Named for MonsterDef {
@@ -235,9 +241,11 @@ impl Roster {
             if d.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
             }
-            brain = match d.shadow {
-                Some(s) => brain.then(Keep::enemies(s.keep_within, s.no_closer_than)).then(Hover),
-                None => brain.then(Hunt),
+            brain = match (d.repairs, d.shadow) {
+                // A drone that rebuilds has nothing to hunt with.
+                (Some(_), _) => brain.then(RepairWrecks),
+                (None, Some(s)) => brain.then(Keep::enemies(s.keep_within, s.no_closer_than)).then(Hover),
+                (None, None) => brain.then(Hunt),
             };
             brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));
         }

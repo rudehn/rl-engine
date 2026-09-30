@@ -14,7 +14,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
-     fingerprint: 22f47c9b -->
+     fingerprint: 3bd4ae01 -->
 
 # Minds
 
@@ -38,7 +38,7 @@ A `Mind` put on an entity in a game with no `MindsPlugin` is reported once, by n
 `Mind(Arc<Brain<Entity>>)` is the component, shared because most monsters of a kind think alike, and it requires `Intelligence`, `CameFrom` and a `Viewshed`.
 `Brain::then` appends a tactic below the ones already there, and `decide` returns the first `Decision` a tactic gave together with the name of the tactic that gave it.
 A `Tactic` is a `name` for that trace and an `evaluate` returning a `Decision` or `None` to let the next one try.
-`Decision` is `Step`, `Attack`, `Ability`, `Wait`, `PickUp`, `EquipFromGround`, `Throw`, or `Own(Box<dyn Choice>)` for an action of the game's own; a step onto a shut door is written as an `Open` instead, since the mind knows what it is walking into.
+`Decision` is `Step`, `Attack`, `Ability`, `Wait`, `PickUp`, `EquipFromGround`, `Throw`, `Work` to begin work of many turns, which the brain is not asked about again until it is done or broken, or `Own(Box<dyn Choice>)` for an action of the game's own; a step onto a shut door is written as an `Open` instead, since the mind knows what it is walking into.
 `Perception(i32)` is how far a mind sees and notices, `DEFAULT_PERCEPTION` of 8 without one, and the cast is a disc read through the light, so a monster in the dark sees what is lit, what its `DarkSight` reaches and what it is touching.
 `Intelligence(Wits)` is what a mind is able to do whatever its brain would like: `FLEES`, `SEARCHES`, `OPENS_DOORS`, `PICKS_UP`, `EQUIPS` and `THROWS`, with `MINDLESS`, `ANIMAL` and `SAPIENT` presets, sapient unless the spawn says otherwise.
 `Profile(MovementProfile)` is the movement class it paths with, and `CameFrom` the cell it stepped from last, so a wanderer drifts rather than dithers.

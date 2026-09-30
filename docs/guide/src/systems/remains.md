@@ -7,18 +7,19 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-rules/src/ai/snapshot.rs
             crates/rl-save/src/run.rs
-     fingerprint: 04ef19d7 -->
+     fingerprint: f1dd5bb1 -->
 
 # Remains
 
-What the dead leave lying where they fell, for a game to say what that means.
-Nothing is spawned and nothing is copied: the remains are the dead entity itself, kept past the frame it died in, with whatever the game spawned it with still on it.
+What the dead leave lying where they fell, for a game to say what that means, and to stand back up if it wants to.
+The remains are the dead entity itself, kept past the frame it died in, with whatever the game spawned it with still on it.
 What the engine takes off is only what the engine put on, and only what means this is alive and acting.
 What it adds is a `Remains` marking when it died and who got the credit, a `Prop` so a body is something standing in a cell like any other, and a name saying it is what is left of what it was.
+Beside the body it keeps a twin of the actor as it lived, which no ordinary query sees, so a body can be revived as the actor it was.
 
 ## Turning it on
 
-`RemainsPlugin` adds `leave_remains` to `CleanupSet::Remove`, after `process_deaths`, and declares `depends_on::<CombatPlugin>`, since without deaths there is nothing to leave.
+`RemainsPlugin` adds `keep_life` to `ResolveSet::Damage`, after `apply_damage`, and `leave_remains` to `CleanupSet::Remove`, after `process_deaths`, and declares `depends_on::<CombatPlugin>`, since without deaths there is nothing to leave.
 It is opt-in twice: the plugin decides whether any death leaves anything, and `LeavesRemains` on the spawn decides whether this one does, so a game leaves wrecks behind its machines and nothing behind its summoned things without a second plugin.
 A marker on an actor in a game that never added the plugin does nothing at all.
 `RemainsPlugin::naming("{what} remains")` is the same plugin with the wording set as it is added; the default `RemainsNaming` says the same thing, and a game may replace the resource later instead.
@@ -30,7 +31,10 @@ Without `PropsPlugin` a body is something named lying on the floor and nothing r
 `LeavesRemains` is the per-actor half of the opt-in, and carries nothing.
 `Remains` is what an actor becomes: `since`, what the clock read when it died, and `credit`, whoever killed it if anyone did and that one is still in the world.
 Those are the two things the engine already knew at the moment of death, and neither is a claim about a world.
-`leave_remains` reads `DeathEvent`, skips the player and skips anything unmarked, and on the rest removes `WasLiving` and inserts `Position`, `Prop` and `Remains`.
+`keep_life` reads the same `DeathEvent` first, in the pass the actor dies and before anything answers it, and `take_twin` copies the whole actor onto a twin carrying Bevy's `Disabled`, linked from the body by `Life`.
+Every component is copied and none is named; one that is not `Clone` cannot be, and `uncopied` names it in an error at the moment of death.
+`Life` despawns the twin when it comes off the body or the body is despawned, and `Remains` takes `Life` with it when it comes off, so no twin outlives its body.
+`leave_remains` reads `DeathEvent`, skips the player and skips anything unmarked, and on the rest puts `Position` back and calls `lay_down`, which removes `WasLiving` and inserts `Prop` and `Remains`.
 The position is put back because `process_deaths` took it off with the turn and the cell in the index, and remains lie where the actor fell rather than where a game would have to remember it fell.
 `WasLiving` is the one list of what an actor stops being: `Dead`, `Actor`, `Blocks`, `Health`, `Mind`, `Perception`, `Viewshed`, `Notice`, `Aware`, `Hearing`, `Heard` and `Post`.
 `Health` comes off rather than being left at zero, because a body left with health answers the query the damage pass makes and could be killed a second time.
@@ -42,6 +46,12 @@ The position is put back because `process_deaths` took it off with the turn and 
 A body is seen by a mind as a `PropView` in `Snapshot::props`, filled by `perceive_props` in `PerceiveSet::Annotate`, carrying which entity it is, where it lies and whose it was, and nothing else.
 `EntityState::remains` is how a save holds it: the whole of it is optional, so a save written before remains existed still loads, and the `SaveId` inside it is optional again, since a death nobody was credited with is still a death.
 `EntityState::remains_as` holds the prop kind a game dressed the body in afterwards, by name, and it is put back on the body as it is laid down, so a wreck comes back a wreck without the game's own record of what the thing was having to know it died.
+A save lays a body down through the same `lay_down`, so a body from a save has a twin too, of the living thing the game's record respawned.
+`revive(world, body, health)`, or `commands.revive(body, health)` through `ReviveCommands`, makes the body its twin again: every component the twin has comes back with the twin's value, everything the body gained as a body comes off, and only what the world did to the body stays the body's, where it lies and what it carries.
+A looted body comes back without what was taken, a body whose bag was taken away comes back with none, and a bag it gained as a body is emptied onto the floor first.
+In a game with items, death has already let fall everything the actor carried and wore, so it stands up with nothing and its gear at its feet, and what its gear lent is folded again from what it wears now.
+An actor still dying is refused: it has a twin from the pass it died in, but it is not remains until it is laid down.
+A body with something standing on it stands up on the nearest free cell within `STANDING_ROOM`, and `Revived { entity }` is sent.
 
 ## Using it
 
@@ -70,10 +80,12 @@ pub fn wreck_the_dead(mut commands: Commands, mut left: MessageReader<RemainsLef
 
 The engine refuses to say what remains are.
 There is no glyph, no rot timer, no loot table, and no answer to whether a body can be searched, stripped, rebuilt, eaten or raised: a game answers all of it from its own components, on the same entity, reacting to `RemainsLeft`.
+Standing a body back up is the engine's, because the engine laid it down and knows what it took off; when, why and with how much health is the game's.
+A revived actor comes back as it was the moment it died, including what it was in the middle of, and nothing is started fresh; a game that wants it to forget something answers `Revived`.
 The one word the engine puts on a body is the name, and that only through a template a game wrote.
 Whose it was is the one thing the engine tells a mind, because sides are its own: it registered them and it holds the hostility matrix, so a mind asking whether that one is ours is asking a question answerable without a word of the game's vocabulary.
 Anything finer than that travels as a sense the game pushes.
-The engine never removes remains, because how long the dead linger is a rule about a world, and a timer here would be a default every game either accepted without meaning to or switched off.
+The engine never removes remains of its own accord, because how long the dead linger is a rule about a world, and a timer here would be a default every game either accepted without meaning to or switched off.
 The player's death is the game's alone, marked or not: a run ends on it, and the corpse a game may still want to draw is not taken out from under it.
 The cost of keeping the entity is real and worth saying: a game querying its own monsters by a component it added now also matches its bodies, and those queries want `Without<Remains>`.
 Queries on `Actor` or `Mind`, which is most of them, are unaffected.

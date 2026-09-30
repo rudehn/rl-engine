@@ -346,6 +346,12 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   A run is saved on the way out and on every deck arrival, Nate choosing that over a save key; the arrival save is the engine's, `SavePlugin::on_arrival()`, since when a save is written is the engine's loop and every game with places wants it.
   Found on the way: nothing ordered the end of the frame, so a save refreshed after a restart could write a world with no run in it; `Last` is now `EndOfFrame::{Save, Bury, Restart}`, and `Counters` is saved by the engine as `Quests` is.
   The title screen's Continue is taken whenever the slot holds a readable run, and New Game asks "Abandon the run in progress?" first, No picked out, as Nate chose.
+- 2026-09-29: work across many turns, and remains stood back up.
+  Nate, 2026-09-23: "how could we support actions that take multiple turns ... a repair droid that took 10 turns to fix a dead droid".
+  `WorkPlugin` spends each turn of a piece of work as an ordinary turn without asking the brain again, and breaks it off from the one place each cause lands: harm, death, and reach asked of where things are now; `docs/design/work.md` is the reasoning.
+  Revival copies the whole actor onto a disabled twin the moment it dies, so a component nobody listed still comes back, and the twin lives exactly as long as the body is remains; `docs/design/remains.md` §9.
+  Foundry's repair drone uses both: its row reads `(repairing)`, inspect counts the turns left, and the droid stands back up.
+  Found on the way: sharing one `target/` between a worktree and the main checkout linked one branch's crates against the other's, so every checkout builds in its own; a looted body went on listing the armor it wore; `Drops` was `Clone` only for a game item type that was; and a revived droid stood up drawn as its wreck, which turned the revival rule round so the twin's values win everywhere but what the body carries and where it lies.
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.

@@ -221,9 +221,12 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
         name.push_str(" \u{00b7} ");
         name.push_str(&facet.text);
     }
-    // What it is doing about you, in the panel's own words and after the
-    // name: a state a player reads rather than a mark they learn.
-    if let Some(word) = row.alert.and_then(|alert| words.get(alert)) {
+    // What it is doing, in the panel's own words and after the name: a
+    // state a player reads rather than a mark they learn. What it is busy
+    // with outranks what it knows of you, since something at work is not
+    // coming for anyone, whatever it has noticed.
+    let state = row.work.as_ref().map(|w| w.doing.as_str()).or_else(|| row.alert.and_then(|alert| words.get(alert)));
+    if let Some(word) = state {
         name.push_str(" (");
         name.push_str(word);
         name.push(')');
@@ -292,6 +295,22 @@ mod tests {
         draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &AlertWords::default(), &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert!(said.contains("(hunting)"), "{said:?}");
+    }
+
+    #[test]
+    fn what_an_actor_is_working_at_is_written_where_its_alert_would_be() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        stage.actor("drone", 'u', 2, 0);
+        stage.tick();
+        let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
+        row.alert = Some(Alert::Hunting);
+        row.work = Some(crate::view::WorkRow { doing: "mending".into(), target: None, left: 3 });
+        let palette = stage.app.world().resource::<Palette>().clone();
+        let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &AlertWords::default(), &palette);
+        let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
+        assert!(said.contains("drone (mending)"), "{said:?}");
+        assert!(!said.contains("hunting"), "what it is busy with, not what it knows: {said:?}");
     }
 
     #[test]

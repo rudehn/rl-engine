@@ -93,14 +93,52 @@ pub struct Row {
     /// game; what it is *called* is the panel's, since one game's monsters
     /// sleep and another's stand idle.
     pub alert: Option<Alert>,
+    /// What it is working at, when it is at work. Written where the alert
+    /// would be: what it is busy doing is what a player needs to know.
+    pub work: Option<WorkRow>,
     /// What the game added. Empty until an annotate system pushes.
     pub facets: Vec<Facet>,
+}
+
+/// What an actor is working at, as a panel reads it.
+///
+/// A field of the view rather than a facet, because the engine knows it
+/// and every game with work would push the same one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkRow {
+    /// The word the game declared the kind of work by.
+    pub doing: String,
+    /// What the work is done to, by name, if it is done to something.
+    pub target: Option<String>,
+    /// Of the worker's own turns, how many are left.
+    pub left: u16,
+}
+
+/// Reads what an entity is working at, for any collector.
+///
+/// Empty in a game without work: no `Working` is ever put on anything, and
+/// without `WorkKinds` there is no word to show.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Workings<'w, 's> {
+    working: Query<'w, 's, &'static rl_bevy::Working>,
+    kinds: Option<Res<'w, rl_bevy::WorkKinds>>,
+    names: Query<'w, 's, &'static Name>,
+}
+
+impl Workings<'_, '_> {
+    /// What `entity` is working at, if anything.
+    pub fn row(&self, entity: Entity) -> Option<WorkRow> {
+        let work = self.working.get(entity).ok()?.0;
+        let kinds = self.kinds.as_deref()?;
+        let target = work.target.and_then(|t| self.names.get(t).ok()).map(|n| n.as_str().to_string());
+        Some(WorkRow { doing: kinds.name(work.kind).to_string(), target, left: work.left() })
+    }
 }
 
 impl Row {
     /// A row for `entity` with nothing but a name and a glyph.
     pub fn new(entity: Entity, label: impl Into<String>, glyph: Glyph) -> Self {
-        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, alert: None, facets: Vec::new() }
+        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, alert: None, work: None, facets: Vec::new() }
     }
 
     /// The same row, `distance` tiles away.

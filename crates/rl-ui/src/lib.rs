@@ -56,6 +56,8 @@
 //! 1. A view struct in [`view`], holding [`Row`]s, [`Bar`]s and numbers.
 //!    No `Color`, no [`Rect`](rl_core::Rect), no string the game did not
 //!    supply. Anything a game might phrase differently is a [`Facet`].
+//!    What an actor is working at is a [`WorkRow`] on its row, read by any
+//!    collector through [`Workings`].
 //! 2. A collector system in [`ViewSet::Collect`], and a plugin that adds
 //!    it and declares what it needs with [`Needs::needs`](rl_bevy::Needs::needs),
 //!    saying how a game makes each piece.
@@ -126,7 +128,7 @@ pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, Bar, ContainerView, ContainerViewPlugin, EndingSection, EndingView,
     EndingViewPlugin, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView,
     NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
-    VitalsViewPlugin, target_modal,
+    VitalsViewPlugin, WorkRow, Workings, target_modal,
 };
 
 use bevy::prelude::*;
@@ -269,7 +271,8 @@ pub mod prelude {
     pub use crate::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, Bar, ContainerView, ContainerViewPlugin, EndingSection, EndingView,
         GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin, OfferRow,
-        OffersView, OffersViewPlugin, OpenContainer, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, target_modal,
+        OffersView, OffersViewPlugin, OpenContainer, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin, WorkRow,
+        Workings, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};
 }
