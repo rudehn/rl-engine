@@ -1,6 +1,6 @@
 # Remains
 
-Status: built 2026-09-21, against `main` at `43660f9`; revival (§9) designed 2026-09-23, not built.
+Status: built 2026-09-21, against `main` at `43660f9`; revival (§9) designed 2026-09-23 and built 2026-09-29.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists.
 
 ## 0. Summary
@@ -104,7 +104,7 @@ The field defaults, so a save written before this exists still loads.
 
 ## 9. Revival
 
-Status: designed 2026-09-23 with `docs/design/work.md`, not built.
+Status: designed 2026-09-23 with `docs/design/work.md`, built 2026-09-29.
 
 Foundry's repair drone rebuilds a droid wreck into a droid, so remains must be able to stand up again.
 The engine laid the body down, so standing it back up is the engine's too; a game that respawned a fresh droid in its place would lose what made it that droid, its bag, its statuses and every component the game put on it, and each game would lose a different part of it.
@@ -137,9 +137,14 @@ No path through the engine or a game can skip it, because the hook belongs to th
 
 - Every component the twin has and the body lacks is put back, which is everything death took off and anything a game's death took off, named nowhere.
 - Every component the body has and the twin lacks is taken off: `Remains`, whose hook then despawns the twin, `Prop`, and whatever the game added to the body, such as Foundry's `PropKind`.
-- A component on both keeps the body's value, because that is what has happened since.
-  The one exception is `Name`, which the engine itself changed when it named the body, and which comes back from the twin.
+- A component on both comes back with the twin's value, so a body dressed as something else while it lay there stands up as the actor it was: the name the engine gave the body, and the look the renderer wrote into the same `Glyph` when it dressed the body as a prop, both go back to the actor's own.
+- `Position` and `OnMap` stay the body's, since where it lies is what the world did to it, and a body carried off stands up where it was carried.
 - `Health` is set to `health`, capped at the twin's maximum.
+- A body with something standing on it stands up on the nearest free cell within `STANDING_ROOM`, two, ring by ring in reading order; with none free the revival is refused with a warning.
+
+As designed, a component on both kept the body's value, with `Name` the one exception.
+Seeing it in Foundry turned that round: a revived line droid stood up drawn as its wreck, because dressing a body writes its look into the component the living actor's look was in.
+The rule was only ever protecting what a body carries, which is handled on its own below, so the twin wins everywhere else and `Name` needs no exception.
 
 What it carries is the one place the twin is never trusted, because the twin's bag is a list of item entities that may since have gone anywhere.
 `Inventory` and `Equipped` are never put back from the twin, even when the body has lost them:

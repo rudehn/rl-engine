@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 905c7892 -->
+     fingerprint: 44a2114c -->
 
 # Panels
 
@@ -60,7 +60,8 @@ What is optional is read as optional: `VitalsViewPlugin` reads `NoiseHeard` thro
 
 ## The model
 
-`Row` is one entity as a panel reads it: the `entity` itself, the `label` from its `Name`, its own `Glyph`, a Chebyshev `distance`, an optional `relation` and `health`, an optional `alert`, and the `facets` a game pushed.
+`Row` is one entity as a panel reads it: the `entity` itself, the `label` from its `Name`, its own `Glyph`, a Chebyshev `distance`, an optional `relation` and `health`, an optional `alert`, an optional `work`, and the `facets` a game pushed.
+`WorkRow` is what an actor is working at, the kind's word, the target's name and the turns left, and any collector fills it through `Workings`; the nearby rail writes the word where it would write the alert, and inspect adds a line from `InspectPanel::working`'s templates, `"{doing} the {target}, {left} left"` by default.
 The glyph is content rather than theme, which is why a green slime stays green in every palette, and `relation` and `health` are optional because a thing on the floor has neither.
 `Alert` is `Unaware`, `Searching` or `Hunting`, three readings and no more because three is what the engine can say without guessing; what each is *called* is the presenter's, since one game's monsters sleep where another's stand idle.
 `Bar` is a label, a value, a maximum and a tone, and `fraction` is how full it reads.

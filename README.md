@@ -18,6 +18,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Field of view**: symmetric shadowcasting over any `OpacitySource`, plus line of fire and targeting shapes for bolts, balls, beams and cones.
 - **Pathfinding**: A* with reusable scratch buffers, region-bounded Dijkstra maps, flee maps and flow fields per movement profile.
 - **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt and wander, reading snapshots of what each actor can see.
+- **Work across many turns**: an actor rebuilding, charging or digging over turns it spends one at a time, broken off when it is hurt, dies or loses its reach, with its row saying what it is doing and how long it has left, so a busy actor never reads as a stuck one.
 - **A turn loop the engine owns**: an integer-clock energy scheduler, speed-scaled action costs and every due turn resolved inside one frame.
 - **RPG rules**: stats and modifiers, a staged damage pipeline with resistances, status effects that tick by the turn, factions, equipment slots, affixes and enchantments, and a to-hit roll shaped by range and light whose model is the game's to choose.
 - **Items that do things**: the ground, bags and slots with stacks and tags, one `Loadout` summed from what an actor is and wears so nothing is copied onto a wearer, gear that grants stats, triggers that say in RON what a thing does when it is used, lands, fires or hits, charges that are spent and can refill, and throwing with the flight the resolver and the preview both read.
@@ -27,7 +28,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Stealth and awareness**: a roll to notice by sight and light, memory of who has noticed whom, waking on a blow, and minds that act only on what they have noticed and search where they last saw it, and statuses that make their holder unseen until it strikes.
 - **Noise and hearing**: every engine action makes its own sound, loudness spent walking through what a tile is made of, and a listener that hears a place rather than who made it and walks to it as a trail.
 - **Fire and gas**: a value per tile stepped a turn at a time, gas whose kinds are a game's content and fire whose rules are the engine's, both writing into what stops sight and light.
-- **Props and remains**: a crate, a lever or a console as content rather than a component and an action in every game, containers with a screen the engine runs end to end, and the dead left where they fell as the entity that died.
+- **Props and remains**: a crate, a lever or a console as content rather than a component and an action in every game, containers with a screen the engine runs end to end, and the dead left where they fell as the entity that died, which a game can stand back up as it was.
 - **Data-driven content**: tiles, monsters, items, statuses and quests are registries loaded from RON files, with weighted spawn tables by depth band.
 - **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.

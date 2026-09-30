@@ -1,7 +1,7 @@
 # Work
 
-Status: designed 2026-09-23, not built.
-The reasoning is here; `docs/OVERVIEW.md` will list what exists once it does.
+Status: designed 2026-09-23, built 2026-09-29.
+The reasoning is here; `docs/OVERVIEW.md` lists what exists.
 Bringing remains back to life is part of the same slice of work and is written up in `docs/design/remains.md` §9, since it is a change to that subsystem rather than a new one.
 
 ## 0. Summary

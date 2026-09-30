@@ -11,7 +11,7 @@
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: e707fbd9 -->
+     fingerprint: a010a268 -->
 
 # Saving and the ending screen
 
@@ -34,7 +34,7 @@ Nothing here is on by default, and a game that registers no kinds and adds neith
 ## The model
 
 `Saveable` is the one trait a game writes, implemented on the component that marks a kind: `capture` writes an entity down as `Self::Saved`, and `restore` spawns one again from that, nowhere, carrying nothing, at full health.
-Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads or where an actor is posted, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
+Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads, where an actor is posted or the work it is in the middle of, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
 A status a worn thing holds is saved apart from the rest, with the thing's save id, and put back held by the thing; one whose thing did not come back is left out rather than put back loose, since it lasted only while that thing was worn.
 Remains are saved as whatever they were, and a prop kind a game laid on a body afterwards is part of what `EntityState` records of the remains, which is why `PropKind` answers false to `Saveable::TAKES_REMAINS`; a capture that finds one entity claimed by two kinds is refused with both named, since restoring it would spawn the thing twice.
 `SaveableState` is the same bargain for a resource a game keeps of a run, with `capture` and `restore` on the resource itself, which must already exist when the save is restored.
