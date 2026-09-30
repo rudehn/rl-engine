@@ -179,18 +179,18 @@ pub const STANDING_ROOM: i32 = 2;
 
 /// Stands `body` back up with `health`, and says whether it could.
 ///
-/// The body is given back the shape of its twin (see [`Life`]): every
-/// component the twin has and the body lacks is put back, which is
-/// everything death took off, named nowhere; every component the body
-/// gained as a body is taken off, `Remains` and `Prop` and whatever the
-/// game added; and a component on both keeps the body's value, because
-/// that is what has happened since. `Name` is the exception, because the
-/// engine itself renamed the body. What it carries is never taken from
-/// the twin, whose bag lists items that may since be anywhere: a looted
-/// body comes back without what was taken, one whose bag was taken away
-/// comes back with none, and a bag it gained as a body is emptied onto the
-/// floor before it goes. `MyTurn` is never put back either; the turn queue
-/// deals it turns again when it is admitted.
+/// The body is made its twin again (see [`Life`]): every component the
+/// twin has is put back with the twin's value, which is everything death
+/// took off and everything a body is dressed in over the actor's own,
+/// its name, its look, a game's value set on a body, named nowhere; and
+/// every component the body gained as a body is taken off, `Remains` and
+/// `Prop` and whatever the game added. Only what the world did to the
+/// body stays the body's: where it lies, and what it carries. The twin's
+/// bag lists items that may since be anywhere, so a looted body comes
+/// back without what was taken, one whose bag was taken away comes back
+/// with none, and a bag it gained as a body is emptied onto the floor
+/// before it goes. `MyTurn` is never put back; the turn queue deals it
+/// turns again when it is admitted.
 ///
 /// Refused, with a warning, for anything that is not remains with a twin,
 /// and for a body with someone on it and no free cell within
@@ -204,22 +204,26 @@ pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
         warn!("{body:?} cannot be revived: something stands on it and nothing within {STANDING_ROOM} cells is free");
         return false;
     };
-    let never = [world.component_id::<Disabled>(), world.component_id::<Inventory>(), world.component_id::<Equipped>(), world.component_id::<MyTurn>()];
+    // What the world did to the body, which stays the body's.
+    let the_bodys = [
+        world.component_id::<Disabled>(),
+        world.component_id::<Inventory>(),
+        world.component_id::<Equipped>(),
+        world.component_id::<MyTurn>(),
+        world.component_id::<Position>(),
+        world.component_id::<OnMap>(),
+    ];
     let body_has: Vec<ComponentId> = world.entity(body).archetype().components().to_vec();
     let twin_has: Vec<ComponentId> = world.entity(twin).archetype().components().to_vec();
-    let missing: Vec<ComponentId> = twin_has.iter().copied().filter(|c| !body_has.contains(c) && !never.contains(&Some(*c))).collect();
+    let restored: Vec<ComponentId> = twin_has.iter().copied().filter(|c| !the_bodys.contains(&Some(*c))).collect();
     let gained: Vec<ComponentId> = body_has.iter().copied().filter(|c| !twin_has.contains(c)).collect();
     if world.component_id::<Inventory>().is_some_and(|bag| gained.contains(&bag)) {
         spill(world, body, at);
     }
-    EntityCloner::build_opt_in(world).allow_by_ids(missing).clone_entity(twin, body);
-    let name = world.get::<Name>(twin).cloned();
+    EntityCloner::build_opt_in(world).allow_by_ids(restored).clone_entity(twin, body);
     let max = world.get::<Health>(twin).map_or(health.max(1), |h| h.max);
     let mut stood = world.entity_mut(body);
     stood.remove_by_ids(&gained).insert((Health { current: health.clamp(1, max), max }, Position(at)));
-    if let Some(name) = name {
-        stood.insert(name);
-    }
     if let Some(mut sight) = stood.get_mut::<Viewshed>() {
         sight.dirty = true;
     }
@@ -894,6 +898,22 @@ mod tests {
         assert_ne!(stood, at, "not on top of whoever was there");
         assert!(rl_core::geometry::is_adjacent(stood, at), "but beside them");
         assert_eq!(app.world().get::<Position>(blocker).unwrap().0, at, "who did not move");
+    }
+
+    /// A body dressed as something else while it lay there, a look or a
+    /// component of the game's own set to a body's value, stands up as the
+    /// actor it was: the revived actor has the twin's values, not the
+    /// body's, for everything but what it carries and where it lies.
+    #[test]
+    fn a_revived_actor_is_as_it_was_alive_whatever_its_body_was_dressed_as() {
+        let (mut app, start, sides) = arena();
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        app.world_mut().entity_mut(dead).insert(Patrol(3));
+        kill(&mut app, dead, sides);
+        // A game dressing the body: the same component, a body's value.
+        app.world_mut().entity_mut(dead).insert(Patrol(9));
+        assert!(stand_up(&mut app, dead, 2));
+        assert_eq!(app.world().get::<Patrol>(dead), Some(&Patrol(3)), "the actor's own value, not the body's");
     }
 
     /// Only remains can be stood up.
