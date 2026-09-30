@@ -14,7 +14,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
-     fingerprint: 3bd4ae01 -->
+     fingerprint: 88a1d2b4 -->
 
 # Minds
 
@@ -35,7 +35,7 @@ A `Mind` put on an entity in a game with no `MindsPlugin` is reported once, by n
 
 ## The model
 
-`Mind(Arc<Brain<Entity>>)` is the component, shared because most monsters of a kind think alike, and it requires `Intelligence`, `CameFrom` and a `Viewshed`.
+`Mind(Arc<Brain<Entity>>)` is the component, shared because most monsters of a kind think alike, and it requires `Intelligence`, `CameFrom`, a `Viewshed`, and `Doing`, the name of the tactic that decided its last turn, or `None` when none did, which a panel reads to say what the actor is doing.
 `Brain::then` appends a tactic below the ones already there, and `decide` returns the first `Decision` a tactic gave together with the name of the tactic that gave it.
 A `Tactic` is a `name` for that trace and an `evaluate` returning a `Decision` or `None` to let the next one try.
 `Decision` is `Step`, `Attack`, `Ability`, `Wait`, `PickUp`, `EquipFromGround`, `Throw`, `Work` to begin work of many turns, which the brain is not asked about again until it is done or broken, or `Own(Box<dyn Choice>)` for an action of the game's own; a step onto a shut door is written as an `Open` instead, since the mind knows what it is walking into.
