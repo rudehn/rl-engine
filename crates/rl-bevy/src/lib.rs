@@ -79,8 +79,8 @@ pub use knowledge::{Knowledge, KnowledgeSave};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
-    AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight, Thinking,
-    a_mind_holds_the_turn,
+    AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight,
+    Thinking, a_mind_holds_the_turn,
 };
 pub use noise::{
     AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds,
@@ -144,7 +144,7 @@ pub mod prelude {
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
-    pub use crate::minds::{AddChoice, Intelligence, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
+    pub use crate::minds::{AddChoice, Doing, Intelligence, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::places::{
         Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,

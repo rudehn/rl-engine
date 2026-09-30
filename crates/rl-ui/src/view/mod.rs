@@ -96,6 +96,10 @@ pub struct Row {
     /// What it is working at, when it is at work. Written where the alert
     /// would be: what it is busy doing is what a player needs to know.
     pub work: Option<WorkRow>,
+    /// The name of the tactic that decided its last turn, for a panel to
+    /// say in the game's words what it is doing; `None` for a thing, for an
+    /// actor with no mind, and for a turn no tactic decided.
+    pub doing: Option<&'static str>,
     /// What the game added. Empty until an annotate system pushes.
     pub facets: Vec<Facet>,
 }
@@ -138,7 +142,7 @@ impl Workings<'_, '_> {
 impl Row {
     /// A row for `entity` with nothing but a name and a glyph.
     pub fn new(entity: Entity, label: impl Into<String>, glyph: Glyph) -> Self {
-        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, alert: None, work: None, facets: Vec::new() }
+        Self { entity, label: label.into(), glyph, distance: 0, relation: None, health: None, alert: None, work: None, doing: None, facets: Vec::new() }
     }
 
     /// The same row, `distance` tiles away.

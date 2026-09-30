@@ -149,11 +149,23 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // A droid does not sleep: one that knows of nothing is idle, one
         // walking to a noise is searching, and one that has the commando
         // is hunting.
-        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the deck").cursor(CursorStyle::ticks()).alerts(AlertWords::new(
-            "idle",
-            "searching",
-            "hunting",
-        )),
+        NearbyPanel::new(screen.nearby)
+            .titled("")
+            .headings("In sight", "On the deck")
+            .cursor(CursorStyle::ticks())
+            .alerts(AlertWords::new("idle", "searching", "hunting"))
+            // What a droid is doing outranks whether it has the commando:
+            // one running from it, keeping its distance, holding its post
+            // or on its way to a wreck is not hunting it. Everything
+            // unnamed, a blow, a shot or the chase, reads as the alert.
+            .activities(
+                ActivityWords::new()
+                    .word("flee_when_hurt", "fleeing")
+                    .word("shadow", "keeping away")
+                    .word("hover", "keeping away")
+                    .word("keep_post", "guarding")
+                    .word("repair_wrecks", "to a wreck"),
+            ),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
