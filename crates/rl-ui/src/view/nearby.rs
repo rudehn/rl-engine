@@ -194,6 +194,22 @@ mod tests {
         assert_eq!(view.threats(), 2);
     }
 
+    /// Scenery is drawn but not listed: a lathe beside a crate leaves the
+    /// crate the one thing in the rail, so a room of machinery does not
+    /// bury what can be acted on.
+    #[test]
+    fn scenery_is_left_out_of_the_rows_and_a_thing_beside_it_is_not() {
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let lathe = stage.thing("a lathe", '0', 1, 0);
+        stage.app.world_mut().entity_mut(lathe).insert(rl_bevy::Scenery);
+        stage.thing("a crate", '&', 2, 0);
+        stage.tick();
+
+        let view = stage.app.world().resource::<NearbyView>();
+        let names: Vec<&str> = view.things.iter().map(|r| r.label.as_str()).collect();
+        assert_eq!(names, vec!["a crate"]);
+    }
+
     #[test]
     fn a_row_says_whether_it_has_noticed_the_player_only_when_stealth_is_running() {
         // Stealth is decided in the minds' pass, so it needs the minds.

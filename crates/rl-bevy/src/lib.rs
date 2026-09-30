@@ -94,7 +94,7 @@ pub use plugin::{
 pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
 pub use props::{
     AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet,
-    PropsPlugin, Refused, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
+    PropsPlugin, Refused, Scenery, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
 };
 pub use registries::Registries;
 pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, WasLiving};
@@ -153,8 +153,8 @@ pub mod prelude {
     };
     pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{
-        AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Spotted,
-        Take, VerbId, Verbs, spawn_prop,
+        AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery,
+        Spotted, Take, VerbId, Verbs, spawn_prop,
     };
     pub use crate::registries::Registries;
     pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin};

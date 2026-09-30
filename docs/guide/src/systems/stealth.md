@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: a02259e6 -->
+     fingerprint: 16fd0e12 -->
 
 # Stealth
 

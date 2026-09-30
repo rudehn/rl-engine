@@ -62,6 +62,24 @@
     (name: "live cable", glyph: '/', color: (r: 140, g: 200, b: 255), hidden: (spot: 35),
      triggers: [(on: "entered", fires: 3, effects: [(kind: "Harm", args: (kind: "electricity", roll: "1d4"))])]),
 
+    // Machinery: what says what a room was for. None of it offers, holds
+    // or does anything, so the engine keeps it out of the nearby list and
+    // the look cursor still names it. Which of it should block sight is
+    // in DESIGN.md under Rooms; no prop blocks sight yet, and everything
+    // here that blocks the way also stops a shot.
+    (name: "lathe",           glyph: '0', color: (r: 150, g: 162, b: 175), blocks: true),
+    (name: "stamping press",  glyph: 'H', color: (r: 125, g: 132, b: 145), blocks: true),
+    (name: "workbench",       glyph: 'n', color: (r: 155, g: 118, b: 82),  blocks: true),
+    (name: "control desk",    glyph: 'n', color: (r: 85, g: 190, b: 200),  blocks: true),
+    (name: "parts shelving",  glyph: '|', color: (r: 145, g: 128, b: 100), blocks: true),
+    (name: "coolant tank",    glyph: 'O', color: (r: 95, g: 155, b: 205),  blocks: true),
+    (name: "coolant pump",    glyph: 'Q', color: (r: 105, g: 145, b: 175), blocks: true),
+    (name: "conveyor frame",  glyph: '-', color: (r: 135, g: 135, b: 122), blocks: true),
+    (name: "crate stack",     glyph: 'X', color: (r: 172, g: 146, b: 102), blocks: true),
+    (name: "charging cradle", glyph: 'Y', color: (r: 115, g: 125, b: 160), blocks: true),
+    // Underfoot, not in the way: scrap too loose to stop anyone.
+    (name: "loose scrap",     glyph: ';', color: (r: 128, g: 118, b: 106)),
+
     // What a droid leaves. Named by the remains template, so this name is
     // only what a wreck nobody died into would be called; stripping one is
     // opening it, and what is in it is whatever the droid had left.

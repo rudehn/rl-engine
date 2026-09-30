@@ -44,6 +44,49 @@ The foundry is not collapsing around the commando; it is simply old, neglected a
 It is dark, and getting darker the deeper it goes.
 The tone is tense rather than heroic: one person with a lamp, in a building that is still working, surrounded by things that are not.
 
+## Rooms
+
+Every room should say what it was for when the foundry was working, and a blank room is what this is here to avoid.
+The pieces a deck needs are stamped first: the armory, the store, a guard post, a reactor or the core.
+Every other room is then furnished as one of these, each drawn once small enough for the smallest room and once larger, weighted so a hall that takes the larger usually gets it (**exists**):
+
+| Room | What stands in it |
+| --- | --- |
+| Machine shop | Lathes, workbenches, stamping presses, oil stains and a scorch mark |
+| Charging bay | Charging cradles behind a hazard stripe, and a cable trench |
+| Parts store | Aisles of parts shelving, and crate stacks |
+| Pump room | Coolant tanks, coolant pumps and drain grates |
+| Control room | Control desks, and cable trenches to them |
+| Scrap sorting | Conveyor frames, loose scrap, a crate stack and a scorch mark |
+| Loading dock | Crate stacks, a hazard stripe and oil |
+| Maintenance corner | Shelving, a workbench, loose scrap and oil |
+
+No room piece holds loot or a guard, so furnishing changes how a deck looks and where one can walk and hide, never what the deck is worth.
+
+What each thing is follows two rules:
+
+- **Underfoot, a tile unless it does something.** A hazard stripe, an oil stain, a scorch mark, a drain grate and a cable trench change nothing, so they are tiles. An oil slick that made you slip would be a prop.
+- **Machinery is a prop.** It stands in a cell with a name the look cursor reads, and since it offers, holds and does nothing, the engine keeps it out of the nearby list, where a machine shop would otherwise bury its one crate.
+
+What blocks sight is a third rule: a thing blocks sight when a person standing beside it can neither see over it nor through it.
+
+| Blocks walking, sight and shots | Blocks walking only |
+| --- | --- |
+| Coolant tank, stamping press, parts shelving, crate stack | Lathe, workbench, control desk, coolant pump, conveyor frame, charging cradle |
+
+Loose scrap blocks nothing.
+A tall frame that can be seen through, a charging cradle, blocks walking only, and a shot passes over anything low.
+Today no prop blocks sight, and every prop that blocks the way also stops a shot.
+
+**Engine pressure:** a prop that blocks sight, and one that blocks the way but lets a shot past; rules that dress a room of any size rather than centre a fixed piece; and a pool of room kinds by depth, which the zones need. All three are in `docs/TODO.md`.
+
+Next (**planned**):
+
+- Hazards that belong to their room, from the list under [Props](#props): fuel drums in a fuel store, a capacitor bank in the charging bay, an ion coil in the control room, a blast valve in the pump room, an emergency cache in the maintenance corner.
+- Room kinds by zone, so fabrication has furnace halls and the reactor ring coolant galleries.
+- Rooms placed beside the rooms they served: the pump room by a coolant spill, the control room a door from the reactor.
+- Droids at work in the rooms, so a quiet deck shows what each room was for by what is still being done in it.
+
 ## Progression
 
 Ten decks in four zones.

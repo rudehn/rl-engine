@@ -165,8 +165,7 @@ pub fn draw_inspect(
         y += 1;
     }
     if y < inner.bottom() {
-        let whereabouts = if ground.is_empty() { format!("{} tiles away", subject.distance) } else { format!("{} tiles away, on {ground}", subject.distance) };
-        terminal.print_on(inner.x, y, &clip(&whereabouts, width), palette.get(Tones::MUTED), bg);
+        terminal.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
     if let Some(duel) = view.duel
@@ -206,6 +205,13 @@ pub fn draw_inspect(
         terminal.print_on(inner.x, y, &clip(&facet.text, width), palette.get(facet.tone), bg);
         y += 1;
     }
+}
+
+/// How far off the thing under the cursor is, and what it stands on when
+/// the ground has a name: `1 tile away`, `3 tiles away, on floor`.
+fn whereabouts(distance: i32, ground: &str) -> String {
+    let away = if distance == 1 { "1 tile away".to_string() } else { format!("{distance} tiles away") };
+    if ground.is_empty() { away } else { format!("{away}, on {ground}") }
 }
 
 #[cfg(test)]
@@ -282,5 +288,11 @@ mod tests {
         stage.press(CursorKeys::default().next);
         let rows = stage.rows();
         assert!(rows.iter().any(|r| r.contains("2 tiles away, on floor")), "{rows:#?}");
+    }
+
+    #[test]
+    fn one_tile_off_is_one_tile_and_any_other_distance_is_tiles() {
+        assert_eq!(whereabouts(1, "deck"), "1 tile away, on deck");
+        assert_eq!(whereabouts(2, ""), "2 tiles away");
     }
 }

@@ -14,7 +14,10 @@
 //   legend: glyph to what it stands for, one of
 //     Tile("name")                          a tile: "hull" | "deck" |
 //                                           "grating" | "bulkhead" |
-//                                           "hatch" | "console" | "lamp"
+//                                           "hatch" | "console" | "lamp" |
+//                                           "hazard stripe" | "oil stain" |
+//                                           "scorch mark" | "drain grate" |
+//                                           "cable trench"
 //     Prop("name")                          a prop from props.ron
 //     Item(item: "item", count: 1)          that item from items.ron;
 //                                           count is 1 or a range,

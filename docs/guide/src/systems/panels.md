@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 03ac2462 -->
+     fingerprint: 7c74112c -->
 
 # Panels
 
@@ -76,7 +76,7 @@ A tone with no colour falls back to `text` rather than panicking, and every unco
 `modal_is(id)` gates a screen's own systems and `no_modal` gates the engine's, which is how a game stops discovering that its player walks while the bag is open.
 A stack rather than a return-to slot, because a slot can be pushed twice and lose the first target.
 `Sighted` is refilled twice a frame rather than once, at the head of the input phase and again in `ViewSet::Sight`, because those are two different moments: the turns run between them, and a list collected before the player's key was resolved is not the list the panels draw.
-`InSight` reads it as actors nearest first and then things nearest first, which is the order the nearby rail prints.
+`InSight` reads it as actors nearest first and then things nearest first, which is the order the nearby rail prints, and leaves out a prop nobody has spotted and a prop that is only `Scenery`; the inspect cursor reads what stands under it rather than the list, so it still names a machine the rail passes over.
 `Focus` is the one entity picked out of that list, held by entity rather than by cell so two things on a tile are two stops, and a focus on something that has left sight is treated as none rather than as an error.
 The rail highlights it, the look cursor opens on it and an aim opens on it when the aim can take it, so the row picked out and the thing aimed at are one choice.
 An aim put away, fired or not, leaves nothing picked out, so the rail is not left pointing at what a grenade already landed on; what it was fired at is kept apart as `LastAimed`, and the next aim opens there when nothing is picked out.

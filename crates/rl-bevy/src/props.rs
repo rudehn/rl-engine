@@ -16,6 +16,9 @@
 //! spawned here carries its [`PropKind`], and whoever draws dresses it,
 //! exactly as a tile is described once as a tile and once as a look.
 //!
+//! A prop whose definition does nothing but stand there is [`Scenery`],
+//! which a list of what is in sight passes over.
+//!
 //! Offers and the interactions that answer them, containers that stock and
 //! empty, triggers that land an effect list, and hiding that a turn in
 //! sight rolls away are all here. `docs/design/props.md` is the whole
@@ -50,6 +53,17 @@ pub struct Prop;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PropKind(pub PropId);
 
+/// A prop that only says what a place was for: its definition offers,
+/// holds, answers and hides nothing and it cannot be broken, as
+/// [`PropDef::is_scenery`](rl_rules::prop::PropDef::is_scenery) reads it.
+///
+/// Put on by [`spawn_prop`], so a restored run marks it again. A panel's
+/// list of what is in sight leaves scenery out, and the map and the look
+/// cursor still show it. A game that hangs a behaviour of its own on a
+/// prop like this removes the marker, and the prop is listed again.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Scenery;
+
 /// Puts a prop of kind `id` at `at` on `map`, with everything its
 /// definition asks for.
 ///
@@ -70,6 +84,9 @@ pub fn spawn_prop(commands: &mut Commands, registries: &Registries, id: PropId, 
     }
     if let Some(secret) = def.hidden {
         prop.insert(Hidden { spot: secret.spot });
+    }
+    if def.is_scenery() {
+        prop.insert(Scenery);
     }
     prop.id()
 }
@@ -1001,8 +1018,9 @@ mod offers {
     use crate::turn::{Intent, Turns};
     use rl_rules::{Names, Registry, TagDef};
 
-    /// A crate that opens, a console with a verb of the game's own, and a
-    /// cache that wants a cutter.
+    /// A crate that opens, a console with a verb of the game's own, a
+    /// cache that wants a cutter, a workbench offering two things, and a
+    /// lathe that offers nothing and is only scenery.
     const PROPS: &str = r#"#![enable(implicit_some)]
         [
             (name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), blocks: true,
@@ -1013,6 +1031,7 @@ mod offers {
              container: (contents: [(item: "slug", count: 1)], locked: "cutter"), offers: [(verb: "open", time: 250)]),
             (name: "workbench", glyph: 'T', color: (r: 150, g: 120, b: 90), blocks: true,
              offers: [(verb: "search", time: 100), (verb: "charge", time: 100)]),
+            (name: "lathe", glyph: '0', color: (r: 150, g: 160, b: 170), blocks: true),
         ]"#;
 
     fn arena() -> (App, Point) {
@@ -1042,6 +1061,17 @@ mod offers {
         let prop = spawn_prop(&mut app.world_mut().commands(), &registries, id, at, MapId::SURFACE);
         app.update();
         prop
+    }
+
+    /// A prop whose definition does nothing is marked as scenery when it
+    /// is put down, and one that offers something is not.
+    #[test]
+    fn a_prop_that_does_nothing_is_put_down_as_scenery_and_one_that_offers_is_not() {
+        let (mut app, start) = arena();
+        let lathe = put(&mut app, "lathe", start.offset(1, 0));
+        let console = put(&mut app, "reactor console", start.offset(2, 0));
+        assert!(app.world().entity(lathe).contains::<Scenery>());
+        assert!(!app.world().entity(console).contains::<Scenery>());
     }
 
     /// The gate answers for whoever holds the turn, about what it can

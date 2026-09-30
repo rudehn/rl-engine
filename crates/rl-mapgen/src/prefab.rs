@@ -16,6 +16,9 @@
 //! that wants variety without one entry per piece; a piece with no weight
 //! stays in the list without ever being drawn, and nothing carrying weight
 //! fails the chain rather than generating a map its game does not expect.
+//! [`StampEachRoom`] is the pass that keeps rooms from being left empty: a
+//! weighted piece in every room nothing was stamped in, each in a facing
+//! [`Orient::facings`] allows and that fits, off the way in and out.
 //! A piece's legend maps a character to a [`Cell`], so a mark can paint the
 //! tile under it instead of leaving whatever the map had there. A piece
 //! [`Prefab::keyed`] carries that key through every stamp as
@@ -229,6 +232,23 @@ pub enum Orient {
 }
 
 impl Orient {
+    /// Every facing this policy allows `prefab` to land in: one when
+    /// fixed, the four quarter-turns, or those and their mirror images.
+    /// A symmetric piece repeats itself in the list, which leaves each
+    /// distinct facing equally likely to a uniform pick among them.
+    pub fn facings(self, prefab: &Prefab) -> Vec<Prefab> {
+        let turns = |p: &Prefab| (0..4).map(|q| p.rotated(q)).collect::<Vec<_>>();
+        match self {
+            Orient::Fixed => vec![prefab.clone()],
+            Orient::Turned => turns(prefab),
+            Orient::TurnedOrMirrored => {
+                let mut all = turns(prefab);
+                all.extend(turns(&prefab.flipped()));
+                all
+            }
+        }
+    }
+
     /// The piece as this policy leaves it, drawing from `rng` only when
     /// there is a choice to make, so a fixed stamp advances no stream and
     /// a chain that adds one does not move every map after it.
@@ -359,6 +379,110 @@ impl<C: BuildContext> Pass<C> for StampOneOf {
         let chosen = self.choices[pick_weighted(&weights, roll)].0.clone();
         StampPrefab { name: self.name, prefab: chosen, at: self.at, orient: self.orient }.apply(ctx)
     }
+}
+
+/// Stamps one of several pieces into every room nothing was stamped in.
+///
+/// This is the pass that keeps a map from having empty rooms: after the
+/// pieces a game needs are down and the ways in and out are chosen, every
+/// emitted [`Room`] that no [`Stamped`] touches gets a piece drawn by
+/// weight from those that fit it. A room nothing fits is left as it was,
+/// since a room too small to furnish is a smaller map, not a failed one;
+/// only a list with no weight at all fails the chain, as it does for
+/// [`StampOneOf`].
+///
+/// A piece fits a room in a facing [`Orient`] allows when the room exceeds
+/// it by a cell on every side, the rule [`Placement::AnyRoom`] keeps, so
+/// a corridor meeting the room anywhere on its edge still reaches every
+/// side of it. It is laid centred, and slid to the nearest position where
+/// it paints and marks neither the [`StartPoint`](crate::passes::StartPoint)
+/// nor the [`ExitPoint`](crate::dungeon::ExitPoint), which is why the pass
+/// runs in [`Phase::Finish`]: what stands at the way in must not land on
+/// a wall or share a cell with a slot. A cell the piece leaves showing may
+/// lie over either, so an open piece stays centred more often than not.
+/// Each facing that fits is equally likely, so a piece that only fits
+/// turned is laid turned rather than refused.
+///
+/// It reads rooms and nothing else, so it furnishes what [`Rooms`](crate::dungeon::Rooms)
+/// and [`Bsp`](crate::dungeon::Bsp) carve and nothing on a cave or any map
+/// whose builder emits no [`Room`].
+#[derive(Debug, Clone)]
+pub struct StampEachRoom {
+    /// A stable name, so two passes in one chain draw different streams.
+    pub name: &'static str,
+    /// The pieces and their weights.
+    pub choices: Vec<(Prefab, u32)>,
+    /// How a piece may be turned before it lands.
+    pub orient: Orient,
+}
+
+impl<C: BuildContext> Pass<C> for StampEachRoom {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn phase(&self) -> Phase {
+        Phase::Finish
+    }
+    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+        if self.choices.iter().try_fold(0u32, |sum, (_, w)| sum.checked_add(*w)).is_none_or(|total| total == 0) {
+            return Err(BuildError::new(self.name, "no candidate carries weight, or the weights overflow a u32".to_string()));
+        }
+        // Every candidate's facings once, rather than once per room.
+        let facings: Vec<Vec<Prefab>> = self.choices.iter().map(|(p, _)| self.orient.facings(p)).collect();
+        let keep: Vec<Point> =
+            ctx.outputs().iter::<crate::passes::StartPoint>().map(|s| s.0).chain(ctx.outputs().iter::<crate::dungeon::ExitPoint>().map(|e| e.0)).collect();
+        let taken: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).filter(|r| taken.iter().all(|t| r.intersection(t).is_none())).collect();
+        for room in rooms {
+            // What could go here: each candidate with weight, and the
+            // facings of it that fit, each with where it would be laid.
+            let fitting: Vec<(u32, Vec<(&Prefab, Point)>)> = self
+                .choices
+                .iter()
+                .zip(&facings)
+                .filter(|((_, w), _)| *w > 0)
+                .map(|((_, w), faces)| (*w, faces.iter().filter_map(|f| laid_in(room, f, &keep).map(|at| (f, at))).collect::<Vec<_>>()))
+                .filter(|(_, faces)| !faces.is_empty())
+                .collect();
+            if fitting.is_empty() {
+                continue;
+            }
+            let weights: Vec<u32> = fitting.iter().map(|(w, _)| *w).collect();
+            let total: u32 = weights.iter().sum();
+            let roll = ctx.rng().random_range(0..total);
+            let faces = &fitting[pick_weighted(&weights, roll)].1;
+            let (piece, origin) = faces[ctx.rng().random_range(0..faces.len())];
+            piece.stamp(ctx.terrain_mut(), origin);
+            let marks = piece.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
+            ctx.emit(Stamped { bounds: Rect::new(origin.x, origin.y, piece.width(), piece.height()), marks, prefab: piece.key() });
+        }
+        Ok(())
+    }
+}
+
+/// Where `piece` is laid in `room`: centred, or else the position nearest
+/// the centre that paints and marks none of `keep`, always with a cell of
+/// the room all round it. `None` when the room is too small or every
+/// position paints or marks something kept.
+fn laid_in(room: Rect, piece: &Prefab, keep: &[Point]) -> Option<Point> {
+    let (w, h) = (piece.width(), piece.height());
+    if room.width < w + 2 || room.height < h + 2 {
+        return None;
+    }
+    let centre = Point::new(room.x + (room.width - w) / 2, room.y + (room.height - h) / 2);
+    // A cell the piece leaves showing is no cover: only what it paints or
+    // marks may not land on something kept.
+    let clear = |o: &Point| {
+        keep.iter().all(|k| {
+            let local = Point::new(k.x - o.x, k.y - o.y);
+            !Rect::new(0, 0, w, h).contains(local) || (piece.tile(local).is_none() && piece.marks().iter().all(|(_, m)| *m != local))
+        })
+    };
+    let xs = room.x + 1..=room.x + room.width - w - 1;
+    let ys = room.y + 1..=room.y + room.height - h - 1;
+    // Nearest the centre first, then top to bottom and left to right, so
+    // a tie always slides the same way.
+    ys.flat_map(|y| xs.clone().map(move |x| Point::new(x, y))).filter(clear).min_by_key(|o| ((o.x - centre.x).abs() + (o.y - centre.y).abs(), o.y, o.x))
 }
 
 /// The index into `weights` that `roll` falls under, when the weights are
@@ -771,6 +895,127 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A blank map with floor carved for each of `rooms`, each emitted as
+    /// a [`Room`], for a test that needs rooms of an exact size.
+    fn with_rooms(rooms: &[Rect]) -> (BaseContext, TileId, TileId) {
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut c = BaseContext::blank(40, 30, tiles, wall);
+        for r in rooms {
+            for p in r.cells() {
+                c.terrain_mut().set(p, floor);
+            }
+            c.emit(Room(*r));
+        }
+        (c, wall, floor)
+    }
+
+    /// A 3x3 block of wall with a mark in the middle, keyed by `mark`, so
+    /// a test can tell which piece landed where.
+    fn block(wall: TileId, mark: char) -> Prefab {
+        let middle = format!("#{mark}#");
+        Prefab::parse(&["###", &middle, "###"], |c| match c {
+            '#' => Some(wall),
+            _ => None,
+        })
+        .unwrap()
+    }
+
+    /// Over a span of seeds on a full dungeon, every room gets exactly one
+    /// piece, and the room an earlier stamp took gets no second one: the
+    /// property the pass exists for, that no room is left empty.
+    #[test]
+    fn every_room_is_furnished_once_and_a_room_already_stamped_is_left_alone() {
+        for seed in 0..100 {
+            let tiles = TileRegistry::standard();
+            let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+            let mut c = BaseContext::blank(70, 40, tiles, wall);
+            Chain::new()
+                .then(Rooms { floor, min_size: 5, max_size: 11, ..Default::default() })
+                .then(StampPrefab { name: "first", prefab: block(wall, 'f'), at: Placement::AnyRoom, orient: Orient::Fixed })
+                .then(StampEachRoom { name: "each", choices: vec![(block(wall, 'a'), 1), (block(wall, 'b'), 1)], orient: Orient::Fixed })
+                .run(&mut c, RunSeed(seed))
+                .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+            let stamps: Vec<Rect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+            for room in c.outputs().iter::<Room>() {
+                let inside = stamps.iter().filter(|b| room.0.intersection(b).is_some()).count();
+                assert_eq!(inside, 1, "seed {seed}: room {:?} holds {inside} pieces", room.0);
+            }
+        }
+    }
+
+    /// A room too small for every candidate is left as it was, and the
+    /// chain does not fail: an unfurnished room is a plainer map, where a
+    /// missing required piece is a broken one.
+    #[test]
+    fn a_room_nothing_fits_is_left_alone_without_failing_the_chain() {
+        let (mut c, wall, floor) = with_rooms(&[Rect::new(2, 2, 4, 4), Rect::new(10, 2, 5, 5)]);
+        Chain::new().then(StampEachRoom { name: "each", choices: vec![(block(wall, 'a'), 1)], orient: Orient::Fixed }).run(&mut c, RunSeed(1)).unwrap();
+        let stamps: Vec<Rect> = c.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        assert_eq!(stamps, vec![Rect::new(11, 3, 3, 3)], "only the 5x5 room takes the 3x3 piece");
+        assert!(Rect::new(2, 2, 4, 4).cells().all(|p| c.terrain().get(p) == Some(floor)), "the 4x4 room is untouched");
+    }
+
+    /// A piece that fits a room only when turned is laid turned when the
+    /// stamp may turn it, and not at all when it is fixed.
+    #[test]
+    fn a_piece_that_fits_only_turned_is_laid_turned_and_a_fixed_one_is_not_laid() {
+        let bar = |wall: TileId| Prefab::parse(&["#####"], |c| (c == '#').then_some(wall)).unwrap();
+        let tall = Rect::new(2, 2, 3, 7);
+        let (mut c, wall, _) = with_rooms(&[tall]);
+        Chain::new().then(StampEachRoom { name: "each", choices: vec![(bar(wall), 1)], orient: Orient::Fixed }).run(&mut c, RunSeed(1)).unwrap();
+        assert_eq!(c.outputs().iter::<Stamped>().count(), 0, "a fixed 5x1 bar does not fit a room 3 wide");
+        let (mut c, wall, _) = with_rooms(&[tall]);
+        Chain::new().then(StampEachRoom { name: "each", choices: vec![(bar(wall), 1)], orient: Orient::Turned }).run(&mut c, RunSeed(1)).unwrap();
+        let laid = c.outputs().first::<Stamped>().expect("the bar is laid turned").bounds;
+        assert_eq!((laid.width, laid.height), (1, 5));
+    }
+
+    /// The way in and the way out are never under a piece: a piece whose
+    /// centred place covers either slides to the nearest place that does
+    /// not, so the room is still furnished and nothing lands on a wall.
+    #[test]
+    fn a_piece_never_covers_the_start_or_the_exit_and_slides_off_them() {
+        let room = Rect::new(2, 2, 9, 9);
+        let (mut c, wall, _) = with_rooms(&[room]);
+        // The centre of the room, which a centred 3x3 piece would cover.
+        let start = Point::new(6, 6);
+        c.emit(crate::passes::StartPoint(start));
+        c.emit(crate::dungeon::ExitPoint(Point::new(7, 6)));
+        Chain::new().then(StampEachRoom { name: "each", choices: vec![(block(wall, 'a'), 1)], orient: Orient::Fixed }).run(&mut c, RunSeed(1)).unwrap();
+        let laid = c.outputs().first::<Stamped>().expect("the room is still furnished").bounds;
+        assert!(!laid.contains(start) && !laid.contains(Point::new(7, 6)), "{laid:?} covers the way in or out");
+        assert!(laid.x > room.x && laid.y > room.y && laid.right() < room.right() && laid.bottom() < room.bottom(), "{laid:?} keeps a cell of floor all round");
+    }
+
+    /// A piece that leaves a cell showing may lie over the way in, so an
+    /// open piece stays centred rather than sliding off something it never
+    /// touches.
+    #[test]
+    fn a_piece_stays_centred_over_the_start_when_it_leaves_that_cell_showing() {
+        let room = Rect::new(2, 2, 7, 7);
+        let (mut c, wall, _) = with_rooms(&[room]);
+        c.emit(crate::passes::StartPoint(Point::new(5, 5)));
+        let ring = Prefab::parse(&["###", "# #", "###"], |c| (c == '#').then_some(wall)).unwrap();
+        Chain::new().then(StampEachRoom { name: "each", choices: vec![(ring, 1)], orient: Orient::Fixed }).run(&mut c, RunSeed(1)).unwrap();
+        assert_eq!(c.outputs().first::<Stamped>().expect("the room is furnished").bounds, Rect::new(4, 4, 3, 3));
+    }
+
+    /// A candidate with no weight is never laid, and a list where nothing
+    /// carries weight fails the chain rather than furnishing nothing.
+    #[test]
+    fn an_unweighted_piece_is_never_laid_and_a_list_with_no_weight_fails() {
+        for seed in 0..40 {
+            let (mut c, wall, _) = with_rooms(&[Rect::new(2, 2, 5, 5), Rect::new(10, 2, 5, 5), Rect::new(2, 10, 5, 5)]);
+            let choices = vec![(block(wall, 'a'), 1), (block(wall, 'z'), 0)];
+            Chain::new().then(StampEachRoom { name: "each", choices, orient: Orient::Fixed }).run(&mut c, RunSeed(seed)).unwrap();
+            assert!(c.outputs().iter::<Stamped>().all(|s| s.marks[0].0 == 'a'), "seed {seed}: the unweighted piece was laid");
+        }
+        let (mut c, wall, _) = with_rooms(&[Rect::new(2, 2, 5, 5)]);
+        let none = StampEachRoom { name: "each", choices: vec![(block(wall, 'a'), 0)], orient: Orient::Fixed };
+        assert!(Chain::new().then(none).run(&mut c, RunSeed(1)).is_err());
     }
 
     #[test]

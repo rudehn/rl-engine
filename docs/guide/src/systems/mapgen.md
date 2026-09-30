@@ -8,7 +8,7 @@
             crates/rl-core/src/seed.rs
             crates/rl-world/src/chunk.rs
             crates/rl-bevy/src/places.rs
-     fingerprint: 17a75ca9 -->
+     fingerprint: 42c9cc07 -->
 
 # Map generation
 
@@ -48,7 +48,9 @@ Where no cell anywhere is that clear it is the plain pick, from the same stream,
 A legend maps a character to a `Cell`: `Tile` paints, `Mark` marks the position and may paint the tile under it, and `Clear` leaves the map as it was.
 `StampPrefab` places one at a `Placement` with an `Orient` saying how it may be turned first, authored per stamp because the same vault may turn freely in a cave and be fixed against the corridor its door has to meet.
 `StampOneOf` is the same pass with a weighted choice in front of it; a zero weight is a piece in the list that is never drawn, which is how a piece stays in while it is being worked on, and nothing carrying weight fails the chain.
-Either stamp publishes a `Stamped` with its bounds and its marks in map coordinates, so a later pass can keep out of it or spawn into it.
+`StampEachRoom` is the pass that keeps a map from having empty rooms: in `Finish`, every emitted `Room` no `Stamped` touches gets one piece drawn by weight among those that fit it in a facing `Orient::facings` allows, with a cell of the room all round it.
+It is laid centred, and slid to the nearest place where it paints and marks neither the `StartPoint` nor the `ExitPoint`, which is why it runs after both exist; a room nothing fits is left as it was, and only a list with no weight at all fails the chain.
+Every stamp publishes a `Stamped` with its bounds and its marks in map coordinates, so a later pass can keep out of it or spawn into it.
 A piece `keyed` with an opaque number carries that key through every turn and mirror to its stamp's `Stamped::prefab`, so whoever fills the marks can trace them back to the piece that gave them meaning.
 
 ## Using it
@@ -92,6 +94,7 @@ A pass that rolls takes the stream from the context rather than making one, and 
 The engine decides the pipeline: what a phase is and what order the six come in, that a name keys a stream, that a failure stops the chain and names itself, and how each shipped pass does its work.
 The game decides which passes are in the chain, which tile ids each one writes, what the numbers are, what the context carries beyond a terrain, and what the outputs mean.
 No shipped pass knows what a wall or a cave or a road is; every tile it writes arrives as a parameter, which is why the same `CellularCave` carves a warren, a mine and a nest of tunnels in three different games.
+The passes that place a piece by room, `Placement::InRoom`, `Placement::AnyRoom` and `StampEachRoom`, read the `Room`s that `Rooms` and `Bsp` emit and nothing else, so on a cave, or any map whose builder emits no `Room`, they have nowhere to put a piece; a cave that wants furnishing places its pieces `At` points of its own choosing for now.
 
 ## Where it lives
 

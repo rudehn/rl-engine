@@ -1,5 +1,6 @@
 //! Foundry's pieces and roles, as data: the armories, the stores, the
-//! reactor and the core, and the guard post, each a file under
+//! reactor and the core, the guard post, and the rooms that say what the
+//! rest of a deck was for, each a file under
 //! `assets/prefabs/`, and `assets/roles.ron` naming who may stand in a
 //! guard's slot.
 //!
@@ -26,7 +27,7 @@ use crate::droids::{MonsterDef, Roster};
 
 /// Every piece a deck is built from, compiled in so the binary runs from
 /// anywhere.
-const PIECES: [&str; 7] = [
+const PIECES: [&str; 22] = [
     include_str!("../assets/prefabs/armory_wide.ron"),
     include_str!("../assets/prefabs/armory_tall.ron"),
     include_str!("../assets/prefabs/store_wide.ron"),
@@ -34,6 +35,21 @@ const PIECES: [&str; 7] = [
     include_str!("../assets/prefabs/reactor.ron"),
     include_str!("../assets/prefabs/core.ron"),
     include_str!("../assets/prefabs/guard_post.ron"),
+    include_str!("../assets/prefabs/machine_shop.ron"),
+    include_str!("../assets/prefabs/machine_shop_large.ron"),
+    include_str!("../assets/prefabs/charging_bay.ron"),
+    include_str!("../assets/prefabs/charging_bay_large.ron"),
+    include_str!("../assets/prefabs/parts_store.ron"),
+    include_str!("../assets/prefabs/parts_store_large.ron"),
+    include_str!("../assets/prefabs/pump_room.ron"),
+    include_str!("../assets/prefabs/pump_room_large.ron"),
+    include_str!("../assets/prefabs/control_room.ron"),
+    include_str!("../assets/prefabs/control_room_large.ron"),
+    include_str!("../assets/prefabs/scrap_sorting.ron"),
+    include_str!("../assets/prefabs/scrap_sorting_large.ron"),
+    include_str!("../assets/prefabs/loading_dock.ron"),
+    include_str!("../assets/prefabs/loading_dock_large.ron"),
+    include_str!("../assets/prefabs/maintenance_closet.ron"),
 ];
 
 /// Who may stand in a guard's slot, compiled in beside the pieces.
@@ -78,8 +94,8 @@ mod tests {
     use super::*;
 
     /// Every piece and the roles file load against the real tiles, props,
-    /// tags and roster, and nothing is lost on the way: seven pieces in,
-    /// seven out, and both roles the guard post asks for.
+    /// tags and roster, and nothing is lost on the way: every piece in is
+    /// a piece out, and both roles the guard post asks for.
     #[test]
     fn every_piece_and_role_file_loads() {
         let prefabs = load(Foundry::new(RunSeed(0)).tiles());
