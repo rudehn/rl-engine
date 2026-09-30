@@ -19,4 +19,11 @@
     (tile: "hatch",    glyph: '+', fg: (0.85, 0.68, 0.25), bg: (0.3, 0.24, 0.09),  vary: (0.1, 0.02)),
     (tile: "console",  glyph: '%', fg: (0.35, 0.85, 0.9),  bg: (0.08, 0.22, 0.24), vary: (0.1, 0.05), shimmer: 0.3),
     (tile: "lamp",     glyph: '*', fg: (1.0, 0.92, 0.55),  bg: (0.35, 0.3, 0.1),   vary: (0.1, 0.04),  shimmer: 0.4),
+    // Floor that says what a room was for and changes nothing underfoot:
+    // anything with an effect is a prop in props.ron instead.
+    (tile: "hazard stripe", glyph: '\\', fg: (0.16, 0.13, 0.05), bg: (0.46, 0.37, 0.1), vary: (0.08, 0.02)),
+    (tile: "oil stain",     glyph: '.', fg: (0.6, 0.58, 0.5),   bg: (0.21, 0.2, 0.16),  vary: (0.1, 0.02)),
+    (tile: "scorch mark",   glyph: '.', fg: (0.62, 0.5, 0.42),  bg: (0.24, 0.17, 0.13), vary: (0.1, 0.03)),
+    (tile: "drain grate",   glyph: ':', fg: (0.5, 0.64, 0.72),  bg: (0.15, 0.2, 0.23),  vary: (0.1, 0.02)),
+    (tile: "cable trench",  glyph: '_', fg: (0.62, 0.66, 0.44), bg: (0.18, 0.19, 0.15), vary: (0.1, 0.03)),
 ]

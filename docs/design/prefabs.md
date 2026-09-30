@@ -120,7 +120,7 @@ Fantasy-rogue's prefab system is the alternative, and every lesson here is from 
 
 ## 9. Not here
 
-- A prefab pool: per-prefab bands and weights, groups a chain draws from, and a per-place budget. A chain still names its pieces through `StampPrefab` and `StampOneOf`, and the coverage report runs over a band range the game passes until a pool gives each piece its own.
+- A prefab pool: per-prefab bands and weights, groups a chain draws from, and a per-place budget. A chain still names its pieces through `StampPrefab`, `StampOneOf` and, since 2026-09-28, `StampEachRoom`, which furnishes every room no other stamp took from one flat weighted list, and the coverage report runs over a band range the game passes until a pool gives each piece its own. `docs/TODO.md` section 1 has the pool, dressing a room of any size, and furnishing a map that is not rooms.
 - Roaming within the prefab's bounds and walking a route, which need the stamp's bounds and orientation carried into the place.
 - A group slot: a leader and escort drawn together.
 - Stamping walls into rock with a connectivity check and rollback, which fantasy-rogue does and no current prefab needs.

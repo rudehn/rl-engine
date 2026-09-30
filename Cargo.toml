@@ -63,9 +63,12 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 # Worldgen and pathfinding are math-heavy; an unoptimised debug run takes
 # seconds per map. Dependencies get full optimisation, workspace crates a
-# light pass so debug builds stay quick to compile.
+# light pass so debug builds stay quick to compile. Dependencies carry no
+# debug info: nobody steps through Bevy in a debugger, and it was most of a
+# build's size on disk, which reached hundreds of gigabytes.
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
 
 [profile.dev]
 opt-level = 1

@@ -13,7 +13,7 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/remains.rs
             crates/rl-save/src/run.rs
-     fingerprint: e7abd2a7 -->
+     fingerprint: 35bed9d1 -->
 
 # Prefabs
 
@@ -116,7 +116,7 @@ impl ActorMaker for Roster {
 The engine decides when a slot is filled, on the arrival that built the place and never again; from which stream, one derived for each slot's cell; what is skipped, and that a skipped slot still draws; how a role is drawn from the spawn table and where it falls back; and how a post is kept, saved and dropped at death.
 The game decides what its pieces and roles are, what a monster and an item are and what making one means, where its chain stamps each piece and which way it faces, and what every `Mark` stands for.
 A band is the game's number, answered by each maker for itself, and a slot's offset is the only thing on a piece that makes its draw deeper: a prefab carries no rarity, theme or stakes.
-Which pieces a place gets is the chain's, through `StampPrefab` and `StampOneOf`; the engine owns what a piece holds, not how often it appears.
+Which pieces a place gets is the chain's, through `StampPrefab`, `StampOneOf` and `StampEachRoom`, which furnishes every room nothing else took; the engine owns what a piece holds, not how often it appears.
 So is how far the arrival stands from a piece's guards: a slot on the arrival cell is skipped, and one beside it is not, so a chain whose pieces hold monsters draws its start with `RandomStart.clear_of_stamps(n)`, as Foundry's does at seven cells.
 Whether a role's members fight side by side is the game's too, since who fights whom is its idea: Foundry's roles are all droids, because a scrap crab drawn to hold a post beside droid sentries was shot by them the moment either woke.
 

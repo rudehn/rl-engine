@@ -13,8 +13,9 @@
             crates/rl-bevy/src/effects/triggers.rs
             crates/rl-render/src/map_view.rs
             crates/rl-ui/src/interact.rs
+            crates/rl-ui/src/focus.rs
             crates/rl-save/src/run.rs
-     fingerprint: a4efca6e -->
+     fingerprint: 582ee418 -->
 
 # Props
 
@@ -39,6 +40,7 @@ It declares `reads` for every message its work may touch that belongs to a plugi
 `load` resolves every name in the file and reports every problem in it at once rather than the first.
 `spawn_prop(commands, registries, id, at, map)` puts one down and returns the entity, so a game can hang its own components on it; the definition says what, the game says where.
 It inserts `Prop`, `PropKind(id)`, a `Name`, a `Position` and an `OnMap`, and then `Blocks`, `Health`, `Container` with an `Inventory`, and `Hidden` as the definition asks.
+A definition that offers nothing, holds nothing, answers no moment, has no `health` and is not hidden is scenery, as `PropDef::is_scenery` reads it, and the prop gets `Scenery` as well.
 No glyph: a look travels as data and whoever draws dresses the prop from the same definition, exactly as a tile is described once as a tile and once as a look.
 `OfferDef` is a `verb`, a `time` in hundredths of a step, an optional `needs` tag and a list of effects.
 `offer_here` works out, for the actor holding the turn and nobody else, what it is offered by what it stands on and what stands beside it, as an `Offer { prop, verb, time, refused }`.
@@ -110,6 +112,7 @@ What a bump cannot reach, a body underfoot or a plate already found, is `Interac
 `OffersPanel` and `ContainerPanel`, in `rl-ui`, are where that question and that rummaging are drawn, and a game with neither gets nothing rather than a guess.
 A prop that blocks sight is not here: field of view reads the map's tiles and the veil gas writes into, so a sight-blocking prop is a second mechanism and the veil is where it goes on the day something needs it.
 Doors stay tiles, because a door has no state of its own to remember and props are for things that remember something.
+Scenery is a prop rather than a tile because it stands in the way and can be looked at by name, and it stays out of what is listed in sight, the nearby rail and the Tab cycle, because a room of machinery would otherwise bury its one crate; the map draws it and the look cursor names it, and a game that hangs a behaviour of its own on one takes `Scenery` off.
 A prop with no `Name` is reported once and loudly: nothing can list it or look at it, which is a spawn bug every time and never a choice.
 Saving is the engine's, and the first save kind that is: `SavePlugin` registers `PropKind` itself, so a game that saves gets an emptied crate still empty, a sprung trap still sprung and a spotted plate still spotted, without writing a line for it.
 A body a game dressed as a prop is not saved as a prop but as what it was, its prop kind kept with its remains, so the one entity is never written down twice.

@@ -61,9 +61,10 @@ pub struct Sighting {
 /// What a sighting is read off.
 type Seen = (Entity, &'static Position, &'static Name, Option<&'static OnMap>, Has<Actor>);
 
-/// What may be listed: something drawn, still alive, and not a prop
-/// nobody has spotted.
-type Sightable = (Without<Dead>, With<Glyph>, Without<Hidden>);
+/// What may be listed: something drawn, still alive, not a prop nobody
+/// has spotted, and not [`Scenery`], which is there to be looked at with
+/// the cursor rather than acted on.
+type Sightable = (Without<Dead>, With<Glyph>, Without<Hidden>, Without<Scenery>);
 
 /// The list of what the player can see, borrowed as a system parameter.
 ///

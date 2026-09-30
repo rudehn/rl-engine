@@ -36,33 +36,22 @@
 //                                           this glyph and fills itself
 //   A monster at a slot holds that cell as its post.
 //
-// The guard post, on decks two, four, five, seven and eight: a locker
-// and a weapon two decks ahead of the deck, flanked by two sentries a
-// deck ahead and held at the mouth by a brute two ahead, each drawn from
-// roles.ron at whatever deck the post is stamped on. Five by five, so any
-// room that takes a reactor takes it.
-//
-// The mouth is three wide, not a one-cell door: a sentry that went out
-// after the commando walks home past the brute, where a door the brute
-// stood in would shut it out of its own post for good.
-// ANCHOR: post
+// The loading dock at its full width.
 (
-    name: "guard post",
+    name: "loading dock large",
     ground: "deck",
     rows: [
-        "#####",
-        "#sAs#",
-        "#.w.#",
-        "#.b.#",
-        "#...#",
+        "XXX  XXX",
+        "XX    XX",
+        "        ",
+        "========",
+        "        ",
+        "  o  o  ",
+        "X      X",
     ],
     legend: {
-        '#': Tile("bulkhead"),
-        '.': Tile("deck"),
-        'A': Prop("armory locker"),
-        'w': Item(tag: "weapon", band: 2),
-        's': Monster(role: "sentry", band: 1),
-        'b': Monster(role: "brute", band: 2),
+        '=': Tile("hazard stripe"),
+        'o': Tile("oil stain"),
+        'X': Prop("crate stack"),
     },
 )
-// ANCHOR_END: post

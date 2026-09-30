@@ -1780,6 +1780,19 @@ mod tests {
             // Or the far droid's silence would be a lane off the deck.
             assert_eq!(map.tile(aim.offset(far, 0)), Some(floor), "the lane reaches the far droid");
         }
+        // And nothing stands in it: a room's machinery on the lane would
+        // stop the throw or lengthen the walk the sound takes.
+        let lane: Vec<Point> = (1..=3 + far).map(|dx| from.offset(dx, 0)).collect();
+        let in_lane: Vec<Entity> = app
+            .world_mut()
+            .query_filtered::<(Entity, &Position), With<Prop>>()
+            .iter(app.world())
+            .filter(|(_, p)| lane.contains(&p.0))
+            .map(|(e, _)| e)
+            .collect();
+        for prop in in_lane {
+            app.world_mut().despawn(prop);
+        }
         let registries = app.world().resource::<Registries>().clone();
         let roster = crate::droids::Roster::load(&registries);
         let deck = app.world().resource::<WorldMap>().current();

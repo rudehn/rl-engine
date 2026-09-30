@@ -61,6 +61,19 @@ impl Named for PropDef {
     }
 }
 
+impl PropDef {
+    /// Whether this is scenery: a prop that offers nothing, holds nothing,
+    /// answers no moment, cannot be broken and is in plain sight.
+    ///
+    /// Such a thing says what a place was for and does nothing else, so it
+    /// is drawn and can be looked at but is not listed beside what the
+    /// player can act on. A room of machinery otherwise buries the one
+    /// crate in it under a row for every lathe.
+    pub fn is_scenery(&self) -> bool {
+        self.offers.is_empty() && self.container.is_none() && self.triggers.is_empty() && self.health.is_none() && self.hidden.is_none()
+    }
+}
+
 /// A registered prop id.
 pub type PropId = Id<PropDef>;
 
@@ -387,6 +400,30 @@ mod tests {
 
     fn tags() -> Registry<TagDef> {
         Registry::from_defs(vec![TagDef::new("cutter")]).expect("one tag")
+    }
+
+    /// A prop that does something is not scenery, whichever part does
+    /// it: an offer, a trigger, health to break, or being hidden each makes
+    /// it something to act on or look out for. Contents need no case of
+    /// their own, since the load refuses a container nothing opens.
+    #[test]
+    fn only_a_prop_with_no_part_that_does_anything_is_scenery() {
+        let tags = tags();
+        let names = Names::new().tags(&tags);
+        let props = load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "lathe", glyph: '0', color: (r: 150, g: 160, b: 170), blocks: true),
+                (name: "oil drum", glyph: '0', color: (r: 90, g: 80, b: 60), blocks: true, health: 4),
+                (name: "lever", glyph: '0', color: (r: 90, g: 80, b: 60), offers: [(verb: "pull")]),
+                (name: "plate", glyph: '0', color: (r: 90, g: 80, b: 60), triggers: [(on: "entered", effects: [])]),
+                (name: "seam", glyph: '0', color: (r: 90, g: 80, b: 60), hidden: (spot: 10)),
+            ]"#,
+            &names,
+        )
+        .expect("the file loads");
+        let scenery: Vec<&str> = props.iter().filter(|(_, d)| d.is_scenery()).map(|(_, d)| d.name.as_str()).collect();
+        assert_eq!(scenery, vec!["lathe"]);
     }
 
     /// The file in `docs/design/props.md`, near enough: a crate that

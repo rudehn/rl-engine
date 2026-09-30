@@ -50,6 +50,10 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 24 | Two engine types are named for a theme word | 4 | low | low |
 | 25 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
 | 26 | A searcher dithers where it lost the trail | 2 | medium | low |
+| 27 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
+| 28 | Furnishing a room of any size | 1 | medium | medium |
+| 29 | A furnishing pool with bands and a budget | 1 | low | medium |
+| 30 | Furnishing a map that is not rooms | 1 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -73,10 +77,26 @@ Why the order that is left, in four moves:
 Items 13 to 20 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 21 waits on a game that actually wants the tactics it would add, and item 22 waits on a second game asking for it.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
+Items 27 to 30 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 27 is what the furnished rooms most visibly lack, 28 what the larger rooms do, and 29 and 30 wait on Foundry's zones and on a game that furnishes a cave.
 
 ## 1. Own the loops the games keep rewriting
 
-Nothing is left in this section; its three items and the swap below were built on 2026-09-16, and the plan's progress log says how.
+Its three original items and the swap below were built on 2026-09-16, and the plan's progress log says how.
+What is left is furnishing, the loop every game with rooms writes next, opened on 2026-09-28 when `StampEachRoom` gave Foundry a piece in every room.
+
+- **Furnishing a room of any size.**
+  `StampEachRoom` centres a fixed piece, and rooms run from seven cells to twelve, so a twelve-cell hall around a five-cell piece is a bare ring with a cluster in the middle; Foundry draws each room kind twice, small and large, to soften it.
+  A room kind should be a legend and where its things go rather than rows: against the walls, in the corners, in the centre, never in front of a doorway, at a density, with a floor repainted, so one kind dresses a room of any size.
+  It should reuse the prefab legend and slots, so the per-cell streams, the save, the coverage report and the load checks come with it, and the pass should guarantee what Foundry's deck test checks today, that nothing it stands walls a cell or a corridor off.
+  This is not the theme or category `docs/design/prefabs.md` section 8 rejected: a room kind is what it places, and nothing reads a label off it.
+- **A furnishing pool with bands and a budget.**
+  `docs/design/prefabs.md` section 9 names the pool: per-piece bands and weights, groups a chain draws from, and a budget per place.
+  `StampEachRoom` takes one flat weighted list, so Foundry's four zones, which want a pump room common in assembly and a furnace hall only in fabrication, would each need a chain of their own.
+- **Furnishing a map that is not rooms.**
+  `Placement::InRoom`, `Placement::AnyRoom` and `StampEachRoom` read the `Room`s that `Rooms` and `Bsp` emit and nothing else, so a map carved by `CellularCave`, a drunkard's walk or diffusion-limited aggregation gets no piece from any of them.
+  The seam should be a pass that finds room-like open areas in any terrain, from `rl-grid`'s region labelling and a distance to the nearest wall, and emits them as `Room`s, so every room-reading pass works on a cave unchanged rather than each growing a second placement.
+  A cave's area has no wall all round it the way a carved room does, so the pass that stamps into one needs what section 9 of the prefab design calls a connectivity check and a rollback: flood the region before and after, and refuse a piece that cut it.
+  `Placement::Fits`, anywhere the cells a piece paints and marks land on open floor, is the smaller half, and wants the same check.
 
 ## 2. Open the minds
 
@@ -94,6 +114,11 @@ The five items that opened this section were built in the six stages of `docs/de
   It changes how every game's monsters search, so every fingerprint moves with it.
 
 ## 3. Make what exists real
+
+- **A prop cannot block sight, or block the way and let a shot past.**
+  A prop's `blocks` is `Blocks`, which the occupancy index reads for movement and `combat::shot` reads as stopping a shot, and nothing a prop is can block sight.
+  Tiles already split the three, walkable, opaque and whether a shot passes, and Foundry's rooms want the same of a prop: a coolant tank or a full shelf blocks all three, a workbench or a lathe only the way, as `examples/foundry/DESIGN.md` sets out under Rooms.
+  Sight goes through the veil that gas writes into and a bump to the map's `opacity_epoch`, which `docs/design/props.md` section 10 already names; a low prop letting a shot over it wants `shot` to tell an actor standing in a cell from a thing that only blocks walking.
 
 - **A `Burning` entity comes back unlit.**
   `EngineSave` records every burning cell, but the `Burning` component on the entity standing in one is not saved and has no design note saying it should not be, unlike `Fuel`, `LightSource`, `Aware` and `Heard`, which all do.

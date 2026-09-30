@@ -1,7 +1,8 @@
 //! The foundry's ten decks: assembly halls of rooms and doors, each
 //! holding an armory and a supply store, a guard post on five of them, a
 //! reactor chamber on three and the core chamber on the tenth, so all four
-//! charges have somewhere to be set.
+//! charges have somewhere to be set, and every other room furnished as
+//! what it was for.
 //!
 //! This is the whole of a deck builder: a tile registry, the pieces in
 //! `assets/prefabs/` loaded against it by [`crate::prefabs::load`], one
@@ -14,7 +15,7 @@ use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::RunSeed;
 use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::dungeon::{Doors, FarthestExit, RandomStart, Rooms};
-use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampOneOf, StampPrefab};
+use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab};
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_world::WorldGraph;
@@ -66,6 +67,10 @@ impl Foundry {
         let hatch = tiles.register(TileProps::floor("hatch").opaque(true)).unwrap();
         tiles.register(TileProps::wall("console")).unwrap();
         let lamp = tiles.register(TileProps::wall("lamp")).unwrap();
+        // Floor that says what a room was for, and crosses like any deck.
+        for floor in ["hazard stripe", "oil stain", "scorch mark", "drain grate", "cable trench"] {
+            tiles.register(TileProps::floor(floor)).unwrap();
+        }
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
         Self { tiles, hull, deck, hatch, lamp, prefabs, seed }
@@ -108,6 +113,23 @@ impl Foundry {
     /// supply crate each, and each lit by one `lamp` fixture on its wall.
     fn stores(&self) -> Result<Vec<(Prefab, u32)>, BuildError> {
         Ok(vec![(self.prefabs.piece("store wide")?, 1), (self.prefabs.piece("store tall")?, 1)])
+    }
+
+    /// What every other room of a deck was for: a machine shop, a charging
+    /// bay, a parts store, a pump room, a control room, scrap sorting or a
+    /// loading dock, each drawn small enough for the smallest room and
+    /// again larger, weighted so a hall that takes the larger usually gets
+    /// it, and the maintenance corner for variety. None holds anything to
+    /// take or anyone to fight, so furnishing a deck changes what it looks
+    /// like and where things stand, never what it is worth.
+    fn rooms(&self) -> Result<Vec<(Prefab, u32)>, BuildError> {
+        let mut rooms = vec![(self.prefabs.piece("maintenance closet")?, 1)];
+        for name in ["machine shop", "charging bay", "parts store", "pump room", "control room", "scrap sorting", "loading dock"] {
+            rooms.push((self.prefabs.piece(name)?, 2));
+            let large = format!("{name} large");
+            rooms.push((self.prefabs.piece(&large)?, 3));
+        }
+        Ok(rooms)
     }
 
     /// Runs the deck's chain and hands back the context still open, so a
@@ -155,7 +177,10 @@ impl Foundry {
         // The start keeps the population's own distance from every piece,
         // so no guard at a post stands beside the arrival.
         let start = RandomStart.clear_of_stamps(crate::droids::MIN_DISTANCE_FROM_ENTRY);
-        chain.then(start).then(FarthestExit).run(&mut ctx, seed)?;
+        // Last, once the ways in and out are known so no room piece lands
+        // on either: every room nothing was stamped in is furnished.
+        let rooms = StampEachRoom { name: "furnish", choices: self.rooms()?, orient: Orient::TurnedOrMirrored };
+        chain.then(start).then(FarthestExit).then(rooms).run(&mut ctx, seed)?;
         Ok(ctx)
     }
 }
@@ -345,6 +370,71 @@ mod tests {
                             assert!(tables.walkable[tile.index()], "deck {deck}, seed {s}: mark {c} at {p:?} sits on a wall");
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// No room on any deck is left empty: the armory, the store and the
+    /// charge pieces take theirs, and every other room is furnished as what
+    /// it was for. A blank room is the thing furnishing exists to stop.
+    #[test]
+    fn no_room_on_any_deck_is_left_empty_over_a_span_of_seeds() {
+        use rl_engine::rl_mapgen::dungeon::Room;
+        for s in 0..100 {
+            let foundry = Foundry::new(RunSeed(s));
+            for deck in 1..=DECKS {
+                let ctx = foundry.generate(map_of(deck)).unwrap();
+                let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
+                for room in ctx.outputs().iter::<Room>() {
+                    assert!(stamps.iter().any(|b| room.0.intersection(b).is_some()), "deck {deck}, seed {s}: room {:?} is empty", room.0);
+                }
+            }
+        }
+    }
+
+    /// With every prop that stands in the way and every guard at its post,
+    /// every open cell of a deck can still be walked to from the entry,
+    /// one orthogonal step at a time. A room piece stands machinery about
+    /// a room a corridor may cross anywhere, so a piece that walled a cell
+    /// in, or a corridor off, would be a deck with a place nobody reaches.
+    #[test]
+    fn with_everything_standing_every_open_cell_of_a_deck_can_be_walked_to_from_the_entry() {
+        use rl_engine::rl_core::Grid2D;
+        use rl_engine::rl_rules::prefab::Slot;
+        let registries = crate::content::registries();
+        let tables = Foundry::new(RunSeed(0)).tiles().tables();
+        for s in 0..60 {
+            let foundry = Foundry::new(RunSeed(s));
+            for deck in 1..=DECKS {
+                let built = foundry.build(map_of(deck), None).unwrap();
+                let standing: BTreeSet<(i32, i32)> = built
+                    .spots
+                    .iter()
+                    .filter(|spot| spot.at != built.entry)
+                    .filter(|spot| {
+                        let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| foundry.prefabs().slot(key, c));
+                        match slot {
+                            Some(Slot::Prop(id)) => registries.props.get(*id).blocks,
+                            Some(Slot::Monster { .. }) => true,
+                            _ => false,
+                        }
+                    })
+                    .map(|spot| (spot.at.x, spot.at.y))
+                    .collect();
+                let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&(p.x, p.y));
+                let mut seen = BTreeSet::from([(built.entry.x, built.entry.y)]);
+                let mut queue = vec![built.entry];
+                while let Some(p) = queue.pop() {
+                    for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
+                        if open(n) && seen.insert((n.x, n.y)) {
+                            queue.push(n);
+                        }
+                    }
+                }
+                let bounds = built.terrain.bounds();
+                for p in bounds.cells().filter(|p| open(*p)) {
+                    assert!(seen.contains(&(p.x, p.y)), "deck {deck}, seed {s}: {p:?} cannot be walked to with everything standing");
                 }
             }
         }
