@@ -273,10 +273,14 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     // so the forecast counts the misses the roll will make.
     let mine = duelists.marks.at_distance(&duelists.loadout, me, entity);
     let theirs = duelists.marks.at_distance(&duelists.loadout, entity, me);
-    let asker = Combatant::armed(my_health.current, duelists.loadout.armor(me), my_speed.map(|s| s.0).unwrap_or(100), &my_resists, &my_arms, apart)
+    // Each side as it would fight once in reach, so a monster across the
+    // room still says what it would take rather than "never"; only a side
+    // with no attack at all reads never. The chance to hit stays what it is
+    // from here, which is why it is shown only while something reaches.
+    let asker = Combatant::closing(my_health.current, duelists.loadout.armor(me), my_speed.map(|s| s.0).unwrap_or(100), &my_resists, &my_arms, apart)
         .hitting(mine.as_ref().map_or(100, Odds::percent));
     let other =
-        Combatant::armed(their_health.current, duelists.loadout.armor(entity), their_speed.map(|s| s.0).unwrap_or(100), &their_resists, &their_arms, apart)
+        Combatant::closing(their_health.current, duelists.loadout.armor(entity), their_speed.map(|s| s.0).unwrap_or(100), &their_resists, &their_arms, apart)
             .hitting(theirs.as_ref().map_or(100, Odds::percent));
     view.odds = mine;
     let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = duelists.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
@@ -558,11 +562,25 @@ mod tests {
 
         let far = read(5);
         assert!(far.turns_to_fall.is_some(), "across the room its shot reaches, and the forecast must say so");
-        assert_eq!(far.outlook, Outlook::Deadly, "five a shot against a player who cannot answer at that range");
+        assert!(far.turns_to_fell.is_some(), "and the player's blade is forecast as it would fight once beside it, not as never");
 
         let near = read(1);
         assert_eq!(near.turns_to_fall, None, "beside it the gun is no use, which is the rule `resolve_attacks` plays by");
         assert!(near.turns_to_fell.is_some(), "and the player's own blade reaches");
         assert_eq!(near.outlook, Outlook::Easy);
+    }
+
+    /// Across the room neither blade reaches, and the panel still says what
+    /// each would take once they closed, rather than "never" both ways.
+    #[test]
+    fn a_subject_out_of_reach_is_still_forecast_both_ways() {
+        let mut stage = Stage::new(InspectViewPlugin);
+        stage.tick();
+        stage.actor("brawler", 'b', 5, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let duel = stage.app.world().resource::<InspectView>().duel.expect("a duel against something that fights");
+        assert!(duel.turns_to_fell.is_some(), "the player's blow, once beside it: {duel:?}");
+        assert!(duel.turns_to_fall.is_some(), "and its blow, once beside the player: {duel:?}");
     }
 }
