@@ -496,6 +496,38 @@ mod tests {
         assert!(at("The probe droid notices you.") < at("The probe droid sounds an alarm."), "{lines:#?}");
     }
 
+    /// A line droid across the room is out of the commando's reach and the
+    /// commando out of its, and the look panel still says how many turns
+    /// each would take once they closed, rather than never both ways.
+    #[test]
+    fn looking_at_a_droid_across_the_room_still_forecasts_turns_both_ways() {
+        let mut app = on_screen(RunSeed(1));
+        let (droid, _) = foundry::testing::droid_facing_player(&mut app, "line droid", 5);
+        foundry::testing::clear_droids(&mut app, &[droid]);
+        app.update();
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::KeyX);
+        let reading = (0..ROWS).map(|y| row(&app, y)).find(|r| r.contains("you fell it in")).expect("a forecast on the look panel");
+        assert!(!reading.contains("never"), "{reading:?}");
+    }
+
+    /// A rat that has the commando in sight and is running from it reads as
+    /// fleeing on the rail, not hunting: what it is doing outranks whether
+    /// it has seen you.
+    #[test]
+    fn a_hurt_rat_running_from_the_commando_reads_fleeing_on_the_rail() {
+        let mut app = on_screen(RunSeed(1));
+        let (rat, me) = foundry::testing::droid_facing_player(&mut app, "coolant rat", 3);
+        app.world_mut().get_mut::<Health>(rat).unwrap().current = 1;
+        foundry::testing::alert(&mut app, rat, me);
+        // Alone on the deck, so nothing else meets it while it runs.
+        foundry::testing::clear_droids(&mut app, &[rat]);
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        let line = (0..ROWS).map(|y| row(&app, y)).find(|r| r.contains("coolant rat (")).expect("the rat is on the rail");
+        assert!(line.contains("coolant rat (fleeing)"), "{line:?}");
+    }
+
     /// `t` is the pack, opened on the first thing in it that flies:
     /// which of several is meant is the player's to pick, and the pack's
     /// own `t` throws the row picked out.
