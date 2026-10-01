@@ -15,6 +15,7 @@
 
 pub mod capture;
 pub mod fields;
+pub mod layout;
 pub mod looks;
 pub mod map_view;
 pub mod particles;
@@ -22,6 +23,7 @@ pub mod shade;
 pub mod terminal;
 
 pub use capture::CapturePlugin;
+pub use layout::{Fit, fit};
 pub use map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 pub use particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Spark, Trail};
 pub use shade::{Memory, Shading, Vary};
