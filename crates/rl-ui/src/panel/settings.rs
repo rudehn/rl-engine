@@ -244,6 +244,28 @@ mod tests {
         assert!(rows.contains("Play") && rows.contains("Pace") && rows.contains("Even"), "{rows}");
     }
 
+    /// The menu is as tall as its rows and so is this screen, and the two
+    /// are seldom the same height: a menu left drawn under it shows its
+    /// last rows below the frame.
+    #[test]
+    fn the_menu_is_not_drawn_under_the_screen_and_is_back_when_it_closes() {
+        // The two apart on the terminal, so a menu still drawn is seen.
+        let mut stage = Stage::new_with((GameMenuPanel::new(Rect::new(0, 0, 40, 8)), SettingsPanel::new(Rect::new(0, 8, 40, 4))), |app| {
+            app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
+        })
+        .screen(40, 12);
+        open(&mut stage);
+        // A game's map repaints the terminal every frame; this harness has
+        // no map, so wipe what earlier frames left and draw one more.
+        stage.app.world_mut().resource_mut::<Terminal>().clear(Color::BLACK);
+        stage.tick();
+        let rows = stage.rows().join("\n");
+        assert!(rows.contains("Glow"), "{rows}");
+        assert!(!rows.contains("Quit") && !rows.contains("Back to the run"), "{rows}");
+        stage.press(KeyCode::Escape);
+        assert!(stage.rows().join("\n").contains("Quit"));
+    }
+
     #[test]
     fn the_key_that_opened_the_screen_does_not_also_change_the_first_setting() {
         let mut stage = staged();

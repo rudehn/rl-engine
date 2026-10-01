@@ -343,6 +343,12 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
     if !modals.is_open(game_menu_modal(modals)) {
         return;
     }
+    // The settings screen stands in for the menu that opened it. The two
+    // are as tall as their rows and seldom the same height, so a menu left
+    // drawn shows its last rows under the other's frame.
+    if crate::panel::settings::settings_modal(modals).is_some_and(|settings| modals.is_open(settings)) {
+        return;
+    }
     let rect = layout.rect;
     if rect.width < 12 || rect.height < 6 {
         return;
