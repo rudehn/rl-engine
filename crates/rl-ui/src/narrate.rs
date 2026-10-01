@@ -146,6 +146,10 @@ pub enum Phrase {
     OpensDoor,
     /// Someone else closed one.
     ClosesDoor,
+    /// Someone you could see left for another map.
+    Leaves,
+    /// Someone came through to another map after you.
+    FollowsYou,
     /// You walked into someone you would not strike.
     YouBumpInto,
     /// You changed places with someone.
@@ -387,6 +391,7 @@ impl Plugin for NarrationViewPlugin {
             .add_message::<LightEvent>()
             .add_message::<FireEvent>()
             .add_message::<AbilityEvent>()
+            .add_message::<Travelled>()
             .add_message::<Tell>()
             .add_systems(Turn, collect_narration.in_set(TurnSet::Record));
     }
@@ -406,6 +411,7 @@ pub struct Heard<'w, 's> {
     bumps: MessageReader<'w, 's, Bumped>,
     swaps: MessageReader<'w, 's, Swapped>,
     doors: MessageReader<'w, 's, DoorEvent>,
+    travels: MessageReader<'w, 's, Travelled>,
     items: MessageReader<'w, 's, ItemEvent>,
     dealt: MessageReader<'w, 's, DamageDealt>,
     missed: MessageReader<'w, 's, Missed>,
@@ -597,6 +603,23 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         let mut said = say(phrase, Some(actor), None);
         said.at = Some(at);
         said.seen = witness.seen(Some(at), &[Some(actor)]);
+        rows.push(said);
+    }
+    for t in heard.travels.read() {
+        // The player's own going is the game's to say, since what a way
+        // is called is. Anyone else is told of by where the player was
+        // looking: one that came after the player stands in sight of it
+        // now, and one that left is told of by the cell it left.
+        if witness.is_you(t.actor) {
+            continue;
+        }
+        let followed = t.after.is_some_and(|led| witness.is_you(led));
+        let mut said = say(if followed { Phrase::FollowsYou } else { Phrase::Leaves }, Some(t.actor), None);
+        if !followed {
+            said.at = Some(t.left);
+            said.seen = witness.sees(Some(t.left));
+            said.who_seen = said.seen;
+        }
         rows.push(said);
     }
     for ev in heard.items.read() {
@@ -803,7 +826,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 64] = [
+        let table: [(Phrase, &str, ToneId); 66] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -849,6 +872,8 @@ impl Default for Phrasebook {
             (YouClose, "You close the door.", Tones::MUTED),
             (OpensDoor, "{Who} opens a door.", Tones::NOTICE),
             (ClosesDoor, "{Who} closes a door.", Tones::NOTICE),
+            (Leaves, "{Who} leaves.", Tones::NOTICE),
+            (FollowsYou, "{Who} follows you.", Tones::NOTICE),
             (YouBumpInto, "{Whom} is in the way.", Tones::MUTED),
             (YouSwapWith, "You change places with {whom}.", Tones::MUTED),
             (NoticesYou, "{Who} notices you.", Tones::NOTICE),
@@ -1132,6 +1157,30 @@ mod tests {
         let entry = stage.app.world().resource::<MessageLog>().iter().find(|e| e.text.starts_with("You hit the slime")).unwrap();
         assert_eq!(entry.spans.len(), 1, "one name coloured");
         assert_eq!((entry.spans[0].start, entry.spans[0].len, entry.spans[0].color), (8, 9, green), "'the slime' in its green: {entry:?}");
+    }
+
+    /// Someone the player watched leave for another map is said to have
+    /// left, one that came through after the player is said to have
+    /// followed, and one that left from a cell out of sight is not spoken
+    /// of: where it stands now is a cell of another map, so it is the cell
+    /// it left that decides.
+    #[test]
+    fn one_who_leaves_in_sight_is_said_to_leave_and_one_who_follows_the_player_to_follow() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (player, theirs) = (stage.player, stage.theirs);
+        let beside = stage.at.offset(1, 0);
+        let rat = stage.app.world_mut().spawn((Actor, Blocks, Position(beside), Health::full(1), Faction(theirs), Name::new("rat"))).id();
+        stage.tick();
+        let went = |left: Point, after: Option<Entity>| Travelled { actor: rat, from: MapId::SURFACE, left, to: MapId(3), after };
+        stage.app.world_mut().write_message(went(beside, None));
+        stage.tick();
+        stage.app.world_mut().write_message(went(stage.at.offset(500, 0), None));
+        stage.tick();
+        stage.app.world_mut().write_message(went(stage.at.offset(500, 0), Some(player)));
+        stage.tick();
+        let said: Vec<String> = lines(&stage).into_iter().map(|(text, _)| text).collect();
+        assert_eq!(said.iter().filter(|t| *t == "The rat leaves.").count(), 1, "the one seen going, and not the one unseen: {said:?}");
+        assert!(said.contains(&"The rat follows you.".to_string()), "{said:?}");
     }
 
     /// A kill by the player is its own phrase in the brightest tone, and a

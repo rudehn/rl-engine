@@ -30,6 +30,7 @@ use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{Direction, Grid2D, Point, geometry};
 use rl_grid::{BitGrid, DijkstraMap, PathRules};
+use rl_rules::ai::tactics::{Station, Ways};
 use rl_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 
 use crate::ability::Use;
@@ -38,7 +39,7 @@ use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
 use crate::items::{EquipFromGround, PickUp};
 use crate::lighting::{DarkSight, Lighting};
-use crate::places::{MapId, OnMap};
+use crate::places::{GoThrough, MapId, OnMap, Transition};
 use crate::throwing::Throw;
 use crate::turn::{Acting, Action, AddAction, Intent, Occupancy, Step, Wait};
 use crate::world::WorldMap;
@@ -69,7 +70,7 @@ pub struct Profile(pub MovementProfile);
 /// and [`Doing`], what decided its last turn.
 #[derive(Component, Clone)]
 #[component(on_add = report_mind_without_plugin)]
-#[require(Intelligence, CameFrom, Doing, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
+#[require(Intelligence, CameFrom, Doing, Trails, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
 pub struct Mind(pub Arc<Brain<Entity>>);
 
 /// The name of the tactic that decided this mind's last turn, `None` when
@@ -81,6 +82,19 @@ pub struct Mind(pub Arc<Brain<Entity>>);
 /// a decision's trace prints; what a game calls it is the game's.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Doing(pub Option<&'static str>);
+
+/// Whom a mind was after or keeping beside when it last decided: the
+/// enemies it saw, when the tactic that decided was one that closes on or
+/// watches them, and the allies it saw, when its brain keeps it beside
+/// them at all.
+///
+/// Read when one of them goes through a way to another map, which a mind
+/// standing next to it then takes too. Kept only for a mind with
+/// [`Wits::TRAVELS`] and empty for every other, so a monster that stays
+/// on its map pays nothing for those that do not. Not saved: it is
+/// rewritten on the mind's next turn.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct Trails(pub Vec<Entity>);
 
 /// What an actor is able to do, whatever its brain would like: whether it
 /// runs, searches, and works doors.
@@ -555,6 +569,24 @@ pub fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
     }
 }
 
+/// Tells the mind holding the turn which ways to another map it can see,
+/// if it is one that travels: a mind that does not is never told, so no
+/// tactic of its brain can send it through one.
+pub fn sense_ways(mut thinking: ResMut<Thinking>, sight: Sight, ways: Query<(&Position, Option<&OnMap>), With<Transition>>) {
+    if !thinking.snapshot().is_some_and(|snapshot| snapshot.wits.has(Wits::TRAVELS)) {
+        return;
+    }
+    let mut seen: Vec<Point> = ways.iter().filter(|(at, on)| sight.perceives(&thinking, at.0, *on)).map(|(at, _)| at.0).collect();
+    if seen.is_empty() {
+        return;
+    }
+    seen.sort();
+    seen.dedup();
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(Ways(seen));
+    }
+}
+
 /// The minds' own stream, so adding a tactic cannot shift combat's rolls
 /// and a game with no combat still has one to draw from.
 #[derive(Resource, Debug)]
@@ -640,6 +672,7 @@ pub struct MindIntents<'w> {
     abilities: MessageWriter<'w, Intent<Use>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
     waits: MessageWriter<'w, Intent<Wait>>,
+    ways: MessageWriter<'w, Intent<GoThrough>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     equips: MessageWriter<'w, Intent<EquipFromGround>>,
     throws: MessageWriter<'w, Intent<Throw>>,
@@ -648,7 +681,8 @@ pub struct MindIntents<'w> {
 }
 
 /// The mind holding the turn, as the decision reads it.
-type Deciding = (&'static Mind, &'static Position, Option<&'static Profile>, Option<&'static Intelligence>, &'static mut CameFrom, &'static mut Doing);
+type Deciding =
+    (&'static Mind, &'static Position, Option<&'static Profile>, Option<&'static Intelligence>, &'static mut CameFrom, &'static mut Doing, &'static mut Trails);
 
 /// Lets the mind holding the turn decide it, from the snapshot the
 /// perceive stage filled.
@@ -665,7 +699,7 @@ pub fn decide_minds(
     mut minds: Query<Deciding, With<MyTurn>>,
 ) {
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
-    let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing)) = minds.get_mut(thinker) else { return };
+    let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
     let MindWorld { fields, rng, map, occupancy } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
@@ -691,12 +725,22 @@ pub fn decide_minds(
         bounds: map.window_tiles(),
         rng: &mut rng.0,
     };
-    let (decision, which) = mind.0.decide(&mut ctx);
+    let (decision, which) = match mind.0.deciding(&mut ctx) {
+        Some((decision, tactic)) => (decision, Some(tactic)),
+        None => (Decision::Wait, None),
+    };
     if !acting.claim_decision(thinker) {
         return;
     }
     came_from.0 = None;
-    doing.0 = which;
+    doing.0 = which.map(|tactic| tactic.name());
+    if wits.has(Wits::TRAVELS) {
+        let after = which.and_then(|tactic| tactic.keeps_with()) == Some(Station::Enemies);
+        let beside = mind.0.keeps_with_allies();
+        let enemies = snapshot.enemies.iter().filter(|_| after);
+        let allies = snapshot.allies.iter().filter(|_| beside);
+        trails.0 = enemies.chain(allies).map(|seen| seen.id).collect();
+    }
     match decision {
         // A step onto a shut door is the turn spent opening it: the door is
         // its own action, and the mind knows what it is walking into.
@@ -720,6 +764,9 @@ pub fn decide_minds(
         }
         Decision::Wait => {
             intents.waits.write(Intent::new(thinker, Wait));
+        }
+        Decision::GoThrough => {
+            intents.ways.write(Intent::new(thinker, GoThrough));
         }
         Decision::PickUp => {
             intents.pick_ups.write(Intent::new(thinker, PickUp));
@@ -779,7 +826,7 @@ impl Plugin for MindsPlugin {
             .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, sense_posts.in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_posts, sense_ways).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 

@@ -10,7 +10,9 @@
 //   profile:    how it takes a hit: "chassis" | "organic"
 //   faction:    "droids" | "vermin"
 //   wits:       "mindless" | "animal" | "sapient", or a list as in the engine's Wits
-//               ("flees", "searches", "opens_doors", "picks_up", "equips", "throws" on top);
+//               ("flees", "searches", "opens_doors", "picks_up", "equips", "throws" on top,
+//               and "travels", which no preset has: it follows you through a lift it stood
+//               beside and leaves by one when it runs);
 //               a droid names "opens_doors", so a shut door never stops one on a trail
 //   perception: how far it sees, in tiles
 //   dark_sight: optional; tiles it sees without light: radar, for the droids that have it

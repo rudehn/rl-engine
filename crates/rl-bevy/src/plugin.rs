@@ -221,6 +221,7 @@ impl Plugin for CorePlugin {
             .add_message::<Restart>()
             .add_message::<places::WarpRequest>()
             .add_message::<places::MapChanged>()
+            .add_message::<places::Travelled>()
             .add_message::<places::PlaceEntered>()
             .add_message::<crate::doors::DoorEvent>()
             .add_message::<crate::bump::Bumped>()
