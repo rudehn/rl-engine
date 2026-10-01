@@ -118,10 +118,73 @@ pub struct Post(pub Point);
 /// what a closed door costs; and whether it leads away rather than toward.
 type FieldKey = (Vec<Point>, MovementProfile, bool, bool);
 
-/// How many fields are kept before the cache starts over. A moving goal is
-/// a new key every turn, so without a bound the cache would grow for as
-/// long as nothing changed the map.
+/// What one flood is from: a single goal cell in world coordinates, the
+/// movement class it is walked by, and whether that class opens doors.
+type FloodKey = (Point, MovementProfile, bool);
+
+/// How many fields, and how many floods, are kept. A moving goal is a new
+/// key every turn, so without a bound either would grow for as long as
+/// nothing changed the map.
 const FIELD_CACHE: usize = 32;
+
+/// The largest roster a field is composed for from one flood per goal; a
+/// larger one is flooded once from all of its goals together. Composing is
+/// what lets two minds that see different enemies share work, and it costs
+/// a flood per goal that moved, so it pays while the goals are few: the
+/// player and a companion or two. A companion looking at thirty monsters
+/// that all moved is thirty floods composed and one flooded whole.
+const COMPOSED_UP_TO: usize = 4;
+
+/// A bounded cache that forgets what was asked for longest ago.
+///
+/// Starting over when full, which this replaced, threw away the field
+/// every hunter was reading along with the thirty-one nobody was, once a
+/// turn in a busy fight.
+struct Recent<K, V> {
+    /// Counts every ask, so each entry knows how lately it was wanted.
+    asked: u64,
+    entries: BTreeMap<K, (u64, V)>,
+}
+
+impl<K, V> Default for Recent<K, V> {
+    fn default() -> Self {
+        Self { asked: 0, entries: BTreeMap::new() }
+    }
+}
+
+impl<K: Ord + Clone, V> Recent<K, V> {
+    /// Whether `key` is held, marking it as just asked for if so.
+    fn touch(&mut self, key: &K) -> bool {
+        self.asked += 1;
+        match self.entries.get_mut(key) {
+            Some((asked, _)) => {
+                *asked = self.asked;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Keeps `value`, in place of the entry asked for longest ago when
+    /// there is no room.
+    fn insert(&mut self, key: K, value: V) {
+        if self.entries.len() >= FIELD_CACHE
+            && let Some(oldest) = self.entries.iter().min_by_key(|(_, (asked, _))| *asked).map(|(k, _)| k.clone())
+        {
+            self.entries.remove(&oldest);
+        }
+        self.asked += 1;
+        self.entries.insert(key, (self.asked, value));
+    }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        self.entries.get(key).map(|(_, v)| v)
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
 
 /// Flow fields toward or away from any cells, built on demand and shared.
 ///
@@ -132,6 +195,11 @@ const FIELD_CACHE: usize = 32;
 /// A field lives until the map's cost epoch changes, so a mind that did
 /// not move and a player who did not move cost nothing the next pass.
 ///
+/// A field toward a few goals is the lowest, cell for cell, of one flood
+/// per goal, which is exactly the flood from all of them. So two hunters
+/// that see different enemies share the flood from each enemy both see,
+/// and a goal that stood still is not flooded again because another moved.
+///
 /// Window-local, like every grid the engine keeps; the points a tactic
 /// hands in and gets back are translated at the boundary, so no map is
 /// ever copied to shift its origin.
@@ -139,7 +207,8 @@ const FIELD_CACHE: usize = 32;
 pub struct FlowFields {
     /// The map's cost epoch the fields were built for.
     epoch: Option<u64>,
-    fields: BTreeMap<FieldKey, DijkstraMap>,
+    fields: Recent<FieldKey, DijkstraMap>,
+    floods: Recent<FloodKey, DijkstraMap>,
 }
 
 impl FlowFields {
@@ -147,20 +216,37 @@ impl FlowFields {
     fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
         if self.epoch != Some(map.cost_epoch()) {
             self.fields.clear();
+            self.floods.clear();
             self.epoch = Some(map.cost_epoch());
         }
-        if !self.fields.contains_key(&key) {
-            if self.fields.len() >= FIELD_CACHE {
-                self.fields.clear();
-            }
-            let (goals, _, opens_doors, away) = &key;
+        if !self.fields.touch(&key) {
+            let (goals, profile, opens_doors, away) = &key;
             let view = if *opens_doors { map.opening_view() } else { map.view() };
-            let locals: Vec<Point> = goals.iter().filter_map(|g| map.to_local(*g)).collect();
-            if locals.is_empty() {
+            let goals: Vec<(Point, Point)> = goals.iter().filter_map(|g| Some((*g, map.to_local(*g)?))).collect();
+            if goals.is_empty() {
                 return None;
             }
-            let mut field = DijkstraMap::covering(&view);
-            field.build(&view, locals, PathRules::default());
+            let mut field = if goals.len() <= COMPOSED_UP_TO {
+                let mut field: Option<DijkstraMap> = None;
+                for (goal, local) in goals {
+                    let from = (goal, *profile, *opens_doors);
+                    if !self.floods.touch(&from) {
+                        let mut flood = DijkstraMap::covering(&view);
+                        flood.build(&view, [local], PathRules::default());
+                        self.floods.insert(from, flood);
+                    }
+                    let flood = self.floods.get(&from)?;
+                    match field.as_mut() {
+                        Some(field) => field.take_lower(flood),
+                        None => field = Some(flood.clone()),
+                    }
+                }
+                field?
+            } else {
+                let mut field = DijkstraMap::covering(&view);
+                field.build(&view, goals.into_iter().map(|(_, local)| local), PathRules::default());
+                field
+            };
             if *away {
                 field.scale(-12, 10);
                 field.rescan(&view, PathRules::default());
@@ -173,12 +259,12 @@ impl FlowFields {
     /// How many fields are built right now, for a test that a shared goal
     /// is one flood.
     pub fn len(&self) -> usize {
-        self.fields.len()
+        self.fields.entries.len()
     }
 
     /// Whether nothing is built.
     pub fn is_empty(&self) -> bool {
-        self.fields.is_empty()
+        self.fields.entries.is_empty()
     }
 
     /// Forgets every map, so the next mind rebuilds them: the player
@@ -186,6 +272,7 @@ impl FlowFields {
     pub fn invalidate(&mut self) {
         self.epoch = None;
         self.fields.clear();
+        self.floods.clear();
     }
 }
 
@@ -1311,6 +1398,58 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Wait));
         app.update();
         assert_eq!(app.world().resource::<FlowFields>().len(), 1, "and the same one the next turn, since nothing moved the goal");
+    }
+
+    /// Two hunters that see different enemies share the flood from the
+    /// enemy both see: a field toward a few goals is composed from one
+    /// flood per goal, so the second roster costs only the goal it adds.
+    #[test]
+    fn rosters_that_overlap_share_the_flood_from_each_goal_they_have_in_common() {
+        let (mut app, start, _) = arena();
+        app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let map = app.world().resource::<WorldMap>();
+        let walker = MovementProfile::default();
+        let (a, b, c) = (start.offset(2, 0), start.offset(0, 2), start.offset(-2, 0));
+        let mut fields = FlowFields::default();
+        assert!(fields.ensure((vec![a, b], walker, false, false), map).is_some());
+        assert!(fields.ensure((vec![a], walker, false, false), map).is_some());
+        assert_eq!((fields.len(), fields.floods.entries.len()), (2, 2), "two fields, and no flood the first did not already make");
+        assert!(fields.ensure((vec![a, c], walker, false, false), map).is_some());
+        assert_eq!((fields.len(), fields.floods.entries.len()), (3, 3), "a third field, for the one goal that is new");
+        // A composed field is the flood from all of its goals together.
+        let view = map.view();
+        let mut whole = DijkstraMap::covering(&view);
+        whole.build(&view, [a, b].iter().filter_map(|g| map.to_local(*g)), PathRules::default());
+        let composed = fields.ensure((vec![a, b], walker, false, false), map).unwrap();
+        assert!(whole.iter().eq(composed.iter()), "cell for cell what one flood from both gives");
+    }
+
+    /// A full cache gives up the field asked for longest ago and keeps the
+    /// one in use: the field every hunter reads each pass outlives any
+    /// number of one-off questions asked around it.
+    #[test]
+    fn a_full_cache_forgets_the_field_asked_for_longest_ago_and_keeps_the_one_in_use() {
+        let (mut app, start, _) = arena();
+        app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let map = app.world().resource::<WorldMap>();
+        let walker = MovementProfile::default();
+        let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false);
+        let mut fields = FlowFields::default();
+        fields.ensure(key(0), map);
+        for i in 1..=(FIELD_CACHE as i32 + 8) {
+            fields.ensure(key(i), map);
+            fields.ensure(key(0), map);
+        }
+        assert_eq!(fields.len(), FIELD_CACHE, "never more than the bound");
+        assert!(fields.fields.entries.contains_key(&key(0)), "the one asked for every time is still held");
+        assert!(!fields.fields.entries.contains_key(&key(1)), "the one asked for once, longest ago, went first");
+        assert!(fields.fields.entries.contains_key(&key(FIELD_CACHE as i32 + 8)), "and the newest is held");
     }
 
     /// A companion keeps up with the player and gives way when it is
