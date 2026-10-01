@@ -14,7 +14,8 @@
 //! registers it with [`AddSaveable::save_kind`]. Everything the engine
 //! owns on that entity, where it stands, its health, what it carries and
 //! wears, its statuses and which worn thing holds each held one, its
-//! stack, the transition it is, the post it holds, is the engine's to
+//! stack, the transition it is, the post it holds, how long it has left
+//! alight, is the engine's to
 //! capture and put back, in [`EntityState`]. A
 //! resource a game keeps of the run goes through [`SaveableState`] and
 //! [`save_state`](AddSaveable::save_state).
@@ -32,8 +33,8 @@
 
 use bevy::prelude::*;
 use rl_bevy::{
-    Afflict, Afflicted, Counters, Dead, Emptied, EndOfFrame, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap, PlaceEntered,
-    Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
+    Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap,
+    PlaceEntered, Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::Point;
 use rl_rules::{Equipment, Work};
@@ -383,6 +384,24 @@ pub struct EntityState {
     /// What it was in the middle of, for an actor at work.
     #[serde(default)]
     pub working: Option<SavedWork>,
+    /// How long it has left alight, for something that was burning. The
+    /// burning cell under it is in [`EngineSave`], but that holds only the
+    /// two turns the thing last lent it, so without this a crate that
+    /// caught mid-run would come back out after two turns rather than
+    /// after what it had left.
+    #[serde(default)]
+    pub burning: Option<SavedBurning>,
+}
+
+/// How long something alight has left, as a save keeps it. An enum of its
+/// own rather than an `Option` inside the field's, so "alight for good" and
+/// "not alight" cannot be read as each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SavedBurning {
+    /// This many turns.
+    For(u32),
+    /// It never goes out.
+    Forever,
 }
 
 /// Work an actor was in the middle of, as a save keeps it: the kind by its
@@ -451,6 +470,13 @@ impl EntityState {
             remains_as,
             post: e.get::<Post>().map(|p| p.0),
             working,
+            // One with no turns left has burnt out and is only waiting for
+            // the removal that was queued with it.
+            burning: e.get::<Burning>().and_then(|b| match b.turns {
+                Some(0) => None,
+                Some(turns) => Some(SavedBurning::For(turns)),
+                None => Some(SavedBurning::Forever),
+            }),
         }
     }
 
@@ -519,6 +545,11 @@ impl EntityState {
         }
         if let Some(working) = working {
             target.insert(working);
+        }
+        match self.burning {
+            Some(SavedBurning::For(turns)) => drop(target.insert(Burning::for_turns(turns))),
+            Some(SavedBurning::Forever) => drop(target.insert(Burning::forever())),
+            None => {}
         }
         // Last, and after the health a kind's own spawn gave it: a game
         // writes down what a thing is, never that it is dead, so what
@@ -1177,6 +1208,30 @@ mod tests {
         let w = back.world_mut();
         let posted = w.query_filtered::<&Post, With<Person>>().single(w).copied().expect("Ada came back");
         assert_eq!(posted, Post(post), "posted on the same cell");
+    }
+
+    /// Something alight comes back alight with the turns it had left, and a
+    /// fire that never goes out comes back as one. The burning cell under
+    /// it is saved with the engine's fields, but only the thing itself
+    /// knows how long it will go on feeding that cell.
+    #[test]
+    fn a_burning_thing_keeps_the_turns_it_had_left_when_the_run_is_continued() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        app.world_mut().spawn((Item, Thing { def: "crate".into(), notches: 0 }, Position(start.offset(2, 0)), Burning::for_turns(7)));
+        app.world_mut().spawn((Item, Thing { def: "brazier".into(), notches: 0 }, Position(start.offset(3, 0)), Burning::forever()));
+        app.world_mut().spawn((Item, Thing { def: "ash".into(), notches: 0 }, Position(start.offset(4, 0)), Burning::for_turns(0)));
+        app.world_mut().spawn((Item, Thing { def: "coin".into(), notches: 0 }, Position(start.offset(5, 0))));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        let w = back.world_mut();
+        let mut alight: Vec<(String, Option<u32>)> = w.query::<(&Thing, &Burning)>().iter(w).map(|(t, b)| (t.def.clone(), b.turns)).collect();
+        alight.sort();
+        assert_eq!(alight, vec![("brazier".to_string(), None), ("crate".to_string(), Some(7))], "what was alight, for as long, and nothing else");
     }
 
     /// The whole of a run comes back: every kind by its own account, and
