@@ -15,6 +15,7 @@
 
 pub mod capture;
 pub mod fields;
+pub mod fullscreen;
 pub mod layout;
 pub mod looks;
 pub mod map_view;
@@ -23,6 +24,7 @@ pub mod shade;
 pub mod terminal;
 
 pub use capture::CapturePlugin;
+pub use fullscreen::{FULLSCREEN, FullscreenPlugin};
 pub use layout::{Fit, fit};
 pub use map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 pub use particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Spark, Trail};
@@ -32,6 +34,7 @@ pub use terminal::{Cell, Terminal, TerminalPlugin};
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::capture::CapturePlugin;
+    pub use crate::fullscreen::FullscreenPlugin;
     pub use crate::map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
     pub use crate::particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Trail};
     pub use crate::shade::{Memory, Shading, Vary};
