@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: c68fa045 -->
+     fingerprint: 8794d41c -->
 
 # Stealth
 
@@ -52,7 +52,7 @@ What "could be seen" means is the observer's own `Viewshed` and `within_reach` o
 `Noticed { observer, subject, at }` is written once, on the flip from unaware, and never again while the awareness holds.
 `filter_unnoticed` takes the hiders the mind holding the turn has not noticed back out of its enemies and leaves a mind that keeps no `Aware` alone, then offers every subject it is alert to but cannot see as a trail through `Thinking::offer_trail`.
 Noise offers its own to the same place, the freshest becomes `Snapshot::last_known`, and `SearchLastKnown` walks to it.
-`wake_on_damage` wakes whoever takes a blow from something carrying `Stealth` and points it at the attacker's cell: a mend is not a blow, a blow armor stopped at zero still wakes it, and so does a rolled attack that missed, read from `Missed`, so a hider cannot fire at a sleeper until one lands.
+`wake_on_damage` wakes whoever takes a blow from something carrying `Stealth` and points it at the attacker's cell: a mend is a `Heal` and never a blow, a blow armor stopped at zero still wakes it, and so does a rolled attack that missed, read from `Missed`, so a hider cannot fire at a sleeper until one lands.
 `StealthRunning` answers whether the plugin was added, asked of its message rather than of the components, because `Notice` brings an `Aware` with it and a game that authored observers without the plugin would otherwise have monsters that notice nothing forever.
 `Watchers` answers who is watching whom by the rule the minds act on: an observer that keeps an `Aware` watches what it knows about, one that does not watches whatever its own sight reaches, and neither watches anything it is not at odds with or anything unseen.
 `Watchers::remembers` answers whether an observer still has a subject in mind, watching it or not, and the two part only for the unseen.

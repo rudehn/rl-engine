@@ -8,7 +8,7 @@
             crates/rl-bevy/src/minds.rs
             crates/rl-world/src/chunk.rs
             crates/rl-world/src/graph.rs
-     fingerprint: 2bc3de36 -->
+     fingerprint: 29a6427d -->
 
 # Places and streaming
 
@@ -39,10 +39,13 @@ Three counters tell readers when to recompute without anyone asking them: `gener
 A mark inside the bounds of a stamp emitted after its own is dropped, keyed or not, because the piece drawn on top owns its cells.
 A `Spot` from a keyed piece carries its `prefab`, the key set on the `Prefab` that stamped it, so the game can trace it back to what defined it; `None` for a spot a game made itself or a mark of an unkeyed piece.
 `Transition` is a component on an entity standing on a cell, holding the `Destination` it leads to: a cell of the surface, or a place with an `Arrive` of its entry, its exit or a named cell.
-`GoThrough` is the action that takes the player through the one it is standing on, and `WarpRequest` does the same from anywhere for a portal or a first arrival, resolved without charging a turn so the game charges what it likes.
-Only the player travels; anyone else asking to go through fails like any other impossible action.
-A warp that lands on a map nobody has built calls the rules, installs the result with `install_place`, and writes `PlaceEntered` with `first` true, which is the one arrival on which a game populates a floor; `MapChanged` is written on every change of map.
-The warp also switches the per-map indexes with the map: `Occupancy` swaps its `SpatialGrid` for the arriving map's and stashes the one it had, `Knowledge` does the same with explored tiles, and `FlowFields` is invalidated so the next mind rebuilds.
+`GoThrough` is the action that takes an actor through the one it is standing on, and `WarpRequest` does the same from anywhere for a portal or a first arrival, resolved without charging a turn so the game charges what it likes.
+The player always may go through; anyone else is refused unless its `Intelligence` has `Wits::TRAVELS`, which no preset has, while a `WarpRequest` moves anyone, since that is the game doing the moving.
+A mind that travels, stood beside an actor as it went through, and was after it or beside it on its own last turn goes through behind it in the same pass; a warp is never followed.
+An arrival on a taken cell lands on the nearest free one that can be walked to from it, so a follower stands beside whom it followed.
+A warp that lands on a map nobody has built calls the rules and installs the result with `install_place`, whoever arrived; `PlaceEntered` is written for the player alone, with `first` true on the player's first arrival, which is the one arrival on which a game populates a floor.
+`MapChanged` is written when the player changes map and `Travelled` when anyone does, naming the cell it left and whom it went after.
+The player's warp also switches the per-map indexes with the map: `Occupancy` swaps its `SpatialGrid` for the arriving map's and stashes the one it had, `Knowledge` does the same with explored tiles, and `FlowFields` is invalidated so the next mind rebuilds.
 On the streaming side, `stream_chunks` asks `desired_window` for the square of radius `window_radius` around the player's region clipped to the world, and does nothing if that is the window already or if the player is in a place.
 Loading generates each new region through `WorldGraph::build_chunk` and the game's `ChunkRules`, replays that region's stored delta onto it, keeps every chunk still in the window, and files the edits of the ones that left.
 `ChunkLoaded` is written once per region generated, and every viewshed is marked stale when the window moves.
@@ -76,7 +79,8 @@ pub fn mark_entrances(mut commands: Commands, mut loaded: MessageReader<ChunkLoa
 The engine decides when a place is built, which is the first time anything enters it, and that it is never built twice.
 It decides that a place is kept whole once built, so leaving one freezes what is in it and returning finds it as it was, and that the surface is not: a region outside the window is thrown away and only its edits survive.
 It decides that a chunk is a pure function of the run seed and its region, through `WorldGraph::chunk_seed`, so a region regenerates identically however many times it has been walked across, which is what makes storing a delta instead of a map correct rather than merely cheap.
-It decides that only the player travels, that an actor on another map or outside the loaded window is frozen and requeued a full step without acting, and that such an actor can neither act nor be seen.
+It decides that the map being read follows the player and nobody else, that an actor on another map or outside the loaded window is frozen and requeued a full step without acting, and that such an actor can neither act nor be seen.
+It decides who follows whom through a way and where each lands; the game decides which kinds travel at all, by writing `travels` in their wits.
 The game decides what a map id means, what is built there, where the transitions stand and what they lead to, what an arrival costs, and everything that goes in a place on the arrival `PlaceEntered` marks as its first.
 The game also decides whether there is a surface at all, and that decision is made by adding `StreamingPlugin` or not rather than by any resource being present or absent.
 Which regions are in the window is the engine's; what a region generates into is the game's `ChunkRules`, and the seam where two chunks meet is arithmetic both sides compute from the same unordered pair of regions rather than a negotiation either could lose.

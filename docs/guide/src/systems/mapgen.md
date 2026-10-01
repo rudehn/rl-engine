@@ -8,7 +8,7 @@
             crates/rl-core/src/seed.rs
             crates/rl-world/src/chunk.rs
             crates/rl-bevy/src/places.rs
-     fingerprint: 42c9cc07 -->
+     fingerprint: 38e5b552 -->
 
 # Map generation
 

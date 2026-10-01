@@ -155,7 +155,7 @@ pub struct PlaceRulesRes(pub Box<dyn PlaceRules>);
 
 /// Go through the [`Transition`] on the actor's cell. Refused off one,
 /// and refused to anyone but the player whose
-/// [`Intelligence`](crate::minds::Intelligence) lacks
+/// [`Intelligence`] lacks
 /// [`Wits::TRAVELS`]: a monster stays on the map it was put on unless the
 /// game says its kind does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

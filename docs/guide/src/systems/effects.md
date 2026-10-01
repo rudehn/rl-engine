@@ -15,7 +15,7 @@
             crates/rl-bevy/src/registries.rs
             crates/rl-rules/src/ability.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 5c1b8ddf -->
+     fingerprint: 5b9c7e10 -->
 
 # Effects
 
@@ -45,7 +45,7 @@ Its sound is resolved at load against the names it is built with, and those carr
 `Inflict` also takes `while_worn`, false unless written: landed by a trigger, its `Afflict` is then held by the thing the trigger is on, and the status ends when that thing is no longer worn; landed by an ability or an offer, it is not held.
 It is meant for a trigger that only ever lands on its own wearer, since a held refresh reaching an area's or a hit's bystander who already carries the status unheld takes their instance over and the very next pass cures it for not wearing the thing.
 It describes itself with ` while worn` after the turns, so the bag says so under the thing.
-`EffectWorld` asks the subsystem that owns a thing to do it, damage, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
+`EffectWorld` asks the subsystem that owns a thing to do it, damage, a heal, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.
 `Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed` and `pulse` first so their ids are constants on the type.
 `TriggerSpec`, in `rl-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; `look`, what shows over the cells it lands on; and `every`, the hundredths between pulses, which a `pulse` trigger must carry and no other may.
