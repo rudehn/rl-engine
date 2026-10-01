@@ -4,10 +4,16 @@
 //!
 //! A probe is an alarm and nothing else: it carries no weapon, and its
 //! brain keeps the commando in sight at a distance rather than closing to
-//! fight. For every turn it takes knowing where the commando is, it shouts
-//! again, so the deck keeps homing in for as long as the probe hangs
-//! there, and a shout the player can see is a pulse on the probe. The
-//! log says so once, when it first notices, since a line a turn would
+//! fight. The alarm is not instant. A probe that knows where the commando
+//! is first signals, the engine's work, for as many of its own turns as
+//! its definition says, standing where it is with its row reading
+//! `signalling`: that is the commando's window, since a hit breaks the
+//! signalling and it starts over, and a kill ends it. Only when it
+//! finishes is the alarm [`Raised`]. From then, for every turn it takes
+//! knowing where the commando is, it shouts again, so the deck keeps
+//! homing in for as long as the probe hangs there, and a shout the player
+//! can see is a pulse on the probe. The log says when it starts
+//! signalling and, once, when the alarm sounds, since a line a turn would
 //! bury everything else.
 //!
 //! The alarm is a noise of the game's own, carried by the engine's
@@ -22,7 +28,14 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
+use rl_engine::rl_bevy::{Thinking, WorkBegan, WorkDone, WorkKinds};
 use rl_engine::rl_rules::ability::Look;
+use rl_engine::rl_rules::ai::{Decision, Tactic, TacticCtx};
+use rl_engine::rl_rules::work::{Work, WorkKindId};
+
+/// The kind of work a probe does before its alarm sounds, by the word its
+/// row shows.
+pub const SIGNALLING: &str = "signalling";
 
 /// The name the alarm's sound is declared under, with
 /// [`AddSound::add_sound`](rl_engine::rl_bevy::AddSound) in
@@ -48,32 +61,109 @@ pub const PULSE: Look = Look { glyph: '!', color: rl_engine::rl_grid::Rgb::new(2
 pub const NOISE: NoiseRules = NoiseRules { step: 0, strike: 10, door: 0, landing: 0, door_muffle: 3 };
 // ANCHOR_END: noise_rules
 
-/// Marks a monster that sounds the deck's alarm for as long as it knows
-/// where the commando is, through [`shout_alarm`], and says so in the log
-/// when it first notices, through [`sound_alarm`].
+/// Marks a monster that sounds the deck's alarm: once it knows where the
+/// commando is it signals for `signal` of its own turns, and then shouts
+/// for as long as it still knows, through [`shout_alarm`].
 ///
-/// A marker rather than a field on [`Notice`](rl_engine::rl_bevy::prelude::Notice),
+/// Its own component rather than a field on [`Notice`](rl_engine::rl_bevy::prelude::Notice),
 /// since most of a deck's droids never carry it: only the probe's radar
 /// reports back.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Alarm {
+    /// The turns of signalling before the alarm sounds.
+    pub signal: u16,
+}
+
+/// The alarm this probe signalled for is up: it shouts on every action
+/// until it no longer knows where the commando is, and must signal again
+/// the next time it finds out.
 #[derive(Component, Debug, Clone, Copy, Default)]
-pub struct Alarm;
+pub struct Raised;
+
+/// What a probe that has not yet raised its alarm knows it should do
+/// about an enemy it knows of: the kind of work, and how long it takes.
+#[derive(Debug, Clone, Copy)]
+pub struct Signal {
+    /// The kind of work, so the tactic needs no resource.
+    pub kind: WorkKindId,
+    /// The turns it takes.
+    pub turns: u16,
+}
+
+/// Tells a probe holding the turn that it has an alarm to raise: it knows
+/// where the commando is and has not raised one yet.
+pub fn sense_alarm(
+    mut thinking: ResMut<Thinking>,
+    kinds: Res<WorkKinds>,
+    quiet: Query<(&Alarm, &Aware), Without<Raised>>,
+    players: Query<Entity, With<Player>>,
+) {
+    let Some(actor) = thinking.actor() else { return };
+    let (Ok((alarm, aware)), Some(kind)) = (quiet.get(actor), kinds.get(SIGNALLING)) else { return };
+    if !players.iter().any(|p| aware.knows(p)) {
+        return;
+    }
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(Signal { kind, turns: alarm.signal });
+    }
+}
+
+// ANCHOR: signal
+/// Raise the alarm: begin signalling, which the engine carries on turn
+/// after turn until it is done or a hit breaks it.
+pub struct SignalAlarm;
+
+impl Tactic<Entity> for SignalAlarm {
+    fn name(&self) -> &'static str {
+        "signal_alarm"
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+        let signal = *ctx.snapshot.sense::<Signal>()?;
+        Some(Decision::Work(Work::new(signal.kind, signal.turns)))
+    }
+}
+// ANCHOR_END: signal
 
 // ANCHOR: tell
-/// Says in the log that a probe sounds the alarm, for every [`Noticed`]
-/// whose observer carries [`Alarm`]: once on the flip from unaware, which
-/// is when the engine writes one, and not on every shout after.
-pub fn sound_alarm(mut noticed: MessageReader<Noticed>, alarmed: Query<(), With<Alarm>>, mut tell: MessageWriter<Tell>) {
-    for ev in noticed.read() {
-        if alarmed.contains(ev.observer) {
-            tell.write(Tell::new("{Who} sounds an alarm.", Tones::BAD).by(ev.observer));
-        }
+/// Answers a probe's signalling: says in the log that it has started,
+/// which is the commando's warning, and when it finishes raises the alarm
+/// and says so, once, and not on every shout after.
+pub fn sound_alarm(
+    mut commands: Commands,
+    mut began: MessageReader<WorkBegan>,
+    mut done: MessageReader<WorkDone>,
+    kinds: Res<WorkKinds>,
+    alarmed: Query<(), With<Alarm>>,
+    mut tell: MessageWriter<Tell>,
+) {
+    let Some(signalling) = kinds.get(SIGNALLING) else { return };
+    for ev in began.read().filter(|ev| ev.kind == signalling && alarmed.contains(ev.actor)) {
+        tell.write(Tell::new("{Who} starts signalling.", Tones::NOTICE).by(ev.actor));
+    }
+    for ev in done.read().filter(|ev| ev.kind == signalling && alarmed.contains(ev.actor)) {
+        commands.entity(ev.actor).insert(Raised);
+        tell.write(Tell::new("{Who} sounds an alarm.", Tones::BAD).by(ev.actor));
     }
 }
 // ANCHOR_END: tell
 
+/// A probe whose alarm is up, where it stands and what it knows.
+type Sounding<'w, 's> = Query<'w, 's, (&'static Position, &'static Aware), (With<Alarm>, With<Raised>)>;
+
 // ANCHOR: shout
-/// Shouts the alarm for every action an [`Alarm`] carrier finishes while it
-/// knows where the player is: a [`MakeNoise`] of [`ALARM_SOUND`] where it
+/// Lowers the alarm of a probe that no longer knows where the commando is,
+/// so the next time it finds out it has to signal again.
+pub fn lower_alarm(mut commands: Commands, raised: Query<(Entity, &Aware), With<Raised>>, players: Query<Entity, With<Player>>) {
+    for (probe, aware) in &raised {
+        if !players.iter().any(|p| aware.knows(p)) {
+            commands.entity(probe).remove::<Raised>();
+        }
+    }
+}
+
+/// Shouts the alarm for every action a probe whose alarm is [`Raised`]
+/// finishes while it knows where the player is: a [`MakeNoise`] of [`ALARM_SOUND`] where it
 /// stands, as loud as [`ALARM_LOUDNESS`], and a [`PULSE`] on it when the
 /// player can see it there. Whoever hears it comes to look; the engine's
 /// hearing decides who that is.
@@ -86,7 +176,7 @@ pub fn sound_alarm(mut noticed: MessageReader<Noticed>, alarmed: Query<(), With<
 /// see, so the noise goes out and the pulse does not.
 pub fn shout_alarm(
     mut done: MessageReader<ActionDone>,
-    alarmed: Query<(&Position, &Aware), With<Alarm>>,
+    alarmed: Sounding,
     players: Query<(Entity, &Viewshed), With<Player>>,
     sounds: Res<Sounds>,
     mut noise: MessageWriter<MakeNoise>,
@@ -132,6 +222,63 @@ mod tests {
         app.world().get::<Heard>(listener).and_then(|h| h.last_known())
     }
 
+    /// Real damage, through combat, so a hit is a hit and a death a death.
+    fn strike(app: &mut App, target: Entity, amount: i32) {
+        let kinetic = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::from_source(None, kinetic, amount)));
+    }
+
+    fn shouts(app: &App, probe: Entity) -> usize {
+        app.world().resource::<crate::testing::Alarms>().shouts.iter().filter(|(who, ..)| *who == probe).count()
+    }
+
+    /// The alarm is not instant: a probe that knows where the commando is
+    /// signals first, for four of its own turns, which at its speed is a
+    /// little over three of the commando's, standing where it is and saying
+    /// so, and only then does the alarm sound.
+    #[test]
+    fn a_probe_signals_where_it_stands_before_the_alarm_sounds() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (probe, me) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
+        crate::testing::clear_droids(&mut app, &[probe]);
+        crate::testing::record_alarms_from_now(&mut app);
+        crate::testing::alert(&mut app, probe, me);
+        let stood = at(&app, probe);
+        crate::testing::pass_turns(&mut app, 2);
+        assert!(app.world().get::<Working>(probe).is_some(), "two turns in, it is still signalling");
+        assert_eq!(shouts(&app, probe), 0, "and the alarm has not sounded");
+        assert_eq!(at(&app, probe), stood, "nor has it moved from where it began");
+        assert!(lines(&app).iter().any(|l| l == "The probe droid starts signalling."), "{:#?}", lines(&app));
+        assert!(!lines(&app).iter().any(|l| l == "The probe droid sounds an alarm."), "{:#?}", lines(&app));
+
+        crate::testing::pass_turns(&mut app, 4);
+        assert!(app.world().get::<Raised>(probe).is_some(), "its signalling done, the alarm is raised");
+        assert!(shouts(&app, probe) > 0, "and it shouts");
+        assert!(lines(&app).iter().any(|l| l == "The probe droid sounds an alarm."), "{:#?}", lines(&app));
+    }
+
+    /// The window the signalling opens: a probe hit before it finishes
+    /// starts over, so the alarm that was a turn away is three away again,
+    /// and one killed never sounds it.
+    #[test]
+    fn a_probe_hit_while_signalling_starts_over_and_one_killed_never_sounds_the_alarm() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let (probe, me) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
+        crate::testing::clear_droids(&mut app, &[probe]);
+        crate::testing::record_alarms_from_now(&mut app);
+        crate::testing::alert(&mut app, probe, me);
+        crate::testing::pass_turns(&mut app, 2);
+        strike(&mut app, probe, 2);
+        crate::testing::pass_turns(&mut app, 2);
+        assert_eq!(shouts(&app, probe), 0, "four turns on, past where it would have sounded, and it has not");
+        assert!(app.world().get::<Raised>(probe).is_none());
+
+        strike(&mut app, probe, 1_000);
+        crate::testing::pass_turns(&mut app, 6);
+        assert_eq!(shouts(&app, probe), 0, "and killed, it never does");
+        assert!(!lines(&app).iter().any(|l| l == "The probe droid sounds an alarm."), "{:#?}", lines(&app));
+    }
+
     /// A probe that has not noticed anyone says nothing; one that knows
     /// where the commando is shouts the alarm on every turn it takes. The
     /// pulse is for the eye: a probe the player cannot see shouts without
@@ -146,10 +293,12 @@ mod tests {
         assert!(app.world().resource::<crate::testing::Alarms>().shouts.is_empty(), "it knows nothing, so it says nothing");
         let me = player(&mut app);
         crate::testing::alert(&mut app, probe, me);
-        crate::testing::pass_turns(&mut app, 4);
+        // Its signalling first, then the alarm for as long as it remembers
+        // where the commando was, which out of sight is a couple of turns.
+        crate::testing::pass_turns(&mut app, 8);
         let alarms = app.world().resource::<crate::testing::Alarms>();
         let shouts: Vec<&(Entity, Point, bool)> = alarms.shouts.iter().filter(|(who, ..)| *who == probe).collect();
-        assert!(shouts.len() >= 4, "four turns, a shout on each of its own: {shouts:?}");
+        assert!(shouts.len() >= 2, "the alarm raised, a shout on each turn of its own it still knows: {shouts:?}");
         assert!(shouts.iter().all(|(.., seen)| !seen), "and all of them out of sight: {shouts:?}");
         assert!(alarms.cues.iter().all(|c| c.actor != probe), "no pulse for a probe nobody sees: {:?}", alarms.cues);
     }
@@ -162,10 +311,11 @@ mod tests {
         let (probe, me) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
         crate::testing::record_alarms_from_now(&mut app);
         crate::testing::alert(&mut app, probe, me);
-        crate::testing::pass_turns(&mut app, 4);
+        // Its signalling first, then four turns of the alarm.
+        crate::testing::pass_turns(&mut app, 8);
         let alarms = app.world().resource::<crate::testing::Alarms>();
         let shouts: Vec<Point> = alarms.shouts.iter().filter(|(who, _, seen)| *who == probe && *seen).map(|(_, at, _)| *at).collect();
-        assert!(shouts.len() >= 4, "four turns in plain view, a shout on each: {:?}", alarms.shouts);
+        assert!(shouts.len() >= 4, "four turns of the alarm in plain view, a shout on each: {:?}", alarms.shouts);
         let pulses: Vec<&Cued> = alarms.cues.iter().filter(|c| c.actor == probe).collect();
         assert_eq!(pulses.len(), shouts.len(), "a pulse for every shout: {pulses:?}");
         for (cue, shouted) in pulses.iter().zip(&shouts) {
@@ -187,7 +337,8 @@ mod tests {
         crate::testing::record_alarms_from_now(&mut app);
         let me = player(&mut app);
         crate::testing::alert(&mut app, probe, me);
-        crate::testing::pass_turns(&mut app, 1);
+        // Long enough to finish signalling and shout once.
+        crate::testing::pass_turns(&mut app, 5);
         let last = app.world().resource::<crate::testing::Alarms>().shouts.last().copied();
         assert_eq!(last.map(|(who, ..)| who), Some(probe), "it shouted");
         assert_eq!(heard(&app, far), last.map(|(_, at, _)| at), "fifteen steps and more round the deck, it heard the alarm, and where");
@@ -220,7 +371,7 @@ mod tests {
         let (probe, _) = crate::testing::droid_facing_player(&mut app, "probe droid", 4);
         assert!(app.world().get::<MeleeAttack>(probe).is_none() && app.world().get::<RangedAttack>(probe).is_none(), "a probe carries no attack");
         let brain = format!("{:?}", app.world().get::<Mind>(probe).expect("a probe has a mind").0);
-        assert_eq!(brain, r#"["shadow", "hover", "search_last_known", "keep_post", "wander"]"#, "and no tactic that would strike");
+        assert_eq!(brain, r#"["signal_alarm", "shadow", "hover", "search_last_known", "keep_post", "wander"]"#, "and no tactic that would strike");
         crate::testing::pass_turns(&mut app, 12);
         let lines = lines(&app);
         let noticed = lines.iter().position(|l| l == "The probe droid notices you.").unwrap_or_else(|| panic!("{lines:#?}"));
@@ -262,8 +413,8 @@ mod tests {
             .collect()
     }
 
-    /// A probe that spots a player who then stands still backs off and
-    /// stays off: within three turns it is three away, and it is never
+    /// A probe that spots a player who then stands still signals where it
+    /// is, then backs off and stays off: within six turns it is three away, and it is never
     /// nearer again, even where backing off takes it round a corner out of sight,
     /// since it keeps its distance from where it last saw the player too.
     #[test]
@@ -271,7 +422,7 @@ mod tests {
         for seed in [2, 1, 3, 4, 5, 6] {
             let gaps = gaps_while_the_player_waits(seed, 1, 20);
             let off = gaps.iter().position(|g| *g >= 3).unwrap_or_else(|| panic!("seed {seed}: never backed off, gaps per turn {gaps:?}"));
-            assert!(off <= 3, "seed {seed}: backed off only by turn {off}, gaps per turn {gaps:?}");
+            assert!(off <= 6, "seed {seed}: backed off only by turn {off}, gaps per turn {gaps:?}");
             assert!(gaps[off..].iter().all(|g| *g >= 3), "seed {seed}: came back in, gaps per turn {gaps:?}");
         }
     }

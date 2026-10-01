@@ -55,7 +55,7 @@ impl Plugin for FoundryPlugin {
         app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
         // Work, for the repair drone: the engine keeps its turns and its
         // row; `droids::repair` says which wrecks and what finishing means.
-        app.add_plugins(WorkPlugin).add_work(crate::droids::REPAIRING);
+        app.add_plugins(WorkPlugin).add_work(crate::droids::REPAIRING).add_work(crate::droids::SIGNALLING);
         app.add_systems(Turn, crate::droids::sense_wrecks.in_set(PerceiveSet::Annotate))
             .add_systems(Turn, crate::droids::rebuild_wrecks.in_set(TurnSet::React));
         // Loot is the engine's: what lies on a deck when it is first
@@ -174,7 +174,11 @@ impl Plugin for FoundryPlugin {
         // engine's own stealth writes, before heat's pair for the order of
         // the log, as above; its shout answers each action it finishes,
         // and touches nothing else of Foundry's.
-        app.add_systems(Turn, (crate::droids::sound_alarm.before(crate::heat::vent_heat), crate::droids::shout_alarm).in_set(TurnSet::React));
+        app.add_systems(
+            Turn,
+            (crate::droids::sound_alarm.before(crate::heat::vent_heat), crate::droids::shout_alarm, crate::droids::lower_alarm).in_set(TurnSet::React),
+        )
+        .add_systems(Turn, crate::droids::sense_alarm.in_set(PerceiveSet::Annotate));
         // Chained, and in this order: the engine's own `schedule` can
         // write a `TurnEnd` and deal the very next turn's `DamageDealt` in
         // the same pass, so `unjam_sensors` must count the turn that just
