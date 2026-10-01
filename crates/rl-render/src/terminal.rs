@@ -79,7 +79,12 @@ impl Plugin for TerminalPlugin {
             .insert_resource(TerminalFont { size: self.font_size })
             .init_resource::<CellEntities>()
             .add_systems(Startup, spawn_grid)
-            .add_systems(PostUpdate, (relayout, flush_terminal));
+            // Early in the frame, by which time the window already has its
+            // new size: Bevy works out where a thing is drawn and lays its
+            // text out late in `PostUpdate`, and a layout written there in
+            // no order against them could be drawn a frame late.
+            .add_systems(PreUpdate, relayout)
+            .add_systems(PostUpdate, flush_terminal);
     }
 }
 
@@ -396,6 +401,29 @@ mod tests {
         app.update();
         // The same physical pixels, half as many logical ones.
         assert_eq!(first_cell(&mut app).0, Vec2::new(10.0, 20.0));
+    }
+
+    /// What is drawn is the `GlobalTransform`, which Bevy works out from
+    /// the `Transform` late in the frame. A layout written after that is
+    /// drawn a frame late: backgrounds of the new size at the old places.
+    #[test]
+    fn a_resize_is_where_it_will_be_drawn_in_the_same_frame() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, bevy::transform::TransformPlugin)).add_plugins(TerminalPlugin {
+            width: 8,
+            height: 4,
+            cell_size: Vec2::new(10.0, 20.0),
+            font_size: 16.0,
+        });
+        let mut resolution = WindowResolution::new(80, 80);
+        resolution.set_scale_factor_override(Some(1.0));
+        let window = app.world_mut().spawn((Window { resolution, ..default() }, PrimaryWindow)).id();
+        app.update();
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(160, 160);
+        app.update();
+        let background = app.world().resource::<CellEntities>().background[0];
+        let drawn = app.world().get::<GlobalTransform>(background).unwrap().translation().truncate();
+        assert_eq!(drawn, Vec2::new(-70.0, 60.0), "one update after the window changed");
     }
 
     #[test]

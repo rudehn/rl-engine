@@ -42,7 +42,7 @@ pub struct SettingsScreen {
 /// The control each keyed setting was declared as, so the controls screen
 /// lists the key and this screen reads it through the registry.
 #[derive(Resource, Debug, Default)]
-struct SettingKeys(Vec<(SettingId, ControlId)>);
+pub struct SettingKeys(Vec<(SettingId, ControlId)>);
 
 /// The settings screen.
 pub struct SettingsPanel(SettingsLayout);
@@ -103,7 +103,13 @@ fn ordered(settings: &Settings) -> Vec<SettingId> {
 ///
 /// A frame that opened the screen reads nothing more: the key that opened
 /// it is the confirm key, still down, and it would change the first row.
-fn settings_keys(keys: ControlInput, bound: Res<SettingKeys>, mut screen: ResMut<SettingsScreen>, mut modals: ResMut<Modals>, mut settings: ResMut<Settings>) {
+pub fn settings_keys(
+    keys: ControlInput,
+    bound: Res<SettingKeys>,
+    mut screen: ResMut<SettingsScreen>,
+    mut modals: ResMut<Modals>,
+    mut settings: ResMut<Settings>,
+) {
     let Some(modal) = settings_modal(&modals) else { return };
     let top = modals.is_top(modal);
     if top && modals.just_opened() {

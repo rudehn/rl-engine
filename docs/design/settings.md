@@ -24,9 +24,10 @@ The grid is laid out for the window it is in, by one pure function, `rl_render::
   Zooming only by 1, 2 or 3 is sharp without any of this, and was rejected: on most displays the next whole zoom does not fit, and the game sits in a wide empty border.
 - **The camera does not scale.**
   One world unit is one logical pixel, the cells are moved and sized, and the glyphs take a font size scaled with the cell, so Bevy rasterizes them at the size they are shown.
-  That happens once per change of window size, not per frame.
+  That happens once per change of window size, not per frame, and in `PreUpdate`: Bevy works out where a thing is drawn and lays text out late in `PostUpdate`, and a layout written there in no order against them could be drawn a frame late.
 - **The native size is the identity.**
   A window of exactly the grid's declared size gets exactly the declared cell and font and no margin, so nothing a game looked like before changes, and a capture is the same file.
+  That holds where the declared cell is a whole number of physical pixels, at 100%, 150% and 200%; at 125% a ten-pixel cell is twelve and a half, the cell is floored, and the game opens inside a thin border, which is the price of never drawing a cell across a pixel.
   A float's rounding nearly broke this: a zoom of `0.99999994` floors a twenty-pixel cell to nineteen, so the floor is taken a thousandth of a pixel high, which is far less than one pixel across any grid a terminal has.
 - **No resize limit.**
   A window smaller than the grid gets a zoom below 1, drawn at that size.

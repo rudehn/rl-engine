@@ -12,7 +12,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: b1046172 -->
+     fingerprint: ad1a72d7 -->
 
 # Rendering
 
@@ -23,7 +23,7 @@ What a tile looks like is the game's to say; what light, memory, fire and gas do
 ## Turning it on
 
 `RoguelikePlugins` adds all four, and `FullscreenPlugin` beside them, which the settings page covers, because a game with no terminal has nothing to draw into and a map with no viewport is a map nobody sees.
-`TerminalPlugin` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, and in `PostUpdate` lays the grid out again when the window has changed and flushes the buffer.
+`TerminalPlugin` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`.
 Glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
 `MapViewPlugin` takes the `Rect` it draws in, the way every panel does, so a game has no `MapView` of its own to insert and cannot forget one.
 Its `finish` declares `depends_on::<CorePlugin>` and `depends_on::<FovPlugin>`: without field of view no tile is ever seen or remembered, and the map would draw as nothing at all.
@@ -37,7 +37,7 @@ It reads cues in `PresentSet::Narrate` and takes the turns' hold on entering `Pl
 `Cell` is one character position: a `glyph`, a foreground `fg` and a fill `bg`, with `new`, `on` and `dimmed` to build one.
 `Terminal` is the back buffer, a resource, so any crate's presenter writes into it: `set`, `put`, `print`, `print_on`, `fill` and `clear` write, `get` reads back, and every write outside the grid is dropped rather than wrapping or panicking.
 `Fit` is how the grid sits in a window, a cell and a margin in physical pixels, and `layout::fit` works it out: the largest zoom that fits, each cell floored to whole pixels so no seam shows between two backgrounds, and the grid centred.
-The camera never scales; the glyphs take a font size scaled with the cell and are drawn at the size they are shown, and a window of exactly the size the game opened in gets exactly the declared cell.
+The camera never scales; the glyphs take a font size scaled with the cell and are drawn at the size they are shown, and a window of exactly the size the game opened in gets exactly the declared cell, wherever that cell is a whole number of physical pixels; at a display scaling of 125% a ten-pixel cell is not, and is floored.
 `Glyph` is how an entity is drawn, a `ch`, an `fg` and a `layer`, and on a tile with two things on it the higher layer wins.
 `TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.
 `seen` is that look jittered for the cell and the moment, `remembered` is it jittered as it was seen and then faded, and `under` colours both of a cell's colours by the light landing there.

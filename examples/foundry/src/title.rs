@@ -1061,6 +1061,53 @@ mod tests {
         assert!(rows[rows::MENU as usize..].iter().all(|r| r.trim().is_empty()), "{rows:#?}");
     }
 
+    /// The title's keys and the settings screen's are not ordered against
+    /// each other, since one is the game's and the other the engine's. So
+    /// whichever runs first, the key that opens the screen must not also
+    /// change its first row, and the key that closes it must not also be
+    /// the title's Escape, which leaves the game.
+    #[test]
+    fn the_title_and_the_settings_screen_share_no_key_whichever_reads_first() {
+        use bevy::ecs::system::RunSystemOnce;
+        use rl_engine::rl_bevy::settings::{AddSettings, Setting, Settings};
+        use rl_engine::rl_ui::panel::settings::settings_keys;
+
+        fn frame(app: &mut App, key: KeyCode, title_first: bool) {
+            app.world_mut().resource_mut::<Modals>().begin_frame();
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
+            if title_first {
+                app.world_mut().run_system_once(read_title_keys).unwrap();
+                app.world_mut().run_system_once(settings_keys).unwrap();
+            } else {
+                app.world_mut().run_system_once(settings_keys).unwrap();
+                app.world_mut().run_system_once(read_title_keys).unwrap();
+            }
+            let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            input.release(key);
+            input.clear();
+        }
+
+        for (open_title_first, close_title_first) in [(true, true), (true, false), (false, true), (false, false)] {
+            let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(4));
+            app.add_plugins(rl_engine::rl_ui::SettingsPanel::new(rl_engine::rl_core::Rect::new(0, 0, 40, 12)));
+            app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
+            app.insert_resource(Title::default());
+            app.update();
+            app.world_mut().resource_mut::<Title>().picked = Choice::all().iter().position(|c| *c == Choice::Settings).unwrap();
+            let orders = format!("opened with the title first: {open_title_first}, closed with it first: {close_title_first}");
+
+            frame(&mut app, KeyCode::Enter, open_title_first);
+            assert!(app.world().resource::<Modals>().any_open(), "{orders}");
+            let settings = app.world().resource::<Settings>();
+            assert_eq!(settings.choice(settings.find("glow").unwrap()), "Off", "{orders}");
+
+            frame(&mut app, KeyCode::Escape, close_title_first);
+            assert!(settings_modal(app.world().resource::<Modals>()).is_some_and(|m| !app.world().resource::<Modals>().is_open(m)), "{orders}");
+            assert!(app.should_exit().is_none(), "{orders}");
+            assert!(app.world().resource::<Title>().up, "{orders}");
+        }
+    }
+
     /// Prints the title screen as the player sees it, for eyeballing the
     /// art: `cargo test -p foundry title_screen -- --ignored --nocapture`.
     #[test]
