@@ -44,12 +44,14 @@ A site is a wall cell just outside the body, with the direction that leads out o
 A shape also says how it is joined: by a door, by an open arch one cell wide, or by a mouth as wide as the piece allows.
 
 `Shape` is a trait, so a game draws a piece the engine never thought of.
-The engine ships four:
+The engine ships three:
 
 - a rectangle, between a smallest and a largest side;
 - a cross, two rectangles overlapped on their centers;
-- a hall, a rectangle whose sides are drawn from a larger range and whose mouth is wide;
 - a passage, a width, a length and a chance of one bend.
+
+A hall is not a fourth: it is a rectangle drawn from a larger range and joined by a mouth, which a game's file says in one row.
+A shape also says whether what it draws is a room, somewhere a piece may be stamped; a passage is not.
 
 A prefab as a shape, attached by a door drawn in the piece, is the director's and is not built here.
 The trait is the seam it will use.
@@ -80,7 +82,7 @@ The same recipe therefore builds a small place and a large one, and the tests in
 
 ### 2.3 Districts
 
-Before growth, district seeds are scattered: as many as the recipe's density per thousand cells gives, at least one, each drawn a district from the recipe's weighted list.
+Before growth, district seeds are scattered: as many as the recipe's density per ten thousand cells gives, at least one, each drawn a district from the recipe's weighted list.
 A cell is in the district of its nearest seed, by squared distance, ties to the earlier seed.
 
 A district is a name and a weighted list of shapes.
@@ -93,6 +95,7 @@ An area records its district, so the furnisher can theme a region and the direct
 ### 2.4 Loops
 
 Accretion alone builds a tree: one way to anywhere.
+`OpenLoops` is its own pass, straight after `Accrete`, with its own stream.
 After growth, every wall cell with open floor on two opposite sides, belonging to two different areas, is a candidate.
 Its detour is the walking distance between those two floor cells as the place stands.
 The candidate with the longest detour is opened, as a door, while that detour is at least the recipe's threshold; distances are measured again after each, since one opening shortens others.
@@ -104,9 +107,9 @@ Longest first is what makes a loop worth having: an opening that saves three ste
 
 - `Area`, one per piece: an index, the shape's name, the district's name, its cells, their bounds, and the largest rectangle that fits inside it.
 - `Opening`, one per join and per loop: its cell, its facing, the two areas it joins, and how it was joined.
-- `Room`, the existing output, one per area, holding the area's largest inner rectangle.
+- `Room`, the existing output, one per area whose shape draws rooms, holding the area's largest inner rectangle.
 
-`Room` is what `StampPrefab`, `StampOneOf` and `StampEachRoom` already read, so every existing stamp works on an accreted place unchanged, and a passage too narrow to hold a piece is refused by the margin they already ask for.
+`Room` is what `StampPrefab`, `StampOneOf` and `StampEachRoom` already read, so every existing stamp works on an accreted place unchanged, and a passage, which emits none, is never furnished or chosen for a vault.
 `Doors` is not used with `Accrete`, which opens its own.
 
 ## 4. The survey
@@ -159,14 +162,14 @@ So a recipe loads, and every mistake in it is reported by name, with no map and 
 
 A layout file holds the shapes, the districts and the recipes:
 
-- a shape: a name, and one of the four the engine ships with its ranges and how it is joined;
+- a shape: a name, and one of the three the engine ships with its ranges and how it is joined;
 - a district: a name and `(shape, weight)` rows;
 - a recipe: a name, a width and a height, the target open share, the run of failed attempts allowed, the district density, `(district, weight)` rows, the loop threshold and cap, and its requirements.
 
 Checked at load: every name resolves, every weight is more than nought, every range has its smallest no larger than its largest, every share is between nought and a hundred, the requirements' shape names are shapes some district of the recipe can draw, and the smallest shape fits the recipe's size.
 The file carries the top-of-file comment listing every field and every option.
 
-A game's own `Shape` is registered by name beside the four, and a file names it as it names them.
+A game with a `Shape` of its own builds its `Accrete` in code; naming one from a file waits for a game that has one.
 
 ## 7. Foundry
 
@@ -178,7 +181,7 @@ A deck starts at 84 by 48, about 1.4 times the area it has now.
 Accretion wastes no rock between rooms, so that holds noticeably more than the scatter does, and it stays small while there is little to put in it.
 The map view already follows the player and clamps to the map, so a deck larger than the screen needs nothing new.
 
-The deck's chain swaps `Rooms` and `Doors` for `Accrete`, and adds `Survey` after `FarthestExit` and `Require` last.
+The deck's chain swaps `Rooms` and `Doors` for `Accrete` and `OpenLoops`, and adds `Survey` after `FarthestExit` and `Require` last.
 The armory, the store, the guard post, the reactor, the core and the furnishing stay as they are, stamped into the rooms accretion emits, until the furnisher and the director replace them.
 `Foundry::build` runs the chain retrying.
 
