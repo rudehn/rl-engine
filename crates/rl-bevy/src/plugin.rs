@@ -252,7 +252,9 @@ impl Plugin for CorePlugin {
             // a prop held a `Viewshed` in the same pass.
             .configure_sets(
                 Turn,
-                (DecideSet::Sense, DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game).chain().in_set(TurnSet::Decide),
+                (DecideSet::Light, DecideSet::Sense, DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game)
+                    .chain()
+                    .in_set(TurnSet::Decide),
             )
             .configure_sets(Turn, DecideSet::Perceive.run_if(crate::minds::a_mind_holds_the_turn))
             .configure_sets(Turn, (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate).chain().in_set(DecideSet::Perceive))
@@ -483,6 +485,11 @@ impl ResetsOnNewRun for App {
 /// the choice has been made and written but nothing has acted on it yet.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DecideSet {
+    /// The light, recast if a source was lit, put out or moved since the
+    /// last pass, so the sight cast next is cut by the light as it is now.
+    /// Empty unless the game added
+    /// [`LightingPlugin`](crate::lighting::LightingPlugin).
+    Light,
     /// The sight of the mind about to decide, recast if it moved or the
     /// map changed, so everything after reads what it sees now.
     Sense,

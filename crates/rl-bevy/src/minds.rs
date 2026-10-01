@@ -1400,6 +1400,49 @@ mod tests {
         assert_eq!(app.world().resource::<FlowFields>().len(), 1, "and the same one the next turn, since nothing moved the goal");
     }
 
+    /// A mind sees by the light as it is when its turn comes, not as it was
+    /// when the frame began: a lamp lit in the same frame the mind acts in
+    /// shows it the player at once, and one put out hides the player at
+    /// once. The light used to be recast once a frame, after every pass, so
+    /// each took a turn to reach the minds.
+    #[test]
+    fn a_mind_sees_by_the_light_as_it_is_on_its_own_turn() {
+        use crate::lighting::{LightSource, LightingPlugin};
+        let (mut app, start, blunt) = arena();
+        app.add_plugins(LightingPlugin);
+        let us = rl_rules::FactionId::from_raw(0);
+        let them = rl_rules::FactionId::from_raw(1);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let hunter = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(5, 0)),
+                Health::full(5),
+                Faction(them),
+                Perception(8),
+                MeleeAttack::new(blunt, DiceRoll::flat(1)),
+                Mind(Arc::new(Brain::new().then(Hunt))),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let turn = |app: &mut App| {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+            app.world().get::<Position>(hunter).unwrap().0
+        };
+        assert_eq!(turn(&mut app), start.offset(5, 0), "in the dark it sees nobody and stands");
+
+        let lamp = app.world_mut().spawn((Position(start.offset(0, 1)), LightSource::new(200, 2, rl_grid::Rgb::new(255, 255, 255)))).id();
+        assert_eq!(turn(&mut app), start.offset(4, 0), "lit this frame, seen this frame");
+
+        app.world_mut().entity_mut(lamp).remove::<LightSource>();
+        assert_eq!(turn(&mut app), start.offset(4, 0), "put out this frame, lost this frame");
+    }
+
     /// Two hunters that see different enemies share the flood from the
     /// enemy both see: a field toward a few goals is composed from one
     /// flood per goal, so the second roster costs only the goal it adds.
