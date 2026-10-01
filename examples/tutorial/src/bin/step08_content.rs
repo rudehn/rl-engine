@@ -345,17 +345,16 @@ fn populate(
     bestiary: Res<Bestiary>,
     map: Res<WorldMap>,
     seed: Res<Seed>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
+    mut tell: MessageWriter<Tell>,
 ) {
     for ev in entered.read() {
         let depth = floor_of(ev.map);
-        log.push(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE, turns.turn_number());
+        tell.write(Tell::new(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE));
         // The keys, once, under the first floor's name. Not in `start`: the
         // name is written when the warp lands, a frame later, and would read
         // as though it came after them.
         if ev.first && depth == 1 {
-            log.push("Something is scratching in the dark. g picks up, e eats, > goes down.", Tones::MUTED, turns.turn_number());
+            tell.write(Tell::new("Something is scratching in the dark. g picks up, e eats, > goes down.", Tones::MUTED));
         }
         if !ev.first {
             continue;

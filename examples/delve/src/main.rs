@@ -82,7 +82,7 @@ fn main() -> AppExit {
         ))
         // The engine narrates the fight and the knacks; the one phrase the
         // delve rewords is the brand going out.
-        .add_plugins(NarratorPlugin::default().phrase(Phrase::YourLightGoesOut, "Your brand gutters and goes out.", Tones::BAD))
+        .add_plugins(narrator())
         .add_systems(Update, (note_floor, show_pools).in_set(ViewSet::Annotate))
         .add_systems(NewRun, start)
         // A screen that is up owns the keys: the knack keys decide that for
@@ -415,18 +415,24 @@ struct Stock<'w> {
     help: Res<'w, ControlsKeys>,
 }
 
+/// The engine's narrator, as the delve speaks through it. A function so
+/// the tests say a floor's name through the same one `main` does.
+fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default().phrase(Phrase::YourLightGoesOut, "Your brand gutters and goes out.", Tones::BAD)
+}
+
 /// Stairs, glowing bile and beasts, the first time a floor is entered.
-fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
+fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock, mut tell: MessageWriter<Tell>) {
     let Stock { beasts, map, bile, seed, first, registries, help } = &stock;
     let reek = registries.gases.expect("reek");
     for ev in entered.read() {
         let floor = floor_of(ev.map);
-        log.push(format!("Floor {floor}: {}.", name_of(floor)), Tones::NOTICE, turns.turn_number());
+        tell.write(Tell::new(format!("Floor {floor}: {}.", name_of(floor)), Tones::NOTICE));
         // How to see the keys, once, under the name of the floor the run
         // starts on. Not in `start`: the name is written when the warp lands,
         // a frame later, and would read as if it came after.
         if ev.first && floor == first.as_ref().map_or(1, |f| f.0) {
-            log.push(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED, turns.turn_number());
+            tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
         }
         if !ev.first {
             continue;
@@ -742,6 +748,8 @@ mod tests {
             // are never held for it.
             .insert_resource(rl_engine::rl_render::ParticleStyle::instant())
             .add_plugins((TargetPanel::new(screen.target), AbilityPanel::new(screen.knacks).called("knacks")))
+            // Someone to read what `populate_floor` tells.
+            .add_plugins(narrator())
             .add_systems(Update, (call_on, (tend_brand, pick_and_drop, toggle_overlay, player_input).chain().run_if(no_modal)).chain().in_set(EngineSet::Input))
             .add_systems(NewRun, start)
             .add_systems(Turn, populate_floor.in_set(TurnSet::React))
