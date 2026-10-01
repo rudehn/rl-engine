@@ -704,7 +704,7 @@ pub(crate) mod harness {
         (name: "burst", aim: Ground, mode: Ball(range: 6, radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "2"))]),
         (name: "steel", aim: SelfOnly, mode: Own, effects: []),
         (name: "dear", mode: Bolt(range: 6), costs: [Pool("focus", 99)], effects: []),
-        (name: "salve", aim: Ally, mode: Ball(range: 6, radius: 1), effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))]),
+        (name: "salve", aim: Ally, mode: Ball(range: 6, radius: 1), effects: [(kind: "Mend", args: (roll: "2"))]),
     ]"#;
 
     /// Inserts everything an ability needs into `app`, before play begins.

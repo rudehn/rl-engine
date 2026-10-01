@@ -15,7 +15,8 @@
 //                Harm, Mend, Inflict, Cleanse, Shove, Pull, Teleport; Ignite(turns:),
 //                which sets the ground alight; Emit(gas:, amount:), which gives gas
 //                off on every cell. The damage kinds are "kinetic" | "energy" |
-//                "ion" | "electricity" | "thermal" | "care", the statuses
+//                "ion" | "electricity" | "thermal", and a Mend takes a roll
+//                and no kind, since healing is not damage; the statuses
 //                "sensors down" | "mending" | "scorched" | "cloaked", the one
 //                gas "smoke"
 #![enable(implicit_some)]
@@ -27,6 +28,6 @@
         aim: SelfOnly,
         mode: Own,
         cooldown: 2000,
-        effects: [(kind: "Mend", args: (kind: "care", roll: "2d4+4"))],
+        effects: [(kind: "Mend", args: (roll: "2d4+4"))],
     ),
 ]

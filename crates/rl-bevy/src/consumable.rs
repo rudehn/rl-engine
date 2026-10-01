@@ -306,7 +306,7 @@ mod tests {
     use rl_rules::{DamageKind, Registry};
 
     /// A trigger list that mends four on a use.
-    const MEND_ON_USE: &str = r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "4"))])]"#;
+    const MEND_ON_USE: &str = r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "4"))])]"#;
 
     /// A wounded player holding the first turn, with one thing in the bag
     /// carrying `triggers`, and `consumable` and a stack of `stack` if given.
@@ -324,7 +324,7 @@ mod tests {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, ItemsPlugin, ConsumablesPlugin));
         app.add_engine_effects();
-        let kinds = Registry::from_defs(vec![DamageKind::new("care").unarmored(), DamageKind::new("kinetic")]).expect("two kinds");
+        let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
         let sides = Registry::from_defs(vec![rl_rules::faction::FactionDef::new("ours")]).expect("one side");
         app.insert_resource(crate::combat::CombatRules::new(&sides));
         app.insert_resource(Registries { damage_kinds: kinds, factions: sides, ..Registries::default() });
@@ -396,7 +396,7 @@ mod tests {
     }
 
     /// A trigger list that mends one on each pulse.
-    const MEND_ON_PULSE: &str = r#"[(on: "pulse", every: 1000, effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]"#;
+    const MEND_ON_PULSE: &str = r#"[(on: "pulse", every: 1000, effects: [(kind: "Mend", args: (roll: "1"))])]"#;
 
     /// `text`'s triggers, built against the rig's moments and effect kinds,
     /// the way the rig builds its own item's.
@@ -473,7 +473,8 @@ mod tests {
 
     #[test]
     fn a_thing_with_a_use_and_a_land_trigger_used_from_the_bag_answers_only_use() {
-        let both = r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "3"))]), (on: "land", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "9"))])]"#;
+        let both =
+            r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "3"))]), (on: "land", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "9"))])]"#;
         let (mut app, player, item) = rig(Some(Consumable::new(2, WhenEmpty::Kept)), None, both);
         use_it(&mut app, player, item);
         assert_eq!(health(&app, player), 13, "mended three, and the land trigger did not go off");

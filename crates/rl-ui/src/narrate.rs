@@ -380,6 +380,7 @@ impl Plugin for NarrationViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NarrationView>()
             .add_message::<DamageDealt>()
+            .add_message::<Healed>()
             .add_message::<Missed>()
             .add_message::<DeathEvent>()
             .add_message::<ItemEvent>()
@@ -414,6 +415,7 @@ pub struct Heard<'w, 's> {
     travels: MessageReader<'w, 's, Travelled>,
     items: MessageReader<'w, 's, ItemEvent>,
     dealt: MessageReader<'w, 's, DamageDealt>,
+    healed: MessageReader<'w, 's, Healed>,
     missed: MessageReader<'w, 's, Missed>,
     statuses: MessageReader<'w, 's, StatusEvent>,
     deaths: MessageReader<'w, 's, DeathEvent>,
@@ -675,14 +677,12 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
             }
             continue;
         }
-        // A heal that restored nothing is no line at all, and never a blow
-        // to no effect: the healer did not strike anyone.
-        if d.is_mend() {
-            if d.dealt < 0 {
-                let mut said = say(if you_target { Phrase::YouMend } else { Phrase::Mends }, Some(target), None);
-                said.amount = -d.dealt;
-                rows.push(said);
-            }
+        // A hit the target absorbed mended it, and reads as a mend: the
+        // one who dealt it did not strike to no effect.
+        if d.dealt < 0 {
+            let mut said = say(if you_target { Phrase::YouMend } else { Phrase::Mends }, Some(target), None);
+            said.amount = -d.dealt;
+            rows.push(said);
             continue;
         }
         if d.hit.attacker == Some(target) {
@@ -718,6 +718,15 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         let mut said = say(phrase, d.hit.attacker, Some(target));
         said.amount = d.dealt;
         rows.push(said);
+    }
+    for h in heard.healed.read() {
+        // A heal that restored nothing is no line at all, and neither is
+        // a status mending each turn, which was said when it was gained.
+        if h.restored > 0 && h.status.is_none() {
+            let mut said = say(if witness.is_you(h.target) { Phrase::YouMend } else { Phrase::Mends }, Some(h.target), None);
+            said.amount = h.restored;
+            rows.push(said);
+        }
     }
     for ev in heard.statuses.read() {
         let (target, status, phrase) = match *ev {
@@ -1361,7 +1370,7 @@ mod tests {
     /// of three and two are left.
     #[test]
     fn using_a_thing_says_so_as_one_of_it_last_of_its_stack_or_not() {
-        let (mut stage, triggers) = with_things(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))])]"#);
+        let (mut stage, triggers) = with_things(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "1"))])]"#);
         let player = stage.player;
         let last = stage.app.world_mut().spawn((Item, Name::new("stim"), triggers.clone(), Consumable::new(1, WhenEmpty::Destroyed))).id();
         let three =
@@ -1381,7 +1390,7 @@ mod tests {
     /// bag the moment the pass ends.
     #[test]
     fn the_last_of_a_thing_used_up_is_named_in_its_own_colour() {
-        let (mut stage, triggers) = with_things(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))])]"#);
+        let (mut stage, triggers) = with_things(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "1"))])]"#);
         let player = stage.player;
         let green = Color::srgb(0.2, 0.9, 0.4);
         let last =
@@ -1399,7 +1408,7 @@ mod tests {
     /// what it was, not as something nobody could make out.
     #[test]
     fn a_thing_spent_where_it_lands_is_named_when_it_is_thrown() {
-        let (mut stage, triggers) = with_things(r#"[(on: "land", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))])]"#);
+        let (mut stage, triggers) = with_things(r#"[(on: "land", effects: [(kind: "Mend", args: (roll: "1"))])]"#);
         let player = stage.player;
         let grenade =
             stage.app.world_mut().spawn((Item, Name::new("frag grenade"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Throwable::new(6, None))).id();
@@ -1518,21 +1527,27 @@ mod tests {
         assert_eq!(spoken(&stage, &["The line droid"])[0], "The line droid hits you for 3.");
     }
 
-    /// A heal aimed at another is a heal whether or not it restored
-    /// anything: at full health it says nothing, in either direction, and
-    /// never that someone was struck to no effect.
+    /// A heal is told as a mend when it restored something and not at all
+    /// when it found its target whole, in either direction, and never as a
+    /// blow to no effect: it is not a hit of any kind.
     #[test]
-    fn a_heal_on_another_at_full_health_is_not_spoken_as_a_blow() {
+    fn a_heal_is_spoken_as_a_mend_when_it_restored_something_and_never_as_a_blow() {
         let mut stage = Stage::new(NarratorPlugin::default());
-        let (player, kind) = (stage.player, stage.kind);
+        let player = stage.player;
         let droid = stage.actor("line droid", 'd', 1, 0);
         stage.tick();
         let world = stage.app.world_mut();
-        world.write_message(DamageEvent::new(droid, rl_rules::Hit::by(player, kind, -3)));
-        world.write_message(DamageEvent::new(player, rl_rules::Hit::by(droid, kind, -3)));
+        world.write_message(Heal::new(droid, 3).by(player));
+        world.write_message(Heal::new(player, 3).by(droid));
         stage.tick();
         let said = spoken(&stage, &["You", "The line droid"]);
         assert!(said.is_empty(), "a heal that restored nothing is not a line: {said:#?}");
+
+        let world = stage.app.world_mut();
+        world.get_mut::<Health>(player).unwrap().current -= 5;
+        world.write_message(Heal::new(player, 3).by(droid));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You", "The line droid"]), vec!["You mend for 3."]);
     }
 
     /// A status is told in the words its name is written for, "You are

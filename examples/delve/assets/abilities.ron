@@ -23,7 +23,8 @@
 //              which sets what it lands on alight; Emit(gas:, amount:), which gives
 //              gas off) or the delve's own, Drain, which pours into a pool what it
 //              takes; the damage kinds are "bite" | "blade" | "blunt" | "bile" |
-//              "fire" | "care", the statuses "scorched" | "dazed", the gases
+//              "fire", and a Mend takes a roll and no kind, since healing is
+//              not damage; the statuses "scorched" | "dazed", the gases
 //              "smoke" | "reek"
 #![enable(implicit_some)]
 [
@@ -57,7 +58,7 @@
         aim: SelfOnly,
         mode: Own,
         costs: [Pool("mana", 6)],
-        effects: [(kind: "Mend", args: (kind: "care", roll: "2d6"))],
+        effects: [(kind: "Mend", args: (roll: "2d6"))],
     ),
     (
         name: "drain",

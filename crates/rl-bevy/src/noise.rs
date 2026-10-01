@@ -337,8 +337,8 @@ pub struct Sources<'w, 's> {
 /// came to rest.
 ///
 /// A blow is one sound per attacker however many strikes it carried, so a
-/// flurry is not heard as four. A mend is not a blow, and damage over time
-/// has no attacker, so neither makes a sound. How loud each is comes from
+/// flurry is not heard as four. Damage over time has no attacker and so
+/// makes no sound, and a mend is not a hit at all. How loud each is comes from
 /// [`NoiseRules`], and a stepper's own [`Footfall`] in place of the rule.
 pub fn make_engine_noise(mut sources: Sources, rules: Res<NoiseRules>, mut noise: MessageWriter<MakeNoise>) {
     for step in sources.stepped.read() {
@@ -347,7 +347,7 @@ pub fn make_engine_noise(mut sources: Sources, rules: Res<NoiseRules>, mut noise
     }
     let mut attackers: Vec<Entity> = Vec::new();
     for blow in sources.blows.read() {
-        if let Some(attacker) = blow.hit.attacker.filter(|a| blow.hit.amount >= 0 && !attackers.contains(a)) {
+        if let Some(attacker) = blow.hit.attacker.filter(|a| !attackers.contains(a)) {
             attackers.push(attacker);
         }
     }
@@ -685,14 +685,13 @@ mod tests {
     }
 
     #[test]
-    fn a_flurry_is_one_sound_where_the_attacker_stands_and_a_mend_is_none() {
+    fn a_flurry_is_one_sound_where_the_attacker_stands() {
         let mut field = Field::new(LOUD_STEPS);
         field.app.init_resource::<Told>().add_systems(PostUpdate, tell);
         let (player, start) = (field.player, field.start);
         let listener = field.listener(3, 0, 0, 1);
-        let healer = field.app.world_mut().spawn(Position(start.offset(0, 2))).id();
         let kind = rl_rules::damage::DamageKindId::from_raw(0);
-        for hit in [rl_rules::Hit::by(player, kind, 3), rl_rules::Hit::by(player, kind, 0), rl_rules::Hit::by(healer, kind, -4)] {
+        for hit in [rl_rules::Hit::by(player, kind, 3), rl_rules::Hit::by(player, kind, 0)] {
             field.app.world_mut().write_message(DamageEvent::new(listener, hit));
         }
         field.wait();

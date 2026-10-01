@@ -609,13 +609,14 @@ mod tests {
 
         app.world_mut().write_message(Intent::new(me, UseItem(rum)));
         app.update();
-        // What landed on the player this frame, in order: the mend first,
-        // then whatever the cutthroat's turn did.
+        // What landed on the player this frame: the mend, in the pass the
+        // drink was drunk in, and then whatever the cutthroat's turn did.
+        let mended: Vec<i32> = app.world_mut().resource_mut::<Messages<Healed>>().drain().filter(|h| h.target == me).map(|h| h.restored).collect();
         let dealt: Vec<i32> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().filter(|d| d.target == me).map(|d| d.dealt).collect();
 
         let died = app.world_mut().resource_mut::<Messages<DeathEvent>>().drain().any(|d| d.was_player);
-        assert!(!died, "the drink landed after the blow: {dealt:?}");
-        assert!(dealt.first().is_some_and(|d| *d < 0), "the mend landed first: {dealt:?}");
+        assert!(!died, "the drink landed after the blow: {mended:?} then {dealt:?}");
+        assert!(mended.first().is_some_and(|m| *m > 0), "the mend landed: {mended:?}");
         assert!(app.world().get::<Health>(me).is_some_and(|h| h.current >= 1), "and the player stands");
         assert_eq!(app.world().get::<Stack>(rum).map(|s| s.count), Some(bottles - 1), "and cost a bottle");
         let hearty = app.world().resource::<Registries>().statuses.expect("hearty");

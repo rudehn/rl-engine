@@ -170,6 +170,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Thinking", c.component_id::<rl_engine::rl_bevy::Thinking>()),
         ("Messages<Cued>", c.component_id::<Messages<rl_engine::rl_bevy::Cued>>()),
         ("Messages<DamageEvent>", c.component_id::<Messages<rl_engine::rl_bevy::DamageEvent>>()),
+        ("Messages<Heal>", c.component_id::<Messages<rl_engine::rl_bevy::Heal>>()),
         ("Messages<Afflict>", c.component_id::<Messages<rl_engine::rl_bevy::Afflict>>()),
         ("Messages<Cure>", c.component_id::<Messages<rl_engine::rl_bevy::Cure>>()),
         ("Messages<FillContainer>", c.component_id::<Messages<rl_engine::rl_bevy::FillContainer>>()),
@@ -248,7 +249,17 @@ fn allowed(world: &World) -> Vec<Allowed> {
             id(ability::resolve_abilities),
             &[
                 &claims[..],
-                &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "EffectRng"],
+                &[
+                    "Occupancy",
+                    "Messages<Cued>",
+                    "Messages<DamageEvent>",
+                    "Messages<Heal>",
+                    "Messages<Afflict>",
+                    "Messages<Cure>",
+                    "Position",
+                    "Viewshed",
+                    "EffectRng",
+                ],
             ]
             .concat(),
             "one action a pass: an interaction and an ability are never resolved in the same one",
@@ -303,7 +314,17 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_interactions),
             id(ability::land_abilities),
-            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "EffectRng"],
+            &[
+                "Occupancy",
+                "Messages<Cued>",
+                "Messages<DamageEvent>",
+                "Messages<Heal>",
+                "Messages<Afflict>",
+                "Messages<Cure>",
+                "Position",
+                "Viewshed",
+                "EffectRng",
+            ],
             "an ability lands in a pass no interaction is resolved in",
         ),
         pair(

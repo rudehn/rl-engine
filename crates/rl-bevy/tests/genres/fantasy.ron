@@ -42,7 +42,7 @@
         aim: SelfOnly,
         mode: Own,
         costs: [Pool("mana", 6)],
-        effects: [(kind: "Mend", args: (kind: "care", roll: "2d6"))],
+        effects: [(kind: "Mend", args: (roll: "2d6"))],
     ),
     (
         name: "drain",

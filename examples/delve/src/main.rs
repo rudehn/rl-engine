@@ -157,7 +157,6 @@ fn registries() -> Registries {
         DamageKind::new("blunt"),
         DamageKind::new("bile"),
         DamageKind::new("fire").unarmored(),
-        DamageKind::new("care").unarmored(),
     ])
     .unwrap();
     // ANCHOR: statuses

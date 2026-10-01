@@ -474,8 +474,9 @@ mod tests {
     fn a_worker_that_is_hurt_breaks_off_even_when_healed_in_the_same_pass() {
         let (mut app, player, worker, _, damage) = at_work();
         app.world_mut().write_message(crate::combat::DamageEvent::new(worker, rl_rules::Hit::from_source(None, damage, 2)));
-        app.world_mut().write_message(crate::combat::DamageEvent::new(worker, rl_rules::Hit::from_source(None, damage, -2)));
+        app.world_mut().write_message(crate::combat::Heal::new(worker, 2));
         pass(&mut app, player);
+        assert_eq!(app.world().get::<Health>(worker).map(|h| h.current), Some(10), "mended back to whole in the pass it was hurt in");
         assert_eq!(reasons(&app), vec![BreakReason::Hurt]);
         assert!(app.world().get::<Working>(worker).is_none());
     }
