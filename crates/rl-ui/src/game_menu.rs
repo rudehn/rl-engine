@@ -80,18 +80,25 @@ pub enum MenuItem {
     NewRun,
     /// The same run again.
     SameSeed,
+    /// The settings screen, when a game has one with something on it.
+    Settings,
     /// Leave.
     Quit,
 }
 
 impl MenuItem {
-    /// What is offered while `playing`, or once the run is over.
-    pub fn offered(playing: bool) -> Vec<MenuItem> {
+    /// What is offered while `playing`, or once the run is over, with the
+    /// settings screen when there is one with a row on it.
+    pub fn offered(playing: bool, settings: bool) -> Vec<MenuItem> {
         let mut items = Vec::new();
         if playing {
             items.push(MenuItem::Resume);
         }
-        items.extend([MenuItem::NewRun, MenuItem::SameSeed, MenuItem::Quit]);
+        items.extend([MenuItem::NewRun, MenuItem::SameSeed]);
+        if settings {
+            items.push(MenuItem::Settings);
+        }
+        items.push(MenuItem::Quit);
         items
     }
 
@@ -100,6 +107,7 @@ impl MenuItem {
             MenuItem::Resume => "Back to the run",
             MenuItem::NewRun => "A new run",
             MenuItem::SameSeed => "This seed again",
+            MenuItem::Settings => "Settings",
             MenuItem::Quit => "Quit",
         }
     }
@@ -165,6 +173,13 @@ pub fn game_menu_modal(modals: &Modals) -> ModalId {
     modals.get(GAME_MENU_MODAL).expect("GameMenuPanel declares the menu modal")
 }
 
+/// The settings screen's modal, when the menu should offer it: the panel
+/// was added, and something is declared for it to list. A screen with no
+/// rows is not offered, which is what a build on the web gets.
+fn settings_offered(modals: &Modals, settings: Option<&Settings>) -> Option<ModalId> {
+    crate::panel::settings::settings_modal(modals).filter(|_| settings.is_some_and(|s| !s.is_empty()))
+}
+
 /// What the menu writes when a row is chosen.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Choices<'w> {
@@ -180,6 +195,7 @@ pub struct Opening<'w> {
     binds: Res<'w, MenuKeys>,
     focus: Option<Res<'w, crate::focus::Focus>>,
     sighted: Option<Res<'w, crate::focus::Sighted>>,
+    settings: Option<Res<'w, Settings>>,
 }
 
 impl Opening<'_> {
@@ -216,7 +232,13 @@ pub fn menu_keys(
     if !modals.is_top(modal) {
         return;
     }
-    let items = MenuItem::offered(playing);
+    // A screen that closed over the menu this frame did so on a key that
+    // is still down; it is not the menu's.
+    if modals.closing() {
+        return;
+    }
+    let settings = settings_offered(&modals, opening.settings.as_deref());
+    let items = MenuItem::offered(playing, settings.is_some());
     let bindings = keys.bindings();
     match bindings.directions.just_pressed(input) {
         Some(Direction::North) => menu.selected = (menu.selected + items.len() - 1) % items.len(),
@@ -233,6 +255,11 @@ pub fn menu_keys(
         }
         MenuItem::SameSeed => {
             choices.restarts.write(Restart { seed: seed.map(|s| s.0) });
+        }
+        MenuItem::Settings => {
+            if let Some(settings) = settings {
+                modals.open(settings);
+            }
         }
         MenuItem::Quit => {
             choices.exits.write(AppExit::Success);
@@ -304,6 +331,7 @@ pub struct MenuScreen<'w> {
     state: Res<'w, State<EngineState>>,
     ending: Option<Res<'w, Ending>>,
     view: Res<'w, EndingView>,
+    settings: Option<Res<'w, Settings>>,
     keys: ControlInput<'w>,
     palette: Res<'w, Palette>,
 }
@@ -311,7 +339,7 @@ pub struct MenuScreen<'w> {
 /// Paints the menu while it is open: the ending, if there is one, and the
 /// choices under it.
 pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
-    let MenuScreen { layout, menu, modals, state, ending, view, keys, palette } = &screen;
+    let MenuScreen { layout, menu, modals, state, ending, view, settings, keys, palette } = &screen;
     if !modals.is_open(game_menu_modal(modals)) {
         return;
     }
@@ -352,7 +380,7 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
         }
         words.push((String::new(), Tones::MUTED));
     }
-    let items = MenuItem::offered(playing);
+    let items = MenuItem::offered(playing, settings_offered(modals, settings.as_deref()).is_some());
     let height = ((words.len() + items.len()) as i32 + 2).min(rect.height);
     let rect = Rect::new(rect.x, rect.y, rect.width, height);
     clear(&mut terminal, rect, palette);
