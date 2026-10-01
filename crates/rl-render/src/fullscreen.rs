@@ -36,36 +36,37 @@ impl Plugin for FullscreenPlugin {
     /// Once, before the first frame and after every plugin has finished,
     /// which is after what was remembered has been recalled: a game left
     /// fullscreen opens that way rather than flashing a window first.
+    ///
+    /// On the primary monitor, since a window that does not exist yet is
+    /// on no monitor and asking for the current one is a warning.
     fn cleanup(&self, app: &mut App) {
-        if cfg!(target_arch = "wasm32") {
+        if cfg!(target_arch = "wasm32") || !on(app.world().resource::<Settings>()) {
             return;
         }
-        let wanted = wanted(app.world().resource::<Settings>());
         let mut windows = app.world_mut().query_filtered::<&mut Window, With<PrimaryWindow>>();
-        if let Ok(mut window) = windows.single_mut(app.world_mut())
-            && window.mode != wanted
-        {
-            window.mode = wanted;
+        if let Ok(mut window) = windows.single_mut(app.world_mut()) {
+            window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Primary);
         }
     }
 }
 
-/// The mode the setting asks for.
-fn wanted(settings: &Settings) -> WindowMode {
-    let on = settings.find(FULLSCREEN).is_some_and(|id| settings.chosen(id) == 1);
-    if on { WindowMode::BorderlessFullscreen(MonitorSelection::Current) } else { WindowMode::Windowed }
+/// Whether the setting asks for fullscreen.
+fn on(settings: &Settings) -> bool {
+    settings.find(FULLSCREEN).is_some_and(|id| settings.chosen(id) == 1)
 }
 
-/// Puts the window in the mode the setting asks for, when it is not.
+/// Puts the window in the mode the setting asks for, when it is not, on
+/// the monitor it is on.
 ///
-/// Compared before it is written, so a change to some other setting does
-/// not mark the window changed.
+/// Compared before it is written, and by whether it fills a screen and
+/// not by which, so a change to some other setting neither marks the
+/// window changed nor moves one that opened on the primary monitor.
 fn apply(settings: Res<Settings>, mut windows: Query<&mut Window, With<PrimaryWindow>>) {
-    let wanted = wanted(&settings);
+    let on = on(&settings);
     if let Ok(mut window) = windows.single_mut()
-        && window.mode != wanted
+        && (window.mode != WindowMode::Windowed) != on
     {
-        window.mode = wanted;
+        window.mode = if on { WindowMode::BorderlessFullscreen(MonitorSelection::Current) } else { WindowMode::Windowed };
     }
 }
 
@@ -111,7 +112,12 @@ mod tests {
         set(&mut app, true);
         app.finish();
         app.cleanup();
-        assert_eq!(mode(&app, window), WindowMode::BorderlessFullscreen(MonitorSelection::Current), "no frame has run yet");
+        // The primary monitor: before there is a window there is no monitor
+        // it is on, and asking for the current one is a warning in the log.
+        assert_eq!(mode(&app, window), WindowMode::BorderlessFullscreen(MonitorSelection::Primary), "no frame has run yet");
+        // And a frame later it is left as it was opened, not moved.
+        app.update();
+        assert_eq!(mode(&app, window), WindowMode::BorderlessFullscreen(MonitorSelection::Primary));
     }
 
     #[test]
