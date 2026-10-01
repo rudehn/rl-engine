@@ -12,7 +12,7 @@
             crates/rl-rules/src/accuracy.rs
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/throwing.rs
-     fingerprint: 95890808 -->
+     fingerprint: 58b15a95 -->
 
 # Combat and loadout
 
@@ -51,6 +51,7 @@ A worn thing whose `Consumable` is empty lends no blow or shot, so a spent wand 
 The attack resolver strikes with it, `apply_damage` defends with it, and `blows` and its ranged twin `shots` are what a forecast is filled from, so what a panel says a fight will cost is worked out from the numbers the fight uses.
 `Loadout::arms` packs both of those, both costs and the shot's reach into a `forecast::Arms`, and `Combatant::armed` reads it at the distance the caller passes: one cell away is the melee rolls, further is the shot while the shot reaches, and past its reach is nothing at all.
 That is the rule `resolve_attacks` picks by, kept in one place, so an actor carrying only a gun forecasts as dangerous across the room and harmless once you are beside it rather than as harmless everywhere.
+`Combatant::closing` and `Arms::closing` are the same fight as the two would have it once in reach: where nothing reaches from where they stand, a side is counted with its shot if it has one and its blow if not, so an inspect panel says how many turns a brawler across the room needs rather than never, and only a side with no attack at all reads never.
 `resolve_attacks` picks melee when the two are adjacent and otherwise a shot filtered by `line_of_fire`; an attack with nothing that reaches still spends an ordinary turn, since what was spent was the aim.
 It writes `Struck` before any damage, naming the worn item the attack came from, because what a weapon does to itself happens at the trigger rather than at the target.
 A rolled attack that misses still writes `Struck` and the `fire` moment, since the weapon fired, and then writes `Missed` where it would have landed instead of any damage or `hit` moment; a thrown miss rests where a hit would have and reports that it struck nobody.

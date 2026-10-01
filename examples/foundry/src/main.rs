@@ -149,11 +149,23 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // A droid does not sleep: one that knows of nothing is idle, one
         // walking to a noise is searching, and one that has the commando
         // is hunting.
-        NearbyPanel::new(screen.nearby).titled("").headings("In sight", "On the deck").cursor(CursorStyle::ticks()).alerts(AlertWords::new(
-            "idle",
-            "searching",
-            "hunting",
-        )),
+        NearbyPanel::new(screen.nearby)
+            .titled("")
+            .headings("In sight", "On the deck")
+            .cursor(CursorStyle::ticks())
+            .alerts(AlertWords::new("idle", "searching", "hunting"))
+            // What a droid is doing outranks whether it has the commando:
+            // one running from it, keeping its distance, holding its post
+            // or on its way to a wreck is not hunting it. Everything
+            // unnamed, a blow, a shot or the chase, reads as the alert.
+            .activities(
+                ActivityWords::new()
+                    .word("flee_when_hurt", "fleeing")
+                    .word("shadow", "keeping away")
+                    .word("hover", "keeping away")
+                    .word("keep_post", "guarding")
+                    .word("repair_wrecks", "to a wreck"),
+            ),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
@@ -482,6 +494,38 @@ mod tests {
         let lines = lines(&app);
         let at = |what: &str| lines.iter().position(|l| l.contains(what)).unwrap_or_else(|| panic!("{what:?} not in {lines:#?}"));
         assert!(at("The probe droid notices you.") < at("The probe droid sounds an alarm."), "{lines:#?}");
+    }
+
+    /// A line droid across the room is out of the commando's reach and the
+    /// commando out of its, and the look panel still says how many turns
+    /// each would take once they closed, rather than never both ways.
+    #[test]
+    fn looking_at_a_droid_across_the_room_still_forecasts_turns_both_ways() {
+        let mut app = on_screen(RunSeed(1));
+        let (droid, _) = foundry::testing::droid_facing_player(&mut app, "line droid", 5);
+        foundry::testing::clear_droids(&mut app, &[droid]);
+        app.update();
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::KeyX);
+        let reading = (0..ROWS).map(|y| row(&app, y)).find(|r| r.contains("you fell it in")).expect("a forecast on the look panel");
+        assert!(!reading.contains("never"), "{reading:?}");
+    }
+
+    /// A rat that has the commando in sight and is running from it reads as
+    /// fleeing on the rail, not hunting: what it is doing outranks whether
+    /// it has seen you.
+    #[test]
+    fn a_hurt_rat_running_from_the_commando_reads_fleeing_on_the_rail() {
+        let mut app = on_screen(RunSeed(1));
+        let (rat, me) = foundry::testing::droid_facing_player(&mut app, "coolant rat", 3);
+        app.world_mut().get_mut::<Health>(rat).unwrap().current = 1;
+        foundry::testing::alert(&mut app, rat, me);
+        // Alone on the deck, so nothing else meets it while it runs.
+        foundry::testing::clear_droids(&mut app, &[rat]);
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        let line = (0..ROWS).map(|y| row(&app, y)).find(|r| r.contains("coolant rat (")).expect("the rat is on the rail");
+        assert!(line.contains("coolant rat (fleeing)"), "{line:?}");
     }
 
     /// `t` is the pack, opened on the first thing in it that flies:

@@ -24,7 +24,10 @@
 //! The distance is the caller's to supply, since only the caller knows
 //! where the two stand. [`Combatant::armed`] is the constructor that takes
 //! [`Arms`] and a distance; [`Combatant`] itself still holds one set of
-//! rolls and one cost, already chosen.
+//! rolls and one cost, already chosen. [`Combatant::closing`] and
+//! [`Arms::closing`] are the same fight as the two would have it once in
+//! reach, for a panel that still wants numbers when nothing reaches yet: a
+//! brawler across the room says how many blows it needs rather than never.
 
 use rl_core::DiceRoll;
 use rl_core::turn::BASE_ACTION_COST;
@@ -71,6 +74,17 @@ impl Combatant<'_> {
     /// panel cannot pick differently from the resolver.
     pub fn armed<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
         let (strikes, blow_cost) = arms.at(distance);
+        Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
+    }
+
+    /// A combatant fighting what `arms` gives it at `distance`, or, when
+    /// nothing reaches from there, what it would bring once it closed.
+    ///
+    /// For a panel that wants numbers for a fight the two are not yet in:
+    /// a brawler across the room still says how many blows it needs. See
+    /// [`Arms::closing`]; [`armed`](Self::armed) is the fight as it stands.
+    pub fn closing<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
+        let (strikes, blow_cost) = arms.closing(distance);
         Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
     }
 
@@ -129,6 +143,25 @@ impl<'a> Arms<'a> {
             (self.ranged, self.ranged_cost)
         } else {
             (&[], None)
+        }
+    }
+
+    /// What these arms would fight with once in reach of a target at
+    /// `distance`: [`at`](Self::at) when something reaches from there, and
+    /// otherwise the shot if there is one, since it only has to close to
+    /// its range, or the blow if not.
+    ///
+    /// Beside the target nothing changes: an actor with no blow of its own
+    /// cannot hurt what stands next to it, and saying otherwise would be a
+    /// forecast of a fight the resolver never fights.
+    pub fn closing(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
+        let reach = self.at(distance);
+        if !reach.0.is_empty() || distance <= 1 {
+            reach
+        } else if !self.ranged.is_empty() {
+            (self.ranged, self.ranged_cost)
+        } else {
+            (self.melee, self.melee_cost)
         }
     }
 }
@@ -432,5 +465,29 @@ mod tests {
         assert_eq!(near.turns_to_fell, None, "adjacent, the gun is no use");
         assert_eq!(near.turns_to_fall, Some(4), "and the brawler is swinging");
         assert_eq!(near.outlook, Outlook::Deadly);
+    }
+
+    /// Out of reach, a panel still wants the numbers: a side is forecast
+    /// with what it would bring once it closed, its shot if it has one and
+    /// its blow if not, and only a side with no attack at all reads never.
+    #[test]
+    fn out_of_reach_a_side_is_forecast_with_what_it_would_bring_once_it_closed() {
+        let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
+        let kind = kinds.expect("kinetic");
+        let none = Resistances::new();
+        let stages: [&dyn DamageStage<u32>; 0] = [];
+        let shot = [(kind, DiceRoll::flat(5))];
+        let gunner = Arms { melee: &[], melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
+        let swing = [(kind, DiceRoll::flat(10))];
+        let brawler = Arms { melee: &swing, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
+        let closing = |arms: &Arms<'_>, d: i32| {
+            duel(&Combatant::closing(20, 0, 100, &none, arms, d), &Combatant::unarmed(20, 0, 100, &none), &kinds, &stages).turns_to_fell
+        };
+
+        assert_eq!(closing(&brawler, 5), Some(2), "a brawler across the room still fells it in two blows once it is beside it");
+        assert_eq!(closing(&gunner, 12), Some(4), "a gunner past its reach, in four shots once it is in range");
+        assert_eq!(closing(&gunner, 5), Some(4), "within reach it is the same as armed");
+        assert_eq!(closing(&gunner, 1), None, "beside it with no blow of its own, it still cannot hurt it");
+        assert_eq!(closing(&Arms::none(), 5), None, "and a side with no attack at all never fells anything");
     }
 }

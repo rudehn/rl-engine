@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: b8eeba2c -->
+     fingerprint: 90ea25ba -->
 
 # Panels
 
@@ -60,9 +60,8 @@ What is optional is read as optional: `VitalsViewPlugin` reads `NoiseHeard` thro
 
 ## The model
 
-`Row` is one entity as a panel reads it: the `entity` itself, the `label` from its `Name`, its own `Glyph`, a Chebyshev `distance`, an optional `relation` and `health`, an optional `alert`, an optional `work`, and the `facets` a game pushed.
-`WorkRow` is what an actor is working at, the kind's word, the target's name and the turns left, and any collector fills it through `Workings`; the nearby rail writes the word where it would write the alert, and inspect adds a line from `InspectPanel::working`'s templates, `"{doing} the {target}, {left} left"` by default.
-The glyph is content rather than theme, which is why a green slime stays green in every palette, and `relation` and `health` are optional because a thing on the floor has neither.
+`Row` is one entity as a panel reads it: the `entity` itself, the `label` from its `Name`, its own `Glyph`, which is content rather than theme so a green slime stays green in every palette, a Chebyshev `distance`, an optional `relation` and `health`, since a thing on the floor has neither, an optional `alert`, `work` and `doing`, and the `facets` a game pushed.
+`WorkRow` is what an actor is working at, the kind's word, the target's name and the turns left, filled through `Workings`, and `doing` is the tactic that decided its last turn; the rail writes the work's word, else the game's word for that tactic through `ActivityWords`, keyed by tactic name, else the alert, so a monster that has you in sight and is running reads fleeing rather than hunting, and inspect adds a work line from `InspectPanel::working`'s templates, `"{doing} the {target}, {left} left"` by default.
 `Alert` is `Unaware`, `Searching` or `Hunting`, three readings and no more because three is what the engine can say without guessing; what each is *called* is the presenter's, since one game's monsters sleep where another's stand idle.
 `Bar` is a label, a value, a maximum and a tone, and `fraction` is how full it reads.
 A view holds no `Color`, no `Rect` and no string the game did not supply, so the same data serves the terminal panels, a game's own drawing and a test that never opens a window.
@@ -84,7 +83,7 @@ An aim put away, fired or not, leaves nothing picked out, so the rail is not lef
 `VitalsView` is the player: a label, a list of `Bar`s, armor, status badges, game facets, the turn, the position, whether the player is seen, the `LightBand` it stands in, and how loud it has been.
 `exposure` is `None` without lighting, and the strip prints it beside seen or hidden, since the same band decides how well a watcher sees the player and how hard it is to hit.
 `NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one and `primary` false only on a two-hander's claimed hand, whose row is the same item worn twice.
-`InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it and a `Duel` fought at the distance the cursor stands from the player.
+`InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it and a `Duel` fought at the distance the cursor stands from the player, each side counted as it would fight once in reach, so a monster across the room still reads in turns.
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
 Each side's chance of landing what it would attack with from there comes from `Marksmanship::at_distance` and scales its `Combatant` through `hitting`, and the player's own is kept as `odds` for the panel to print under the forecast, the same lines the targeting cursor prints.
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.

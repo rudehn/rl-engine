@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: e1e411ea -->
+     fingerprint: c68fa045 -->
 
 # Stealth
 
@@ -125,7 +125,7 @@ A `Perception` is still the hard cap on how far an actor notices anything at all
 `notices` takes a `lit` flag rather than a `Lighting`, so it stays pure and a game is free to decide exposure means standing in water, or on open ground, or having shouted a moment ago.
 Light is the one exposure term the engine ships, and it is one number, so a creature with `lit_bonus: 0` is one that hunts by something other than the eye without the engine learning a word for it.
 Hearing is a separate lever that this never reads: it brings a monster close, and close is where the roll is likely to land.
-What the player reads off it is `Alert::Hunting` on a nearby row, and hunting outranks searching, since something that has seen you is not still wondering about a noise.
+What the player reads off it is `Alert::Hunting` on a nearby row, unless the game named what the monster is doing, which outranks it, and hunting outranks searching, since something that has seen you is not still wondering about a noise.
 Something that had you and lost you to the unseen reads `Alert::Searching`, since it is on its way to where it last knew of you, and neither hunting, since nothing sees the unseen, nor idle, since it has not forgotten.
 `Aware` is not saved, so a monster that had noticed you has forgotten by the time a continued run begins.
 

@@ -64,12 +64,23 @@ pub struct Profile(pub MovementProfile);
 /// a kind think alike.
 ///
 /// Requires [`Intelligence`], sapient unless the spawn says otherwise,
-/// [`CameFrom`], so a wanderer knows not to step straight back, and a
-/// [`Viewshed`] of its own, sized by its [`Perception`] when it is cast.
+/// [`CameFrom`], so a wanderer knows not to step straight back, a
+/// [`Viewshed`] of its own, sized by its [`Perception`] when it is cast,
+/// and [`Doing`], what decided its last turn.
 #[derive(Component, Clone)]
 #[component(on_add = report_mind_without_plugin)]
-#[require(Intelligence, CameFrom, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
+#[require(Intelligence, CameFrom, Doing, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
 pub struct Mind(pub Arc<Brain<Entity>>);
+
+/// The name of the tactic that decided this mind's last turn, `None` when
+/// no tactic did and the turn was a wait.
+///
+/// So a panel can say what a monster is doing and not only whether it has
+/// seen you: a monster that has you in sight and is running from you is
+/// not hunting you. The name is the tactic's own trace name, the same one
+/// a decision's trace prints; what a game calls it is the game's.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Doing(pub Option<&'static str>);
 
 /// What an actor is able to do, whatever its brain would like: whether it
 /// runs, searches, and works doors.
@@ -550,7 +561,7 @@ pub struct MindIntents<'w> {
 }
 
 /// The mind holding the turn, as the decision reads it.
-type Deciding = (&'static Mind, &'static Position, Option<&'static Profile>, Option<&'static Intelligence>, &'static mut CameFrom);
+type Deciding = (&'static Mind, &'static Position, Option<&'static Profile>, Option<&'static Intelligence>, &'static mut CameFrom, &'static mut Doing);
 
 /// Lets the mind holding the turn decide it, from the snapshot the
 /// perceive stage filled.
@@ -567,7 +578,7 @@ pub fn decide_minds(
     mut minds: Query<Deciding, With<MyTurn>>,
 ) {
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
-    let Ok((mind, my_pos, profile, intelligence, mut came_from)) = minds.get_mut(thinker) else { return };
+    let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
     let MindWorld { fields, rng, map, occupancy } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
@@ -593,11 +604,12 @@ pub fn decide_minds(
         bounds: map.window_tiles(),
         rng: &mut rng.0,
     };
-    let (decision, _which) = mind.0.decide(&mut ctx);
+    let (decision, which) = mind.0.decide(&mut ctx);
     if !acting.claim_decision(thinker) {
         return;
     }
     came_from.0 = None;
+    doing.0 = which;
     match decision {
         // A step onto a shut door is the turn spent opening it: the door is
         // its own action, and the mind knows what it is walking into.
@@ -764,6 +776,34 @@ mod tests {
             count.0 += 1;
             resolution.done(intent.actor, rl_core::turn::BASE_ACTION_COST);
         }
+    }
+
+    /// A mind keeps the name of the tactic that decided its last turn, so a
+    /// panel can say what it is doing and not only whether it has seen you;
+    /// a turn no tactic decided keeps nothing.
+    #[test]
+    fn a_mind_keeps_the_name_of_the_tactic_that_decided_its_turn() {
+        let (mut app, start, _) = arena();
+        app.init_resource::<Shoves>().add_choice::<Shoved>().add_systems(crate::plugin::Turn, resolve_shoves.in_set(crate::plugin::ResolveSet::Act));
+        let (us, them) = (rl_rules::FactionId::from_raw(0), rl_rules::FactionId::from_raw(1));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let shover = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(1, 0)), Health::full(5), Faction(them), Perception(8), Mind(Arc::new(Brain::new().then(Shove)))))
+            .id();
+        let idle = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(-3, 0)), Health::full(5), Faction(them), Perception(8), Mind(Arc::new(Brain::new()))))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..6 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        assert_eq!(app.world().get::<Doing>(shover), Some(&Doing(Some("shove"))), "the tactic that decided");
+        assert_eq!(app.world().get::<Doing>(idle), Some(&Doing(None)), "and nothing for a turn no tactic decided");
     }
 
     #[test]

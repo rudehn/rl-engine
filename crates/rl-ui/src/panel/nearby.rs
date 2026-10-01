@@ -5,6 +5,8 @@
 //! with Tab sees which glyph each row is. A cursor draws its own mark on
 //! the map, and the rail leaves the map to it.
 
+use std::collections::BTreeMap;
+
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
 use rl_core::Rect;
@@ -32,6 +34,10 @@ pub struct NearbyLayout {
     /// says nothing at all for that state, which is what a game that
     /// wants only "hunting" written does with the other two.
     pub alerts: AlertWords,
+    /// What a monster is doing, by the tactic that decided its last turn, in
+    /// the game's own words; written in place of the alert word for a tactic
+    /// the game named.
+    pub activities: ActivityWords,
     /// How the cell of the row picked out is marked on the map. A glow by
     /// default, since the rail's own highlight is a glow and the two read
     /// as one thing.
@@ -77,6 +83,36 @@ impl AlertWords {
     }
 }
 
+/// What a monster is doing, by the name of the tactic that decided its last
+/// turn, in the game's own words.
+///
+/// An alert says whether a monster has noticed you, which is not what it is
+/// doing about it: one that has you in sight and is running is not hunting
+/// you. The engine names no activity itself, since what a retreat is called
+/// is a game's, so a game names the tactics worth naming, its own among
+/// them, and a tactic it leaves unnamed reads as the alert. Keyed by the
+/// tactic's own trace name, the one [`Doing`](rl_bevy::Doing) records.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActivityWords(BTreeMap<String, String>);
+
+impl ActivityWords {
+    /// No activity named: every row reads its alert.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The same, with the tactic called `tactic` written as `word`.
+    pub fn word(mut self, tactic: impl Into<String>, word: impl Into<String>) -> Self {
+        self.0.insert(tactic.into(), word.into());
+        self
+    }
+
+    /// What the tactic called `tactic` is written as, if the game named it.
+    pub fn get(&self, tactic: &str) -> Option<&str> {
+        self.0.get(tactic).map(String::as_str).filter(|w| !w.is_empty())
+    }
+}
+
 /// Draws [`NearbyView`] as a rail.
 ///
 /// Adds [`NearbyViewPlugin`] if the game has not, because a panel with no
@@ -92,6 +128,7 @@ impl NearbyPanel {
             actors: "In sight".into(),
             things: "On the ground".into(),
             alerts: AlertWords::default(),
+            activities: ActivityWords::default(),
             cursor: CursorStyle::glow(Tones::SELECT),
         })
     }
@@ -119,6 +156,12 @@ impl NearbyPanel {
     /// Sets what each state is called on a row.
     pub fn alerts(mut self, words: AlertWords) -> Self {
         self.0.alerts = words;
+        self
+    }
+
+    /// Sets what each named activity is called on a row.
+    pub fn activities(mut self, words: ActivityWords) -> Self {
+        self.0.activities = words;
         self
     }
 }
@@ -186,14 +229,14 @@ pub fn draw_nearby(
             if y >= bottom {
                 break;
             }
-            draw_row(&mut terminal, inner, y, row, view.is_focused(row), &layout.alerts, &palette);
+            draw_row(&mut terminal, inner, y, row, view.is_focused(row), &layout, &palette);
             y += 1;
         }
         y += 1;
     }
 }
 
-fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, words: &AlertWords, palette: &Palette) {
+fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, layout: &NearbyLayout, palette: &Palette) {
     // The row is the bar: health fills it from the left in the health's
     // own tone, mixed into the row's background rather than painted over
     // it, so a wounded thing reads at a glance without a column of its
@@ -225,7 +268,12 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
     // state a player reads rather than a mark they learn. What it is busy
     // with outranks what it knows of you, since something at work is not
     // coming for anyone, whatever it has noticed.
-    let state = row.work.as_ref().map(|w| w.doing.as_str()).or_else(|| row.alert.and_then(|alert| words.get(alert)));
+    let state = row
+        .work
+        .as_ref()
+        .map(|w| w.doing.as_str())
+        .or_else(|| row.doing.and_then(|tactic| layout.activities.get(tactic)))
+        .or_else(|| row.alert.and_then(|alert| layout.alerts.get(alert)));
     if let Some(word) = state {
         name.push_str(" (");
         name.push_str(word);
@@ -292,9 +340,34 @@ mod tests {
         row.alert = Some(Alert::Hunting);
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &AlertWords::default(), &palette);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert!(said.contains("(hunting)"), "{said:?}");
+    }
+
+    /// What a monster is doing, in the game's words, outranks whether it has
+    /// seen you: one that has you in sight and is running reads fleeing, not
+    /// hunting. A tactic the game named nothing falls back to the alert, and
+    /// work outranks both.
+    #[test]
+    fn what_an_actor_is_doing_is_written_in_the_games_words_before_its_alert() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 30, 10)).titled("")).screen(30, 10);
+        stage.actor("rat", 'r', 2, 0);
+        stage.tick();
+        let palette = stage.app.world().resource::<Palette>().clone();
+        let layout = NearbyPanel::new(Rect::new(0, 0, 30, 10)).activities(ActivityWords::new().word("flee_when_hurt", "fleeing")).0;
+        let say = |doing: Option<&'static str>, work: bool| {
+            let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
+            row.alert = Some(Alert::Hunting);
+            row.doing = doing;
+            row.work = work.then(|| crate::view::WorkRow { doing: "mending".into(), target: None, left: 3 });
+            let mut terminal = Terminal::new(30, 1, bevy::math::Vec2::ONE);
+            draw_row(&mut terminal, Rect::new(0, 0, 30, 1), 0, &row, false, &layout, &palette);
+            (0..30).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect::<String>()
+        };
+        assert!(say(Some("flee_when_hurt"), false).contains("rat (fleeing)"), "{:?}", say(Some("flee_when_hurt"), false));
+        assert!(say(Some("hunt"), false).contains("rat (hunting)"), "a tactic the game named nothing reads as the alert");
+        assert!(say(Some("flee_when_hurt"), true).contains("rat (mending)"), "and work outranks both");
     }
 
     #[test]
@@ -307,7 +380,7 @@ mod tests {
         row.work = Some(crate::view::WorkRow { doing: "mending".into(), target: None, left: 3 });
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &AlertWords::default(), &palette);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert!(said.contains("drone (mending)"), "{said:?}");
         assert!(!said.contains("hunting"), "what it is busy with, not what it knows: {said:?}");

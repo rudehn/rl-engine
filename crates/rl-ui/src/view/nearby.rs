@@ -114,6 +114,7 @@ pub struct Around<'w, 's> {
     heard: Query<'w, 's, &'static rl_bevy::Heard>,
     stacks: Query<'w, 's, &'static Stack>,
     work: crate::view::Workings<'w, 's>,
+    doing: Query<'w, 's, &'static rl_bevy::Doing>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
@@ -153,6 +154,7 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
                 _ => None,
             };
             row.work = around.work.row(sighting.entity);
+            row.doing = around.doing.get(sighting.entity).ok().and_then(|d| d.0);
         }
         if sighting.actor { view.actors.push(row) } else { view.things.push(row) }
     }
@@ -361,6 +363,19 @@ mod tests {
         stage.tick();
         stage.tick();
         assert_eq!(stage.app.world().resource::<NearbyView>().focused, None, "out of sight, so nothing is highlighted");
+    }
+
+    #[test]
+    fn a_row_says_which_tactic_decided_an_actors_last_turn() {
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let runner = stage.actor("runner", 'r', 2, 0);
+        let still = stage.actor("still", 's', 3, 0);
+        stage.app.world_mut().entity_mut(runner).insert(rl_bevy::Doing(Some("flee_when_hurt")));
+        stage.tick();
+        let view = stage.app.world().resource::<NearbyView>();
+        let doing = |e: Entity| view.actors.iter().find(|r| r.entity == e).unwrap().doing;
+        assert_eq!(doing(runner), Some("flee_when_hurt"));
+        assert_eq!(doing(still), None, "and nothing for an actor no tactic has decided for");
     }
 
     #[test]
