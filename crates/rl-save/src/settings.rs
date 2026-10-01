@@ -1,6 +1,6 @@
 //! Remembering what a player chose.
 //!
-//! [`Settings`](rl_bevy::settings::Settings) is plain data that knows
+//! [`Settings`] is plain data that knows
 //! nothing of storage, and the settings screen draws it without knowing
 //! either. This is the third part: one slot, read once before the first
 //! frame and written whenever a setting changes.

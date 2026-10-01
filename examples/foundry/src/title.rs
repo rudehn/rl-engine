@@ -115,7 +115,7 @@ pub fn look_for_save(world: &mut World) {
 ///
 /// While the title is up the screen is moved to stand over the title's
 /// own menu, where the player is already looking: where the game put it
-/// for a run is across the title's lettering. [`begin`] puts it back.
+/// for a run is across the title's lettering. Starting a run puts it back.
 pub fn look_for_settings(
     mut title: ResMut<Title>,
     modals: Option<Res<Modals>>,

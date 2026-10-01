@@ -8,7 +8,7 @@
             crates/rl-world/src/sites.rs
             crates/rl-render/src/terminal.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: df421495 -->
+     fingerprint: 37bf4408 -->
 
 # The overworld
 

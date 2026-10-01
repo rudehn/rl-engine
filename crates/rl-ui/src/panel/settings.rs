@@ -1,7 +1,7 @@
 //! The settings screen: every declared setting under its heading, and the
 //! keys that change them.
 //!
-//! It lists [`Settings`](rl_bevy::settings::Settings) and nothing else, so
+//! It lists [`Settings`] and nothing else, so
 //! what it shows is what the engine and the game read. It does not know
 //! what any setting does: whoever declared one watches the registry.
 //!

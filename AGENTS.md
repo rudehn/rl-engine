@@ -54,7 +54,7 @@ crates/<name>/benches/          criterion, on realistic maps, only for hot paths
 docs/PLAN.md                    the design and milestones
 docs/design/                    how one subsystem works, and why: abilities, accuracy, effects,
                                 fields, items, lighting, loot, minds, noise, prefabs, props,
-                                remains, stealth, ui, work
+                                remains, settings, stealth, ui, work
 docs/guide/                     the mdBook; every chapter quotes examples/tutorial
 docs/reviews/                   the evidence
 scripts/check-tiers.sh          the tier boundary check
