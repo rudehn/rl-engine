@@ -55,6 +55,8 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("ammo::sync_ammo", id(ammo::sync_ammo)),
         ("droids::populate_deck", id(droids::populate_deck)),
         ("droids::sound_alarm", id(droids::sound_alarm)),
+        ("droids::sense_alarm", id(droids::sense_alarm)),
+        ("droids::lower_alarm", id(droids::lower_alarm)),
         ("droids::sense_wrecks", id(droids::sense_wrecks)),
         ("droids::rebuild_wrecks", id(droids::rebuild_wrecks)),
         ("droids::shout_alarm", id(droids::shout_alarm)),
@@ -202,11 +204,17 @@ fn allowed(world: &World) -> Vec<Allowed> {
     let allowed = vec![
         Allowed { a: None, b: None, on: on(&claims), why: "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass" },
         pair(
-            id(droids::sound_alarm),
+            id(droids::lower_alarm),
             id(stealth::wake_on_damage),
-            &["Messages<Noticed>"],
-            "a probe woken by a blow is logged sounding the alarm this pass or the next, after its notice either way",
+            &["Aware"],
+            "an alarm is lowered only on a probe that knows of nobody; one a blow wakes in the same pass either keeps its alarm or signals again, and both are right for a probe that had lost the commando",
         ),
+        Allowed {
+            a: Some(id(droids::sense_alarm)),
+            b: None,
+            on: on(&["Thinking"]),
+            why: "one contributor per field of the snapshot: the probe's sense pushes `Signal`, a sense of its own type, and nothing else, and it is sorted once after them all",
+        },
         pair(
             id(droids::shout_alarm),
             id(stealth::wake_on_damage),
