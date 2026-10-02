@@ -108,7 +108,7 @@ pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
-pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
 pub use work::{AddWork, BeginWork, BreakReason, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPlugin, Working, Works};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
@@ -168,7 +168,7 @@ pub mod prelude {
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
-    pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+    pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
     pub use crate::work::{AddWork, WorkDone, WorkKinds, WorkPlugin, Working};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
     pub use rl_grid::LightBand;

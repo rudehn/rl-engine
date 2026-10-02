@@ -67,6 +67,87 @@ impl Turns {
     }
 }
 
+/// How fast the turns run while nobody is waited on.
+///
+/// The loop stops for a player holding a turn, which is the only pace a
+/// game somebody plays needs: the world moves when the player does. A run
+/// nobody plays has nothing to stop for, and unpaced it is over in a few
+/// frames. A pace is game time allowed per second of the wall clock: the
+/// loop earns it each frame and spends it as the turn clock advances, so a
+/// fight is watched at the speed it is set to whatever the frame rate.
+///
+/// Passes that do not move the clock are free, so everyone due at one
+/// reading acts in one frame, and a pass that jumps the clock a long way
+/// is paid off over the frames after it rather than refused. The pace only
+/// decides how many passes a frame runs, never what a pass does, so the
+/// same seed plays the same run at any pace, stopped and started or not.
+///
+/// Whoever holds a turn at the head of a frame is still answered: a
+/// player's intent is resolved in the frame it was written at any pace.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Pace {
+    /// Hundredths of a step per second, or `None` for as fast as the loop
+    /// runs.
+    rate: Option<u32>,
+    /// Game time earned and not yet spent, in millionths of a hundredth of
+    /// a step, so a frame of a few milliseconds earns a whole number.
+    credit: i64,
+}
+
+impl Pace {
+    /// The most a slow frame earns, in microseconds of wall clock: a hitch
+    /// is not answered by a burst of turns nobody saw.
+    const MOST_EARNED_MICROS: i64 = 250_000;
+
+    /// As fast as the loop runs, which is the default and what a game
+    /// somebody plays wants.
+    pub const fn unpaced() -> Self {
+        Self { rate: None, credit: 0 }
+    }
+
+    /// `hundredths` of a step of game time for each second watched: 100 is
+    /// one ordinary step a second.
+    pub const fn per_second(hundredths: u32) -> Self {
+        Self { rate: Some(hundredths), credit: 0 }
+    }
+
+    /// No turn is dealt until the pace is changed.
+    pub const fn stopped() -> Self {
+        Self::per_second(0)
+    }
+
+    /// Hundredths of a step per second, or `None` when unpaced.
+    pub fn rate(&self) -> Option<u32> {
+        self.rate
+    }
+
+    /// Whether no turn is dealt at all.
+    pub fn is_stopped(&self) -> bool {
+        self.rate == Some(0)
+    }
+
+    /// Earns what `elapsed` of the wall clock allows.
+    pub(crate) fn earn(&mut self, elapsed: std::time::Duration) {
+        let Some(rate) = self.rate else { return };
+        let micros = i64::try_from(elapsed.as_micros()).unwrap_or(i64::MAX).min(Self::MOST_EARNED_MICROS);
+        // Never above what one capped frame earns: a pace left idle, with
+        // nothing to deal, does not save up a burst for when there is.
+        self.credit = (self.credit + i64::from(rate) * micros).min(i64::from(rate) * Self::MOST_EARNED_MICROS);
+    }
+
+    /// Pays for the turn clock having advanced by `hundredths`.
+    pub(crate) fn spend(&mut self, hundredths: u32) {
+        if self.rate.is_some() {
+            self.credit -= i64::from(hundredths) * 1_000_000;
+        }
+    }
+
+    /// Whether the pace allows no more game time this frame.
+    pub(crate) fn is_spent(&self) -> bool {
+        self.rate.is_some() && self.credit <= 0
+    }
+}
+
 /// Who is standing where on the current map. Only entities with
 /// [`Blocks`] are indexed. Other maps' indexes are kept aside and swapped
 /// in when the player goes there.

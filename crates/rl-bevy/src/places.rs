@@ -560,6 +560,42 @@ mod tests {
         entered.0.extend(events.read().copied());
     }
 
+    /// An onlooker is a player that is no actor: it takes no turn, and the
+    /// map being read still follows it, so a run nobody plays is set in a
+    /// place by warping its onlooker there.
+    #[test]
+    fn the_map_being_read_follows_an_onlooker_into_a_place() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard())))).init_resource::<Entered>().add_systems(PostUpdate, record_entered);
+        let onlooker = app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), RevealsMap)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let cave = MapId(3);
+        app.world_mut().write_message(WarpRequest::into_place(onlooker, cave));
+        app.update();
+        // Someone put in the place once it is the map being read acts there.
+        let entry = app.world().resource::<WorldMap>().place(cave).expect("the place was built").entry;
+        let dweller = app.world_mut().spawn((Actor, Blocks, Position(entry))).id();
+        for _ in 0..3 {
+            app.update();
+        }
+
+        let w = app.world();
+        let map = w.resource::<WorldMap>();
+        assert_eq!(map.current(), cave, "the place is the map being read");
+        let place = map.place(cave).unwrap();
+        assert_eq!(w.resource::<Entered>().0, vec![PlaceEntered { map: cave, first: true, entry: place.entry, exit: place.exit }], "and it was entered, once");
+        assert!(w.get::<MyTurn>(onlooker).is_none(), "the onlooker is never dealt a turn");
+        let sight = w.get::<Viewshed>(onlooker).unwrap();
+        assert_eq!(sight.visible.count(), 40 * 30, "it sees the whole place, walls and all");
+        assert!(w.resource::<Knowledge>().is_explored(Point::new(0, 0)), "and remembers its far corner");
+        assert_eq!(w.get::<OnMap>(dweller).map(|m| m.0), Some(cave));
+        assert!(w.resource::<Turns>().now() > 0, "whoever is in the place is dealt turns with nobody playing");
+    }
+
     #[test]
     fn a_transition_takes_the_player_down_and_a_warp_brings_it_back_to_the_same_place() {
         let mut r = rig();
