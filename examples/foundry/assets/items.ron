@@ -104,7 +104,7 @@
     // to live through first. Both are spent by being used: one charge each,
     // so one off the stack, and the last one takes the item with it.
     (name: "stim", glyph: '!', color: (0.55, 0.9, 0.63), tags: ["med"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "use", effects: [(kind: "Mend", args: (kind: "care", roll: "2d4+5"))])]),
+     triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "2d4+5"))])]),
     (name: "medkit", glyph: '!', color: (0.78, 0.94, 0.82), tags: ["med"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "mending", turns: 10))])]),
     // ANCHOR: grenades
@@ -136,7 +136,7 @@
     // not to swap to. A level adds no armor: the clock is what it is for.
     (name: "nanite plate", glyph: '[', color: (0.55, 0.9, 0.7), slot: "torso", tags: ["armor"], armor: 1,
      enchant: (max: 9, armor: 0, pulse: -100),
-     triggers: [(on: "pulse", every: 1000, effects: [(kind: "Mend", args: (kind: "care", roll: "1"))])]),
+     triggers: [(on: "pulse", every: 1000, effects: [(kind: "Mend", args: (roll: "1"))])]),
     // Used while worn, nothing sees the commando for ten turns, two more
     // for every level, until they strike or until the plate comes off.
     // Its one charge comes back over forty turns worn, and it is empty

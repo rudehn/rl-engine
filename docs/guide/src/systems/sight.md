@@ -7,7 +7,7 @@
             crates/rl-bevy/src/knowledge.rs
             crates/rl-grid/src/fov.rs
             crates/rl-grid/src/light.rs
-     fingerprint: b542f118 -->
+     fingerprint: a2f19ee6 -->
 
 # Sight and lighting
 
@@ -21,7 +21,7 @@ The player and every mind are cast and cut by the same code, so an unlit monster
 `FovPlugin` recasts every stale viewshed once a frame, in `EngineSet::Fov`.
 With it alone there is no dark: `visible` is a copy of `line`, and an actor sees every tile it has an unobstructed line to.
 `LightingPlugin` adds the field and the gate.
-It inserts `Lighting::dark()`, casts in `EngineSet::Light` ahead of sight, burns `Fuel` in `ResolveSet::Effects`, and resets `Lighting` to dark on a new run so that each run writes its own ambient.
+It inserts `Lighting::dark()`, casts in `EngineSet::Light` ahead of sight and again in `DecideSet::Light` in any pass since a light changed, so a mind decides by the light as it is on its own turn, burns `Fuel` in `ResolveSet::Effects`, and resets `Lighting` to dark on a new run so that each run writes its own ambient.
 Adding it without `FovPlugin` builds a field nothing reads, because the gate is applied by the one function that writes a viewshed.
 Both declare `depends_on::<CorePlugin>` in `finish`, which runs after every plugin is added, so the order they go into `add_plugins` does not matter.
 A game that adds neither has no sight: nothing ever casts a `Viewshed`, `can_see` is false on every tile, and the map view draws nothing.
@@ -97,5 +97,5 @@ What the bands are worth is the game's: the engine names them, stealth reads the
 
 `rl-grid` is tier 1 and has no Bevy in it: `fov.rs` is the symmetric shadowcast, and `light.rs` is `Rgb`, `Light`, `Emitter` and the `LightField` that casts and composes them.
 Both read a borrowed `OpacitySource` and write into buffers the caller owns, so a recast allocates nothing and either can be tested without an `App`.
-`rl-bevy` is tier 2 and has the plugins: `fov.rs` holds `is_stale`, `cast` and `update_viewsheds` over the `Viewshed` that `components.rs` defines, and `lighting.rs` holds the light components, the `Lighting` resource, `update_lighting`, `tick_fuel` and `gate`.
+`rl-bevy` is tier 2 and has the plugins: `fov.rs` holds `is_stale`, `cast` and `update_viewsheds` over the `Viewshed` that `components.rs` defines, and `lighting.rs` holds the light components, the `Lighting` resource, `update_lighting`, `relight`, `tick_fuel` and `gate`.
 `rl-render` reads the composed field once more, for the color and the waver that gameplay ignores.

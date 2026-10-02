@@ -147,19 +147,14 @@ pub fn registries() -> Registries {
         // electricity is: plate heats through, and a tick of `scorched`
         // that armor could stop would never tick at all.
         DamageKind::new("thermal").unarmored(),
-        // The kind a `Mend` is dealt as, like Corsair's and Delve's; no
-        // profile resists it, so a heal lands in full.
-        DamageKind::new("care").unarmored(),
     ])
     .unwrap();
-    // Mending is what a medkit's gel does: two a turn through the same
-    // pipeline a wound comes in by, so plate and resistances have nothing
-    // to say about it and the commando reads the gain in the log a blow
-    // reads in. `Stacking::Refresh` is the default and is the rule that
+    // Mending is what a medkit's gel does: two a turn, as a mend and not
+    // as damage of some kind, so plate and resistances have nothing to say
+    // about it. `Stacking::Refresh` is the default and is the rule that
     // matters here: a second medkit puts the clock back to ten turns
     // rather than mending four a turn, so a pack of them is a longer
     // recovery and never a faster one.
-    let care = damage_kinds.expect("care");
     // Scorched is what standing in fire leaves on whoever stood there, a
     // point a turn for as long as `run::start`'s `FireRules` says. Cloaked,
     // last, ticks nothing: it hides whoever holds it and does no more.
@@ -167,7 +162,7 @@ pub fn registries() -> Registries {
     let thermal = damage_kinds.expect("thermal");
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") },
-        StatusDef { badge: Some('+'), ..StatusDef::new("mending").ticks(care, -MEND_PER_TURN).boon() },
+        StatusDef { badge: Some('+'), ..StatusDef::new("mending").mends(MEND_PER_TURN).boon() },
         StatusDef { badge: Some('^'), ..StatusDef::new("scorched").ticks(thermal, 1) },
         // What a cloak plate's charge puts on its wearer: nothing sees them
         // until it runs out or they strike.

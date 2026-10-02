@@ -50,8 +50,6 @@ pub fn load(seed: RunSeed, home: Point, effects: &EffectKinds) -> Loaded {
             DamageKind::new("claw"),
             DamageKind::new("fist"),
             DamageKind::new("fire"),
-            // What a swig mends with: nothing in the way of it.
-            DamageKind::new("care").unarmored(),
         ])
         .unwrap(),
         factions: Registry::from_defs(vec![FactionDef::new("player"), FactionDef::new("beasts"), FactionDef::new("cutthroats"), FactionDef::new("navy")])

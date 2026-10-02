@@ -217,6 +217,9 @@ pub fn draw_sheet(
                 if let Some((kind, amount)) = &s.ticks {
                     does.push(format!("{amount} {kind} a turn"));
                 }
+                if let Some(amount) = s.mends {
+                    does.push(format!("mends {amount} a turn"));
+                }
                 let turns = if s.turns == 1 { "1 turn".to_string() } else { format!("{} turns", s.turns) };
                 if does.is_empty() { format!("{} {turns}", s.name) } else { format!("{} {turns}   {}", s.name, does.join(", ")) }
             })

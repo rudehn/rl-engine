@@ -53,7 +53,7 @@ So an item may write what it holds once, as `effects`, and each trigger that nam
 ```ron
 (name: "healing draught", stack: true, throw: (range: 5),
  consumable: (charges: 1, when_empty: Destroyed),
- effects: [(kind: "Mend", args: (kind: "care", roll: "2d6"))],
+ effects: [(kind: "Mend", args: (roll: "2d6"))],
  triggers: [(on: "use"), (on: "land", area: Burst(radius: 1))]),
 ```
 

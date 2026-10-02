@@ -30,6 +30,7 @@ use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rl_core::{Direction, Grid2D, Point, geometry};
 use rl_grid::{BitGrid, DijkstraMap, PathRules};
+use rl_rules::ai::tactics::{Station, Ways};
 use rl_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 
 use crate::ability::Use;
@@ -38,7 +39,7 @@ use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
 use crate::items::{EquipFromGround, PickUp};
 use crate::lighting::{DarkSight, Lighting};
-use crate::places::{MapId, OnMap};
+use crate::places::{GoThrough, MapId, OnMap, Transition};
 use crate::throwing::Throw;
 use crate::turn::{Acting, Action, AddAction, Intent, Occupancy, Step, Wait};
 use crate::world::WorldMap;
@@ -69,7 +70,7 @@ pub struct Profile(pub MovementProfile);
 /// and [`Doing`], what decided its last turn.
 #[derive(Component, Clone)]
 #[component(on_add = report_mind_without_plugin)]
-#[require(Intelligence, CameFrom, Doing, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
+#[require(Intelligence, CameFrom, Doing, Trails, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
 pub struct Mind(pub Arc<Brain<Entity>>);
 
 /// The name of the tactic that decided this mind's last turn, `None` when
@@ -81,6 +82,19 @@ pub struct Mind(pub Arc<Brain<Entity>>);
 /// a decision's trace prints; what a game calls it is the game's.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Doing(pub Option<&'static str>);
+
+/// Whom a mind was after or keeping beside when it last decided: the
+/// enemies it saw, when the tactic that decided was one that closes on or
+/// watches them, and the allies it saw, when its brain keeps it beside
+/// them at all.
+///
+/// Read when one of them goes through a way to another map, which a mind
+/// standing next to it then takes too. Kept only for a mind with
+/// [`Wits::TRAVELS`] and empty for every other, so a monster that stays
+/// on its map pays nothing for those that do not. Not saved: it is
+/// rewritten on the mind's next turn.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct Trails(pub Vec<Entity>);
 
 /// What an actor is able to do, whatever its brain would like: whether it
 /// runs, searches, and works doors.
@@ -118,10 +132,73 @@ pub struct Post(pub Point);
 /// what a closed door costs; and whether it leads away rather than toward.
 type FieldKey = (Vec<Point>, MovementProfile, bool, bool);
 
-/// How many fields are kept before the cache starts over. A moving goal is
-/// a new key every turn, so without a bound the cache would grow for as
-/// long as nothing changed the map.
+/// What one flood is from: a single goal cell in world coordinates, the
+/// movement class it is walked by, and whether that class opens doors.
+type FloodKey = (Point, MovementProfile, bool);
+
+/// How many fields, and how many floods, are kept. A moving goal is a new
+/// key every turn, so without a bound either would grow for as long as
+/// nothing changed the map.
 const FIELD_CACHE: usize = 32;
+
+/// The largest roster a field is composed for from one flood per goal; a
+/// larger one is flooded once from all of its goals together. Composing is
+/// what lets two minds that see different enemies share work, and it costs
+/// a flood per goal that moved, so it pays while the goals are few: the
+/// player and a companion or two. A companion looking at thirty monsters
+/// that all moved is thirty floods composed and one flooded whole.
+const COMPOSED_UP_TO: usize = 4;
+
+/// A bounded cache that forgets what was asked for longest ago.
+///
+/// Starting over when full, which this replaced, threw away the field
+/// every hunter was reading along with the thirty-one nobody was, once a
+/// turn in a busy fight.
+struct Recent<K, V> {
+    /// Counts every ask, so each entry knows how lately it was wanted.
+    asked: u64,
+    entries: BTreeMap<K, (u64, V)>,
+}
+
+impl<K, V> Default for Recent<K, V> {
+    fn default() -> Self {
+        Self { asked: 0, entries: BTreeMap::new() }
+    }
+}
+
+impl<K: Ord + Clone, V> Recent<K, V> {
+    /// Whether `key` is held, marking it as just asked for if so.
+    fn touch(&mut self, key: &K) -> bool {
+        self.asked += 1;
+        match self.entries.get_mut(key) {
+            Some((asked, _)) => {
+                *asked = self.asked;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Keeps `value`, in place of the entry asked for longest ago when
+    /// there is no room.
+    fn insert(&mut self, key: K, value: V) {
+        if self.entries.len() >= FIELD_CACHE
+            && let Some(oldest) = self.entries.iter().min_by_key(|(_, (asked, _))| *asked).map(|(k, _)| k.clone())
+        {
+            self.entries.remove(&oldest);
+        }
+        self.asked += 1;
+        self.entries.insert(key, (self.asked, value));
+    }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        self.entries.get(key).map(|(_, v)| v)
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
 
 /// Flow fields toward or away from any cells, built on demand and shared.
 ///
@@ -132,6 +209,11 @@ const FIELD_CACHE: usize = 32;
 /// A field lives until the map's cost epoch changes, so a mind that did
 /// not move and a player who did not move cost nothing the next pass.
 ///
+/// A field toward a few goals is the lowest, cell for cell, of one flood
+/// per goal, which is exactly the flood from all of them. So two hunters
+/// that see different enemies share the flood from each enemy both see,
+/// and a goal that stood still is not flooded again because another moved.
+///
 /// Window-local, like every grid the engine keeps; the points a tactic
 /// hands in and gets back are translated at the boundary, so no map is
 /// ever copied to shift its origin.
@@ -139,7 +221,8 @@ const FIELD_CACHE: usize = 32;
 pub struct FlowFields {
     /// The map's cost epoch the fields were built for.
     epoch: Option<u64>,
-    fields: BTreeMap<FieldKey, DijkstraMap>,
+    fields: Recent<FieldKey, DijkstraMap>,
+    floods: Recent<FloodKey, DijkstraMap>,
 }
 
 impl FlowFields {
@@ -147,20 +230,37 @@ impl FlowFields {
     fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
         if self.epoch != Some(map.cost_epoch()) {
             self.fields.clear();
+            self.floods.clear();
             self.epoch = Some(map.cost_epoch());
         }
-        if !self.fields.contains_key(&key) {
-            if self.fields.len() >= FIELD_CACHE {
-                self.fields.clear();
-            }
-            let (goals, _, opens_doors, away) = &key;
+        if !self.fields.touch(&key) {
+            let (goals, profile, opens_doors, away) = &key;
             let view = if *opens_doors { map.opening_view() } else { map.view() };
-            let locals: Vec<Point> = goals.iter().filter_map(|g| map.to_local(*g)).collect();
-            if locals.is_empty() {
+            let goals: Vec<(Point, Point)> = goals.iter().filter_map(|g| Some((*g, map.to_local(*g)?))).collect();
+            if goals.is_empty() {
                 return None;
             }
-            let mut field = DijkstraMap::covering(&view);
-            field.build(&view, locals, PathRules::default());
+            let mut field = if goals.len() <= COMPOSED_UP_TO {
+                let mut field: Option<DijkstraMap> = None;
+                for (goal, local) in goals {
+                    let from = (goal, *profile, *opens_doors);
+                    if !self.floods.touch(&from) {
+                        let mut flood = DijkstraMap::covering(&view);
+                        flood.build(&view, [local], PathRules::default());
+                        self.floods.insert(from, flood);
+                    }
+                    let flood = self.floods.get(&from)?;
+                    match field.as_mut() {
+                        Some(field) => field.take_lower(flood),
+                        None => field = Some(flood.clone()),
+                    }
+                }
+                field?
+            } else {
+                let mut field = DijkstraMap::covering(&view);
+                field.build(&view, goals.into_iter().map(|(_, local)| local), PathRules::default());
+                field
+            };
             if *away {
                 field.scale(-12, 10);
                 field.rescan(&view, PathRules::default());
@@ -173,12 +273,12 @@ impl FlowFields {
     /// How many fields are built right now, for a test that a shared goal
     /// is one flood.
     pub fn len(&self) -> usize {
-        self.fields.len()
+        self.fields.entries.len()
     }
 
     /// Whether nothing is built.
     pub fn is_empty(&self) -> bool {
-        self.fields.is_empty()
+        self.fields.entries.is_empty()
     }
 
     /// Forgets every map, so the next mind rebuilds them: the player
@@ -186,6 +286,7 @@ impl FlowFields {
     pub fn invalidate(&mut self) {
         self.epoch = None;
         self.fields.clear();
+        self.floods.clear();
     }
 }
 
@@ -468,6 +569,24 @@ pub fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
     }
 }
 
+/// Tells the mind holding the turn which ways to another map it can see,
+/// if it is one that travels: a mind that does not is never told, so no
+/// tactic of its brain can send it through one.
+pub fn sense_ways(mut thinking: ResMut<Thinking>, sight: Sight, ways: Query<(&Position, Option<&OnMap>), With<Transition>>) {
+    if !thinking.snapshot().is_some_and(|snapshot| snapshot.wits.has(Wits::TRAVELS)) {
+        return;
+    }
+    let mut seen: Vec<Point> = ways.iter().filter(|(at, on)| sight.perceives(&thinking, at.0, *on)).map(|(at, _)| at.0).collect();
+    if seen.is_empty() {
+        return;
+    }
+    seen.sort();
+    seen.dedup();
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(Ways(seen));
+    }
+}
+
 /// The minds' own stream, so adding a tactic cannot shift combat's rolls
 /// and a game with no combat still has one to draw from.
 #[derive(Resource, Debug)]
@@ -553,6 +672,7 @@ pub struct MindIntents<'w> {
     abilities: MessageWriter<'w, Intent<Use>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
     waits: MessageWriter<'w, Intent<Wait>>,
+    ways: MessageWriter<'w, Intent<GoThrough>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     equips: MessageWriter<'w, Intent<EquipFromGround>>,
     throws: MessageWriter<'w, Intent<Throw>>,
@@ -561,7 +681,8 @@ pub struct MindIntents<'w> {
 }
 
 /// The mind holding the turn, as the decision reads it.
-type Deciding = (&'static Mind, &'static Position, Option<&'static Profile>, Option<&'static Intelligence>, &'static mut CameFrom, &'static mut Doing);
+type Deciding =
+    (&'static Mind, &'static Position, Option<&'static Profile>, Option<&'static Intelligence>, &'static mut CameFrom, &'static mut Doing, &'static mut Trails);
 
 /// Lets the mind holding the turn decide it, from the snapshot the
 /// perceive stage filled.
@@ -578,7 +699,7 @@ pub fn decide_minds(
     mut minds: Query<Deciding, With<MyTurn>>,
 ) {
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
-    let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing)) = minds.get_mut(thinker) else { return };
+    let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
     let MindWorld { fields, rng, map, occupancy } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
@@ -604,12 +725,22 @@ pub fn decide_minds(
         bounds: map.window_tiles(),
         rng: &mut rng.0,
     };
-    let (decision, which) = mind.0.decide(&mut ctx);
+    let (decision, which) = match mind.0.deciding(&mut ctx) {
+        Some((decision, tactic)) => (decision, Some(tactic)),
+        None => (Decision::Wait, None),
+    };
     if !acting.claim_decision(thinker) {
         return;
     }
     came_from.0 = None;
-    doing.0 = which;
+    doing.0 = which.map(|tactic| tactic.name());
+    if wits.has(Wits::TRAVELS) {
+        let after = which.and_then(|tactic| tactic.keeps_with()) == Some(Station::Enemies);
+        let beside = mind.0.keeps_with_allies();
+        let enemies = snapshot.enemies.iter().filter(|_| after);
+        let allies = snapshot.allies.iter().filter(|_| beside);
+        trails.0 = enemies.chain(allies).map(|seen| seen.id).collect();
+    }
     match decision {
         // A step onto a shut door is the turn spent opening it: the door is
         // its own action, and the mind knows what it is walking into.
@@ -633,6 +764,9 @@ pub fn decide_minds(
         }
         Decision::Wait => {
             intents.waits.write(Intent::new(thinker, Wait));
+        }
+        Decision::GoThrough => {
+            intents.ways.write(Intent::new(thinker, GoThrough));
         }
         Decision::PickUp => {
             intents.pick_ups.write(Intent::new(thinker, PickUp));
@@ -692,7 +826,7 @@ impl Plugin for MindsPlugin {
             .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, sense_posts.in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_posts, sense_ways).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
@@ -1311,6 +1445,101 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Wait));
         app.update();
         assert_eq!(app.world().resource::<FlowFields>().len(), 1, "and the same one the next turn, since nothing moved the goal");
+    }
+
+    /// A mind sees by the light as it is when its turn comes, not as it was
+    /// when the frame began: a lamp lit in the same frame the mind acts in
+    /// shows it the player at once, and one put out hides the player at
+    /// once. The light used to be recast once a frame, after every pass, so
+    /// each took a turn to reach the minds.
+    #[test]
+    fn a_mind_sees_by_the_light_as_it_is_on_its_own_turn() {
+        use crate::lighting::{LightSource, LightingPlugin};
+        let (mut app, start, blunt) = arena();
+        app.add_plugins(LightingPlugin);
+        let us = rl_rules::FactionId::from_raw(0);
+        let them = rl_rules::FactionId::from_raw(1);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let hunter = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(5, 0)),
+                Health::full(5),
+                Faction(them),
+                Perception(8),
+                MeleeAttack::new(blunt, DiceRoll::flat(1)),
+                Mind(Arc::new(Brain::new().then(Hunt))),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let turn = |app: &mut App| {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+            app.world().get::<Position>(hunter).unwrap().0
+        };
+        assert_eq!(turn(&mut app), start.offset(5, 0), "in the dark it sees nobody and stands");
+
+        let lamp = app.world_mut().spawn((Position(start.offset(0, 1)), LightSource::new(200, 2, rl_grid::Rgb::new(255, 255, 255)))).id();
+        assert_eq!(turn(&mut app), start.offset(4, 0), "lit this frame, seen this frame");
+
+        app.world_mut().entity_mut(lamp).remove::<LightSource>();
+        assert_eq!(turn(&mut app), start.offset(4, 0), "put out this frame, lost this frame");
+    }
+
+    /// Two hunters that see different enemies share the flood from the
+    /// enemy both see: a field toward a few goals is composed from one
+    /// flood per goal, so the second roster costs only the goal it adds.
+    #[test]
+    fn rosters_that_overlap_share_the_flood_from_each_goal_they_have_in_common() {
+        let (mut app, start, _) = arena();
+        app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let map = app.world().resource::<WorldMap>();
+        let walker = MovementProfile::default();
+        let (a, b, c) = (start.offset(2, 0), start.offset(0, 2), start.offset(-2, 0));
+        let mut fields = FlowFields::default();
+        assert!(fields.ensure((vec![a, b], walker, false, false), map).is_some());
+        assert!(fields.ensure((vec![a], walker, false, false), map).is_some());
+        assert_eq!((fields.len(), fields.floods.entries.len()), (2, 2), "two fields, and no flood the first did not already make");
+        assert!(fields.ensure((vec![a, c], walker, false, false), map).is_some());
+        assert_eq!((fields.len(), fields.floods.entries.len()), (3, 3), "a third field, for the one goal that is new");
+        // A composed field is the flood from all of its goals together.
+        let view = map.view();
+        let mut whole = DijkstraMap::covering(&view);
+        whole.build(&view, [a, b].iter().filter_map(|g| map.to_local(*g)), PathRules::default());
+        let composed = fields.ensure((vec![a, b], walker, false, false), map).unwrap();
+        assert!(whole.iter().eq(composed.iter()), "cell for cell what one flood from both gives");
+    }
+
+    /// A full cache gives up the field asked for longest ago and keeps the
+    /// one in use: the field every hunter reads each pass outlives any
+    /// number of one-off questions asked around it.
+    #[test]
+    fn a_full_cache_forgets_the_field_asked_for_longest_ago_and_keeps_the_one_in_use() {
+        let (mut app, start, _) = arena();
+        app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let map = app.world().resource::<WorldMap>();
+        let walker = MovementProfile::default();
+        let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false);
+        let mut fields = FlowFields::default();
+        fields.ensure(key(0), map);
+        for i in 1..=(FIELD_CACHE as i32 + 8) {
+            fields.ensure(key(i), map);
+            fields.ensure(key(0), map);
+        }
+        assert_eq!(fields.len(), FIELD_CACHE, "never more than the bound");
+        assert!(fields.fields.entries.contains_key(&key(0)), "the one asked for every time is still held");
+        assert!(!fields.fields.entries.contains_key(&key(1)), "the one asked for once, longest ago, went first");
+        assert!(fields.fields.entries.contains_key(&key(FIELD_CACHE as i32 + 8)), "and the newest is held");
     }
 
     /// A companion keeps up with the player and gives way when it is

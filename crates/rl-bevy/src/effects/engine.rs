@@ -4,7 +4,7 @@
 //! `Harm`, `Mend` and `Inflict` grow with their carrier's `EffectBonus`;
 //! the others ignore it.
 //!
-//! [`Harm`] and [`Mend`] ask combat's damage pipeline, [`Inflict`] and
+//! [`Harm`] asks combat's damage pipeline and [`Mend`] its healing, [`Inflict`] and
 //! [`Cleanse`] ask statuses, and [`Shove`], [`Pull`] and [`Teleport`] move
 //! an actor through [`EffectWorld`]; [`AddEngineEffects`] registers those
 //! seven. [`Ignite`] asks fire, [`Emit`] asks gas and [`Noise`] asks
@@ -22,7 +22,7 @@ use rl_rules::gas::GasId;
 use rl_rules::{Hit, Names, StatusId};
 
 use super::{AddEffect, Effect, EffectBonus, EffectWorld, FromArgs, Landing};
-use crate::combat::DamageEvent;
+use crate::combat::{DamageEvent, Heal};
 use crate::registries::Registries;
 use crate::status::{Afflict, Cure};
 
@@ -77,13 +77,12 @@ impl FromArgs for Harm {
 
 /// Heal everyone under the footprint.
 ///
-/// Negative damage of a named kind, so resistance to it is a game's to
-/// define: a construct that resists the kind a medkit deals cannot be
-/// patched up, and nothing in the engine had to learn the word undead.
+/// A [`Heal`], not a hit: no kind, so no armor, resistance or stage is
+/// asked about it. What scales it is each target's own mending,
+/// [`CombatRules::mending_stat`](crate::combat::CombatRules::mending_stat),
+/// which is where a game says a thing cannot be patched up.
 #[derive(Debug, Clone, Copy)]
 pub struct Mend {
-    /// The kind healing counts as.
-    pub kind: DamageKindId,
     /// How much, rolled per target, before any bonus.
     pub roll: DiceRoll,
 }
@@ -100,27 +99,29 @@ impl Effect for Mend {
         let roll = self.roll_with(landing.bonus);
         for target in &landing.targets {
             let amount = roll.roll_at_least(&mut **world.rng, 0);
-            world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, -amount)));
+            world.heal.write(Heal::new(*target, amount).by(landing.user));
         }
     }
 
-    fn describe(&self, registries: &Registries, bonus: EffectBonus) -> String {
-        format!("mends {} {}", self.roll_with(bonus), registries.damage_kinds.name(self.kind))
+    fn describe(&self, _: &Registries, bonus: EffectBonus) -> String {
+        format!("mends {}", self.roll_with(bonus))
     }
 }
 
 impl FromArgs for Mend {
     const KIND: &'static str = "Mend";
 
-    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
+    fn from_args(args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Args {
-            kind: String,
             roll: String,
         }
-        let a: Args = read_args(args)?;
-        Ok(Self { kind: names.damage_kind(&a.kind)?, roll: a.roll.parse().map_err(|e| format!("{e}"))? })
+        // Said by name rather than left to "unknown field": every content
+        // file written before mending left the damage table has one.
+        let a: Args = read_args(args)
+            .map_err(|e| if e.contains("kind") { format!("{e}; a mend has no kind, since healing is not damage: write `(roll: ..)`") } else { e })?;
+        Ok(Self { roll: a.roll.parse().map_err(|e| format!("{e}"))? })
     }
 }
 
@@ -507,7 +508,7 @@ mod tests {
     fn a_bonus_adds_its_amount_to_harm_and_mend_and_its_turns_to_a_status_and_a_default_adds_nothing() {
         let kind = DamageKindId::from_raw(0);
         let bonus = EffectBonus { turns: 2, amount: 3 };
-        let mend = Mend { kind, roll: DiceRoll::flat(1) };
+        let mend = Mend { roll: DiceRoll::flat(1) };
         assert_eq!((mend.roll_with(EffectBonus::default()), mend.roll_with(bonus)), (DiceRoll::flat(1), DiceRoll::flat(4)));
         let harm = Harm { kind, roll: DiceRoll::new(2, 6) };
         assert_eq!(harm.roll_with(bonus), DiceRoll { num: 2, sides: 6, bonus: 3 });
@@ -520,16 +521,30 @@ mod tests {
     /// naming the field, rather than silently ignored.
     #[test]
     fn per_level_in_harm_mend_or_inflict_args_is_refused_naming_it() {
-        let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("care")]).unwrap();
+        let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("kinetic")]).unwrap();
         let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
         let names = Names::new().damage_kinds(&kinds).statuses(&statuses);
         let args = |text: &str| rl_rules::ability::parse_args(text).unwrap();
-        let harm = Harm::from_args(&args(r#"(kind: "care", roll: "4", per_level: 1)"#), &names).expect_err("per_level is gone from Harm");
+        let harm = Harm::from_args(&args(r#"(kind: "kinetic", roll: "4", per_level: 1)"#), &names).expect_err("per_level is gone from Harm");
         assert!(harm.contains("per_level"), "{harm}");
-        let mend = Mend::from_args(&args(r#"(kind: "care", roll: "4", per_level: 1)"#), &names).expect_err("per_level is gone from Mend");
+        let mend = Mend::from_args(&args(r#"(roll: "4", per_level: 1)"#), &names).expect_err("per_level is gone from Mend");
         assert!(mend.contains("per_level"), "{mend}");
         let inflict = Inflict::from_args(&args(r#"(status: "hidden", turns: 5, per_level: 1)"#), &names).expect_err("per_level is gone from Inflict");
         assert!(inflict.contains("per_level"), "{inflict}");
+    }
+
+    /// A mend is written with a roll and nothing else, and one still
+    /// written with the kind healing used to be dealt as is refused with
+    /// the reason, since every content file older than this has one.
+    #[test]
+    fn a_mend_has_no_kind_and_one_written_with_a_kind_is_told_why() {
+        let names = Names::new();
+        let args = |text: &str| rl_rules::ability::parse_args(text).unwrap();
+        let mend = Mend::from_args(&args(r#"(roll: "2d4")"#), &names).expect("a roll is all it takes");
+        assert_eq!(mend.roll, DiceRoll::new(2, 4));
+        assert_eq!(mend.describe(&Registries::default(), EffectBonus { turns: 0, amount: 1 }), "mends 2d4+1");
+        let old = Mend::from_args(&args(r#"(kind: "care", roll: "2d4")"#), &names).expect_err("a kind is refused");
+        assert!(old.contains("kind") && old.contains("healing is not damage"), "{old}");
     }
 
     /// A typo'd argument on another engine effect is refused the same way,

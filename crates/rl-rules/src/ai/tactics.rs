@@ -20,13 +20,32 @@ impl<A: Copy> Tactic<A> for MeleeAdjacent {
     fn name(&self) -> &'static str {
         "melee_adjacent"
     }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(Station::Enemies)
+    }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         ctx.snapshot.adjacent_enemies().next().map(|e| Decision::Attack(e.id))
     }
 }
 
+/// The ways to another map a mind can see from where it stands, as a
+/// [`Sense`](crate::ai::Sense): stairs, a hatch, a cave mouth, each by its
+/// cell.
+///
+/// The engine's `sense_ways` pushes it for a mind with [`Wits::TRAVELS`]
+/// and nobody else, so a tactic that reads it never has to ask whether
+/// the mind may take one; a game running minds without `rl-bevy` pushes
+/// it itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ways(pub Vec<Point>);
+
 /// Run when health falls below a share, down a field away from every
 /// enemy in sight, or straight away from the nearest if there is none.
+///
+/// A mind that sees a way to another map, which is one with
+/// [`Wits::TRAVELS`], runs for it when it would get there before any
+/// enemy does, and goes through once it stands on it: out of the fight
+/// for good rather than round the next corner.
 ///
 /// Only for a mind with [`Wits::FLEES`]: a mindless thing fights on, and
 /// one with no health has nothing to run from.
@@ -47,6 +66,14 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
         }
         let me = ctx.snapshot.me.pos;
         let foes: Vec<Point> = ctx.snapshot.enemies.iter().map(|e| e.pos).collect();
+        if let Some(way) = way_out(ctx.snapshot, &foes) {
+            if way == me {
+                return Some(Decision::GoThrough);
+            }
+            if let Some(step) = ctx.step_toward(&[way]) {
+                return Some(Decision::Step(step));
+            }
+        }
         if let Some(step) = ctx.step_away_from(&foes) {
             return Some(Decision::Step(step));
         }
@@ -62,6 +89,21 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
     }
 }
 
+/// The nearest way out the mind would reach before any of `foes` does,
+/// the one it stands on first of all.
+///
+/// By steps on an open floor, which is the only distance a tactic has
+/// without flooding from every enemy: a way an enemy is nearer to in a
+/// straight line is one it will be standing on when the mind arrives.
+fn way_out<A: Copy>(snapshot: &Snapshot<A>, foes: &[Point]) -> Option<Point> {
+    let me = snapshot.me.pos;
+    let ways = &snapshot.sense::<Ways>()?.0;
+    ways.iter()
+        .copied()
+        .filter(|way| foes.iter().all(|foe| geometry::chebyshev(me, *way) < geometry::chebyshev(*foe, *way)))
+        .min_by_key(|way| (geometry::chebyshev(me, *way), way.y, way.x))
+}
+
 /// Close on the enemies in sight, down a field toward all of them, which
 /// leads to the nearest by the way round whatever is between; or straight
 /// toward the nearest when there is no field.
@@ -71,6 +113,9 @@ pub struct Hunt;
 impl<A: Copy> Tactic<A> for Hunt {
     fn name(&self) -> &'static str {
         "hunt"
+    }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(Station::Enemies)
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let target = ctx.snapshot.nearest_enemy()?.pos;
@@ -229,6 +274,9 @@ impl<A: Copy> Tactic<A> for Keep {
             Station::Enemies => "shadow",
         }
     }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(self.on)
+    }
 
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let me = ctx.snapshot.me.pos;
@@ -318,6 +366,9 @@ pub struct Hover;
 impl<A: Copy> Tactic<A> for Hover {
     fn name(&self) -> &'static str {
         "hover"
+    }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(Station::Enemies)
     }
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let remembers = ctx.snapshot.wits.has(Wits::SEARCHES) && ctx.snapshot.last_known.is_some();
@@ -526,6 +577,9 @@ impl<A: Copy> Tactic<A> for UseAbility {
     fn name(&self) -> &'static str {
         "use_ability"
     }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(Station::Enemies)
+    }
 
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         if ctx.snapshot.usable.is_empty() {
@@ -578,6 +632,9 @@ impl Default for ThrowAtRange {
 impl<A: Copy> Tactic<A> for ThrowAtRange {
     fn name(&self) -> &'static str {
         "throw_at_range"
+    }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(Station::Enemies)
     }
 
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
@@ -633,6 +690,9 @@ impl Default for ShootAtRange {
 impl<A: Copy> Tactic<A> for ShootAtRange {
     fn name(&self) -> &'static str {
         "shoot_at_range"
+    }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(Station::Enemies)
     }
 
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
@@ -834,6 +894,64 @@ mod tests {
         t.set(Point::new(6, 5), wall);
         t.set(Point::new(5, 6), wall);
         (t, r)
+    }
+
+    /// A hurt mind that sees a way to another map makes for it when it
+    /// would get there before its enemy and goes through once it stands on
+    /// it, runs the ordinary way from one its enemy is nearer to, and is
+    /// never offered one unless it travels, since nobody tells it of any.
+    #[test]
+    fn a_hurt_mind_that_travels_runs_for_a_way_out_it_would_reach_first() {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let decide = |snapshot: &Snapshot<u32>| {
+            let mut rng = StdRng::seed_from_u64(1);
+            Brain::new()
+                .then(FleeWhenHurt { at_pct: 50 })
+                .decide(&mut TacticCtx {
+                    snapshot,
+                    fields: &mut Given::over(&view_t),
+                    can_step: &can_step,
+                    blocks_shot: &nothing_blocks,
+                    blocks_burst: &nothing_blocks,
+                    bounds: arena(),
+                    rng: &mut rng,
+                })
+                .0
+        };
+        let hurt = |ways: Vec<Point>| {
+            let mut s = Snapshot::alone(view(1, 5, 5, 1));
+            s.wits = Wits::ANIMAL.with(Wits::TRAVELS);
+            s.enemies.push(view(2, 2, 5, 10));
+            s.add_sense(Ways(ways));
+            s
+        };
+        assert_eq!(decide(&hurt(vec![Point::new(8, 5)])), Decision::Step(Point::new(6, 5)), "toward the way it is nearer to");
+        assert_eq!(decide(&hurt(vec![Point::new(5, 5)])), Decision::GoThrough, "and through it once it stands there");
+        let Decision::Step(away) = decide(&hurt(vec![Point::new(3, 5)])) else { panic!("it still runs") };
+        assert!(away.x > 5, "from a way its enemy is nearer to, as from the enemy: {away:?}");
+
+        let mut unseen = Snapshot::alone(view(1, 5, 5, 1));
+        unseen.wits = Wits::ANIMAL;
+        unseen.enemies.push(view(2, 2, 5, 10));
+        assert!(matches!(decide(&unseen), Decision::Step(p) if p.x > 5), "one told of no way runs as it always did");
+    }
+
+    /// Which tactics keep a mind with someone is what decides who follows
+    /// whom through a way: the ones that close on or watch an enemy, and
+    /// a station kept on either side, and never the one that runs.
+    #[test]
+    fn the_tactics_that_close_on_or_stay_beside_someone_say_whose_company_they_keep() {
+        let with = |t: &dyn Tactic<u32>| t.keeps_with();
+        assert_eq!(with(&Hunt), Some(Station::Enemies));
+        assert_eq!(with(&MeleeAdjacent), Some(Station::Enemies));
+        assert_eq!(with(&Keep::enemies(5, 3)), Some(Station::Enemies));
+        assert_eq!(with(&Keep::allies(3, 1)), Some(Station::Allies));
+        assert_eq!(with(&FleeWhenHurt { at_pct: 50 }), None);
+        assert_eq!(with(&Wander { chance_pct: 50 }), None);
+        assert!(Brain::<u32>::new().then(Keep::allies(3, 1)).then(Wander { chance_pct: 50 }).keeps_with_allies());
+        assert!(!brain().keeps_with_allies());
     }
 
     /// No tactic decides on a diagonal that squeezes between two walls.

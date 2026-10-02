@@ -11,7 +11,9 @@
 //   wits:       what it can manage: "mindless" fights on and forgets you out of sight, "animal"
 //               also runs when hurt and searches for you, "sapient" also opens doors, picks things
 //               up, throws them and puts on better gear; or a list of "flees" | "searches" |
-//               "opens_doors" | "picks_up" | "equips" | "throws", which may name a preset too
+//               "opens_doors" | "picks_up" | "equips" | "throws" | "travels", which may name a
+//               preset too; "travels" is in no preset, and lets it follow you down the stairs
+//               and leave by them when it runs
 //   perception: how far it sees, in tiles: the radius of its own sight, read
 //               through the light the way the player's is
 //   speed:      percent, 100 normal

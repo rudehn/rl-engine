@@ -46,7 +46,7 @@ One ability for you, one for the ratlings, and both of them written in a file ra
         aim: SelfOnly,
         mode: Own,
         costs: [Item("bread", 1)],
-        effects: [(kind: "Mend", args: (kind: "care", roll: "1d6"))],
+        effects: [(kind: "Mend", args: (roll: "1d6"))],
     ),
 ]
 ```

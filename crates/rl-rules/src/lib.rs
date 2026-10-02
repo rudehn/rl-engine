@@ -98,7 +98,7 @@ pub use prefab::{Coverage, CoverageRow, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
-pub use status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
+pub use status::{ActiveStatus, Mended, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 pub use work::{Work, WorkKind, WorkKindId};
 
 /// The names most callers want in scope.
@@ -125,5 +125,5 @@ pub mod prelude {
     pub use crate::names::{NameRef, Names};
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
-    pub use crate::status::{ActiveStatus, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
+    pub use crate::status::{ActiveStatus, Mended, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
 }

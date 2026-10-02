@@ -24,7 +24,7 @@
         mode: Own,
         costs: [Item("rum", 1)],
         effects: [
-            (kind: "Mend", args: (kind: "care", roll: "2d4")),
+            (kind: "Mend", args: (roll: "2d4")),
             (kind: "Cleanse", args: (status: "bleeding")),
         ],
     ),

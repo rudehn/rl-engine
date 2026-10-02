@@ -13,7 +13,7 @@
 use bevy::prelude::*;
 use rl_rules::{Hit, Stats, StatusId, Statuses};
 
-use crate::combat::DamageEvent;
+use crate::combat::{DamageEvent, Heal};
 use crate::components::Actor;
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
@@ -122,10 +122,12 @@ pub fn resolve_afflictions(
 
 /// Once per whole turn, ticks every afflicted actor on the current map:
 /// damage over time becomes [`DamageEvent`]s credited to whoever applied
-/// the status, and what ran out is reported.
+/// the status, a status that mends becomes [`Heal`]s, and what ran out is
+/// reported.
 pub fn tick_statuses(
     mut ends: MessageReader<TurnEnd>,
     mut damage: MessageWriter<DamageEvent>,
+    mut heals: MessageWriter<Heal>,
     mut events: MessageWriter<StatusEvent>,
     registries: Res<Registries>,
     map: Res<WorldMap>,
@@ -145,6 +147,10 @@ pub fn tick_statuses(
             for t in report.ticks {
                 let credit = t.source.and_then(Entity::try_from_bits);
                 damage.write(DamageEvent::new(entity, Hit::from_status(credit, t.status, t.kind, t.amount)));
+            }
+            for m in report.mends {
+                let by = m.source.and_then(Entity::try_from_bits);
+                heals.write(Heal { target: entity, amount: m.amount, by, status: Some(m.status) });
             }
             for status in report.expired {
                 events.write(StatusEvent::Expired { target: entity, status });
@@ -272,5 +278,38 @@ mod tests {
         assert_eq!(w.get::<StatBlock>(player).unwrap().value(armor_stat, &stats), 0, "hearty's modifier left with it");
         let expired = &w.resource::<Heard>().0;
         assert!(expired.contains(&StatusEvent::Expired { target: player, status: venom }), "{expired:?}");
+    }
+
+    /// A status that mends restores its amount every whole turn, to no
+    /// more than the most its holder has, and is reported as a heal by
+    /// whoever applied it and never as damage dealt: there is no kind for
+    /// armor or a resistance to be asked about.
+    #[test]
+    fn a_status_that_mends_restores_health_each_turn_and_stops_at_the_most() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, StatusPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
+        let defs = Registry::from_defs(vec![StatusDef::new("mending").mends(4).boon()]).unwrap();
+        let mending = defs.expect("mending");
+        app.insert_resource(CombatRules::new(&facs));
+        app.insert_resource(crate::seed::Seed(RunSeed(5)));
+        app.insert_resource(Registries { factions: facs, statuses: defs, ..Default::default() });
+        let player =
+            app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Health { current: 21, max: 30 }, Armor(50))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Afflict { target: player, status: mending, turns: 3, by: Some(player), held_by: None });
+        app.update();
+        let mut healed = Vec::new();
+        for want in [25, 29, 30] {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+            assert_eq!(app.world().get::<Health>(player).unwrap().current, want);
+            healed.extend(app.world_mut().resource_mut::<Messages<crate::combat::Healed>>().drain());
+        }
+        assert_eq!(healed.iter().map(|h| (h.restored, h.by, h.status)).collect::<Vec<_>>(), [4, 4, 1].map(|n| (n, Some(player), Some(mending))).to_vec());
+        assert!(app.world_mut().resource_mut::<Messages<crate::combat::DamageDealt>>().drain().next().is_none(), "nothing was dealt");
     }
 }

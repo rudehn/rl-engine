@@ -150,6 +150,8 @@ pub struct EffectWorld<'w, 's> {
     pub commands: Commands<'w, 's>,
     /// Damage, through the pipeline that mitigates it.
     pub damage: MessageWriter<'w, crate::combat::DamageEvent>,
+    /// Health restored, which nothing mitigates.
+    pub heal: MessageWriter<'w, crate::combat::Heal>,
     /// A status on.
     pub afflict: MessageWriter<'w, Afflict>,
     /// A status off.
@@ -471,6 +473,7 @@ impl Plugin for EffectsPlugin {
             .add_message::<Afflict>()
             .add_message::<Cure>()
             .add_message::<DamageEvent>()
+            .add_message::<crate::combat::Heal>()
             .reads::<Cued>()
             .add_systems(Turn, (report_remnants, land_triggers).chain().in_set(ResolveSet::Triggers));
     }
