@@ -35,7 +35,7 @@ pub use map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 pub use particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Spark, Trail};
 pub use pointer::Pointer;
 pub use shade::{Memory, Shading, Vary};
-pub use terminal::{Cell, Terminal, TerminalPlugin};
+pub use terminal::{Cell, Terminal, TerminalPlugin, WideCells};
 pub use tileset::Tileset;
 
 /// The names most callers want in scope.
@@ -46,6 +46,6 @@ pub mod prelude {
     pub use crate::particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Trail};
     pub use crate::pointer::Pointer;
     pub use crate::shade::{Memory, Shading, Vary};
-    pub use crate::terminal::{Cell, Terminal, TerminalPlugin};
+    pub use crate::terminal::{Cell, Terminal, TerminalPlugin, WideCells};
     pub use crate::tileset::Tileset;
 }

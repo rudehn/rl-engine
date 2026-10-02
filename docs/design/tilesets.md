@@ -55,8 +55,20 @@ A sheet in full colour is shown as drawn by a game that gives those cells a whit
 One more sprite per cell, spawned the first time there is a tileset and never in a game without one.
 Hidden until a cell shows a picture, and laid out with the cell, so it is sharp in a window of any size as the glyphs are.
 
+### 3.7 A tile wider than a cell
+
+A terminal's cells are narrow, so text reads as text, and a picture drawn the size of one is half a picture.
+A game with square cells has square pictures and letters spaced like a banner, which is what the first game on a tileset looked like.
+
+So a map tile may be more than one cell across: `MapViewPlugin::new(rect).across(2)`, or `RoguelikePlugins::across(2)`.
+`MapView` is the only thing that knows: `to_screen` answers a tile's first cell, `to_world` takes any of its cells back to the tile, and `set` and `wash` write a tile whole, which is what the map, the particles, the cursors and the panel highlights now call.
+The terminal is told the same cells come in runs, as `WideCells`, and draws the first cell's glyph or picture centred across the run, the picture as wide as the run.
+
+Nothing else changes: the cells are still cells, a panel drawn over the map still draws a character to a cell, and a game that says nothing has a cell to a tile as before.
+A map drawn in letters on runs of two has each letter centred in a square, which is how a letters-and-pictures setting keeps one layout.
+
 ## 4. What waits
 
-- A picture larger than its cell, or drawn across several.
+- A picture taller than its cell.
 - Pictures that animate.
 - Panels in anything but text, which is the Bevy UI presenters `docs/design/ui.md` defers.

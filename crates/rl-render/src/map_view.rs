@@ -26,7 +26,7 @@ use rl_rules::GasId;
 
 use crate::fields::{ShownFields, Wavefronts, churn, track_fields};
 use crate::shade::{Memory, Shading, Vary};
-use crate::terminal::{Cell, Terminal};
+use crate::terminal::{Cell, Terminal, WideCells};
 
 /// How an entity is drawn.
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
@@ -195,25 +195,51 @@ impl FieldAppearance {
     }
 }
 
-/// Where on the terminal the map is drawn, and which world tile sits at
-/// its top-left.
+/// Where on the terminal the map is drawn, which world tile sits at its
+/// top-left, and how many cells across a tile is.
+///
+/// A tile is one cell unless the view is [`across`](Self::across) more:
+/// a terminal's cells are narrow so that text reads well, and a map of
+/// square tiles on it wants each tile two cells wide. Everything that
+/// draws on the map asks the view where a tile is, so a wide tile is the
+/// view's business and nobody else's.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct MapView {
     /// The terminal cells the map occupies.
     pub viewport: Rect,
     /// The world tile drawn at the viewport's top-left.
     pub origin: Point,
+    /// How many cells across one tile is drawn. At least one.
+    across: i32,
 }
 
 impl MapView {
-    /// A view filling `viewport`.
+    /// A view filling `viewport`, a cell to a tile.
     pub fn new(viewport: Rect) -> Self {
-        Self { viewport, origin: Point::ZERO }
+        Self { viewport, origin: Point::ZERO, across: 1 }
+    }
+
+    /// Draws each tile `cells` cells across: two, for square tiles on
+    /// cells half as wide as they are tall.
+    pub fn across(mut self, cells: i32) -> Self {
+        self.across = cells.max(1);
+        self
+    }
+
+    /// How many cells across one tile is drawn.
+    pub fn tile_width(&self) -> i32 {
+        self.across
+    }
+
+    /// How many tiles the viewport is wide. Cells left over at its right
+    /// edge, too few for a whole tile, show nothing.
+    pub fn tiles_wide(&self) -> i32 {
+        self.viewport.width / self.across
     }
 
     /// Centres the view on `p`.
     pub fn center_on(&mut self, p: Point) {
-        self.origin = Point::new(p.x - self.viewport.width / 2, p.y - self.viewport.height / 2);
+        self.origin = Point::new(p.x - self.tiles_wide() / 2, p.y - self.viewport.height / 2);
     }
 
     /// Pulls the view back inside `bounds`, so it never shows void past
@@ -224,20 +250,63 @@ impl MapView {
     /// spends the rest on nothing. A map smaller than the viewport is
     /// centred in it instead, since there is nothing to scroll.
     pub fn clamp_to(&mut self, bounds: Rect) {
-        let slack = Point::new(bounds.width - self.viewport.width, bounds.height - self.viewport.height);
+        let slack = Point::new(bounds.width - self.tiles_wide(), bounds.height - self.viewport.height);
         self.origin.x = if slack.x <= 0 { bounds.x + slack.x / 2 } else { self.origin.x.clamp(bounds.x, bounds.x + slack.x) };
         self.origin.y = if slack.y <= 0 { bounds.y + slack.y / 2 } else { self.origin.y.clamp(bounds.y, bounds.y + slack.y) };
     }
 
-    /// The terminal cell a world tile is drawn at, if inside the viewport.
+    /// The terminal cell a world tile is drawn at, its first when it is
+    /// more than one across, if inside the viewport.
     pub fn to_screen(&self, p: Point) -> Option<Point> {
-        let s = p - self.origin + self.viewport.origin();
-        self.viewport.contains(s).then_some(s)
+        let tile = p - self.origin;
+        let inside = (0..self.tiles_wide()).contains(&tile.x) && (0..self.viewport.height).contains(&tile.y);
+        inside.then(|| Point::new(self.viewport.x + tile.x * self.across, self.viewport.y + tile.y))
     }
 
     /// The world tile drawn at a terminal cell, if inside the viewport.
     pub fn to_world(&self, s: Point) -> Option<Point> {
-        self.viewport.contains(s).then(|| s - self.viewport.origin() + self.origin)
+        let local = s - self.viewport.origin();
+        let tile = Point::new(local.x.div_euclid(self.across), local.y);
+        (self.viewport.contains(s) && tile.x < self.tiles_wide()).then(|| tile + self.origin)
+    }
+
+    /// Every terminal cell a world tile is drawn in, left to right; none
+    /// when it is outside the viewport.
+    pub fn cells(&self, p: Point) -> impl Iterator<Item = Point> + use<> {
+        let across = self.across;
+        self.to_screen(p).into_iter().flat_map(move |first| (0..across).map(move |i| Point::new(first.x + i, first.y)))
+    }
+
+    /// Every world tile in the viewport, row by row.
+    pub fn tiles(&self) -> impl Iterator<Item = Point> + use<> {
+        let (origin, wide, high) = (self.origin, self.tiles_wide(), self.viewport.height);
+        (0..high).flat_map(move |y| (0..wide).map(move |x| origin + Point::new(x, y)))
+    }
+
+    /// Writes `cell` over the whole of a world tile: the glyph in its
+    /// first cell, and the same colours with no glyph in the rest. What
+    /// the terminal's [`WideCells`] then draws centred across them.
+    pub fn set(&self, terminal: &mut Terminal, p: Point, cell: Cell) {
+        for (i, at) in self.cells(p).enumerate() {
+            terminal.set(at.x, at.y, if i == 0 { cell } else { Cell { glyph: ' ', ..cell } });
+        }
+    }
+
+    /// Repaints the background of a world tile, every cell of it, leaving
+    /// whatever glyph is drawn there: a highlight that marks without
+    /// hiding.
+    pub fn wash(&self, terminal: &mut Terminal, p: Point, bg: Color) {
+        for at in self.cells(p) {
+            if let Some(mut drawn) = terminal.get(at.x, at.y) {
+                drawn.bg = bg;
+                terminal.set(at.x, at.y, drawn);
+            }
+        }
+    }
+
+    /// What is drawn for a world tile: its first cell.
+    pub fn get(&self, terminal: &Terminal, p: Point) -> Option<Cell> {
+        self.to_screen(p).and_then(|at| terminal.get(at.x, at.y))
     }
 }
 
@@ -247,12 +316,24 @@ impl MapView {
 /// has no [`MapView`] of its own to insert and cannot forget one. Needs
 /// field of view: without it no tile is ever seen or remembered, so the
 /// map would draw as nothing at all.
-pub struct MapViewPlugin(Rect);
+pub struct MapViewPlugin {
+    viewport: Rect,
+    across: i32,
+}
 
 impl MapViewPlugin {
-    /// The map, drawn in the terminal cells of `viewport`.
+    /// The map, drawn in the terminal cells of `viewport`, a cell to a
+    /// tile.
     pub fn new(viewport: Rect) -> Self {
-        Self(viewport)
+        Self { viewport, across: 1 }
+    }
+
+    /// Draws each tile `cells` cells across, and has the terminal draw a
+    /// glyph or a picture centred across them: two, for square tiles on
+    /// cells half as wide as they are tall.
+    pub fn across(mut self, cells: i32) -> Self {
+        self.across = cells.max(1);
+        self
     }
 }
 
@@ -262,12 +343,15 @@ impl Plugin for MapViewPlugin {
             .init_resource::<FieldAppearance>()
             .init_resource::<ShownFields>()
             .init_resource::<Wavefronts>()
-            .insert_resource(MapView::new(self.0))
+            .insert_resource(MapView::new(self.viewport).across(self.across))
             .add_systems(Update, (follow_player, track_fields, draw_map).chain().in_set(PresentSet::Map))
             // Before the map is drawn, and in `Update` rather than in a
             // play-only set, because props are put down while a place is
             // built and `Added` matches for one frame only.
             .add_systems(Update, (dress_props, redress_emptied).before(draw_map));
+        if self.across > 1 {
+            app.insert_resource(WideCells { region: self.viewport, span: self.across });
+        }
     }
 
     fn finish(&self, app: &mut App) {
@@ -359,9 +443,8 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
     let lighting = lighting.as_deref();
     let overlay = overlay.as_deref().is_some_and(|o| o.0) && lighting.is_some();
     let sees = |p: Point| viewshed.is_some_and(|v| v.can_see(p));
-    let cloud = shown.clouds_in_sight(view.viewport.cells().filter_map(|s| view.to_world(s)), now, sees, |p| knowledge.is_explored(p));
-    for s in view.viewport.cells() {
-        let Some(p) = view.to_world(s) else { continue };
+    let cloud = shown.clouds_in_sight(view.tiles(), now, sees, |p| knowledge.is_explored(p));
+    for p in view.tiles() {
         let mut cell = match (map.tile(p), viewshed.is_some_and(|v| v.can_see(p))) {
             (Some(id), true) => match lighting {
                 Some(l) => look.under(look.seen(id, p, t), l.at(p), p, t),
@@ -390,7 +473,7 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             cell.glyph = (b'0' + level) as char;
             cell.fg = Color::WHITE;
         }
-        terminal.set(s.x, s.y, cell);
+        view.set(&mut terminal, p, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
     for (pos, glyph, on) in glyphs {
@@ -496,6 +579,37 @@ mod tests {
         assert_eq!(v.to_world(Point::new(10, 2)), Some(Point::new(80, 90)));
         assert_eq!(v.to_screen(Point::new(0, 0)), None);
         assert_eq!(v.to_world(Point::new(0, 0)), None);
+    }
+
+    /// A view two cells to a tile: a tile is found at its first cell, any
+    /// of its cells is that tile, and a write covers both.
+    #[test]
+    fn a_wide_view_maps_a_tile_to_its_cells_and_any_of_them_back() {
+        let mut v = MapView::new(Rect::new(10, 2, 41, 20)).across(2);
+        v.origin = Point::new(100, 50);
+        assert_eq!((v.tile_width(), v.tiles_wide()), (2, 20), "forty-one cells hold twenty tiles and one cell over");
+        assert_eq!(v.to_screen(Point::new(100, 50)), Some(Point::new(10, 2)));
+        assert_eq!(v.to_screen(Point::new(103, 51)), Some(Point::new(16, 3)), "three tiles along is six cells along");
+        assert_eq!(v.to_screen(Point::new(120, 50)), None, "the twenty-first tile is off the view");
+        assert_eq!(v.to_world(Point::new(16, 3)), Some(Point::new(103, 51)));
+        assert_eq!(v.to_world(Point::new(17, 3)), Some(Point::new(103, 51)), "its second cell is the same tile");
+        assert_eq!(v.to_world(Point::new(50, 3)), None, "the cell left over is no tile");
+        assert_eq!(v.cells(Point::new(103, 51)).collect::<Vec<_>>(), vec![Point::new(16, 3), Point::new(17, 3)]);
+        assert_eq!(v.tiles().count(), 20 * 20);
+        v.center_on(Point::new(200, 200));
+        assert_eq!(v.origin, Point::new(190, 190), "centred by tiles, not by cells");
+        v.clamp_to(Rect::new(0, 0, 10, 10));
+        assert_eq!(v.origin, Point::new(-5, -5), "a map of ten tiles is centred in a view of twenty");
+
+        let mut terminal = Terminal::new(60, 30, Vec2::ONE);
+        v.origin = Point::new(100, 50);
+        v.set(&mut terminal, Point::new(103, 51), Cell::new('@', Color::WHITE).on(Color::srgb(0.2, 0.2, 0.2)));
+        assert_eq!(terminal.get(16, 3).map(|c| c.glyph), Some('@'));
+        assert_eq!(terminal.get(17, 3).map(|c| (c.glyph, c.bg)), Some((' ', Color::srgb(0.2, 0.2, 0.2))), "the glyph once, the colours across");
+        v.wash(&mut terminal, Point::new(103, 51), Color::srgb(1.0, 0.0, 0.0));
+        assert_eq!(terminal.get(16, 3).map(|c| (c.glyph, c.bg)), Some(('@', Color::srgb(1.0, 0.0, 0.0))), "a wash keeps the glyph");
+        assert_eq!(terminal.get(17, 3).map(|c| c.bg), Some(Color::srgb(1.0, 0.0, 0.0)), "and covers the whole tile");
+        assert_eq!(v.get(&terminal, Point::new(103, 51)).map(|c| c.glyph), Some('@'));
     }
 
     #[test]

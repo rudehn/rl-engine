@@ -74,13 +74,14 @@ pub struct RoguelikePlugins {
     cell: Vec2,
     font: f32,
     map: Option<rl_core::Rect>,
+    across: i32,
 }
 
 impl RoguelikePlugins {
     /// A window titled `title`, `cols` by `rows` cells of ten by sixteen
     /// pixels, with the map filling it.
     pub fn new(title: impl Into<String>, cols: i32, rows: i32) -> Self {
-        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None }
+        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1 }
     }
 
     /// Each cell's size in pixels.
@@ -98,6 +99,14 @@ impl RoguelikePlugins {
     /// The terminal cells the map is drawn in; the rest is left to panels.
     pub fn map(mut self, viewport: rl_core::Rect) -> Self {
         self.map = Some(viewport);
+        self
+    }
+
+    /// Draws each map tile `cells` cells across: two, for square tiles on
+    /// cells half as wide as they are tall, so text keeps a terminal's
+    /// proportions and the map keeps a board's.
+    pub fn across(mut self, cells: i32) -> Self {
+        self.across = cells.max(1);
         self
     }
 }
@@ -119,7 +128,7 @@ impl PluginGroup for RoguelikePlugins {
             .add(rl_render::FullscreenPlugin)
             .add(rl_bevy::CorePlugin)
             .add(rl_bevy::FovPlugin)
-            .add(rl_render::MapViewPlugin::new(map))
+            .add(rl_render::MapViewPlugin::new(map).across(self.across))
             // What flies and bursts over the map for a moment after a
             // turn: presentation of the map, not a subsystem, so it comes
             // with the map view.
