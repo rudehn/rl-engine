@@ -179,18 +179,17 @@ pub fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
 /// since the act that raised it was the last one dealt, so nothing a
 /// player presses meanwhile could have been resolved anyway.
 ///
-/// A spent pace stops the loop only between turns, with nobody holding
-/// one: a turn already dealt is always resolved, so a player's intent is
-/// answered in its own frame at any pace, and no actor is left holding a
-/// turn across frames because the pace ran out under it.
+/// A spent [`Pace`] stops turns being dealt, not passes being run: the
+/// scheduler deals nobody a turn while it is spent, so the pass that finds
+/// it spent changes nothing and ends the loop as an idle one does. A turn
+/// already dealt is therefore always resolved, a player's intent is
+/// answered in its own frame at any pace, and a warp or a reaction asked
+/// for while the turns are stopped is still answered.
 pub fn run_turns(world: &mut World) {
     if world.resource::<TurnHold>().is_held() {
         return;
     }
     for pass in 0..MAX_PASSES {
-        if world.resource::<Pace>().is_spent() && world.query_filtered::<(), With<MyTurn>>().iter(world).next().is_none() {
-            return;
-        }
         let before = world.resource::<Turns>().now();
         world.resource_mut::<Turns>().progress = false;
         world.run_schedule(Turn);
@@ -901,6 +900,26 @@ mod tests {
         }
         let fast = app.world().resource::<Turns>().turn_number();
         assert!((155..=165).contains(&fast), "about a hundred and sixty turns, not {fast}");
+    }
+
+    /// Stopping the turns stops nobody being moved by the game: a warp
+    /// asked for under a stopped pace is answered, and the actor it put in
+    /// the place is admitted, with no turn dealt to anyone.
+    #[test]
+    fn a_request_made_while_the_pace_is_stopped_is_still_answered() {
+        let (mut app, start) = app_with_world();
+        app.insert_resource(Pace::stopped());
+        let walker = app.world_mut().spawn((Actor, Blocks, Position(start))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let to = start.offset(3, 0);
+        app.world_mut().write_message(crate::places::WarpRequest { actor: walker, to: crate::places::Destination::Surface(to) });
+        app.update();
+        assert_eq!(app.world().get::<Position>(walker).unwrap().0, to, "the warp was resolved");
+        assert!(app.world().resource::<Occupancy>().is_occupied(to), "and the index moved with it");
+        assert_eq!(app.world().resource::<Turns>().now(), 0, "with no time passing");
+        assert!(app.world().get::<MyTurn>(walker).is_none(), "and no turn dealt");
     }
 
     #[test]

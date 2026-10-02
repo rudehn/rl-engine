@@ -82,8 +82,10 @@ impl Turns {
 /// decides how many passes a frame runs, never what a pass does, so the
 /// same seed plays the same run at any pace, stopped and started or not.
 ///
-/// Whoever holds a turn at the head of a frame is still answered: a
-/// player's intent is resolved in the frame it was written at any pace.
+/// A spent pace stops turns being dealt and nothing else: every frame
+/// still runs a pass, so a turn already dealt is resolved, a player's
+/// intent is answered in the frame it was written, and a warp or a
+/// reaction asked for while the turns are stopped is still answered.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Pace {
     /// Hundredths of a step per second, or `None` for as fast as the loop
@@ -400,6 +402,26 @@ fn where_play_is(map: &WorldMap, pos: Point, on: Option<&OnMap>) -> bool {
     on.map(|m| m.0).unwrap_or(MapId::SURFACE) == map.current() && map.is_loaded(pos)
 }
 
+/// What stops a turn being dealt though the queue has one due.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Brakes<'w> {
+    hold: Res<'w, TurnHold>,
+    pace: Res<'w, Pace>,
+}
+
+impl Brakes<'_> {
+    /// Whether nothing is to be dealt this pass.
+    ///
+    /// While something flies: what it does when it lands comes before
+    /// whatever the next actor would do. And while the pace has no game
+    /// time left to give: the rest of the pass still runs, so what was
+    /// asked for is answered, but nobody new is given a turn and the clock
+    /// stays where it is.
+    fn on(&self) -> bool {
+        self.hold.in_flight() || self.pace.is_spent()
+    }
+}
+
 /// Deals the next turn if nobody holds one.
 ///
 /// Actors that were admitted and have since been left behind, on another
@@ -417,11 +439,9 @@ pub fn schedule(
     holding: Query<Entity, With<MyTurn>>,
     actors: Query<(&Position, Option<&OnMap>), With<Actor>>,
     map: Res<WorldMap>,
-    hold: Res<TurnHold>,
+    brakes: Brakes,
 ) {
-    // Nothing is dealt while something flies: what it does when it lands
-    // comes before whatever the next actor would do.
-    if !holding.is_empty() || hold.in_flight() {
+    if !holding.is_empty() || brakes.on() {
         return;
     }
     let mut advanced = false;

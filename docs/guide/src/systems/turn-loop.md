@@ -5,7 +5,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/components.rs
-     fingerprint: 5a1ebc2f -->
+     fingerprint: 1e175ad2 -->
 
 # The turn loop
 
@@ -39,8 +39,8 @@ A resolver takes a `Resolution`: `claim` gives it the turn once, `done(actor, co
 `cleanup_turns` requeues at `scaled_cost` of what was owed against `Speed`, requeues one actor once per pass, and charges a wait to any non-player left holding a turn nobody used.
 `Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s or a `Cue::Burst` on several, all at once or going out `from` one of them, where an anchor that follows an entity goes where the entity goes.
 `Pace` is how fast the turns run while nobody is waited on: `Pace::unpaced()`, the default, `Pace::per_second(hundredths)` of game time for each second of the wall clock, or `Pace::stopped()`.
-`earn_pace` adds a frame's share once a frame, capped at a quarter of a second, and `run_turns` spends it as the clock advances and deals no more once it is gone, so a pass that moves no time is free and one that jumps the clock is paid off over the frames after.
-A turn already dealt is always resolved, so a player's intent is answered in its own frame at any pace.
+`earn_pace` adds a frame's share once a frame, capped at a quarter of a second, and `run_turns` spends it as the clock advances, so a pass that moves no time is free and one that jumps the clock is paid off over the frames after.
+Once it is gone `schedule` deals nobody a turn, and the pass that finds it so changes nothing and ends the loop: a turn already dealt is always resolved, a player's intent is answered in its own frame at any pace, and a warp asked for while the turns are stopped is still answered.
 A `Player` that is no `Actor` is an onlooker: never admitted to the queue, so never dealt a turn, while the map being read, the view and everything that asks what the player sees still follow it.
 `TurnHold` is the brake, and it takes only while something watches: `hold_for_cues` raises it after any pass that cued, and `run_turns` then runs no pass until the watcher releases it.
 `Airborne<L>` is what a subsystem has in the air; `launched` hands the landing straight back when nothing watches, so a headless game lands everything at once.
