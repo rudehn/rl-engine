@@ -11,6 +11,10 @@
 //! - **Passes can fail.** A pass that cannot place what it was asked to
 //!   says so, and the caller retries with a different index.
 //!
+//! A place can also be grown: [`Accrete`] attaches each [`Shape`]'s
+//! [`Piece`] to a wall of what already stands, biased by [`District`]s,
+//! and publishes an [`Area`] per piece and an [`Opening`] per [`Join`].
+//!
 //! Engine passes are generic over the context, so a game extends the
 //! context with its own state and engine passes still run on it.
 
@@ -24,11 +28,13 @@ pub mod dungeon;
 pub mod passes;
 pub mod prefab;
 
+pub use accrete::{Accrete, Area, District, Join, Opening, Piece, Shape};
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
 
 /// The names most callers want in scope.
 pub mod prelude {
+    pub use crate::accrete::{Accrete, Cross, District, Join, Opening, Passage, Piece, Rectangle, Shape};
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
     pub use crate::context::{BaseContext, BuildContext, Outputs};
     pub use crate::dungeon;
