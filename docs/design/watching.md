@@ -1,7 +1,7 @@
 # Watching: a run somebody watches and nobody plays
 
 Written 2026-10-02.
-Section 3 is the design; section 4 is the order of work and what is done.
+Section 3 is the design; section 4 is the order it was built in.
 
 ## 1. What it is for
 
@@ -67,11 +67,13 @@ So a watched fight is paced twice, by the pace and by what is worth seeing, and 
 
 ## 4. Order of work
 
-1. `BitGrid::fill`. Done, tested.
-2. `Viewshed::everywhere` and the cast. Written; its test is written and has not run.
-3. `Pace`, `earn_pace` and the loop. Written; its four tests are written and have not run.
-4. An onlooker through a warp into a place, and two sides of minds fighting to the end under one: tests only, in `places.rs` and `minds.rs`.
-5. The map view under an onlooker: a test in `rl-render`.
+Built on 2026-10-02 in this order, each with its tests.
+
+1. `BitGrid::fill`.
+2. `Viewshed::everywhere` and the cast.
+3. `Pace`, `earn_pace` and the loop.
+4. An onlooker through a warp into a place, and two sides of minds fighting to the end under one, at two paces with one outcome.
+5. The map view under an onlooker, drawn whole.
 6. The documentation pass: the turn loop and sight pages, the overview, the changelog and the README's feature list.
 
 ## 5. Risks
