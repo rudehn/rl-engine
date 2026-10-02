@@ -48,7 +48,7 @@ The flag is private to `Viewshed` rather than a component beside it, so `cast` k
 - Passes that do not move the clock are free: everyone due at one reading acts in one frame.
 - A pass that jumps the clock further than the credit in hand is paid off over the frames after it, so the average is the rate whatever the costs of the actions.
 - A frame earns at most a quarter of a second, and idle credit never grows past that, so a hitch or a quiet stretch is not answered by a burst of turns nobody saw.
-- The loop stops only between turns, with nobody holding one, so a player's intent is still resolved in the frame it was written and no actor is left holding a turn across frames.
+- A spent pace stops turns being dealt, in `schedule`, and not passes being run: every frame still runs one, so a player's intent is resolved in the frame it was written, no actor is left holding a turn across frames, and a warp or a reaction asked for while the turns are stopped is still answered. The first cut skipped the passes themselves, and a game that stopped the pace before its first frame never had its opening warp resolved.
 - `Pace::stopped()` deals nothing, which is a pause.
 
 The pace decides how many passes a frame runs and never what a pass does, so one seed plays one run at any pace.
