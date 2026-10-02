@@ -56,6 +56,9 @@ pub struct StatusDef {
     pub modifiers: Vec<StatusModifier>,
     /// Damage per turn as `(kind, amount)`, if any.
     pub tick_damage: Option<(DamageKindId, i32)>,
+    /// Health restored per turn, if any. Not a tick of a kind: mending is
+    /// not damage, so no armor, resistance or stage is asked about it.
+    pub tick_mend: Option<i32>,
     /// Glyph for a badge, if the game wants one.
     pub badge: Option<char>,
     /// Whether nothing sees whoever holds it while it lasts. What that
@@ -76,7 +79,16 @@ fn refresh() -> Stacking {
 impl StatusDef {
     /// A status with no effects.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), stacking: Stacking::Refresh, modifiers: Vec::new(), tick_damage: None, badge: None, unseen: false, boon: false }
+        Self {
+            name: name.into(),
+            stacking: Stacking::Refresh,
+            modifiers: Vec::new(),
+            tick_damage: None,
+            tick_mend: None,
+            badge: None,
+            unseen: false,
+            boon: false,
+        }
     }
 
     /// Sets the stacking rule.
@@ -91,10 +103,16 @@ impl StatusDef {
         self
     }
 
-    /// Sets damage per turn. A negative amount mends each turn instead,
-    /// through the same pipeline, so regeneration is a status like poison.
+    /// Sets damage per turn.
     pub fn ticks(mut self, kind: DamageKindId, amount: i32) -> Self {
         self.tick_damage = Some((kind, amount));
+        self
+    }
+
+    /// Sets health restored per turn, so regeneration is a status as
+    /// poison is.
+    pub fn mends(mut self, amount: i32) -> Self {
+        self.tick_mend = Some(amount);
         self
     }
 
@@ -131,6 +149,8 @@ struct Authored {
     #[serde(default)]
     ticks: Option<(String, i32)>,
     #[serde(default)]
+    mends: Option<i32>,
+    #[serde(default)]
     badge: Option<char>,
     #[serde(default)]
     unseen: bool,
@@ -155,8 +175,9 @@ impl Named for Authored {
 ///   instance beside the first; `Ignore` does nothing.
 /// - `modifies`: stat changes while it lasts, each `(stat, op)` with `op`
 ///   one of `Add(n)`, `MulPct(n)`, `AtLeast(n)` or `AtMost(n)`.
-/// - `ticks`: `(damage kind, amount)` dealt every whole turn. A negative
-///   amount mends.
+/// - `ticks`: `(damage kind, amount)` dealt every whole turn. Never
+///   negative: a status that mends says `mends`.
+/// - `mends`: health restored every whole turn, at least 1.
 /// - `badge`: one character a panel may draw beside a health bar.
 /// - `unseen`: `true` for a status whose holder nothing can see while it
 ///   lasts; `false`, the default, otherwise.
@@ -177,13 +198,32 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             }
         }
         let tick_damage = a.ticks.as_ref().and_then(|(kind, amount)| match names.damage_kind(kind) {
+            // Refused rather than read as a mend: mending was once a
+            // negative tick of a kind a game invented for it, and a file
+            // still written that way should say so, not quietly hurt.
+            Ok(_) if *amount < 0 => {
+                errors.push(format!("{}: `ticks` of {amount} is not damage; a status that mends says `mends: {}`", a.name, -amount));
+                None
+            }
             Ok(kind) => Some((kind, *amount)),
             Err(e) => {
                 errors.push(format!("{}: {e}", a.name));
                 None
             }
         });
-        defs.push(StatusDef { name: a.name.clone(), stacking: a.stacking, modifiers, tick_damage, badge: a.badge, unseen: a.unseen, boon: a.boon });
+        if let Some(amount) = a.mends.filter(|amount| *amount < 1) {
+            errors.push(format!("{}: `mends` of {amount} restores nothing; it is at least 1", a.name));
+        }
+        defs.push(StatusDef {
+            name: a.name.clone(),
+            stacking: a.stacking,
+            modifiers,
+            tick_damage,
+            tick_mend: a.mends,
+            badge: a.badge,
+            unseen: a.unseen,
+            boon: a.boon,
+        });
     }
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
@@ -222,11 +262,24 @@ pub struct Tick {
     pub source: Option<u64>,
 }
 
+/// Health one status restored on a tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mended {
+    /// Which status.
+    pub status: StatusId,
+    /// How much it offers, before the holder's own mending is asked.
+    pub amount: i32,
+    /// Who applied the status.
+    pub source: Option<u64>,
+}
+
 /// What one turn did to an actor's statuses.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TickReport {
     /// Damage to resolve, in status order.
     pub ticks: Vec<Tick>,
+    /// Health to restore, in status order.
+    pub mends: Vec<Mended>,
     /// Statuses that ran out this turn.
     pub expired: Vec<StatusId>,
 }
@@ -313,10 +366,14 @@ impl Statuses {
     /// Advances one turn: collects the damage each status deals, then
     /// expires what ran out and removes its modifiers.
     pub fn tick(&mut self, defs: &Registry<StatusDef>, stats: &mut Stats) -> TickReport {
-        let mut ticks = Vec::new();
+        let (mut ticks, mut mends) = (Vec::new(), Vec::new());
         for s in &self.active {
-            if let Some((kind, amount)) = defs.get(s.id).tick_damage {
+            let def = defs.get(s.id);
+            if let Some((kind, amount)) = def.tick_damage {
                 ticks.push(Tick { status: s.id, kind, amount, source: s.source });
+            }
+            if let Some(amount) = def.tick_mend {
+                mends.push(Mended { status: s.id, amount, source: s.source });
             }
         }
         let mut expired = Vec::new();
@@ -336,7 +393,7 @@ impl Statuses {
         // the instance index at the time of application, which the order of
         // `active` preserves.
         self.active = kept;
-        TickReport { ticks, expired }
+        TickReport { ticks, mends, expired }
     }
 
     /// Removes `id` outright, modifiers included. Returns whether it was there.
@@ -416,7 +473,7 @@ mod tests {
 
     fn vocabulary() -> (Registry<StatDef>, Registry<crate::damage::DamageKind>) {
         let stats = Registry::from_defs(vec![StatDef::new("speed", 100), StatDef::new("armor", 0)]).unwrap();
-        let kinds = Registry::from_defs(vec![crate::damage::DamageKind::new("bite"), crate::damage::DamageKind::new("care")]).unwrap();
+        let kinds = Registry::from_defs(vec![crate::damage::DamageKind::new("bite")]).unwrap();
         (stats, kinds)
     }
 
@@ -473,7 +530,7 @@ mod tests {
             [
                 (name: "hasted", modifies: [("speed", MulPct(200))], badge: 'H'),
                 (name: "venom", stacking: Extend, ticks: ("bite", 1)),
-                (name: "mending", ticks: ("care", -2)),
+                (name: "mending", mends: 2),
                 (name: "stunned", stacking: Ignore),
             ]"#,
             &names,
@@ -484,8 +541,37 @@ mod tests {
         assert_eq!(hasted.badge, Some('H'));
         assert_eq!(hasted.stacking, Stacking::Refresh, "the default");
         assert_eq!(r.get(r.expect("venom")).tick_damage, Some((kinds.expect("bite"), 1)));
-        assert_eq!(r.get(r.expect("mending")).tick_damage, Some((kinds.expect("care"), -2)), "a negative tick mends");
+        let mending = r.get(r.expect("mending"));
+        assert_eq!((mending.tick_damage, mending.tick_mend), (None, Some(2)), "a mend is not a tick of any kind");
         assert_eq!(r.get(r.expect("stunned")).stacking, Stacking::Ignore);
+    }
+
+    /// A tick below zero was how a status mended when healing was damage
+    /// of a kind; it is refused with the word that replaced it rather
+    /// than loaded as a tick that now does nothing. So is a mend of none.
+    #[test]
+    fn a_negative_tick_and_a_mend_of_nothing_are_refused_naming_what_to_write() {
+        let (stats, kinds) = vocabulary();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds);
+        let old = load(r#"#![enable(implicit_some)] [(name: "mending", ticks: ("bite", -2))]"#, &names).expect_err("a negative tick is not damage");
+        assert!(old.to_string().contains("mends: 2"), "{old}");
+        let none = load(r#"#![enable(implicit_some)] [(name: "mending", mends: 0)]"#, &names).expect_err("a mend of nothing");
+        assert!(none.to_string().contains("at least 1"), "{none}");
+    }
+
+    /// A status that mends is reported as a mend each turn, beside and
+    /// apart from the damage another deals.
+    #[test]
+    fn a_mending_status_reports_a_mend_each_turn_and_no_tick_of_damage() {
+        let (_, kinds) = vocabulary();
+        let defs = Registry::from_defs(vec![StatusDef::new("mending").mends(2), StatusDef::new("venom").ticks(kinds.expect("bite"), 1)]).unwrap();
+        let (mending, venom) = (defs.expect("mending"), defs.expect("venom"));
+        let (mut statuses, mut stats) = (Statuses::default(), Stats::default());
+        statuses.apply(mending, 2, Some(9), &defs, &mut stats);
+        statuses.apply(venom, 2, None, &defs, &mut stats);
+        let report = statuses.tick(&defs, &mut stats);
+        assert_eq!(report.mends, vec![Mended { status: mending, amount: 2, source: Some(9) }]);
+        assert_eq!(report.ticks.iter().map(|t| (t.status, t.amount)).collect::<Vec<_>>(), vec![(venom, 1)]);
     }
 
     #[test]

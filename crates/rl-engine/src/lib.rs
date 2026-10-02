@@ -42,7 +42,8 @@ pub use rl_world;
 ///
 /// Bevy's defaults, with a window sized to the terminal and nearest-pixel
 /// sampling so glyphs stay sharp; the [`TerminalPlugin`](rl_render::TerminalPlugin)
-/// grid; the engine's [`CorePlugin`](rl_bevy::CorePlugin) and
+/// grid, and the [`FullscreenPlugin`](rl_render::FullscreenPlugin) that
+/// declares filling the screen as a setting; the engine's [`CorePlugin`](rl_bevy::CorePlugin) and
 /// [`FovPlugin`](rl_bevy::FovPlugin); the map, drawn in [`map`](Self::map)'s
 /// rectangle, and the [`ParticlesPlugin`](rl_render::ParticlesPlugin) that
 /// plays flights and bursts over it; [`UiPlugin`](rl_ui::UiPlugin), the base
@@ -114,6 +115,8 @@ impl PluginGroup for RoguelikePlugins {
                 DefaultPlugins.set(WindowPlugin { primary_window: Some(rl_render::capture::prepare(window)), ..default() }).set(ImagePlugin::default_nearest()),
             )
             .add(rl_render::TerminalPlugin { width: self.cols, height: self.rows, cell_size: self.cell, font_size: self.font })
+            // Filling the screen, as a setting the renderer declares.
+            .add(rl_render::FullscreenPlugin)
             .add(rl_bevy::CorePlugin)
             .add(rl_bevy::FovPlugin)
             .add(rl_render::MapViewPlugin::new(map))

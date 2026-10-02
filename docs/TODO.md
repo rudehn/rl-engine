@@ -11,7 +11,7 @@ The second review's: the contributor pattern the minds use is the engine's best 
 That review first filed what it read as a save data-loss bug, over `Fuel`, `LightSource`, `Aware` and `Heard`.
 It is not one.
 `docs/design/lighting.md` section 5 says fuel and a light source on an item are the game's to save with its item state, as `Enchant` already is, and `docs/design/noise.md` says `Heard` and `Aware` are lost on load on purpose, with the note that should either become worth saving the two go into `EngineSave` together.
-The item is struck, and what is left of it is the one line in section 3 about `Burning`.
+The item is struck, and the one line that was left of it, a `Burning` entity coming back unlit, was fixed on 2026-09-30 by saving it in `EntityState`.
 The reading it rested on is worth keeping as a caution: the save's coverage is legible only from three design docs, and nothing in `crates/rl-save/` states the rule it follows.
 
 The sections below are thematic.
@@ -25,59 +25,56 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 
 | # | Item | Section | Impact | Effort |
 |---|------|---------|--------|--------|
-| 1 | Healing is not a kind of damage | 4 | high | high |
-| 2 | `FlowFields` thrashes rather than evicts | 8 | medium | medium |
-| 3 | Corsair's tests play a different game from its binary | 3 | medium | medium |
-| 4 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
-| 5 | `OnMap` as a required component | 4 | medium | medium |
-| 6 | Light is recast once a frame, not once a turn | 3 | medium | medium |
-| 7 | Every game's log lines go through `Tell` | 3 | medium | medium |
-| 8 | What the save holds is stated where the save is | 7 | medium | medium |
-| 9 | Anyone travels | 3 | medium | high |
-| 10 | Movement profiles that change costs | 3 | medium | high |
-| 11 | The narrator hears what registers itself | 7 | medium | high |
-| 12 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 13 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 14 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 15 | Admission scans its waiting actors linearly | 4 | low | low |
-| 16 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 17 | A `Burning` entity comes back unlit | 3 | low | low |
-| 18 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 1 | Corsair's tests play a different game from its binary | 3 | medium | medium |
+| 2 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
+| 3 | `OnMap` as a required component | 4 | medium | medium |
+| 4 | What the save holds is stated where the save is | 7 | medium | medium |
+| 5 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
+| 6 | A searcher dithers where it lost the trail | 2 | medium | low |
+| 7 | No game fields a kind that travels | 3 | medium | medium |
+| 8 | Movement profiles that change costs | 3 | medium | high |
+| 9 | The narrator hears what registers itself | 7 | medium | high |
+| 10 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 11 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 12 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 13 | Admission scans its waiting actors linearly | 4 | low | low |
+| 14 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 15 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 16 | `HalveIfBlocked` can never fire | 3 | low | low |
+| 17 | Two engine types are named for a theme word | 4 | low | low |
+| 18 | A light that moved costs a second cast, unmeasured | 8 | low | low |
 | 19 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
 | 20 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | 21 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
-| 22 | `HalveIfBlocked` can never fire | 3 | low | low |
-| 24 | Two engine types are named for a theme word | 4 | low | low |
-| 25 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
-| 26 | A searcher dithers where it lost the trail | 2 | medium | low |
-| 27 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 28 | Furnishing a room of any size | 1 | medium | medium |
-| 29 | A furnishing pool with bands and a budget | 1 | low | medium |
-| 30 | Furnishing a map that is not rooms | 1 | low | medium |
+| 22 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
+| 23 | Furnishing a room of any size | 1 | medium | medium |
+| 24 | A furnishing pool with bands and a budget | 1 | low | medium |
+| 25 | Furnishing a map that is not rooms | 1 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
+Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
+The table was renumbered that day, so a number here is a place in the order as it stands and not the one an older note may cite.
 
 Why the order that is left, in four moves:
 
-1. **Healing first.**
-   It was put at the top on 2026-09-23 as a design correction rather than by the ranking below: every game registers a damage kind that is not one, and each new game copies it, so it only gets dearer.
-2. **The performance section is done for now.**
-   Eight items opened there; the benches closed or struck seven of them and one line fixed the eighth.
-   The turn loop's ceiling was schedule dispatch, and everything else that was supposed to be a ceiling measured small: the perceive scans, the veil's epoch, the closed screens' collectors, the terminal's entity count.
-   What is left in section 8 is one cache that thrashes and two cheap cleanups, none of them urgent.
-3. **Then work down the middle band, 2 to 9.**
+1. **The middle band first, 1 to 7.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-4. **Then 10 to 12**, the high-effort ones, of which only the narrator's registry is structural.
+   Item 7 is the newest: travel is built and tested in the engine and no game's content asks for it, which is the shape of the failure `docs/PLAN.md` section 1 was written against.
+2. **Then 8 and 9**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
+3. **Items 10 to 19 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
+   Item 18 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
+4. **The rest wait on something.**
+   Item 20 waits on a game that actually wants the tactics it would add, and item 21 on a second game asking for it.
+   Items 22 to 25 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 22 is what the furnished rooms most visibly lack, 23 what the larger rooms do, and 24 and 25 wait on Foundry's zones and on a game that furnishes a cave.
 
-Items 13 to 20 are cleanups worth taking whenever their file is open for another reason rather than scheduling, item 21 waits on a game that actually wants the tactics it would add, and item 22 waits on a second game asking for it.
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
-Items 27 to 30 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 27 is what the furnished rooms most visibly lack, 28 what the larger rooms do, and 29 and 30 wait on Foundry's zones and on a game that furnishes a cave.
+The performance section is done for now: eight items opened there, the benches closed or struck seven, and what is left is one cheap cleanup and one cast to measure.
 
 ## 1. Own the loops the games keep rewriting
 
@@ -120,22 +117,18 @@ The five items that opened this section were built in the six stages of `docs/de
   Tiles already split the three, walkable, opaque and whether a shot passes, and Foundry's rooms want the same of a prop: a coolant tank or a full shelf blocks all three, a workbench or a lathe only the way, as `examples/foundry/DESIGN.md` sets out under Rooms.
   Sight goes through the veil that gas writes into and a bump to the map's `opacity_epoch`, which `docs/design/props.md` section 10 already names; a low prop letting a shot over it wants `shot` to tell an actor standing in a cell from a thing that only blocks walking.
 
-- **A `Burning` entity comes back unlit.**
-  `EngineSave` records every burning cell, but the `Burning` component on the entity standing in one is not saved and has no design note saying it should not be, unlike `Fuel`, `LightSource`, `Aware` and `Heard`, which all do.
-  A crate that caught fire mid-run reloads without its remaining turns, so `keep_alight` stops refreshing its cell and it burns for whatever the saved field has left rather than for what it had left.
-  Mostly self-healing, since the saved field re-catches it, which is why this is at the bottom of the order rather than the top.
-- **Every game's log lines said inside a turn go through `Tell`.**
-  Corsair, the tutorial, Delve and Heist still push lines straight to `MessageLog` from systems in `TurnSet::React` (the tutorial's "You eat the crust. It helps.", Corsair's portal and discovery lines, the heist's), against the narrator's module doc, so a line can land above the event it answers.
-  Each should write a `Tell` instead, and the guide chapters that quote the tutorial move with it; Foundry did this on 2026-09-18.
+- **No game fields a kind that travels.**
+  `Wits::TRAVELS` is built and tested in the engine, a mind following through and a hurt one leaving by a way, and no example's content writes `travels`, so no game exercises it and no fingerprint would notice it break.
+  Three things want deciding when a game takes it up.
+  Foundry's lifts are gated by the game for the commando, the core charged or not, and nothing asks that of a droid that travels.
+  Following is only for a mind beside the one that left, as it left; a chase that arrives some turns later would need actors on a map nobody is reading to be dealt turns, which nothing does.
+  And the narrator's `Leaves` cannot name the way, "leaves" rather than "takes the lift", because a transition has no name the engine reads.
+- **The tutorial's own `narrate` pushes lines once a frame.**
+  Steps 4 to 6 and 8 to 10 of the tutorial read `ItemEvent` in `PresentSet::Narrate` and push "You eat the crust. It helps." straight to the log, which is the pattern the narrator replaced: a frame of several passes says them in buffer order rather than in the order they happened.
+  They are not inside a pass, so the rule about `Tell` does not reach them; moving them into `TurnSet::React` as a `Tell` would, and the guide chapters that quote them move with it.
 - **Movement profiles that change costs.**
   `FlowFields::ensure` keys the cache by `MovementProfile` but builds every map with `PathRules::default()`, so a swimmer and a walker see the same map and the sailing profile the plan's river section promised is not wired.
   `TileProps` needs a per-profile walkability mask, and the flood needs to read it.
-- **Anyone travels.**
-  `WarpRequest` and `GoThrough` ignore everyone but the player (`crates/rl-bevy/src/places.rs`, `resolve_warps`).
-  Companions, escorts and a monster fleeing down the stairs are out of reach until a non-player can change maps.
-- **Light is recast once a frame, not once a turn.**
-  `update_lighting` runs in `EngineSet::Light`, after every `Turn` pass the frame ran, so a droid acting in the same frame the player switches a lamp off still sees by the old light, for one turn.
-  Foundry's lamp shows it; recasting the dynamic layer inside the turn loop, when a source was added or removed, would close it.
 - **`Rooms` can run out of attempts on a small map.**
   Asked for three rooms sized 8 to 10 on a 40x30 map, it fails roughly one seed in sixty inside its default thirty attempts.
   Whether that is a tuning problem, a default `attempts` too low for the room sizes it is asked to fit, or a limit the pass should just document is not yet decided.
@@ -179,13 +172,6 @@ The five items that opened this section were built in the six stages of `docs/de
   Found on 2026-09-22 while writing `docs/guide/src/systems/narration.md`.
 
 ## 4. Simplify
-
-- **Healing is not a kind of damage.**
-  `Mend` writes negative damage of a named kind (`crates/rl-bevy/src/effects/engine.rs`), and a status mends over time by ticking negative damage (`StatusDef::ticks` in `crates/rl-rules/src/status.rs`), so every game registers a damage kind that is not one, `care` in Foundry, Corsair, Delve and the tutorial, and sets it unarmored so plate does not stop a medkit.
-  The reason given is that a game can then make a construct resist healing without the engine learning the word, but that is one case bought by teaching armor, resistances and the damage stages to leave a heal alone, and a damage table that lists healing beside kinetic and thermal reads as a mistake to anyone who opens it.
-  Healing becomes its own effect and its own path to `Health`: `Mend { roll }` with no kind, a status that mends rather than ticks negative damage, and a per-actor modifier on healing received for the construct case.
-  It touches the damage pipeline in `crates/rl-bevy/src/combat.rs`, narration and the views that read a negative hit as a heal, the content of five games and the genre tests, and `docs/guide/src/05-a-knack.md`, which teaches `care` to a new author.
-  Raised on 2026-09-23 while writing up Foundry's props, and ranked first in the order at the maintainer's call.
 
 - **`Thinking` splits its context from its snapshot.**
   `crates/rl-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.
@@ -331,10 +317,10 @@ What is left below is measured unless it says otherwise.
   Nine microseconds of a 309-microsecond frame, three per cent, against a change that breaks two of the five collectors it would gate: `open_on_crowded_bump` reads `OffersView` every frame to decide whether to open the offers screen, and the menu reads `SheetView` at the end of a run to write the obituary.
   Not worth it.
   `docs/design/ui.md`'s "every frame, not on a turn boundary" stands, and this is a second reason for it.
-- **`FlowFields` thrashes rather than evicts.**
-  `FlowFields::ensure` (`crates/rl-bevy/src/minds.rs`) clears the entire cache when it reaches thirty-two entries instead of evicting one, and keys it by a `Vec<Point>` of every enemy the asking mind can see, so two hunters seeing different subsets share no flood.
-  The doc's promise that fifty hunters after one player cost one flood holds only when all fifty see exactly the same set.
-  An LRU, and a coarser key than the full roster, would make it hold more often.
+- **A light that moved costs a second cast, unmeasured.**
+  Since 2026-09-30 the light is recast inside the turn loop, so a mind within reach of a light that moved is marked stale and casts its sight in `sense` on its own turn, and again in the frame's pass if it then stepped.
+  That is up to two shadowcasts a turn for the minds round a player carrying a lamp, where the count was exactly one, at about 10 microseconds each by the figures above.
+  Run `one_player_turn` lit before deciding anything: a cast that only the light invalidated needs the gate and not the line, which `Viewshed` already keeps, and that is the fix if the number is worth one.
 - **`WorldMap::tile` walks a `BTreeMap` per call.**
   `active_place()` does a lookup on every `tile`, `is_walkable` and `is_opaque`, and `draw_map` asks two or three times per cell per frame.
   Caching the active place behind the switch would take thousands of lookups a frame down to none.

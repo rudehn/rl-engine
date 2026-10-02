@@ -87,6 +87,8 @@ pub struct StatusLine {
     pub modifies: Vec<(String, Op)>,
     /// Damage it deals a turn, by the kind's name.
     pub ticks: Option<(String, i32)>,
+    /// Health it restores a turn.
+    pub mends: Option<i32>,
 }
 
 /// One equipment slot.
@@ -240,6 +242,7 @@ pub fn collect_sheet(
                 turns: active.turns,
                 modifies: def.modifiers.iter().map(|m| (registries.stats.name(m.stat).to_string(), m.op)).collect(),
                 ticks: def.tick_damage.map(|(kind, amount)| (kind_name(kind), amount)),
+                mends: def.tick_mend,
             });
         }
     }

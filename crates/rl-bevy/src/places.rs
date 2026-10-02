@@ -8,20 +8,27 @@
 //! freezes actors on other maps and the readers of the current map do not
 //! see them.
 //!
-//! Only the player travels. A [`Transition`] is an entity standing on a
-//! cell; [`GoThrough`] on that cell takes the player through it. A
-//! [`WarpRequest`] does the same from anywhere, for portals.
+//! A [`Transition`] is an entity standing on a cell; [`GoThrough`] on
+//! that cell takes an actor through it, and a [`WarpRequest`] does the
+//! same from anywhere, for portals. The map being read follows the player.
+//! Anyone else travels only when the game says its kind does, with
+//! [`Wits::TRAVELS`]: such a mind goes through after whoever it was
+//! hunting or keeping beside, when it stood next to them as they left,
+//! and takes a way out when it runs. It is frozen where it lands until
+//! the player comes, like everything else on a map nobody is reading.
 
 use bevy::prelude::*;
 use rl_core::Point;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_grid::Terrain;
 use rl_mapgen::BuildError;
+use rl_rules::Wits;
 use rl_world::WorldGraph;
 
+use crate::combat::Dead;
 use crate::components::{Blocks, Player, Position, Viewshed};
 use crate::knowledge::Knowledge;
-use crate::minds::FlowFields;
+use crate::minds::{FlowFields, Intelligence, Post, Trails};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
 use crate::world::{WorldMap, WorldRes};
 
@@ -146,17 +153,25 @@ pub trait PlaceRules: Send + Sync {
 #[derive(Resource)]
 pub struct PlaceRulesRes(pub Box<dyn PlaceRules>);
 
-/// Go through the [`Transition`] on the actor's cell. Refused off one.
+/// Go through the [`Transition`] on the actor's cell. Refused off one,
+/// and refused to anyone but the player whose
+/// [`Intelligence`] lacks
+/// [`Wits::TRAVELS`]: a monster stays on the map it was put on unless the
+/// game says its kind does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GoThrough;
 impl Action for GoThrough {}
 
-/// Asks the engine to move the player somewhere, building the place if
+/// Asks the engine to move someone somewhere, building the place if
 /// needed. Resolved in [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve)
 /// without costing a turn; a game charges what it likes.
+///
+/// Anyone: this is the game moving an actor, so nothing is asked of its
+/// wits. The map being read follows the player and nobody else, so an
+/// actor sent to another map is frozen there until the player arrives.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WarpRequest {
-    /// Who. Only the player travels; anyone else is ignored.
+    /// Who.
     pub actor: Entity,
     /// Where to.
     pub to: Destination,
@@ -169,7 +184,7 @@ impl WarpRequest {
     }
 }
 
-/// The player changed maps.
+/// The player changed maps, and the map being read with it.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MapChanged {
     /// From.
@@ -178,13 +193,39 @@ pub struct MapChanged {
     pub to: MapId,
 }
 
-/// A place was entered. `first` is true the one time it was just built,
+/// Someone changed maps: the player, or anyone else.
+///
+/// Beside [`MapChanged`] rather than in place of it, because that one
+/// says the map every reader reads has switched, which only the player's
+/// travel does. This is what a game answers to say that something ran
+/// down the stairs or came up them after the player.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Travelled {
+    /// Who.
+    pub actor: Entity,
+    /// From.
+    pub from: MapId,
+    /// The cell of `from` it left, which is where anyone who saw it go was
+    /// looking; where it stands now is a cell of another map.
+    pub left: Point,
+    /// To.
+    pub to: MapId,
+    /// Who it went after, when it followed someone through rather than
+    /// going of its own accord.
+    pub after: Option<Entity>,
+}
+
+/// A place was entered by the player. `first` is true the first time,
 /// which is when a game populates it.
+///
+/// The first time the player arrives, not the time it was built: a
+/// monster that travels can get there first and build it, and the floor
+/// is still to be filled when the player follows.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlaceEntered {
     /// Which.
     pub map: MapId,
-    /// Whether it was built for this arrival.
+    /// Whether this is the player's first arrival.
     pub first: bool,
     /// Its entry.
     pub entry: Point,
@@ -208,14 +249,28 @@ pub struct Maps<'w> {
 pub struct WarpReport<'w> {
     changed: MessageWriter<'w, MapChanged>,
     entered: MessageWriter<'w, PlaceEntered>,
+    travelled: MessageWriter<'w, Travelled>,
 }
 
-/// The player as a traveller.
-type Traveller<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Option<&'static OnMap>, Has<Blocks>), With<Player>>;
+/// Anyone who might travel: where it stands, whether it is the player,
+/// what its wits allow, and whom it would go after.
+type TravellerData = (
+    &'static mut Position,
+    Option<&'static mut Viewshed>,
+    Option<&'static OnMap>,
+    Has<Blocks>,
+    Has<Player>,
+    Option<&'static Intelligence>,
+    Option<&'static Trails>,
+    Has<Dead>,
+);
 
-/// Transitions, wherever they stand. Never the player, which keeps this
-/// disjoint from the traveller's mutable position.
-type Transitions<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static OnMap>, &'static Transition), Without<Player>>;
+/// Everyone with a position but the ways through themselves, which keeps
+/// this disjoint from the transitions it is read beside.
+type Traveller<'w, 's> = Query<'w, 's, (Entity, TravellerData), Without<Transition>>;
+
+/// Transitions, wherever they stand.
+type Transitions<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static OnMap>, &'static Transition)>;
 
 /// Who travels and what they travel through.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -224,8 +279,23 @@ pub struct Travel<'w, 's> {
     transitions: Transitions<'w, 's>,
 }
 
-/// Takes the player through the transition it stands on for an
+/// One journey to resolve: who, where to, whether it is the actor's turn
+/// spent, and whom it follows.
+struct Trip {
+    actor: Entity,
+    to: Destination,
+    is_action: bool,
+    after: Option<Entity>,
+}
+
+/// Takes an actor through the transition it stands on for a
 /// [`GoThrough`], and anywhere a [`WarpRequest`] asks.
+///
+/// Whoever was beside an actor that went through, travels, and was after
+/// it or with it on its own last turn goes through behind it, in the same
+/// pass: [`Trails`] is the list a mind keeps of those, and it is empty
+/// for a mind without [`Wits::TRAVELS`]. A warp is never followed, since
+/// nobody saw where it went.
 pub fn resolve_warps(
     mut commands: Commands,
     mut intents: MessageReader<Intent<GoThrough>>,
@@ -236,45 +306,109 @@ pub fn resolve_warps(
     travel: Travel,
 ) {
     let Travel { mut travellers, transitions } = travel;
-    let mut trips: Vec<(Entity, Destination, bool)> = Vec::new();
+    let mut trips: Vec<Trip> = Vec::new();
     for intent in intents.read() {
         if !resolution.claim(intent.actor) {
             continue;
         }
-        // Only the player travels between places; anyone else going
-        // through fails like any other impossible action.
-        let Ok((pos, _, on, _)) = travellers.get(intent.actor) else {
+        let Ok((_, (pos, _, on, _, player, wits, ..))) = travellers.get(intent.actor) else {
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         };
-        let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
-        let found = transitions.iter().find(|(p, m, _)| p.0 == pos.0 && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| t.to);
-        match found {
-            Some(to) => trips.push((intent.actor, to, true)),
-            None => resolution.failed(intent.actor, BASE_ACTION_COST),
+        if !player && !wits.is_some_and(|w| w.has(Wits::TRAVELS)) {
+            resolution.failed(intent.actor, BASE_ACTION_COST);
+            continue;
         }
+        let (at, here) = (pos.0, on.map(|m| m.0).unwrap_or(MapId::SURFACE));
+        let found = transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| t.to);
+        let Some(to) = found else {
+            resolution.failed(intent.actor, BASE_ACTION_COST);
+            continue;
+        };
+        trips.push(Trip { actor: intent.actor, to, is_action: true, after: None });
+        // Nearest first, then by entity, so who gets the cell beside the
+        // landing never depends on the order a query happened to run in.
+        let mut behind: Vec<(i32, Entity)> = travellers
+            .iter()
+            .filter(|(e, (pos, _, on, _, _, wits, trails, dead))| {
+                *e != intent.actor
+                    && !dead
+                    && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here
+                    && rl_core::geometry::chebyshev(pos.0, at) <= 1
+                    && wits.is_some_and(|w| w.has(Wits::TRAVELS))
+                    && trails.is_some_and(|t| t.0.contains(&intent.actor))
+            })
+            .map(|(e, (pos, ..))| (rl_core::geometry::chebyshev(pos.0, at), e))
+            .collect();
+        behind.sort();
+        trips.extend(behind.into_iter().map(|(_, e)| Trip { actor: e, to, is_action: false, after: Some(intent.actor) }));
     }
     for req in requests.read() {
         debug!("warp request {req:?}");
         if travellers.get(req.actor).is_ok() {
-            trips.push((req.actor, req.to, false));
+            trips.push(Trip { actor: req.actor, to: req.to, is_action: false, after: None });
         }
     }
-    for (actor, to, is_action) in trips {
-        match warp(&mut commands, &mut maps, &mut report, &mut travellers, actor, to) {
+    // Whoever a trip follows has to have got there: nobody goes through
+    // after someone the way refused.
+    let mut stayed: Vec<Entity> = Vec::new();
+    for Trip { actor, to, is_action, after } in trips {
+        if after.is_some_and(|led| stayed.contains(&led)) {
+            continue;
+        }
+        match warp(&mut commands, &mut maps, &mut report, &mut travellers, actor, to, after) {
             Ok(()) => {
                 if is_action {
                     resolution.done(actor, BASE_ACTION_COST);
                 }
             }
             Err(e) => {
-                error!("warp failed: {e}");
+                stayed.push(actor);
                 if is_action {
+                    error!("warp failed: {e}");
                     resolution.failed(actor, BASE_ACTION_COST);
+                } else {
+                    debug!("{actor:?} did not travel: {e}");
                 }
             }
         }
     }
+}
+
+/// How many cells round a taken landing are tried before an arrival is
+/// refused: the landing's neighbours and theirs.
+const LANDING_REACH: usize = 25;
+
+/// Where an arrival on `map` that takes up its cell stands: `want` when
+/// nothing stands there, and otherwise the nearest free cell that can be
+/// walked to from it.
+///
+/// `want` is taken on trust, as it always was: it is where the builder or
+/// the game said arrivals stand, and on the surface it may not be loaded
+/// yet. Only the cells searched round it are asked whether they are floor,
+/// so the second through a way lands beside the first rather than on it or
+/// in a wall.
+fn landing(maps: &Maps, map: MapId, want: Point) -> Option<Point> {
+    if !maps.occupancy.is_occupied_on(map, want) {
+        return Some(want);
+    }
+    let mut seen = vec![want];
+    let mut next = 0;
+    while next < seen.len() && seen.len() < LANDING_REACH {
+        let from = seen[next];
+        next += 1;
+        for dir in rl_core::Direction::ALL {
+            let p = from + dir.offset();
+            if seen.contains(&p) || !maps.map.is_walkable_on(map, p) {
+                continue;
+            }
+            if !maps.occupancy.is_occupied_on(map, p) {
+                return Some(p);
+            }
+            seen.push(p);
+        }
+    }
+    None
 }
 
 fn warp(
@@ -284,50 +418,71 @@ fn warp(
     travellers: &mut Traveller,
     actor: Entity,
     to: Destination,
+    after: Option<Entity>,
 ) -> Result<(), BuildError> {
     let (target_map, arrive) = match to {
         Destination::Surface(p) => (MapId::SURFACE, Arrive::At(p)),
         Destination::Place { map, arrive } => (map, arrive),
     };
-    let mut first = false;
     if !target_map.is_surface() && !maps.map.has_place(target_map) {
         let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("warp", "no PlaceRulesRes to build a place with"))?;
         let build = rules.0.build(target_map, maps.world.as_deref().map(|w| &w.0))?;
         maps.map.install_place(target_map, build);
-        first = true;
     }
-    let Ok((mut pos, viewshed, on, blocks)) = travellers.get_mut(actor) else {
+    let Ok((_, (mut pos, viewshed, on, blocks, player, ..))) = travellers.get_mut(actor) else {
         return Err(BuildError::new("warp", "the traveller has no position"));
     };
     let from = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
-    if blocks {
-        maps.occupancy.remove(pos.0, actor);
-    }
-    if from != target_map {
-        maps.map.switch_to(target_map);
-        maps.occupancy.switch(target_map);
-        maps.knowledge.switch(target_map);
-        maps.fields.invalidate();
-    }
-    let landing = match (arrive, maps.map.place(target_map)) {
+    let want = match (arrive, maps.map.place(target_map)) {
         (Arrive::At(p), _) => p,
         (Arrive::Entry, Some(place)) => place.entry,
         (Arrive::Exit, Some(place)) => place.exit.unwrap_or(place.entry),
         (_, None) => return Err(BuildError::new("warp", "the surface has no entry or exit")),
     };
-    pos.0 = landing;
+    // Found before anything is switched, so a refused arrival leaves the
+    // traveller and the maps exactly as they were.
+    let landing = if blocks {
+        maps.occupancy.remove_on(from, pos.0, actor);
+        match landing(maps, target_map, want) {
+            Some(landing) => landing,
+            None => {
+                maps.occupancy.insert_on(from, pos.0, actor);
+                return Err(BuildError::new("warp", "nowhere to stand on the far side"));
+            }
+        }
+    } else {
+        want
+    };
+    // The map being read follows the player and nobody else.
+    let moved = from != target_map;
+    if player && moved {
+        maps.map.switch_to(target_map);
+        maps.occupancy.switch(target_map);
+        maps.knowledge.switch(target_map);
+        maps.fields.invalidate();
+    }
+    let left = std::mem::replace(&mut pos.0, landing);
     if blocks {
-        maps.occupancy.insert(landing, actor);
+        maps.occupancy.insert_on(target_map, landing, actor);
     }
     if let Some(mut v) = viewshed {
         v.dirty = true;
     }
     commands.entity(actor).insert(OnMap(target_map));
-    if from != target_map {
+    if !moved {
+        return Ok(());
+    }
+    report.travelled.write(Travelled { actor, from, left, to: target_map, after });
+    if player {
         report.changed.write(MapChanged { from, to: target_map });
+        let first = maps.map.visit(target_map);
         if let Some(place) = maps.map.place(target_map) {
             report.entered.write(PlaceEntered { map: target_map, first, entry: place.entry, exit: place.exit });
         }
+    } else {
+        // A post is a cell of the map it was given on, and means nothing
+        // on another: an actor that left its map has left its post.
+        commands.entity(actor).remove::<Post>();
     }
     Ok(())
 }
@@ -469,6 +624,196 @@ mod tests {
         let events: Vec<ItemEvent> = r.app.world_mut().resource_mut::<Messages<ItemEvent>>().drain().collect();
         assert_eq!(events.len(), 1);
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin));
+    }
+
+    /// A rig with two sides and minds, for whoever else travels.
+    fn crowd() -> (Rig, crate::testing::Sides) {
+        let mut app = headless_app();
+        app.add_plugins((
+            crate::fov::FovPlugin,
+            crate::items::ItemsPlugin,
+            crate::world::StreamingPlugin,
+            crate::combat::CombatPlugin,
+            crate::minds::MindsPlugin,
+        ));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard()))));
+        app.init_resource::<Went>().add_systems(PostUpdate, record_travels);
+        let player = app
+            .world_mut()
+            .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap, crate::combat::Health::full(30), crate::combat::Faction(sides.ours)))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (Rig { app, player, start }, sides)
+    }
+
+    /// Everyone who travelled, recorded by a reader as `Entered` is.
+    #[derive(Resource, Default)]
+    struct Went(Vec<Travelled>);
+
+    fn record_travels(mut events: MessageReader<Travelled>, mut went: ResMut<Went>) {
+        went.0.extend(events.read().copied());
+    }
+
+    fn mind(r: &mut Rig, at: Point, side: rl_rules::FactionId, kind: rl_rules::damage::DamageKindId, wits: Wits, brain: rl_rules::Brain<Entity>) -> Entity {
+        use crate::combat::{Faction, Health, MeleeAttack};
+        use crate::minds::{Mind, Perception};
+        r.app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(at),
+                Health::full(10),
+                Faction(side),
+                Perception(8),
+                Intelligence(wits),
+                MeleeAttack::new(kind, rl_core::DiceRoll::flat(1)),
+                Mind(std::sync::Arc::new(brain)),
+            ))
+            .id()
+    }
+
+    fn on(r: &Rig, e: Entity) -> MapId {
+        r.app.world().get::<OnMap>(e).map_or(MapId::SURFACE, |m| m.0)
+    }
+
+    fn at(r: &Rig, e: Entity) -> Point {
+        r.app.world().get::<Position>(e).unwrap().0
+    }
+
+    /// A hunter that travels and stood beside the player goes through
+    /// behind it and lands beside it, still hunting; one whose kind does
+    /// not travel stays, and so does one that travels but was not beside
+    /// the player when it left.
+    #[test]
+    fn a_hunter_that_travels_follows_the_player_through_and_one_that_does_not_stays() {
+        use rl_rules::ai::tactics::{Hunt, MeleeAdjacent};
+        let (mut r, sides) = crowd();
+        let cave = MapId(3);
+        r.app.world_mut().spawn((Position(r.start), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
+        let hunts = || rl_rules::Brain::new().then(MeleeAdjacent).then(Hunt);
+        let travels = Wits::SAPIENT.with(Wits::TRAVELS);
+        let (beside, stays, far) = (r.start.offset(1, 0), r.start.offset(0, 1), r.start.offset(5, 0));
+        let follower = mind(&mut r, beside, sides.theirs, sides.kind, travels, hunts());
+        let homebody = mind(&mut r, stays, sides.theirs, sides.kind, Wits::SAPIENT, hunts());
+        let straggler = mind(&mut r, far, sides.theirs, sides.kind, travels, hunts());
+        intend(&mut r, Wait);
+        assert!(r.app.world().get::<Trails>(follower).unwrap().0.contains(&r.player), "it is after the player");
+        assert!(r.app.world().get::<Trails>(homebody).unwrap().0.is_empty(), "one that does not travel keeps no trail");
+
+        intend(&mut r, GoThrough);
+        let entry = r.app.world().resource::<WorldMap>().place(cave).unwrap().entry;
+        assert_eq!((on(&r, r.player), at(&r, r.player)), (cave, entry));
+        assert_eq!(on(&r, follower), cave, "the one beside it came through");
+        assert_eq!(rl_core::geometry::chebyshev(at(&r, follower), entry), 1, "and stands beside it, not on it");
+        assert!(r.app.world().resource::<Occupancy>().is_occupied(at(&r, follower)), "indexed where it landed");
+        assert_eq!((on(&r, homebody), at(&r, homebody)), (MapId::SURFACE, stays), "its kind does not travel");
+        assert_eq!(on(&r, straggler), MapId::SURFACE, "it was not beside the player");
+        assert_eq!(
+            r.app.world().resource::<Went>().0,
+            vec![
+                Travelled { actor: r.player, from: MapId::SURFACE, left: r.start, to: cave, after: None },
+                Travelled { actor: follower, from: MapId::SURFACE, left: beside, to: cave, after: Some(r.player) },
+            ]
+        );
+
+        let before = r.app.world().get::<crate::combat::Health>(r.player).unwrap().current;
+        intend(&mut r, Wait);
+        intend(&mut r, Wait);
+        assert!(r.app.world().get::<crate::combat::Health>(r.player).unwrap().current < before, "and it goes on with the fight below");
+    }
+
+    /// A companion comes through with the one it keeps beside, whatever
+    /// decided its last turn: idling inside the distance it keeps, it is
+    /// still a companion.
+    #[test]
+    fn a_companion_that_travels_comes_through_with_the_player() {
+        use rl_rules::ai::tactics::Keep;
+        let (mut r, sides) = crowd();
+        let cave = MapId(3);
+        r.app.world_mut().spawn((Position(r.start), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
+        let beside = r.start.offset(1, 0);
+        let friend = mind(&mut r, beside, sides.ours, sides.kind, Wits::SAPIENT.with(Wits::TRAVELS), rl_rules::Brain::new().then(Keep::allies(3, 1)));
+        intend(&mut r, Wait);
+        assert_eq!(r.app.world().get::<crate::minds::Doing>(friend).unwrap().0, None, "close enough that nothing decided its turn");
+        intend(&mut r, GoThrough);
+        assert_eq!(on(&r, friend), cave);
+        assert_eq!(rl_core::geometry::chebyshev(at(&r, friend), at(&r, r.player)), 1);
+    }
+
+    /// A hurt mind that travels runs for the way out and takes it. The
+    /// floor it lands on is built for it and waits, unvisited, so the
+    /// player's own arrival is still the first, and the player lands
+    /// beside what is standing on the entry rather than on it.
+    #[test]
+    fn a_hurt_mind_that_travels_leaves_by_a_way_and_the_floor_is_still_new_to_the_player() {
+        use rl_rules::ai::tactics::{FleeWhenHurt, Hunt};
+        let (mut r, sides) = crowd();
+        r.app.init_resource::<Entered>().add_systems(PostUpdate, record_entered);
+        let cave = MapId(3);
+        let way = r.start.offset(4, 0);
+        r.app.world_mut().spawn((Position(way), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
+        let brain = rl_rules::Brain::new().then(FleeWhenHurt { at_pct: 50 }).then(Hunt);
+        let from = r.start.offset(3, 0);
+        let runner = mind(&mut r, from, sides.theirs, sides.kind, Wits::ANIMAL.with(Wits::TRAVELS), brain);
+        r.app.world_mut().get_mut::<crate::combat::Health>(runner).unwrap().current = 2;
+        r.app.world_mut().entity_mut(runner).insert(Post(way));
+        intend(&mut r, Wait);
+        assert_eq!((on(&r, runner), at(&r, runner)), (MapId::SURFACE, way), "onto the way first");
+        intend(&mut r, Wait);
+        assert_eq!(on(&r, runner), cave, "then through it");
+        {
+            let w = r.app.world();
+            let map = w.resource::<WorldMap>();
+            assert_eq!(map.current(), MapId::SURFACE, "the map being read stays with the player");
+            let place = map.place(cave).expect("built for the one that arrived");
+            assert!(!place.visited);
+            assert_eq!(at(&r, runner), place.entry);
+            assert!(!w.resource::<Occupancy>().is_occupied(way), "no longer standing on the way");
+            assert!(w.resource::<Occupancy>().is_occupied_on(cave, place.entry), "and indexed on the map it went to");
+            assert!(w.get::<Post>(runner).is_none(), "a post is a cell of the map it left");
+            assert!(w.resource::<Entered>().0.is_empty(), "nobody has entered it as far as the game is told");
+        }
+
+        r.app.world_mut().write_message(WarpRequest::into_place(r.player, cave));
+        r.app.update();
+        let entered = r.app.world().resource::<Entered>().0.clone();
+        assert!(entered.len() == 1 && entered[0].first, "the player's arrival is the first: {entered:?}");
+        assert_eq!(rl_core::geometry::chebyshev(at(&r, r.player), at(&r, runner)), 1, "beside what stands on the entry");
+        assert!(r.app.world().resource::<WorldMap>().is_walkable(at(&r, r.player)));
+    }
+
+    /// Whatever its brain decides, a mind whose kind does not travel is
+    /// refused the way: the wits gate the action itself, not only the
+    /// tactics that would choose it.
+    #[test]
+    fn going_through_is_refused_to_a_mind_whose_kind_does_not_travel() {
+        struct Through;
+        impl rl_rules::ai::Tactic<Entity> for Through {
+            fn name(&self) -> &'static str {
+                "through"
+            }
+            fn evaluate(&self, _: &mut rl_rules::ai::TacticCtx<'_, Entity>) -> Option<rl_rules::Decision<Entity>> {
+                Some(rl_rules::Decision::GoThrough)
+            }
+        }
+        let (mut r, sides) = crowd();
+        let cave = MapId(3);
+        let way = r.start.offset(3, 0);
+        r.app.world_mut().spawn((Position(way), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
+        let stuck = mind(&mut r, way, sides.theirs, sides.kind, Wits::SAPIENT, rl_rules::Brain::new().then(Through));
+        intend(&mut r, Wait);
+        intend(&mut r, Wait);
+        assert_eq!((on(&r, stuck), at(&r, stuck)), (MapId::SURFACE, way));
+        assert!(!r.app.world().resource::<WorldMap>().has_place(cave), "and nothing was built for it");
+
+        r.app.world_mut().get_mut::<Intelligence>(stuck).unwrap().0 = Wits::SAPIENT.with(Wits::TRAVELS);
+        intend(&mut r, Wait);
+        assert_eq!(on(&r, stuck), cave, "the same brain, once its kind travels");
     }
 
     /// Found while building throwing: an item picked up on one map and put

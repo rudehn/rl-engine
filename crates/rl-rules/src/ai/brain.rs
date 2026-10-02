@@ -10,6 +10,7 @@ use crate::ability::AbilityId;
 use crate::work::Work;
 
 use crate::ai::snapshot::Snapshot;
+use crate::ai::tactics::Station;
 
 /// An action of the game's own, chosen by a tactic of the game's own.
 ///
@@ -44,6 +45,8 @@ pub enum Decision<A: Copy> {
     },
     /// Do nothing this turn.
     Wait,
+    /// Go through the way it stands on, to wherever that leads.
+    GoThrough,
     /// Take everything lying where it stands.
     PickUp,
     /// Take the item lying where it stands and put it on, in one action.
@@ -78,7 +81,7 @@ impl<A: Copy + PartialEq> PartialEq for Decision<A> {
             (Decision::Step(a), Decision::Step(b)) => a == b,
             (Decision::Attack(a), Decision::Attack(b)) => a == b,
             (Decision::Ability { ability: a, aim: p }, Decision::Ability { ability: b, aim: q }) => a == b && p == q,
-            (Decision::Wait, Decision::Wait) | (Decision::PickUp, Decision::PickUp) => true,
+            (Decision::Wait, Decision::Wait) | (Decision::PickUp, Decision::PickUp) | (Decision::GoThrough, Decision::GoThrough) => true,
             (Decision::EquipFromGround(a), Decision::EquipFromGround(b)) => a == b,
             (Decision::Throw { item: a, at: p }, Decision::Throw { item: b, at: q }) => a == b && p == q,
             (Decision::Own(a), Decision::Own(b)) => a.name() == b.name(),
@@ -166,6 +169,17 @@ pub trait Tactic<A: Copy>: Send + Sync {
 
     /// A decision, or `None` to let the next tactic try.
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>>;
+
+    /// Whose company a turn decided by this tactic keeps: the enemies it
+    /// is closing on or watching, or the allies it stays beside. `None`
+    /// for one that is about nobody, or about getting away.
+    ///
+    /// Read when one of them leaves by a way to another map, so a mind
+    /// that travels goes after what it was after and not after what it
+    /// was running from. A game's own tactic that hunts says so here.
+    fn keeps_with(&self) -> Option<Station> {
+        None
+    }
 }
 
 /// An ordered list of tactics; the first that decides, wins.
@@ -200,12 +214,23 @@ impl<A: Copy> Brain<A> {
     /// Decides, and says which tactic decided. `None` for the name means
     /// nothing fired and the actor waits.
     pub fn decide(&self, ctx: &mut TacticCtx<'_, A>) -> (Decision<A>, Option<&'static str>) {
-        for t in &self.tactics {
-            if let Some(d) = t.evaluate(ctx) {
-                return (d, Some(t.name()));
-            }
+        match self.deciding(ctx) {
+            Some((decision, tactic)) => (decision, Some(tactic.name())),
+            None => (Decision::Wait, None),
         }
-        (Decision::Wait, None)
+    }
+
+    /// Decides, and hands back the tactic that decided, for a caller that
+    /// wants more of it than its name. `None` when nothing fired.
+    pub fn deciding(&self, ctx: &mut TacticCtx<'_, A>) -> Option<(Decision<A>, &dyn Tactic<A>)> {
+        self.tactics.iter().find_map(|t| t.evaluate(ctx).map(|d| (d, &**t)))
+    }
+
+    /// Whether any tactic here keeps the mind beside its allies, whichever
+    /// tactic decides a given turn: a companion idling inside the distance
+    /// it keeps is still a companion.
+    pub fn keeps_with_allies(&self) -> bool {
+        self.tactics.iter().any(|t| t.keeps_with() == Some(Station::Allies))
     }
 
     /// The tactic names in priority order.

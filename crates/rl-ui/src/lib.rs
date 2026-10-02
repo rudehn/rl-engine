@@ -119,9 +119,9 @@ pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal
 pub use narrate::{NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
 pub use panel::{
     AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
-    INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, Scrollback, ScrollbackKeys,
-    ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal,
-    sheet_modal,
+    INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, SETTINGS_MODAL, Scrollback,
+    ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal,
+    inventory_modal, offers_modal, settings_modal, sheet_modal,
 };
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
@@ -265,8 +265,8 @@ pub mod prelude {
     pub use crate::panel::{
         AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
         INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, Scrollback,
-        ScrollbackKeys, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal,
-        offers_modal, sheet_modal,
+        ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal,
+        inventory_modal, offers_modal, settings_modal, sheet_modal,
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{

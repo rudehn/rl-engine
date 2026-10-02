@@ -58,7 +58,6 @@ impl Content {
                 DamageKind::new("shock").unarmored(),
                 DamageKind::new("blunt"),
                 DamageKind::new("pierce"),
-                DamageKind::new("care").unarmored(),
             ])
             .unwrap(),
         }

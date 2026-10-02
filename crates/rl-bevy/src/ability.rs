@@ -865,13 +865,13 @@ mod tests {
         name: "mend",
         aim: Ally,
         mode: Own,
-        effects: [(kind: "Mend", args: (kind: "fire", roll: "5"))],
+        effects: [(kind: "Mend", args: (roll: "5"))],
     ),
     (
         name: "quaff",
         aim: SelfOnly,
         mode: Own,
-        effects: [(kind: "Mend", args: (kind: "fire", roll: "5"))],
+        effects: [(kind: "Mend", args: (roll: "5"))],
     ),
 ]"#;
 

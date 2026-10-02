@@ -75,6 +75,7 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("engine loot::drop_on_death", id(rl_engine::rl_bevy::loot::drop_on_death::<gear::Armory>)),
         ("engine loot::fill_containers", id(rl_engine::rl_bevy::loot::fill_containers::<gear::Armory>)),
         ("title::look_for_save", id(title::look_for_save)),
+        ("title::look_for_settings", id(title::look_for_settings)),
         ("engine save::refresh_stash", id(rl_engine::rl_save::run::refresh_stash)),
         ("engine save::save_on_arrival", id(rl_engine::rl_save::save_on_arrival)),
         ("engine save::flush_on_exit", id(rl_engine::rl_save::unload::flush_on_exit)),
@@ -170,6 +171,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Thinking", c.component_id::<rl_engine::rl_bevy::Thinking>()),
         ("Messages<Cued>", c.component_id::<Messages<rl_engine::rl_bevy::Cued>>()),
         ("Messages<DamageEvent>", c.component_id::<Messages<rl_engine::rl_bevy::DamageEvent>>()),
+        ("Messages<Heal>", c.component_id::<Messages<rl_engine::rl_bevy::Heal>>()),
         ("Messages<Afflict>", c.component_id::<Messages<rl_engine::rl_bevy::Afflict>>()),
         ("Messages<Cure>", c.component_id::<Messages<rl_engine::rl_bevy::Cure>>()),
         ("Messages<FillContainer>", c.component_id::<Messages<rl_engine::rl_bevy::FillContainer>>()),
@@ -248,7 +250,17 @@ fn allowed(world: &World) -> Vec<Allowed> {
             id(ability::resolve_abilities),
             &[
                 &claims[..],
-                &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "EffectRng"],
+                &[
+                    "Occupancy",
+                    "Messages<Cued>",
+                    "Messages<DamageEvent>",
+                    "Messages<Heal>",
+                    "Messages<Afflict>",
+                    "Messages<Cure>",
+                    "Position",
+                    "Viewshed",
+                    "EffectRng",
+                ],
             ]
             .concat(),
             "one action a pass: an interaction and an ability are never resolved in the same one",
@@ -294,8 +306,8 @@ fn allowed(world: &World) -> Vec<Allowed> {
         Allowed {
             a: Some(id(title::read_title_keys)),
             b: None,
-            on: on(&["Messages<AppExit>", "ButtonInput<KeyCode>"]),
-            why: "the title screen is up only before a run, the menu only inside one, and a key forgotten as the window leaves is a key this screen may act on or not with nothing riding on it",
+            on: on(&["Messages<AppExit>", "ButtonInput<KeyCode>", "Modals"]),
+            why: "the title screen is up only before a run, the menu only inside one, and a key forgotten as the window leaves is a key this screen may act on or not with nothing riding on it; the one screen it opens, the settings, is read in neither order in the frame it opens or closes",
         },
         // What lands only ever lands in a pass that dealt nobody a turn,
         // since nothing is dealt while it flies, so never beside an
@@ -303,7 +315,17 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_interactions),
             id(ability::land_abilities),
-            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Messages<Afflict>", "Messages<Cure>", "Position", "Viewshed", "EffectRng"],
+            &[
+                "Occupancy",
+                "Messages<Cued>",
+                "Messages<DamageEvent>",
+                "Messages<Heal>",
+                "Messages<Afflict>",
+                "Messages<Cure>",
+                "Position",
+                "Viewshed",
+                "EffectRng",
+            ],
             "an ability lands in a pass no interaction is resolved in",
         ),
         pair(

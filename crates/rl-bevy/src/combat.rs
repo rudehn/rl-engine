@@ -31,7 +31,7 @@ use rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_rules::ability::Look;
 use rl_rules::damage::{DamageKindId, Defender, SubtractArmor};
 use rl_rules::faction::FactionDef;
-use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances, StatId};
+use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances, StatId, StatusId};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
 use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
@@ -69,12 +69,12 @@ pub struct Armor(pub i32);
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Resists(pub Resistances);
 
-/// Takes no harm: every hit on it lands as nothing, after the stages, and a
-/// heal still heals.
+/// Takes no harm: every hit on it lands as nothing, after the stages. A
+/// [`Heal`] still heals it, and so does a hit it absorbs.
 ///
 /// A component rather than a stage, because a stage sees the hit and not
 /// whom it lands on, and rather than a resistance of a hundred percent,
-/// because resistances add up and past a hundred they heal. For a dummy a
+/// because resistances add up and past a hundred they absorb. For a dummy a
 /// tutorial wants struck, an escort a scene keeps alive, or a debug mode.
 /// The hit is still reported, with nothing dealt, so whatever narrates it
 /// says it had no effect rather than saying nothing.
@@ -241,6 +241,9 @@ pub struct CombatRules {
     pub accuracy: Option<StatId>,
     /// The stat a target's evasion is read from, if any.
     pub evasion: Option<StatId>,
+    /// The stat whose value is added, in percent, to the hundred of every
+    /// [`Heal`] an actor is given, if any.
+    pub mending: Option<StatId>,
     /// Whether the player's death ends the run, which it does unless the
     /// game says otherwise: one that revives, or plays on as a ghost, keeps
     /// the ending for itself.
@@ -252,7 +255,7 @@ impl CombatRules {
     /// until a pair is named, no stat read by a blow, and the player's death
     /// the end of the run.
     pub fn new(sides: &Registry<FactionDef>) -> Self {
-        Self { factions: Factions::new(sides), armor: None, attack: None, accuracy: None, evasion: None, death_ends_run: true }
+        Self { factions: Factions::new(sides), armor: None, attack: None, accuracy: None, evasion: None, mending: None, death_ends_run: true }
     }
 
     /// The player's death does not end the run; the game says when it ends.
@@ -284,6 +287,17 @@ impl CombatRules {
     /// Reads `stat` as evasion, for the hit model.
     pub fn evasion_stat(mut self, stat: StatId) -> Self {
         self.evasion = Some(stat);
+        self
+    }
+
+    /// Reads `stat` as how well an actor mends: its value is a percentage
+    /// added to the hundred of every [`Heal`] it is given, never taking
+    /// one below nothing. A thing that cannot be patched up carries a
+    /// modifier of minus a hundred on it, and a status that halves every
+    /// mend puts minus fifty there, with no kind of damage invented for
+    /// either.
+    pub fn mending_stat(mut self, stat: StatId) -> Self {
+        self.mending = Some(stat);
         self
     }
 
@@ -405,34 +419,81 @@ pub enum Reach {
 }
 
 /// Damage that actually landed, after mitigation, for narration and
-/// on-hit reactions. Zero means the hit was fully stopped, or was a heal
-/// that found its target whole; negative healed. [`DamageDealt::is_mend`]
-/// tells the two zeros apart.
+/// on-hit reactions. Zero means the hit was fully stopped; negative means
+/// the target absorbed it, which a resistance past a hundred does.
+///
+/// Never a mend: health restored is a [`Heal`], reported as [`Healed`], so
+/// a reader of this need not ask whether what it holds was a blow.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct DamageDealt {
     /// Who took it.
     pub target: Entity,
     /// The hit as it arrived.
     pub hit: Hit<Entity>,
-    /// What health lost; for a heal, the negative of what it gained, which
-    /// is nought for a heal at full health.
+    /// What health lost; negative for a hit absorbed, by what it restored.
     pub dealt: i32,
     /// How it got there, carried through from the [`DamageEvent`] so a
     /// narrator can tell a shot from a blow.
     pub reach: Reach,
 }
 
-impl DamageDealt {
-    /// Whether this was a heal rather than a blow: offered as one, or
-    /// restoring health after the stages.
-    ///
-    /// Not `dealt < 0` alone, which misses a heal at full health: it
-    /// restored nothing and reports nought, the same as a blow armor
-    /// stopped, and a reader that took it for one said the healer struck
-    /// to no effect and woke whoever it patched up.
-    pub fn is_mend(&self) -> bool {
-        self.hit.amount < 0 || self.dealt < 0
+/// Asks for health to be restored: a medkit, a status that mends, a shrine.
+///
+/// Its own request and its own path to [`Health`], not a negative hit of
+/// some kind. It was one once, and every game registered a damage kind
+/// that was not one to carry it, set unarmored so plate did not stop a
+/// medkit, while armor, resistances and every stage a game wrote had to
+/// know to leave it alone. Nothing mitigates a mend; what scales it is
+/// the target's own mending, [`CombatRules::mending_stat`].
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Heal {
+    /// Who is mended.
+    pub target: Entity,
+    /// How much is offered, before the target's mending. Below one offers
+    /// nothing.
+    pub amount: i32,
+    /// Who did it, if anyone: the user of the thing, or whoever applied
+    /// the status.
+    pub by: Option<Entity>,
+    /// The status whose tick this is, when it is one.
+    pub status: Option<StatusId>,
+}
+
+impl Heal {
+    /// `amount` for `target`, by nobody.
+    pub fn new(target: Entity, amount: i32) -> Self {
+        Self { target, amount, by: None, status: None }
     }
+
+    /// The same, by `who`.
+    pub fn by(mut self, who: Entity) -> Self {
+        self.by = Some(who);
+        self
+    }
+
+    /// The same, as one tick of `status`.
+    pub fn of_status(mut self, status: StatusId) -> Self {
+        self.status = Some(status);
+        self
+    }
+}
+
+/// Health that was restored, for narration and for a game's reactions.
+///
+/// Written for every [`Heal`] that found its target alive, with what it
+/// restored rather than what it offered: a mend at full health restored
+/// nothing and says so, so a log is not told every few turns that a
+/// wearer who is whole has mended.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Healed {
+    /// Who was mended.
+    pub target: Entity,
+    /// What health gained, nought at full health.
+    pub restored: i32,
+    /// Who did it, if anyone.
+    pub by: Option<Entity>,
+    /// The status whose tick it was, when it was one.
+    pub status: Option<StatusId>,
 }
 
 /// An actor's health reached zero. A non-player is taken out of the
@@ -527,6 +588,12 @@ impl Loadout<'_, '_> {
         let own = self.own.get(who).ok().and_then(|(armor, ..)| armor).map_or(0, |a| a.0);
         let worn: i32 = self.worn(who).filter_map(|(_, armor, ..)| armor).map(|a| a.0).sum();
         own + worn + self.stat(who, |r| r.armor)
+    }
+
+    /// How much of a [`Heal`] reaches `who`, in percent: a hundred and the
+    /// mending stat, never below nothing.
+    pub fn mending(&self, who: Entity) -> i32 {
+        (100 + self.stat(who, |r| r.mending)).max(0)
     }
 
     /// What `who` resists: its own [`Resists`] and every worn item's, added
@@ -884,8 +951,8 @@ pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Poin
 /// Runs the damage stages and applies what is left to health.
 ///
 /// The armor and the resistances a blow meets are the target's
-/// [`Loadout`]: its own, what it wears, and the armor stat. An [`Invulnerable`] target keeps whatever
-/// heals it and nothing that harms it.
+/// [`Loadout`]: its own, what it wears, and the armor stat. An
+/// [`Invulnerable`] target keeps what it absorbs and nothing that harms it.
 pub fn apply_damage(
     mut events: MessageReader<DamageEvent>,
     mut dealt: MessageWriter<DamageDealt>,
@@ -907,14 +974,31 @@ pub fn apply_damage(
         let amount = if invulnerable { amount.min(0) } else { amount };
         let before = health.current;
         health.current = (health.current - amount).min(health.max);
-        // A heal reports what it restored, not what it offered: a mend at
-        // full health restored nothing, and saying otherwise put a line in
-        // the log every time a worn thing mended a wearer who was whole.
+        // A hit absorbed reports what it restored, which at full health is
+        // nothing.
         let reported = if amount < 0 { before - health.current } else { amount };
         dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: reported, reach: ev.reach });
         if health.current <= 0 {
             deaths.write(DeathEvent { entity: ev.target, at: pos.0, credit: ev.hit.credit, was_player: is_player });
         }
+    }
+}
+
+/// Restores what every [`Heal`] asks, scaled by the target's own mending
+/// and stopped at its most, and reports it.
+///
+/// After [`apply_damage`] in the same pass, so a mend never stands between
+/// an actor and the blow that killed it: the dead are not mended.
+pub fn apply_healing(mut heals: MessageReader<Heal>, mut healed: MessageWriter<Healed>, loadout: Loadout, mut targets: Query<&mut Health>) {
+    for heal in heals.read() {
+        let Ok(mut health) = targets.get_mut(heal.target) else { continue };
+        if health.current <= 0 {
+            continue;
+        }
+        let offered = (i64::from(heal.amount.max(0)) * i64::from(loadout.mending(heal.target)) / 100) as i32;
+        let before = health.current;
+        health.current = health.current.saturating_add(offered).min(health.max).max(before);
+        healed.write(Healed { target: heal.target, restored: health.current - before, by: heal.by, status: heal.status });
     }
 }
 
@@ -997,6 +1081,8 @@ impl Plugin for CombatPlugin {
         use crate::turn::AddAction;
         app.add_message::<DamageEvent>()
             .add_message::<DamageDealt>()
+            .add_message::<Heal>()
+            .add_message::<Healed>()
             .add_message::<DeathEvent>()
             // What an attack made with a worn thing reports, for its `fire`
             // and `hit` triggers. A game may fight and have no effects, and
@@ -1013,7 +1099,7 @@ impl Plugin for CombatPlugin {
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
             .add_systems(Turn, (land_shots.in_set(crate::plugin::LandSet::Shot), resolve_attacks.in_set(ResolveSet::Act)).chain())
-            .add_systems(Turn, apply_damage.in_set(ResolveSet::Damage))
+            .add_systems(Turn, (apply_damage, apply_healing).chain().in_set(ResolveSet::Damage))
             .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))
             .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))
             // In `Last`, after everything that reads the frame's deaths has
@@ -1372,19 +1458,61 @@ mod tests {
 
     /// A heal says what it restored rather than what it offered: two to
     /// bring twenty-eight back to thirty, and then nought, so a wearer who
-    /// is whole is not told every few turns that they mended.
+    /// is whole is not told every few turns that they mended. It is not a
+    /// hit, so nothing is reported as dealt and no armor is asked.
     #[test]
     fn a_heal_reports_what_it_restored_and_nothing_at_full_health() {
         let (mut app, _, player, _) = duel(4, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
-        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        app.world_mut().entity_mut(player).insert(Armor(50));
         app.world_mut().get_mut::<Health>(player).unwrap().current = 28;
-        app.world_mut().write_message(DamageEvent::new(player, Hit::by(player, kind, -5)));
+        app.world_mut().write_message(Heal::new(player, 5));
         app.update();
-        app.world_mut().write_message(DamageEvent::new(player, Hit::by(player, kind, -5)));
+        app.world_mut().write_message(Heal::new(player, 5).by(player));
         app.update();
-        let dealt: Vec<i32> = app.world().resource::<Seen>().dealt.iter().map(|d| d.dealt).collect();
-        assert_eq!(dealt, vec![-2, 0], "two to reach thirty, then nothing left to mend");
+        let healed: Vec<Healed> = app.world_mut().resource_mut::<Messages<Healed>>().drain().collect();
+        assert_eq!(healed.iter().map(|h| (h.restored, h.by)).collect::<Vec<_>>(), vec![(2, None), (0, Some(player))], "two to reach thirty, then nothing");
+        assert!(app.world().resource::<Seen>().dealt.is_empty(), "a mend is not damage dealt");
         assert_eq!(hp(&app, player), 30);
+    }
+
+    /// How well an actor mends is a stat the game names: minus a hundred
+    /// on it and nothing patches the thing up, minus fifty and half does,
+    /// with no kind of damage invented to resist.
+    #[test]
+    fn the_mending_stat_scales_what_a_heal_restores_down_to_nothing() {
+        use rl_rules::{Modifier, Op, StatDef};
+        let (mut app, _, player, _) = duel(4, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
+        let stats = rl_rules::Registry::from_defs(vec![StatDef::new("mending", 0)]).unwrap();
+        let mending = stats.expect("mending");
+        app.world_mut().resource_mut::<Registries>().stats = stats;
+        app.world_mut().resource_mut::<CombatRules>().mending = Some(mending);
+        let heal_at = |app: &mut App, by: i32| {
+            let mut block = StatBlock::default();
+            block.0.add(Modifier::new(mending, Op::Add(by), rl_rules::stats::Source::Game(7)));
+            app.world_mut().entity_mut(player).insert(block);
+            app.world_mut().get_mut::<Health>(player).unwrap().current = 10;
+            app.world_mut().write_message(Heal::new(player, 8));
+            app.update();
+            hp(app, player)
+        };
+        assert_eq!(heal_at(&mut app, 0), 18, "whole, with nothing on the stat");
+        assert_eq!(heal_at(&mut app, -50), 14, "half");
+        assert_eq!(heal_at(&mut app, -100), 10, "none");
+        assert_eq!(heal_at(&mut app, -250), 10, "and never a mend that hurts");
+        assert_eq!(heal_at(&mut app, 50), 22, "or half again");
+    }
+
+    /// The dead are not mended: a heal in the pass a blow killed in comes
+    /// after the blow and restores nothing.
+    #[test]
+    fn a_heal_in_the_pass_that_killed_its_target_restores_nothing() {
+        let (mut app, _, player, target) = duel(0, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        app.world_mut().write_message(Heal::new(target, 50));
+        app.world_mut().write_message(DamageEvent::new(target, Hit::by(player, kind, 999)));
+        app.update();
+        assert!(app.world_mut().resource_mut::<Messages<Healed>>().drain().next().is_none());
+        assert!(app.world().get::<Health>(target).is_none_or(|h| h.current <= 0));
     }
 
     /// What `who` fights with, as a panel or a resolver would ask.
@@ -1914,7 +2042,7 @@ mod tests {
         assert_eq!(app.world().get::<Health>(who).unwrap().current, 10, "nothing taken off, and not killed");
         let dealt: Vec<i32> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().map(|d| d.dealt).collect();
         assert_eq!(dealt, vec![0], "the hit is reported, with nothing dealt");
-        app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, -5)));
+        app.world_mut().write_message(Heal::new(who, 5));
         app.update();
         assert_eq!(app.world().get::<Health>(who).unwrap().current, 15, "a heal lands in full");
         app.world_mut().entity_mut(who).remove::<Invulnerable>();

@@ -34,7 +34,7 @@ use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::FactionId;
 use rl_engine::rl_ui::{
     AbilityPanel, AddModal, Chord, ControlsPanel, Facets, GameMenuPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryPanel, LogPanel, MessageLog,
-    Modals, NarratorPlugin, NearbyPanel, NearbyView, Phrase, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, Tones, ViewSet, VitalsPanel, panel,
+    Modals, NarratorPlugin, NearbyPanel, NearbyView, Phrase, ScrollbackPanel, SheetKeys, SheetPanel, TargetPanel, Tell, Tones, ViewSet, VitalsPanel, panel,
 };
 use rl_engine::rl_world::{WorldConfig, WorldGraph};
 
@@ -431,8 +431,7 @@ fn honour_portals(
     mut requests: MessageReader<PortalRequest>,
     mut warps: MessageWriter<WarpRequest>,
     world: Res<WorldRes>,
-    mut log: ResMut<MessageLog>,
-    turns: Res<Turns>,
+    mut tell: MessageWriter<Tell>,
     player: Query<Entity, With<Player>>,
 ) {
     let Ok(entity) = player.single() else { return };
@@ -440,7 +439,7 @@ fn honour_portals(
         let Some(site) = world.sites().get(req.site) else { continue };
         let target = world.region_tiles(site.position).center();
         warps.write(WarpRequest { actor: entity, to: Destination::Surface(target) });
-        log.push("The portal takes you.", Tones::NOTICE, turns.turn_number());
+        tell.write(Tell::new("The portal takes you.", Tones::NOTICE));
     }
 }
 // ANCHOR_END: portals

@@ -2,8 +2,9 @@
 //!
 //! Opt-in by adding [`LightingPlugin`], which inserts a dark [`Lighting`]
 //! for the game to write its ambient into. The field is then rebuilt
-//! whenever a source moves, changes or burns out, and every viewshed is
-//! cut down to what is lit, within an actor's [`DarkSight`], or adjacent.
+//! whenever a source moves, changes or burns out, inside the turn loop as
+//! well as once a frame, so nobody decides by light that has gone, and
+//! every viewshed is cut down to what is lit, within an actor's [`DarkSight`], or adjacent.
 //! A game that leaves the plugin out sees exactly what it saw before, at
 //! no cost.
 //!
@@ -120,6 +121,8 @@ pub struct Lighting {
     static_dirty: bool,
     /// Light shed by cells rather than entities, and the map it is on.
     glow: (MapId, Vec<(Point, LightSource)>),
+    /// Whether the glow was replaced by a different one since the last cast.
+    glow_moved: bool,
 }
 
 impl Lighting {
@@ -141,6 +144,7 @@ impl Lighting {
             epoch: 0,
             static_dirty: true,
             glow: (MapId::SURFACE, Vec::new()),
+            glow_moved: false,
         }
     }
 
@@ -179,7 +183,20 @@ impl Lighting {
     /// and so are cast with the sources that move. Nothing is shed while
     /// another map is current.
     pub fn set_glow(&mut self, map: MapId, glow: Vec<(Point, LightSource)>) {
-        self.glow = (map, glow);
+        let glow = (map, glow);
+        self.glow_moved |= self.glow != glow;
+        self.glow = glow;
+    }
+
+    /// Whether something only this resource and the map know of has changed
+    /// since the last cast: the window, what blocks light, the fixtures
+    /// marked dirty, the ambient, or the glow.
+    fn is_behind(&self, map: &WorldMap) -> bool {
+        self.generation != Some(map.generation())
+            || self.epoch != map.opacity_epoch()
+            || self.static_dirty
+            || self.glow_moved
+            || self.composed_with != self.ambient
     }
 
     /// Matches the fields to the window. Returns whether they were remade.
@@ -275,10 +292,62 @@ type Lit = (Option<&'static Position>, &'static mut Viewshed);
 /// or a frame three times over at sixty-four of them.
 pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, sources: Sources, mut viewsheds: Query<Lit>) {
     let Some(mut lighting) = lighting else { return };
-    let lighting = &mut *lighting;
+    recast(&map, &mut lighting, &sources, &mut viewsheds);
+}
+
+/// What tells the turn loop a light may have moved, without gathering every
+/// emitter to find out.
+///
+/// A pass is a few microseconds and a frame may hold hundreds, so the pass
+/// asks only what changed since the last one: a source lit, altered, moved
+/// or put out, or a carrier of one that stepped or whose bag changed.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct LightMoves<'w, 's> {
+    sources: Query<'w, 's, (), (With<LightSource>, Stirred)>,
+    carriers: Query<'w, 's, &'static Inventory, (With<Actor>, Bearing)>,
+    carried: Query<'w, 's, (), InABag>,
+    put_out: RemovedComponents<'w, 's, LightSource>,
+}
+
+/// A source that was lit, altered or moved since the last pass.
+type Stirred = Or<(Changed<LightSource>, Changed<Position>, Changed<OnMap>)>;
+/// Someone who moved, or whose bag changed, since the last pass.
+type Bearing = Or<(Changed<Position>, Changed<Inventory>, Changed<OnMap>)>;
+/// A source that is carried rather than lying somewhere.
+type InABag = (With<LightSource>, With<Item>, Without<Position>);
+
+impl LightMoves<'_, '_> {
+    fn any(&mut self) -> bool {
+        // Read to the end whatever the answer, so one removal is not
+        // counted again on the next pass.
+        let put_out = self.put_out.read().count() > 0;
+        put_out || !self.sources.is_empty() || self.carriers.iter().any(|bag| bag.items.iter().any(|item| self.carried.contains(*item)))
+    }
+}
+
+/// Recasts inside the turn loop, at the head of every pass in which a
+/// light may have moved, so whoever decides next sees by the light as it
+/// is now.
+///
+/// [`update_lighting`] runs once a frame, after every pass the frame ran.
+/// With only that, a lamp the player switched off still lit the player for
+/// every mind that acted in the same frame, and a lamp carried a step lit
+/// the cell it had left: one turn of sight by light that was gone. The
+/// viewsheds a change reaches are marked stale here exactly as there, and
+/// [`sense`](crate::minds::sense) recasts the one about to decide.
+pub fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves: LightMoves, sources: Sources, mut viewsheds: Query<Lit>) {
+    let Some(mut lighting) = lighting else { return };
+    if moves.any() || lighting.is_behind(&map) {
+        recast(&map, &mut lighting, &sources, &mut viewsheds);
+    }
+}
+
+/// The one cast both the frame and the pass go through.
+fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds: &mut Query<Lit>) {
     let here = map.current();
     let on_map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here;
-    let mut recast_all = lighting.fit(&map);
+    let mut recast_all = lighting.fit(map);
+    lighting.glow_moved = false;
     if lighting.epoch != map.opacity_epoch() {
         lighting.epoch = map.opacity_epoch();
         recast_all = true;
@@ -342,7 +411,7 @@ pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, s
         everywhere |= lighting.composed_with != lighting.ambient;
         lighting.combined.compose(&lighting.statics, &lighting.dynamics, lighting.ambient);
         lighting.composed_with = lighting.ambient;
-        for (pos, mut v) in &mut viewsheds {
+        for (pos, mut v) in viewsheds.iter_mut() {
             v.dirty |= everywhere || reaches(touched, pos.map(|p| local(p.0)), v.range);
         }
     }
@@ -421,13 +490,14 @@ pub struct LightingPlugin;
 
 impl Plugin for LightingPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{EngineSet, ResetsOnNewRun, ResolveSet, Turn};
+        use crate::plugin::{DecideSet, EngineSet, ResetsOnNewRun, ResolveSet, Turn};
         app.add_message::<LightEvent>()
             .insert_resource(Lighting::dark())
             // Dark rather than the ambient the game chose: a new run writes
             // its own ambient in `NewRun`, as the first one did.
             .reset_on_new_run_with::<Lighting>(Lighting::dark)
             .add_systems(Update, update_lighting.in_set(EngineSet::Light))
+            .add_systems(Turn, relight.in_set(DecideSet::Light))
             .add_systems(Turn, tick_fuel.in_set(ResolveSet::Effects));
     }
 

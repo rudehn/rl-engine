@@ -5,6 +5,7 @@
 //   stacking:  optional; what a second application does: Refresh (longer wins, default) | Extend (durations add) | Stack | Ignore
 //   modifies:  optional; stat changes while it lasts, each (stat, op): stat "armor" | "attack", op Add(n) | MulPct(n) | AtLeast(n) | AtMost(n)
 //   ticks:     optional; (damage kind, amount) dealt every whole turn: kind "cutlass" | "pistol" | "bite" | "claw" | "fist" | "fire"
+//   mends:     optional; health restored every whole turn, at least 1; a status that mends says this, never a negative tick
 //   badge:     optional; one character for the status line
 //   unseen:    optional; true when nothing sees whoever holds it while it lasts, until it strikes (false, default)
 //   boon:      optional; true when holding it is good for the holder, told in the log as good news (false, default)

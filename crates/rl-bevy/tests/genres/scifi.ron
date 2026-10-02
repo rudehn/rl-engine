@@ -24,7 +24,7 @@
         aim: Ally,
         mode: Adjacent,
         costs: [Pool("power", 4)],
-        effects: [(kind: "Mend", args: (kind: "care", roll: "2d4"))],
+        effects: [(kind: "Mend", args: (roll: "2d4"))],
     ),
     (
         name: "hack",

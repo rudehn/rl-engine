@@ -242,6 +242,23 @@ impl DijkstraMap {
         self.rules = other.rules;
     }
 
+    /// Lowers every cell to `other`'s value where that is the lower, and
+    /// reaches what only `other` reached.
+    ///
+    /// A flood from several goals is, cell for cell, the lowest of the
+    /// floods from each of them, so a caller that keeps one flood per goal
+    /// can make the map toward any set of them without flooding again.
+    /// Both must have stepped by the same rules for that to hold.
+    ///
+    /// # Panics
+    /// Panics if the shapes differ.
+    pub fn take_lower(&mut self, other: &DijkstraMap) {
+        assert_eq!(self.values.len(), other.values.len(), "maps differ in shape");
+        for (mine, theirs) in self.values.iter_mut().zip(&other.values) {
+            *mine = (*mine).min(*theirs);
+        }
+    }
+
     /// Every reached cell with its value, row-major within the region.
     pub fn iter(&self) -> impl Iterator<Item = (Point, i32)> + '_ {
         self.values.iter().enumerate().filter(|(_, v)| **v != UNREACHED).map(|(i, v)| (self.point(i), *v))
@@ -276,6 +293,36 @@ mod tests {
         assert_eq!(map.value(p(3, 1)), Some(300));
         assert_eq!(map.value(p(4, 1)), None);
         assert_eq!(map.value(p(9, 9)), None);
+    }
+
+    #[test]
+    fn over_a_seed_range_a_flood_from_several_goals_is_the_lowest_of_the_floods_from_each() {
+        let registry = crate::tile::TileRegistry::standard();
+        let (wall, floor) = (registry.expect("wall"), registry.expect("floor"));
+        for rules in [PathRules::default(), PathRules::CARDINAL] {
+            for seed in 0..20u64 {
+                let mut rng = StdRng::seed_from_u64(seed);
+                let terrain = crate::terrain::Terrain::from_fn(20, 15, |_| if rng.random_range(0..100) < 35 { wall } else { floor });
+                let view = terrain.view(&registry);
+                let goals: Vec<Point> = (0..rng.random_range(2..5)).map(|_| p(rng.random_range(0..20), rng.random_range(0..15))).collect();
+                let mut together = DijkstraMap::covering(&view);
+                together.build(&view, goals.iter().copied(), rules);
+                let mut lowest: Option<DijkstraMap> = None;
+                for goal in &goals {
+                    let mut one = DijkstraMap::covering(&view);
+                    one.build(&view, [*goal], rules);
+                    match lowest.as_mut() {
+                        Some(lowest) => lowest.take_lower(&one),
+                        None => lowest = Some(one),
+                    }
+                }
+                let lowest = lowest.unwrap();
+                for cell in (0..15).flat_map(|y| (0..20).map(move |x| p(x, y))) {
+                    assert_eq!(lowest.value(cell), together.value(cell), "seed {seed}: {cell:?} under {rules:?}");
+                    assert_eq!(lowest.descents(cell), together.descents(cell), "seed {seed}: the ways down from {cell:?} under {rules:?}");
+                }
+            }
+        }
     }
 
     #[test]

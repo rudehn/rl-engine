@@ -16,7 +16,7 @@
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: bba243ce -->
+     fingerprint: 5be8c35f -->
 
 # Statuses
 
@@ -51,7 +51,7 @@ The status plugin never acts on the holder, only `resolve_afflictions` reads it 
 `tick_statuses` runs it once per `TurnEnd` and only for actors on the current map, so a monster on a floor nobody is standing on does not burn down while the player is elsewhere.
 Its damage becomes a `DamageEvent` carrying `Hit::from_status`, which names the status and credits whoever applied it but leaves `attacker` empty, so a poison tick cannot set off the riders a blow would.
 That event is built with `DamageEvent::new`, so its `Reach` is `Effect` and rides through to `DamageDealt` as one: a game hanging a rule off a blow can tell a blow from a tick without reading `status` at all.
-A negative `ticks` amount mends through the same pipeline, which is the whole of what makes regeneration a status like poison.
+A status that mends says `mends`, and its tick becomes a `Heal` by whoever applied it, which is the whole of what makes regeneration a status like poison; a negative `ticks` is refused at load, since mending is not damage of any kind.
 `StatBlock` is the `Stats` underneath: a per-actor base for whichever stats the game overrode, and a flat list of `Modifier`s each carrying a `Source`.
 `Stats::value` is base plus every `Add`, then every `MulPct` compounded, then `AtLeast` and `AtMost`, then the definition's own `min` and `max`.
 The `Source` is a tagged value rather than an opaque number because several systems fold modifiers into one `Stats` without knowing about each other: statuses remove theirs one instance at a time, the gear fold strips every item's and puts the worn ones back, and a game's own sit under `Source::Game` where nothing in the engine touches them.

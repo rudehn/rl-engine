@@ -681,7 +681,7 @@ mod tests {
     /// effects, with no ability anywhere, and the use key uses it.
     #[test]
     fn a_thing_with_a_use_trigger_is_offered_described_and_used() {
-        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "5"))])]"#);
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "5"))])]"#);
         let player = stage.player;
         let poultice =
             stage.app.world_mut().spawn((Item, Name::new("poultice"), triggers, Consumable::new(1, WhenEmpty::Destroyed), Stack { key: 1, count: 2 })).id();
@@ -690,7 +690,7 @@ mod tests {
 
         stage.press(KeyCode::KeyI);
         assert_eq!(inside(&stage, 1), "2 poultices");
-        assert!(detail(&stage).iter().any(|l| l == "use: mends 5 kinetic"), "described by what it does: {:?}", detail(&stage));
+        assert!(detail(&stage).iter().any(|l| l == "use: mends 5"), "described by what it does: {:?}", detail(&stage));
         assert!(stage.app.world().resource::<InventoryView>().rows[0].usable(), "and the row knows it is used");
 
         stage.press(KeyCode::KeyU);
@@ -720,7 +720,7 @@ mod tests {
     /// a use it would be refused.
     #[test]
     fn a_wand_counts_its_charges_and_an_empty_one_offers_no_use() {
-        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "2"))])]"#);
         let player = stage.player;
         let wand = stage.app.world_mut().spawn((Item, Name::new("wand"), triggers.clone(), Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) })).id();
         let spent = stage.app.world_mut().spawn((Item, Name::new("dead wand"), triggers, Consumable { left: 0, ..Consumable::new(5, WhenEmpty::Kept) })).id();
@@ -743,7 +743,7 @@ mod tests {
     /// starts it from nothing.
     #[test]
     fn a_charging_plate_says_when_it_is_ready_and_a_spare_says_it_charges_only_worn() {
-        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "2"))])]"#);
         stage.app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("torso")]).unwrap();
         let player = stage.player;
         let torso = stage.app.world().resource::<Registries>().slots.expect("torso");
@@ -774,7 +774,7 @@ mod tests {
     /// The last turn of a charge is one turn, not one turns.
     #[test]
     fn a_plate_a_turn_from_ready_says_one_turn() {
-        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (kind: "kinetic", roll: "2"))])]"#);
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "2"))])]"#);
         let player = stage.player;
         let nearly = Consumable { left: 0, recharge: Some(rl_bevy::Recharge { every: 4000, progress: 3950 }), ..Consumable::new(1, WhenEmpty::Kept) };
         let wand = stage.app.world_mut().spawn((Item, Name::new("wand"), triggers, nearly)).id();

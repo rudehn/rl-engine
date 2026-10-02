@@ -12,7 +12,7 @@
             crates/rl-bevy/src/replay.rs
             crates/rl-bevy/src/seed.rs
             crates/rl-bevy/src/testing.rs
-     fingerprint: 47e80288 -->
+     fingerprint: c8b740d0 -->
 
 # Controls, modals and cursors
 
@@ -58,7 +58,7 @@ It takes the candidates as a closure and asks for them only when the cursor move
 Stepping stops at the edge of the window rather than sliding along it, which would read as the cursor moving on its own, and every step or cycle drags the shared focus with it so the row a panel highlights is what the cursor is on.
 `CursorStyle` is `Glow` or `Ticks`, each taking a `ToneId` and an optional second tone to breathe toward, and `mark` is the one drawing of them, so the two cannot drift apart.
 `ControlsScreen` is which page is showing and `ControlsLayout` is where the screen and its one hand-typed hint are drawn.
-`MenuItem` is `Resume`, `NewRun`, `SameSeed` or `Quit`, and the first is offered only while playing; each choice is one message, a `Restart` or an `AppExit`, and nothing in the menu knows how a game starts.
+`MenuItem` is `Resume`, `NewRun`, `SameSeed`, `Settings` or `Quit`: the first is offered only while playing and `Settings` only when a `SettingsPanel` has a setting to list, which it opens over the menu; each of the rest is one message, a `Restart` or an `AppExit`, and nothing in the menu knows how a game starts.
 With nothing open and something in sight picked out, the close key lets go of it rather than opening the menu, so backing out of the nearby list takes the same key as backing out of a cursor, and the next press opens the menu.
 `Recording` is a run written down: the seed, the command line it was run with, and every frame that pressed something as a `Pressed` of a turn clock, the keys and whether Shift was with them.
 `KeyScript` is the test keyboard: `press` for one frame, `hold` until `release`, which is what a finger resting on a key does.

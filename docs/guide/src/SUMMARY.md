@@ -47,6 +47,7 @@
   - [Rendering](systems/rendering.md)
   - [Panels](systems/panels.md)
   - [Controls, modals and cursors](systems/controls.md)
+  - [Settings](systems/settings.md)
   - [Narration](systems/narration.md)
 - [What persists]()
   - [Saving and the ending screen](systems/saving.md)

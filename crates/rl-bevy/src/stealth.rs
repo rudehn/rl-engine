@@ -475,12 +475,9 @@ pub fn wake_on_damage(
         aware.0.insert(attacker, state);
     };
     for ev in dealt.read() {
-        // A mend is a negative hit down the same pipeline, and a hider who
-        // patches a sleeper up has not struck it, whole or not. A blow that
-        // armor stopped at zero still woke it.
-        if ev.is_mend() {
-            continue;
-        }
+        // A blow that armor stopped at zero still woke it. A mend never
+        // comes here: it is not damage dealt, so a hider who patches a
+        // sleeper up has not struck it.
         let Some(attacker) = ev.hit.attacker else { continue };
         wake(ev.target, attacker);
     }
@@ -651,17 +648,19 @@ mod tests {
         assert!(field.distance() < 5, "and goes for it: {}", field.distance());
     }
 
-    /// A heal is a negative hit down the same pipeline, and one that found
-    /// its target whole restored nothing; neither makes it a blow.
+    /// A heal is not damage dealt, so one by a hider wakes nobody, whether
+    /// it restored anything or found its target whole.
     #[test]
-    fn a_heal_on_a_sleeper_at_full_health_does_not_wake_it() {
+    fn a_heal_on_a_sleeper_does_not_wake_it() {
         let mut field = Field::new(blind(), 5, 10, true, None);
         field.wait();
         let (watcher, player) = (field.watcher, field.player);
-        let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
-        field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, -3), dealt: 0, reach: crate::combat::Reach::Melee });
+        field.app.world_mut().write_message(crate::combat::Heal::new(watcher, 3).by(player));
         field.wait();
-        assert!(!field.aware().knows(player), "patched up while whole, and none the wiser");
+        field.app.world_mut().get_mut::<crate::combat::Health>(watcher).unwrap().current -= 2;
+        field.app.world_mut().write_message(crate::combat::Heal::new(watcher, 3).by(player));
+        field.wait();
+        assert!(!field.aware().knows(player), "patched up, whole or not, and none the wiser");
     }
 
     #[test]
@@ -938,7 +937,7 @@ mod tests {
             let abilities = crate::ability::Abilities::load(
                 r#"[
                     (name: "jab", mode: Bolt(range: 8), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "1"))]),
-                    (name: "steady", aim: SelfOnly, mode: Own, effects: [(kind: "Mend", args: (kind: "kinetic", roll: "1"))]),
+                    (name: "steady", aim: SelfOnly, mode: Own, effects: [(kind: "Mend", args: (roll: "1"))]),
                 ]"#,
                 app.world().resource::<crate::effects::EffectKinds>(),
                 &names,

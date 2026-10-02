@@ -487,17 +487,16 @@ fn populate(
     bestiary: Res<Bestiary>,
     map: Res<WorldMap>,
     seed: Res<Seed>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
+    mut tell: MessageWriter<Tell>,
 ) {
     for ev in entered.read() {
         let depth = floor_of(ev.map);
-        log.push(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE, turns.turn_number());
+        tell.write(Tell::new(format!("Floor {depth}: {}.", name_of(depth)), Tones::NOTICE));
         // The keys, once, under the first floor's name. Not in `start`: the
         // name is written when the warp lands, a frame later, and would read
         // as though it came after them.
         if ev.first && depth == 1 {
-            log.push("g gets, e eats, > descends, x looks, p reads back.", Tones::MUTED, turns.turn_number());
+            tell.write(Tell::new("g gets, e eats, > descends, x looks, p reads back.", Tones::MUTED));
         }
         if !ev.first {
             continue;
@@ -727,6 +726,8 @@ mod tests {
         app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, ItemsPlugin));
         app.insert_resource(Seed(RunSeed(seed)))
             .add_plugins(UiPlugin)
+            // Someone to read what `populate` tells.
+            .add_plugins(NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD))
             .add_choice::<Shove>()
             .add_message::<Shoved>()
             .add_systems(NewRun, start)

@@ -160,7 +160,7 @@ fn start(
 
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
-    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick"), DamageKind::new("din"), DamageKind::new("care")]).unwrap();
+    let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick"), DamageKind::new("din")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));

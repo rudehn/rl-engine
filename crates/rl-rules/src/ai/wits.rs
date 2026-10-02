@@ -44,6 +44,11 @@ impl Wits {
     pub const EQUIPS: Wits = Wits(1 << 4);
     /// Throws what it carries.
     pub const THROWS: Wits = Wits(1 << 5);
+    /// Goes through a way to another map: after whoever it is hunting or
+    /// keeping beside, and to get away when it runs. In no preset, because
+    /// a monster that leaves the map it was put on is something a game
+    /// says of a kind on purpose: content writes `["sapient", "travels"]`.
+    pub const TRAVELS: Wits = Wits(1 << 6);
 
     /// Nothing but what its brain does unconditionally: it strikes, hunts
     /// what it can perceive and wanders, and forgets you the moment it
@@ -52,8 +57,9 @@ impl Wits {
     /// Runs when hurt and searches for what it lost, but a door is a wall
     /// and a knife on the floor is nothing to it.
     pub const ANIMAL: Wits = Wits(Self::FLEES.0 | Self::SEARCHES.0);
-    /// Everything the engine knows how to ask about: doors, and picking up,
-    /// wearing and throwing things besides.
+    /// Everything the engine knows how to ask about on the map it stands
+    /// on: doors, and picking up, wearing and throwing things besides.
+    /// Leaving that map is [`Wits::TRAVELS`], which no preset has.
     pub const SAPIENT: Wits = Wits(Self::ANIMAL.0 | Self::OPENS_DOORS.0 | Self::PICKS_UP.0 | Self::EQUIPS.0 | Self::THROWS.0);
 
     /// Whether every capability in `wit` is here.
@@ -94,13 +100,14 @@ impl Default for Wits {
 const PRESETS: [(&str, Wits); 3] = [("mindless", Wits::MINDLESS), ("animal", Wits::ANIMAL), ("sapient", Wits::SAPIENT)];
 
 /// Each capability by the name content writes it with.
-const CAPABILITIES: [(&str, Wits); 6] = [
+const CAPABILITIES: [(&str, Wits); 7] = [
     ("flees", Wits::FLEES),
     ("searches", Wits::SEARCHES),
     ("opens_doors", Wits::OPENS_DOORS),
     ("picks_up", Wits::PICKS_UP),
     ("equips", Wits::EQUIPS),
     ("throws", Wits::THROWS),
+    ("travels", Wits::TRAVELS),
 ];
 
 /// Every name content may use, for a message that lists them.
