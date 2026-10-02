@@ -17,7 +17,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Procedural world generation**: FBM noise, elevation, priority-flood hydrology with rivers and lakes, climate, site placement, road routing and seamless infinite chunk streaming.
 - **Field of view**: symmetric shadowcasting over any `OpacitySource`, plus line of fire and targeting shapes for bolts, balls, beams and cones.
 - **Pathfinding**: A* with reusable scratch buffers, region-bounded Dijkstra maps, flee maps and flow fields per movement profile.
-- **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt and wander, reading snapshots of what each actor can see.
+- **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt, wander, and exploring by a chart of what has been seen that a party shares and can hand on, reading snapshots of what each actor can see.
 - **Work across many turns**: an actor rebuilding, charging or digging over turns it spends one at a time, broken off when it is hurt, dies or loses its reach, with its row saying what it is doing and how long it has left, so a busy actor never reads as a stuck one.
 - **A turn loop the engine owns**: an integer-clock energy scheduler, speed-scaled action costs and every due turn resolved inside one frame.
 - **A run nobody plays**: an onlooker in place of a player, a sight that sees the whole map, and a pace that deals so much game time a second, so two sides of minds fight while someone watches, or a thousand fights run headless.

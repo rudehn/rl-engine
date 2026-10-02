@@ -45,6 +45,10 @@ pub struct EngineSave {
     /// Empty in a game with neither, and in a save written before either.
     #[serde(default)]
     pub fields: FieldsSave,
+    /// What everyone but the player has seen: every chart of every map.
+    /// Empty in a game with no minds, and in a save written before charts.
+    #[serde(default)]
+    pub charts: rl_bevy::ChartsSave,
 }
 
 /// Fire and gas, as a save holds them.
@@ -173,7 +177,18 @@ impl EngineSave {
             fire: world.get_resource::<Fire>().map(Fire::export).unwrap_or_default(),
             gases: world.get_resource::<Gases>().map(Gases::export).unwrap_or_default(),
         };
-        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities, effects, fields }
+        let charts = world.get_resource::<rl_bevy::Charts>().map(rl_bevy::Charts::export).unwrap_or_default();
+        Self {
+            seed,
+            now,
+            queue,
+            map: world.resource::<WorldMap>().export(),
+            knowledge: world.resource::<Knowledge>().export(),
+            abilities,
+            effects,
+            fields,
+            charts,
+        }
     }
 
     /// Restores the engine's state into `world`. The game's entities must
@@ -183,6 +198,9 @@ impl EngineSave {
     pub fn restore(&self, world: &mut World, remap: &EntityRemap) {
         world.resource_mut::<WorldMap>().import(self.map.clone());
         world.resource_mut::<Knowledge>().import(self.knowledge.clone());
+        if let Some(mut charts) = world.get_resource_mut::<rl_bevy::Charts>() {
+            charts.import(self.charts.clone());
+        }
         if let Some(mut fire) = world.get_resource_mut::<Fire>() {
             fire.import(self.fields.fire.clone());
         }

@@ -804,7 +804,7 @@ pub struct MindsPlugin;
 
 impl Plugin for MindsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, PerceiveSet, Turn};
+        use crate::plugin::{DecideSet, PerceiveSet, ResetsOnNewRun, Turn};
         // The minds may choose an ability, a pickup or a throw, so the
         // messages they would write them into exist whether or not the game
         // added abilities, items or throwing. Registering one twice is what
@@ -823,10 +823,12 @@ impl Plugin for MindsPlugin {
             // not left to hang, for the same reason as a blow.
             .add_action::<crate::work::BeginWork>()
             .add_stream::<MindRng>("MindsPlugin")
-            .add_systems(Turn, sense.in_set(DecideSet::Sense))
+            .init_resource::<crate::charts::Charts>()
+            .reset_on_new_run::<crate::charts::Charts>()
+            .add_systems(Turn, (sense, crate::charts::chart_sight).chain().in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, (sense_posts, sense_ways).chain().in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_posts, sense_ways, crate::charts::sense_uncharted).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
