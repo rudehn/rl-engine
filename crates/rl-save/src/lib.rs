@@ -14,6 +14,9 @@
 //! which keeps the [`Stash`] a turn behind the run and forgets the slot
 //! when the run ends, and [`UnloadPlugin`], which writes the stash when
 //! the page or the window is closed on it.
+//!
+//! Apart from all of that, [`SettingsSavePlugin`] remembers what a player
+//! chose in a slot of its own, which no run's ending forgets.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -22,6 +25,7 @@ pub mod backend;
 pub mod engine;
 pub mod remap;
 pub mod run;
+pub mod settings;
 pub mod unload;
 pub mod versioned;
 
@@ -32,6 +36,7 @@ pub use run::{
     AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableState, SavedBurning, forget_save, load_run,
     save_on_arrival, save_run,
 };
+pub use settings::{SETTINGS_SLOT, SettingsSavePlugin};
 pub use unload::{Stash, UnloadPlugin};
 pub use versioned::{Versioned, decode, encode};
 
@@ -41,6 +46,7 @@ pub mod prelude {
     pub use crate::engine::EngineSave;
     pub use crate::remap::{EntityRemap, SaveId};
     pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableState, load_run, save_run};
+    pub use crate::settings::SettingsSavePlugin;
     pub use crate::unload::{Stash, UnloadPlugin};
     pub use crate::versioned::{Versioned, decode, encode};
 }

@@ -61,6 +61,7 @@ struct Screen {
     pack: Rect,
     controls: Rect,
     menu: Rect,
+    settings: Rect,
     choice: Rect,
     cheats: Rect,
     search: Rect,
@@ -102,9 +103,11 @@ impl Screen {
             pack: centred(56, 3, 16),
             controls: map.inflate(-2),
             // The most the menu may take: the ending's words, the seed and
-            // turn, and three choices. The engine closes the frame under
+            // turn, and four choices. The engine closes the frame under
             // the last row, so the shorter pause menu leaves no gap.
-            menu: centred(44, 6, 12),
+            menu: centred(44, 6, 13),
+            // Where the menu stands, since the menu is what opens it.
+            settings: centred(44, 6, 13),
             // Three upgrades, a blank row, and what the one picked out does.
             choice: centred(60, 8, 7),
             // Six cheats, a blank row, and what the one picked out does.
@@ -186,6 +189,11 @@ fn add_panels(app: &mut App, screen: &Screen) {
         ChoicePanel(screen.choice),
         CheatPanel { menu: screen.cheats, search: screen.search },
     ));
+    // ANCHOR: settings
+    // What the player may set, opened from the menu and from the title
+    // screen: fullscreen is the engine's, declared by `RoguelikePlugins`.
+    app.add_plugins(SettingsPanel::new(screen.settings));
+    // ANCHOR_END: settings
 }
 
 /// Whether this run plays keys from a script of some kind: a replay, a
@@ -236,6 +244,12 @@ fn main() -> AppExit {
         .insert_resource(foundry::content::registries())
         .insert_resource(Seed(seed))
         .insert_resource(saves_for(scripted()))
+        // ANCHOR: remember
+        // Remembered beside the save and apart from it. A scripted run's
+        // backend is in memory, so a capture or a replay starts on the
+        // defaults whatever the player chose.
+        .add_plugins(SettingsSavePlugin)
+        // ANCHOR_END: remember
         .add_plugins(FoundryPlugin);
     add_panels(&mut app, &screen);
     if let Some(deck) = std::env::var("FOUNDRY_START").ok().and_then(|d| d.parse().ok()) {

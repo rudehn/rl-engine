@@ -11,7 +11,7 @@
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: d0d7f7fb -->
+     fingerprint: 28945330 -->
 
 # Saving and the ending screen
 

@@ -35,6 +35,7 @@ These are the reasoning; the overview is the list.
 - [prefabs.md](design/prefabs.md), a piece of a place as data: slots for props, items and monsters drawn at the place's depth, roles, and guards that hold their post.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.
 - [remains.md](design/remains.md), what is left where something died.
+- [settings.md](design/settings.md), what a player chooses once: a registry three crates read, and a terminal laid out for its window.
 - [stealth.md](design/stealth.md), being noticed, and being looked for.
 - [ui.md](design/ui.md), why a panel is a view, a collector and a presenter.
 - [work.md](design/work.md), an actor doing one thing across many turns.

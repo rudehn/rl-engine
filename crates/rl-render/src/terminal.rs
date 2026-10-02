@@ -5,6 +5,8 @@ use bevy::sprite::Anchor;
 use bevy::text::{FontSize, FontSmoothing, FontSource};
 use rl_core::Rect;
 
+use crate::layout::fit;
+
 const BACKGROUND_Z: f32 = 0.0;
 const GLYPH_Z: f32 = 1.0;
 
@@ -48,7 +50,11 @@ impl Cell {
     }
 }
 
-/// Sets up the terminal grid and keeps it on screen.
+/// Sets up the terminal grid and keeps it filling its window.
+///
+/// The grid is laid out again whenever the window changes size, in whole
+/// pixels, and the glyphs are drawn at the size they are shown; the camera
+/// never scales, since scaling stretches glyphs drawn for another size.
 ///
 /// Glyphs come from the system's generic monospace family, which needs
 /// Bevy's `system_font_discovery` feature; the workspace enables it. With
@@ -73,6 +79,11 @@ impl Plugin for TerminalPlugin {
             .insert_resource(TerminalFont { size: self.font_size })
             .init_resource::<CellEntities>()
             .add_systems(Startup, spawn_grid)
+            // Early in the frame, by which time the window already has its
+            // new size: Bevy works out where a thing is drawn and lays its
+            // text out late in `PostUpdate`, and a layout written there in
+            // no order against them could be drawn a frame late.
+            .add_systems(PreUpdate, relayout)
             .add_systems(PostUpdate, flush_terminal);
     }
 }
@@ -186,15 +197,10 @@ struct CellEntities {
 }
 
 fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<TerminalFont>, mut entities: ResMut<CellEntities>) {
-    let pixel_size = terminal.pixel_size();
-    commands.spawn((
-        Camera2d,
-        Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() },
-        Projection::from(OrthographicProjection {
-            scaling_mode: bevy::camera::ScalingMode::AutoMin { min_width: pixel_size.x, min_height: pixel_size.y },
-            ..OrthographicProjection::default_2d()
-        }),
-    ));
+    // No projection of its own: one world unit is one logical pixel, and
+    // `relayout` sizes the grid for the window. A camera that scaled the
+    // grid to fit would stretch glyphs drawn for another size.
+    commands.spawn((Camera2d, Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() }));
     // No system font database in a browser: take the embedded font.
     #[cfg(target_arch = "wasm32")]
     let family = FontSource::default();
@@ -213,6 +219,55 @@ fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<Termina
                 commands.spawn((Text2d::new(" "), text_font.clone(), TextColor(Color::WHITE), Anchor::CENTER, Transform::from_xyz(c.x, c.y, GLYPH_Z))).id();
             entities.background.push(background);
             entities.glyph.push(glyph);
+        }
+    }
+}
+
+/// The window the grid was last laid out for: its physical size and its
+/// scale factor's bits, compared exactly.
+#[derive(Default)]
+struct LaidOutFor(Option<(UVec2, u32)>);
+
+/// Lays the grid out again when its window is another size or on another
+/// display.
+///
+/// Sizes and positions come from [`fit`], and the glyphs take a font size
+/// scaled with the cell, so Bevy rasterizes them at the size they are
+/// shown rather than stretching what it drew for the declared one. Once
+/// per change, not per frame.
+///
+/// With no window, as in a headless test, or a window of no size, as when
+/// minimized, the last layout stands.
+fn relayout(
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    terminal: Res<Terminal>,
+    font: Res<TerminalFont>,
+    entities: Res<CellEntities>,
+    mut laid: Local<LaidOutFor>,
+    mut backgrounds: Query<(&mut Sprite, &mut Transform), Without<Text2d>>,
+    mut glyphs: Query<(&mut TextFont, &mut Transform), With<Text2d>>,
+) {
+    let Ok(window) = windows.single() else { return };
+    let size = UVec2::new(window.physical_width(), window.physical_height());
+    let scale = window.scale_factor();
+    if size.x == 0 || size.y == 0 || entities.background.is_empty() || laid.0 == Some((size, scale.to_bits())) {
+        return;
+    }
+    laid.0 = Some((size, scale.to_bits()));
+    let fit = fit(terminal.width, terminal.height, terminal.cell_size, size, scale);
+    let (cell, font_size) = (fit.cell_logical(scale), fit.font(font.size, terminal.cell_size, scale));
+    for y in 0..terminal.height {
+        for x in 0..terminal.width {
+            let i = (y * terminal.width + x) as usize;
+            let c = fit.center(x, y, size, scale);
+            if let Ok((mut sprite, mut transform)) = backgrounds.get_mut(entities.background[i]) {
+                sprite.custom_size = Some(cell);
+                transform.translation = c.extend(BACKGROUND_Z);
+            }
+            if let Ok((mut text, mut transform)) = glyphs.get_mut(entities.glyph[i]) {
+                text.font_size = FontSize::Px(font_size);
+                transform.translation = c.extend(GLYPH_Z);
+            }
         }
     }
 }
@@ -293,5 +348,101 @@ mod tests {
         let c = Cell::new('#', Color::linear_rgb(1.0, 0.5, 0.0)).on(Color::linear_rgb(0.2, 0.2, 0.2)).dimmed(0.5);
         assert!((c.fg.to_linear().red - 0.5).abs() < 1e-6);
         assert!((c.bg.to_linear().red - 0.1).abs() < 1e-6);
+    }
+
+    use bevy::window::{PrimaryWindow, WindowResolution};
+
+    /// A headless app with a terminal of eight by four cells of ten by
+    /// twenty, and a primary window of `width` by `height` physical pixels.
+    fn windowed(width: u32, height: u32, scale: f32) -> (App, Entity) {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        let mut resolution = WindowResolution::new(width, height);
+        resolution.set_scale_factor_override(Some(scale));
+        resolution.set_physical_resolution(width, height);
+        let window = app.world_mut().spawn((Window { resolution, ..default() }, PrimaryWindow)).id();
+        app.update();
+        (app, window)
+    }
+
+    fn first_cell(app: &mut App) -> (Vec2, Vec2, f32) {
+        let entities = app.world().resource::<CellEntities>();
+        let (background, glyph) = (entities.background[0], entities.glyph[0]);
+        let size = app.world().get::<Sprite>(background).unwrap().custom_size.unwrap();
+        let at = app.world().get::<Transform>(background).unwrap().translation.truncate();
+        let FontSize::Px(font) = app.world().get::<TextFont>(glyph).unwrap().font_size else { panic!("a pixel font size") };
+        (size, at, font)
+    }
+
+    #[test]
+    fn a_window_of_the_native_size_leaves_the_cells_as_declared() {
+        let (mut app, _) = windowed(80, 80, 1.0);
+        assert_eq!(first_cell(&mut app), (Vec2::new(10.0, 20.0), Vec2::new(-35.0, 30.0), 16.0));
+    }
+
+    #[test]
+    fn a_window_twice_the_size_doubles_the_cells_and_the_font() {
+        let (mut app, _) = windowed(160, 160, 1.0);
+        assert_eq!(first_cell(&mut app), (Vec2::new(20.0, 40.0), Vec2::new(-70.0, 60.0), 32.0));
+    }
+
+    #[test]
+    fn resizing_the_window_lays_the_grid_out_again() {
+        let (mut app, window) = windowed(80, 80, 1.0);
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(240, 240);
+        app.update();
+        assert_eq!(first_cell(&mut app).0, Vec2::new(30.0, 60.0));
+    }
+
+    #[test]
+    fn a_change_of_scale_factor_alone_lays_the_grid_out_again() {
+        let (mut app, window) = windowed(160, 160, 1.0);
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_scale_factor_override(Some(2.0));
+        app.update();
+        // The same physical pixels, half as many logical ones.
+        assert_eq!(first_cell(&mut app).0, Vec2::new(10.0, 20.0));
+    }
+
+    /// What is drawn is the `GlobalTransform`, which Bevy works out from
+    /// the `Transform` late in the frame. A layout written after that is
+    /// drawn a frame late: backgrounds of the new size at the old places.
+    #[test]
+    fn a_resize_is_where_it_will_be_drawn_in_the_same_frame() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, bevy::transform::TransformPlugin)).add_plugins(TerminalPlugin {
+            width: 8,
+            height: 4,
+            cell_size: Vec2::new(10.0, 20.0),
+            font_size: 16.0,
+        });
+        let mut resolution = WindowResolution::new(80, 80);
+        resolution.set_scale_factor_override(Some(1.0));
+        let window = app.world_mut().spawn((Window { resolution, ..default() }, PrimaryWindow)).id();
+        app.update();
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(160, 160);
+        app.update();
+        let background = app.world().resource::<CellEntities>().background[0];
+        let drawn = app.world().get::<GlobalTransform>(background).unwrap().translation().truncate();
+        assert_eq!(drawn, Vec2::new(-70.0, 60.0), "one update after the window changed");
+    }
+
+    #[test]
+    fn a_window_of_no_size_is_left_alone_and_recovers() {
+        let (mut app, window) = windowed(160, 160, 1.0);
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(0, 0);
+        app.update();
+        assert_eq!(first_cell(&mut app).0, Vec2::new(20.0, 40.0), "the last layout stands while minimized");
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(80, 80);
+        app.update();
+        assert_eq!(first_cell(&mut app).0, Vec2::new(10.0, 20.0));
+    }
+
+    #[test]
+    fn with_no_window_the_grid_is_spawned_as_declared_and_nothing_fails() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        app.update();
+        app.update();
+        assert_eq!(first_cell(&mut app), (Vec2::new(10.0, 20.0), Vec2::new(-35.0, 30.0), 16.0));
     }
 }

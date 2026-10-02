@@ -26,8 +26,11 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun};
+use rl_engine::rl_bevy::settings::Settings;
+use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::{Cell, Terminal};
-use rl_engine::rl_ui::{Palette, Tones};
+use rl_engine::rl_ui::panel::SettingsLayout;
+use rl_engine::rl_ui::{Modals, Palette, Tones, settings_modal};
 
 /// The title screen's state: whether it is up, and the row picked out.
 ///
@@ -46,13 +49,30 @@ pub struct Title {
     /// The question New Game asks over a save, while it is asked: `Some`
     /// with whether Yes is picked out.
     pub confirm: Option<bool>,
+    /// Whether there is a settings screen with something on it to open.
+    pub settings: bool,
+    /// Where the game put the settings screen for a run, kept while this
+    /// screen has it standing over its own menu instead.
+    pub settings_in_run: Option<Rect>,
+    /// Whether a screen stands over the menu, as the keys last saw it: the
+    /// drawing reads this and not the stack of screens, which other
+    /// systems write and it is not ordered against.
+    pub covered: bool,
 }
 
 impl Default for Title {
     /// Up, with no save looked for yet and the first row that can be taken
     /// picked out.
     fn default() -> Self {
-        Self { up: true, picked: first_available(SaveOnDisk::None), save: SaveOnDisk::None, confirm: None }
+        Self {
+            up: true,
+            picked: first_available(SaveOnDisk::None, false),
+            save: SaveOnDisk::None,
+            confirm: None,
+            settings: false,
+            settings_in_run: None,
+            covered: false,
+        }
     }
 }
 
@@ -68,9 +88,10 @@ pub enum SaveOnDisk {
     Unreadable,
 }
 
-/// The first row that can be taken with `save` in the slot.
-fn first_available(save: SaveOnDisk) -> usize {
-    Choice::all().iter().position(|c| c.available(save)).unwrap_or(0)
+/// The first row that can be taken with `save` in the slot, and a
+/// settings screen to open or not.
+fn first_available(save: SaveOnDisk, settings: bool) -> usize {
+    Choice::all().iter().position(|c| c.available(save, settings)).unwrap_or(0)
 }
 
 /// Looks in the save slot as the screen comes up, and picks Continue out
@@ -86,7 +107,28 @@ pub fn look_for_save(world: &mut World) {
     };
     let mut title = world.resource_mut::<Title>();
     title.save = save;
-    title.picked = first_available(save);
+    title.picked = first_available(save, title.settings);
+}
+
+/// Whether there is a settings screen to open: the panel was added and a
+/// setting is declared. Looked at once, since both are fixed by then.
+///
+/// While the title is up the screen is moved to stand over the title's
+/// own menu, where the player is already looking: where the game put it
+/// for a run is across the title's lettering. Starting a run puts it back.
+pub fn look_for_settings(
+    mut title: ResMut<Title>,
+    modals: Option<Res<Modals>>,
+    settings: Option<Res<Settings>>,
+    layout: Option<ResMut<SettingsLayout>>,
+    terminal: Option<Res<Terminal>>,
+) {
+    title.settings = modals.is_some_and(|m| settings_modal(&m).is_some()) && settings.is_some_and(|s| !s.is_empty());
+    if let (true, Some(mut layout), Some(terminal)) = (title.up, layout, terminal) {
+        title.settings_in_run = Some(layout.rect);
+        let width = layout.rect.width.min(terminal.width());
+        layout.rect = Rect::new((terminal.width() - width) / 2, rows::MENU - 1, width, terminal.height() - rows::MENU);
+    }
 }
 
 /// What the title screen offers.
@@ -96,14 +138,16 @@ pub enum Choice {
     Continue,
     /// A fresh seed, deck one.
     NewGame,
+    /// What the player may set: the engine's settings screen, over this one.
+    Settings,
     /// Leave.
     Exit,
 }
 
 impl Choice {
     /// Every row, in the order they are drawn.
-    pub fn all() -> [Choice; 3] {
-        [Choice::Continue, Choice::NewGame, Choice::Exit]
+    pub fn all() -> [Choice; 4] {
+        [Choice::Continue, Choice::NewGame, Choice::Settings, Choice::Exit]
     }
 
     /// What the row says.
@@ -111,26 +155,32 @@ impl Choice {
         match self {
             Choice::Continue => "Continue",
             Choice::NewGame => "New Game",
+            Choice::Settings => "Settings",
             Choice::Exit => "Exit",
         }
     }
 
-    /// Whether the row can be picked with `save` in the slot: every row
-    /// but `Continue`, which needs a run this build can read.
-    fn available(self, save: SaveOnDisk) -> bool {
-        self != Choice::Continue || save == SaveOnDisk::Readable
+    /// Whether the row can be picked: `Continue` needs a run this build
+    /// can read in the slot, and `Settings` a settings screen with
+    /// something on it.
+    fn available(self, save: SaveOnDisk, settings: bool) -> bool {
+        match self {
+            Choice::Continue => save == SaveOnDisk::Readable,
+            Choice::Settings => settings,
+            Choice::NewGame | Choice::Exit => true,
+        }
     }
 }
 
 /// The next row from `from` toward `dir`, one way or the other, wrapping
 /// round and passing over any row that cannot be picked.
-fn step(from: usize, dir: isize, save: SaveOnDisk) -> usize {
+fn step(from: usize, dir: isize, save: SaveOnDisk, settings: bool) -> usize {
     let rows = Choice::all();
     let n = rows.len() as isize;
     let mut at = from as isize;
     loop {
         at = (at + dir).rem_euclid(n);
-        if rows[at as usize].available(save) {
+        if rows[at as usize].available(save, settings) {
             return at as usize;
         }
     }
@@ -146,7 +196,7 @@ impl Plugin for TitlePlugin {
             // before the first key is read: in `PreStartup`, so it is done
             // before the engine begins its first run in `Startup`, and after
             // the save's armory is loaded beside it.
-            .add_systems(PreStartup, look_for_save.after(crate::gear::load_armory))
+            .add_systems(PreStartup, (look_for_save.after(crate::gear::load_armory), look_for_settings).chain())
             // Before the engine's input phase, and both of them before it:
             // that phase holds the exclusive key handlers, which conflict
             // with everything in the schedule they are not ordered against.
@@ -173,7 +223,19 @@ pub fn title_is_up(title: Option<Res<Title>>, state: Res<State<EngineState>>) ->
 /// takes the whole world conflicts with every other system in its schedule.
 /// The world work is queued as a command instead, which runs with exclusive
 /// access at the next sync point in the same frame.
-pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>, mut commands: Commands, mut exit: MessageWriter<AppExit>) {
+pub fn read_title_keys(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut title: ResMut<Title>,
+    mut modals: Option<ResMut<Modals>>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    // A screen over the title has the keys, and the key that closed one
+    // this frame is still down and is not the title's.
+    title.covered = modals.as_deref().is_some_and(|m| m.any_open());
+    if title.covered || modals.as_deref().is_some_and(|m| m.closing()) {
+        return;
+    }
     let up = keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyK);
     let down = keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyJ);
     let across = keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::ArrowRight);
@@ -196,10 +258,10 @@ pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>
     }
     let rows = Choice::all().len();
     if up {
-        title.picked = step(title.picked, -1, title.save);
+        title.picked = step(title.picked, -1, title.save, title.settings);
     }
     if down {
-        title.picked = step(title.picked, 1, title.save);
+        title.picked = step(title.picked, 1, title.save, title.settings);
     }
     if leave {
         exit.write(AppExit::Success);
@@ -223,6 +285,14 @@ pub fn read_title_keys(keys: Res<ButtonInput<KeyCode>>, mut title: ResMut<Title>
             title.up = false;
             commands.queue(begin);
         }
+        Choice::Settings => {
+            if let Some(modals) = modals.as_deref_mut()
+                && let Some(settings) = settings_modal(modals)
+            {
+                modals.open(settings);
+                title.covered = true;
+            }
+        }
         Choice::Exit => {
             exit.write(AppExit::Success);
         }
@@ -243,6 +313,12 @@ fn abandon_and_begin(world: &mut World) {
 /// restart after, so Foundry's own start is written once and runs the same
 /// way whoever asked for it.
 fn begin(world: &mut World) {
+    // The settings screen goes back to where the game put it for a run.
+    if let Some(rect) = world.resource_mut::<Title>().settings_in_run.take()
+        && let Some(mut layout) = world.get_resource_mut::<SettingsLayout>()
+    {
+        layout.rect = rect;
+    }
     world.run_schedule(NewRun);
 }
 
@@ -251,7 +327,7 @@ pub fn draw_title(mut terminal: ResMut<Terminal>, title: Res<Title>, palette: Re
     let t = time.elapsed_secs();
     paint(&mut terminal, t);
     paint_title(&mut terminal, t);
-    paint_menu(&mut terminal, &title, &palette);
+    paint_menu(&mut terminal, &title, &palette, !title.covered);
 }
 
 /// The colours the picture is drawn in.
@@ -414,7 +490,9 @@ mod rows {
     /// belt so the two do not read as one machine.
     pub const RAIL: i32 = 29;
     /// The first row of the menu, three below the grating so its rule has a
-    /// clear row of its own.
+    /// clear row of its own. Its four rows are on four lines running, which
+    /// leaves two clear rows under them; a blank row between each would run
+    /// off the terminal.
     pub const MENU: i32 = 34;
 }
 
@@ -607,8 +685,12 @@ fn letter(which: &str) -> [&'static str; 6] {
 }
 
 /// The tagline and the rows: a word each, and nothing under them, since
-/// three words need no gloss and the keys are the ones every menu has.
-fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
+/// four words need no gloss and the keys are the ones every menu has.
+///
+/// With `rows` false only the tagline and the rule are drawn: a screen
+/// stands over the menu, as tall as its own rows, and the menu left drawn
+/// would show its last row under it.
+fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette, rows: bool) {
     let w = terminal.width();
     let centre = |text: &str| (w - text.chars().count() as i32) / 2;
 
@@ -617,6 +699,9 @@ fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
 
     let rule: String = "─".repeat(34);
     terminal.print(centre(&rule), rows::MENU - 2, &rule, palette.get(Tones::MUTED));
+    if !rows {
+        return;
+    }
 
     // The question over New Game stands where the menu stood while it is
     // asked: one line, and its two answers under it, the picked one marked
@@ -646,13 +731,13 @@ fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette) {
         // the plain row and the dim one alike; `SELECT` is a background,
         // and as a foreground it read darker than the row that cannot be
         // picked.
-        let tone = match (picked, choice.available(title.save)) {
+        let tone = match (picked, choice.available(title.save, title.settings)) {
             (true, _) => Tones::TITLE,
             (false, true) => Tones::TEXT,
             (false, false) => Tones::MUTED,
         };
         let mark = if picked { '>' } else { ' ' };
-        terminal.print(x, rows::MENU + 2 * i as i32, &format!("{mark} {}", choice.label()), palette.get(tone));
+        terminal.print(x, rows::MENU + i as i32, &format!("{mark} {}", choice.label()), palette.get(tone));
     }
 }
 
@@ -754,7 +839,7 @@ mod tests {
             assert_eq!(Choice::all()[title.picked], Choice::NewGame, "New Game is picked out");
             let mut at = title.picked;
             for _ in 0..6 {
-                at = step(at, 1, title.save);
+                at = step(at, 1, title.save, title.settings);
                 assert_ne!(Choice::all()[at], Choice::Continue, "and the cursor never lands on Continue");
             }
         }
@@ -824,16 +909,16 @@ mod tests {
         (0..terminal.height()).map(|y| (0..terminal.width()).map(|x| terminal.get(x, y).map_or(' ', |c| c.glyph)).collect()).collect()
     }
 
-    /// The menu is three words and nothing else: no line under a row saying
+    /// The menu is four words and nothing else: no line under a row saying
     /// what it does, and no row of keys along the bottom.
     #[test]
-    fn the_menu_reads_continue_new_game_and_exit_and_nothing_more() {
+    fn the_menu_reads_continue_new_game_settings_and_exit_and_nothing_more() {
         let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
         let palette = Palette::default();
-        paint_menu(&mut terminal, &Title::default(), &palette);
+        paint_menu(&mut terminal, &Title::default(), &palette, true);
         let rows = screen(&terminal);
         let menu: Vec<&str> = rows[rows::MENU as usize..].iter().map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
-        assert_eq!(menu, vec!["Continue", "> New Game", "Exit"], "{rows:#?}");
+        assert_eq!(menu, vec!["Continue", "> New Game", "Settings", "Exit"], "{rows:#?}");
     }
 
     /// Continue is there to say a run can be continued one day, and until
@@ -844,18 +929,18 @@ mod tests {
         assert_eq!(Choice::all()[title.picked], Choice::NewGame, "the cursor starts on New Game");
         let mut seen = Vec::new();
         for _ in 0..6 {
-            title.picked = step(title.picked, 1, title.save);
+            title.picked = step(title.picked, 1, title.save, title.settings);
             seen.push(Choice::all()[title.picked]);
         }
         for _ in 0..6 {
-            title.picked = step(title.picked, -1, title.save);
+            title.picked = step(title.picked, -1, title.save, title.settings);
             seen.push(Choice::all()[title.picked]);
         }
         assert!(!seen.contains(&Choice::Continue), "{seen:?}");
 
         let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
         let palette = Palette::default();
-        paint_menu(&mut terminal, &Title::default(), &palette);
+        paint_menu(&mut terminal, &Title::default(), &palette, true);
         let rows = screen(&terminal);
         let y = rows.iter().position(|r| r.trim() == "Continue").expect("Continue is drawn") as i32;
         let x = rows[y as usize].find('C').unwrap() as i32;
@@ -873,7 +958,7 @@ mod tests {
         let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
         let palette = Palette::default();
         let title = Title { confirm: Some(false), save: SaveOnDisk::Readable, ..Title::default() };
-        paint_menu(&mut terminal, &title, &palette);
+        paint_menu(&mut terminal, &title, &palette, true);
         let rows = screen(&terminal);
         let menu: Vec<&str> = rows[rows::MENU as usize..].iter().map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
         assert_eq!(menu, vec!["Abandon the run in progress?", "> No      Yes"], "{rows:#?}");
@@ -893,6 +978,136 @@ mod tests {
         assert!(app.should_exit().is_some(), "it asked to exit");
     }
 
+    #[test]
+    fn the_settings_row_sits_between_new_game_and_exit() {
+        assert_eq!(Choice::all(), [Choice::Continue, Choice::NewGame, Choice::Settings, Choice::Exit]);
+    }
+
+    #[test]
+    fn the_settings_row_cannot_be_picked_when_there_is_no_settings_screen() {
+        assert!(!Choice::Settings.available(SaveOnDisk::None, false));
+        assert!(Choice::Settings.available(SaveOnDisk::None, true));
+        // Stepping down from New Game passes over it to Exit.
+        assert_eq!(step(1, 1, SaveOnDisk::None, false), 3);
+        assert_eq!(step(1, 1, SaveOnDisk::None, true), 2);
+    }
+
+    #[test]
+    fn the_title_gives_its_keys_to_the_settings_screen_while_it_is_open_and_takes_them_back_when_it_closes() {
+        use rl_engine::rl_bevy::settings::{AddSettings, Setting, Settings};
+        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(4));
+        app.add_plugins(rl_engine::rl_ui::SettingsPanel::new(rl_engine::rl_core::Rect::new(0, 0, 40, 12)));
+        app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
+        app.insert_resource(Title::default());
+        app.update();
+        assert!(app.world().resource::<Title>().settings, "there is a settings screen to open");
+
+        key(&mut app, KeyCode::ArrowDown);
+        assert_eq!(Choice::all()[app.world().resource::<Title>().picked], Choice::Settings);
+        key(&mut app, KeyCode::Enter);
+        assert!(app.world().resource::<Modals>().any_open(), "Enter opened the settings screen");
+        assert!(app.world().resource::<Title>().up, "and the title is still up under it");
+        let glow = |app: &App| {
+            let settings = app.world().resource::<Settings>();
+            settings.choice(settings.find("glow").unwrap()).to_string()
+        };
+        assert_eq!(glow(&app), "Off", "the key that opened it changed nothing");
+
+        // The screen has the keys: Down does not move the title's row, and
+        // Enter changes the setting rather than taking a title row.
+        key(&mut app, KeyCode::ArrowDown);
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(Choice::all()[app.world().resource::<Title>().picked], Choice::Settings);
+        assert_eq!(glow(&app), "On");
+        assert!(app.world().resource::<Title>().up && app.should_exit().is_none());
+
+        // Escape closes the screen and is not the title's Escape, which leaves.
+        key(&mut app, KeyCode::Escape);
+        assert!(!app.world().resource::<Modals>().any_open());
+        assert!(app.should_exit().is_none(), "the game did not exit");
+        assert!(app.world().resource::<Title>().up);
+    }
+
+    /// Over the title the settings screen stands on the title's own menu,
+    /// where the player is already looking, and not where the game put it
+    /// for a run, which is across the title's lettering.
+    #[test]
+    fn the_settings_screen_stands_over_the_titles_menu_until_a_run_begins() {
+        use rl_engine::rl_bevy::settings::{AddSettings, Setting};
+        use rl_engine::rl_core::Rect;
+        use rl_engine::rl_ui::panel::SettingsLayout;
+        let in_run = Rect::new(28, 6, 44, 13);
+        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(4));
+        app.add_plugins(rl_engine::rl_ui::SettingsPanel::new(in_run));
+        app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
+        app.insert_resource(Terminal::new(100, 40, Vec2::new(10.0, 16.0)));
+        app.insert_resource(Title::default());
+        app.update();
+        assert_eq!(app.world().resource::<SettingsLayout>().rect, Rect::new(28, rows::MENU - 1, 44, 6));
+
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.world().resource::<Title>().up, "New Game began a run");
+        assert_eq!(app.world().resource::<SettingsLayout>().rect, in_run, "and the screen is back where the game put it");
+    }
+
+    /// A screen over the title stands on its menu, and is as tall as its
+    /// own rows: the menu left drawn would show its last row under it.
+    #[test]
+    fn the_menu_is_not_drawn_while_a_screen_stands_over_it() {
+        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
+        paint_menu(&mut terminal, &Title::default(), &Palette::default(), false);
+        let rows = screen(&terminal);
+        assert!(rows[rows::TAGLINE as usize].contains("Ten decks"), "the tagline stays");
+        assert!(rows[rows::MENU as usize..].iter().all(|r| r.trim().is_empty()), "{rows:#?}");
+    }
+
+    /// The title's keys and the settings screen's are not ordered against
+    /// each other, since one is the game's and the other the engine's. So
+    /// whichever runs first, the key that opens the screen must not also
+    /// change its first row, and the key that closes it must not also be
+    /// the title's Escape, which leaves the game.
+    #[test]
+    fn the_title_and_the_settings_screen_share_no_key_whichever_reads_first() {
+        use bevy::ecs::system::RunSystemOnce;
+        use rl_engine::rl_bevy::settings::{AddSettings, Setting, Settings};
+        use rl_engine::rl_ui::panel::settings::settings_keys;
+
+        fn frame(app: &mut App, key: KeyCode, title_first: bool) {
+            app.world_mut().resource_mut::<Modals>().begin_frame();
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
+            if title_first {
+                app.world_mut().run_system_once(read_title_keys).unwrap();
+                app.world_mut().run_system_once(settings_keys).unwrap();
+            } else {
+                app.world_mut().run_system_once(settings_keys).unwrap();
+                app.world_mut().run_system_once(read_title_keys).unwrap();
+            }
+            let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            input.release(key);
+            input.clear();
+        }
+
+        for (open_title_first, close_title_first) in [(true, true), (true, false), (false, true), (false, false)] {
+            let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(4));
+            app.add_plugins(rl_engine::rl_ui::SettingsPanel::new(rl_engine::rl_core::Rect::new(0, 0, 40, 12)));
+            app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
+            app.insert_resource(Title::default());
+            app.update();
+            app.world_mut().resource_mut::<Title>().picked = Choice::all().iter().position(|c| *c == Choice::Settings).unwrap();
+            let orders = format!("opened with the title first: {open_title_first}, closed with it first: {close_title_first}");
+
+            frame(&mut app, KeyCode::Enter, open_title_first);
+            assert!(app.world().resource::<Modals>().any_open(), "{orders}");
+            let settings = app.world().resource::<Settings>();
+            assert_eq!(settings.choice(settings.find("glow").unwrap()), "Off", "{orders}");
+
+            frame(&mut app, KeyCode::Escape, close_title_first);
+            assert!(settings_modal(app.world().resource::<Modals>()).is_some_and(|m| !app.world().resource::<Modals>().is_open(m)), "{orders}");
+            assert!(app.should_exit().is_none(), "{orders}");
+            assert!(app.world().resource::<Title>().up, "{orders}");
+        }
+    }
+
     /// Prints the title screen as the player sees it, for eyeballing the
     /// art: `cargo test -p foundry title_screen -- --ignored --nocapture`.
     #[test]
@@ -902,7 +1117,7 @@ mod tests {
         let palette = Palette::default();
         paint(&mut terminal, 0.4);
         paint_title(&mut terminal, 0.4);
-        paint_menu(&mut terminal, &Title::default(), &palette);
+        paint_menu(&mut terminal, &Title::default(), &palette, true);
         for y in 0..terminal.height() {
             let row: String = (0..terminal.width()).map(|x| terminal.get(x, y).map(|c| c.glyph).unwrap_or(' ')).collect();
             println!("{row}");

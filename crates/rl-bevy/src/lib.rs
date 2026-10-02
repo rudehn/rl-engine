@@ -41,6 +41,7 @@ pub mod registries;
 pub mod remains;
 pub mod replay;
 pub mod seed;
+pub mod settings;
 pub mod state;
 pub mod status;
 pub mod stealth;
@@ -102,6 +103,7 @@ pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, Rema
 pub use replay::{Pressed, Recording};
 pub use rl_grid::LightBand;
 pub use seed::{AddStream, Seed, Stream};
+pub use settings::{AddSettings, Setting, SettingId, Settings};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
@@ -161,6 +163,7 @@ pub mod prelude {
     pub use crate::registries::Registries;
     pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived};
     pub use crate::seed::{AddStream, Seed};
+    pub use crate::settings::{AddSettings, Setting, SettingId, Settings};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};

@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: e7da4ab4 -->
+     fingerprint: ac3bd6c5 -->
 
 # Panels
 
@@ -50,7 +50,7 @@ So a game takes all three, or the first two and draws its own, or neither.
 The log lives here rather than with the panels that draw it because a game writes to it from its own systems whether or not anything draws it, so a headless test adds this plugin and has a log with no panel in sight.
 It chains `ViewSet::Sight`, `Collect`, `Annotate` and `Speak` inside `PresentSet::Narrate`, the frame's work-out-what-to-say phase, and `finish` declares `depends_on::<CorePlugin>`.
 Each panel after that is its own plugin, constructed with the `Rect` it draws in and whatever titles and hints it carries, and it adds its view plugin behind it when the game did not.
-A strip draws in `PresentSet::Chrome` and a screen in `PresentSet::Overlay`, which is what makes a modal cover the thing it is about.
+A strip draws in `PresentSet::Chrome` and a screen in `PresentSet::Overlay`, which is what makes a modal cover the thing it is about; the settings screen alone is drawn after the whole of `EngineSet::Present`, for the reason its own page gives.
 `VitalsPanel`, `NearbyPanel`, `GearPanel` and `LogPanel` are strips; `InspectPanel`, `AbilityPanel`, `SheetPanel`, `OffersPanel`, `ScrollbackPanel` and `TargetPanel` are screens, and every screen has a modal.
 Which of the two layers declares it is not the same for all six, and the rule is that it goes wherever the behaviour is: the two cursors are the view's, so `InspectViewPlugin` and `TargetViewPlugin` declare the modal and the key themselves and a game that takes the view alone still gets a cursor it can open, while `AbilityPanel`, `SheetPanel`, `ScrollbackPanel` and `OffersPanel` declare theirs in the presenter.
 A key that opens a screen is declared in `finish`, after the game's own so a controls screen lists the game's groups first; the offers screen is the one with no key of its own, since it opens on a crowded bump or on the interact key.
