@@ -13,7 +13,9 @@
 //!
 //! A place can also be grown: [`Accrete`] attaches each [`Shape`]'s
 //! [`Piece`] to a wall of what already stands, biased by [`District`]s,
-//! and publishes an [`Area`] per piece and an [`Opening`] per [`Join`].
+//! and publishes an [`Area`] per piece and an [`Opening`] per [`Join`];
+//! [`OpenLoops`] then cuts the longest detours through, so there is more
+//! than one way round.
 //!
 //! Engine passes are generic over the context, so a game extends the
 //! context with its own state and engine passes still run on it.
@@ -25,12 +27,15 @@ pub mod accrete;
 pub mod chain;
 pub mod context;
 pub mod dungeon;
+pub mod loops;
 pub mod passes;
 pub mod prefab;
+mod walk;
 
 pub use accrete::{Accrete, Area, District, Join, Opening, Piece, Shape};
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
+pub use loops::OpenLoops;
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -38,6 +43,7 @@ pub mod prelude {
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
     pub use crate::context::{BaseContext, BuildContext, Outputs};
     pub use crate::dungeon;
+    pub use crate::loops::OpenLoops;
     pub use crate::passes;
     pub use crate::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab, Stamped};
 }
