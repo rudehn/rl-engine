@@ -16,6 +16,7 @@
 pub mod ability;
 pub mod accuracy;
 pub mod bump;
+pub mod charts;
 pub mod combat;
 pub mod components;
 pub mod consumable;
@@ -54,6 +55,7 @@ pub mod world;
 pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
+pub use charts::{ChartId, ChartSave, Charting, Charts, ChartsSave};
 pub use combat::{
     Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
     Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
@@ -76,7 +78,7 @@ pub use items::{
     Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Pulse,
     Stack, Tagged, Unequip, UseItem, Wearable,
 };
-pub use knowledge::{Knowledge, KnowledgeSave};
+pub use knowledge::{Knowledge, KnowledgeSave, TileSet};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
@@ -123,6 +125,7 @@ pub mod prelude {
     pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Use};
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
+    pub use crate::charts::{ChartId, Charting, Charts};
     pub use crate::combat::{
         Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
         Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,

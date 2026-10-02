@@ -78,12 +78,13 @@ impl Plugin for TerminalPlugin {
         app.insert_resource(Terminal::new(self.width, self.height, self.cell_size))
             .insert_resource(TerminalFont { size: self.font_size })
             .init_resource::<CellEntities>()
+            .init_resource::<crate::pointer::Pointer>()
             .add_systems(Startup, spawn_grid)
             // Early in the frame, by which time the window already has its
             // new size: Bevy works out where a thing is drawn and lays its
             // text out late in `PostUpdate`, and a layout written there in
             // no order against them could be drawn a frame late.
-            .add_systems(PreUpdate, relayout)
+            .add_systems(PreUpdate, (relayout, crate::pointer::track_pointer).chain())
             .add_systems(PostUpdate, flush_terminal);
     }
 }
@@ -112,6 +113,12 @@ impl Terminal {
     /// Height in cells.
     pub fn height(&self) -> i32 {
         self.height
+    }
+
+    /// The size of one cell as declared, in logical pixels: what the grid
+    /// is laid out from, not what a window of another size shows it at.
+    pub fn cell_size(&self) -> Vec2 {
+        self.cell_size
     }
 
     /// The whole grid as a rectangle of cells.
@@ -435,6 +442,50 @@ mod tests {
         app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(80, 80);
         app.update();
         assert_eq!(first_cell(&mut app).0, Vec2::new(10.0, 20.0));
+    }
+
+    /// The cursor's cell is read off the layout the frame is drawn with:
+    /// in a window twice the native size a cell is twenty by forty.
+    #[test]
+    fn the_pointer_is_the_cell_under_the_cursor_and_none_off_the_grid() {
+        use crate::pointer::Pointer;
+        use bevy::math::DVec2;
+        use rl_core::Point;
+        // Wider than the grid needs, so there is a margin to be in.
+        let (mut app, window) = windowed(200, 160, 1.0);
+        let cell = |app: &mut App, at: Option<DVec2>| {
+            app.world_mut().get_mut::<Window>(window).unwrap().set_physical_cursor_position(at);
+            app.update();
+            app.world().resource::<Pointer>().cell()
+        };
+        assert_eq!(cell(&mut app, None), None, "no cursor in the window, no cell");
+        assert_eq!(cell(&mut app, Some(DVec2::new(20.0, 0.0))), Some(Point::new(0, 0)), "the grid starts after a margin of twenty");
+        assert_eq!(cell(&mut app, Some(DVec2::new(19.0, 0.0))), None, "and the margin is no cell");
+        assert_eq!(cell(&mut app, Some(DVec2::new(20.0 + 7.0 * 20.0 + 19.0, 159.0))), Some(Point::new(7, 3)), "the last pixel of the last cell");
+        assert_eq!(cell(&mut app, Some(DVec2::new(75.0, 45.0))), Some(Point::new(2, 1)));
+        // The window is resized under a cursor that did not move.
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(80, 80);
+        app.update();
+        assert_eq!(app.world().resource::<Pointer>().cell(), Some(Point::new(7, 2)), "the same pixel is another cell in a smaller grid");
+    }
+
+    /// With no window the pointer is left where a test put it.
+    #[test]
+    fn with_no_window_a_pointer_set_by_hand_stays() {
+        use crate::pointer::Pointer;
+        use rl_core::{Point, Rect};
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        app.insert_resource(Pointer::at(Point::new(5, 2)));
+        app.update();
+        let pointer = *app.world().resource::<Pointer>();
+        assert_eq!(pointer.cell(), Some(Point::new(5, 2)));
+        assert_eq!(pointer.within(Rect::new(4, 0, 4, 4)), Some(Point::new(5, 2)), "inside a panel's rectangle");
+        assert_eq!(pointer.within(Rect::new(0, 0, 4, 4)), None, "and outside another's");
+        let mut view = crate::map_view::MapView::new(Rect::new(2, 1, 6, 3));
+        view.origin = Point::new(100, 50);
+        assert_eq!(pointer.tile(&view), Some(Point::new(103, 51)), "the tile the map draws there");
+        assert_eq!(Pointer::at(Point::new(0, 0)).tile(&view), None, "and none where the map is not drawn");
     }
 
     #[test]

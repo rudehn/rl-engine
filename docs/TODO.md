@@ -362,4 +362,4 @@ Left over from the worn gear and unseen slice on 2026-09-27, the same way.
 ## Tracked elsewhere
 
 - The plan's "Next" line: nights on Corsair's surface, scripted encounters, Bevy UI presenters over the panel views, and the living-world-rogue conversion.
-- `docs/OVERVIEW.md`, "Not built yet": cursed items, heat and cold, liquids and wind, lit detection ranges, mouse-to-tile, instanced terminal rendering.
+- `docs/OVERVIEW.md`, "Not built yet": cursed items, heat and cold, liquids and wind, lit detection ranges, hover and click-to-travel over the pointer, instanced terminal rendering.

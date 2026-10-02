@@ -25,6 +25,7 @@ These are the reasoning; the overview is the list.
 
 - [abilities.md](design/abilities.md), what an actor can spend a turn on, as data.
 - [accuracy.md](design/accuracy.md), whether an attack lands, and the three bands of light the odds read.
+- [charts.md](design/charts.md), what someone other than the player has seen: a chart per party, and a mind that walks to what its chart lacks.
 - [effects.md](design/effects.md), what lands and what sets it off: the effects subsystem, its moments and triggers, and what a use costs a thing.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
 - [items.md](design/items.md), what a thing does: the three carriers of an effect list, and why an item never lends an ability.

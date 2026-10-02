@@ -5,6 +5,8 @@
             crates/rl-rules/src/ai/tactics.rs
             crates/rl-rules/src/ai/wits.rs
             crates/rl-bevy/src/minds.rs
+            crates/rl-bevy/src/charts.rs
+            crates/rl-bevy/src/knowledge.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/fov.rs
             crates/rl-bevy/src/combat.rs
@@ -14,7 +16,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
-     fingerprint: c1dcd475 -->
+     fingerprint: eaa19d9e -->
 
 # Minds
 
@@ -26,7 +28,7 @@ Deciding is tier 1 and sees no world: a tactic reads the snapshot and asks for t
 ## Turning it on
 
 `MindsPlugin` is every non-player deciding its own turn, and it is opt-in: a game that moves its monsters with systems of its own leaves it out.
-It puts `sense` in `DecideSet::Sense`, `begin_thinking` in `PerceiveSet::Begin`, `perceive_roster` in `PerceiveSet::Roster`, `sense_posts` and `sense_ways` in `PerceiveSet::Annotate` and `decide_minds` in `DecideSet::Minds`, and adds `MindRng`, a stream of its own, so writing one more tactic cannot shift combat's rolls.
+It puts `sense` in `DecideSet::Sense`, `begin_thinking` in `PerceiveSet::Begin`, `perceive_roster` in `PerceiveSet::Roster`, `chart_sight` behind it, `sense_posts`, `sense_ways` and `sense_uncharted` in `PerceiveSet::Annotate` and `decide_minds` in `DecideSet::Minds`, and adds `MindRng`, a stream of its own, so writing one more tactic cannot shift combat's rolls.
 It declares `depends_on::<FovPlugin>` and nothing else, because a mind's sight is a `Viewshed` of its own cast by the function that casts the player's.
 Not combat: without `CombatPlugin` there is no faction matrix, everyone a mind sees is one of the others, and it steps round them rather than at them.
 It registers the `Attack` action itself, so a blow decided in a game with no combat is refused by the sweeper rather than left holding the turn, and it registers the messages for a use, a pickup, an equip and a throw so that a brain reaching for one in a game without that subsystem writes into a message nobody reads.
@@ -52,7 +54,9 @@ The four phases fill it in turn: `Begin` opens it, `Roster` sorts everyone in si
 A field toward up to four goals is composed from one flood per goal, which is cell for cell the flood from all of them, so two hunters that see different enemies share the flood from each enemy both see.
 It also offers `can_step`, which refuses an occupied cell and any cell marked a hazard, `blocks_shot` and `blocks_burst`, the two predicates the ability resolver flies and bursts by, and the turn's stream.
 `can_step` answers whether a cell may be stood on and says nothing about the way in, so a tactic that picks a neighbour for itself rather than taking one a field offered pairs it with the resolver's corner rule: a diagonal that squeezes between two cells the actor cannot stand on is refused silently, and a mind deciding on one would decide the same way again on every turn until something moved.
-The thirteen shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Keep`, `Hover`, `KeepPost`, `Wander`, `GiveWay`, `UseAbility`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
+The fourteen shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Keep`, `Hover`, `KeepPost`, `Explore`, `Wander`, `GiveWay`, `UseAbility`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
+`Charting(ChartId)` on a mind says its sight is written into a chart, a `TileSet` per map in the `Charts` resource under an id the game numbers, by `chart_sight` on each of its turns; `sense_uncharted` then pushes `Uncharted`, the cells the chart lacks that could be stood on beside held ones that could, and `Explore` steps toward the nearest of them by the way there and passes when there is none it can reach.
+Minds naming one chart share it, `Charts::copy` hands what one holds to another, and `Charts::forget` empties one.
 `Post(Point)` on an actor is the cell it was set to stand on, pushed into its snapshot as the `Posted` sense, and `KeepPost` walks it back there and waits, waiting too beside a post something else stands on, and passes for an actor with no post, so one brain serves a kind whether or not this one was posted.
 `Keep` is one tactic for both sides of keeping station, parameterised by the roster it reads: `Keep::allies(keep_within, no_closer_than)` is what a companion is and `Keep::enemies(..)` what a spotter or a skirmisher is, each closing past the first distance, backing off inside the second and leaving the band between to the next tactic, and it reports itself as `follow` or `shadow`, because a trace that says `shadow` says more about what a probe did than one that says `keep`.
 `app.add_choice::<A>()` registers an action that is also a `Choice` and routes every `MindChose` carrying an `A` into its `Intent` in `DecideSet::Game`, and `Snapshot::add_sense` with `sense::<T>()` carries a game's own knowledge in by type, one per type.
