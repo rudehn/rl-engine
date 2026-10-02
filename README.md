@@ -14,6 +14,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 ## Features
 
 - **Procedural map generation**: a chain of seeded passes with rooms and corridors, BSP, cellular automata caves, doors, largest-region cleanup and ASCII prefabs.
+- **Places grown by accretion**: rooms, halls and passages attached piece by piece so they share walls, districts that differ across one map, loops cut through the longest detours, a survey of every area (dead end, chokepoint, junction, how far off the direct route), and recipes in RON that a place is held to and rebuilt until it meets.
 - **Procedural world generation**: FBM noise, elevation, priority-flood hydrology with rivers and lakes, climate, site placement, road routing and seamless infinite chunk streaming.
 - **Field of view**: symmetric shadowcasting over any `OpacitySource`, plus line of fire and targeting shapes for bolts, balls, beams and cones.
 - **Pathfinding**: A* with reusable scratch buffers, region-bounded Dijkstra maps, flee maps and flow fields per movement profile.

@@ -153,6 +153,7 @@ impl Foundry {
         Ok(rooms)
     }
 
+    // ANCHOR: grow
     /// Runs the deck's chain and hands back the context still open, so a
     /// test can read a [`Stamped`](rl_engine::rl_mapgen::prefab::Stamped)
     /// pass emitted before [`PlaceBuild::from_context`] flattens every
@@ -202,6 +203,7 @@ impl Foundry {
         let make = || BaseContext::blank(width, height, self.tiles.clone(), self.hull);
         chain.then(start).then(FarthestExit).then(Survey).then(rooms).then(grown.require).run_retrying(make, seed, ATTEMPTS)
     }
+    // ANCHOR_END: grow
 
     /// The deck as rows of glyphs, for `foundry --deck` and for reading a
     /// layout before calling a recipe done: `#` what cannot be walked on,

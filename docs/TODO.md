@@ -373,6 +373,17 @@ Left over from the worn gear and unseen slice on 2026-09-27, the same way.
   A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read `Landing::targets` of a `use` trigger the way it reads an ability's.
   No shipped content harms others from a `use` trigger, so it waits for one that does.
 
+Left over from the layout slice on 2026-10-01: the three pieces of work `docs/design/layout.md` section 0 says key on what it publishes.
+
+- **A furnisher that fills an area to its size.**
+  Rows of one machine with aisles between, by a theme per district, in place of `StampEachRoom`'s one centered piece.
+- **A run director.**
+  Which pieces a run holds and on which place, limits per place and per run, and rewards put by `AreaFacts::seclusion`; prefabs attached by their own door as a `Shape` belong here.
+- **Tells.**
+  A thing seen before it is reached.
+- **Foundry's recipes are a first draw.**
+  Two recipes over three districts at 84 by 48; the size and the mix are meant to grow as the furnisher and the director give a deck more to hold.
+
 ## Tracked elsewhere
 
 - The plan's "Next" line: nights on Corsair's surface, scripted encounters, Bevy UI presenters over the panel views, and the living-world-rogue conversion.

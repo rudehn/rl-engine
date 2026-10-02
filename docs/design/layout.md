@@ -1,7 +1,7 @@
 # Layout
 
-Status: designed 2026-09-30, not built.
-This is the spec the first implementation is written against; the documentation pass that finishes the branch rewrites it as what was built.
+Status: built 2026-10-01, against `main` at `235f864`.
+The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/guide/src/systems/layout.md` is the reference.
 The research behind it is `docs/research/gridsage-mapgen.md`, read for its concepts and not for its algorithms.
 
 ## 0. Summary
@@ -16,7 +16,7 @@ Which shapes are drawn depends on where on the map the piece is going, so a plac
 Then the place is surveyed, and the survey is published: every area, every door, and for each what a later pass needs to decide what belongs there.
 A place that fails what its recipe requires is thrown away and built again from the next attempt of the same seed.
 
-It is the first of four pieces of work, and the only one this document specifies.
+It is the first of four pieces of work, and the only one built.
 The other three key on what this one publishes: a furnisher that fills an area to its size, a director that decides what a run holds and where, and tells that show a thing before it is reached.
 
 ## 1. What it is for
@@ -74,8 +74,15 @@ It runs over a map filled with solid tile and keeps a one-cell border solid.
    When no site fits, the attempt is spent.
 6. Stop when the share of the map that is open reaches the recipe's target, or when a run of consecutive attempts as long as the recipe allows has all been spent.
 
+7. Turn every passage with one way in back into what it was carved from, with the opening into it, and take growth up again from step 2 to refill the share, for a few rounds at most; the last round's trim stands, and a place then short of its share fails.
+
 Every area is joined to one that was already joined, so every open cell can be walked to from every other, before any check is made.
 The ring in step 4 is what keeps one wall between two areas and never none.
+
+Step 7 was not in the first design.
+The first decks printed had service passages ending at walls all over them, and a passage is the one area nothing is ever put in, so a dead end that is a passage can never pay; a dead end that is a room can.
+Trimming before the place is handed on, and not as a later pass, is what keeps an area's index its place in the list for everything that reads it.
+A game that wants a blind corridor draws it as a shape that is a room.
 
 Every number above is a share or a count per area of map, never a count of cells of map: the target is a share, and the allowed run of failures is the recipe's.
 The same recipe therefore builds a small place and a large one, and the tests in section 7 build both.
@@ -166,16 +173,17 @@ A layout file holds the shapes, the districts and the recipes:
 - a district: a name and `(shape, weight)` rows;
 - a recipe: a name, a width and a height, the target open share, the run of failed attempts allowed, the district density, `(district, weight)` rows, the loop threshold and cap, and its requirements.
 
-Checked at load: every name resolves, every weight is more than nought, every range has its smallest no larger than its largest, every share is between nought and a hundred, the requirements' shape names are shapes some district of the recipe can draw, and the smallest shape fits the recipe's size.
+Checked at load: no name is used twice, every name resolves, every list has a weight more than nought, every range starts at one or more and has its smallest no larger than its largest, a cross's bars are thinner than they are long, a mouth has a width, every share is within a hundred, patience is more than nought, the requirements' shape names are shapes some district of the recipe can draw, and the recipe's size holds some shape it draws and every shape it requires.
+Whether a recipe's requirements can be met at all is not checked at load, since only growing a place can say; a game's test over a span of seeds is what finds a recipe that asks too much.
 The file carries the top-of-file comment listing every field and every option.
 
 A game with a `Shape` of its own builds its `Accrete` in code; naming one from a file waits for a game that has one.
 
 ## 7. Foundry
 
-`assets/layout.ron` holds foundry's shapes, three districts and its recipes.
-The districts are halls, cells and service passages, and a deck's recipe weights two or three of them.
-Each deck names its recipe, so a deck's size is data and the `70, 40` in `decks.rs` goes.
+`assets/layout.ron` holds foundry's five shapes, three districts and two recipes.
+The districts are halls, cells and service passages, and each recipe weights all three: `assembly`, which favors halls, for decks one to three, and `warren`, tighter and with more loops required, for the seven below.
+Each deck names its recipe, so a deck's size is data and the `70, 40` that was in `decks.rs` is gone.
 
 A deck starts at 84 by 48, about 1.4 times the area it has now.
 Accretion wastes no rock between rooms, so that holds noticeably more than the scatter does, and it stays small while there is little to put in it.
@@ -183,7 +191,8 @@ The map view already follows the player and clamps to the map, so a deck larger 
 
 The deck's chain swaps `Rooms` and `Doors` for `Accrete` and `OpenLoops`, and adds `Survey` after `FarthestExit` and `Require` last.
 The armory, the store, the guard post, the reactor, the core and the furnishing stay as they are, stamped into the rooms accretion emits, until the furnisher and the director replace them.
-`Foundry::build` runs the chain retrying.
+`Foundry::build` runs the chain retrying, forty attempts at most, and `foundry --deck N --seed S` prints a deck as rows of glyphs, which is how the recipes were read before they were called done.
+One test that ran a script on a fixed seed moved to another seed, and the fingerprint tripwire was re-baselined on a seed whose deck still brings a droid into sight.
 
 ## 8. Testing
 
@@ -202,7 +211,9 @@ For the survey, on small maps drawn by hand: a dead end, a chokepoint, a junctio
 
 In `rl-rules`: the recipe file loads, and each mistake section 6 lists is refused by name.
 
-In foundry: every deck builds within the retry bound on every seed of the range and meets its requirements, and every existing deck test passes unchanged.
+In foundry: every deck builds within the retry bound on every seed of the range and meets its requirements, and every deck test that was there before passes unchanged.
+
+In `rl-mapgen` again, since the trim: no passage of a grown place is left with one way in, and areas are numbered in the order they are emitted.
 
 A layout that meets every bound can still read badly, so sample decks are printed as text across seeds and looked at before the recipes are called done.
 
