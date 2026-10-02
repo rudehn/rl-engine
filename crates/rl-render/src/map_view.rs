@@ -440,6 +440,53 @@ mod tests {
         assert_eq!(app.world().get::<Glyph>(dressed).map(|g| g.ch), Some('#'), "a game that dressed its own is not overruled");
     }
 
+    /// The map as drawn for whoever is the player at `start`, with a wall
+    /// two tiles east of it and something standing behind that wall:
+    /// the glyphs drawn at the wall, behind it and on the thing.
+    fn drawn_for(sight: Viewshed) -> [char; 3] {
+        use rl_bevy::components::RevealsMap;
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        let start = rl_bevy::testing::surface(&mut app);
+        let tiles = rl_grid::TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut look = TileAppearance::new();
+        look.set(wall, Cell::new('#', Color::WHITE));
+        look.set(floor, Cell::new('.', Color::WHITE));
+        app.insert_resource(look);
+        app.world_mut().spawn((Player, Position(start), sight, RevealsMap));
+        app.world_mut().spawn((Position(start.offset(4, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 }));
+        app.world_mut().resource_mut::<NextState<rl_bevy::state::EngineState>>().set(rl_bevy::state::EngineState::Playing);
+        app.update();
+        app.update();
+        // A wall the height of the sight, so nothing sees round its ends.
+        for dy in -9..=9 {
+            app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, dy), wall);
+        }
+        app.update();
+        app.update();
+        let view = *app.world().resource::<MapView>();
+        let terminal = app.world().resource::<Terminal>();
+        let at = |dx: i32| {
+            let s = view.to_screen(start.offset(dx, 0)).expect("on screen");
+            terminal.get(s.x, s.y).expect("a cell").glyph
+        };
+        [at(2), at(3), at(4)]
+    }
+
+    /// An onlooker, a player that sees everywhere, is drawn the whole map:
+    /// the same view code, asked by a viewshed no wall stops.
+    #[test]
+    fn the_map_is_drawn_whole_for_a_player_that_sees_everywhere() {
+        assert_eq!(
+            drawn_for(Viewshed::new(8)),
+            ['#', '.', '.'],
+            "an ordinary sight stops at the wall: the ground behind is remembered, and what stands on it is not drawn"
+        );
+        assert_eq!(drawn_for(Viewshed::everywhere()), ['#', '.', 'g'], "one that sees everywhere is shown what is behind it");
+    }
+
     #[test]
     fn view_maps_between_world_and_screen() {
         let mut v = MapView::new(Rect::new(10, 2, 40, 20));

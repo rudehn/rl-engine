@@ -940,6 +940,64 @@ mod tests {
         assert_eq!(app.world().get::<Doing>(idle), Some(&Doing(None)), "and nothing for a turn no tactic decided");
     }
 
+    /// Two sides of minds and an onlooker: what a watched fight is. Returns
+    /// the app, the two fighters, and the clock reading each frame ended on.
+    fn watched_fight(pace: crate::turn::Pace, frames: usize) -> (App, [Entity; 2], Vec<u32>) {
+        let (mut app, start, blunt) = arena();
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(50))).insert_resource(pace);
+        let (us, them) = (rl_rules::FactionId::from_raw(0), rl_rules::FactionId::from_raw(1));
+        app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), crate::components::RevealsMap));
+        let brain = Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt));
+        let strong = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(-3, 0)), Health::full(40), Faction(us), Perception(8), MeleeAttack::new(blunt, DiceRoll::flat(4))))
+            .insert(Mind(brain.clone()))
+            .id();
+        let weak = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(12), Faction(them), Perception(8), MeleeAttack::new(blunt, DiceRoll::flat(2))))
+            .insert(Mind(brain))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        let mut clock = Vec::new();
+        for _ in 0..frames {
+            app.update();
+            clock.push(app.world().resource::<Turns>().now());
+        }
+        (app, [strong, weak], clock)
+    }
+
+    /// Nobody plays: an onlooker is no actor, so the loop waits on no one
+    /// and the two sides close and fight until one of them is dead.
+    #[test]
+    fn two_sides_of_minds_fight_to_the_end_with_nobody_playing() {
+        let (app, [strong, weak], _) = watched_fight(crate::turn::Pace::unpaced(), 6);
+        assert!(app.world().get_entity(weak).is_err() || app.world().get::<Dead>(weak).is_some(), "the weaker side fell");
+        let left = app.world().get::<Health>(strong).expect("the stronger still stands");
+        assert!(left.current < 40 && left.current > 0, "having been struck on the way: {}", left.current);
+    }
+
+    /// The pace decides how many passes a frame runs and nothing a pass
+    /// does: the fight watched at four steps a second ends as the fight
+    /// run flat out does, only later.
+    #[test]
+    fn a_watched_fight_ends_the_same_at_any_pace_only_later() {
+        let (flat_out, [strong, _], fast) = watched_fight(crate::turn::Pace::unpaced(), 6);
+        let (paced, [strong_paced, weak_paced], slow) = watched_fight(crate::turn::Pace::per_second(400), 400);
+        assert!(paced.world().get_entity(weak_paced).is_err() || paced.world().get::<Dead>(weak_paced).is_some(), "the paced fight ended too");
+        assert_eq!(
+            paced.world().get::<Health>(strong_paced).map(|h| h.current),
+            flat_out.world().get::<Health>(strong).map(|h| h.current),
+            "with the same wounds on the winner"
+        );
+        assert_eq!(paced.world().get::<Position>(strong_paced), flat_out.world().get::<Position>(strong), "standing on the same cell");
+        // Twenty frames a second at four steps a second is twenty hundredths
+        // a frame: after the first second the clock is near four steps, where
+        // the unpaced run had long finished.
+        assert!((300..=500).contains(&slow[19]), "about four steps in the first second, not {}", slow[19]);
+        assert!(fast[0] > slow[19], "which the unpaced run passed in its first frame: {} against {}", fast[0], slow[19]);
+    }
+
     #[test]
     fn a_mind_can_choose_an_action_the_engine_never_heard_of() {
         let (mut app, start, blunt) = arena();

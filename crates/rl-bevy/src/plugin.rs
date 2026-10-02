@@ -8,7 +8,7 @@ use crate::components::{Actor, MyTurn, Player, Position};
 use crate::cue::TurnHold;
 use crate::knowledge::Knowledge;
 use crate::state::{EngineState, Restart, RunOver};
-use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, TurnEnd, Turns};
+use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, Pace, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
 use crate::{places, turn};
 
@@ -159,8 +159,16 @@ pub enum TurnSet {
 /// stalling the window.
 const MAX_PASSES: usize = 512;
 
+/// Earns the frame's share of the [`Pace`], once a frame and ahead of the
+/// loop, so a loop run again inside the frame, as skipping a cue does, is
+/// not paid twice for one stretch of the wall clock.
+pub fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
+    pace.earn(time.delta());
+}
+
 /// Runs [`Turn`] passes until the player holds a turn, a pass changes
-/// nothing, or a pass cued something worth waiting for.
+/// nothing, a pass cued something worth waiting for, or the
+/// [`Pace`] has no more game time to give this frame.
 ///
 /// The player holding a turn means the game's input system gets the next
 /// frame; a pass that neither dealt, advanced nor requeued means the queue
@@ -170,13 +178,24 @@ const MAX_PASSES: usize = 512;
 /// pass at all until it is let go: nobody holds a turn while it is up,
 /// since the act that raised it was the last one dealt, so nothing a
 /// player presses meanwhile could have been resolved anyway.
+///
+/// A spent pace stops the loop only between turns, with nobody holding
+/// one: a turn already dealt is always resolved, so a player's intent is
+/// answered in its own frame at any pace, and no actor is left holding a
+/// turn across frames because the pace ran out under it.
 pub fn run_turns(world: &mut World) {
     if world.resource::<TurnHold>().is_held() {
         return;
     }
     for pass in 0..MAX_PASSES {
+        if world.resource::<Pace>().is_spent() && world.query_filtered::<(), With<MyTurn>>().iter(world).next().is_none() {
+            return;
+        }
+        let before = world.resource::<Turns>().now();
         world.resource_mut::<Turns>().progress = false;
         world.run_schedule(Turn);
+        let advanced = world.resource::<Turns>().now().saturating_sub(before);
+        world.resource_mut::<Pace>().spend(advanced);
         let player_holds = world.query_filtered::<(), (With<Player>, With<MyTurn>)>().iter(world).next().is_some();
         if player_holds || !world.resource::<Turns>().progress || world.resource::<TurnHold>().is_held() {
             return;
@@ -207,6 +226,7 @@ impl Plugin for CorePlugin {
             .init_resource::<Turns>()
             .init_resource::<Occupancy>()
             .init_resource::<Acting>()
+            .init_resource::<Pace>()
             .init_resource::<WorldSettings>()
             .init_resource::<Knowledge>()
             .init_resource::<crate::minds::FlowFields>()
@@ -282,7 +302,7 @@ impl Plugin for CorePlugin {
             .add_action::<places::GoThrough>()
             .add_action::<crate::doors::Open>()
             .add_action::<crate::doors::Close>()
-            .add_systems(Update, run_turns.in_set(EngineSet::Turns))
+            .add_systems(Update, (earn_pace, run_turns).chain().in_set(EngineSet::Turns))
             .add_systems(Turn, (turn::start_pass, places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
             .add_systems(Turn, crate::bump::redirect_bumps.in_set(ResolveSet::Redirect))
             .add_systems(
@@ -840,6 +860,80 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), 100);
         assert!(app.world().get::<MyTurn>(player).is_some());
+    }
+
+    /// An app whose every frame is a tenth of a second of wall clock, with
+    /// an onlooker and one actor nobody decides for, which the recovery
+    /// net charges a wait each time it is dealt a turn: one step a turn.
+    fn watched(pace: Pace) -> (App, Entity) {
+        let (mut app, start) = app_with_world();
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(100))).insert_resource(pace);
+        let onlooker = app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), RevealsMap)).id();
+        app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0))));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        (app, onlooker)
+    }
+
+    #[test]
+    fn a_run_nobody_plays_runs_to_the_ceiling_of_passes_each_frame_when_unpaced() {
+        let (mut app, onlooker) = watched(Pace::unpaced());
+        for _ in 0..4 {
+            app.update();
+        }
+        assert!(app.world().resource::<Turns>().turn_number() > 200, "hundreds of turns in a few frames: {}", app.world().resource::<Turns>().turn_number());
+        assert!(app.world().get::<MyTurn>(onlooker).is_none(), "an onlooker is no actor and is never dealt a turn");
+    }
+
+    #[test]
+    fn a_paced_run_is_dealt_the_game_time_its_pace_allows_whatever_the_frame_rate() {
+        // One step a second, watched for twenty seconds of tenth-second frames.
+        let (mut app, _) = watched(Pace::per_second(100));
+        for _ in 0..200 {
+            app.update();
+        }
+        let slow = app.world().resource::<Turns>().turn_number();
+        assert!((18..=21).contains(&slow), "about twenty turns in twenty seconds, not {slow}");
+
+        // Eight steps a second for the same twenty seconds.
+        let (mut app, _) = watched(Pace::per_second(800));
+        for _ in 0..200 {
+            app.update();
+        }
+        let fast = app.world().resource::<Turns>().turn_number();
+        assert!((155..=165).contains(&fast), "about a hundred and sixty turns, not {fast}");
+    }
+
+    #[test]
+    fn a_stopped_pace_deals_nothing_until_it_is_changed() {
+        let (mut app, _) = watched(Pace::stopped());
+        for _ in 0..50 {
+            app.update();
+        }
+        assert_eq!(app.world().resource::<Turns>().now(), 0, "nothing was dealt");
+        app.insert_resource(Pace::per_second(100));
+        for _ in 0..50 {
+            app.update();
+        }
+        assert!(app.world().resource::<Turns>().turn_number() >= 4, "and it runs again once it is");
+    }
+
+    /// The pace decides how many passes a frame runs and nothing else, so
+    /// a player's own intent is still resolved in the frame it was written.
+    #[test]
+    fn a_player_holding_a_turn_is_answered_in_its_frame_at_any_pace() {
+        let (mut app, start) = app_with_world();
+        app.insert_resource(Pace::stopped());
+        let player = spawn_player(&mut app, start);
+        app.update();
+        app.update();
+        assert!(app.world().get::<MyTurn>(player).is_none(), "a stopped pace deals nobody a turn, the player included");
+        app.insert_resource(Pace::per_second(1));
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(100)));
+        app.update();
+        assert!(app.world().get::<MyTurn>(player).is_some(), "dealt once the pace allows any time at all");
+        intend(&mut app, player, Step(Direction::East));
+        app.update();
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0), "the step is resolved though the pace is all but nothing");
     }
 
     /// Every missing piece is reported together, each with how to make it,

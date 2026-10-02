@@ -5,13 +5,14 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/components.rs
-     fingerprint: f843b24b -->
+     fingerprint: 5a1ebc2f -->
 
 # The turn loop
 
 A turn is dealt to one actor at a time, from a queue keyed by an integer clock.
 One pass of the `Turn` schedule deals that turn, lets a mind decide what to do with it, resolves the decision, and puts the actor back at the reading it is next due at.
 The loop runs the pass again and again inside one frame until the player holds a turn or nothing moved, to a ceiling of 512 passes, so a player's step costs one frame however many monsters are awake between.
+A run nobody plays has no player to stop for, and is dealt at a `Pace` instead: so much game time for each second it is watched.
 What a turn caused is answered inside the same pass, and what is worth watching can stop the loop until it has been seen.
 
 ## Turning it on
@@ -37,6 +38,10 @@ A decision is an `Intent<A>` for an `A: Action`, written by the game in `EngineS
 A resolver takes a `Resolution`: `claim` gives it the turn once, `done(actor, cost)` spends it, and `failed(actor, cost)` refuses for the player and charges anyone else, because a monster handed a free retry asks again forever.
 `cleanup_turns` requeues at `scaled_cost` of what was owed against `Speed`, requeues one actor once per pass, and charges a wait to any non-player left holding a turn nobody used.
 `Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s or a `Cue::Burst` on several, all at once or going out `from` one of them, where an anchor that follows an entity goes where the entity goes.
+`Pace` is how fast the turns run while nobody is waited on: `Pace::unpaced()`, the default, `Pace::per_second(hundredths)` of game time for each second of the wall clock, or `Pace::stopped()`.
+`earn_pace` adds a frame's share once a frame, capped at a quarter of a second, and `run_turns` spends it as the clock advances and deals no more once it is gone, so a pass that moves no time is free and one that jumps the clock is paid off over the frames after.
+A turn already dealt is always resolved, so a player's intent is answered in its own frame at any pace.
+A `Player` that is no `Actor` is an onlooker: never admitted to the queue, so never dealt a turn, while the map being read, the view and everything that asks what the player sees still follow it.
 `TurnHold` is the brake, and it takes only while something watches: `hold_for_cues` raises it after any pass that cued, and `run_turns` then runs no pass until the watcher releases it.
 `Airborne<L>` is what a subsystem has in the air; `launched` hands the landing straight back when nothing watches, so a headless game lands everything at once.
 
@@ -84,6 +89,7 @@ Anything that reacts to what a turn caused belongs in `TurnSet::React`, inside t
 A system that scans the world every frame is not a reaction and belongs in `PresentSet::Narrate`, because `React` runs once a pass and one frame may hold hundreds.
 Systems in a pass run several times a frame, so a system that must run once a frame says so by being in `EngineSet::Input` or a `PresentSet` layer instead.
 Which executor a pass runs on is the engine's default and not its decision: a game whose own system in the pass is heavy enough to be worth a thread puts the multi-threaded one back with `app.edit_schedule(Turn, ..)`.
+The pace is the game's number and its alone: it decides how many passes a frame runs and never what a pass does, so one seed plays one run at any pace, stopped and started or not.
 The engine owns who is dealt a turn, when, and what is done with an action that nobody resolved; the game owns what actions exist beyond the few above, what each costs, and who is allowed to try it.
 A game orders its systems into `TurnSet` and `ResolveSet`, never after another crate's system function.
 
