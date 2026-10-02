@@ -3,11 +3,13 @@
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::text::{FontSize, FontSmoothing, FontSource};
-use rl_core::Rect;
+use rl_core::{Point, Rect};
 
 use crate::layout::fit;
+use crate::tileset::Tileset;
 
 const BACKGROUND_Z: f32 = 0.0;
+const PICTURE_Z: f32 = 0.5;
 const GLYPH_Z: f32 = 1.0;
 
 /// One character cell.
@@ -85,7 +87,7 @@ impl Plugin for TerminalPlugin {
             // text out late in `PostUpdate`, and a layout written there in
             // no order against them could be drawn a frame late.
             .add_systems(PreUpdate, (relayout, crate::pointer::track_pointer).chain())
-            .add_systems(PostUpdate, flush_terminal);
+            .add_systems(PostUpdate, (spawn_pictures, flush_terminal).chain());
     }
 }
 
@@ -200,8 +202,21 @@ struct TerminalFont {
 struct CellEntities {
     background: Vec<Entity>,
     glyph: Vec<Entity>,
+    /// One sprite per cell for a tileset's pictures, spawned the first
+    /// time there is a tileset, and never in a game without one.
+    picture: Vec<Entity>,
     displayed: Vec<Cell>,
+    /// Which picture each cell is showing, `None` for a glyph.
+    pictured: Vec<Option<usize>>,
+    /// The size and place the grid was last laid out to, so sprites
+    /// spawned after a layout are put where the cells already are.
+    laid: Option<(Vec2, Vec<Vec2>)>,
 }
+
+/// Marks a cell's picture sprite, which keeps it apart from the
+/// background sprite the same cell has.
+#[derive(Component)]
+struct Picture;
 
 fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<TerminalFont>, mut entities: ResMut<CellEntities>) {
     // No projection of its own: one world unit is one logical pixel, and
@@ -249,7 +264,7 @@ fn relayout(
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     terminal: Res<Terminal>,
     font: Res<TerminalFont>,
-    entities: Res<CellEntities>,
+    mut entities: ResMut<CellEntities>,
     mut laid: Local<LaidOutFor>,
     mut backgrounds: Query<(&mut Sprite, &mut Transform), Without<Text2d>>,
     mut glyphs: Query<(&mut TextFont, &mut Transform), With<Text2d>>,
@@ -263,13 +278,21 @@ fn relayout(
     laid.0 = Some((size, scale.to_bits()));
     let fit = fit(terminal.width, terminal.height, terminal.cell_size, size, scale);
     let (cell, font_size) = (fit.cell_logical(scale), fit.font(font.size, terminal.cell_size, scale));
+    let mut centres = Vec::with_capacity(entities.background.len());
     for y in 0..terminal.height {
         for x in 0..terminal.width {
             let i = (y * terminal.width + x) as usize;
             let c = fit.center(x, y, size, scale);
+            centres.push(c);
             if let Ok((mut sprite, mut transform)) = backgrounds.get_mut(entities.background[i]) {
                 sprite.custom_size = Some(cell);
                 transform.translation = c.extend(BACKGROUND_Z);
+            }
+            // A picture is a sprite like the background, and is laid out
+            // with it: the same size, the same place, a little nearer.
+            if let Some(Ok((mut sprite, mut transform))) = entities.picture.get(i).map(|e| backgrounds.get_mut(*e)) {
+                sprite.custom_size = Some(cell);
+                transform.translation = c.extend(PICTURE_Z);
             }
             if let Ok((mut text, mut transform)) = glyphs.get_mut(entities.glyph[i]) {
                 text.font_size = FontSize::Px(font_size);
@@ -277,37 +300,98 @@ fn relayout(
             }
         }
     }
+    entities.laid = Some((cell, centres));
+}
+
+/// Spawns a picture sprite for every cell, the first time there is a
+/// [`Tileset`], hidden until a cell shows one.
+///
+/// Laid out where the cells are now: as the grid was last laid out for
+/// its window, or as declared when it never has been.
+fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Option<Res<Tileset>>, mut entities: ResMut<CellEntities>) {
+    let Some(tileset) = tileset else { return };
+    if !entities.picture.is_empty() || entities.background.is_empty() {
+        return;
+    }
+    let laid = entities.laid.clone();
+    for y in 0..terminal.height() {
+        for x in 0..terminal.width() {
+            let i = (y * terminal.width() + x) as usize;
+            let (size, at) = match &laid {
+                Some((size, centres)) => (*size, centres[i]),
+                None => (terminal.cell_size, terminal.cell_center(x, y)),
+            };
+            let sprite = Sprite {
+                image: tileset.image().clone(),
+                texture_atlas: Some(TextureAtlas { layout: tileset.layout().clone(), index: 0 }),
+                custom_size: Some(size),
+                ..default()
+            };
+            entities.picture.push(commands.spawn((Picture, sprite, Visibility::Hidden, Transform::from_xyz(at.x, at.y, PICTURE_Z))).id());
+        }
+    }
+    entities.pictured = vec![None; entities.picture.len()];
 }
 
 /// Pushes changed cells to their entities.
+///
+/// With a [`Tileset`], a cell whose glyph it has a picture for shows the
+/// picture, tinted by the cell's colour, and no glyph; any other cell
+/// shows its glyph and no picture. A change to the tileset itself, its
+/// pictures or whether it is on, redraws every cell, since any of them
+/// may now be drawn the other way.
 fn flush_terminal(
     terminal: Res<Terminal>,
+    tileset: Option<Res<Tileset>>,
     mut entities: ResMut<CellEntities>,
-    mut backgrounds: Query<&mut Sprite>,
+    mut backgrounds: Query<&mut Sprite, Without<Picture>>,
+    mut pictures: Query<(&mut Sprite, &mut Visibility), With<Picture>>,
     mut glyphs: Query<(&mut Text2d, &mut TextColor)>,
+    mut had_tileset: Local<bool>,
 ) {
     if entities.displayed.len() != terminal.cells.len() {
         return;
     }
+    // Every cell again when the tileset changed, came or went.
+    let redraw = tileset.as_ref().is_some_and(|t| t.is_changed()) || *had_tileset != tileset.is_some();
+    *had_tileset = tileset.is_some();
+    let tileset = tileset.as_deref().filter(|_| entities.pictured.len() == terminal.cells.len());
     for i in 0..terminal.cells.len() {
         let next = terminal.cells[i];
         let current = entities.displayed[i];
-        if next == current {
+        if next == current && !redraw {
             continue;
         }
+        let cell = Point::new(i as i32 % terminal.width, i as i32 / terminal.width);
+        let picture = tileset.and_then(|t| t.picture(next.glyph, cell));
+        let was_pictured = entities.pictured.get(i).copied().flatten();
         if next.bg != current.bg
             && let Ok(mut sprite) = backgrounds.get_mut(entities.background[i])
         {
             sprite.color = next.bg;
         }
+        // The glyph the text shows: none while a picture stands for it.
+        let (shown, was_shown) = (if picture.is_some() { ' ' } else { next.glyph }, if was_pictured.is_some() { ' ' } else { current.glyph });
         if let Ok((mut text, mut color)) = glyphs.get_mut(entities.glyph[i]) {
-            if next.glyph != current.glyph {
+            if shown != was_shown {
                 text.0.clear();
-                text.0.push(next.glyph);
+                text.0.push(shown);
             }
             if next.fg != current.fg {
                 color.0 = next.fg;
             }
+        }
+        if let Some(Ok((mut sprite, mut visibility))) = entities.picture.get(i).map(|e| pictures.get_mut(*e)) {
+            match (picture, tileset) {
+                (Some(index), Some(tileset)) => {
+                    sprite.image = tileset.image().clone();
+                    sprite.texture_atlas = Some(TextureAtlas { layout: tileset.layout().clone(), index });
+                    sprite.color = next.fg;
+                    *visibility = Visibility::Inherited;
+                }
+                _ => *visibility = Visibility::Hidden,
+            }
+            entities.pictured[i] = picture;
         }
         entities.displayed[i] = next;
     }
@@ -486,6 +570,84 @@ mod tests {
         view.origin = Point::new(100, 50);
         assert_eq!(pointer.tile(&view), Some(Point::new(103, 51)), "the tile the map draws there");
         assert_eq!(Pointer::at(Point::new(0, 0)).tile(&view), None, "and none where the map is not drawn");
+    }
+
+    /// What cell `(x, y)` shows: its glyph as text, and the picture it
+    /// shows with the picture's tint, or `None` while its sprite is hidden.
+    fn shows(app: &App, x: i32, y: i32) -> (String, Option<(usize, Color)>) {
+        let entities = app.world().resource::<CellEntities>();
+        let i = (y * 8 + x) as usize;
+        let text = app.world().get::<Text2d>(entities.glyph[i]).unwrap().0.clone();
+        let picture = entities.picture.get(i).and_then(|e| {
+            let visible = *app.world().get::<Visibility>(*e).unwrap() != Visibility::Hidden;
+            let sprite = app.world().get::<Sprite>(*e).unwrap();
+            visible.then(|| (sprite.texture_atlas.as_ref().unwrap().index, sprite.color))
+        });
+        (text, picture)
+    }
+
+    /// A tileset is a font of pictures: the cells are drawn as ever, and
+    /// inside what it covers a glyph it names is a picture in the cell's
+    /// colour, the rest stay glyphs, and turning it off is glyphs again.
+    #[test]
+    fn a_tileset_draws_pictures_for_the_glyphs_it_names_where_it_covers_and_glyphs_everywhere_else() {
+        use rl_core::Rect;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        let red = Color::srgb(1.0, 0.0, 0.0);
+        let draw = |app: &mut App| {
+            let mut terminal = app.world_mut().resource_mut::<Terminal>();
+            terminal.put(1, 1, '#', red);
+            terminal.put(2, 1, 'x', Color::WHITE);
+            terminal.put(1, 3, '#', Color::WHITE);
+        };
+        draw(&mut app);
+        app.update();
+        assert_eq!(shows(&app, 1, 1), ("#".to_string(), None), "with no tileset a glyph is a glyph");
+        assert!(app.world().resource::<CellEntities>().picture.is_empty(), "and no sprite is spawned for pictures nobody has");
+
+        // Covering the top three rows, with a picture for '#' alone.
+        app.insert_resource(Tileset::new(Handle::default(), Handle::default()).within(Rect::new(0, 0, 8, 3)).with('#', 5));
+        app.update();
+        assert_eq!(shows(&app, 1, 1), (" ".to_string(), Some((5, red))), "the picture, in the cell's colour, and no glyph under it");
+        assert_eq!(shows(&app, 2, 1), ("x".to_string(), None), "a character with no picture stays a glyph");
+        assert_eq!(shows(&app, 1, 3), ("#".to_string(), None), "and so does one outside what the tileset covers");
+
+        // The cell changes to something with no picture, and back.
+        app.world_mut().resource_mut::<Terminal>().put(1, 1, 'x', red);
+        app.update();
+        assert_eq!(shows(&app, 1, 1), ("x".to_string(), None));
+        draw(&mut app);
+        app.update();
+        assert_eq!(shows(&app, 1, 1), (" ".to_string(), Some((5, red))));
+
+        // Off: the same cells, in letters. On again: in pictures.
+        app.world_mut().resource_mut::<Tileset>().turned(false);
+        app.update();
+        assert_eq!(shows(&app, 1, 1), ("#".to_string(), None), "turned off, every cell is its glyph without being redrawn");
+        app.world_mut().resource_mut::<Tileset>().turned(true);
+        app.update();
+        assert_eq!(shows(&app, 1, 1), (" ".to_string(), Some((5, red))));
+        app.world_mut().remove_resource::<Tileset>();
+        app.update();
+        assert_eq!(shows(&app, 1, 1), ("#".to_string(), None), "and taken away altogether, glyphs");
+    }
+
+    /// A picture sprite is the cell's own size and stands where the cell
+    /// does, in a window of any size, whenever it was spawned.
+    #[test]
+    fn a_picture_is_laid_out_with_its_cell() {
+        let (mut app, window) = windowed(160, 160, 1.0);
+        app.insert_resource(Tileset::new(Handle::default(), Handle::default()).with('#', 1));
+        app.update();
+        let picture = |app: &App| {
+            let e = app.world().resource::<CellEntities>().picture[0];
+            (app.world().get::<Sprite>(e).unwrap().custom_size.unwrap(), app.world().get::<Transform>(e).unwrap().translation.truncate())
+        };
+        assert_eq!(picture(&app), (Vec2::new(20.0, 40.0), Vec2::new(-70.0, 60.0)), "spawned after the layout, where the layout put the cell");
+        app.world_mut().get_mut::<Window>(window).unwrap().resolution.set_physical_resolution(80, 80);
+        app.update();
+        assert_eq!(picture(&app), (Vec2::new(10.0, 20.0), Vec2::new(-35.0, 30.0)), "and laid out again with it");
     }
 
     #[test]

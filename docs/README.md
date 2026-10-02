@@ -38,6 +38,7 @@ These are the reasoning; the overview is the list.
 - [remains.md](design/remains.md), what is left where something died.
 - [settings.md](design/settings.md), what a player chooses once: a registry three crates read, and a terminal laid out for its window.
 - [stealth.md](design/stealth.md), being noticed, and being looked for.
+- [tilesets.md](design/tilesets.md), pictures in place of glyphs: a tileset as a font, so nothing that draws the map has to change.
 - [ui.md](design/ui.md), why a panel is a view, a collector and a presenter.
 - [watching.md](design/watching.md), a run somebody watches and nobody plays: an onlooker, a sight that sees everywhere, and a pace.
 - [work.md](design/work.md), an actor doing one thing across many turns.
