@@ -55,8 +55,8 @@ pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, C
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use combat::{
-    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,
-    MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
+    Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
@@ -81,13 +81,13 @@ pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingP
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight,
-    Thinking, a_mind_holds_the_turn,
+    Thinking, Trails, a_mind_holds_the_turn,
 };
 pub use noise::{
     AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds,
 };
 pub use places::{
-    Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
+    Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, Travelled, WarpRequest,
 };
 pub use plugin::{
     CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, Requirements,
@@ -124,8 +124,8 @@ pub mod prelude {
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::combat::{
-        Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Health, Invulnerable, Loadout,
-        MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+        Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
+        Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, WhenEmpty};
@@ -149,7 +149,7 @@ pub mod prelude {
     pub use crate::minds::{AddChoice, Doing, Intelligence, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::places::{
-        Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, WarpRequest,
+        Arrive, Destination, GoThrough, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, Travelled, WarpRequest,
     };
     pub use crate::plugin::{
         CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, ResetsOnNewRun,

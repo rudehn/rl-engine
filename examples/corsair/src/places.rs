@@ -21,7 +21,7 @@ use rl_engine::rl_mapgen::passes::{CellularCave, KeepLargestRegion, StartPoint};
 use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab, Stamped};
 use rl_engine::rl_mapgen::{BaseContext, BuildContext, BuildError, Chain};
 use rl_engine::rl_render::Glyph;
-use rl_engine::rl_ui::{MessageLog, Tones};
+use rl_engine::rl_ui::{Tell, Tones};
 use rl_engine::rl_world::WorldGraph;
 
 use crate::content::{COVE, Content};
@@ -177,8 +177,7 @@ pub struct Stock<'w> {
     map: Res<'w, WorldMap>,
     world: Res<'w, WorldRes>,
     occupancy: Res<'w, Occupancy>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
+    tell: MessageWriter<'w, Tell>,
 }
 
 /// On the first arrival in a level: stairs, smugglers and treasure. On
@@ -187,12 +186,10 @@ pub fn populate_places(mut commands: Commands, mut entered: MessageReader<PlaceE
     for ev in entered.read() {
         let Some((site, depth)) = cave_of(ev.map) else { continue };
         let name = place_name(ev.map).unwrap_or_default();
-        let turn = stock.turns.turn_number();
-        stock.log.push(
+        stock.tell.write(Tell::new(
             if ev.first { format!("You climb down into the {name}. It smells of tar and rum.") } else { format!("You return to the {name}.") },
             Tones::NOTICE,
-            turn,
-        );
+        ));
         if !ev.first {
             continue;
         }

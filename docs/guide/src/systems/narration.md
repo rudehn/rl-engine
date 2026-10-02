@@ -8,7 +8,7 @@
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-rules/src/status.rs
-     fingerprint: 8377dad4 -->
+     fingerprint: 9a14d3fd -->
 
 # Narration
 
@@ -69,14 +69,24 @@ A line the engine has no phrase for is a `Tell`, written from inside the pass it
 
 <!-- include: ../../../../examples/foundry/src/droids/alarm.rs:tell -->
 ```rust,no_run
-/// Says in the log that a probe sounds the alarm, for every [`Noticed`]
-/// whose observer carries [`Alarm`]: once on the flip from unaware, which
-/// is when the engine writes one, and not on every shout after.
-pub fn sound_alarm(mut noticed: MessageReader<Noticed>, alarmed: Query<(), With<Alarm>>, mut tell: MessageWriter<Tell>) {
-    for ev in noticed.read() {
-        if alarmed.contains(ev.observer) {
-            tell.write(Tell::new("{Who} sounds an alarm.", Tones::BAD).by(ev.observer));
-        }
+/// Answers a probe's signalling: says in the log that it has started,
+/// which is the commando's warning, and when it finishes raises the alarm
+/// and says so, once, and not on every shout after.
+pub fn sound_alarm(
+    mut commands: Commands,
+    mut began: MessageReader<WorkBegan>,
+    mut done: MessageReader<WorkDone>,
+    kinds: Res<WorkKinds>,
+    alarmed: Query<(), With<Alarm>>,
+    mut tell: MessageWriter<Tell>,
+) {
+    let Some(signalling) = kinds.get(SIGNALLING) else { return };
+    for ev in began.read().filter(|ev| ev.kind == signalling && alarmed.contains(ev.actor)) {
+        tell.write(Tell::new("{Who} starts signalling.", Tones::NOTICE).by(ev.actor));
+    }
+    for ev in done.read().filter(|ev| ev.kind == signalling && alarmed.contains(ev.actor)) {
+        commands.entity(ev.actor).insert(Raised);
+        tell.write(Tell::new("{Who} sounds an alarm.", Tones::BAD).by(ev.actor));
     }
 }
 ```

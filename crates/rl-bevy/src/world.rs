@@ -196,6 +196,11 @@ pub struct PlaceMap {
     pub exit: Option<Point>,
     /// The builder's points of interest.
     pub spots: Vec<Spot>,
+    /// Whether the player has arrived here yet. A place is built for
+    /// whoever gets there first, and a monster that ran down the stairs
+    /// ahead of the player builds the floor it lands on; the game still
+    /// fills that floor the first time the player sees it.
+    pub visited: bool,
 }
 
 /// The map every reader reads: the streamed surface, when the game has
@@ -292,7 +297,26 @@ impl WorldMap {
     /// Keeps a freshly built place. Does not switch to it.
     pub fn install_place(&mut self, map: MapId, build: PlaceBuild) {
         assert!(!map.is_surface(), "the surface is not a place");
-        self.places.insert(map, PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots });
+        self.places.insert(map, PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots, visited: false });
+    }
+
+    /// Marks `map` as somewhere the player has arrived, and answers
+    /// whether this was the first time. The surface is never a first.
+    pub fn visit(&mut self, map: MapId) -> bool {
+        self.places.get_mut(&map).is_some_and(|place| !std::mem::replace(&mut place.visited, true))
+    }
+
+    /// Whether `p` on `map` can be walked on, whether or not `map` is the
+    /// one being read: an arrival on a map nobody is looking at still has
+    /// to land on floor. False where the tile is not known, which is the
+    /// surface outside its loaded window.
+    pub fn is_walkable_on(&self, map: MapId, p: Point) -> bool {
+        let tile = match self.places.get(&map) {
+            Some(place) => place.terrain.get(p),
+            None if map.is_surface() => self.surface.tile(p),
+            None => None,
+        };
+        tile.is_some_and(|t| self.tables.walkable[t.index()])
     }
 
     /// Makes `map` the one readers read: the surface, or a built place.
@@ -453,8 +477,11 @@ impl WorldMap {
     /// Every edit to the surface, loaded chunks included, and every built
     /// place, for saving.
     pub fn export(&self) -> WorldMapSave {
-        let places =
-            self.places.iter().map(|(id, p)| (*id, PlaceSave { terrain: p.terrain.clone(), entry: p.entry, exit: p.exit, spots: p.spots.clone() })).collect();
+        let places = self
+            .places
+            .iter()
+            .map(|(id, p)| (*id, PlaceSave { terrain: p.terrain.clone(), entry: p.entry, exit: p.exit, spots: p.spots.clone(), visited: p.visited }))
+            .collect();
         WorldMapSave { current: self.current, deltas: self.surface.edits(), places }
     }
 
@@ -463,7 +490,11 @@ impl WorldMap {
     /// edits onto fresh generation.
     pub fn import(&mut self, save: WorldMapSave) {
         self.surface = Surface { deltas: save.deltas.into_iter().collect(), ..Surface::default() };
-        self.places = save.places.into_iter().map(|(id, p)| (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots })).collect();
+        self.places = save
+            .places
+            .into_iter()
+            .map(|(id, p)| (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, visited: p.visited }))
+            .collect();
         self.current = MapId::SURFACE;
         self.switch_to(save.current);
         self.generation += 1;
@@ -491,6 +522,15 @@ pub struct PlaceSave {
     pub exit: Option<Point>,
     /// The builder's spots.
     pub spots: Vec<Spot>,
+    /// Whether the player had arrived there. A save written before anyone
+    /// but the player travelled holds only places the player built by
+    /// arriving, so one with no word on it reads as visited.
+    #[serde(default = "visited_by_default")]
+    pub visited: bool,
+}
+
+fn visited_by_default() -> bool {
+    true
 }
 
 /// What [`WorldMap::export`] produces.

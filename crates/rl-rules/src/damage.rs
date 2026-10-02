@@ -49,7 +49,8 @@ impl Named for DamageKind {
 pub type DamageKindId = Id<DamageKind>;
 
 /// Resistance per kind, as a percentage of damage removed: 0 is none,
-/// 100 immune, negative is vulnerability, above 100 absorbs (heals).
+/// 100 immune, negative is vulnerability, above 100 absorbs: the hit
+/// restores the share past a hundred.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Resistances {
     pct: Vec<i32>,
@@ -104,11 +105,12 @@ pub struct Hit<A: Copy> {
     pub credit: Option<A>,
     /// The kind.
     pub kind: DamageKindId,
-    /// Damage before mitigation. Negative mends, and goes down the same
-    /// stages, so a resistance to the kind a heal is dealt as scales the
-    /// heal and immunity to it means nothing can patch the defender up.
-    /// Whoever rolls a blow floors it at zero first: a weapon with a
-    /// negative bonus that rolls low has missed, not healed.
+    /// Damage before mitigation, never below zero: [`resolve`] reads a
+    /// negative one as nothing. Mending is not a hit of any kind, and has
+    /// its own path to health, so no kind has to be invented for it and no
+    /// stage has to know to leave it alone. Whoever rolls a blow floors it
+    /// at zero first all the same: a weapon with a negative bonus that
+    /// rolls low has missed.
     pub amount: i32,
     /// Whether the hit was a critical, for stages that care.
     pub critical: bool,
@@ -146,8 +148,9 @@ pub struct Defender {
 /// One step of mitigation. The engine's stages are plain values; a game's
 /// can be anything that implements this.
 pub trait DamageStage<A: Copy> {
-    /// Adjusts `amount` for this hit. Returning a negative amount means the
-    /// hit heals; returning zero means it was fully stopped.
+    /// Adjusts `amount` for this hit. Returning zero means it was fully
+    /// stopped; returning a negative amount means the defender absorbed
+    /// it, which only a resistance past a hundred does.
     fn apply(&self, hit: &Hit<A>, defender: &Defender, resistances: &Resistances, kinds: &Registry<DamageKind>, amount: i32) -> i32;
 }
 
@@ -184,13 +187,14 @@ impl<A: Copy> DamageStage<A> for HalveIfBlocked {
 }
 
 /// Runs `stages` in order over `hit.amount`. The result is what to take
-/// from health: positive hurts, negative heals, zero was stopped.
+/// from health: positive hurts, zero was stopped, and negative was
+/// absorbed, which is what a resistance past a hundred makes of a hit.
 ///
-/// The amount goes in with its sign. Clamping it here once made every
-/// heal a no-op, because a mend is a negative hit; the stages that must
-/// not touch a heal, armor and a block, already leave one alone.
+/// A hit offered below zero is read as zero. It was once how a mend was
+/// written, a negative hit of a kind the game invented for it, and every
+/// stage had to know to let one through; a mend now never comes here.
 pub fn resolve<A: Copy>(hit: &Hit<A>, defender: &Defender, resistances: &Resistances, kinds: &Registry<DamageKind>, stages: &[&dyn DamageStage<A>]) -> i32 {
-    let mut amount = hit.amount;
+    let mut amount = hit.amount.max(0);
     for stage in stages {
         amount = stage.apply(hit, defender, resistances, kinds, amount);
     }
@@ -250,19 +254,20 @@ mod tests {
         assert_eq!(resolve(&hit, &defender, &r, &k, &[&ApplyResistance]), 13, "vulnerable takes more");
     }
 
+    /// A hit offered below zero is nothing, not a mend: mending has its own
+    /// path to health, and a kind is no longer invented to carry it. What a
+    /// resistance past a hundred absorbs is still negative, and armor and a
+    /// block leave it alone, since they stop blows.
     #[test]
-    fn a_negative_hit_heals_past_armor_and_a_block_and_resistance_scales_it() {
+    fn a_hit_offered_below_zero_is_nothing_and_what_is_absorbed_passes_armor_and_a_block() {
         let k = kinds();
         let kinetic = k.expect("kinetic");
         let mut r = Resistances::new();
         let stages: [&dyn DamageStage<u32>; 3] = [&ApplyResistance, &SubtractArmor, &HalveIfBlocked];
-        let heal = Hit::by(1u32, kinetic, -6);
         let braced = Defender { armor: 4, blocked: true };
-        assert_eq!(resolve(&heal, &braced, &r, &k, &stages), -6, "armor and a block stop blows, not mending");
-        r.set(kinetic, 50);
-        assert_eq!(resolve(&heal, &braced, &r, &k, &stages), -3, "half resistant to the kind is half mended");
-        r.set(kinetic, 100);
-        assert_eq!(resolve(&heal, &braced, &r, &k, &stages), 0, "and immune to it cannot be patched up");
+        assert_eq!(resolve(&Hit::by(1u32, kinetic, -6), &braced, &r, &k, &stages), 0, "a negative hit restores nothing");
+        r.set(kinetic, 150);
+        assert_eq!(resolve(&Hit::by(1u32, kinetic, 6), &braced, &r, &k, &stages), -3, "half again resistant absorbs half, armor and block aside");
     }
 
     #[test]

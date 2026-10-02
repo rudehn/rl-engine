@@ -33,7 +33,8 @@ pub use backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
 pub use engine::EngineSave;
 pub use remap::{EntityRemap, SaveId};
 pub use run::{
-    AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableState, forget_save, load_run, save_on_arrival, save_run,
+    AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableState, SavedBurning, forget_save, load_run,
+    save_on_arrival, save_run,
 };
 pub use settings::{SETTINGS_SLOT, SettingsSavePlugin};
 pub use unload::{Stash, UnloadPlugin};

@@ -30,7 +30,7 @@ use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::{DropRow, DropTable};
 use serde::Deserialize;
 
-pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, shout_alarm, sound_alarm};
+pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, Raised, SIGNALLING, SignalAlarm, lower_alarm, sense_alarm, shout_alarm, sound_alarm};
 pub use repair::{REPAIRING, RepairWrecks, Wrecks, rebuild_wrecks, sense_wrecks};
 pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub(crate) use spawns::MIN_DISTANCE_FROM_ENTRY;
@@ -85,10 +85,11 @@ pub struct MonsterDef {
     /// lit commando in blaster range is not a sentry.
     #[serde(default)]
     pub notice: Option<NoticeStats>,
-    /// True when it sounds the deck's alarm for as long as it knows where
-    /// an enemy is.
+    /// The turns it signals before it sounds the deck's alarm, which then
+    /// sounds for as long as it knows where an enemy is; absent, it has no
+    /// alarm to sound.
     #[serde(default)]
-    pub alarm: bool,
+    pub alarm: Option<u16>,
     /// How far from the enemies in sight it keeps; present, it hangs at
     /// that distance rather than closing in.
     #[serde(default)]
@@ -232,6 +233,11 @@ impl Roster {
         let mut brains = Vec::new();
         for (_, d) in defs.iter() {
             let mut brain = Brain::new();
+            // First, since nothing a probe would otherwise do matters more
+            // than raising the alarm it has not raised yet.
+            if d.alarm.is_some() {
+                brain = brain.then(SignalAlarm);
+            }
             if d.melee.is_some() {
                 brain = brain.then(MeleeAdjacent);
             }
@@ -306,8 +312,8 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
     if let Some(n) = d.dark_sight {
         e.insert(NativeDarkSight(n));
     }
-    if d.alarm {
-        e.insert(Alarm);
+    if let Some(signal) = d.alarm {
+        e.insert(Alarm { signal });
     }
     if let Some(hearing) = d.hearing {
         e.insert(Hearing(hearing));

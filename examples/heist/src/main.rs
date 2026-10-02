@@ -77,7 +77,7 @@ fn main() -> AppExit {
             ControlsPanel::new(screen.controls).hint(screen.hint),
             GameMenuPanel::new(screen.menu).title("The Counting House").died("The watch have you.").won("Over the roofs and away."),
         ))
-        .add_plugins(NarratorPlugin::default().phrase(Phrase::NoticesYou, "{Who} has seen you!", Tones::BAD))
+        .add_plugins(narrator())
         .insert_resource(Lighting::dark())
         .add_systems(NewRun, start)
         .add_systems(Update, (tend_lantern, snuff, pick_up, throw, toggle_overlay, player_input).chain().run_if(no_modal).in_set(EngineSet::Input))
@@ -495,8 +495,13 @@ struct Stock<'w> {
     tiles: Res<'w, Tiles>,
     seed: Res<'w, Seed>,
     help: Res<'w, ControlsKeys>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
+    tell: MessageWriter<'w, Tell>,
+}
+
+/// The engine's narrator, as the heist speaks through it. A function so
+/// the tests say a floor's name through the same one `main` does.
+fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default().phrase(Phrase::NoticesYou, "{Who} has seen you!", Tones::BAD)
 }
 
 /// Stairs, the window, lamps, coin and the watch, the first time a floor is
@@ -504,10 +509,9 @@ struct Stock<'w> {
 fn populate_floor(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, mut stock: Stock) {
     for ev in entered.read() {
         let floor = floor_of(ev.map);
-        let turn = stock.turns.turn_number();
-        stock.log.notice(format!("Floor {floor}: {}.", name_of(floor)), turn);
+        stock.tell.write(Tell::new(format!("Floor {floor}: {}.", name_of(floor)), Tones::NOTICE));
         if ev.first && floor == 1 {
-            stock.log.muted(format!("Press {} for the controls. Stay out of the light.", stock.help.toggle.label()), turn);
+            stock.tell.write(Tell::new(format!("Press {} for the controls. Stay out of the light.", stock.help.toggle.label()), Tones::MUTED));
         }
         if !ev.first {
             continue;
@@ -947,6 +951,8 @@ mod tests {
             .insert_resource(rl_engine::rl_render::Terminal::new(COLS, ROWS, Vec2::ONE))
             .init_resource::<LightOverlay>()
             .add_plugins(TargetPanel::new(Screen::new().target))
+            // Someone to read what `populate_floor` tells.
+            .add_plugins(narrator())
             .add_systems(NewRun, start)
             .add_systems(Update, (tend_lantern, snuff, pick_up, throw, toggle_overlay, player_input).chain().run_if(no_modal).in_set(EngineSet::Input))
             .add_action::<Snuff>()

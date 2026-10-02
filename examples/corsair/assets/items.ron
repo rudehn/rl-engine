@@ -44,7 +44,7 @@
     (name: "bottle of rum", glyph: '!', color: (0.9, 0.6, 0.2), tags: ["rum"], stack: true,
      consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [
-        (kind: "Mend", args: (kind: "care", roll: "2d4")),
+        (kind: "Mend", args: (roll: "2d4")),
         (kind: "Cleanse", args: (status: "bleeding")),
         (kind: "Cleanse", args: (status: "venom")),
         (kind: "Inflict", args: (status: "hearty", turns: 10)),

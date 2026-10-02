@@ -1034,8 +1034,8 @@ mod tests {
     ///
     /// Ten turns exactly: the tenth mends and the eleventh does not, so
     /// the gain is `MEND_PER_TURN * 10` and no more. The status is the
-    /// engine's own, ticking through the damage pipeline a wound arrives
-    /// by, so plate and resistances have nothing to say about it.
+    /// engine's own and mends rather than ticks damage of some kind, so
+    /// plate and resistances have nothing to say about it.
     #[test]
     fn a_medkit_is_worth_twice_a_stim_spread_over_ten_turns() {
         let (mut app, player) = alone_and_wounded(4, 25);
@@ -1309,14 +1309,14 @@ mod tests {
         assert_eq!(health(&app, player), before + 1, "a point in ten turns");
     }
 
-    /// Every `DamageDealt` on anyone, recorded as it is written: a headless
+    /// Every `Healed` on anyone, recorded as it is written: a headless
     /// app rotates its message buffers on wall time, so draining the queue
     /// afterwards can find it already empty and prove nothing.
     #[derive(Resource, Default)]
-    struct Dealt(Vec<(Entity, i32)>);
+    struct Mended(Vec<(Entity, i32)>);
 
-    fn record_dealt(mut dealt: MessageReader<DamageDealt>, mut out: ResMut<Dealt>) {
-        out.0.extend(dealt.read().map(|d| (d.target, d.dealt)));
+    fn record_mended(mut healed: MessageReader<Healed>, mut out: ResMut<Mended>) {
+        out.0.extend(healed.read().map(|h| (h.target, h.restored)));
     }
 
     /// Worn at full health it mends nothing and says nothing: a whole
@@ -1324,10 +1324,10 @@ mod tests {
     #[test]
     fn the_nanite_plate_on_a_whole_commando_says_nothing() {
         let (mut app, player) = alone_and_wounded(12, 0);
-        app.init_resource::<Dealt>().add_systems(PostUpdate, record_dealt);
+        app.init_resource::<Mended>().add_systems(PostUpdate, record_mended);
         crate::testing::equip_new(&mut app, player, "nanite plate");
         crate::testing::pass_turns(&mut app, 21);
-        let mine: Vec<i32> = app.world().resource::<Dealt>().0.iter().filter(|(t, _)| *t == player).map(|(_, d)| *d).collect();
+        let mine: Vec<i32> = app.world().resource::<Mended>().0.iter().filter(|(t, _)| *t == player).map(|(_, d)| *d).collect();
         assert_eq!(mine.len(), 2, "two pulses came round in twenty-one turns: {mine:?}");
         assert!(mine.iter().all(|d| *d == 0), "and each mended nothing, so the narrator says nothing: {mine:?}");
     }

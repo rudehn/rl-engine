@@ -93,6 +93,21 @@ impl Occupancy {
         }
     }
 
+    /// Takes `e` off `p` on `map`, whether or not that is the current map.
+    pub fn remove_on(&mut self, map: MapId, p: Point, e: Entity) {
+        if map == self.current {
+            self.grid.remove(p, e);
+        } else if let Some(grid) = self.stash.get_mut(&map) {
+            grid.remove(p, e);
+        }
+    }
+
+    /// Whether anything stands on `p` on `map`, whether or not that is the
+    /// current map.
+    pub fn is_occupied_on(&self, map: MapId, p: Point) -> bool {
+        if map == self.current { self.grid.is_occupied(p) } else { self.stash.get(&map).is_some_and(|grid| grid.is_occupied(p)) }
+    }
+
     /// Swaps in the index for `map`, keeping the current one aside.
     pub fn switch(&mut self, map: MapId) {
         if map == self.current {

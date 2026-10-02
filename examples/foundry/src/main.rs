@@ -507,7 +507,28 @@ mod tests {
         }
         let lines = lines(&app);
         let at = |what: &str| lines.iter().position(|l| l.contains(what)).unwrap_or_else(|| panic!("{what:?} not in {lines:#?}"));
-        assert!(at("The probe droid notices you.") < at("The probe droid sounds an alarm."), "{lines:#?}");
+        assert!(at("The probe droid notices you.") < at("The probe droid starts signalling."), "{lines:#?}");
+        assert!(at("The probe droid starts signalling.") < at("The probe droid sounds an alarm."), "{lines:#?}");
+    }
+
+    /// A probe standing still to raise the alarm reads as signalling on
+    /// the rail and says how long it has left under the look cursor, so
+    /// the player sees a window to stop it rather than a droid doing nothing.
+    #[test]
+    fn a_probe_raising_the_alarm_reads_signalling_on_the_rail_and_under_the_look_cursor() {
+        let mut app = on_screen(RunSeed(1));
+        let (probe, me) = foundry::testing::droid_facing_player(&mut app, "probe droid", 4);
+        foundry::testing::alert(&mut app, probe, me);
+        foundry::testing::clear_droids(&mut app, &[probe]);
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        let screen = |app: &App| (0..ROWS).map(|y| row(app, y)).collect::<Vec<_>>();
+        let line = screen(&app).into_iter().find(|r| r.contains("probe droid (")).expect("the probe is on the rail");
+        assert!(line.contains("probe droid (signalling)"), "{line:?}");
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::KeyX);
+        let screen = screen(&app);
+        assert!(screen.iter().any(|r| r.contains("Signalling, ") && r.contains(" left")), "{screen:#?}");
     }
 
     /// A line droid across the room is out of the commando's reach and the

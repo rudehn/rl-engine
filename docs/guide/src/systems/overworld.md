@@ -8,7 +8,7 @@
             crates/rl-world/src/sites.rs
             crates/rl-render/src/terminal.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: e2379ccf -->
+     fingerprint: 9e3ead33 -->
 
 # The overworld
 
@@ -57,8 +57,7 @@ fn honour_portals(
     mut requests: MessageReader<PortalRequest>,
     mut warps: MessageWriter<WarpRequest>,
     world: Res<WorldRes>,
-    mut log: ResMut<MessageLog>,
-    turns: Res<Turns>,
+    mut tell: MessageWriter<Tell>,
     player: Query<Entity, With<Player>>,
 ) {
     let Ok(entity) = player.single() else { return };
@@ -66,7 +65,7 @@ fn honour_portals(
         let Some(site) = world.sites().get(req.site) else { continue };
         let target = world.region_tiles(site.position).center();
         warps.write(WarpRequest { actor: entity, to: Destination::Surface(target) });
-        log.push("The portal takes you.", Tones::NOTICE, turns.turn_number());
+        tell.write(Tell::new("The portal takes you.", Tones::NOTICE));
     }
 }
 ```

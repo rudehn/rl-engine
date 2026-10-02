@@ -12,7 +12,7 @@
             crates/rl-rules/src/accuracy.rs
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/throwing.rs
-     fingerprint: 58b15a95 -->
+     fingerprint: 23dd1776 -->
 
 # Combat and loadout
 
@@ -25,8 +25,8 @@ Above that line everything is the game's: who hates whom, what a kind of damage 
 
 `CombatPlugin` declares `needs::<CombatRules>`, hinting that one comes from `CombatRules::new(&sides)`, and `needs::<Registries>` for the damage kinds a blow can deal.
 It takes `CombatRng`, a stream of its own derived from the run's seed, so a game never inserts one and a weapon added late cannot shift the rolls of a run that was going fine.
-It registers `Attack` as an action, `DamageEvent`, `DamageDealt`, `DeathEvent` and `Struck` as messages, `ShotLanding` as something that can be in the air, and `DamageStages` as a resource whose default is `SubtractArmor` alone.
-Its systems are `perceive_reach` in `PerceiveSet::Annotate`, `land_shots` in `LandSet::Shot` chained ahead of `resolve_attacks` in `ResolveSet::Act`, `apply_damage` in `ResolveSet::Damage`, `end_run_on_player_death` in `TurnSet::React` and `process_deaths` in `CleanupSet::Remove`.
+It registers `Attack` as an action, `DamageEvent`, `DamageDealt`, `Heal`, `Healed`, `DeathEvent` and `Struck` as messages, `ShotLanding` as something that can be in the air, and `DamageStages` as a resource whose default is `SubtractArmor` alone.
+Its systems are `perceive_reach` in `PerceiveSet::Annotate`, `land_shots` in `LandSet::Shot` chained ahead of `resolve_attacks` in `ResolveSet::Act`, `apply_damage` chained ahead of `apply_healing` in `ResolveSet::Damage`, `end_run_on_player_death` in `TurnSet::React` and `process_deaths` in `CleanupSet::Remove`.
 `bury_the_dead` is the exception and runs in `Last`'s `EndOfFrame::Bury`, after the run is saved and before a restart, which is how the dead are promised to linger until the frame ends without naming one of the systems that has to see them go.
 `Resists` is a component rather than a requirement, so an actor with none meets an empty ladder and a game with no resistances pays nothing.
 Nothing here decides who strikes whom: minds choose for monsters, `Bump` turns a walk key into an `Attack` when a foe is in the way, and an ability's damage arrives as the same `DamageEvent` a sword's does.
@@ -57,18 +57,18 @@ It writes `Struck` before any damage, naming the worn item the attack came from,
 A rolled attack that misses still writes `Struck` and the `fire` moment, since the weapon fired, and then writes `Missed` where it would have landed instead of any damage or `hit` moment; a thrown miss rests where a hit would have and reports that it struck nobody.
 For a worn item it also reports the `fire` moment at the attacker's cell, and the `hit` moment at the target's cell when the blow or shot lands, so a wand's charge is spent and its effects land through [Effects](effects.md) without combat knowing what either is.
 A shot takes its item's triggers with it as it is fired, so a watched shot from a thing its last charge spent still lands what its hits carry, from a remnant in its place.
-Every roll is floored at zero where it is rolled, so a weapon with a bad bonus that rolls low has missed rather than healed.
+Every roll is floored at zero where it is rolled, so a weapon with a bad bonus that rolls low has missed, and `resolve` reads a hit offered below zero as nothing.
 An attack with a `Look` is seen: a shot cues a `Cue::Flight` and a blow a `Cue::Burst`, and while something watches the cues a shot's hits wait in `Airborne<ShotLanding>` until the flight has been seen.
 `land_shots` then drops them on a target still standing, so one killed while the shot flew is missed rather than hurt twice.
 `shot` is where a projectile goes and `line_of_fire` is that call landing on the cell it was pointed at; a targeting preview draws the same call, so what the player is shown and what the resolver decides cannot disagree.
 A `DamageEvent` carries a `Hit`, which separates `attacker`, who triggers on-hit riders, from `credit`, who gets the kill, so a poison tick credits whoever applied it without recursing its own riders; `critical` and `status` are there for the stages and narrators that care.
 It also carries a `Reach`, which is how the damage got there: `DamageEvent::new` is `Effect`, what did not travel as a weapon, and `arriving` names `Melee`, `Shot` or `Thrown` instead, carried through to `DamageDealt` for whoever puts it into words and read by nothing in the pipeline.
 `apply_damage` builds a `Defender` and the resistances from the target's `Loadout`, runs `resolve` over the game's `DamageStages`, takes the result off health capped at `max`, and writes `DamageDealt` and, at zero, `DeathEvent`.
-An `Invulnerable` target keeps a heal and takes no harm: the hit is still written to `DamageDealt`, with nothing dealt, so a narrator says it had no effect rather than saying nothing.
-A `DamageKind` is a name and whether armor applies to it, and `Resistances` is a percentage per kind: 100 is immunity, a negative number is vulnerability, and above 100 absorbs the hit into healing.
+An `Invulnerable` target keeps what it absorbs and takes no harm: the hit is still written to `DamageDealt`, with nothing dealt, so a narrator says it had no effect rather than saying nothing.
+A `DamageKind` is a name and whether armor applies to it, and `Resistances` is a percentage per kind: 100 is immunity, a negative number is vulnerability, and above 100 absorbs the hit, restoring the share past a hundred.
 The engine ships three stages, `SubtractArmor`, `ApplyResistance` and `HalveIfBlocked`, and the default list holds the first alone.
-A negative amount is a mend and goes down the same stages, which is why resistance scales a heal and immunity means nothing can patch the defender up.
-A heal reports the health it restored, so a mend at full health reports nought, and `DamageDealt::is_mend` tells it from a blow armor stopped.
+A mend is not a hit and has no kind: a `Heal` names a target, an amount and who did it, `apply_healing` restores it after the pass's damage, never to the dead and never past `max`, and `Healed` reports what was restored, which at full health is nought.
+Nothing mitigates a heal; what scales it is `CombatRules::mending_stat`, the stat whose value is a percentage added to a hundred and never taken below nothing, so minus a hundred on it is a thing nothing can patch up.
 `process_deaths` takes a dead non-player out of the world, the queue and the occupancy index and marks it `Dead`; `end_run_on_player_death` writes `RunOver` inside the turn, so the monster that would have struck the corpse never gets its move.
 `perceive_reach` is combat's one word to a mind: how far its own shot reaches, read from `Loadout::ranged` whether the gun is worn or is the monster itself.
 
@@ -105,7 +105,7 @@ Turning accuracy on is one resource, and Foundry's is the whole of it.
 
 The engine decides whether a blow is in reach, whether a shot has a line, what it is struck with, what it costs, what it rolls, the order the stages run in, what comes off health and who died.
 Which of an actor's two attacks a forecast counts is the engine's for the same reason: a panel hands over both sets of rolls and how far apart the two stand, and `Arms::at` picks, so what a screen says about a fight and what the resolver does in it cannot drift apart.
-The game decides what a damage kind is and whether armor applies to it, who hates whom, what mitigates a hit, and what a hit or a death is worth beyond health reaching zero.
+The game decides what a damage kind is and whether armor applies to it, who hates whom, what mitigates a hit, how well a thing mends, and what a hit or a death is worth beyond health reaching zero.
 `DamageStages` is a list of boxed `DamageStage`s, so there is no enum of mitigations and no `Custom` arm: a game's critical rule sits in the list beside `SubtractArmor` and `resolve` cannot tell them apart.
 `Defender::blocked` is never set by the engine, which builds one with `blocked: false` every time, so `HalveIfBlocked` is for a caller that fills its own and a game that blocks rolls the block inside a stage of its own.
 Whether an attack lands is the game's model and the engine's roll: `HitRules` holds whatever `HitModel` the game chose, `Marksmanship` hands it the same facts whoever asks, and the resolver draws once from `CombatRng`, so a panel's chance and the attack's outcome cannot disagree.

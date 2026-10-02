@@ -12,7 +12,7 @@
             crates/rl-grid/src/dijkstra.rs
             crates/rl-grid/src/region.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 82b0b78f -->
+     fingerprint: f1f668a4 -->
 
 # Grids and tiles
 
@@ -44,7 +44,7 @@ Names are resolved there rather than at registration, which is what lets a door 
 Those two questions are the traits `OpacitySource` and `CostSource`, both supertraits of `Grid2D`, and both answer for an out-of-bounds cell without being asked: off the grid is opaque and impassable, so a scan stops at the edge rather than checking twice.
 A newtype over a view that overrides one method is how smoke, a hazard or a swimmer's costs go on top without copying the terrain, and the doc-test on `TerrainView` is that pattern written out.
 `BitGrid` is one bit per cell for viewsheds, visited sets and explored maps; `SpatialGrid<E>` is a `BTreeMap<Point, Vec<E>>` for who is standing where, kept out of the terrain so moving every turn does not mark the terrain changed.
-`AStar` is one mover to one goal, holding its scratch buffers across searches, and returns a `Path` of steps and a total cost; `DijkstraMap` is one flood any number of movers descend, bounded to a `Rect` so a continuous world never floods a million cells a turn, with `UNREACHED` for what it did not reach and signed values so `scale` and `rescan` invert it into the safety map a fleeing monster follows.
+`AStar` is one mover to one goal, holding its scratch buffers across searches, and returns a `Path` of steps and a total cost; `DijkstraMap` is one flood any number of movers descend, bounded to a `Rect` so a continuous world never floods a million cells a turn, with `UNREACHED` for what it did not reach, signed values so `scale` and `rescan` invert it into the safety map a fleeing monster follows, and `take_lower`, which makes the flood from several goals out of one flood from each.
 `PathRules` says whether diagonals are allowed and whether one may cut a corner between two blocked orthogonals, off by default, and a diagonal costs 1414 to an orthogonal's 1000.
 `region::flood` marks what is reachable into a `BitGrid` and `region::label_regions` numbers every connected component at once, both taking passability as a closure over flat indices so they run on anything.
 `targeting::footprint` resolves a `TargetMode`, own cell, adjacent, bolt, ball, beam or cone, into the `Footprint` of cells it covers and the path a projectile took, with blocking passed in as two closures because what blocks is the caller's to say: what stops a projectile, walls and whoever stands in the way, and what stops a burst, walls alone.

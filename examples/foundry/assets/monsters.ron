@@ -10,7 +10,9 @@
 //   profile:    how it takes a hit: "chassis" | "organic"
 //   faction:    "droids" | "vermin"
 //   wits:       "mindless" | "animal" | "sapient", or a list as in the engine's Wits
-//               ("flees", "searches", "opens_doors", "picks_up", "equips", "throws" on top);
+//               ("flees", "searches", "opens_doors", "picks_up", "equips", "throws" on top,
+//               and "travels", which no preset has: it follows you through a lift it stood
+//               beside and leaves by one when it runs);
 //               a droid names "opens_doors", so a shut door never stops one on a trail
 //   perception: how far it sees, in tiles
 //   dark_sight: optional; tiles it sees without light: radar, for the droids that have it
@@ -29,9 +31,10 @@
 //               added to certain while the subject stands in light, may be left out, 0,
 //               memory: turns it keeps looking, may be left out, 6); absent, the engine's
 //               default: sure only of what is adjacent, 25 percent a turn beyond
-//   alarm:      optional; true when it sounds the deck's alarm, a klaxon heard in every open
-//               corner of the deck, on every turn it takes knowing where an enemy is; the log
-//               says so once, when it first notices
+//   alarm:      optional; the turns it signals before it sounds the deck's alarm, standing
+//               where it is, a hit making it start over; once sounded, a klaxon heard in every
+//               open corner of the deck on every turn it takes knowing where an enemy is; the
+//               log says when it starts signalling, and once when the alarm sounds
 //   shadow:     optional; (keep_within:, no_closer_than:) in tiles: it keeps the enemies in sight
 //               that far off, closing past keep_within and backing off inside no_closer_than,
 //               and waits in between rather than hunting; absent, it closes in
@@ -49,7 +52,7 @@
     (name: "line droid", glyph: 'd', color: (0.85, 0.75, 0.55), hp: 8, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches", "opens_doors"],
      perception: 8, melee: (roll: "1d3", kind: "kinetic"), notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 100, flee_at: 0, hearing: (threshold: 0, memory: 8), drops: [("slug", 10), ("keycard", 12)]),
     (name: "probe droid", glyph: 'p', color: (0.5, 0.5, 0.55), hp: 6, armor: 0, profile: "chassis", faction: "droids", wits: ["mindless", "searches", "opens_doors"],
-     perception: 10, dark_sight: 4, notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 120, flee_at: 0, alarm: true, shadow: (keep_within: 5, no_closer_than: 3), hearing: (threshold: 0, memory: 8), drops: [("slug", 10)]),
+     perception: 10, dark_sight: 4, notice: (certain: 2, chance_pct: 35, lit_bonus: 6), speed: 120, flee_at: 0, alarm: 4, shadow: (keep_within: 5, no_closer_than: 3), hearing: (threshold: 0, memory: 8), drops: [("slug", 10)]),
     // A finished chassis walked off the end of the line it was built on:
     // the first thing on the way down that shoots, from four tiles, inside
     // the lamp's six, and what it shoots with is what it may drop.

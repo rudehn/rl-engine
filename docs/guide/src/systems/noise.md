@@ -15,7 +15,7 @@
             crates/rl-bevy/src/props.rs
             crates/rl-ui/src/view/nearby.rs
             crates/rl-ui/src/panel/nearby.rs
-     fingerprint: 9595339a -->
+     fingerprint: 227a9d71 -->
 
 # Noise
 
@@ -47,7 +47,7 @@ The engine reads `maker` for one thing only, that its maker does not hear it: it
 `SoundId` is interned by `Sounds`, the engine's four first as `Sounds::STEP`, `STRIKE`, `DOOR` and `LANDING`; a game declares its own with `app.add_sound("shout")` and finds it again by name with `Sounds::get`, so there is no closed list of what can make a noise.
 `SoundNames` puts every sound declared so far in scope where content is loaded, `registries.names().sounds(&sounds)`, since a sound is interned while the app is built and is not in `Registries`; the engine's prop loader chains it on itself, and a game with noise chains it wherever it builds its items' or abilities' effects.
 `Noise { sound, loudness }` is the effect content makes a sound with, `(kind: "Noise", args: (sound: "blast", loudness: 14))`: one `MakeNoise` by the landing's user where a projectile stopped, else where it was aimed, one sound however wide the burst, and a sound nobody declared or a `loudness` below one refused at load.
-`make_engine_noise` writes those four: every `Stepped` the move resolver let through, at the cell stepped to; one sound per attacker per pass however many strikes its `DamageEvent`s carried, at the attacker's cell, with a mend and damage that has no attacker making none; a `DoorEvent` opened or closed, at the door; and an `ItemEvent::Thrown` where the thing came to rest.
+`make_engine_noise` writes those four: every `Stepped` the move resolver let through, at the cell stepped to; one sound per attacker per pass however many strikes its `DamageEvent`s carried, at the attacker's cell, with damage that has no attacker making none; a `DoorEvent` opened or closed, at the door; and an `ItemEvent::Thrown` where the thing came to rest.
 `resolve_noise` then floods each one.
 It skips a noise no listener on this map is within `loudness` Chebyshev tiles of, since no flood carries further than that, and otherwise builds `Earshot`, a single `DijkstraMap` reused by every flood so hearing allocates nothing once it has grown, over a square of side `2 * loudness + 1` clipped to the loaded window.
 What a cell costs a sound is `hearing::carries`, read off flags a tile already has rather than a field of its own: what a thrown thing passes, sound passes at one step; what stops one and opens is a closed door, passed at one step and `door_muffle` more; anything else that stops one is a wall and stops sound.
@@ -64,8 +64,18 @@ A game's own noise is the same message the engine writes, so Foundry's probe sou
 
 <!-- include: ../../../../examples/foundry/src/droids/alarm.rs:shout -->
 ```rust,no_run
-/// Shouts the alarm for every action an [`Alarm`] carrier finishes while it
-/// knows where the player is: a [`MakeNoise`] of [`ALARM_SOUND`] where it
+/// Lowers the alarm of a probe that no longer knows where the commando is,
+/// so the next time it finds out it has to signal again.
+pub fn lower_alarm(mut commands: Commands, raised: Query<(Entity, &Aware), With<Raised>>, players: Query<Entity, With<Player>>) {
+    for (probe, aware) in &raised {
+        if !players.iter().any(|p| aware.knows(p)) {
+            commands.entity(probe).remove::<Raised>();
+        }
+    }
+}
+
+/// Shouts the alarm for every action a probe whose alarm is [`Raised`]
+/// finishes while it knows where the player is: a [`MakeNoise`] of [`ALARM_SOUND`] where it
 /// stands, as loud as [`ALARM_LOUDNESS`], and a [`PULSE`] on it when the
 /// player can see it there. Whoever hears it comes to look; the engine's
 /// hearing decides who that is.
@@ -78,7 +88,7 @@ A game's own noise is the same message the engine writes, so Foundry's probe sou
 /// see, so the noise goes out and the pulse does not.
 pub fn shout_alarm(
     mut done: MessageReader<ActionDone>,
-    alarmed: Query<(&Position, &Aware), With<Alarm>>,
+    alarmed: Sounding,
     players: Query<(Entity, &Viewshed), With<Player>>,
     sounds: Res<Sounds>,
     mut noise: MessageWriter<MakeNoise>,
