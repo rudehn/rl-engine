@@ -15,7 +15,9 @@
 //! [`Piece`] to a wall of what already stands, biased by [`District`]s,
 //! and publishes an [`Area`] per piece and an [`Opening`] per [`Join`];
 //! [`OpenLoops`] then cuts the longest detours through, so there is more
-//! than one way round.
+//! than one way round. [`Survey`] measures what was built, as a
+//! [`Surveyed`] with an [`AreaFacts`] per area, and [`Require`] fails a
+//! place that falls short, for [`Chain::run_retrying`] to build again.
 //!
 //! Engine passes are generic over the context, so a game extends the
 //! context with its own state and engine passes still run on it.
@@ -30,12 +32,14 @@ pub mod dungeon;
 pub mod loops;
 pub mod passes;
 pub mod prefab;
+pub mod survey;
 mod walk;
 
 pub use accrete::{Accrete, Area, District, Join, Opening, Piece, Shape};
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
 pub use loops::OpenLoops;
+pub use survey::{AreaFacts, Require, Survey, Surveyed};
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -46,4 +50,5 @@ pub mod prelude {
     pub use crate::loops::OpenLoops;
     pub use crate::passes;
     pub use crate::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab, Stamped};
+    pub use crate::survey::{AreaFacts, Require, Survey, Surveyed};
 }
