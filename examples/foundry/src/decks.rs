@@ -1,12 +1,16 @@
-//! The foundry's ten decks: assembly halls of rooms and doors, each
+//! The foundry's ten decks, each grown piece by piece from a recipe in
+//! `assets/layout.ron`, halls opening onto each other on the upper decks
+//! and a tighter warren below, each
 //! holding an armory and a supply store, a guard post on five of them, a
 //! reactor chamber on three and the core chamber on the tenth, so all four
 //! charges have somewhere to be set, and every other room furnished as
 //! what it was for.
 //!
-//! This is the whole of a deck builder: a tile registry, the pieces in
-//! `assets/prefabs/` loaded against it by [`crate::prefabs::load`], one
-//! chain per deck stamping them by name, and [`PlaceBuild::from_context`]
+//! This is the whole of a deck builder: a tile registry, the layout the
+//! engine grows a deck to and holds it to, the pieces in
+//! `assets/prefabs/` loaded against the tiles by [`crate::prefabs::load`],
+//! one chain per deck stamping them by name, run again from the next
+//! attempt when a deck falls short of its recipe, and [`PlaceBuild::from_context`]
 //! to read the entry, the exit and the pieces' marks back out, the way
 //! delve's `Whale` does for the whale's floors. What stands at a mark is
 //! the engine's to put down, from what the piece's file says.
@@ -14,10 +18,11 @@
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::RunSeed;
 use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
-use rl_engine::rl_mapgen::dungeon::{Doors, FarthestExit, RandomStart, Rooms};
+use rl_engine::rl_mapgen::dungeon::{FarthestExit, RandomStart};
 use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab};
-use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain};
+use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain, Survey};
 use rl_engine::rl_render::TileAppearance;
+use rl_engine::rl_rules::layout::{self, LayoutDef};
 use rl_engine::rl_world::WorldGraph;
 
 use crate::droids::MonsterDef;
@@ -28,6 +33,20 @@ pub const DECKS: u32 = 10;
 
 /// How every tile looks, compiled in so the binary runs from anywhere.
 const TILES_RON: &str = include_str!("../assets/tiles.ron");
+
+/// How a deck is grown, compiled in beside the tiles.
+const LAYOUT_RON: &str = include_str!("../assets/layout.ron");
+
+/// How many times a deck is built before the run gives up on it. A deck
+/// that fails this many is a recipe that asks too much, which the test
+/// over a span of seeds is there to find before a player does.
+const ATTEMPTS: u32 = 40;
+
+/// The recipe a deck is grown to: wide assembly halls on the upper decks,
+/// and tighter, with more ways round, from deck four down.
+pub fn recipe_of(deck: u32) -> &'static str {
+    if deck <= 3 { "assembly" } else { "warren" }
+}
 
 /// The deck a map id is; decks count from one.
 pub fn deck_of(map: MapId) -> u32 {
@@ -46,6 +65,7 @@ pub struct Foundry {
     deck: TileId,
     hatch: TileId,
     lamp: TileId,
+    layout: LayoutDef,
     prefabs: Prefabs<MonsterDef>,
     seed: RunSeed,
 }
@@ -73,7 +93,8 @@ impl Foundry {
         }
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
-        Self { tiles, hull, deck, hatch, lamp, prefabs, seed }
+        let layout = layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"));
+        Self { tiles, hull, deck, hatch, lamp, layout, prefabs, seed }
     }
 
     /// The registered tiles, for `WorldMap::new`.
@@ -138,17 +159,13 @@ impl Foundry {
     /// mark into a [`Spot`] and drops the stamp's own bounds.
     fn generate(&self, map: MapId) -> Result<BaseContext, BuildError> {
         let deck = deck_of(map);
-        let mut ctx = BaseContext::blank(70, 40, self.tiles.clone(), self.hull);
         // One stream per deck, so building deck 2 first does not change deck 1.
         let seed = RunSeed(self.seed.0 ^ (deck as u64) << 32);
+        let grown = rl_engine::rl_bevy::layout::passes(&self.layout, recipe_of(deck), self.deck, self.hatch)?;
+        let (width, height) = grown.size;
         let mut chain = Chain::new()
-            // Every room is at least seven cells, two more than the
-            // largest piece: `Placement::AnyRoom` takes only a room that
-            // leaves a cell of floor all round the piece, so with rooms
-            // of five the reactor, stamped last, found no room left on
-            // some seeds and the deck failed to build.
-            .then(Rooms { floor: self.deck, min_size: 7, max_size: 12, ..Default::default() })
-            .then(Doors { door: self.hatch })
+            .then(grown.accrete)
+            .then(grown.loops)
             .then(StampOneOf { name: "armory", choices: self.armories()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored })
             .then(StampOneOf { name: "store", choices: self.stores()?, at: Placement::AnyRoom, orient: Orient::TurnedOrMirrored });
         // Decks two, four, five, seven and eight hold a guard post: a locker
@@ -180,8 +197,40 @@ impl Foundry {
         // Last, once the ways in and out are known so no room piece lands
         // on either: every room nothing was stamped in is furnished.
         let rooms = StampEachRoom { name: "furnish", choices: self.rooms()?, orient: Orient::TurnedOrMirrored };
-        chain.then(start).then(FarthestExit).then(rooms).run(&mut ctx, seed)?;
-        Ok(ctx)
+        // The survey once the ways in and out are known, and what the
+        // recipe requires last: a deck that falls short is built again.
+        let make = || BaseContext::blank(width, height, self.tiles.clone(), self.hull);
+        chain.then(start).then(FarthestExit).then(Survey).then(rooms).then(grown.require).run_retrying(make, seed, ATTEMPTS)
+    }
+
+    /// The deck as rows of glyphs, for `foundry --deck` and for reading a
+    /// layout before calling a recipe done: `#` what cannot be walked on,
+    /// `.` what can, `+` a hatch, `<` the way in and `>` the way down.
+    pub fn render(&self, map: MapId) -> Result<String, BuildError> {
+        use rl_engine::rl_core::Grid2D;
+        let built = self.build(map, None)?;
+        let tables = self.tiles.tables();
+        let bounds = built.terrain.bounds();
+        let mut out = String::new();
+        for y in 0..bounds.height {
+            for x in 0..bounds.width {
+                let p = rl_engine::rl_core::Point::new(x, y);
+                let tile = built.terrain.get(p).expect("in bounds");
+                out.push(if p == built.entry {
+                    '<'
+                } else if Some(p) == built.exit {
+                    '>'
+                } else if tile == self.hatch {
+                    '+'
+                } else if tables.walkable[tile.index()] {
+                    '.'
+                } else {
+                    '#'
+                });
+            }
+            out.push('\n');
+        }
+        Ok(out)
     }
 }
 
@@ -473,5 +522,45 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Every deck is grown, surveyed and held to its recipe, and builds
+    /// within the attempts a deck is given on every seed of the span.
+    #[test]
+    fn every_deck_meets_what_its_recipe_requires_over_a_span_of_seeds() {
+        use rl_engine::rl_mapgen::{Area, Surveyed};
+        for s in 0..150 {
+            let foundry = Foundry::new(RunSeed(s));
+            for deck in 1..=DECKS {
+                let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
+                let surveyed = ctx.outputs().first::<Surveyed>().unwrap_or_else(|| panic!("deck {deck}, seed {s}: not surveyed"));
+                assert!(surveyed.loops >= 2, "deck {deck}, seed {s}: {} loops", surveyed.loops);
+                assert_eq!(surveyed.areas.len(), ctx.outputs().iter::<Area>().count());
+            }
+        }
+    }
+
+    /// Two decks of one run are not grown to one plan: over a span of
+    /// seeds no two decks of a run are the same map, and the upper and the
+    /// lower decks name different recipes.
+    #[test]
+    fn the_decks_of_a_run_differ_from_each_other() {
+        for s in 0..20 {
+            let foundry = Foundry::new(RunSeed(s));
+            let maps: Vec<String> = (1..=DECKS).map(|d| foundry.render(map_of(d)).unwrap()).collect();
+            for i in 0..maps.len() {
+                for j in i + 1..maps.len() {
+                    assert_ne!(maps[i], maps[j], "seed {s}: decks {} and {} are the same map", i + 1, j + 1);
+                }
+            }
+        }
+        assert_ne!(recipe_of(1), recipe_of(5), "the upper and the lower decks name different recipes");
+    }
+
+    #[test]
+    fn a_deck_is_the_size_its_recipe_says() {
+        use rl_engine::rl_core::Grid2D;
+        let built = Foundry::new(RunSeed(1)).build(map_of(1), None).unwrap();
+        assert_eq!((built.terrain.bounds().width, built.terrain.bounds().height), (84, 48));
     }
 }

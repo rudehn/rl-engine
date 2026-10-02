@@ -108,16 +108,17 @@ fn run(seed: u64, turns: usize) -> u64 {
 /// same run, and this run comes to this number. Re-baseline deliberately,
 /// with a `CHANGELOG.md` line.
 ///
-/// Seed nine since the rooms were furnished: seven's droids no longer
-/// wander into the commando's sight inside two hundred turns, and a seed
-/// that never fires pins a walk rather than a fight.
+/// Seed five since the decks were grown: on nine's deck no droid comes
+/// into the commando's sight inside two hundred turns, and a seed that
+/// never fires pins a walk rather than a fight. Four is the other run for
+/// the same reason, since it fires too.
 #[test]
-fn fingerprint_tripwire_a_scripted_two_hundred_turn_run_on_seed_nine_comes_to_the_same_run_every_time() {
-    let first = run(9, 200);
-    assert_eq!(first, run(9, 200), "one seed, two runs, one fingerprint");
-    assert_ne!(first, run(8, 200), "another seed is another run");
+fn fingerprint_tripwire_a_scripted_two_hundred_turn_run_on_seed_five_comes_to_the_same_run_every_time() {
+    let first = run(5, 200);
+    assert_eq!(first, run(5, 200), "one seed, two runs, one fingerprint");
+    assert_ne!(first, run(4, 200), "another seed is another run");
     assert_eq!(
-        first, 7_592_400_200_732_157_243,
+        first, 12_025_178_841_912_632_279,
         "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say so in the changelog"
     );
 }

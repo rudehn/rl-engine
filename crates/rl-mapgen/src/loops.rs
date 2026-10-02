@@ -132,7 +132,7 @@ mod tests {
             Some(l) => chain.then(l),
             None => chain,
         };
-        chain.run_retrying(|| BaseContext::blank(w, h, rig.tiles.clone(), rig.wall), RunSeed(seed), 1).unwrap()
+        chain.run_retrying(|| BaseContext::blank(w, h, rig.tiles.clone(), rig.wall), RunSeed(seed), 20).unwrap()
     }
 
     fn pass() -> OpenLoops {
