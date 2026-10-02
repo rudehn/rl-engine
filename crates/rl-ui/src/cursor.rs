@@ -129,12 +129,7 @@ impl CursorStyle {
 pub fn mark(terminal: &mut Terminal, view: &rl_render::MapView, cell: Point, style: CursorStyle, palette: &Palette, t: f32) {
     let color = style.color(palette, t);
     match style {
-        CursorStyle::Glow { .. } => {
-            let Some(screen) = view.to_screen(cell) else { return };
-            let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
-            drawn.bg = color;
-            terminal.set(screen.x, screen.y, drawn);
-        }
+        CursorStyle::Glow { .. } => view.wash(terminal, cell, color),
         CursorStyle::Ticks { marks, .. } => {
             // The cell itself is left alone: a cursor that covered it would
             // hide what it points at.

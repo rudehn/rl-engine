@@ -14,7 +14,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: 127ea744 -->
+     fingerprint: c82c1383 -->
 
 # Rendering
 
@@ -41,6 +41,7 @@ It reads cues in `PresentSet::Narrate` and takes the turns' hold on entering `Pl
 `Fit` is how the grid sits in a window, a cell and a margin in physical pixels, and `layout::fit` works it out: the largest zoom that fits, each cell floored to whole pixels so no seam shows between two backgrounds, and the grid centred.
 `Pointer` is the terminal cell the mouse is over, kept by `TerminalPlugin` once a frame after the grid is laid out, by `Fit::cell_at`, the same arithmetic run backwards: `cell` is that cell, `within(rect)` the cell when it is inside a panel's rectangle, and `tile(&view)` the map tile a `MapView` draws there; it is `None` in the margin and outside the window, and with no window it is left where a test put it with `Pointer::at`.
 `Tileset` is pictures in place of glyphs: a sheet, how it is cut up, a picture per character with `with(glyph, index)`, and with `within(rect)` the part of the terminal it covers; `flush_terminal` shows a cell whose glyph it names as that picture, tinted by the cell's colour, and no glyph, on a sprite spawned per cell the first time there is a tileset, and `turned(false)`, or removing the resource, draws every cell as its glyph again.
+`MapViewPlugin::new(rect).across(2)` draws each tile two cells across, for square tiles on narrow cells: `MapView::to_screen` answers a tile's first cell, `to_world` takes any of its cells back, `tiles` walks the view, and `set` and `wash` write a whole tile, while `WideCells` tells the terminal those cells come in runs, so it draws a run's glyph or picture centred across it.
 The camera never scales; the glyphs take a font size scaled with the cell and are drawn at the size they are shown, and a window of exactly the size the game opened in gets exactly the declared cell, wherever that cell is a whole number of physical pixels; at a display scaling of 125% a ten-pixel cell is not, and is floored.
 `Glyph` is how an entity is drawn, a `ch`, an `fg` and a `layer`, and on a tile with two things on it the higher layer wins.
 `TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.

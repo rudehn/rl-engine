@@ -141,10 +141,7 @@ pub fn bar(terminal: &mut Terminal, x: i32, y: i32, width: i32, fraction: f32, t
 /// monster without hiding it. Nothing happens for a cell the map view is
 /// not showing.
 pub fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, tone: ToneId, palette: &Palette) {
-    let Some(screen) = map.to_screen(cell) else { return };
-    let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
-    drawn.bg = palette.get(tone);
-    terminal.set(screen.x, screen.y, drawn);
+    map.wash(terminal, cell, palette.get(tone));
 }
 
 /// Cuts `text` to `width` characters, with an ellipsis when it did not

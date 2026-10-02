@@ -505,14 +505,13 @@ pub fn draw_particles(
     }
     let at = |anchor: &Anchor| anchor.follow.and_then(|e| positions.get(e).ok()).map(|p| p.0).unwrap_or(anchor.at);
     for spark in particles.frame(time.elapsed_secs(), map.current(), &at) {
-        let Some(screen) = view.to_screen(spark.at) else { continue };
-        let Some(mut cell) = terminal.get(screen.x, screen.y) else { continue };
+        let Some(mut cell) = view.get(&terminal, spark.at) else { continue };
         cell.glyph = spark.glyph;
         // Lit toward a darker shade of itself, so the glyph over it still
         // reads.
         cell.bg = cell.bg.mix(&spark.color.mix(&Color::BLACK, 0.45), spark.glow.clamp(0.0, 1.0));
         cell.fg = spark.color.mix(&cell.bg, spark.faded.clamp(0.0, 1.0));
-        terminal.set(screen.x, screen.y, cell);
+        view.set(&mut terminal, spark.at, cell);
     }
 }
 

@@ -52,6 +52,44 @@ impl Cell {
     }
 }
 
+/// Cells that are drawn in runs: within `region`, every `span` cells
+/// along a row are one wide cell, whose glyph or picture is drawn centred
+/// across the run from its first cell.
+///
+/// What a map of square tiles on a terminal of narrow cells needs: text
+/// is drawn a cell to a character, as it reads best, and a tile is two
+/// cells that show one glyph or one picture between them. Only where the
+/// first cell's glyph is drawn changes; the cells are still cells, each
+/// with its own background, and whoever writes a run puts the glyph in
+/// its first cell and nothing in the rest. Inserted by
+/// [`MapViewPlugin::across`](crate::MapViewPlugin::across).
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WideCells {
+    /// The cells that come in runs.
+    pub region: Rect,
+    /// How many cells a run is.
+    pub span: i32,
+}
+
+impl WideCells {
+    /// How many cells the run starting at `(x, y)` is, when a run starts
+    /// there: one whole run inside the region, counted from its left edge.
+    fn run_at(&self, x: i32, y: i32) -> Option<i32> {
+        let along = x - self.region.x;
+        (self.span > 1 && self.region.contains(Point::new(x, y)) && along % self.span == 0 && along + self.span <= self.region.width).then_some(self.span)
+    }
+}
+
+/// Where the glyph and the picture of cell `(x, y)` are drawn, as a shift
+/// from the cell's own centre, and how large its picture is: across the
+/// whole run for the first cell of one, and the cell itself anywhere else.
+fn placing(wide: Option<&WideCells>, x: i32, y: i32, cell: Vec2) -> (Vec2, Vec2) {
+    match wide.and_then(|wide| wide.run_at(x, y)) {
+        Some(span) => (Vec2::new((span - 1) as f32 * cell.x / 2.0, 0.0), Vec2::new(span as f32 * cell.x, cell.y)),
+        None => (Vec2::ZERO, cell),
+    }
+}
+
 /// Sets up the terminal grid and keeps it filling its window.
 ///
 /// The grid is laid out again whenever the window changes size, in whole
@@ -218,7 +256,7 @@ struct CellEntities {
 #[derive(Component)]
 struct Picture;
 
-fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<TerminalFont>, mut entities: ResMut<CellEntities>) {
+fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<TerminalFont>, wide: Option<Res<WideCells>>, mut entities: ResMut<CellEntities>) {
     // No projection of its own: one world unit is one logical pixel, and
     // `relayout` sizes the grid for the window. A camera that scaled the
     // grid to fit would stretch glyphs drawn for another size.
@@ -236,19 +274,30 @@ fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<Termina
     for y in 0..terminal.height() {
         for x in 0..terminal.width() {
             let c = terminal.cell_center(x, y);
+            let (shift, _) = placing(wide.as_deref(), x, y, terminal.cell_size);
             let background = commands.spawn((Sprite::from_color(Color::BLACK, terminal.cell_size), Transform::from_xyz(c.x, c.y, BACKGROUND_Z))).id();
-            let glyph =
-                commands.spawn((Text2d::new(" "), text_font.clone(), TextColor(Color::WHITE), Anchor::CENTER, Transform::from_xyz(c.x, c.y, GLYPH_Z))).id();
+            let glyph = commands
+                .spawn((Text2d::new(" "), text_font.clone(), TextColor(Color::WHITE), Anchor::CENTER, Transform::from_xyz(c.x + shift.x, c.y, GLYPH_Z)))
+                .id();
             entities.background.push(background);
             entities.glyph.push(glyph);
         }
     }
 }
 
-/// The window the grid was last laid out for: its physical size and its
-/// scale factor's bits, compared exactly.
+/// The grid as a layout reads it: its cells, its font, and which of its
+/// cells come in runs.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Grid<'w> {
+    terminal: Res<'w, Terminal>,
+    font: Res<'w, TerminalFont>,
+    wide: Option<Res<'w, WideCells>>,
+}
+
+/// What the grid was last laid out for: the window's physical size, its
+/// scale factor's bits, and which cells come in runs, compared exactly.
 #[derive(Default)]
-struct LaidOutFor(Option<(UVec2, u32)>);
+struct LaidOutFor(Option<(UVec2, u32, Option<WideCells>)>);
 
 /// Lays the grid out again when its window is another size or on another
 /// display.
@@ -262,20 +311,22 @@ struct LaidOutFor(Option<(UVec2, u32)>);
 /// minimized, the last layout stands.
 fn relayout(
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
-    terminal: Res<Terminal>,
-    font: Res<TerminalFont>,
+    grid: Grid,
     mut entities: ResMut<CellEntities>,
     mut laid: Local<LaidOutFor>,
     mut backgrounds: Query<(&mut Sprite, &mut Transform), Without<Text2d>>,
     mut glyphs: Query<(&mut TextFont, &mut Transform), With<Text2d>>,
 ) {
+    let Grid { terminal, font, wide } = grid;
     let Ok(window) = windows.single() else { return };
     let size = UVec2::new(window.physical_width(), window.physical_height());
     let scale = window.scale_factor();
-    if size.x == 0 || size.y == 0 || entities.background.is_empty() || laid.0 == Some((size, scale.to_bits())) {
+    let wide = wide.as_deref().copied();
+    let now = (size, scale.to_bits(), wide);
+    if size.x == 0 || size.y == 0 || entities.background.is_empty() || laid.0 == Some(now) {
         return;
     }
-    laid.0 = Some((size, scale.to_bits()));
+    laid.0 = Some(now);
     let fit = fit(terminal.width, terminal.height, terminal.cell_size, size, scale);
     let (cell, font_size) = (fit.cell_logical(scale), fit.font(font.size, terminal.cell_size, scale));
     let mut centres = Vec::with_capacity(entities.background.len());
@@ -290,13 +341,14 @@ fn relayout(
             }
             // A picture is a sprite like the background, and is laid out
             // with it: the same size, the same place, a little nearer.
+            let (shift, picture) = placing(wide.as_ref(), x, y, cell);
             if let Some(Ok((mut sprite, mut transform))) = entities.picture.get(i).map(|e| backgrounds.get_mut(*e)) {
-                sprite.custom_size = Some(cell);
-                transform.translation = c.extend(PICTURE_Z);
+                sprite.custom_size = Some(picture);
+                transform.translation = (c + shift).extend(PICTURE_Z);
             }
             if let Ok((mut text, mut transform)) = glyphs.get_mut(entities.glyph[i]) {
                 text.font_size = FontSize::Px(font_size);
-                transform.translation = c.extend(GLYPH_Z);
+                transform.translation = (c + shift).extend(GLYPH_Z);
             }
         }
     }
@@ -308,7 +360,13 @@ fn relayout(
 ///
 /// Laid out where the cells are now: as the grid was last laid out for
 /// its window, or as declared when it never has been.
-fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Option<Res<Tileset>>, mut entities: ResMut<CellEntities>) {
+fn spawn_pictures(
+    mut commands: Commands,
+    terminal: Res<Terminal>,
+    tileset: Option<Res<Tileset>>,
+    wide: Option<Res<WideCells>>,
+    mut entities: ResMut<CellEntities>,
+) {
     let Some(tileset) = tileset else { return };
     if !entities.picture.is_empty() || entities.background.is_empty() {
         return;
@@ -317,10 +375,12 @@ fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Opti
     for y in 0..terminal.height() {
         for x in 0..terminal.width() {
             let i = (y * terminal.width() + x) as usize;
-            let (size, at) = match &laid {
+            let (cell, centre) = match &laid {
                 Some((size, centres)) => (*size, centres[i]),
                 None => (terminal.cell_size, terminal.cell_center(x, y)),
             };
+            let (shift, size) = placing(wide.as_deref(), x, y, cell);
+            let at = centre + shift;
             let sprite = Sprite {
                 image: tileset.image().clone(),
                 texture_atlas: Some(TextureAtlas { layout: tileset.layout().clone(), index: 0 }),
@@ -631,6 +691,49 @@ mod tests {
         app.world_mut().remove_resource::<Tileset>();
         app.update();
         assert_eq!(shows(&app, 1, 1), ("#".to_string(), None), "and taken away altogether, glyphs");
+    }
+
+    /// Where cells come in runs of two, the first of a run draws its glyph
+    /// and its picture centred across both, the picture two cells wide,
+    /// and every other cell is laid out as ever; and it follows the window.
+    #[test]
+    fn a_run_of_cells_draws_its_glyph_and_its_picture_centred_across_the_run() {
+        use rl_core::Rect;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        // Rows one and two, from the third column, in runs of two.
+        app.insert_resource(WideCells { region: Rect::new(2, 1, 5, 2), span: 2 })
+            .insert_resource(Tileset::new(Handle::default(), Handle::default()).with('#', 1));
+        let mut resolution = WindowResolution::new(160, 160);
+        resolution.set_scale_factor_override(Some(1.0));
+        resolution.set_physical_resolution(160, 160);
+        app.world_mut().spawn((Window { resolution, ..default() }, PrimaryWindow));
+        app.update();
+        app.update();
+        // Cells are twenty by forty in this window; cell (x, y) is centred
+        // at (-70 + 20x, 60 - 40y).
+        let placed = |app: &App, x: i32, y: i32| {
+            let entities = app.world().resource::<CellEntities>();
+            let i = (y * 8 + x) as usize;
+            let glyph = app.world().get::<Transform>(entities.glyph[i]).unwrap().translation.truncate();
+            let picture = entities.picture[i];
+            (glyph, app.world().get::<Transform>(picture).unwrap().translation.truncate(), app.world().get::<Sprite>(picture).unwrap().custom_size.unwrap())
+        };
+        assert_eq!(
+            placed(&app, 2, 1),
+            (Vec2::new(-20.0, 20.0), Vec2::new(-20.0, 20.0), Vec2::new(40.0, 40.0)),
+            "the first of a run: between its two cells, and two wide"
+        );
+        assert_eq!(placed(&app, 3, 1), (Vec2::new(-10.0, 20.0), Vec2::new(-10.0, 20.0), Vec2::new(20.0, 40.0)), "the second is a cell like any other");
+        assert_eq!(placed(&app, 4, 2).0, Vec2::new(20.0, -20.0), "the next run starts two along");
+        assert_eq!(placed(&app, 6, 1).0, Vec2::new(50.0, 20.0), "a cell left over at the region's edge is no run");
+        assert_eq!(placed(&app, 2, 0).0, Vec2::new(-30.0, 60.0), "nor is anything outside the region");
+        let background = app.world().resource::<CellEntities>().background[(8 + 2) as usize];
+        assert_eq!(app.world().get::<Sprite>(background).unwrap().custom_size, Some(Vec2::new(20.0, 40.0)), "a background is always its own cell");
+
+        app.world_mut().remove_resource::<WideCells>();
+        app.update();
+        assert_eq!(placed(&app, 2, 1), (Vec2::new(-30.0, 20.0), Vec2::new(-30.0, 20.0), Vec2::new(20.0, 40.0)), "with no runs it is laid out as a cell again");
     }
 
     /// A picture sprite is the cell's own size and stands where the cell

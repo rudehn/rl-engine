@@ -207,10 +207,7 @@ pub fn draw_target(
 
 /// Repaints one cell's background, leaving whatever glyph is on it.
 fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, bg: Color) {
-    let Some(screen) = map.to_screen(cell) else { return };
-    let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
-    drawn.bg = bg;
-    terminal.set(screen.x, screen.y, drawn);
+    map.wash(terminal, cell, bg);
 }
 
 #[cfg(test)]
