@@ -17,6 +17,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod accrete;
 pub mod chain;
 pub mod context;
 pub mod dungeon;
