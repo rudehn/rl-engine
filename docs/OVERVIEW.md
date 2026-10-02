@@ -189,6 +189,7 @@ The prose below the table is the why.
 
 - A diffed terminal back buffer.
 - A grid laid out for its window: `layout::fit` gives the largest whole-pixel cells that fit the grid in a window of any size and the margin that centres them, and the terminal lays itself out again whenever the window changes, with glyphs drawn at the size they are shown, where a camera scaling the grid stretched glyphs drawn for another size. At the window a game opens in, the declared cell exactly, wherever that is a whole number of the display's pixels.
+- `Pointer`: the terminal cell the mouse is over, kept by `TerminalPlugin` once a frame after the grid is laid out, through `Fit::cell_at`, the layout's own arithmetic run backwards, so it is right in a window of any size and `None` in the margin; `within(rect)` is the cell when it is inside a panel's rectangle and `tile(&view)` the map tile a `MapView` draws there. What a click means is the game's, read from Bevy's mouse buttons. With no window it is left where a test put it.
 - `FullscreenPlugin`: filling the screen as a setting, `fullscreen`, `Off` or `On`, with F11 as its key where a `SettingsPanel` is there to read it, which keeps the primary window borderless fullscreen or windowed to match and puts a choice already made on the window before the first frame. Declares nothing on the web, where a browser grants fullscreen only from inside a key's handler.
 - The map view with lit, remembered and unknown tiles. `MapViewPlugin::new(rect)` takes the rectangle it draws in, the way every panel does, and needs field of view, since without it nothing is ever seen.
 - `TileAppearance::load`: how every tile looks, from a RON list against the tile registry, every unknown, doubled or missing tile reported at once, so a game's colours are a file beside its monsters.
@@ -360,7 +361,7 @@ It is a library with a thin binary, so every system is in one `FoundryPlugin` th
 - Lit detection ranges, a light-averse tactic, and a ranged penalty in the dark once accuracy exists.
 - Scripted encounters, which want an ability's effect list without the turn, the cost and the cursor.
 - Bevy UI presenters over the panel views (phase H of `docs/design/ui.md`). The views and collectors already do not know which backend draws them; what a node tree would add is wrapping, proportional text, mouse hover and sub-cell bars. Deferred until a game asks for one of those, since it is a second set of presenters to keep and its tests are node trees rather than the exact-text ones that have caught the bugs so far.
-- Mouse-to-tile in `rl-render`, which hover, tooltips and click-to-travel all wait on.
+- Hover, tooltips and click-to-travel, which `Pointer` now makes possible and nothing yet does.
 - Instanced terminal rendering; one sprite per cell is the known scaling limit.
 - Props that block sight, and a prop that blocks the way without stopping a shot: a prop's `blocks` is movement and shots together, and none blocks sight.
 - Furnishing that works on any map: a weighted pool with bands and a budget, rules that dress a room of any size rather than centre a fixed piece, and a way to find room-like areas on a cave so the room passes reach it. `docs/TODO.md` has all three.

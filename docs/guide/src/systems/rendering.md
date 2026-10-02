@@ -3,6 +3,7 @@
      files: crates/rl-render/src/lib.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/layout.rs
+            crates/rl-render/src/pointer.rs
             crates/rl-render/src/map_view.rs
             crates/rl-render/src/fields.rs
             crates/rl-render/src/shade.rs
@@ -12,7 +13,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: 1cf21c24 -->
+     fingerprint: e2ebdd77 -->
 
 # Rendering
 
@@ -37,6 +38,7 @@ It reads cues in `PresentSet::Narrate` and takes the turns' hold on entering `Pl
 `Cell` is one character position: a `glyph`, a foreground `fg` and a fill `bg`, with `new`, `on` and `dimmed` to build one.
 `Terminal` is the back buffer, a resource, so any crate's presenter writes into it: `set`, `put`, `print`, `print_on`, `fill` and `clear` write, `get` reads back, and every write outside the grid is dropped rather than wrapping or panicking.
 `Fit` is how the grid sits in a window, a cell and a margin in physical pixels, and `layout::fit` works it out: the largest zoom that fits, each cell floored to whole pixels so no seam shows between two backgrounds, and the grid centred.
+`Pointer` is the terminal cell the mouse is over, kept by `TerminalPlugin` once a frame after the grid is laid out, by `Fit::cell_at`, the same arithmetic run backwards: `cell` is that cell, `within(rect)` the cell when it is inside a panel's rectangle, and `tile(&view)` the map tile a `MapView` draws there; it is `None` in the margin and outside the window, and with no window it is left where a test put it with `Pointer::at`.
 The camera never scales; the glyphs take a font size scaled with the cell and are drawn at the size they are shown, and a window of exactly the size the game opened in gets exactly the declared cell, wherever that cell is a whole number of physical pixels; at a display scaling of 125% a ten-pixel cell is not, and is floored.
 `Glyph` is how an entity is drawn, a `ch`, an `fg` and a `layer`, and on a tile with two things on it the higher layer wins.
 `TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.
@@ -110,6 +112,7 @@ The engine will not animate a game's own action: a resolver says what is worth s
 Without a watcher the cues are written and forgotten and the loop runs as if there were none, which is what a headless game gets and why the same rules run with and without a window.
 The pace is the engine's and the look is the game's: `ParticleStyle` is one resource, and a game with a look of its own writes `Animation`s to `Particles` directly.
 The terminal is not a widget toolkit and the map view is not a camera: there is no scene graph, no z-ordering beyond a glyph's layer, and nothing between turns is interpolated but how thick fire and gas look.
+The engine says which cell and which tile the mouse is over and nothing more: what a click there means, and which button, is the game's, read from Bevy's own `ButtonInput<MouseButton>`.
 One sprite and one text entity per cell is fine at a hundred columns and would be replaced by an instanced grid for a bigger one, and nothing above this crate would notice.
 
 ## Where it lives

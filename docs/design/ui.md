@@ -221,8 +221,8 @@ A game declares each key it answers to once, as a group, an action and the keys,
   Those are an application's, not a roguelike's.
 - Text entry, scrollbars, drag, focus traversal.
   The moment the engine owns a widget toolkit it owns a widget toolkit forever.
-- Hover and tooltips, until `rl-render` can map a cursor to a tile.
-  That is a real gap and a small one, and it should land in `rl-render` as a mouse-to-tile query before any panel depends on it.
+- Hover and tooltips.
+  `rl-render` maps a cursor to a cell and a tile since 2026-10-02, as `Pointer`, so nothing is in the way; no panel reads it yet, and a game hit-tests its own rectangles with `Pointer::within`.
 - Key hints from hand-typed strings in a panel's border.
   A hint was worth engine space only once it could be generated from a keybind registry; `Controls` is that registry now, and the controls screen and its `? controls` hint are generated from it.
   A border hint such as the scrollback's is still a phrase the game may replace, not a list.
