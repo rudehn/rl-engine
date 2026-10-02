@@ -110,15 +110,15 @@ fn run(seed: u64, turns: usize) -> u64 {
 ///
 /// Seed five since the decks were grown: on nine's deck no droid comes
 /// into the commando's sight inside two hundred turns, and a seed that
-/// never fires pins a walk rather than a fight. Four is the other run for
+/// never fires pins a walk rather than a fight. Six is the other run for
 /// the same reason, since it fires too.
 #[test]
 fn fingerprint_tripwire_a_scripted_two_hundred_turn_run_on_seed_five_comes_to_the_same_run_every_time() {
     let first = run(5, 200);
     assert_eq!(first, run(5, 200), "one seed, two runs, one fingerprint");
-    assert_ne!(first, run(4, 200), "another seed is another run");
+    assert_ne!(first, run(6, 200), "another seed is another run");
     assert_eq!(
-        first, 12_025_178_841_912_632_279,
+        first, 10_827_942_706_510_307_953,
         "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say so in the changelog"
     );
 }

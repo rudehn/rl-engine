@@ -23,7 +23,7 @@
 //! //   shapes: every shape a district may draw
 //! //     name: the shape's name; an area remembers it, and nothing in the
 //! //           engine reads a meaning into it
-//! //     kind: one of
+//! //     kind: one of, every range from 1 to 4096
 //! //       Rectangle(w: (fewest, most), h: (fewest, most))
 //! //       Cross(long: (fewest, most), short: (fewest, most))
 //! //                         two bars overlapped on their centers; the most
@@ -41,12 +41,12 @@
 //! //     shapes: [(shape, weight)], at least one weight more than nought
 //! //   recipes: what a place names to be built
 //! //     name:              the recipe's name
-//! //     size:              (width, height) in cells
+//! //     size:              (width, height) in cells, each 3 to 4096
 //! //     open_pct:          the share of the map to open, 1 to 100
 //! //     patience:          attempts in a row that may fail before growth
 //! //                        gives up, more than nought
 //! //     districts_per_10k: district seeds per ten thousand cells, rounded,
-//! //                        never fewer than one seed
+//! //                        never fewer than one seed; at most 10000
 //! //     districts:         [(district, weight)], at least one weight more
 //! //                        than nought
 //! //     loops:             (min_detour, max): the shortest detour in steps
@@ -55,7 +55,7 @@
 //! //       open_pct:     (at least, at most)
 //! //       areas:        [(shape, fewest)], each a shape some district of
 //! //                     this recipe draws
-//! //       loops:        fewest
+//! //       loops:        fewest, no more than loops' max
 //! //       dead_end_pct: the largest share of areas with one way in, 0 to 100
 //! //       route:        fewest steps from the way in to the way out
 //! (
@@ -80,6 +80,11 @@
 use serde::Deserialize;
 
 use crate::content::ContentError;
+
+/// The largest a map's side, a shape's range or a district density may
+/// be: far past anything a place is, and small enough that no sum of them
+/// overflows.
+const MOST: i32 = 4096;
 
 /// Which of the engine's generators draws a shape, and its ranges, each
 /// `(fewest, most)` in cells.
@@ -112,13 +117,17 @@ pub enum ShapeKind {
 }
 
 impl ShapeKind {
-    /// The smallest piece this kind can draw, as its longer and its
-    /// shorter side: what a map must have room for.
-    fn smallest(self) -> (i32, i32) {
+    /// Whether the smallest piece this kind can draw lies inside `wide` by
+    /// `tall`. A rectangle and a cross are drawn one way up; a passage
+    /// lies or stands, so either will do.
+    fn fits(self, wide: i32, tall: i32) -> bool {
         match self {
-            ShapeKind::Rectangle { w, h } => (w.0.max(h.0), w.0.min(h.0)),
-            ShapeKind::Cross { long, .. } => (long.0, long.0),
-            ShapeKind::Passage { width, length, .. } => (length.0.max(width.0), width.0),
+            ShapeKind::Rectangle { w, h } => w.0 <= wide && h.0 <= tall,
+            ShapeKind::Cross { long, .. } => long.0 <= wide && long.0 <= tall,
+            ShapeKind::Passage { width, length, .. } => {
+                let (long, short) = (length.0.max(width.0), width.0);
+                (long <= wide && short <= tall) || (long <= tall && short <= wide)
+            }
         }
     }
 
@@ -268,6 +277,11 @@ struct RequireRon {
     route: u32,
 }
 
+/// Whether the weights of `rows` add up without overflowing.
+fn adds_up(rows: &[(String, u32)]) -> bool {
+    rows.iter().try_fold(0u32, |sum, (_, w)| sum.checked_add(*w)).is_some()
+}
+
 /// Reads a layout file.
 ///
 /// Reports every problem in the file at once rather than the first, each
@@ -275,7 +289,8 @@ struct RequireRon {
 /// name that resolves to nothing, a list in which nothing carries weight,
 /// a range that runs backwards or starts below one, a cross whose bars
 /// are thicker than they are long, a mouth of no width, a share outside a
-/// hundred, no patience, a requirement for a shape the recipe never
+/// hundred, no patience, weights that overflow, a size or a range or a
+/// density past any map, more loops required than may be opened, a requirement for a shape the recipe never
 /// draws, and a map too small for any shape its recipe draws or for one
 /// it requires.
 pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
@@ -296,8 +311,8 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
 
     for s in &a.shapes {
         for (field, (fewest, most)) in s.kind.ranges() {
-            if fewest < 1 || fewest > most {
-                errors.push(format!("{}: {field} runs from {fewest} to {most}, and must start at 1 or more and not run backwards", s.name));
+            if fewest < 1 || fewest > most || most > MOST {
+                errors.push(format!("{}: {field} runs from {fewest} to {most}, and must start at 1 or more, not run backwards and stop by {MOST}", s.name));
             }
         }
         match s.kind {
@@ -333,6 +348,9 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
         if !d.shapes.iter().any(|(_, w)| *w > 0) {
             errors.push(format!("{}: no shape carries a weight more than nought", d.name));
         }
+        if !adds_up(&d.shapes) {
+            errors.push(format!("{}: its weights add up to more than a u32 holds", d.name));
+        }
         districts.push(DistrictDef { name: d.name.clone(), shapes });
     }
 
@@ -341,6 +359,18 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
         let mix = resolve(&r.name, "district", &r.districts, &district_names, &mut errors);
         if !r.districts.iter().any(|(_, w)| *w > 0) {
             errors.push(format!("{}: no district carries a weight more than nought", r.name));
+        }
+        if !adds_up(&r.districts) {
+            errors.push(format!("{}: its weights add up to more than a u32 holds", r.name));
+        }
+        if !(3..=MOST).contains(&r.size.0) || !(3..=MOST).contains(&r.size.1) {
+            errors.push(format!("{}: size is {}x{}, and each side must be from 3 to {MOST}", r.name, r.size.0, r.size.1));
+        }
+        if r.districts_per_10k > 10_000 {
+            errors.push(format!("{}: districts_per_10k is {}, more than one seed a cell", r.name, r.districts_per_10k));
+        }
+        if r.require.loops > r.loops.max {
+            errors.push(format!("{}: requires {} loops, and loops.max opens {} at most", r.name, r.require.loops, r.loops.max));
         }
         let areas = resolve(&r.name, "shape", &r.require.areas, &shape_names, &mut errors);
         if !(1..=100).contains(&r.open_pct) {
@@ -364,12 +394,8 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
                 errors.push(format!("{}: requires areas drawn by {:?}, which no district of it draws", r.name, a.shapes[*shape].name));
             }
         }
-        // The map less its border, as its longer and its shorter side.
-        let (long, short) = ((r.size.0.max(r.size.1) - 2), (r.size.0.min(r.size.1) - 2));
-        let fits = |s: &usize| {
-            let (l, sh) = a.shapes[*s].kind.smallest();
-            l <= long && sh <= short
-        };
+        // The map less its border.
+        let fits = |s: &usize| a.shapes[*s].kind.fits(r.size.0.saturating_sub(2), r.size.1.saturating_sub(2));
         if !drawn.is_empty() && !drawn.iter().any(fits) {
             errors.push(format!("{}: a {}x{} map is too small for any shape it draws", r.name, r.size.0, r.size.1));
         }
@@ -464,6 +490,13 @@ mod tests {
             (swap(r#"name: "big""#, r#"name: "cell""#), "cell"),
             (swap("Mouth(3)", "Mouth(0)"), "Mouth"),
             (swap("patience: 300", "patience: 0"), "patience"),
+            (swap(r#"("big", 5), ("cell", 2)"#, r#"("big", 3000000000), ("cell", 3000000000)"#), "weights"),
+            (swap("districts_per_10k: 7", "districts_per_10k: 4000000000"), "districts_per_10k"),
+            (swap("w: (12, 18)", "w: (12, 2000000000)"), "big"),
+            (swap("size: (84, 48)", "size: (84, 2000000000)"), "size"),
+            // A rectangle is never turned, so one wider than the map does not fit it.
+            (swap("w: (12, 18), h: (9, 12)", "w: (60, 60), h: (5, 5)").replacen("size: (84, 48)", "size: (48, 84)", 1), "big"),
+            (swap("loops: 1, dead_end_pct", "loops: 7, dead_end_pct"), "loops"),
         ] {
             let found = problems(&text);
             assert!(found.iter().any(|p| p.contains(says)), "wanted a problem naming {says:?}, got {found:?}");

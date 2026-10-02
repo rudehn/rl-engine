@@ -214,7 +214,7 @@ fn main() -> AppExit {
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         [] => {}
         ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
-        ["--deck", n, "--seed", s] => {
+        ["--deck", n, "--seed", s] | ["--seed", s, "--deck", n] => {
             let deck = n.parse().expect("--deck takes a number");
             let foundry = foundry::decks::Foundry::new(RunSeed(s.parse().expect("--seed takes a number")));
             match foundry.render(foundry::decks::map_of(deck)) {

@@ -36,6 +36,31 @@ pub(crate) fn steps_from(width: i32, height: i32, open: impl Fn(Point) -> bool, 
     steps
 }
 
+/// Orthogonal steps from `from` to `to` over open cells, or [`UNREACHED`].
+/// The flood stops where it arrives, so asking about two cells close
+/// together costs what lies between them and not the whole map.
+pub(crate) fn steps_between(width: i32, height: i32, open: impl Fn(Point) -> bool, from: Point, to: Point) -> u32 {
+    let mut steps = Grid::filled(width, height, UNREACHED);
+    if !open(from) || !steps.set(from, 0) {
+        return UNREACHED;
+    }
+    let mut queue = VecDeque::from([from]);
+    while let Some(p) = queue.pop_front() {
+        let here = steps.get(p).copied().expect("queued cells are on the grid");
+        if p == to {
+            return here;
+        }
+        for d in Direction::CARDINALS {
+            let n = p + d.offset();
+            if steps.get(n).copied() == Some(UNREACHED) && open(n) {
+                steps.set(n, here + 1);
+                queue.push_back(n);
+            }
+        }
+    }
+    UNREACHED
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,5 +81,14 @@ mod tests {
         let d = steps_from(7, 1, |_| true, [Point::new(0, 0), Point::new(6, 0)]);
         assert_eq!(*d.get(Point::new(3, 0)).unwrap(), 3);
         assert_eq!(*d.get(Point::new(5, 0)).unwrap(), 1);
+    }
+
+    #[test]
+    fn steps_between_two_cells_are_the_flood_s_count_and_unreached_across_a_wall() {
+        let open = |p: Point| !(p.x == 2 && p.y < 2);
+        assert_eq!(steps_between(5, 3, open, Point::new(0, 0), Point::new(3, 0)), 7);
+        assert_eq!(steps_between(5, 3, open, Point::new(0, 0), Point::new(0, 0)), 0);
+        assert_eq!(steps_between(5, 3, |p| p.x != 2, Point::new(0, 0), Point::new(4, 0)), UNREACHED);
+        assert_eq!(steps_between(5, 3, open, Point::new(2, 0), Point::new(0, 0)), UNREACHED, "from a cell that is not open");
     }
 }

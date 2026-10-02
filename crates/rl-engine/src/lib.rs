@@ -153,6 +153,9 @@ impl PluginGroup for RoguelikePlugins {
 /// fn rules(_: Registry<StatDef>, _: NameRef<StatDef>, _: Names, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
 /// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
 /// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: OverworldPlugin, _: Saves) {}
+/// // Bevy's own names a game uses beside the engine's: the shape a mesh
+/// // is made from, which a grown place's shapes must not shadow.
+/// fn bevy_own(_: Rectangle, _: Circle) {}
 /// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
 /// ```
 pub mod prelude {

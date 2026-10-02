@@ -127,7 +127,10 @@ pub trait Shape: Send + Sync {
     fn join(&self) -> Join;
 
     /// Whether a piece of this shape is somewhere a prefab may be stamped.
-    /// A passage is not: it emits no `Room`, so nothing furnishes it.
+    /// A passage is not: it emits no `Room`, so nothing furnishes it, and
+    /// since nothing can be put in it, one left with a single way in is
+    /// taken back out of the place. A shape meant to be a blind corridor
+    /// says it is a room.
     fn is_room(&self) -> bool {
         true
     }
@@ -289,8 +292,9 @@ pub struct Opening {
 /// where its body and the ring one cell round it are solid, which leaves
 /// exactly one wall between two areas and never none.
 ///
-/// Every number is a share or a density, never a count of cells of map, so
-/// one recipe grows a small place and a large one. A passage left with
+/// How much is grown and how many districts there are is a share and a
+/// density, never a count of cells of map, so one pass grows a small place
+/// and a large one. A passage left with
 /// one way in is turned back to what it was carved from, since nothing
 /// is ever put in a passage and a dead end should be somewhere. It fails
 /// if the open share is not reached before `patience` attempts in a row
@@ -359,13 +363,17 @@ impl Accrete {
         if self.shapes.is_empty() || self.districts.is_empty() {
             return Err(Self::err("it has no shapes or no districts to draw from"));
         }
-        let weighs = |rows: &[(usize, u32)], len: usize| rows.iter().all(|(i, _)| *i < len) && rows.iter().any(|(_, w)| *w > 0);
+        // In range, and adding up to more than nought without overflowing:
+        // exactly what `draw_weighted` needs to hand back a row.
+        let weighs = |rows: &[(usize, u32)], len: usize| {
+            rows.iter().all(|(i, _)| *i < len) && rows.iter().try_fold(0u32, |sum, (_, w)| sum.checked_add(*w)).is_some_and(|total| total > 0)
+        };
         if !weighs(&self.mix, self.districts.len()) {
-            return Err(Self::err("its mix names no district with a weight"));
+            return Err(Self::err("its mix names no district with a weight, or the weights overflow a u32"));
         }
         for d in &self.districts {
             if !weighs(&d.shapes, self.shapes.len()) {
-                return Err(Self::err(format!("district {:?} names no shape with a weight", d.name)));
+                return Err(Self::err(format!("district {:?} names no shape with a weight, or the weights overflow a u32", d.name)));
             }
         }
         Ok(())
@@ -472,7 +480,7 @@ impl Accrete {
 }
 
 /// How many times growth is taken up again after passages that led
-/// nowhere were turned back to rock. Each round only grows from what the
+/// nowhere were taken back. Each round only grows from what the
 /// last left standing, so a few are enough to refill what was lost.
 const ROUNDS: u32 = 8;
 
@@ -494,7 +502,10 @@ impl<C: BuildContext> Pass<C> for Accrete {
         let total = (bounds.width * bounds.height) as u32;
         let point_inside = |rng: &mut dyn RngCore| Point::new(rng.random_range(inner.x..inner.right()), rng.random_range(inner.y..inner.bottom()));
 
-        let seed_count = ((total * self.districts_per_10k + 5_000) / 10_000).max(1);
+        let seed_count = ((u64::from(total) * u64::from(self.districts_per_10k) + 5_000) / 10_000).max(1);
+        if seed_count > u64::from(total) {
+            return Err(Self::err(format!("{} district seeds per ten thousand cells is more seeds than the map has cells", self.districts_per_10k)));
+        }
         let mut seeds = Vec::new();
         for _ in 0..seed_count {
             let at = point_inside(ctx.rng());
@@ -557,19 +568,31 @@ impl<C: BuildContext> Pass<C> for Accrete {
                 let mut under = vec![ctx.terrain().get(site).expect("a site is on the map")];
                 ctx.terrain_mut().set(site, if join == Join::Door { self.door } else { self.floor });
                 if let Join::Mouth(width) = join {
-                    // Widen along the wall while the same two areas face each other across it.
-                    for side in facing.perpendicular() {
-                        let mut q = site + side.offset();
-                        while cells.len() < width as usize
-                            && solid(ctx.terrain(), &walkable, q)
-                            && grown.owner.get(q - facing.offset()).copied() == Some(from as u32 + 1)
-                            && grown.owner.get(q + facing.offset()).copied() == Some(to as u32 + 1)
-                        {
-                            under.push(ctx.terrain().get(q).expect("solid, so on the map"));
-                            ctx.terrain_mut().set(q, self.floor);
-                            cells.push(q);
-                            q += side.offset();
+                    // Widen along the wall while the same two areas face each
+                    // other across it, a cell to one side and then the other,
+                    // so the mouth is centred on the join where both allow.
+                    let sides = facing.perpendicular();
+                    let mut next = [site + sides[0].offset(), site + sides[1].offset()];
+                    let mut shut = [false, false];
+                    let mut turn = 0;
+                    while cells.len() < width as usize && !(shut[0] && shut[1]) {
+                        let k = turn % 2;
+                        turn += 1;
+                        if shut[k] {
+                            continue;
                         }
+                        let q = next[k];
+                        let across = solid(ctx.terrain(), &walkable, q)
+                            && grown.owner.get(q - facing.offset()).copied() == Some(from as u32 + 1)
+                            && grown.owner.get(q + facing.offset()).copied() == Some(to as u32 + 1);
+                        if !across {
+                            shut[k] = true;
+                            continue;
+                        }
+                        under.push(ctx.terrain().get(q).expect("solid, so on the map"));
+                        ctx.terrain_mut().set(q, self.floor);
+                        cells.push(q);
+                        next[k] = q + sides[k].offset();
                     }
                 }
                 grown.open += cells.len() as u32;
@@ -583,7 +606,11 @@ impl<C: BuildContext> Pass<C> for Accrete {
         }
 
         if grown.open * 100 < self.open_pct * total {
-            return Err(Self::err(format!("grew to {}% open of the {}% asked for", grown.open * 100 / total, self.open_pct)));
+            return Err(Self::err(format!(
+                "grew to {}% open of the {}% asked for, once every passage with one way in was taken back",
+                grown.open * 100 / total,
+                self.open_pct
+            )));
         }
         for (area, room) in grown.areas.into_iter().zip(grown.rooms) {
             if room {
@@ -860,7 +887,7 @@ pub(crate) mod tests {
         assert_eq!(build(empty_district, &rig, 84, 48, 1).unwrap_err().pass, "accrete");
     }
 
-    /// A passage holds nothing, so one that leads nowhere is rock again
+    /// A passage holds nothing, so one that leads nowhere is taken back
     /// before the place is handed on: a dead end is always a room.
     #[test]
     fn no_passage_is_left_leading_nowhere() {
@@ -876,5 +903,47 @@ pub(crate) mod tests {
                 }
             }
         }
+    }
+
+    /// Weights too large to add up are an error like any other list that
+    /// cannot be drawn from, never a panic part-way through growth.
+    #[test]
+    fn weights_that_overflow_are_an_error_by_name() {
+        let rig = rig();
+        let mut heavy = accrete(&rig, 3);
+        heavy.districts[0].shapes = vec![(0, 3_000_000_000), (1, 3_000_000_000)];
+        assert_eq!(build(heavy, &rig, 84, 48, 1).expect_err("refused").pass, "accrete");
+        let mut heavy_mix = accrete(&rig, 3);
+        heavy_mix.mix = vec![(0, 3_000_000_000), (1, 3_000_000_000)];
+        assert_eq!(build(heavy_mix, &rig, 84, 48, 1).expect_err("refused").pass, "accrete");
+        let mut dense = accrete(&rig, 3);
+        dense.districts_per_10k = u32::MAX;
+        assert_eq!(build(dense, &rig, 84, 48, 1).expect_err("refused").pass, "accrete");
+    }
+
+    /// A mouth widens to both sides of where the pieces met before it goes
+    /// two cells to one: where a three-wide mouth sits all to one side,
+    /// the cell on the other side could not have been opened.
+    #[test]
+    fn a_mouth_is_centred_on_the_join_wherever_both_sides_allow() {
+        let rig = rig();
+        let mut wide = 0;
+        for s in 0..120 {
+            let ctx = build(accrete(&rig, 3), &rig, 84, 48, s).unwrap();
+            let areas: Vec<&Area> = ctx.outputs().iter::<Area>().collect();
+            for o in ctx.outputs().iter::<Opening>().filter(|o| o.cells.len() == 3) {
+                wide += 1;
+                let site = o.cells[0];
+                for side in o.facing.perpendicular() {
+                    let beside = site + side.offset();
+                    if !o.cells.contains(&beside) {
+                        let could =
+                            areas[o.areas.0].cells.contains(&(beside - o.facing.offset())) && areas[o.areas.1].cells.contains(&(beside + o.facing.offset()));
+                        assert!(!could, "seed {s}: the mouth at {site:?} left {beside:?} shut and went two the other way");
+                    }
+                }
+            }
+        }
+        assert!(wide > 0, "some mouth was three wide");
     }
 }

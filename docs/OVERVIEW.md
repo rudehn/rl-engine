@@ -59,9 +59,9 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
   A `Shape` draws a `Piece`, its floor and the sites where it may be joined; the engine ships `Rectangle`, `Cross` and `Passage`, and a game writes its own.
   A `District` is a region's weighted taste in shapes, scattered by density, so one place has regions that differ with no wall between them.
   A `Join` is a door, an arch or a mouth several cells wide.
-  A passage left with one way in is turned back to rock, and growth fails if the open share it was asked for is not reached.
+  A passage left with one way in is turned back into what it was carved from, and growth fails if the open share it was asked for is not reached.
   It emits an `Area` per piece, an `Opening` per join, and a `Room` per area whose shape draws rooms, so the stamp passes fill a grown place as they fill any other.
-- `OpenLoops` cuts a door through the wall between two areas that touch but are far apart on foot, longest detour first.
+- `OpenLoops` cuts a door through the wall between two areas that touch but are far apart on foot, longest detour first, one door a pair at most.
 - `Survey` measures a grown place into a `Surveyed`: per area its openings, whether it is a dead end, a chokepoint or a junction, and its seclusion from the direct route; per place its loops, its open share and the length of that route.
   `Require` fails a place that falls short of the bounds it is given.
 - `Chain::run_retrying` runs a chain over a fresh context again from the next attempt when a pass fails; an attempt is an index into every pass's stream, so one seed builds one place however many attempts it took.

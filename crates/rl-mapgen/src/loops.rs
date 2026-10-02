@@ -1,17 +1,17 @@
 //! Cutting the longest detours through, so there is more than one way
 //! round.
 
-use std::collections::BTreeMap;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rand::Rng;
-use rl_core::geometry::manhattan;
 use rl_core::{Direction, Grid, Grid2D, Point};
-use rl_grid::{Terrain, TileId};
+use rl_grid::{BitGrid, Terrain, TileId};
 
 use crate::accrete::{Area, Join, Opening};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
-use crate::walk::{UNREACHED, steps_from};
+use crate::walk::{UNREACHED, steps_between};
 
 /// Opens a door in the wall between two areas that touch but are far
 /// apart on foot, longest detour first.
@@ -20,7 +20,8 @@ use crate::walk::{UNREACHED, steps_from};
 /// wall cell with the floor of two different areas on opposite sides and
 /// solid wall on the other two, not beside an opening already there, so a
 /// loop never widens a way through. One candidate is drawn per pair of
-/// areas. The detour is the walk between the two floor cells as the place
+/// areas, whichever side of a wall each lies on, so no pair gains two
+/// doors. The detour is the walk between the two floor cells as the place
 /// stands, measured again after each door, since one door shortens the
 /// others.
 ///
@@ -61,60 +62,106 @@ impl<C: BuildContext> Pass<C> for OpenLoops {
                 owner.set(*c, a.index as u32 + 1);
             }
         }
-        let joined: Vec<(usize, usize)> = ctx.outputs().iter::<Opening>().map(|o| (o.areas.0.min(o.areas.1), o.areas.0.max(o.areas.1))).collect();
-        let taken: Vec<Point> = ctx.outputs().iter::<Opening>().flat_map(|o| o.cells.iter().copied()).collect();
+        // A pair is the two areas whichever is named first: a piece that
+        // wraps another's corner meets it along two walls, and is still
+        // one pair. A `BTreeSet` and a `BTreeMap` so both are walked in
+        // one order on every run.
+        let pair = |a: usize, b: usize| (a.min(b), a.max(b));
+        let joined: BTreeSet<(usize, usize)> = ctx.outputs().iter::<Opening>().map(|o| pair(o.areas.0, o.areas.1)).collect();
+        // Every opening's cells and the cells beside them: where a door
+        // would widen a way through that is already there.
+        let mut barred = BitGrid::new(w, h);
+        for o in ctx.outputs().iter::<Opening>() {
+            for c in &o.cells {
+                bar(&mut barred, *c);
+            }
+        }
 
-        // Every wall cell between two areas not already joined, by pair. A
-        // `BTreeMap` so the pairs are walked in one order on every run.
-        let mut by_pair: BTreeMap<(usize, usize), Vec<(Point, Direction)>> = BTreeMap::new();
+        // Every wall cell between two areas not already joined, by pair.
+        let mut by_pair: BTreeMap<(usize, usize), Vec<Candidate>> = BTreeMap::new();
         for p in bounds.inflate(-1).cells() {
             let is_solid = |q: Point| !walkable_at(ctx.terrain(), &walkable, q);
-            if !is_solid(p) || taken.iter().any(|t| manhattan(*t, p) <= 1) {
+            if !is_solid(p) || barred.contains(p) {
                 continue;
             }
-            for d in [Direction::East, Direction::South] {
-                let (a, b) = (owner.get(p - d.offset()).copied().unwrap_or(0), owner.get(p + d.offset()).copied().unwrap_or(0));
-                let walled = d.perpendicular().iter().all(|s| is_solid(p + s.offset()));
+            for facing in [Direction::East, Direction::South] {
+                let (a, b) = (owner.get(p - facing.offset()).copied().unwrap_or(0), owner.get(p + facing.offset()).copied().unwrap_or(0));
+                let walled = facing.perpendicular().iter().all(|s| is_solid(p + s.offset()));
                 if a != 0 && b != 0 && a != b && walled {
-                    let (a, b) = (a as usize - 1, b as usize - 1);
-                    if !joined.contains(&(a.min(b), a.max(b))) {
-                        by_pair.entry((a, b)).or_default().push((p, d));
+                    let areas = (a as usize - 1, b as usize - 1);
+                    if !joined.contains(&pair(areas.0, areas.1)) {
+                        by_pair.entry(pair(areas.0, areas.1)).or_default().push(Candidate { at: p, facing, areas, detour: 0 });
                     }
                 }
             }
         }
-        let mut candidates: Vec<((usize, usize), Point, Direction)> = Vec::new();
-        for (pair, cells) in by_pair {
-            let (p, d) = cells[ctx.rng().random_range(0..cells.len())];
-            candidates.push((pair, p, d));
+        let mut candidates: Vec<Candidate> = Vec::new();
+        for (_, cells) in by_pair {
+            candidates.push(cells[ctx.rng().random_range(0..cells.len())]);
         }
 
-        let mut opened: Vec<Point> = Vec::new();
-        while (opened.len() as u32) < self.max {
-            let open = |q: Point| walkable_at(ctx.terrain(), &walkable, q);
-            // The first of equals, so a tie goes to the earlier pair.
-            let mut best: Option<(u32, usize)> = None;
-            for (i, (_, p, d)) in candidates.iter().enumerate() {
-                if opened.iter().any(|o| manhattan(*o, *p) <= 1) {
-                    continue;
+        // The walk between a candidate's two sides as the place stands. A
+        // side a later pass has built over is no way through at all.
+        let measure = |terrain: &Terrain, c: &Candidate| {
+            let open = |q: Point| walkable_at(terrain, &walkable, q);
+            steps_between(w, h, open, c.at - c.facing.offset(), c.at + c.facing.offset())
+        };
+        for c in &mut candidates {
+            c.detour = measure(ctx.terrain(), c);
+        }
+        candidates.retain(|c| c.detour != UNREACHED);
+
+        let mut opened = 0;
+        while opened < self.max {
+            candidates.retain(|c| !barred.contains(c.at));
+            // A door only ever shortens a walk, so a detour measured before
+            // the last door is a ceiling on what it is now. Longest ceiling
+            // first, each measured again, until the longest found is no
+            // shorter than every ceiling left: that one is the longest, and
+            // most candidates were never measured twice. `sort_by_key` is
+            // stable, so equal ceilings keep the order of their pairs.
+            candidates.sort_by_key(|c| Reverse(c.detour));
+            let mut best: Option<usize> = None;
+            for i in 0..candidates.len() {
+                if best.is_some_and(|b| candidates[b].detour >= candidates[i].detour) {
+                    break;
                 }
-                let steps = steps_from(w, h, open, [*p - d.offset()]);
-                let detour = steps.get(*p + d.offset()).copied().unwrap_or(UNREACHED);
-                if best.is_none_or(|(b, _)| detour > b) {
-                    best = Some((detour, i));
+                candidates[i].detour = measure(ctx.terrain(), &candidates[i]);
+                if best.is_none_or(|b| candidates[i].detour > candidates[b].detour) {
+                    best = Some(i);
                 }
             }
-            let Some((detour, i)) = best else { break };
-            if detour < self.min_detour {
+            let Some(best) = best else { break };
+            if candidates[best].detour < self.min_detour {
                 break;
             }
-            let (areas, p, facing) = candidates.remove(i);
-            ctx.terrain_mut().set(p, self.door);
-            ctx.emit(Opening { cells: vec![p], facing, areas, join: Join::Door });
-            opened.push(p);
+            let door = candidates.remove(best);
+            ctx.terrain_mut().set(door.at, self.door);
+            bar(&mut barred, door.at);
+            ctx.emit(Opening { cells: vec![door.at], facing: door.facing, areas: door.areas, join: Join::Door });
+            opened += 1;
         }
         Ok(())
     }
+}
+
+/// Bars `p` and the four cells beside it from becoming a door.
+fn bar(barred: &mut BitGrid, p: Point) {
+    barred.insert(p);
+    for d in Direction::CARDINALS {
+        barred.insert(p + d.offset());
+    }
+}
+
+/// A wall cell that could become a door: where, which way through, the
+/// area behind it and the area ahead, and the walk a door would save, as
+/// last measured.
+#[derive(Debug, Clone, Copy)]
+struct Candidate {
+    at: Point,
+    facing: Direction,
+    areas: (usize, usize),
+    detour: u32,
 }
 
 #[cfg(test)]
@@ -123,6 +170,7 @@ mod tests {
     use crate::accrete::tests::{accrete, rig, walkable};
     use crate::chain::Chain;
     use crate::context::BaseContext;
+    use crate::walk::steps_from;
     use rl_core::RunSeed;
 
     fn grown(seed: u64, w: i32, h: i32, loops: Option<OpenLoops>) -> BaseContext {
@@ -199,5 +247,40 @@ mod tests {
         let tree = grown(3, 84, 48, None);
         let none = grown(3, 84, 48, Some(OpenLoops { door: rig().door, min_detour: 100_000, max: 6 }));
         assert_eq!(tree.terrain(), none.terrain());
+    }
+
+    /// One way through per pair of areas, whichever side of the wall each
+    /// lies on: a piece that wraps another's corner touches it along two
+    /// walls, and still gets one door.
+    #[test]
+    fn no_pair_of_areas_is_joined_twice() {
+        let mut bent = 0;
+        for (w, h, seeds) in [(84, 48, 0..200u64), (160, 90, 0..12)] {
+            for s in seeds {
+                let ctx = grown(s, w, h, Some(OpenLoops { door: rig().door, min_detour: 4, max: 40 }));
+                let mut pairs: Vec<(usize, usize)> = ctx.outputs().iter::<Opening>().map(|o| (o.areas.0.min(o.areas.1), o.areas.0.max(o.areas.1))).collect();
+                let all = pairs.len();
+                pairs.sort();
+                pairs.dedup();
+                assert_eq!(pairs.len(), all, "{w}x{h} seed {s}: a pair of areas has two ways through");
+                bent += 1;
+            }
+        }
+        assert!(bent > 0);
+    }
+
+    /// A door is cut from an area into the one beyond it: its facing leads
+    /// from the first of its areas to the second, as a join's does.
+    #[test]
+    fn a_loop_faces_from_its_first_area_into_its_second() {
+        for s in 0..40 {
+            let ctx = grown(s, 84, 48, Some(pass()));
+            let areas: Vec<&Area> = ctx.outputs().iter::<Area>().collect();
+            for o in ctx.outputs().iter::<Opening>() {
+                let at = o.cells[0];
+                assert!(areas[o.areas.0].cells.contains(&(at - o.facing.offset())), "seed {s}: {at:?}");
+                assert!(areas[o.areas.1].cells.contains(&(at + o.facing.offset())), "seed {s}: {at:?}");
+            }
+        }
     }
 }

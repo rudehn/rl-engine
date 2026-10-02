@@ -7,7 +7,7 @@
             crates/rl-mapgen/src/chain.rs
             crates/rl-rules/src/layout.rs
             crates/rl-bevy/src/layout.rs
-     fingerprint: 304f9b0f -->
+     fingerprint: 8b64d613 -->
 
 # Layout
 
@@ -29,19 +29,20 @@ A `Shape` draws a `Piece` from the pass's stream: the cells of its floor, relati
 A site is a wall cell against the outside of the body that touches exactly one body cell, with the direction that leads out through it; a cell in a concave corner touches two and is not one.
 A shape also has a name, a `Join`, and `is_room`, which says whether a prefab may be stamped in what it draws.
 The engine ships `Rectangle`, `Cross`, two bars overlapped on their centers, and `Passage`, a run of floor with a chance of one bend, which is the one that is not a room.
-`Join` is `Door`, one cell of the door tile, `Arch`, one cell of floor, or `Mouth(n)`, floor up to `n` cells wide along the wall the two pieces share.
+None of the three is in a prelude, since Bevy has a `Rectangle` of its own; a game names them from `rl_mapgen::accrete` where it builds a pass.
+`Join` is `Door`, one cell of the door tile, `Arch`, one cell of floor, or `Mouth(n)`, floor up to `n` cells wide along the wall the two pieces share, widened to either side of where they met in turn.
 A `District` is a name and a weighted list of shapes.
 `Accrete` scatters district seeds, as many as `districts_per_10k` gives for the map's area and never fewer than one, each drawn a district from `mix`, and a cell belongs to its nearest seed.
 It lays a first piece anywhere it fits, then draws a site from the frontier, draws a shape from the district that site is in, and places the piece so one of its own sites is that same cell.
 A piece fits where its body and the ring one cell round it are solid and inside the map's border, which leaves exactly one wall between any two areas.
 Growth stops when `open_pct` of the map is open, and fails when `patience` attempts in a row have fitted nothing.
-Before it hands the place on it turns every passage with one way in back into what it was carved from, and takes growth up again to refill the share.
+Before it hands the place on it turns every area that is not a room and has one way in back into what it was carved from, and takes growth up again to refill the share, so a recipe that draws mostly passages may never reach it.
 It emits an `Area` per piece, with its index, the names of its shape and its district, its cells, their bounds and the largest rectangle inside them, and an `Opening` per join, with its cells, its facing, its two areas and its `Join`.
 It also emits a `Room` holding that inner rectangle for every area whose shape is a room, which is what the stamp passes read.
 `OpenLoops` takes each pair of areas that touch across a wall and are not joined, draws one wall cell between them, and opens the one whose two sides are farthest apart on foot as a door, again and again, until the longest detour is under `min_detour` or `max` doors are open.
-It measures again after each door, never opens beside a way through that is already there, and emits an `Opening` for each.
+A door only shortens a walk, so after each it measures again only the candidates whose last measure could still be the longest; it never opens beside a way through that is already there, and emits an `Opening` for each.
 `Survey` runs in `Exits`, after the start and the exit, and emits one `Surveyed`.
-It holds an `AreaFacts` per area: how many openings it has, whether it is a `dead_end` with one, a `junction` with three or more, a `chokepoint` whose removal parts two others, and its `seclusion`, the steps from its nearest opening to the shortest route from the start to the exit.
+It holds an `AreaFacts` per area: how many openings it has, whether it is a `dead_end` with one, a `junction` with three or more, a `chokepoint` whose removal parts two others, and its `seclusion`, the steps from its nearest opening to the shortest route from the start to the exit, `u32::MAX` for an area a later pass walled off from it.
 For the place it holds `loops`, openings less areas plus one, `open_pct`, and `route`, the length of that shortest route, `None` where there is no exit.
 `Require` runs in `Finish` and fails with the first bound the survey misses: the open share, the fewest areas drawn by a named shape, the fewest loops, the largest share of dead ends, the shortest route.
 `Chain::run_retrying` takes a function that makes a fresh context, a seed and a number of attempts, and derives every pass's stream at the attempt's index, so `Chain::run` is attempt nought.
@@ -100,6 +101,9 @@ A game's place builder is a chain with the recipe's passes at either end of it, 
         let rooms = StampEachRoom { name: "furnish", choices: self.rooms()?, orient: Orient::TurnedOrMirrored };
         // The survey once the ways in and out are known, and what the
         // recipe requires last: a deck that falls short is built again.
+        // The phases put the survey before the furnishing, so the open
+        // share it is held to is the deck's before its machinery; a room
+        // piece keeps floor all round it, so the route is the same after.
         let make = || BaseContext::blank(width, height, self.tiles.clone(), self.hull);
         chain.then(start).then(FarthestExit).then(Survey).then(rooms).then(grown.require).run_retrying(make, seed, ATTEMPTS)
     }
@@ -110,7 +114,8 @@ A game's place builder is a chain with the recipe's passes at either end of it, 
 The engine decides how a place grows: that a piece is attached and never dropped, that one wall stands between two areas, that a passage leading nowhere is taken back, which detour is cut first, and what is measured.
 It decides that one seed builds one place however many attempts that took, because an attempt is only an index into each pass's stream.
 The game decides everything a player would call the place: which shapes exist and how large, which districts favor which, how full the map is grown, how many loops, and the bounds a place must meet.
-Every number in a recipe is a share or a density and never a count of cells of map, so a recipe grows a small map and a large one, and a place's size is one field.
+How full a place is grown and how many districts it has are a share and a density and never a count of cells of map, so a recipe grows a small map and a large one, and a place's size is one field.
+The loops opened and the bounds required are plain counts, so a recipe moved to a much larger map wants those raised with it.
 A shape's name means nothing to the engine.
 There is no enumeration of what an area is: an area carries the name of the shape that drew it, and a requirement asks for areas by that name, so a hall is a rectangle a game's file called one.
 A district builds nothing and no wall follows its edge; it weights a draw, and a recipe with one district is the generator with none.

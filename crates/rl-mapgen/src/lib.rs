@@ -43,7 +43,10 @@ pub use survey::{AreaFacts, Require, Survey, Surveyed};
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::accrete::{Accrete, Cross, District, Join, Opening, Passage, Piece, Rectangle, Shape};
+    // The pass and the trait only. What a game builds one from, `Rectangle`
+    // above all, is named where it is built: Bevy's prelude has a
+    // `Rectangle` of its own, and `rl-rules` an `Area`.
+    pub use crate::accrete::{Accrete, Shape};
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
     pub use crate::context::{BaseContext, BuildContext, Outputs};
     pub use crate::dungeon;

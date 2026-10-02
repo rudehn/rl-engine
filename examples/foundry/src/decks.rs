@@ -200,6 +200,9 @@ impl Foundry {
         let rooms = StampEachRoom { name: "furnish", choices: self.rooms()?, orient: Orient::TurnedOrMirrored };
         // The survey once the ways in and out are known, and what the
         // recipe requires last: a deck that falls short is built again.
+        // The phases put the survey before the furnishing, so the open
+        // share it is held to is the deck's before its machinery; a room
+        // piece keeps floor all round it, so the route is the same after.
         let make = || BaseContext::blank(width, height, self.tiles.clone(), self.hull);
         chain.then(start).then(FarthestExit).then(Survey).then(rooms).then(grown.require).run_retrying(make, seed, ATTEMPTS)
     }

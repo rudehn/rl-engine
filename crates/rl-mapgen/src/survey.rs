@@ -29,7 +29,9 @@ pub struct AreaFacts {
     /// Orthogonal steps from its nearest opening to the nearest cell of
     /// the shortest route from the start to the exit, or to the start
     /// where there is no exit. What is far from the direct way is what a
-    /// player chose to go and find.
+    /// player chose to go and find. `u32::MAX` for an area the route
+    /// cannot be walked to from, which a place grown and surveyed in one
+    /// chain never has, but one a later pass walled off does.
     pub seclusion: u32,
 }
 
@@ -97,29 +99,14 @@ impl<C: BuildContext> Pass<C> for Survey {
         let off_route = steps_from(w, h, open, route_cells);
 
         let joins = |o: &Opening, i: usize| o.areas.0 == i || o.areas.1 == i;
+        let chokepoints = articulations(areas.len(), &openings);
         let facts = (0..areas.len())
             .map(|i| {
                 let doors: Vec<Point> = openings.iter().filter(|o| joins(o, i)).flat_map(|o| o.cells.iter().copied()).collect();
                 let count = openings.iter().filter(|o| joins(o, i)).count() as u32;
                 let from: &[Point] = if doors.is_empty() { &areas[i].cells } else { &doors };
                 let seclusion = from.iter().map(|p| off_route.get(*p).copied().unwrap_or(UNREACHED)).min().unwrap_or(UNREACHED);
-                // Without area i, can every other still be reached from the first of them?
-                let others: Vec<usize> = (0..areas.len()).filter(|j| *j != i).collect();
-                let mut seen = vec![false; areas.len()];
-                let mut stack: Vec<usize> = others.first().copied().into_iter().collect();
-                if let Some(first) = others.first() {
-                    seen[*first] = true;
-                }
-                while let Some(a) = stack.pop() {
-                    for o in openings.iter().filter(|o| joins(o, a)) {
-                        let n = if o.areas.0 == a { o.areas.1 } else { o.areas.0 };
-                        if n != i && !seen[n] {
-                            seen[n] = true;
-                            stack.push(n);
-                        }
-                    }
-                }
-                let chokepoint = others.iter().any(|j| !seen[*j]);
+                let chokepoint = chokepoints[i];
                 AreaFacts { openings: count, dead_end: count == 1, chokepoint, junction: count >= 3, seclusion }
             })
             .collect();
@@ -130,6 +117,55 @@ impl<C: BuildContext> Pass<C> for Survey {
         ctx.emit(surveyed);
         Ok(())
     }
+}
+
+/// Which of `count` areas, joined by `openings`, part two others when
+/// taken away: one depth-first walk, numbering each area as it is reached
+/// and keeping the earliest number reachable from below it without going
+/// back up through it. An area some child cannot get above is the only
+/// way to that child.
+fn articulations(count: usize, openings: &[&Opening]) -> Vec<bool> {
+    const UNSEEN: usize = usize::MAX;
+    let mut beside: Vec<Vec<usize>> = vec![Vec::new(); count];
+    for o in openings {
+        beside[o.areas.0].push(o.areas.1);
+        beside[o.areas.1].push(o.areas.0);
+    }
+    let (mut found, mut reached, mut lowest, mut clock) = (vec![false; count], vec![UNSEEN; count], vec![0; count], 0);
+    for root in 0..count {
+        if reached[root] != UNSEEN {
+            continue;
+        }
+        reached[root] = clock;
+        lowest[root] = clock;
+        clock += 1;
+        let mut children_of_root = 0;
+        // Each entry: an area, the area it was reached from, and how many
+        // of its neighbours have been looked at.
+        let mut stack = vec![(root, UNSEEN, 0)];
+        while let Some(&(area, from, looked)) = stack.last() {
+            if let Some(&n) = beside[area].get(looked) {
+                stack.last_mut().expect("just read").2 += 1;
+                if reached[n] == UNSEEN {
+                    reached[n] = clock;
+                    lowest[n] = clock;
+                    clock += 1;
+                    children_of_root += usize::from(area == root);
+                    stack.push((n, area, 0));
+                } else if n != from {
+                    lowest[area] = lowest[area].min(reached[n]);
+                }
+            } else {
+                stack.pop();
+                if let Some(&(up, _, _)) = stack.last() {
+                    lowest[up] = lowest[up].min(lowest[area]);
+                    found[up] |= up != root && lowest[area] >= reached[up];
+                }
+            }
+        }
+        found[root] = children_of_root > 1;
+    }
+    found
 }
 
 /// Fails the build when the place falls short of what its recipe asked

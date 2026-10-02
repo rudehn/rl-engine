@@ -84,7 +84,7 @@ The first decks printed had service passages ending at walls all over them, and 
 Trimming before the place is handed on, and not as a later pass, is what keeps an area's index its place in the list for everything that reads it.
 A game that wants a blind corridor draws it as a shape that is a room.
 
-Every number above is a share or a count per area of map, never a count of cells of map: the target is a share, and the allowed run of failures is the recipe's.
+How full the place is grown and how many districts it has are a share and a density, never a count of cells of map.
 The same recipe therefore builds a small place and a large one, and the tests in section 7 build both.
 
 ### 2.3 Districts
@@ -106,7 +106,9 @@ Accretion alone builds a tree: one way to anywhere.
 After growth, every wall cell with open floor on two opposite sides, belonging to two different areas, is a candidate.
 Its detour is the walking distance between those two floor cells as the place stands.
 The candidate with the longest detour is opened, as a door, while that detour is at least the recipe's threshold; distances are measured again after each, since one opening shortens others.
-The recipe also caps how many are opened.
+The recipe also caps how many are opened, and no pair of areas gains two.
+The threshold, the cap and the bounds a recipe requires are plain counts and not shares, so a recipe moved to a much larger map wants them raised with it.
+A door only shortens a walk, so a detour measured before the last door is a ceiling on what it is now, and only the candidates whose ceiling could still be the longest are measured again; measuring every one after every door took seconds on a map of four hundred cells a side.
 
 Longest first is what makes a loop worth having: an opening that saves three steps is a second door, and one that saves sixty is another way round.
 
@@ -173,7 +175,7 @@ A layout file holds the shapes, the districts and the recipes:
 - a district: a name and `(shape, weight)` rows;
 - a recipe: a name, a width and a height, the target open share, the run of failed attempts allowed, the district density, `(district, weight)` rows, the loop threshold and cap, and its requirements.
 
-Checked at load: no name is used twice, every name resolves, every list has a weight more than nought, every range starts at one or more and has its smallest no larger than its largest, a cross's bars are thinner than they are long, a mouth has a width, every share is within a hundred, patience is more than nought, the requirements' shape names are shapes some district of the recipe can draw, and the recipe's size holds some shape it draws and every shape it requires.
+Checked at load: no name is used twice, every name resolves, every list has a weight more than nought, every range starts at one or more and has its smallest no larger than its largest, a cross's bars are thinner than they are long, a mouth has a width, every share is within a hundred, patience is more than nought, the requirements' shape names are shapes some district of the recipe can draw, and the recipe's size holds some shape it draws and every shape it requires, a rectangle the way up it is drawn, no weights overflow, no size, range or density is past any map, and no more loops are required than may be opened.
 Whether a recipe's requirements can be met at all is not checked at load, since only growing a place can say; a game's test over a span of seeds is what finds a recipe that asks too much.
 The file carries the top-of-file comment listing every field and every option.
 
