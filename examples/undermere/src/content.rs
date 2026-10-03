@@ -26,8 +26,9 @@ const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
 /// One brightness rather than a field, so how far a light reaches is the
 /// one number a file gives for how bright it is: a lantern and a glowing
 /// cap differ by their radius and their colour, and the lantern dimming
-/// as the adventurer descends is its radius shrinking. 200 is Foundry's
-/// shoulder lamp, the brightest light any example carries.
+/// as the adventurer descends is its radius shrinking. 200 is what
+/// Corsair's lantern, Delve's brand and Foundry's shoulder lamp all shed:
+/// the light every example hands whoever carries it.
 pub const LIGHT_INTENSITY: u8 = 200;
 
 /// A light as Undermere's files write it: `(radius: 4, color: (0.35, 1.0,

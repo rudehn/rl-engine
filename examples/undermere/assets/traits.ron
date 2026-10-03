@@ -14,7 +14,7 @@
 //   perception: how far it sees, in tiles, through the light; absent from all its traits, 8
 //   dark_sight: tiles it sees with no light at all; absent, only what it touches
 //   flee_at:    percent health at or below which it runs from what it can see, if its wits
-//               let it run; 0 never runs, and so does a monster none of whose traits sets it
+//               let it run; 0 never runs, and neither does a monster none of whose traits sets it
 //   notice:     how it notices a quiet adventurer, as (certain: tiles it is sure within,
 //               chance_pct: percent a turn beyond that, lit_bonus: tiles added to certain
 //               while the adventurer stands in light, may be left out, 0, memory: turns it

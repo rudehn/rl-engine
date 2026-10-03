@@ -22,14 +22,14 @@
 //            of gold dropped is a floor's pile
 #![enable(implicit_some)]
 [
-    // Floors one and two: no tricks to speak of.
+    // The upper floors: vermin, and the smallest of the goblins.
     (name: "rat", glyph: 'r', color: (0.62, 0.52, 0.42), hp: 4, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "cowardly"]),
     (name: "jackal", glyph: 'j', color: (0.8, 0.62, 0.36), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swift"]),
     (name: "kobold", glyph: 'k', color: (0.62, 0.72, 0.32), hp: 6, attack: "1d4 slash", faction: "goblins", traits: ["sapient", "cowardly"],
      drops: [("gold coin", 40), ("dagger", 8)]),
     (name: "goblin", glyph: 'g', color: (0.42, 0.75, 0.3), hp: 10, attack: "1d5 slash", faction: "goblins", traits: ["sapient"],
      drops: [("gold coin", 40), ("sword", 8)]),
-    // Floors three to six: one trick each.
+    // The caves and the crypts under them.
     (name: "cave spider", glyph: 's', color: (0.68, 0.58, 0.75), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark"]),
     (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: "1d3 slash", ranged: "1d6 pierce @6", faction: "goblins", traits: ["sapient", "cowardly"],
      drops: [("gold coin", 40), ("bow", 8)]),
