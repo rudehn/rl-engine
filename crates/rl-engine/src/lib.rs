@@ -169,6 +169,8 @@ impl PluginGroup for RoguelikePlugins {
 /// fn records(_: RunRecord, _: RunRecords, _: RecordOutcome, _: RecordSection, _: RecordRun, _: RecordsPlugin) {}
 /// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: OverworldPlugin, _: Saves) {}
 /// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
+/// fn title_screen(_: TitlePanel, _: TitleWords, _: TitleMenu, _: TitleRow, _: TitleSet) {}
+/// let _up = title_is_up;
 /// ```
 pub mod prelude {
     pub use crate::RoguelikePlugins;

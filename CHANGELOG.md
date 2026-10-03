@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A title screen is the engine's: `TitlePanel` holds the first run back and offers Continue, New Game, Settings and Exit, and the pause and end menus offer the way back to it.
+  `TitlePanel::new(rect)` inserts `HoldStart` and a `TitleMenu`, and draws its rows from the top of `rect`, centred across it, the picked one on the `select` tone and one that cannot be taken `muted`; `.words(TitleWords { .. })` changes what they say, the question New Game asks included.
+  Continue is taken over a `SavedRun::Readable` and inserts `ContinueRun` before it begins the run; New Game over anything saved, even a slot this build cannot read, asks "Abandon the run in progress?" with No picked out, and Yes triggers `AbandonRun` before it begins; Settings opens the settings screen, which stands over the menu while the title is up and goes back where the game put it once a run begins; a Records row is drawn once a screen declares the `records` modal and taken once `RunRecords` holds a record; the close key exits.
+  A game paints its picture in `TitleSet::Backdrop`, on a terminal the panel clears to the `surface` tone first, and the panel draws over it in `TitleSet::Menu`; both run only while `title_is_up`, the start held and the engine idle, and every run, the title's or a restart's, begins on a blank terminal.
+  `GameMenuPanel` offers a "Main menu" row above Quit, while playing and on the screen a run ends on, whenever a `TitlePanel` was added, and taking it writes `LeaveRun`.
+  `MenuItem` gains `MainMenu` and `MenuItem::offered` a third argument, whether there is a title, so a game matching on the one or calling the other changes a line.
 - A run ends in a record: a game writes `RecordRun { score, summary, sections }` once, and the new `RecordsPlugin` completes it into a `RunRecord`, the outcome, the seed and the turn read off the engine's `Ending` and `Seed` rather than asked of the game a second time.
   It is filed into `RunRecords`, best score first and a tie keeping the newer record ahead, capped at `MAX_RECORDS`, a hundred; `RunRecords::this_run` is the one just filed, for an end screen or a records screen to read, and is forgotten in `EndRun` rather than with the whole resource, so the list outlives the run that filled it.
   The names are in `rl_bevy::records` and the prelude.

@@ -79,7 +79,10 @@ pub struct ContinueRun;
 /// Triggered on the world rather than written as a message, so it is
 /// answered before the trigger returns: a title triggers it and begins the
 /// new run in the same command, and the new run's start never sees the
-/// old one's slot.
+/// old one's slot. Whoever keeps the slot observes it, and `rl-save`'s
+/// observer expects `Saves` to be present, which it is wherever
+/// [`SavedRun`] can be other than [`Empty`](SavedRun::Empty), the only
+/// time a title asks.
 #[derive(Event, Debug, Clone, Copy)]
 pub struct AbandonRun;
 

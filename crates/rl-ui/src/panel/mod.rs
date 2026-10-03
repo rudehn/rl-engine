@@ -30,6 +30,7 @@ pub mod scrollback;
 pub mod settings;
 pub mod sheet;
 pub mod target;
+pub mod title;
 pub mod vitals;
 
 pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability_modal, reach};
@@ -45,6 +46,7 @@ pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPan
 pub use settings::{SETTINGS_MODAL, SettingsLayout, SettingsPanel, SettingsScreen, settings_modal};
 pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
 pub use target::{TargetLayout, TargetPanel};
+pub use title::{TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, title_is_up};
 pub use vitals::VitalsPanel;
 
 use bevy::prelude::Color;

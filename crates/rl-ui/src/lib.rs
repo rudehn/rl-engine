@@ -49,6 +49,25 @@
 //!     .add_plugins(NearbyPanel::new(rail));
 //! ```
 //!
+//! # A title screen
+//!
+//! One screen comes before there is a world. [`TitlePanel`] holds the
+//! first run back and offers Continue, New Game, Records, Settings and
+//! Exit, each taken only when there is something there; the game paints
+//! its own picture behind the rows in [`TitleSet::Backdrop`], and once the
+//! panel is added the menu offers the way back to it from a run.
+//!
+//! ```
+//! # use bevy::prelude::*;
+//! # use rl_core::Rect;
+//! # use rl_ui::{TitlePanel, TitleSet, UiPlugin};
+//! # fn paint_the_picture() {}
+//! # let mut app = App::new();
+//! app.add_plugins(UiPlugin)
+//!     .add_plugins(TitlePanel::new(Rect::new(30, 30, 40, 6)))
+//!     .add_systems(Update, paint_the_picture.in_set(TitleSet::Backdrop));
+//! ```
+//!
 //! # Adding a panel to the engine
 //!
 //! Write it in this order and the seams come out right:
@@ -120,8 +139,8 @@ pub use narrate::{NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Ph
 pub use panel::{
     AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
     INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, SETTINGS_MODAL, Scrollback,
-    ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal,
-    inventory_modal, offers_modal, settings_modal, sheet_modal,
+    ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, VitalsPanel,
+    ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, settings_modal, sheet_modal, title_is_up,
 };
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
@@ -265,8 +284,8 @@ pub mod prelude {
     pub use crate::panel::{
         AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
         INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, Scrollback,
-        ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, VitalsPanel, ability_modal, container_modal, controls_modal,
-        inventory_modal, offers_modal, settings_modal, sheet_modal,
+        ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, VitalsPanel,
+        ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, settings_modal, sheet_modal, title_is_up,
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{
