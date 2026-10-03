@@ -1,6 +1,7 @@
 //! What Undermere's world is made of: its sides, its kinds of harm, its
-//! statuses, slots and tags, the abilities its monsters know, and the
-//! order every content file is read in.
+//! statuses, slots and tags, the props that stand in its places, the
+//! abilities its monsters know, and the order every content file is read
+//! in.
 //!
 //! Every name here is content the engine knows nothing about; the engine
 //! sees ids. The registries are filled first, since every file names
@@ -20,6 +21,8 @@ use crate::traits::TraitDef;
 
 /// The abilities file, compiled in so the binary runs from anywhere.
 const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
+/// The props file, compiled in beside it.
+const PROPS_RON: &str = include_str!("../assets/props.ron");
 
 /// How bright every light a file writes is at its heart, out of 255.
 ///
@@ -64,7 +67,10 @@ impl LightDef {
 /// loaded against them.
 ///
 /// Assembled the way Foundry's is: one `Registry::from_defs` per table,
-/// then the struct literal, the statuses after the kinds they deal.
+/// then the struct literal, the statuses after the kinds they deal, and
+/// the props last, since a chest asks for what it holds by tag. Panics
+/// naming `assets/props.ron` and every problem in it, since a prop that
+/// does not load is a place that cannot be filled.
 pub fn registries() -> Registries {
     // Armor turns a blow and nothing else. The elements go through plate,
     // since a tick of `poisoned` or `scorched` that armor could stop would
@@ -97,14 +103,16 @@ pub fn registries() -> Registries {
         StatusDef::new("regenerating").mends(1).boon(),
     ])
     .unwrap();
-    Registries {
+    let mut registries = Registries {
         damage_kinds,
         statuses,
         factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead"].map(FactionDef::new).to_vec()).unwrap(),
         tags: Registry::from_defs(["weapon", "armor", "potion", "gold", "arrow", "light"].map(TagDef::new).to_vec()).unwrap(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "light"].map(SlotDef::new).to_vec()).unwrap(),
         ..Registries::default()
-    }
+    };
+    registries.props = rl_engine::rl_rules::prop::load(PROPS_RON, &registries.names()).unwrap_or_else(|e| panic!("assets/props.ron: {e}"));
+    registries
 }
 
 /// Who fights whom: the adventurer against every side, beasts and goblins
@@ -212,6 +220,41 @@ mod tests {
         for tag in ["weapon", "armor", "potion", "gold", "arrow", "light"] {
             assert!(r.tags.id(tag).is_some(), "{tag}");
         }
+    }
+
+    /// A tripwire over what stands in the places, by name, so a prop is
+    /// added or dropped on purpose. Everything but the chest is scenery,
+    /// which the nearby rail leaves out; the chest holds something and is
+    /// opened, and what blocks the way is what the places are laid round.
+    #[test]
+    fn every_prop_of_the_town_and_the_floors_is_in_the_file_and_only_the_chest_is_more_than_scenery() {
+        let r = registries();
+        let props = [
+            ("lamp post", true),
+            ("well", true),
+            ("forge", true),
+            ("anvil", true),
+            ("shelf", true),
+            ("barrel", true),
+            ("table", true),
+            ("counter", true),
+            ("hearth", true),
+            ("bed", true),
+            ("altar", true),
+            ("pew", true),
+            ("candelabra", false),
+            ("brazier", true),
+            ("throne", true),
+            ("chest", true),
+        ];
+        assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
+        for (name, blocks) in props {
+            let def = r.props.get(r.props.id(name).unwrap_or_else(|| panic!("no prop called {name:?}")));
+            assert_eq!(def.blocks, blocks, "{name}: whether it stands in the way");
+            assert_eq!(def.is_scenery(), name != "chest", "{name}");
+        }
+        let chest = r.props.get(r.props.expect("chest"));
+        assert!(chest.container.as_ref().is_some_and(|c| c.contents.len() == 3), "a weapon, armor and a potion, by tag");
     }
 
     /// Plate turns a blade and a club, and nothing else: a tick of poison

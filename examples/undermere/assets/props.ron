@@ -1,0 +1,65 @@
+// What stands in Mereholt and below it that is neither a monster nor a thing to
+// carry: the town's furniture, the lights of the floors, the throne, and the
+// chests found in the dungeon. Where each stands is a piece's in
+// `assets/prefabs/`; what light it sheds is the game's, in `light.rs`, since
+// the engine's props carry no light of their own.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:      unique; the name the nearby rail and the look cursor show, and the
+//              name a piece's `Prop("name")` asks for
+//   glyph:     one character
+//   color:     (r: 0..=255, g:, b:), the glyph's colour, as abilities.ron writes a look
+//   layer:     optional; draw order among entities on one cell, default 1
+//   blocks:    optional; whether it stands in the way, default false; nothing here
+//              blocks sight, which the engine's props never do yet
+//   health:    optional; what it takes to break it; absent, nothing can
+//   offers:    optional; [(verb:, time:, needs:, effects: [...])]: verb is "open" or
+//              "search", the engine's own; time is hundredths of a step; needs is a
+//              tag the opener must carry
+//   container: optional; (contents: [...], locked:, opened: (glyph:, color:)) where
+//              contents is a list of rows, each either (item: "name", count:) for that
+//              item, or (tag: "tag", count:, band:) for anything carrying the tag,
+//              drawn from item_spawns.ron at the floor the container stands on plus
+//              band (optional, 0 by default); count is n or (fewest, most), how many
+//              of the item or how many draws of the tag; the tags are "weapon" |
+//              "armor" | "potion" | "gold" | "arrow" | "light"; locked is the tag an
+//              opener must carry; opened is the look once emptied
+//   triggers:  optional; [(on:, area:, fires:, effects: [...], look:)], what it does at
+//              the moments it answers: "entered" | "destroyed" or a moment a game
+//              registers, written as in abilities.ron
+//   hidden:    optional; (spot:) percent a turn to spot it while in sight
+//
+// Everything here but the chest is scenery: it offers, holds and does nothing, so
+// the engine leaves it off the list of what is nearby and the look cursor still
+// names it.
+#![enable(implicit_some)]
+[
+    // The town. A lamp post's lantern and a forge's fire are lit by `light.rs`.
+    (name: "lamp post",  glyph: '|', color: (r: 240, g: 205, b: 130), blocks: true),
+    (name: "well",       glyph: 'o', color: (r: 150, g: 155, b: 165), blocks: true),
+    (name: "forge",      glyph: '&', color: (r: 255, g: 130, b: 50),  blocks: true),
+    (name: "anvil",      glyph: 'n', color: (r: 125, g: 125, b: 135), blocks: true),
+    (name: "shelf",      glyph: '=', color: (r: 150, g: 110, b: 70),  blocks: true),
+    (name: "barrel",     glyph: '0', color: (r: 165, g: 115, b: 60),  blocks: true),
+    (name: "table",      glyph: '-', color: (r: 170, g: 125, b: 80),  blocks: true),
+    (name: "counter",    glyph: '=', color: (r: 135, g: 95, b: 55),   blocks: true),
+    (name: "hearth",     glyph: '&', color: (r: 255, g: 145, b: 60),  blocks: true),
+    (name: "bed",        glyph: '-', color: (r: 190, g: 170, b: 140), blocks: true),
+    (name: "altar",      glyph: '_', color: (r: 235, g: 225, b: 190), blocks: true),
+    (name: "pew",        glyph: '=', color: (r: 140, g: 100, b: 65),  blocks: true),
+    // Candles stand in the temple and in the crypts, and nothing trips on them.
+    (name: "candelabra", glyph: 'i', color: (r: 255, g: 230, b: 160)),
+
+    // A brazier burns in the colour of the place it stands in, so its iron is
+    // drawn near white and its own light colours it: orange in the halls,
+    // blue-green before the throne.
+    (name: "brazier",    glyph: '&', color: (r: 235, g: 225, b: 210), blocks: true),
+    (name: "throne",     glyph: '#', color: (r: 150, g: 195, b: 205), blocks: true),
+
+    // A chest in the dungeon: a weapon, a piece of armor or both, maybe, and a
+    // potion or two for certain, each drawn at the floor it stands on.
+    (name: "chest", glyph: '=', color: (r: 190, g: 145, b: 70), blocks: true,
+     container: (contents: [(tag: "weapon", count: (0, 1)), (tag: "armor", count: (0, 1)), (tag: "potion", count: (1, 2))],
+                 opened: (glyph: '=', color: (r: 110, g: 85, b: 50))),
+     offers: [(verb: "open", time: 100)]),
+]
