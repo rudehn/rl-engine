@@ -17,13 +17,15 @@
 //! closed on it.
 //!
 //! Apart from all of that, [`SettingsSavePlugin`] remembers what a player
-//! chose in a slot of its own, which no run's ending forgets.
+//! chose in a slot of its own, which no run's ending forgets, and
+//! [`RecordsSavePlugin`] remembers every run's record the same way.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 pub mod backend;
 pub mod engine;
+pub mod records;
 pub mod remap;
 pub mod run;
 pub mod settings;
@@ -32,6 +34,7 @@ pub mod versioned;
 
 pub use backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
 pub use engine::EngineSave;
+pub use records::{RECORDS_SLOT, RecordsSavePlugin};
 pub use remap::{EntityRemap, SaveId};
 pub use run::{
     AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableState, SavedBurning, forget_save, load_run,
@@ -45,6 +48,7 @@ pub use versioned::{Versioned, decode, encode};
 pub mod prelude {
     pub use crate::backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
     pub use crate::engine::EngineSave;
+    pub use crate::records::RecordsSavePlugin;
     pub use crate::remap::{EntityRemap, SaveId};
     pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableState, load_run, save_run};
     pub use crate::settings::SettingsSavePlugin;

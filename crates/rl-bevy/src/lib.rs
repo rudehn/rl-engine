@@ -38,6 +38,7 @@ pub mod places;
 pub mod plugin;
 pub mod prefabs;
 pub mod props;
+pub mod records;
 pub mod registries;
 pub mod remains;
 pub mod replay;
@@ -101,6 +102,7 @@ pub use props::{
     AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet,
     PropsPlugin, Refused, Scenery, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
 };
+pub use records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 pub use registries::Registries;
 pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived, WasLiving, revive};
 pub use replay::{Pressed, Recording};
@@ -165,6 +167,7 @@ pub mod prelude {
         AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery,
         Spotted, Take, VerbId, Verbs, spawn_prop,
     };
+    pub use crate::records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
     pub use crate::registries::Registries;
     pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived};
     pub use crate::seed::{AddStream, Seed};

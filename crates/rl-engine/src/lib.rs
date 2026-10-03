@@ -166,6 +166,7 @@ impl PluginGroup for RoguelikePlugins {
 /// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
 /// fn title(_: HoldStart, _: SavedRun, _: ContinueRun, _: AbandonRun, _: LeaveRun) {}
 /// let _begin: fn(&mut World) = begin_run;
+/// fn records(_: RunRecord, _: RunRecords, _: RecordOutcome, _: RecordSection, _: RecordRun, _: RecordsPlugin) {}
 /// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: OverworldPlugin, _: Saves) {}
 /// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
 /// ```

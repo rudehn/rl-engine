@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A run ends in a record: a game writes `RecordRun { score, summary, sections }` once, and the new `RecordsPlugin` completes it into a `RunRecord`, the outcome, the seed and the turn read off the engine's `Ending` and `Seed` rather than asked of the game a second time.
+  It is filed into `RunRecords`, best score first and a tie keeping the newer record ahead, capped at `MAX_RECORDS`, a hundred; `RunRecords::this_run` is the one just filed, for an end screen or a records screen to read, and is forgotten in `EndRun` rather than with the whole resource, so the list outlives the run that filled it.
+  The names are in `rl_bevy::records` and the prelude.
+  `rl-save`'s new `RecordsSavePlugin` keeps the list between launches in a `records` slot apart from a game's own run, read before the first frame and written whenever it changes, as `SettingsSavePlugin` does for settings; every field of `RunRecord` is `#[serde(default)]`, so a later build's extra field still reads, and a slot that cannot be parsed at all is warned about and left empty, replaced by the next record filed rather than merged with it, since a list cannot be recovered entry by entry the way a map of names can.
 - The start of a run can be held by a title screen, and the save slot says what it holds; the names are in `rl_bevy::title` and the prelude.
   `HoldStart`, a resource, makes the engine begin no run at startup while it is present, and `begin_run(world)` takes it away and runs `NewRun`, the door the engine begins every run through, so a game's start system never asks whether a title is up.
   `LeaveRun` tears a run down as a `Restart` does, through `EndRun` and `clear_run`, and holds the start again rather than beginning another run; it wins over a restart asked in the same frame, and with no run standing it changes nothing.
