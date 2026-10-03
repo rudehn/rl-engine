@@ -8,6 +8,7 @@ use crate::components::{Actor, MyTurn, Player, Position};
 use crate::cue::TurnHold;
 use crate::knowledge::Knowledge;
 use crate::state::{EngineState, Restart, RunOver};
+use crate::title::{HoldStart, LeaveRun, SavedRun, begin_run};
 use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, Pace, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
 use crate::{places, turn};
@@ -38,7 +39,7 @@ pub enum EngineSet {
 }
 
 /// The stages of `Last`, in order: what the run is written down as, then
-/// what the frame is done with, then a restart.
+/// what the frame is done with, then a restart or a leaving.
 ///
 /// A save written after a restart tore the run down would write a world
 /// with no map in it, and a burial after the restart would despawn what
@@ -51,7 +52,7 @@ pub enum EndOfFrame {
     Save,
     /// The dead and the spent despawned.
     Bury,
-    /// A restart asked for this frame.
+    /// A restart, or a leaving for the title, asked for this frame.
     Restart,
 }
 
@@ -85,17 +86,19 @@ pub struct Turn;
 
 /// Where a game begins a run: the schedule its start system goes in.
 ///
-/// Run once at startup and again after every [`Restart`], with the
-/// previous run torn down and the [`Seed`](crate::seed::Seed) set for the
-/// next. A game puts here what it used to put in `Startup`: the rules, the
-/// map, the player, the warp in and the flip to [`EngineState::Playing`].
-/// Nothing of the old run is left when it runs, so the same system starts
-/// the first run and the tenth.
+/// Run once at startup, unless a title holds the start with [`HoldStart`]
+/// and runs it through [`begin_run`] when the player picks, and again
+/// after every [`Restart`], with the previous run torn down and the
+/// [`Seed`](crate::seed::Seed) set for the next. A game puts here what it
+/// used to put in `Startup`: the rules, the map, the player, the warp in
+/// and the flip to [`EngineState::Playing`]. Nothing of the old run is
+/// left when it runs, so the same system starts the first run and the
+/// tenth.
 #[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NewRun;
 
 /// Where a game forgets a run: the schedule run before the engine tears one
-/// down for a [`Restart`].
+/// down for a [`Restart`] or a [`LeaveRun`].
 ///
 /// The engine despawns everything that stands, lies or acts on a map and
 /// resets what it keeps about the run; a game puts here whatever it keeps
@@ -231,6 +234,7 @@ impl Plugin for CorePlugin {
             .init_resource::<crate::minds::FlowFields>()
             .init_resource::<crate::minds::Thinking>()
             .init_resource::<TurnHold>()
+            .init_resource::<SavedRun>()
             .add_message::<crate::cue::Cued>()
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()
@@ -238,6 +242,7 @@ impl Plugin for CorePlugin {
             .add_message::<turn::Stepped>()
             .add_message::<RunOver>()
             .add_message::<Restart>()
+            .add_message::<LeaveRun>()
             .add_message::<places::WarpRequest>()
             .add_message::<places::MapChanged>()
             .add_message::<places::Travelled>()
@@ -325,8 +330,9 @@ impl Plugin for CorePlugin {
             // whether a map exists, and warns, so no order changes it, and a
             // game's exclusive system in `Update` should not have to say so.
             .add_systems(Update, warn_if_play_never_began.ambiguous_with_all())
-            // The run's life: begun at startup, ended by the first `RunOver`,
-            // torn down and begun again by a `Restart`.
+            // The run's life: begun at startup unless a title holds it, ended
+            // by the first `RunOver`, torn down and begun again by a
+            // `Restart`, or torn down and held for the title by a `LeaveRun`.
             .add_systems(Startup, begin_first_run)
             .add_systems(PostUpdate, crate::state::end_runs)
             .configure_sets(Last, (EndOfFrame::Save, EndOfFrame::Bury, EndOfFrame::Restart).chain())
@@ -354,9 +360,11 @@ impl Plugin for CorePlugin {
     }
 }
 
-/// Runs the game's start for the first time.
+/// Begins the first run, unless a title screen is holding it back.
 fn begin_first_run(world: &mut World) {
-    world.run_schedule(NewRun);
+    if !world.contains_resource::<HoldStart>() {
+        begin_run(world);
+    }
 }
 
 /// The run a [`Restart`] asked for, waiting for the state to have left the
@@ -366,16 +374,30 @@ struct PendingRun {
     seed: Option<RunSeed>,
 }
 
-/// Answers the frame's [`Restart`], if there was one: the game forgets the
-/// run, the engine tears it down, and the state goes back to
-/// [`EngineState::Idle`] so the next run is begun through the same door
-/// the first was.
+/// Answers the frame's [`Restart`] or [`LeaveRun`], if there was one: the
+/// game forgets the run, the engine tears it down, and the state goes back
+/// to [`EngineState::Idle`]. After a restart the next run is begun there,
+/// through the same door the first was; after leaving, [`HoldStart`] holds
+/// it back for the title to begin.
 pub fn restart_runs(world: &mut World) {
-    let asked: Option<Restart> = world.resource_mut::<Messages<Restart>>().drain().last();
-    let Some(restart) = asked else { return };
+    let restart: Option<Restart> = world.resource_mut::<Messages<Restart>>().drain().last();
+    // Leaving needs a run to leave. At a title already up there is none,
+    // and a teardown would run a game's forgetting over the save the title
+    // is offering to continue.
+    let left = world.resource_mut::<Messages<LeaveRun>>().drain().count() > 0;
+    let leave = left && world.resource::<State<EngineState>>().get().shows_world();
+    if restart.is_none() && !leave {
+        return;
+    }
     world.run_schedule(EndRun);
     clear_run(world);
-    world.insert_resource(PendingRun { seed: restart.seed });
+    // Leaving wins over a restart asked in the same frame: the run left was
+    // written down to be continued, and a new one would bury it.
+    if leave {
+        world.insert_resource(HoldStart);
+    } else if let Some(restart) = restart {
+        world.insert_resource(PendingRun { seed: restart.seed });
+    }
     world.resource_mut::<NextState<EngineState>>().set(EngineState::Idle);
 }
 
@@ -386,7 +408,7 @@ fn begin_pending_run(world: &mut World) {
     let previous = world.get_resource::<crate::seed::Seed>().map(|s| s.0).unwrap_or(RunSeed(0));
     let seed = seed.unwrap_or_else(|| next_run_seed(previous));
     world.insert_resource(crate::seed::Seed(seed));
-    world.run_schedule(NewRun);
+    begin_run(world);
 }
 
 /// The seed for a run no [`Restart`] named, given the one the last run used.

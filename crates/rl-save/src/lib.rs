@@ -11,9 +11,10 @@
 //! `localStorage` one on wasm), a [`Versioned`] envelope whose version
 //! must match exactly or the save is refused whole, an [`EntityRemap`]
 //! that turns entity ids into stable [`SaveId`]s and back, [`SavePlugin`],
-//! which keeps the [`Stash`] a turn behind the run and forgets the slot
-//! when the run ends, and [`UnloadPlugin`], which writes the stash when
-//! the page or the window is closed on it.
+//! which keeps the [`Stash`] a turn behind the run, forgets the slot when
+//! the run ends and keeps a title told what the slot holds, and
+//! [`UnloadPlugin`], which writes the stash when the page or the window is
+//! closed on it.
 //!
 //! Apart from all of that, [`SettingsSavePlugin`] remembers what a player
 //! chose in a slot of its own, which no run's ending forgets.
@@ -34,7 +35,7 @@ pub use engine::EngineSave;
 pub use remap::{EntityRemap, SaveId};
 pub use run::{
     AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableState, SavedBurning, forget_save, load_run,
-    save_on_arrival, save_run,
+    save_on_arrival, save_on_leaving, save_run,
 };
 pub use settings::{SETTINGS_SLOT, SettingsSavePlugin};
 pub use unload::{Stash, UnloadPlugin};

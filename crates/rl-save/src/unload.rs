@@ -22,9 +22,10 @@
 use std::sync::{Arc, Mutex};
 
 use bevy::prelude::*;
-use rl_bevy::Needs;
+use rl_bevy::{Needs, SavedRun};
 
 use crate::backend::{SaveBackend, SaveError, Saves};
+use crate::run::SaveSlot;
 
 /// The last save the game encoded, waiting to be written if the game is
 /// left.
@@ -93,13 +94,19 @@ impl Plugin for UnloadPlugin {
 }
 
 /// Writes the stash on the frame the app is told to exit, which is the
-/// frame a native window's close button produces.
-pub fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>) {
+/// frame a native window's close button produces. When what it writes is
+/// the run's slot, [`SavedRun`] says the slot holds a run.
+pub fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>, run: Option<Res<SaveSlot>>, mut saved: ResMut<SavedRun>) {
     if exits.read().next().is_none() {
         return;
     }
     match stash.flush(saves.0.as_ref()) {
-        Ok(true) => info!("the stashed save was written on exit"),
+        Ok(true) => {
+            info!("the stashed save was written on exit");
+            if run.is_some_and(|run| stash.pending().as_deref() == Some(run.slot.as_str())) {
+                *saved = SavedRun::Readable;
+            }
+        }
         Ok(false) => {}
         Err(e) => error!("the stashed save could not be written on exit: {e}"),
     }
@@ -165,5 +172,22 @@ mod tests {
         app.world_mut().write_message(AppExit::Success);
         app.update();
         assert_eq!(backend.load("run").unwrap().as_deref(), Some("(turn: 7)"));
+    }
+
+    /// The run's slot written on the way out says it holds a run; a stash
+    /// a game keeps for a slot of its own says nothing about the run's.
+    #[test]
+    fn the_runs_slot_written_on_exit_says_it_holds_a_run() {
+        for (slot, holds) in [("run", SavedRun::Readable), ("notes", SavedRun::Empty)] {
+            let mut app = rl_bevy::plugin::headless_app();
+            app.insert_resource(Saves::new(MemoryBackend::default())).add_plugins((crate::run::SavePlugin::new("run"), UnloadPlugin));
+            app.finish();
+            app.cleanup();
+            // The words stand in for a run: a stash holds what this build encoded.
+            app.world().resource::<Stash>().stash(slot, "(turn: 7)");
+            app.world_mut().write_message(AppExit::Success);
+            app.update();
+            assert_eq!(*app.world().resource::<SavedRun>(), holds, "stashed for {slot}");
+        }
     }
 }

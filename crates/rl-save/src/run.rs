@@ -27,14 +27,22 @@
 //! when the run ends, so nothing is resumed past its end, and, when asked
 //! with [`SavePlugin::on_arrival`], the slot written by [`save_on_arrival`]
 //! every time the player arrives somewhere. A game's save key calls
-//! [`save_run`], and its start calls [`load_run`] and [`RunSave::restore`].
-//! The engine's own resources are saved by the engine: [`Quests`] and
-//! [`Counters`] each implement [`SaveableState`].
+//! [`save_run`], and its start, when [`ContinueRun`](rl_bevy::ContinueRun)
+//! asks, calls [`load_run`] and [`RunSave::restore`]. The engine's own
+//! resources are saved by the engine: [`Quests`] and [`Counters`] each
+//! implement [`SaveableState`].
+//!
+//! What a title needs of the slot is kept here too, in `rl-bevy`'s words so
+//! the screen need not depend on this crate: [`SavedRun`] says what the
+//! slot holds from before the first frame, a run left with [`LeaveRun`] is
+//! written down by [`save_on_leaving`] rather than forgotten with its
+//! teardown, and [`AbandonRun`] forgets the slot the moment it is triggered.
 
 use bevy::prelude::*;
 use rl_bevy::{
-    Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, EngineState, Equipped, Health, Hidden, Inventory, MapId, Needs, OnMap,
-    PlaceEntered, Position, Post, PropKind, Quests, Registries, Remains, Stack, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
+    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, LeaveRun,
+    MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition, Turns, Wearable,
+    WorkKinds, Working,
 };
 use rl_core::Point;
 use rl_rules::{Equipment, Work};
@@ -732,6 +740,11 @@ pub struct SaveSlot {
 /// [`on_arrival`](Self::on_arrival) it also writes the slot whenever the
 /// player arrives somewhere. Registers no key: a game's save key calls
 /// [`save_run`].
+///
+/// For a title: reads the slot into [`SavedRun`] before the first frame
+/// and keeps it current as the slot is written and deleted, writes a run
+/// left with [`LeaveRun`] down rather than forgetting it with its
+/// teardown, and forgets the slot the moment [`AbandonRun`] is triggered.
 pub struct SavePlugin {
     slot: String,
     version: u32,
@@ -766,15 +779,22 @@ impl Plugin for SavePlugin {
         app.init_resource::<SaveRegistry>()
             .save_kind::<PropKind>()
             .init_resource::<Stash>()
+            .init_resource::<Leaving>()
             .insert_resource(SaveSlot { slot: self.slot.clone(), version: self.version })
             .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as `Saves::platform_default(\"my-game\")`")
+            .reads::<LeaveRun>()
             // Exclusive, so it conflicts with everything else in `Last`; the
             // engine's own are ordered against it by `EndOfFrame`, and what
             // is left unordered is Bevy's bookkeeping, the frame count and
             // the like, which reads nothing a save writes.
             .add_systems(Last, refresh_stash.in_set(EndOfFrame::Save).ambiguous_with_all())
-            .add_systems(EndRun, forget_save)
-            .add_systems(OnEnter(EngineState::Over), forget_save);
+            // Exclusive too, and ambiguous with Bevy's bookkeeping for the
+            // same reason; in the save stage, so the run is written down
+            // before the restart stage tears it down.
+            .add_systems(Last, (note_leaving, save_on_leaving.ambiguous_with_all()).chain().in_set(EndOfFrame::Save).before(refresh_stash))
+            .add_systems(EndRun, forget_save.run_if(given_up))
+            .add_systems(OnEnter(EngineState::Over), forget_save)
+            .add_observer(forget_abandoned);
         if self.on_arrival {
             // Exclusive too, and ambiguous with Bevy's bookkeeping for the
             // same reason as the stash.
@@ -782,6 +802,75 @@ impl Plugin for SavePlugin {
                 .add_systems(Last, (note_arrivals, save_on_arrival.ambiguous_with_all()).chain().in_set(EndOfFrame::Save).before(refresh_stash));
         }
     }
+
+    /// Reads what the slot holds into [`SavedRun`] once every plugin has
+    /// built and before the first frame, so a title's first look at it,
+    /// and the first key read against it, are the truth. A slot this build
+    /// cannot read is left where it is, for a new run to ask about.
+    fn finish(&self, app: &mut App) {
+        let world = app.world_mut();
+        // Without a backend there is nothing to read, and play beginning
+        // says what is missing.
+        if !world.contains_resource::<Saves>() {
+            return;
+        }
+        let saved = match load_run(world) {
+            Ok(Some(_)) => SavedRun::Readable,
+            Ok(None) => SavedRun::Empty,
+            Err(e) => {
+                warn!("the saved run cannot be read, so it cannot be continued: {e}");
+                SavedRun::Unreadable
+            }
+        };
+        world.insert_resource(saved);
+    }
+}
+
+/// Whether a run still in play is left for the title this frame: written
+/// down in [`EndOfFrame::Save`] and kept through the teardown that follows,
+/// rather than forgotten with it as a run given up is.
+#[derive(Resource, Default)]
+struct Leaving(bool);
+
+/// Notes a [`LeaveRun`] that leaves a run still in play: playing, and with
+/// no [`Ending`], which a run that ended this frame has before the state
+/// leaves playing. A run that is over has nothing to continue, and its
+/// teardown forgets its save as a restart's does.
+///
+/// A reader of its own, as [`note_arrivals`] is, and assigned every frame,
+/// so a leaving is forgotten by the next.
+fn note_leaving(mut left: MessageReader<LeaveRun>, state: Res<State<EngineState>>, ending: Option<Res<Ending>>, mut leaving: ResMut<Leaving>) {
+    leaving.0 = left.read().count() > 0 && *state.get() == EngineState::Playing && ending.is_none();
+}
+
+/// Writes the run down as it stands when it is left for the title, so
+/// Continue picks it up where it was left.
+///
+/// A save of its own rather than the [`Stash`], which follows the run a
+/// whole turn at a time: a quick player's half turn, or anything that took
+/// no time, would be lost between leaving and continuing. Stashed as well,
+/// by [`save_run`], so a window closed at the title writes the same run
+/// back. A save that fails is logged, and the slot keeps what it held.
+pub fn save_on_leaving(world: &mut World) {
+    if !world.resource::<Leaving>().0 {
+        return;
+    }
+    if let Err(e) = save_run(world) {
+        error!("the run could not be written down as it was left: {e}");
+    }
+}
+
+/// Whether the run torn down this frame was given up rather than left for
+/// the title: only a run given up is forgotten with its teardown.
+fn given_up(leaving: Res<Leaving>) -> bool {
+    !leaving.0
+}
+
+/// Forgets the saved run when a title abandons it for a new one. An
+/// observer, so the slot is gone before the trigger returns and the run
+/// the title begins in the same command never sees it.
+fn forget_abandoned(_: On<AbandonRun>, saves: Res<Saves>, slot: Res<SaveSlot>, stash: Res<Stash>, saved: ResMut<SavedRun>) {
+    forget_save(saves, slot, stash, saved);
 }
 
 /// Whether the frame held an arrival, for [`save_on_arrival`].
@@ -816,12 +905,13 @@ pub fn save_on_arrival(world: &mut World) {
 }
 
 /// Writes the run to the slot, and stashes it for the bridge that writes
-/// on the way out.
+/// on the way out. [`SavedRun`] says the slot holds a run once it does.
 pub fn save_run(world: &mut World) -> Result<(), SaveError> {
     let text = encode_run(world)?;
     let slot = world.resource::<SaveSlot>().slot.clone();
     world.resource::<Saves>().persist(&slot, &text)?;
     world.resource::<Stash>().stash(&slot, &text);
+    world.insert_resource(SavedRun::Readable);
     Ok(())
 }
 
@@ -868,11 +958,14 @@ pub fn refresh_stash(world: &mut World, mut last: Local<Option<u32>>) {
 }
 
 /// Deletes the slot and clears the stash: the run is over, or given up,
-/// and continuing it would be continuing past its end.
-pub fn forget_save(saves: Res<Saves>, slot: Res<SaveSlot>, stash: Res<Stash>) {
+/// and continuing it would be continuing past its end. [`SavedRun`] says
+/// the slot is empty once it is; a delete that failed leaves the slot, and
+/// what it says, as they were.
+pub fn forget_save(saves: Res<Saves>, slot: Res<SaveSlot>, stash: Res<Stash>, mut saved: ResMut<SavedRun>) {
     stash.clear();
-    if let Err(e) = saves.delete(&slot.slot) {
-        error!("could not delete the save: {e}");
+    match saves.delete(&slot.slot) {
+        Ok(()) => *saved = SavedRun::Empty,
+        Err(e) => error!("could not delete the save: {e}"),
     }
 }
 
@@ -1454,6 +1547,7 @@ mod tests {
         assert_eq!(app.world().resource::<Stash>().pending().as_deref(), Some("run"), "stashed by the first turn");
         save_run(app.world_mut()).unwrap();
         assert!(backend.exists("run"));
+        assert_eq!(*app.world().resource::<SavedRun>(), SavedRun::Readable, "and the slot says it holds a run");
         app.world_mut().write_message(RunOver::died(None));
         let _ = me;
         app.update();
@@ -1461,5 +1555,115 @@ mod tests {
         assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Over);
         assert_eq!(app.world().resource::<Stash>().pending(), None, "cleared with the save");
         assert!(!backend.exists("run"), "deleted");
+        assert_eq!(*app.world().resource::<SavedRun>(), SavedRun::Empty, "and the slot says it is empty");
+    }
+
+    /// What the slot is read as when the game starts with `backend` holding
+    /// whatever an earlier launch left: before the first frame, so a
+    /// title's first look at it is the truth.
+    fn read_at_startup(backend: &std::sync::Arc<MemoryBackend>) -> SavedRun {
+        let (app, _) = game(Saves(backend.clone()));
+        *app.world().resource::<SavedRun>()
+    }
+
+    /// A run played and written down, as an earlier launch leaves one.
+    fn a_run_left_in(backend: &std::sync::Arc<MemoryBackend>) {
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+    }
+
+    #[test]
+    fn an_empty_slot_reads_empty() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        assert_eq!(read_at_startup(&backend), SavedRun::Empty);
+    }
+
+    #[test]
+    fn a_saved_run_reads_readable() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        a_run_left_in(&backend);
+        assert_eq!(read_at_startup(&backend), SavedRun::Readable);
+    }
+
+    #[test]
+    fn a_slot_of_another_version_reads_unreadable() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        a_run_left_in(&backend);
+        let text = backend.load("run").unwrap().unwrap();
+        backend.persist("run", &text.replacen("version: 3", "version: 2", 1)).unwrap();
+        assert_eq!(read_at_startup(&backend), SavedRun::Unreadable);
+        assert!(backend.exists("run"), "and it is left where it is, for a new run to ask about");
+    }
+
+    /// Abandoning forgets the run before the trigger returns, with no frame
+    /// run in between: a title begins the new run in the same command, and
+    /// a window closed after that writes nothing back.
+    #[test]
+    fn abandoning_deletes_the_slot_and_clears_the_stash() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+        assert_eq!(*app.world().resource::<SavedRun>(), SavedRun::Readable, "a run to abandon");
+        app.world_mut().trigger(AbandonRun);
+        assert!(!backend.exists("run"), "the slot is gone");
+        assert_eq!(app.world().resource::<Stash>().pending(), None, "and the stash with it");
+        assert_eq!(*app.world().resource::<SavedRun>(), SavedRun::Empty, "and the slot says so");
+    }
+
+    /// The run's clock, as a save of it holds it.
+    fn clock_in(text: &str) -> u32 {
+        decode::<RunSave>(3, text).expect("a run this build reads").engine.now
+    }
+
+    /// What the stash would write if the window were closed now.
+    fn stashed(app: &App) -> String {
+        let scratch = MemoryBackend::default();
+        app.world().resource::<Stash>().flush(&scratch).unwrap();
+        scratch.load("run").unwrap().expect("a run is stashed")
+    }
+
+    /// Leaving for the title writes the run down as it stands. The stash
+    /// follows the run a whole turn at a time, so a quick player's half
+    /// turn is in neither the slot nor the stash until the run is left, and
+    /// then it is in both: Continue, or a window closed at the title, picks
+    /// the run up where it was left.
+    #[test]
+    fn leaving_a_run_writes_it_down_first() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let me = app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30), Speed(200))).id();
+        play(&mut app);
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), 50, "a quick wait is half a turn");
+        assert_eq!(clock_in(&stashed(&app)), 0, "which the stash has not followed");
+        app.world_mut().write_message(LeaveRun);
+        app.update();
+        let slot = backend.load("run").unwrap().expect("the run left is in the slot");
+        assert_eq!(clock_in(&slot), 50, "as it was left, not as the stash had it");
+        assert_eq!(stashed(&app), slot, "and the stash holds the same, for a window closed at the title");
+        assert_eq!(*app.world().resource::<SavedRun>(), SavedRun::Readable);
+    }
+
+    /// A run that ends in the frame it is left has nothing to continue: it
+    /// is not written down, and the save it had is forgotten with it, as
+    /// its end would have forgotten it had the state got that far.
+    #[test]
+    fn a_run_that_ends_in_the_frame_it_is_left_is_forgotten() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+        app.world_mut().write_message(RunOver::died(None));
+        app.world_mut().write_message(LeaveRun);
+        app.update();
+        assert!(!backend.exists("run"), "nothing to continue");
+        assert_eq!(app.world().resource::<Stash>().pending(), None, "nor to write back on the way out");
+        assert_eq!(*app.world().resource::<SavedRun>(), SavedRun::Empty);
     }
 }
