@@ -67,6 +67,7 @@ struct Screen {
     search: Rect,
     chest: Rect,
     here: Rect,
+    title_menu: Rect,
 }
 
 impl Screen {
@@ -103,7 +104,7 @@ impl Screen {
             pack: centred(56, 3, 16),
             controls: map.inflate(-2),
             // The most the menu may take: the ending's words, the seed and
-            // turn, and four choices. The engine closes the frame under
+            // turn, and five choices. The engine closes the frame under
             // the last row, so the shorter pause menu leaves no gap.
             menu: centred(44, 6, 13),
             // Where the menu stands, since the menu is what opens it.
@@ -118,6 +119,9 @@ impl Screen {
             chest: centred(46, 6, 14),
             // What can be done here, when here is more than one thing.
             here: centred(40, 10, 6),
+            // The title's rows: across the whole screen, under the gantry,
+            // where its picture leaves room for them.
+            title_menu: foundry::title::menu(COLS, ROWS),
         }
     }
 }
@@ -128,7 +132,7 @@ impl Screen {
 /// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
     // The gutter belongs to no panel, so it is painted blank with the
-    // chrome each frame, or the title screen's works would show through it.
+    // chrome each frame: nothing else would ever paint it again.
     let gutter = screen.gutter;
     app.add_systems(
         Update,
@@ -194,6 +198,10 @@ fn add_panels(app: &mut App, screen: &Screen) {
     // screen: fullscreen is the engine's, declared by `RoguelikePlugins`.
     app.add_plugins(SettingsPanel::new(screen.settings));
     // ANCHOR_END: settings
+    // The screen before there is a world: the engine's menu, which holds
+    // the run back until the player picks, over the works Foundry paints
+    // under it.
+    app.add_plugins(TitlePanel::new(screen.title_menu)).add_systems(Update, foundry::title::paint_backdrop.in_set(TitleSet::Backdrop));
 }
 
 /// Whether this run plays keys from a script of some kind: a replay, a
@@ -272,17 +280,33 @@ mod tests {
 
     use super::*;
 
-    /// A headless run drawing the window's own screen into a terminal no
-    /// window shows: the same cut, the same panels, the same map view, so
-    /// a test reads back the text the player would see.
-    fn on_screen(seed: RunSeed) -> App {
+    /// The window's own screen drawn into a terminal no window shows, at
+    /// the title it opens on: the same cut, the same panels, the same map
+    /// view, and the fullscreen setting the window's plugins declare, so a
+    /// test reads back the text the player would see and the menus offer
+    /// the rows theirs do. `saved` is in the save slot from before the
+    /// launch, as a run left last time is.
+    fn at_the_title(seed: RunSeed, saved: Option<&str>) -> App {
+        use rl_engine::rl_save::SaveBackend as _;
         let mut app = foundry::testing::headless(seed);
         let screen = Screen::new();
-        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map)));
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map), rl_engine::rl_render::FullscreenPlugin));
         app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
         add_panels(&mut app, &screen);
+        if let Some(text) = saved {
+            app.world().resource::<rl_engine::rl_save::Saves>().persist(foundry::save::SLOT, text).expect("the memory backend takes it");
+        }
         app.finish();
         app.cleanup();
+        app.update();
+        app
+    }
+
+    /// The same screen a few frames into a run begun from its title, the
+    /// way a player begins one: New Game, picked out with nothing saved.
+    fn on_screen(seed: RunSeed) -> App {
+        let mut app = at_the_title(seed, None);
+        press(&mut app, KeyCode::Enter);
         for _ in 0..4 {
             app.update();
         }
@@ -432,8 +456,7 @@ mod tests {
         assert_eq!(screen.vitals.x, rail, "and the rail where it was");
 
         // Painted blank every frame, since nothing else owns it: whatever
-        // was on the terminal before, the title screen's works included,
-        // does not show through.
+        // was on the terminal before does not show through.
         let mut app = on_screen(RunSeed(7));
         let dirt = rl_engine::rl_render::Cell::new('x', Color::WHITE);
         app.world_mut().resource_mut::<Terminal>().fill(Rect::new(rail - 1, 0, 1, ROWS), dirt);
@@ -608,5 +631,87 @@ mod tests {
         }
         let map = app.world().resource::<WorldMap>().current();
         assert_eq!(foundry::decks::deck_of(map), 1);
+    }
+
+    /// Where the commando stands: the deck, the cell, and the turn.
+    fn whereabouts(app: &mut App) -> (u32, Point, u32) {
+        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).expect("one commando");
+        let world = app.world();
+        let deck = foundry::decks::deck_of(world.get::<OnMap>(me).map_or(MapId::SURFACE, |m| m.0));
+        (deck, world.get::<Position>(me).expect("standing somewhere").0, world.resource::<Turns>().now())
+    }
+
+    /// Every row of the screen with something on it, trimmed.
+    fn written(app: &App) -> Vec<String> {
+        (0..ROWS).map(|y| row(app, y).trim().to_string()).filter(|r| !r.is_empty()).collect()
+    }
+
+    /// The title stands over Foundry's picture, holding the run back, with
+    /// the engine's rows where Foundry's own menu stood: from the first row
+    /// under the gantry's rule, one word a row, centred across the screen.
+    /// New Game, picked out with nothing saved, begins the run on deck one,
+    /// once, and nothing of the title is left on the screen.
+    #[test]
+    fn the_title_holds_the_run_back_with_its_menu_under_the_gantry_until_new_game_begins_it() {
+        let mut app = at_the_title(RunSeed(7), None);
+        assert!(!app.world().contains_resource::<WorldMap>(), "no deck is built behind the title");
+        assert!(written(&app).iter().any(|r| r.starts_with("Ten decks of it")), "the picture is up: {:#?}", written(&app));
+        let top = Screen::new().title_menu.y;
+        assert_eq!(row(&app, top - 2).trim(), "─".repeat(34), "the rule, with a clear row between it and the menu");
+        let menu: Vec<String> = (top..top + 4).map(|y| row(&app, y)).collect();
+        assert_eq!(menu.iter().map(|r| r.trim()).collect::<Vec<_>>(), ["Continue", "New Game", "Settings", "Exit"], "{menu:#?}");
+        assert!(menu.iter().all(|r| r.chars().position(|c| c != ' ') == Some(46)), "on one column, centred across the screen: {menu:#?}");
+
+        press(&mut app, KeyCode::Enter);
+        foundry::testing::settle(&mut app);
+        assert_eq!(whereabouts(&mut app).0, 1, "New Game begins the run on deck one");
+        assert_eq!(app.world_mut().query::<&Player>().iter(app.world()).count(), 1, "with one commando, dropped in once");
+        assert!(!written(&app).iter().any(|r| r.contains("Ten decks of it") || r == "New Game"), "and the title is gone: {:#?}", written(&app));
+    }
+
+    /// The text of a run saved on arriving on `deck`, played in an app of
+    /// its own, as a run left there at the last launch wrote it.
+    fn a_save_on(deck: u32) -> String {
+        use rl_engine::rl_save::SaveBackend as _;
+        let mut app = foundry::testing::headless(RunSeed(5));
+        foundry::testing::arrive_on(&mut app, deck);
+        foundry::testing::settle(&mut app);
+        app.world().resource::<rl_engine::rl_save::Saves>().load(foundry::save::SLOT).unwrap().expect("arriving wrote it")
+    }
+
+    /// A run left on deck two at the last launch waits at this one's title,
+    /// picked out as Continue, which takes the commando back to deck two
+    /// and says so in the log.
+    #[test]
+    fn continue_on_the_title_picks_up_a_run_saved_at_the_last_launch_on_the_deck_it_was_left_on() {
+        let mut app = at_the_title(RunSeed(7), Some(&a_save_on(2)));
+        press(&mut app, KeyCode::Enter);
+        foundry::testing::settle(&mut app);
+        assert_eq!(whereabouts(&mut app).0, 2, "on the deck it was left on");
+        let continuing = app.world().resource::<MessageLog>().iter().any(|e| e.text == "Continuing on deck 2.");
+        assert!(continuing, "and the log says so");
+    }
+
+    /// The pause menu's Main menu leaves the run for the title, written
+    /// down as it stood, and Continue, picked out on the title that comes
+    /// back, carries it on from the same cell on the same turn.
+    #[test]
+    fn leaving_for_the_main_menu_and_continuing_carries_the_run_on_from_where_it_was_left() {
+        let mut app = on_screen(RunSeed(7));
+        foundry::testing::pass_turns(&mut app, 3);
+        let left = whereabouts(&mut app);
+        press(&mut app, KeyCode::Escape);
+        // Past Back to the run, A new run, This seed again and Settings.
+        for _ in 0..4 {
+            press(&mut app, KeyCode::ArrowDown);
+        }
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.world().contains_resource::<WorldMap>(), "the run is left");
+        let top = Screen::new().title_menu.y;
+        assert_eq!(row(&app, top).trim(), "Continue", "for the title, which offers it back: {:#?}", written(&app));
+
+        press(&mut app, KeyCode::Enter);
+        foundry::testing::settle(&mut app);
+        assert_eq!(whereabouts(&mut app), left, "carried on where it was left");
     }
 }

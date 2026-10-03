@@ -31,10 +31,6 @@ pub struct StartDeck(pub u32);
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Commando;
 
-/// Asks the next `NewRun` to continue the saved run rather than begin one.
-#[derive(Resource, Debug, Clone, Copy)]
-pub struct Resume;
-
 /// Everything a run stands on that is the same however it began: the
 /// decks, the combat rules and the damage pipeline, the dark, the fire,
 /// the roster, the pieces, the loot stream. Shared by [`start`] and
@@ -125,7 +121,11 @@ pub fn fade_the_unseen(mut commando: Query<(&mut Glyph, Has<Unseen>), With<Comma
 }
 
 /// Builds the foundry, spawns the commando and warps it onto deck one, or
-/// onto [`StartDeck`]'s. Runs once, in [`NewRun`].
+/// onto [`StartDeck`]'s. Runs in [`NewRun`], for every run but one the
+/// title asked to continue with `ContinueRun`, which is [`resume`]'s.
+///
+/// Asks nothing about a title: while one is up the engine runs no
+/// `NewRun` at all, and runs it once the player picks.
 ///
 /// Reads the registries from a resource rather than building them itself:
 /// `main.rs` inserts them before the run starts, the way its content is
@@ -135,16 +135,10 @@ pub fn start(
     seed: Res<Seed>,
     registries: Res<Registries>,
     first: Option<Res<StartDeck>>,
-    title: Option<Res<crate::title::Title>>,
-    resume: Option<Res<Resume>>,
+    continuing: Option<Res<ContinueRun>>,
     mut begin: Begin,
 ) {
-    // Nothing until the player asks for it. The engine runs `NewRun` at
-    // startup, and with the title screen up this is where that first run
-    // stops: no `WorldMap` is inserted, so the engine stays idle and the
-    // screen has the terminal to itself. Picking a run lowers the flag and
-    // runs `NewRun` again. A continued run is [`resume`]'s.
-    if title.is_some_and(|t| t.up) || resume.is_some() {
+    if continuing.is_some() {
         return;
     }
     prepare(&mut commands, &seed, &registries);
@@ -155,16 +149,18 @@ pub fn start(
     begin.next.set(EngineState::Playing);
 }
 
-/// Continues the saved run: the foundry built again from the saved seed,
-/// the run restored into it, and what the run did to the commando put
-/// back once the engine has given it back its gear.
+/// Continues the saved run, when the title's Continue asked for it with
+/// `ContinueRun`: the foundry built again from the saved seed, the run
+/// restored into it, and what the run did to the commando put back once
+/// the engine has given it back its gear. Takes the marker away, so the
+/// run after this one, a restart's, begins afresh.
 ///
 /// After [`start`] and `mission::start` in `NewRun`, so the resources a
 /// restore writes into exist. A save that cannot be read is logged and a
 /// fresh run begins instead: the title offers Continue only for a save it
 /// could read, so this is a save that went bad in between.
 pub fn resume(world: &mut World) {
-    if world.remove_resource::<Resume>().is_none() {
+    if world.remove_resource::<ContinueRun>().is_none() {
         return;
     }
     let saved = match rl_engine::rl_save::load_run(world) {

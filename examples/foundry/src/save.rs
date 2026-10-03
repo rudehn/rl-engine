@@ -13,15 +13,18 @@
 //! engine's to save.
 //!
 //! The run is written on the way out, by the engine's stash when the
-//! window closes or the menu quits, and on every deck arrival, so a crash
+//! window closes or the menu quits, by the engine again when the menu
+//! leaves the run for the title, and on every deck arrival, so a crash
 //! loses at most the deck in hand. There is no save key. Death and a win
-//! delete it. The title screen's Continue reads it back through
-//! [`run::resume`](crate::run::resume).
+//! delete it. The title's Continue reads it back through
+//! [`run::resume`](crate::run::resume), and its New Game over a save gives
+//! the save up through the engine's `AbandonRun`, which `SavePlugin`
+//! answers by deleting the slot.
 
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState, Saves, Stash, UnloadPlugin};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState, UnloadPlugin};
 use serde::{Deserialize, Serialize};
 
 use crate::climb::Deepest;
@@ -52,14 +55,6 @@ pub fn register(app: &mut App) {
         .save_state::<Deepest>()
         .save_state::<Quests>()
         .save_state::<Counters>();
-}
-
-/// Deletes the saved run, for a New Game that abandons it.
-pub fn abandon(world: &mut World) {
-    world.resource::<Stash>().clear();
-    if let Err(e) = world.resource::<Saves>().delete(SLOT) {
-        error!("could not delete the save: {e}");
-    }
 }
 
 /// Runs `spawn` against the world through a command queue, the way a

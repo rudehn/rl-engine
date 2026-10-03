@@ -14,6 +14,9 @@
 //! The one exception is drawing into a rectangle of the screen: the
 //! engine's panels and `upgrades::ChoicePanel` take the rectangle
 //! `main.rs` cuts for them, which a headless test has no screen to cut.
+//! The title is one of them, the engine's `TitlePanel` with Foundry's
+//! picture painted under it, so a headless run has none and begins at
+//! startup.
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, Turn, TurnSet};
@@ -71,10 +74,6 @@ impl Plugin for FoundryPlugin {
         // because a use is not an ability: nothing here is aimed, nothing
         // waits on a cooldown, and nothing shows on the abilities screen.
         app.add_plugins(ConsumablesPlugin);
-        // The screen before there is a world: it holds `run::start` back
-        // until the player picks a run, and paints the terminal itself
-        // while it does.
-        app.add_plugins(crate::title::TitlePlugin);
 
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
         app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));

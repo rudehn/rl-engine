@@ -409,8 +409,10 @@ A run is deterministic from its seed, so a summary can be shared and the run rep
 
 A run is saved on the way out, when the window closes or the menu quits, and on every deck arrival, so a crash loses at most the deck in hand (**exists**).
 There is no save key, so there is nothing to save and reload around.
-The title screen's Continue picks the run up where it was left, and New Game asks before it abandons one (**exists**).
+The title screen is the engine's menu over Foundry's own picture of the works (**exists**).
+Its Continue picks the run up where it was left, and New Game asks before it abandons one (**exists**).
 Its Settings row opens the engine's settings screen over the menu, and what is set there, fullscreen to begin with, is remembered beside the save and apart from it (**exists**).
+The pause menu's Main menu leaves a run for the title, written down as it stood, so Continue carries it on from there (**exists**).
 Death and a win delete the save, so no run is continued past its end.
 
 ## Art

@@ -1,333 +1,48 @@
-//! The title screen: the foundry's floor, seen from the gantry the
-//! commando drops in on, and what the player may do about it.
+//! The title screen's picture: the foundry's floor, seen from the gantry
+//! the commando drops in on.
 //!
-//! Foundry's own screen, not the engine's. The engine owns the menu a run
-//! is paused and ended on (`GameMenuPanel`), which is a list over a world
-//! that already exists; this is the one before there is a world at all, so
-//! it draws the whole terminal itself and holds the run back until the
-//! player asks for it.
-//!
-//! **How it holds the run back.** The engine runs `NewRun` at startup, and
-//! Foundry's `run::start` is in it. While [`Title::up`] is true that system
-//! returns at once, so no `WorldMap` is inserted, the engine's state stays
-//! `Idle` and nothing else runs either. Picking a run lowers the flag and
-//! runs `NewRun` again, which is the same door the engine's own restart
-//! uses. Nothing in the engine had to learn what a title screen is.
+//! The menu over it is the engine's. `main.rs` adds `TitlePanel` with
+//! [`menu`]'s rectangle beside the other panels, and [`paint_backdrop`] in
+//! `TitleSet::Backdrop` with it. The panel holds the run back until the
+//! player picks, and offers Continue, New Game, Settings and Exit in the
+//! rows the picture leaves dark under the gantry; the picture is painted
+//! under them every frame the title is up. What is Foundry's here is the
+//! picture, and where it leaves room for the menu.
 //!
 //! **The art.** Hand-drawn, stamped in layers back to front: the far wall
 //! and its machine towers, the furnace and its glow, the gantry the scene
-//! is watched from, the conveyor and what is on it, then the title and the
-//! menu over all of it. `art` holds the stamps and `paint` the order, so a
-//! change to the picture is a change to one const. Three things move, and
-//! only three, because a title screen that never settles is tiring to look
-//! at: the furnace breathes, its sparks rise, and the line carries chassis
-//! to the right.
+//! is watched from, the conveyor and what is on it, then the title, its
+//! tagline and the rule over the menu. `art` holds the stamps and `paint`
+//! the order, so a change to the picture is a change to one const. Three
+//! things move, and only three, because a title screen that never settles
+//! is tiring to look at: the furnace breathes, its sparks rise, and the
+//! line carries chassis to the right.
 
 use bevy::prelude::*;
-use rl_engine::rl_bevy::EngineState;
-use rl_engine::rl_bevy::plugin::{EngineSet, NewRun};
-use rl_engine::rl_bevy::settings::Settings;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_render::{Cell, Terminal};
-use rl_engine::rl_ui::panel::SettingsLayout;
-use rl_engine::rl_ui::{Modals, Palette, Tones, settings_modal};
+use rl_engine::rl_ui::{Palette, Tones};
 
-/// The title screen's state: whether it is up, and the row picked out.
+/// Where the engine's menu is drawn on a terminal `width` by `height`: the
+/// rows under the gantry's rule, the whole width across, which the picture
+/// leaves dark so the menu reads over nothing. The panel centres its rows
+/// across it, where Foundry's own menu stood.
+pub fn menu(width: i32, height: i32) -> Rect {
+    Rect::new(0, rows::MENU, width, height - rows::MENU)
+}
+
+/// Paints the picture: the scene, the title, its tagline and the rule
+/// over the menu.
 ///
-/// Up at startup and down for the rest of the process: a run that ends
-/// goes to the engine's own end-of-run menu, which offers another run
-/// directly, so coming back here would be a second way to say the same
-/// thing.
-#[derive(Resource, Debug, Clone)]
-pub struct Title {
-    /// Whether the screen is up and holding the run back.
-    pub up: bool,
-    /// Which row is picked out.
-    pub picked: usize,
-    /// What the save slot held when the screen came up.
-    pub save: SaveOnDisk,
-    /// The question New Game asks over a save, while it is asked: `Some`
-    /// with whether Yes is picked out.
-    pub confirm: Option<bool>,
-    /// Whether there is a settings screen with something on it to open.
-    pub settings: bool,
-    /// Where the game put the settings screen for a run, kept while this
-    /// screen has it standing over its own menu instead.
-    pub settings_in_run: Option<Rect>,
-    /// Whether a screen stands over the menu, as the keys last saw it: the
-    /// drawing reads this and not the stack of screens, which other
-    /// systems write and it is not ordered against.
-    pub covered: bool,
-}
-
-impl Default for Title {
-    /// Up, with no save looked for yet and the first row that can be taken
-    /// picked out.
-    fn default() -> Self {
-        Self {
-            up: true,
-            picked: first_available(SaveOnDisk::None, false),
-            save: SaveOnDisk::None,
-            confirm: None,
-            settings: false,
-            settings_in_run: None,
-            covered: false,
-        }
-    }
-}
-
-/// What the save slot holds, for the title screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SaveOnDisk {
-    /// Nothing: there is no run to continue.
-    None,
-    /// A run this build can read and continue.
-    Readable,
-    /// Something this build cannot read, of another version or damaged: it
-    /// cannot be continued, and New Game offers to clear it.
-    Unreadable,
-}
-
-/// The first row that can be taken with `save` in the slot, and a
-/// settings screen to open or not.
-fn first_available(save: SaveOnDisk, settings: bool) -> usize {
-    Choice::all().iter().position(|c| c.available(save, settings)).unwrap_or(0)
-}
-
-/// Looks in the save slot as the screen comes up, and picks Continue out
-/// when there is a run to continue.
-pub fn look_for_save(world: &mut World) {
-    let save = match rl_engine::rl_save::load_run(world) {
-        Ok(Some(_)) => SaveOnDisk::Readable,
-        Ok(None) => SaveOnDisk::None,
-        Err(e) => {
-            warn!("the saved run cannot be read: {e}");
-            SaveOnDisk::Unreadable
-        }
-    };
-    let mut title = world.resource_mut::<Title>();
-    title.save = save;
-    title.picked = first_available(save, title.settings);
-}
-
-/// Whether there is a settings screen to open: the panel was added and a
-/// setting is declared. Looked at once, since both are fixed by then.
-///
-/// While the title is up the screen is moved to stand over the title's
-/// own menu, where the player is already looking: where the game put it
-/// for a run is across the title's lettering. Starting a run puts it back.
-pub fn look_for_settings(
-    mut title: ResMut<Title>,
-    modals: Option<Res<Modals>>,
-    settings: Option<Res<Settings>>,
-    layout: Option<ResMut<SettingsLayout>>,
-    terminal: Option<Res<Terminal>>,
-) {
-    title.settings = modals.is_some_and(|m| settings_modal(&m).is_some()) && settings.is_some_and(|s| !s.is_empty());
-    if let (true, Some(mut layout), Some(terminal)) = (title.up, layout, terminal) {
-        title.settings_in_run = Some(layout.rect);
-        let width = layout.rect.width.min(terminal.width());
-        layout.rect = Rect::new((terminal.width() - width) / 2, rows::MENU - 1, width, terminal.height() - rows::MENU);
-    }
-}
-
-/// What the title screen offers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Choice {
-    /// Carry on the saved run, when there is one this build can read.
-    Continue,
-    /// A fresh seed, deck one.
-    NewGame,
-    /// What the player may set: the engine's settings screen, over this one.
-    Settings,
-    /// Leave.
-    Exit,
-}
-
-impl Choice {
-    /// Every row, in the order they are drawn.
-    pub fn all() -> [Choice; 4] {
-        [Choice::Continue, Choice::NewGame, Choice::Settings, Choice::Exit]
-    }
-
-    /// What the row says.
-    fn label(self) -> &'static str {
-        match self {
-            Choice::Continue => "Continue",
-            Choice::NewGame => "New Game",
-            Choice::Settings => "Settings",
-            Choice::Exit => "Exit",
-        }
-    }
-
-    /// Whether the row can be picked: `Continue` needs a run this build
-    /// can read in the slot, and `Settings` a settings screen with
-    /// something on it.
-    fn available(self, save: SaveOnDisk, settings: bool) -> bool {
-        match self {
-            Choice::Continue => save == SaveOnDisk::Readable,
-            Choice::Settings => settings,
-            Choice::NewGame | Choice::Exit => true,
-        }
-    }
-}
-
-/// The next row from `from` toward `dir`, one way or the other, wrapping
-/// round and passing over any row that cannot be picked.
-fn step(from: usize, dir: isize, save: SaveOnDisk, settings: bool) -> usize {
-    let rows = Choice::all();
-    let n = rows.len() as isize;
-    let mut at = from as isize;
-    loop {
-        at = (at + dir).rem_euclid(n);
-        if rows[at as usize].available(save, settings) {
-            return at as usize;
-        }
-    }
-}
-
-/// Foundry's title screen: the picture, the keys and the hold on the run.
-pub struct TitlePlugin;
-
-impl Plugin for TitlePlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<Title>()
-            // What the slot holds, looked at once as the screen comes up,
-            // before the first key is read: in `PreStartup`, so it is done
-            // before the engine begins its first run in `Startup`, and after
-            // the save's armory is loaded beside it.
-            .add_systems(PreStartup, (look_for_save.after(crate::gear::load_armory), look_for_settings).chain())
-            // Before the engine's input phase, and both of them before it:
-            // that phase holds the exclusive key handlers, which conflict
-            // with everything in the schedule they are not ordered against.
-            // Outside every play-gated set, because the whole point of this
-            // screen is the time before a run exists.
-            //
-            // The drawing wants a terminal, which a headless run has not
-            // got: the keys and the hold on the run are what a test drives,
-            // and the picture is what a window shows.
-            .add_systems(Update, (read_title_keys, draw_title.run_if(resource_exists::<Terminal>)).chain().before(EngineSet::Input).run_if(title_is_up));
-    }
-}
-
-/// Whether the title screen is up, for the systems that only run while it
-/// is.
-pub fn title_is_up(title: Option<Res<Title>>, state: Res<State<EngineState>>) -> bool {
-    title.is_some_and(|t| t.up) && *state.get() == EngineState::Idle
-}
-
-/// Moves the picked row, and answers Enter.
-///
-/// An ordinary system, not an exclusive one: starting the run means running
-/// the `NewRun` schedule, which wants the whole world, and a system that
-/// takes the whole world conflicts with every other system in its schedule.
-/// The world work is queued as a command instead, which runs with exclusive
-/// access at the next sync point in the same frame.
-pub fn read_title_keys(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut title: ResMut<Title>,
-    mut modals: Option<ResMut<Modals>>,
-    mut commands: Commands,
-    mut exit: MessageWriter<AppExit>,
-) {
-    // A screen over the title has the keys, and the key that closed one
-    // this frame is still down and is not the title's.
-    title.covered = modals.as_deref().is_some_and(|m| m.any_open());
-    if title.covered || modals.as_deref().is_some_and(|m| m.closing()) {
-        return;
-    }
-    let up = keys.just_pressed(KeyCode::ArrowUp) || keys.just_pressed(KeyCode::KeyK);
-    let down = keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyJ);
-    let across = keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::ArrowRight);
-    let take = keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter) || keys.just_pressed(KeyCode::Space);
-    let leave = keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::KeyQ);
-    // The question over New Game has the keys while it is asked: any
-    // direction moves between its two answers, Escape is No, and No, taken,
-    // puts the question away with New Game still picked out.
-    if let Some(yes) = title.confirm {
-        if up || down || across {
-            title.confirm = Some(!yes);
-        } else if leave || (take && !yes) {
-            title.confirm = None;
-        } else if take {
-            title.confirm = None;
-            title.up = false;
-            commands.queue(abandon_and_begin);
-        }
-        return;
-    }
-    let rows = Choice::all().len();
-    if up {
-        title.picked = step(title.picked, -1, title.save, title.settings);
-    }
-    if down {
-        title.picked = step(title.picked, 1, title.save, title.settings);
-    }
-    if leave {
-        exit.write(AppExit::Success);
-        return;
-    }
-    if !take {
-        return;
-    }
-    match Choice::all()[title.picked.min(rows - 1)] {
-        Choice::Continue => {
-            title.up = false;
-            commands.insert_resource(crate::run::Resume);
-            commands.queue(begin);
-        }
-        // Over a save, even one this build cannot read, New Game asks
-        // first: a run abandoned by a slip of the key is gone for good.
-        Choice::NewGame if title.save != SaveOnDisk::None => {
-            title.confirm = Some(false);
-        }
-        Choice::NewGame => {
-            title.up = false;
-            commands.queue(begin);
-        }
-        Choice::Settings => {
-            if let Some(modals) = modals.as_deref_mut()
-                && let Some(settings) = settings_modal(modals)
-            {
-                modals.open(settings);
-                title.covered = true;
-            }
-        }
-        Choice::Exit => {
-            exit.write(AppExit::Success);
-        }
-    }
-}
-
-/// Deletes the saved run the player chose to abandon, then starts a new one.
-fn abandon_and_begin(world: &mut World) {
-    crate::save::abandon(world);
-    begin(world);
-}
-
-/// Starts the run the player asked for.
-///
-/// `NewRun` rather than a `Restart`: a restart tears a run down and waits
-/// for the state to come round to idle, and there is no run to tear down
-/// yet. This is the same schedule the engine runs at startup and for every
-/// restart after, so Foundry's own start is written once and runs the same
-/// way whoever asked for it.
-fn begin(world: &mut World) {
-    // The settings screen goes back to where the game put it for a run.
-    if let Some(rect) = world.resource_mut::<Title>().settings_in_run.take()
-        && let Some(mut layout) = world.get_resource_mut::<SettingsLayout>()
-    {
-        layout.rect = rect;
-    }
-    world.run_schedule(NewRun);
-}
-
-/// Paints the whole terminal: the scene, the title, the menu.
-pub fn draw_title(mut terminal: ResMut<Terminal>, title: Res<Title>, palette: Res<Palette>, time: Res<Time>) {
+/// In `TitleSet::Backdrop`, which runs only while the title is up, and
+/// before the engine draws its menu over the picture. Paints nothing
+/// without a terminal, which a headless test may leave out.
+pub fn paint_backdrop(terminal: Option<ResMut<Terminal>>, palette: Res<Palette>, time: Res<Time>) {
+    let Some(mut terminal) = terminal else { return };
     let t = time.elapsed_secs();
     paint(&mut terminal, t);
     paint_title(&mut terminal, t);
-    paint_menu(&mut terminal, &title, &palette, !title.covered);
+    paint_words(&mut terminal, &palette);
 }
 
 /// The colours the picture is drawn in.
@@ -489,10 +204,9 @@ mod rows {
     /// The gantry's rail, its posts, and its grating, a clear row below the
     /// belt so the two do not read as one machine.
     pub const RAIL: i32 = 29;
-    /// The first row of the menu, three below the grating so its rule has a
-    /// clear row of its own. Its four rows are on four lines running, which
-    /// leaves two clear rows under them; a blank row between each would run
-    /// off the terminal.
+    /// The top of the engine's menu, three below the grating so the rule
+    /// over it has a clear row of its own. Its four rows, one to a line,
+    /// leave two clear under them.
     pub const MENU: i32 = 34;
 }
 
@@ -684,13 +398,10 @@ fn letter(which: &str) -> [&'static str; 6] {
     }
 }
 
-/// The tagline and the rows: a word each, and nothing under them, since
-/// four words need no gloss and the keys are the ones every menu has.
-///
-/// With `rows` false only the tagline and the rule are drawn: a screen
-/// stands over the menu, as tall as its own rows, and the menu left drawn
-/// would show its last row under it.
-fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette, rows: bool) {
+/// The words over the picture: the tagline under the title, and the rule
+/// over the menu. In the game's muted tone rather than the picture's ink,
+/// so a game that repaints its tones repaints them with the menu's rows.
+fn paint_words(terminal: &mut Terminal, palette: &Palette) {
     let w = terminal.width();
     let centre = |text: &str| (w - text.chars().count() as i32) / 2;
 
@@ -699,425 +410,42 @@ fn paint_menu(terminal: &mut Terminal, title: &Title, palette: &Palette, rows: b
 
     let rule: String = "─".repeat(34);
     terminal.print(centre(&rule), rows::MENU - 2, &rule, palette.get(Tones::MUTED));
-    if !rows {
-        return;
-    }
-
-    // The question over New Game stands where the menu stood while it is
-    // asked: one line, and its two answers under it, the picked one marked
-    // and in the title's warm tone as a picked row is.
-    if let Some(yes) = title.confirm {
-        let question = "Abandon the run in progress?";
-        terminal.print(centre(question), rows::MENU, question, palette.get(Tones::TEXT));
-        let answers = [("No", !yes), ("Yes", yes)];
-        let width = "> No    > Yes".chars().count() as i32;
-        let mut x = (w - width) / 2;
-        for (word, picked) in answers {
-            let mark = if picked { '>' } else { ' ' };
-            let tone = if picked { Tones::TITLE } else { Tones::TEXT };
-            let text = format!("{mark} {word}");
-            terminal.print(x, rows::MENU + 2, &text, palette.get(tone));
-            x += text.chars().count() as i32 + 4;
-        }
-        return;
-    }
-
-    // Every row is centred on the same column, the mark's two cells
-    // included, so the words line up and do not jump as the cursor moves.
-    let x = centre(&format!("> {}", Choice::all().map(Choice::label).iter().max_by_key(|l| l.len()).unwrap()));
-    for (i, choice) in Choice::all().into_iter().enumerate() {
-        let picked = i == title.picked;
-        // The picked row in the title's own warm tone, so it stands out from
-        // the plain row and the dim one alike; `SELECT` is a background,
-        // and as a foreground it read darker than the row that cannot be
-        // picked.
-        let tone = match (picked, choice.available(title.save, title.settings)) {
-            (true, _) => Tones::TITLE,
-            (false, true) => Tones::TEXT,
-            (false, false) => Tones::MUTED,
-        };
-        let mark = if picked { '>' } else { ' ' };
-        terminal.print(x, rows::MENU + i as i32, &format!("{mark} {}", choice.label()), palette.get(tone));
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_bevy::{Player, WorldMap};
 
-    /// The title screen holds the run back: the engine ran `NewRun` at
-    /// startup and Foundry's start did nothing, so there is no world and
-    /// nothing is being dealt turns.
-    #[test]
-    fn the_title_screen_holds_the_run_back_until_it_is_asked() {
-        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(3));
-        // The harness puts the screen down for every other test; this one is
-        // about the screen, so it goes back up before anything runs.
-        app.insert_resource(Title::default());
-        app.update();
-        app.update();
-        assert!(app.world().resource::<Title>().up, "the screen is up to begin with");
-        assert!(!app.world().contains_resource::<WorldMap>(), "and no deck was built behind it");
-        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Idle, "so the engine is idle");
-        let mut players = app.world_mut().query_filtered::<Entity, With<Player>>();
-        assert!(players.iter(app.world()).next().is_none(), "and there is no commando yet");
-    }
-
-    /// Taking up the offer starts the run the ordinary way: the same
-    /// `NewRun` the engine runs for a restart, so everything Foundry sets up
-    /// is set up exactly once.
-    #[test]
-    fn taking_up_the_offer_starts_the_run() {
-        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(3));
-        app.insert_resource(Title::default());
-        app.update();
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Enter);
-        app.update();
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
-        app.update();
-
-        assert!(!app.world().resource::<Title>().up, "the screen is down");
-        assert!(app.world().contains_resource::<WorldMap>(), "the first deck is built");
-        let mut players = app.world_mut().query_filtered::<Entity, With<Player>>();
-        assert_eq!(players.iter(app.world()).count(), 1, "one commando, dropped in once");
-    }
-
-    /// The text of a run saved on arriving on `deck`, played in an app of
-    /// its own.
-    fn a_save_on(deck: u32) -> String {
-        use rl_engine::rl_save::SaveBackend as _;
-        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(5));
-        crate::testing::arrive_on(&mut app, deck);
-        crate::testing::settle(&mut app);
-        app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).unwrap().expect("arriving wrote it")
-    }
-
-    /// The title up, with `save` in the slot before anything ran.
-    fn title_over(save: Option<&str>) -> App {
-        use rl_engine::rl_save::SaveBackend as _;
-        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(6));
-        app.insert_resource(Title::default());
-        if let Some(text) = save {
-            app.world().resource::<rl_engine::rl_save::Saves>().persist(crate::save::SLOT, text).unwrap();
-        }
-        app.update();
-        app
-    }
-
-    /// Presses `key` for one frame and lets it go, so the same key pressed
-    /// again is a new press.
-    fn key(app: &mut App, key: KeyCode) {
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
-        app.update();
-        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-        input.release(key);
-        input.clear();
-        app.update();
-    }
-
-    fn slot_holds_a_save(app: &App) -> bool {
-        use rl_engine::rl_save::SaveBackend as _;
-        app.world().resource::<rl_engine::rl_save::Saves>().exists(crate::save::SLOT)
-    }
-
-    fn deck(app: &mut App) -> u32 {
-        let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).expect("a commando");
-        crate::decks::deck_of(app.world().get::<rl_engine::rl_bevy::OnMap>(me).map_or(rl_engine::rl_bevy::MapId::SURFACE, |m| m.0))
-    }
-
-    /// Continue is taken only when the slot holds a save this build can
-    /// read, and then it is the row picked out to begin with.
-    #[test]
-    fn continue_is_offered_only_with_a_readable_save() {
-        let none = title_over(None);
-        assert_eq!(none.world().resource::<Title>().save, SaveOnDisk::None);
-        let damaged = title_over(Some("not a save"));
-        assert_eq!(damaged.world().resource::<Title>().save, SaveOnDisk::Unreadable);
-        for app in [&none, &damaged] {
-            let title = app.world().resource::<Title>();
-            assert_eq!(Choice::all()[title.picked], Choice::NewGame, "New Game is picked out");
-            let mut at = title.picked;
-            for _ in 0..6 {
-                at = step(at, 1, title.save, title.settings);
-                assert_ne!(Choice::all()[at], Choice::Continue, "and the cursor never lands on Continue");
-            }
-        }
-        let readable = title_over(Some(&a_save_on(2)));
-        let title = readable.world().resource::<Title>();
-        assert_eq!(title.save, SaveOnDisk::Readable);
-        assert_eq!(Choice::all()[title.picked], Choice::Continue, "Continue is picked out");
-    }
-
-    /// Continue picks the run up where it was left.
-    #[test]
-    fn continue_resumes_the_saved_run() {
-        let mut app = title_over(Some(&a_save_on(2)));
-        key(&mut app, KeyCode::Enter);
-        crate::testing::settle(&mut app);
-        assert!(!app.world().resource::<Title>().up, "the screen is down");
-        assert_eq!(deck(&mut app), 2, "on the deck it was left on");
-        let continuing = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().any(|e| e.text == "Continuing on deck 2.");
-        assert!(continuing, "and the log says so");
-    }
-
-    /// New Game over a save asks first, and No keeps the save and the
-    /// screen as they were.
-    #[test]
-    fn new_game_over_a_save_asks_and_no_keeps_it() {
-        let mut app = title_over(Some(&a_save_on(2)));
-        key(&mut app, KeyCode::ArrowDown);
-        key(&mut app, KeyCode::Enter);
-        assert_eq!(app.world().resource::<Title>().confirm, Some(false), "it asks, with No picked out");
-        key(&mut app, KeyCode::Enter);
-        let title = app.world().resource::<Title>();
-        assert_eq!(title.confirm, None, "the question is gone");
-        assert!(title.up, "and the screen is still up");
-        assert_eq!(Choice::all()[title.picked], Choice::NewGame, "with New Game picked out");
-        assert!(slot_holds_a_save(&app), "and the save is kept");
-    }
-
-    /// Yes abandons the saved run and starts a fresh one on deck one.
-    #[test]
-    fn new_game_over_a_save_and_yes_starts_fresh() {
-        let mut app = title_over(Some(&a_save_on(2)));
-        key(&mut app, KeyCode::ArrowDown);
-        key(&mut app, KeyCode::Enter);
-        key(&mut app, KeyCode::ArrowUp);
-        assert_eq!(app.world().resource::<Title>().confirm, Some(true), "Yes picked out");
-        key(&mut app, KeyCode::Enter);
-        crate::testing::settle(&mut app);
-        assert!(!app.world().resource::<Title>().up, "the screen is down");
-        assert_eq!(deck(&mut app), 1, "a fresh run, on deck one");
-    }
-
-    /// A save this build cannot read leaves Continue dim, and New Game
-    /// still asks, so it can always be cleared from the menu.
-    #[test]
-    fn a_damaged_save_leaves_continue_dim_and_new_game_clears_it() {
-        let mut app = title_over(Some("not a save"));
-        key(&mut app, KeyCode::Enter);
-        assert_eq!(app.world().resource::<Title>().confirm, Some(false), "New Game asks");
-        key(&mut app, KeyCode::ArrowUp);
-        key(&mut app, KeyCode::Enter);
-        crate::testing::settle(&mut app);
-        assert_eq!(deck(&mut app), 1, "a fresh run");
-    }
-
-    /// Every row of the terminal, as text.
-    fn screen(terminal: &Terminal) -> Vec<String> {
-        (0..terminal.height()).map(|y| (0..terminal.width()).map(|x| terminal.get(x, y).map_or(' ', |c| c.glyph)).collect()).collect()
-    }
-
-    /// The menu is four words and nothing else: no line under a row saying
-    /// what it does, and no row of keys along the bottom.
-    #[test]
-    fn the_menu_reads_continue_new_game_settings_and_exit_and_nothing_more() {
+    /// The picture `t` seconds in, on Foundry's screen.
+    fn painted(t: f32) -> Terminal {
         let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
-        let palette = Palette::default();
-        paint_menu(&mut terminal, &Title::default(), &palette, true);
-        let rows = screen(&terminal);
-        let menu: Vec<&str> = rows[rows::MENU as usize..].iter().map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
-        assert_eq!(menu, vec!["Continue", "> New Game", "Settings", "Exit"], "{rows:#?}");
+        paint(&mut terminal, t);
+        paint_title(&mut terminal, t);
+        paint_words(&mut terminal, &Palette::default());
+        terminal
     }
 
-    /// Continue is there to say a run can be continued one day, and until
-    /// there is a save it is drawn dim and the cursor steps over it.
+    /// The engine draws its menu over the picture, and the rows read
+    /// because what is under them is the dark: over a minute of the
+    /// picture's motion, nothing it draws lands in the menu's rectangle.
     #[test]
-    fn continue_is_drawn_dim_and_the_cursor_never_lands_on_it() {
-        let mut title = Title::default();
-        assert_eq!(Choice::all()[title.picked], Choice::NewGame, "the cursor starts on New Game");
-        let mut seen = Vec::new();
-        for _ in 0..6 {
-            title.picked = step(title.picked, 1, title.save, title.settings);
-            seen.push(Choice::all()[title.picked]);
-        }
-        for _ in 0..6 {
-            title.picked = step(title.picked, -1, title.save, title.settings);
-            seen.push(Choice::all()[title.picked]);
-        }
-        assert!(!seen.contains(&Choice::Continue), "{seen:?}");
-
-        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
-        let palette = Palette::default();
-        paint_menu(&mut terminal, &Title::default(), &palette, true);
-        let rows = screen(&terminal);
-        let y = rows.iter().position(|r| r.trim() == "Continue").expect("Continue is drawn") as i32;
-        let x = rows[y as usize].find('C').unwrap() as i32;
-        assert_eq!(terminal.get(x, y).unwrap().fg, palette.get(Tones::MUTED), "and drawn dim");
-        let y = rows.iter().position(|r| r.trim() == "> New Game").expect("New Game is drawn picked") as i32;
-        let x = rows[y as usize].find('N').unwrap() as i32;
-        assert_eq!(terminal.get(x, y).unwrap().fg, palette.get(Tones::TITLE), "while the picked row stands out");
-    }
-
-    /// While New Game's question is asked it stands where the menu stood:
-    /// the question, and its two answers under it with the picked one
-    /// marked.
-    #[test]
-    fn the_question_over_new_game_stands_where_the_menu_stood() {
-        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
-        let palette = Palette::default();
-        let title = Title { confirm: Some(false), save: SaveOnDisk::Readable, ..Title::default() };
-        paint_menu(&mut terminal, &title, &palette, true);
-        let rows = screen(&terminal);
-        let menu: Vec<&str> = rows[rows::MENU as usize..].iter().map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
-        assert_eq!(menu, vec!["Abandon the run in progress?", "> No      Yes"], "{rows:#?}");
-    }
-
-    /// Exit leaves, the same as it always did.
-    #[test]
-    fn exit_leaves() {
-        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(3));
-        app.insert_resource(Title::default());
-        app.update();
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::ArrowDown);
-        app.update();
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
-        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Enter);
-        app.update();
-        assert!(app.should_exit().is_some(), "it asked to exit");
-    }
-
-    #[test]
-    fn the_settings_row_sits_between_new_game_and_exit() {
-        assert_eq!(Choice::all(), [Choice::Continue, Choice::NewGame, Choice::Settings, Choice::Exit]);
-    }
-
-    #[test]
-    fn the_settings_row_cannot_be_picked_when_there_is_no_settings_screen() {
-        assert!(!Choice::Settings.available(SaveOnDisk::None, false));
-        assert!(Choice::Settings.available(SaveOnDisk::None, true));
-        // Stepping down from New Game passes over it to Exit.
-        assert_eq!(step(1, 1, SaveOnDisk::None, false), 3);
-        assert_eq!(step(1, 1, SaveOnDisk::None, true), 2);
-    }
-
-    #[test]
-    fn the_title_gives_its_keys_to_the_settings_screen_while_it_is_open_and_takes_them_back_when_it_closes() {
-        use rl_engine::rl_bevy::settings::{AddSettings, Setting, Settings};
-        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(4));
-        app.add_plugins(rl_engine::rl_ui::SettingsPanel::new(rl_engine::rl_core::Rect::new(0, 0, 40, 12)));
-        app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
-        app.insert_resource(Title::default());
-        app.update();
-        assert!(app.world().resource::<Title>().settings, "there is a settings screen to open");
-
-        key(&mut app, KeyCode::ArrowDown);
-        assert_eq!(Choice::all()[app.world().resource::<Title>().picked], Choice::Settings);
-        key(&mut app, KeyCode::Enter);
-        assert!(app.world().resource::<Modals>().any_open(), "Enter opened the settings screen");
-        assert!(app.world().resource::<Title>().up, "and the title is still up under it");
-        let glow = |app: &App| {
-            let settings = app.world().resource::<Settings>();
-            settings.choice(settings.find("glow").unwrap()).to_string()
-        };
-        assert_eq!(glow(&app), "Off", "the key that opened it changed nothing");
-
-        // The screen has the keys: Down does not move the title's row, and
-        // Enter changes the setting rather than taking a title row.
-        key(&mut app, KeyCode::ArrowDown);
-        key(&mut app, KeyCode::Enter);
-        assert_eq!(Choice::all()[app.world().resource::<Title>().picked], Choice::Settings);
-        assert_eq!(glow(&app), "On");
-        assert!(app.world().resource::<Title>().up && app.should_exit().is_none());
-
-        // Escape closes the screen and is not the title's Escape, which leaves.
-        key(&mut app, KeyCode::Escape);
-        assert!(!app.world().resource::<Modals>().any_open());
-        assert!(app.should_exit().is_none(), "the game did not exit");
-        assert!(app.world().resource::<Title>().up);
-    }
-
-    /// Over the title the settings screen stands on the title's own menu,
-    /// where the player is already looking, and not where the game put it
-    /// for a run, which is across the title's lettering.
-    #[test]
-    fn the_settings_screen_stands_over_the_titles_menu_until_a_run_begins() {
-        use rl_engine::rl_bevy::settings::{AddSettings, Setting};
-        use rl_engine::rl_core::Rect;
-        use rl_engine::rl_ui::panel::SettingsLayout;
-        let in_run = Rect::new(28, 6, 44, 13);
-        let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(4));
-        app.add_plugins(rl_engine::rl_ui::SettingsPanel::new(in_run));
-        app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
-        app.insert_resource(Terminal::new(100, 40, Vec2::new(10.0, 16.0)));
-        app.insert_resource(Title::default());
-        app.update();
-        assert_eq!(app.world().resource::<SettingsLayout>().rect, Rect::new(28, rows::MENU - 1, 44, 6));
-
-        key(&mut app, KeyCode::Enter);
-        assert!(!app.world().resource::<Title>().up, "New Game began a run");
-        assert_eq!(app.world().resource::<SettingsLayout>().rect, in_run, "and the screen is back where the game put it");
-    }
-
-    /// A screen over the title stands on its menu, and is as tall as its
-    /// own rows: the menu left drawn would show its last row under it.
-    #[test]
-    fn the_menu_is_not_drawn_while_a_screen_stands_over_it() {
-        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
-        paint_menu(&mut terminal, &Title::default(), &Palette::default(), false);
-        let rows = screen(&terminal);
-        assert!(rows[rows::TAGLINE as usize].contains("Ten decks"), "the tagline stays");
-        assert!(rows[rows::MENU as usize..].iter().all(|r| r.trim().is_empty()), "{rows:#?}");
-    }
-
-    /// The title's keys and the settings screen's are not ordered against
-    /// each other, since one is the game's and the other the engine's. So
-    /// whichever runs first, the key that opens the screen must not also
-    /// change its first row, and the key that closes it must not also be
-    /// the title's Escape, which leaves the game.
-    #[test]
-    fn the_title_and_the_settings_screen_share_no_key_whichever_reads_first() {
-        use bevy::ecs::system::RunSystemOnce;
-        use rl_engine::rl_bevy::settings::{AddSettings, Setting, Settings};
-        use rl_engine::rl_ui::panel::settings::settings_keys;
-
-        fn frame(app: &mut App, key: KeyCode, title_first: bool) {
-            app.world_mut().resource_mut::<Modals>().begin_frame();
-            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
-            if title_first {
-                app.world_mut().run_system_once(read_title_keys).unwrap();
-                app.world_mut().run_system_once(settings_keys).unwrap();
-            } else {
-                app.world_mut().run_system_once(settings_keys).unwrap();
-                app.world_mut().run_system_once(read_title_keys).unwrap();
-            }
-            let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            input.release(key);
-            input.clear();
-        }
-
-        for (open_title_first, close_title_first) in [(true, true), (true, false), (false, true), (false, false)] {
-            let mut app = crate::testing::headless(rl_engine::rl_core::RunSeed(4));
-            app.add_plugins(rl_engine::rl_ui::SettingsPanel::new(rl_engine::rl_core::Rect::new(0, 0, 40, 12)));
-            app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
-            app.insert_resource(Title::default());
-            app.update();
-            app.world_mut().resource_mut::<Title>().picked = Choice::all().iter().position(|c| *c == Choice::Settings).unwrap();
-            let orders = format!("opened with the title first: {open_title_first}, closed with it first: {close_title_first}");
-
-            frame(&mut app, KeyCode::Enter, open_title_first);
-            assert!(app.world().resource::<Modals>().any_open(), "{orders}");
-            let settings = app.world().resource::<Settings>();
-            assert_eq!(settings.choice(settings.find("glow").unwrap()), "Off", "{orders}");
-
-            frame(&mut app, KeyCode::Escape, close_title_first);
-            assert!(settings_modal(app.world().resource::<Modals>()).is_some_and(|m| !app.world().resource::<Modals>().is_open(m)), "{orders}");
-            assert!(app.should_exit().is_none(), "{orders}");
-            assert!(app.world().resource::<Title>().up, "{orders}");
+    fn the_picture_never_draws_in_the_menus_rectangle_at_any_moment_of_its_motion() {
+        let menu = menu(100, 40);
+        for tenth in 0..600 {
+            let terminal = painted(tenth as f32 / 10.0);
+            let drawn: Vec<_> = menu.cells().filter(|at| terminal.get(at.x, at.y).is_some_and(|c| c.glyph != ' ' || c.bg != Color::BLACK)).collect();
+            assert!(drawn.is_empty(), "{} seconds in, the picture draws in the menu at {drawn:?}", tenth as f32 / 10.0);
         }
     }
 
-    /// Prints the title screen as the player sees it, for eyeballing the
-    /// art: `cargo test -p foundry title_screen -- --ignored --nocapture`.
+    /// Prints the picture as the player sees it under the menu, for
+    /// eyeballing the art: `cargo test -p foundry title_screen -- --ignored
+    /// --nocapture`. The menu is the engine's and is drawn over the dark
+    /// rows at the foot; running the game shows the two together.
     #[test]
     #[ignore]
     fn title_screen() {
-        let mut terminal = Terminal::new(100, 40, Vec2::new(10.0, 20.0));
-        let palette = Palette::default();
-        paint(&mut terminal, 0.4);
-        paint_title(&mut terminal, 0.4);
-        paint_menu(&mut terminal, &Title::default(), &palette, true);
+        let terminal = painted(0.4);
         for y in 0..terminal.height() {
             let row: String = (0..terminal.width()).map(|x| terminal.get(x, y).map(|c| c.glyph).unwrap_or(' ')).collect();
             println!("{row}");

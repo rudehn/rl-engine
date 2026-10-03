@@ -74,8 +74,6 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("engine loot::scatter_places", id(rl_engine::rl_bevy::loot::scatter_places::<gear::Armory>)),
         ("engine loot::drop_on_death", id(rl_engine::rl_bevy::loot::drop_on_death::<gear::Armory>)),
         ("engine loot::fill_containers", id(rl_engine::rl_bevy::loot::fill_containers::<gear::Armory>)),
-        ("title::look_for_save", id(title::look_for_save)),
-        ("title::look_for_settings", id(title::look_for_settings)),
         ("engine save::refresh_stash", id(rl_engine::rl_save::run::refresh_stash)),
         ("engine save::save_on_arrival", id(rl_engine::rl_save::save_on_arrival)),
         ("engine save::flush_on_exit", id(rl_engine::rl_save::unload::flush_on_exit)),
@@ -85,8 +83,6 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("engine plugin::restart_runs", id(rl_engine::rl_bevy::plugin::restart_runs)),
         ("upgrades::react_uplink", id(upgrades::react_uplink)),
         ("upgrades::choice_keys", id(upgrades::choice_keys)),
-        ("title::read_title_keys", id(title::read_title_keys)),
-        ("title::draw_title", id(title::draw_title)),
         ("light::toggle_lamp", id(light::toggle_lamp)),
         ("input::player_input", id(input::player_input)),
         ("cheats::search_keys", id(cheats::search_keys)),
@@ -185,8 +181,6 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Consumable", c.component_id::<rl_engine::rl_bevy::Consumable>()),
         ("Triggers", c.component_id::<rl_engine::rl_bevy::Triggers>()),
         ("Messages<ItemEvent>", c.component_id::<Messages<rl_engine::rl_bevy::ItemEvent>>()),
-        ("Messages<AppExit>", c.component_id::<Messages<AppExit>>()),
-        ("ButtonInput<KeyCode>", c.component_id::<ButtonInput<KeyCode>>()),
         ("Messages<Fired>", c.component_id::<Messages<rl_engine::rl_bevy::Fired>>()),
     ];
     found.into_iter().map(|(name, id)| (name, id.unwrap_or_else(|| panic!("{name} is registered once every schedule is built")))).collect()
@@ -196,7 +190,6 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
 /// its reason. A pair not here fails the test, and so does an entry no
 /// pair needs any more.
 fn allowed(world: &World) -> Vec<Allowed> {
-    use crate::title;
     use crate::*;
     use rl_engine::rl_bevy::{ability, combat, items, props as engine_props, stealth, throwing};
     let ids = ids(world);
@@ -289,26 +282,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &[&claims[..], &["Messages<ItemEvent>", "Equipped", "Inventory"]].concat(),
             "one action a pass: taking out of a crate and picking up are never resolved in the same one",
         ),
-        // The title screen's keys, against everything else that reads or
-        // clears a key or asks to close.
-        //
-        // Two ways to leave, first: this screen's own key before a run
-        // exists, and the engine's menu inside one. Neither is up while the
-        // other is, and a game told twice to close still closes.
-        //
-        // And the engine forgets what was held when the window loses focus,
-        // which writes `ButtonInput`. Unordered against this reader, the
-        // worst an inversion costs is one menu row moved, or one run begun,
-        // on the single frame the window was leaving; the key it acts on was
-        // really pressed either way. Ordering it would mean naming another
-        // crate's system from a game, which is the one thing this repository
-        // does not do.
-        Allowed {
-            a: Some(id(title::read_title_keys)),
-            b: None,
-            on: on(&["Messages<AppExit>", "ButtonInput<KeyCode>", "Modals"]),
-            why: "the title screen is up only before a run, the menu only inside one, and a key forgotten as the window leaves is a key this screen may act on or not with nothing riding on it; the one screen it opens, the settings, is read in neither order in the frame it opens or closes",
-        },
         // What lands only ever lands in a pass that dealt nobody a turn,
         // since nothing is dealt while it flies, so never beside an
         // interaction, which is an action somebody spent a turn on.
