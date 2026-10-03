@@ -6,6 +6,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Foundry forgets a run's upgrades and the deepest deck it reached when the run ends, declared with `reset_on_new_run`, so a run begun after another in the same launch, by a restart or from the title, inherits neither.
 - Foundry's title screen is the engine's menu over Foundry's own picture of the works, and its pause and end menus offer Main menu with it.
   `main.rs` adds `TitlePanel` beside the other panels, in the rows under the gantry where Foundry's own menu stood, and `title::paint_backdrop` in `TitleSet::Backdrop`; the picture, its stamps and its motion are as they were.
   Foundry's own menu and the `Title` resource `run::start` checked are gone; `run::Resume` is the engine's `ContinueRun`, and `save::abandon` is `SavePlugin`'s answer to `AbandonRun`.

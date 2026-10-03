@@ -19,7 +19,7 @@
 //! startup.
 use bevy::prelude::*;
 use rl_engine::rl_bevy::EngineState;
-use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, Turn, TurnSet};
+use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, ResetsOnNewRun, Turn, TurnSet};
 use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, ConsumablesPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin, WorkPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
 
@@ -133,8 +133,10 @@ impl Plugin for FoundryPlugin {
         // alarm, then the weapon's heat, then its ammunition, rather than
         // whichever order the executor ran the tellers in.
         app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().after(crate::heat::heat_on_struck).in_set(TurnSet::React));
-        // The run's depth memory, one at the start, only ever raised.
-        app.init_resource::<crate::climb::Deepest>();
+        // The run's depth memory, one at the start, only ever raised, and
+        // put back to one when the run ends: the next run in the same
+        // launch, a restart's or one begun from the title, has been nowhere.
+        app.init_resource::<crate::climb::Deepest>().reset_on_new_run::<crate::climb::Deepest>();
         // A deck fills the moment it is first entered, the way delve's own
         // floors do: the engine's prefab slots in `PrefabSet::Fill`, then
         // its droids, then its props, then the engine's loot in
@@ -225,7 +227,9 @@ impl Plugin for FoundryPlugin {
         app.add_modal(crate::upgrades::MODAL);
         app.init_resource::<crate::upgrades::ChoiceScreen>();
         app.init_resource::<crate::upgrades::Choosing>();
-        app.init_resource::<crate::upgrades::Taken>();
+        // The upgrades taken are the run's, emptied when it ends, as the
+        // commando they were fitted to is gone with it.
+        app.init_resource::<crate::upgrades::Taken>().reset_on_new_run::<crate::upgrades::Taken>();
         // The keys, declared once so the controls screen lists what these
         // systems read. Chained, the pick first: a confirm that closes the
         // pick must not fall through, the same frame, to the world's own

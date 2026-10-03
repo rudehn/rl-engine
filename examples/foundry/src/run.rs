@@ -300,6 +300,30 @@ mod tests {
         }
     }
 
+    /// A run begun after another in the same launch, by the menu's A new
+    /// run or by Main menu and New Game, keeps nothing of the run before
+    /// it: no upgrade taken, and no deck reached but the first.
+    #[test]
+    fn a_run_begun_after_another_keeps_neither_its_upgrades_nor_its_depth() {
+        use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+        let mut app = crate::testing::headless(RunSeed(2));
+        app.add_plugins(KeyScriptPlugin);
+        let me = crate::testing::beside_the_console(&mut app);
+        crate::testing::settle(&mut app);
+        let into_it = crate::testing::key_toward_the_console(&app, me);
+        press(&mut app, into_it);
+        crate::testing::settle(&mut app);
+        press(&mut app, KeyCode::Enter);
+        crate::testing::settle(&mut app);
+        let kept = |app: &App| (app.world().resource::<crate::upgrades::Taken>().0.len(), app.world().resource::<crate::climb::Deepest>().0);
+        assert_eq!(kept(&app), (1, 3), "the run charged deck three's reactor and took an upgrade for it");
+
+        app.world_mut().write_message(Restart::fresh());
+        crate::testing::settle(&mut app);
+        crate::testing::settle(&mut app);
+        assert_eq!(kept(&app), (0, 1), "the next run has taken nothing and been nowhere below deck one");
+    }
+
     #[test]
     fn on_a_fresh_run_the_player_is_dealt_the_first_turn_over_a_span_of_seeds() {
         for s in 0..8u64 {
