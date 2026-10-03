@@ -256,8 +256,6 @@ impl SaveableState for Deepest {
 
 #[cfg(test)]
 mod tests {
-    use bevy::prelude::*;
-    use rl_engine::prelude::*;
     use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
     use rl_engine::rl_core::RunSeed;
     use rl_engine::rl_save::{Saves, save_run};
