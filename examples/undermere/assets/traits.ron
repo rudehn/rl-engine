@@ -1,0 +1,62 @@
+// Undermere's traits: what a monster is besides its core. A monster in
+// `monsters.ron` lists the traits it has, an item in `items.ron` lends some to
+// whoever wears it, and each is written here once.
+//
+// Every field (all but name may be left out, and one left out says nothing):
+//   name:       unique; what a monster's `traits` and an item's `lends` name it by
+//   says:       the examine panel's words for it
+//   wits:       "mindless" | "animal" | "sapient", or a list as in the engine's Wits:
+//               "flees" | "searches" | "opens_doors" | "picks_up" | "equips" | "throws" |
+//               "travels", which may name a preset too; a monster's wits are every wit its
+//               traits name together, and one whose traits name none is mindless
+//   speed:      percent of normal: 100 normal, 150 half as fast again, 70 slow;
+//               absent from all its traits, a monster moves at 100
+//   perception: how far it sees, in tiles, through the light; absent from all its traits, 8
+//   dark_sight: tiles it sees with no light at all; absent, only what it touches
+//   flee_at:    percent health at or below which it runs from what it can see, if its wits
+//               let it run; 0 never runs, and so does a monster none of whose traits sets it
+//   notice:     how it notices a quiet adventurer, as (certain: tiles it is sure within,
+//               chance_pct: percent a turn beyond that, lit_bonus: tiles added to certain
+//               while the adventurer stands in light, may be left out, 0, memory: turns it
+//               keeps looking, may be left out, 6); absent, the engine's: sure only of what
+//               is adjacent, 25 percent a turn beyond
+//   hearing:    how it hears, as (threshold: steps of loudness a sound must still have when
+//               it arrives, memory: turns it goes looking, may be left out, 6); absent, deaf
+//   light:      the light it sheds, as (radius: tiles, color: (r, g, b) in 0..=1, flicker:
+//               0..=1, 0 steady, may be left out)
+//   resists:    [(damage kind, percent removed)]: "slash" | "pierce" | "crush" | "fire" |
+//               "cold" | "poison"; 100 immune, negative a weakness
+//   armor:      flat armor, added to the monster's own
+//   abilities:  names from `abilities.ron`: "fire breath" | "drowning grasp"
+//   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating"
+//
+// Lists add up across a monster's traits: wits, resists, abilities and statuses.
+// Every other field may be set by one of a monster's traits only, and a monster
+// with two traits setting the same one is refused at load, naming both.
+#![enable(implicit_some)]
+[
+    // What a mind can do, the three presets every monster starts from.
+    (name: "mindless", says: "acts without thought", wits: "mindless"),
+    (name: "animal", says: "a beast", wits: "animal"),
+    (name: "sapient", says: "thinks, opens doors, uses what it finds", wits: "sapient"),
+    // Running is a wit as well as a threshold, so a coward runs whatever
+    // else its wits are, and the panel's words for it are never a lie.
+    (name: "cowardly", says: "runs when hurt", wits: ["flees"], flee_at: 50),
+    (name: "swift", says: "fast", speed: 150),
+    (name: "slow", says: "slow", speed: 70),
+    (name: "keen-nosed", says: "hard to sneak past", perception: 10, notice: (certain: 4, chance_pct: 50)),
+    (name: "sees in the dark", says: "sees without light", dark_sight: 6),
+    // Setting `flee_at` is what makes a deathless coward a load error,
+    // which is right: nothing can be both.
+    (name: "deathless", says: "no blood, no breath: poison does nothing, and it never runs", resists: [("poison", 100)], flee_at: 0),
+    (name: "thick-hided", says: "a hide that turns blows", armor: 2),
+    (name: "armored", says: "plated", armor: 4),
+    (name: "fire-blooded", says: "fire cannot hurt it; cold bites deep", resists: [("fire", 100), ("cold", -50)]),
+    (name: "fungal glow", says: "glows a soft green", light: (radius: 4, color: (0.35, 1.0, 0.8), flicker: 0.0)),
+    (name: "ember glow", says: "smoulders, lighting the dark", light: (radius: 4, color: (1.0, 0.55, 0.2), flicker: 0.3)),
+    (name: "grave light", says: "lit by a cold, drowned light", light: (radius: 5, color: (0.55, 0.75, 1.0), flicker: 0.1)),
+    (name: "regenerates", says: "its wounds close as you watch", statuses: ["regenerating"]),
+    (name: "fire breath", says: "breathes fire", abilities: ["fire breath"]),
+    (name: "drowning grasp", says: "drags the living down with a grip of cold water", abilities: ["drowning grasp"]),
+    (name: "keen-eared", says: "hears every step", hearing: (threshold: 0, memory: 8)),
+]

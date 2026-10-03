@@ -1,0 +1,35 @@
+// Where Undermere's bestiary turns up: on which floors, how often, and in what
+// numbers. What each kind is and does is `monsters.ron`; this is only where.
+//
+// Every field:
+//   monster: a name from `monsters.ron`
+//   floors:  (first, last), the floors the row applies on, both included
+//   weight:  how often it is drawn against every other row that applies on a floor;
+//            only the ratio matters
+//   group:   (fewest, most) that come together when it is drawn
+//
+// A kind may have several rows, so its groups can grow with depth; a kind with no
+// row never turns up on a floor by itself. The Drowned King has none: the throne's
+// piece stands him at its slot on floor ten, and a row would put a second king on
+// a floor. Rows are drawn in the order they are written, so moving one changes
+// what a seed builds.
+[
+    (monster: "rat",             floors: (1, 3),   weight: 60, group: (1, 3)),
+    (monster: "jackal",          floors: (1, 3),   weight: 30, group: (2, 4)),
+    (monster: "kobold",          floors: (1, 3),   weight: 50, group: (1, 2)),
+    (monster: "goblin",          floors: (1, 2),   weight: 40, group: (1, 1)),
+    (monster: "goblin",          floors: (3, 5),   weight: 50, group: (1, 3)),
+    (monster: "cave spider",     floors: (3, 5),   weight: 40, group: (1, 2)),
+    (monster: "goblin archer",   floors: (3, 6),   weight: 30, group: (1, 2)),
+    (monster: "myconid",         floors: (3, 4),   weight: 40, group: (1, 3)),
+    // The goblins' brute, not before their band is big enough to keep one.
+    (monster: "ogre",            floors: (4, 9),   weight: 20, group: (1, 1)),
+    (monster: "skeleton",        floors: (5, 7),   weight: 60, group: (1, 3)),
+    (monster: "ghoul",           floors: (5, 8),   weight: 30, group: (1, 2)),
+    (monster: "drowned",         floors: (7, 8),   weight: 60, group: (1, 3)),
+    (monster: "wight",           floors: (7, 9),   weight: 30, group: (1, 1)),
+    (monster: "fire imp",        floors: (9, 9),   weight: 50, group: (1, 3)),
+    (monster: "salamander",      floors: (9, 9),   weight: 30, group: (1, 1)),
+    // The court walks the throne's floor beyond the throne itself.
+    (monster: "skeleton knight", floors: (10, 10), weight: 10, group: (1, 2)),
+]

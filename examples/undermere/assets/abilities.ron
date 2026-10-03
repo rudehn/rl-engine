@@ -1,0 +1,51 @@
+// Undermere's abilities: what a monster knows besides its blow. A trait in
+// `traits.ron` names the ones it grants, and whatever has the trait knows them.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:        unique; a trait's `abilities` names it by this
+//   description: optional; what it is, in a sentence
+//   look:        optional; (glyph:, color: (r:, g:, b:)) in bytes, what flies and bursts when
+//                it is used; without one the renderer's plain look is drawn
+//   aim:         optional; Foe (default) | Ally | SelfOnly | Ground | Anyone
+//   mode:        Own | Adjacent | Bolt(range:) | Ball(range:, radius:) | Beam(range:) |
+//                Cone(length:)
+//   sight:       optional; whether the aim must be a cell the user can see (default true)
+//   requires:    optional; Has(status) | Lacks(status) | Wielding(tag) | InSlot(slot, tag) |
+//                Above(stat, n); the slots are "main hand" | "off hand" | "head" | "body" |
+//                "light", and the tags "weapon" | "armor" | "potion" | "gold" | "arrow" | "light"
+//   costs:       optional; Pool(stat, n) | Health(n) | Item(tag, n); Undermere has no pools
+//   time:        optional; hundredths of a step the turn costs (default 100)
+//   cooldown:    optional; hundredths before it may be used again, from the moment of use
+//                (default 0)
+//   effects:     each (kind:, chance:, args:); kind is one the engine ships: Harm(kind:, roll:),
+//                Mend(roll:), Inflict(status:, turns:), Cleanse, Shove, Pull, Teleport;
+//                Ignite(turns:), which sets what it lands on alight. The damage kinds are
+//                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison", and the statuses
+//                "poisoned" | "scorched" | "mending" | "regenerating"
+#![enable(implicit_some)]
+[
+    // The salamander's: a cone of flame that sets the ground it reaches
+    // alight, which its fire-blooded breather stands in unharmed.
+    (
+        name: "fire breath",
+        description: "A gout of flame that burns whatever it reaches and leaves the ground alight.",
+        look: (glyph: '*', color: (r: 255, g: 130, b: 40)),
+        mode: Cone(length: 4),
+        cooldown: 600,
+        effects: [
+            (kind: "Harm", args: (kind: "fire", roll: "2d6")),
+            (kind: "Ignite", args: (turns: 3)),
+        ],
+    ),
+    // The Drowned King's: a grip of cold water reaching out of the dark.
+    // Cold and nothing more, since what would slow its catch is a status
+    // the engine has no speed to take from.
+    (
+        name: "drowning grasp",
+        description: "A grip of cold water that reaches out of the dark for the living.",
+        look: (glyph: '~', color: (r: 140, g: 225, b: 205)),
+        mode: Bolt(range: 5),
+        cooldown: 500,
+        effects: [(kind: "Harm", args: (kind: "cold", roll: "2d4"))],
+    ),
+]

@@ -1,0 +1,53 @@
+// Undermere's bestiary: what lives under the lake. A monster is its core, the
+// things every monster has, and the traits it lists from `traits.ron`, read as
+// the two together with nothing hidden in between. Where each kind turns up, how
+// often and in what numbers, is `monster_spawns.ron`.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:    unique; the spawn table and the pieces name it by this, and a name that
+//            starts with a capital or an article, "the Drowned King", is said as written
+//   glyph:   one character
+//   color:   (r, g, b) in 0..=1
+//   hp:      maximum health
+//   attack:  its blow, written "NdS+B kind", as "1d4 slash"; the kinds are "slash" |
+//            "pierce" | "crush" | "fire" | "cold" | "poison"
+//   ranged:  optional; its shot, written "NdS+B kind @range", as "1d6 pierce @6", range in
+//            tiles; with one it shoots whatever it sees in reach and strikes what is beside it
+//   armor:   optional; flat armor of its own, 0 when left out, added to what a trait gives
+//   faction: "beasts" | "goblins" | "undead"
+//   traits:  names from `traits.ron`, each at most once, in the order the examine panel
+//            lists them; two that set the same single value are refused, naming both
+//   boss:    optional; true for the one whose death wins the run, false when left out
+//   drops:   optional; [(item name, percent chance)], each rolled on its own death; a pile
+//            of gold dropped is a floor's pile
+#![enable(implicit_some)]
+[
+    // Floors one and two: no tricks to speak of.
+    (name: "rat", glyph: 'r', color: (0.62, 0.52, 0.42), hp: 4, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "cowardly"]),
+    (name: "jackal", glyph: 'j', color: (0.8, 0.62, 0.36), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swift"]),
+    (name: "kobold", glyph: 'k', color: (0.62, 0.72, 0.32), hp: 6, attack: "1d4 slash", faction: "goblins", traits: ["sapient", "cowardly"],
+     drops: [("gold coin", 40), ("dagger", 8)]),
+    (name: "goblin", glyph: 'g', color: (0.42, 0.75, 0.3), hp: 10, attack: "1d5 slash", faction: "goblins", traits: ["sapient"],
+     drops: [("gold coin", 40), ("sword", 8)]),
+    // Floors three to six: one trick each.
+    (name: "cave spider", glyph: 's', color: (0.68, 0.58, 0.75), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark"]),
+    (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: "1d3 slash", ranged: "1d6 pierce @6", faction: "goblins", traits: ["sapient", "cowardly"],
+     drops: [("gold coin", 40), ("bow", 8)]),
+    (name: "myconid", glyph: 'm', color: (0.45, 0.9, 0.78), hp: 12, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "slow", "fungal glow"]),
+    (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: "2d6 crush", faction: "goblins", traits: ["sapient", "slow", "thick-hided"],
+     drops: [("gold coin", 80), ("war hammer", 15)]),
+    (name: "skeleton", glyph: 'z', color: (0.88, 0.86, 0.76), hp: 14, attack: "1d6 slash", faction: "undead", traits: ["mindless", "deathless"]),
+    (name: "ghoul", glyph: 'G', color: (0.58, 0.68, 0.52), hp: 18, attack: "1d8 slash", faction: "undead", traits: ["sapient", "deathless", "keen-nosed"]),
+    // Floors seven to nine: the drowned dead, and the forge's fire.
+    (name: "drowned", glyph: 'Z', color: (0.45, 0.65, 0.72), hp: 22, attack: "1d8 crush", faction: "undead", traits: ["mindless", "deathless", "slow"]),
+    (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: "1d8 slash", armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light"]),
+    (name: "fire imp", glyph: 'i', color: (1.0, 0.5, 0.25), hp: 10, attack: "1d4 fire", ranged: "1d6 fire @5", faction: "beasts", traits: ["sapient", "swift", "fire-blooded"]),
+    (name: "salamander", glyph: 'S', color: (1.0, 0.42, 0.18), hp: 26, attack: "1d8 fire", armor: 1, faction: "beasts",
+     traits: ["animal", "fire-blooded", "ember glow", "fire breath"]),
+    // Floor ten: the throne, its court, and the thing that drowned the
+    // kingdom. The throne's piece stands each of them at its own slot; the
+    // knights also walk the rest of the floor, and the king is nowhere else.
+    (name: "skeleton knight", glyph: 'z', color: (0.95, 0.92, 0.75), hp: 22, attack: "1d8 slash", armor: 3, faction: "undead", traits: ["mindless", "deathless"]),
+    (name: "the Drowned King", glyph: 'K', color: (0.55, 0.9, 0.95), hp: 120, attack: "2d8 slash", armor: 4, faction: "undead",
+     traits: ["sapient", "deathless", "grave light", "regenerates", "drowning grasp", "keen-eared"], boss: true),
+]
