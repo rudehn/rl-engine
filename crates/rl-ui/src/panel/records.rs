@@ -402,6 +402,7 @@ mod tests {
 
         press(&mut app, KeyCode::ArrowDown);
         press(&mut app, KeyCode::Enter);
+        assert!(!app.world().resource::<RecordsScreen>().open, "the Enter that opened the screen from the title did not also confirm its first row");
         let modals = app.world().resource::<Modals>();
         assert!(records_modal(modals).is_some_and(|screen| modals.is_top(screen)), "Enter opened the real records screen");
         assert!(rows(&app).join("\n").contains("Won on the tenth floor"), "showing the kept record");

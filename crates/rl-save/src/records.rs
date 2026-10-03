@@ -126,12 +126,12 @@ mod tests {
     #[test]
     fn a_record_from_a_build_with_more_fields_still_reads() {
         let backend = Arc::new(MemoryBackend::default());
-        let text = r#"[(outcome: Won, summary: "Slew the Drowned King", score: 500, seed: 1, turn: 900, when: Some(1000), sections: [], from_a_later_build: "ignored")]"#;
+        let text = r#"[(outcome: Won, summary: "Won on the tenth floor", score: 500, seed: 1, turn: 900, when: Some(1000), sections: [], from_a_later_build: "ignored")]"#;
         backend.persist(RECORDS_SLOT, text).unwrap();
         let app = game(&backend);
         let records = &app.world().resource::<RunRecords>().records;
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].summary, "Slew the Drowned King");
+        assert_eq!(records[0].summary, "Won on the tenth floor");
         assert_eq!(records[0].score, 500);
     }
 
