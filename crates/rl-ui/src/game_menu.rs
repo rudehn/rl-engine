@@ -346,6 +346,25 @@ pub fn describe_sheet(sheet: &SheetView) -> String {
     lines.join("\n")
 }
 
+/// Lines for `sections`, each under its own heading: a blank line, the
+/// heading in the title tone, then its body wrapped to `width`.
+///
+/// Shared by this screen and the records screen's detail view
+/// (`crate::panel::records`), so a game's own account of a run reads the
+/// same wherever it is shown, and `pub(crate)` rather than private because
+/// that is the one caller outside this file.
+pub(crate) fn section_lines<'a>(sections: impl Iterator<Item = (&'a str, &'a str)>, width: usize) -> Vec<(String, ToneId)> {
+    let mut lines = Vec::new();
+    for (heading, body) in sections {
+        lines.push((String::new(), Tones::MUTED));
+        lines.push((clip(heading, width), Tones::TITLE));
+        for line in body.lines() {
+            lines.extend(wrap(line, width).into_iter().map(|line| (line, Tones::TEXT)));
+        }
+    }
+    lines
+}
+
 /// What the screen is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MenuScreen<'w> {
@@ -399,16 +418,11 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
         }
         words.push((clip(&format!("Seed {}, turn {}.", ending.seed.0, ending.turn), width), Tones::MUTED));
         // Then whatever the game had to say, each section under its own
-        // heading. Clipped by the rectangle like everything else here: the
-        // menu is drawn only as far down as its rows reach, and a game that
-        // wants more room gives it a taller one.
-        for section in &view.sections {
-            words.push((String::new(), Tones::MUTED));
-            words.push((clip(&section.heading, width), Tones::TITLE));
-            for line in section.body.lines() {
-                words.extend(wrap(line, width).into_iter().map(|line| (line, Tones::TEXT)));
-            }
-        }
+        // heading, the way the records screen draws one too: clipped by
+        // the rectangle like everything else here, since the menu is
+        // drawn only as far down as its rows reach and a game that wants
+        // more room gives it a taller one.
+        words.extend(section_lines(view.sections.iter().map(|section| (section.heading.as_str(), section.body.as_str())), width));
         words.push((String::new(), Tones::MUTED));
     }
     let items = MenuItem::offered(playing, settings_offered(modals, settings.as_deref()).is_some(), title_menu.is_some());

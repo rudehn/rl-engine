@@ -57,7 +57,7 @@ pub struct RecordSection {
 pub struct RunRecord {
     /// How the run ended.
     pub outcome: RecordOutcome,
-    /// The game's one line about it: "Slew the Drowned King".
+    /// The game's one line about it: "Won on the tenth floor".
     pub summary: String,
     /// The game's score. The list is filed by it, highest first.
     pub score: i64,
