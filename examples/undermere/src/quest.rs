@@ -204,6 +204,69 @@ mod tests {
         assert_eq!(app.world().get_resource::<Ending>().map(|e| e.outcome), Some(Outcome::Won), "won in the frame of the blow");
     }
 
+    /// The first of the kind called `name` on the place being read.
+    fn first_of(app: &mut App, name: &str) -> Entity {
+        let id = app.world().resource::<Bestiary>().defs.expect(name);
+        let here = crate::testing::here(app);
+        let world = app.world_mut();
+        let found = world.query::<(Entity, &Kind, &OnMap)>().iter(world).find(|(_, k, on)| k.0 == id && on.0 == here).map(|(e, _, _)| e);
+        found.unwrap_or_else(|| panic!("a {name} on the place being read"))
+    }
+
+    /// The race the win in the king's own pass is for. A knight of his
+    /// court stands at the adventurer's side, knowing them and striking
+    /// every turn, and the adventurer is down to three of their forty. In
+    /// one frame the adventurer fells the king and waits, and the knight's
+    /// turn, later in that frame, brings a blow that kills them. The king
+    /// fell first, so the run is won and its record says so; a win left to
+    /// the engine's report of the quest, a frame later, would have lost the
+    /// run to that blow.
+    #[test]
+    fn a_blow_from_the_court_in_the_frame_the_king_falls_does_not_take_the_win_away() {
+        use rl_engine::rl_core::RunSeed;
+        use rl_engine::rl_rules::Awareness;
+
+        use crate::testing::{arrive, at, here, lay_floor, pass_turns, settle, sturdy};
+        let mut app = crate::testing::headless(RunSeed(9));
+        let me = arrive(&mut app, crate::dungeon::map_of(10));
+        // Sturdy only while the knight is brought to the adventurer's side
+        // and takes up the fight.
+        sturdy(&mut app, me);
+        let beside = at(&app, me).offset(1, 0);
+        lay_floor(&mut app, &[beside]);
+        let knight = first_of(&mut app, "skeleton knight");
+        let place = here(&app);
+        app.world_mut().write_message(WarpRequest { actor: knight, to: Destination::Place { map: place, arrive: Arrive::At(beside) } });
+        settle(&mut app);
+        let seen = Awareness::Alert { at: at(&app, me), stale_turns: 0 };
+        app.world_mut().entity_mut(knight).insert(Aware([(me, seen)].into()));
+        let health = |app: &App| app.world().get::<Health>(me).map_or(0, |h| h.current);
+        for _ in 0..8 {
+            if health(&app) < 10_000 {
+                break;
+            }
+            pass_turns(&mut app, 1);
+        }
+        assert!(health(&app) < 10_000, "the knight at the adventurer's side strikes them");
+        assert!(geometry::chebyshev(at(&app, knight), at(&app, me)) == 1, "and stands beside them");
+
+        // The frame: the adventurer down to three, the knight's next blow
+        // sure to kill, the king felled by the adventurer, and a wait.
+        let registries = app.world().resource::<Registries>().clone();
+        let (slash, crush) = (registries.damage_kinds.expect("slash"), registries.damage_kinds.expect("crush"));
+        app.world_mut().entity_mut(me).insert(Health { current: 3, max: crate::run::HEALTH });
+        app.world_mut().entity_mut(knight).insert(MeleeAttack::new(slash, DiceRoll::flat(30)));
+        let king = first_of(&mut app, "the Drowned King");
+        app.world_mut().write_message(DamageEvent::new(king, rl_engine::rl_rules::Hit::by(me, crush, 100_000)));
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        assert!(health(&app) <= 0, "the knight's blow came in the frame the king fell: {}", health(&app));
+        assert_eq!(app.world().get_resource::<Ending>().map(|e| e.outcome), Some(Outcome::Won), "and the run is won all the same");
+        settle(&mut app);
+        let record = app.world().resource::<RunRecords>().this_run.clone().expect("the win filed a record");
+        assert_eq!((record.outcome, record.summary.as_str()), (RecordOutcome::Won, "Slew the Drowned King"));
+    }
+
     /// A file in which nothing wins the run is refused, since a run under
     /// it could only end in death; so is an objective counting something
     /// Undermere never writes.
