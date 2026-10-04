@@ -6,9 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
-- A mind no longer trades a strong blow of its own for a weaker weapon.
-  `OwnBlowScore(n)`, a new component in `rl_bevy::items` and the prelude, is what an actor's own blow is worth in its game's `GearScore` units, and a mind weighing a weapon it would strike with in place of its own blow counts it beside what the weapon displaces, so a brute with heavy fists leaves a knife lying and takes up a maul.
-  The engine strikes with the first worn thing that has a blow, so a weapon always replaced a claw rather than adding to it, and a mind used to take up anything scored above nothing for an empty hand.
+- A mind no longer trades a strong blow of its own for a weaker one it could put on.
+  `OwnBlowScore(n)`, a new component in `rl_bevy::items` and the prelude, is what an actor's own blow is worth in its game's `GearScore` units, and a mind weighing a thing whose blow it would strike with in place of its own counts it beside what the thing displaces, so an actor with a heavy blow of its own leaves a lighter one lying and puts on a heavier.
+  The engine strikes with the first worn thing that has a blow, so a worn blow always replaced an actor's own rather than adding to it, and a mind used to put on anything scored above nothing for an empty hand.
   An actor without the component weighs as before, its own blow worth nothing.
 - A status can last until it is cured: one put on for `UNTIL_CURED` turns, in `rl_rules` and the prelude, bites and mends every turn and is never counted down, where `u32::MAX` used to run down one a turn like any other count.
   The character sheet shows such a status by its name and what it does, with no count of turns.

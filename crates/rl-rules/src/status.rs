@@ -236,13 +236,13 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
 /// turns is ticked every turn, its damage and its mending land, and it is
 /// never counted down, so it ends only when it is cured.
 ///
-/// For what a body is rather than what happened to it: a creature that
-/// mends by its nature, or what a worn thing gives for as long as it is
-/// worn, which the thing's own hold ends. The largest count there is
-/// rather than a flag beside the count, so a save keeps it as it keeps any
-/// count, and the stacking rules leave it as it is: a refresh keeps the
-/// longer, and an extension saturates. A panel that counts a status's
-/// turns shows none for it.
+/// For what a body is rather than what happened to it: a body that mends
+/// by its nature, or what a worn thing gives for as long as it is worn,
+/// which the thing's own hold ends. The largest count there is rather
+/// than a flag beside the count, so a save keeps it as it keeps any count,
+/// and the stacking rules leave it as it is: a refresh keeps the longer,
+/// and an extension saturates. A panel that counts a status's turns shows
+/// none for it.
 pub const UNTIL_CURED: u32 = u32::MAX;
 
 /// One status on one actor.

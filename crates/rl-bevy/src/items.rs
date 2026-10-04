@@ -76,24 +76,25 @@ pub struct Wearable(pub EquipShape);
 /// can tell better gear from worse without knowing what armor is.
 ///
 /// A mind weighs an item lying in sight against the worn items it would
-/// displace, and a weapon it would strike with in place of its own blow
-/// against its [`OwnBlowScore`] as well; one worth more than all of that
-/// together is worth putting on. Gear without a score is never worth
+/// displace, and a thing whose blow it would strike with in place of its
+/// own against its [`OwnBlowScore`] as well; one worth more than all of
+/// that together is worth putting on. Gear without a score is never worth
 /// changing into; only the comparison matters, so any scale the game likes
 /// will do.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct GearScore(pub i32);
 
 /// How much the blow an actor strikes with by itself is worth, in the
-/// game's [`GearScore`] units: what a mind gives up when it takes up a
-/// weapon and strikes with that instead.
+/// game's [`GearScore`] units: what a mind gives up when it puts on a thing
+/// with a blow and strikes with that instead.
 ///
 /// The engine strikes with the first worn thing that has a blow, and with
-/// an actor's own only while it wears none, so a weapon replaces a claw
-/// rather than adding to it. A mind weighing a weapon that would become
-/// the blow it strikes with counts this beside what the weapon displaces,
-/// so a brute does not trade its fists for a knife. Without it an actor's
-/// own blow is worth nothing, which is right for a bare hand and was the
+/// an actor's own only while it wears none, so a worn blow replaces the
+/// actor's own rather than adding to it. A mind weighing a thing whose
+/// blow would become the one it strikes with counts this beside what the
+/// thing displaces, so an actor with a heavy blow of its own does not
+/// trade it for a lighter one. Without it an actor's own blow is worth
+/// nothing, which is right for one that barely strikes at all and was the
 /// only rule before.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct OwnBlowScore(pub i32);
@@ -649,10 +650,10 @@ impl Belongings<'_, '_> {
     }
 
     /// How much better `thinker` would be for wearing `item` in `shape`,
-    /// scored `score`, than for what it would displace and, for a weapon it
-    /// would strike with where it strikes with its own blow now, than for
-    /// its [`OwnBlowScore`]; `None` when it wears nothing or the item is not
-    /// scored.
+    /// scored `score`, than for what it would displace and, for a thing
+    /// whose blow it would strike with where it strikes with its own now,
+    /// than for its [`OwnBlowScore`]; `None` when it wears nothing or the
+    /// item is not scored.
     fn gain(&self, thinker: Entity, item: Entity, shape: &Wearable, score: &GearScore) -> Option<i32> {
         let Ok((_, Some(worn))) = self.bags.get(thinker) else { return None };
         // Tried on a copy: what the real equip would displace, and nothing moved.
