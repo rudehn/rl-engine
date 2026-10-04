@@ -108,6 +108,27 @@ pub fn sturdy(app: &mut App, me: Entity) {
     app.world_mut().entity_mut(me).insert(Health::full(10_000));
 }
 
+/// Kills `victim` with a blow nothing under the lake survives, credited
+/// to `by`, or to nobody, the way a burn or a fall would be, and lets the
+/// death settle.
+pub fn kill(app: &mut App, victim: Entity, by: Option<Entity>) {
+    let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
+    app.world_mut().write_message(DamageEvent::new(victim, rl_engine::rl_rules::Hit::from_source(by, crush, 100_000)));
+    settle(app);
+}
+
+/// Takes up whatever lies where `me` stands, as the key does.
+pub fn take_up(app: &mut App, me: Entity) {
+    app.world_mut().write_message(Intent::new(me, PickUp));
+    settle(app);
+}
+
+/// Puts `thing` down where `me` stands, as the key does.
+pub fn put_down(app: &mut App, me: Entity, thing: Entity) {
+    app.world_mut().write_message(Intent::new(me, DropItem(thing)));
+    settle(app);
+}
+
 /// Takes every monster off every place, for a test about the adventurer's
 /// own things rather than about who is near them.
 pub fn clear_monsters(app: &mut App) {

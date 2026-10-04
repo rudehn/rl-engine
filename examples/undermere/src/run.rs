@@ -16,6 +16,7 @@ use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor};
 use crate::armory::Armory;
 use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of, map_of};
 use crate::light::Fixtures;
+use crate::tally::Counted;
 
 /// The adventurer's health at the start of a run, and the most they ever
 /// have: Brogue's forty, a first cut, since no experience and no levels
@@ -47,24 +48,6 @@ pub struct StartFloor(pub u32);
 /// account of it; the engine's marker is every game's.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Adventurer;
-
-/// The deepest floor the run has reached, nought while it has reached
-/// none: what the score's depth line counts, and saved with the run.
-///
-/// Only ever raised, by [`remember_depth`], and put back to nought when the
-/// run ends, so a run begun after another in the same launch has been
-/// nowhere.
-#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Deepest(pub u32);
-
-/// Raises [`Deepest`] on every arrival on a floor deeper than any before.
-pub fn remember_depth(mut entered: MessageReader<PlaceEntered>, mut deepest: ResMut<Deepest>) {
-    for floor in entered.read().filter_map(|ev| floor_of(ev.map)) {
-        if floor > deepest.0 {
-            deepest.0 = floor;
-        }
-    }
-}
 
 /// Everything a run stands on that is the same however it began: the
 /// places and how they look and are lit, who fights whom and how a blow is
@@ -120,13 +103,17 @@ pub fn spawn_adventurer(commands: &mut Commands, registries: &Registries) -> Ent
 ///
 /// Put on straight into the slots rather than asked for with `Equip`,
 /// which would spend the adventurer's first turns dressing: a run begins
-/// with them dressed.
+/// with them dressed. Every piece is [`Counted`] whole, since what the
+/// adventurer set out with is nothing they found, however often they put
+/// it down and take it up again.
 pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, registries: &Registries) {
     let mut pack = Vec::new();
     let mut worn = Equipment::with_slot_count(registries.slots.len());
     for (name, count) in KIT {
         let id = armory.defs.expect(name);
+        let each = if armory.defs.get(id).stack { count } else { 1 };
         for item in crate::armory::spawn_items(commands, armory, id, count, registries) {
+            commands.entity(item).insert(Counted(each));
             if let Some(shape) = crate::armory::shape_of(armory.defs.get(id), registries) {
                 // Each piece of the kit has a slot of its own, so none
                 // displaces another.
@@ -318,17 +305,26 @@ mod tests {
         }
     }
 
-    /// A run begun after another in the same launch has been nowhere: the
-    /// deepest floor the last one reached is not the new one's.
+    /// A run begun after another in the same launch has been nowhere and
+    /// done nothing: the deepest floor the last one reached and the kill
+    /// it made are not the new one's.
     #[test]
-    fn a_run_begun_after_another_has_reached_no_floor() {
+    fn a_run_begun_after_another_has_reached_no_floor_and_killed_nothing() {
+        use crate::tally::Tally;
+        use crate::testing::{clear_monsters, kill, lay_floor, monster};
         let mut app = headless(RunSeed(2));
-        arrive(&mut app, map_of(3));
-        assert_eq!(app.world().resource::<Deepest>().0, 3, "the run went down to floor three");
+        let me = arrive(&mut app, map_of(3));
+        clear_monsters(&mut app);
+        let beside = at(&app, me).offset(1, 0);
+        lay_floor(&mut app, &[beside]);
+        let rat = monster(&mut app, "rat", beside);
+        kill(&mut app, rat, Some(me));
+        let tally = app.world().resource::<Tally>();
+        assert_eq!((tally.deepest, tally.kills), (3, 1), "the run went down to floor three and killed a rat");
         app.world_mut().write_message(Restart::fresh());
         settle(&mut app);
         settle(&mut app);
-        assert_eq!(app.world().resource::<Deepest>().0, 0, "the next run has been nowhere");
+        assert_eq!(*app.world().resource::<Tally>(), Tally::default(), "the next run has been nowhere and done nothing");
         let me = adventurer(&mut app);
         assert_eq!((here(&app), app.world().get::<OnMap>(me).map(|m| m.0)), (TOWN, Some(TOWN)), "and sets out from Mereholt");
     }

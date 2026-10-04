@@ -21,18 +21,25 @@ use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 
 use crate::bestiary::{Bestiary, MonsterDef, spawn_monster};
-use crate::dungeon::{MIN_DISTANCE_FROM_ENTRY, floor_of};
+use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
 
 /// Groups every floor draws before its depth adds any, a first cut: four,
 /// and one more for each floor down, so floor one holds five groups and
-/// the throne's floor fourteen besides the court.
+/// floor nine thirteen.
 pub const BASE_GROUPS: u32 = 4;
+
+/// Groups the throne's floor draws besides its court: few, so the king
+/// and his knights are the fight that matters there and the way to them
+/// is not a fourteenth floor of the dead. What they are is the spawn
+/// table's floor ten, the drowned, the wights and the ogres of the floors
+/// above, and never a knight, who is the throne's alone.
+pub const THRONE_GROUPS: u32 = 4;
 
 /// The most draws a floor makes before it gives up finding room, so one
 /// with nowhere left to stand a group stops trying rather than spinning:
-/// nearly three times what the deepest floor asks for. A draw is wasted
-/// only when its anchor's whole square is already taken, so a floor comes
-/// in short of its groups only where its ground is nearly all taken.
+/// three times what the deepest floor that asks most asks for. A draw is
+/// wasted only when its anchor's whole square is already taken, so a floor
+/// comes in short of its groups only where its ground is nearly all taken.
 const MAX_DRAWS: u32 = 40;
 
 /// How far round its anchor a group stands, in tiles: a pack of jackals
@@ -43,9 +50,9 @@ const GROUP_SPREAD: i32 = 2;
 pub type Groups = Vec<Vec<(Id<MonsterDef>, Point)>>;
 
 /// How many groups floor `floor` draws: [`BASE_GROUPS`] and the floor's
-/// number.
+/// number, but the throne's [`THRONE_GROUPS`].
 pub fn groups_on(floor: u32) -> u32 {
-    BASE_GROUPS + floor
+    if floor == FLOORS { THRONE_GROUPS } else { BASE_GROUPS + floor }
 }
 
 /// Plans a floor's population: up to `target` groups drawn from `table` at
@@ -137,7 +144,7 @@ mod tests {
 
     use super::*;
     use crate::bestiary::Kind;
-    use crate::dungeon::{FLOORS, TOWN, map_of};
+    use crate::dungeon::{TOWN, map_of};
     use crate::testing::{adventurer, arrive, headless, sturdy};
 
     /// A floor's worth of open ground, larger than any floor, with nothing
@@ -150,10 +157,14 @@ mod tests {
         crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).bestiary
     }
 
+    /// Four groups and one more for each floor down, to floor nine's
+    /// thirteen, and the throne's floor four: what every floor draws where
+    /// nothing is in the way.
     #[test]
-    fn on_open_ground_every_floor_draws_four_groups_and_one_more_for_each_floor_down_over_a_span_of_seeds() {
+    fn on_open_ground_every_floor_draws_four_groups_and_one_more_for_each_floor_down_but_the_throne_over_a_span_of_seeds() {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
+        assert_eq!((1..=FLOORS).map(groups_on).collect::<Vec<_>>(), [5, 6, 7, 8, 9, 10, 11, 12, 13, 4]);
         for floor in 1..=FLOORS {
             for s in 0..20 {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(s);
@@ -162,6 +173,32 @@ mod tests {
                 assert!(groups.iter().all(|g| !g.is_empty()), "floor {floor}, seed {s}: an empty group");
             }
         }
+    }
+
+    /// The throne's floor draws few groups, and only of what walks floors
+    /// seven to nine, the drowned, the wights and the ogres, so the
+    /// court is the fight that matters there: never a knight of it out on
+    /// the floor, and never more than four groups.
+    #[test]
+    fn the_throne_floor_draws_at_most_four_groups_of_what_walks_floors_seven_to_nine_over_a_span_of_seeds() {
+        let bestiary = bestiary();
+        let (bounds, entry) = open_ground();
+        let deep: Vec<Id<MonsterDef>> = (7..=9).flat_map(|band| bestiary.spawns.at(band).map(|row| row.item)).collect();
+        let court = bestiary.defs.expect("skeleton knight");
+        let mut kinds: Vec<Id<MonsterDef>> = Vec::new();
+        for s in 0..40 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let groups = plan(&bestiary.spawns, FLOORS as i32, bounds, entry, groups_on(FLOORS), &mut |_| true, &mut rng);
+            assert!(!groups.is_empty() && groups.len() <= 4, "seed {s}: {} groups", groups.len());
+            for (id, _) in groups.iter().flatten() {
+                assert!(*id != court, "seed {s}: a knight of the court out on the floor");
+                assert!(deep.contains(id), "seed {s}: a {} on the throne's floor", bestiary.defs.get(*id).name);
+                if !kinds.contains(id) {
+                    kinds.push(*id);
+                }
+            }
+        }
+        assert!(kinds.len() >= 3, "and mixed: {} kinds over every seed", kinds.len());
     }
 
     #[test]
@@ -194,29 +231,37 @@ mod tests {
         }
     }
 
-    /// Where every monster stood the moment it was made, by place: what
-    /// the population put down, before anybody took a step.
+    /// Where every monster stood the moment it was made, by place, and
+    /// what it is: what the population put down, before anybody took a
+    /// step.
     #[derive(Resource, Default)]
-    struct Spawned(Vec<(MapId, Point)>);
+    struct Spawned(Vec<(MapId, Point, Id<MonsterDef>)>);
 
     fn watch(app: &mut App) {
         app.init_resource::<Spawned>();
-        app.add_observer(|add: On<Add, Kind>, monsters: Query<(&Position, &OnMap)>, mut spawned: ResMut<Spawned>| {
-            if let Ok((at, on)) = monsters.get(add.entity) {
-                spawned.0.push((on.0, at.0));
+        app.add_observer(|add: On<Add, Kind>, monsters: Query<(&Position, &OnMap, &Kind)>, mut spawned: ResMut<Spawned>| {
+            if let Ok((at, on, kind)) = monsters.get(add.entity) {
+                spawned.0.push((on.0, at.0, kind.0));
             }
         });
     }
 
     fn spawned_on(app: &App, map: MapId) -> Vec<Point> {
-        app.world().resource::<Spawned>().0.iter().filter(|(on, _)| *on == map).map(|(_, at)| *at).collect()
+        app.world().resource::<Spawned>().0.iter().filter(|(on, _, _)| *on == map).map(|(_, at, _)| *at).collect()
     }
 
-    /// Every floor, on the arrival that built it, has its people: four
-    /// groups and one more for each floor down, every monster at least the
-    /// distance from the way in, none on a cell a piece marked, and on
-    /// floor ten the throne's court at its own posts besides. A floor
-    /// entered again gets nobody new.
+    /// What was made on `map` at `at`, by name.
+    fn made_at(app: &App, map: MapId, at: Point) -> String {
+        let bestiary = app.world().resource::<Bestiary>();
+        let made = app.world().resource::<Spawned>().0.iter().find(|(on, p, _)| *on == map && *p == at).map(|(_, _, kind)| *kind);
+        made.map_or_else(String::new, |kind| bestiary.defs.get(kind).name.clone())
+    }
+
+    /// Every floor, on the arrival that built it, has its people: as many
+    /// groups as [`groups_on`] says, every monster at least the distance
+    /// from the way in, none on a cell a piece marked, and on floor ten the
+    /// throne's court at its own posts besides, with no knight of it among
+    /// the floor's own people. A floor entered again gets nobody new.
     #[test]
     fn a_floor_is_populated_on_first_arrival_away_from_the_entry() {
         for s in 0..3 {
@@ -248,6 +293,8 @@ mod tests {
                 assert!(people.len() as u32 >= groups_on(floor), "seed {s}, floor {floor}: {} people for {} groups", people.len(), groups_on(floor));
                 let court = spawned.len() - people.len();
                 assert_eq!(court, if floor == FLOORS { 6 } else { 0 }, "seed {s}, floor {floor}: the king and his knights, and only on the throne's floor");
+                let knights = people.iter().filter(|p| made_at(&app, map_of(floor), **p) == "skeleton knight").count();
+                assert_eq!(knights, 0, "seed {s}, floor {floor}: a knight of the court out among the floor's own people");
             }
             let before = spawned_on(&app, map_of(1)).len();
             arrive(&mut app, map_of(1));

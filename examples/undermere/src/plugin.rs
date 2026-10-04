@@ -52,10 +52,11 @@ impl Plugin for UndermerePlugin {
         // statuses, things carried, worn, thrown and drunk, light and the
         // dark, being noticed and heard, what monsters breathe and cast,
         // fire, the props the places stand, the slots the pieces fill,
-        // and loot.
+        // loot, the facts the quest counts, and the record a run ends in.
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
             .add_plugins((AbilitiesPlugin, FirePlugin, NoisePlugin::new(NOISE), PropsPlugin))
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
+            .add_plugins((FactsPlugin, RecordsPlugin))
             // `Harm`, `Mend` and `Inflict`, for the potions, the flask and
             // the breaths, beside the `Ignite` fire declares.
             .add_engine_effects();
@@ -67,6 +68,11 @@ impl Plugin for UndermerePlugin {
             let world = app.world();
             Library::load(world.resource::<EffectKinds>(), world.resource::<Moments>())
         };
+        // What the run is for, read once with the rest: the engine forgets
+        // a run's progress when it ends, so the next run's quest is open
+        // again without the file being read again.
+        let (quests, facts) = crate::quest::load(&library.registries);
+        app.insert_resource(quests).insert_resource(facts);
         app.insert_resource(library.registries).insert_resource(library.abilities).insert_resource(library.armory).insert_resource(library.bestiary);
 
         // The run's start, and a continued run after the fresh start has
@@ -76,10 +82,29 @@ impl Plugin for UndermerePlugin {
         // What a run is saved as, and when: on the way out and on every
         // arrival.
         crate::save::register(app);
-        // The deepest floor reached, nought at the start and put back to
+        // The run's story in numbers, nought at the start and put back to
         // nought when the run ends, so the next run in the same launch has
-        // been nowhere.
-        app.init_resource::<crate::run::Deepest>().reset_on_new_run::<crate::run::Deepest>();
+        // been nowhere and found nothing; and the stacks that left the
+        // world since the reactions last read them, which a teardown
+        // leaves nothing of.
+        app.init_resource::<crate::tally::Tally>().reset_on_new_run::<crate::tally::Tally>();
+        app.init_resource::<crate::tally::Departed>().reset_on_new_run::<crate::tally::Departed>();
+        app.add_observer(crate::tally::note_departure);
+        // What a turn did, counted and answered inside it: the fighting and
+        // what was found and drunk into the tally, and a boss's death into
+        // the fact the quest counts, and the win when it finishes the
+        // quest. Chained, and after the arrivals' chain, which raises the
+        // tally's deepest floor, so nothing writes the tally in an order
+        // the scheduler picks.
+        app.add_systems(
+            Turn,
+            (crate::tally::count_the_fighting, crate::tally::count_what_is_found, crate::quest::report_bosses)
+                .chain()
+                .in_set(TurnSet::React)
+                .after(LootSet::Scatter),
+        );
+        // The run written down the frame it is over, however it ended.
+        app.add_systems(OnEnter(EngineState::Over), crate::tally::record);
         // A place fills the moment it is first entered: the engine's slots
         // in `PrefabSet::Fill`, then the depth, the ways through and the
         // place's line in the log, the floor's people, and the fixtures'
@@ -93,7 +118,7 @@ impl Plugin for UndermerePlugin {
         // next.
         app.add_systems(
             Turn,
-            (crate::run::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures)
+            (crate::tally::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures)
                 .chain()
                 .in_set(TurnSet::React)
                 .after(PrefabSet::Fill)

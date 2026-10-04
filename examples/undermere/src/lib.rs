@@ -20,9 +20,12 @@
 //! puts each floor's people down the first time it is entered, and
 //! [`light`] lights them and dims the lantern as the adventurer descends.
 //!
-//! The run is [`run`]'s: the adventurer and what they set out with, the
-//! deepest floor reached, and a run carried on from a save, which
-//! [`save`] says how to write down. [`wearing`] gives a wearer what a worn
+//! The run is [`run`]'s: the adventurer and what they set out with, and a
+//! run carried on from a save, which [`save`] says how to write down.
+//! [`quest`] is what the run is for, the Drowned King's death, and the win
+//! when he dies; [`tally`] counts what the run does on the way, and when
+//! it ends scores it, line by line, and writes the record the end screen
+//! and the records screen show. [`wearing`] gives a wearer what a worn
 //! thing lends, [`input`] turns keys into intents, and [`plugin`] is every
 //! one of these systems in one list, which the binary and [`testing`]'s
 //! headless world both add, so a test plays the game that ships.
@@ -38,9 +41,11 @@ pub mod light;
 pub mod plugin;
 pub mod population;
 pub mod prefabs;
+pub mod quest;
 pub mod run;
 pub mod save;
 pub mod stairs;
+pub mod tally;
 pub mod testing;
 pub mod traits;
 pub mod wearing;

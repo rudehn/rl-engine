@@ -68,6 +68,9 @@ pub struct MonsterDef {
     pub faction: FactionId,
     /// Whether its death wins the run.
     pub boss: bool,
+    /// Whether it is a mini-boss, worth the score's five hundred when the
+    /// adventurer kills it.
+    pub miniboss: bool,
     /// What it leaves when it dies, by the armory's ids.
     pub drops: DropTable<Id<ItemDef>>,
     /// Its traits' names, in the order the file lists them.
@@ -109,6 +112,29 @@ impl MonsterDef {
     /// never.
     pub fn flee_at(&self) -> i32 {
         self.folded.flee_at.unwrap_or(0)
+    }
+}
+
+/// How dangerous a kind is, for the score's line for the slain: the
+/// engine's `balance::threat` of its health and armor against the harder
+/// of its blow and its shot, at its speed. What its abilities do is left
+/// out, as the engine's ranking leaves it out.
+impl ThreatSubject for MonsterDef {
+    fn hp(&self) -> i32 {
+        self.hp
+    }
+
+    fn armor(&self) -> i32 {
+        self.armor
+    }
+
+    fn damage_per_hit(&self) -> f32 {
+        let blow = self.attack.dice.avg();
+        self.ranged.map_or(blow, |shot| blow.max(shot.dice.avg()))
+    }
+
+    fn speed_pct(&self) -> u32 {
+        self.speed()
     }
 }
 
@@ -181,6 +207,8 @@ struct Authored {
     traits: Vec<NameRef<TraitDef>>,
     #[serde(default)]
     boss: bool,
+    #[serde(default)]
+    miniboss: bool,
     #[serde(default)]
     drops: Vec<(NameRef<ItemDef>, u32)>,
 }
@@ -256,6 +284,7 @@ fn resolve(a: &Authored, id: Id<MonsterDef>, names: &Names<'_>, traits: &Registr
         armor: a.armor + folded.armor.unwrap_or(0),
         faction: a.faction.id(),
         boss: a.boss,
+        miniboss: a.miniboss,
         drops: DropTable(a.drops.iter().map(|(item, pct)| DropRow::new(item.id(), *pct)).collect()),
         traits: listed.iter().map(|t| traits.get(*t).name.clone()).collect(),
         folded,
@@ -537,7 +566,7 @@ mod tests {
             "ogre",
             "skeleton",
             "ghoul",
-            "drowned",
+            "drowned thrall",
             "wight",
             "fire imp",
             "salamander",
@@ -648,9 +677,9 @@ mod tests {
     }
 
     /// Every floor of the ten has something to draw, and the Drowned King
-    /// is drawn on none of them: the throne's piece stands him on floor
-    /// ten, its one slot for him, and a table that could draw him would
-    /// put a second king on a floor.
+    /// and his knights are drawn on none of them: the throne's piece stands
+    /// them on floor ten, at its slots, and a table that could draw them
+    /// would put a second king on a floor, or his court out walking it.
     #[test]
     fn every_band_of_the_spawn_table_can_draw_a_monster_and_only_floor_ten_has_the_king() {
         let library = library();
@@ -663,8 +692,7 @@ mod tests {
             assert!(bestiary.spawns.at(floor).all(|row| !bestiary.defs.get(row.item).boss), "a boss drawn on floor {floor}");
         }
         let court = bestiary.defs.expect("skeleton knight");
-        assert!(bestiary.spawns.at(DEEPEST).any(|row| row.item == court), "the court keeps the last floor");
-        assert!((1..DEEPEST).all(|floor| bestiary.spawns.at(floor).all(|row| row.item != court)), "and only the last");
+        assert!((1..=DEEPEST).all(|floor| bestiary.spawns.at(floor).all(|row| row.item != court)), "the court is the throne's alone, drawn on no floor");
     }
 
     #[test]

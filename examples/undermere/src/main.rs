@@ -69,7 +69,6 @@ struct Screen {
     controls: Rect,
     menu: Rect,
     settings: Rect,
-    #[expect(dead_code, reason = "cut with the rest so the screen is planned whole; nothing stands in it until the records screen is added")]
     records: Rect,
 }
 
@@ -113,14 +112,16 @@ impl Screen {
             // What can be done here, when here is more than one thing.
             here: centred(40, 10, 6),
             controls: map.inflate(-2),
-            // The most the menu may take: the ending's words, the seed and
-            // turn, and its choices. The engine closes the frame under the
-            // last row, so the shorter pause menu leaves no gap. Wide
-            // enough for the words a run is won with, which stand whole in
-            // its top border.
-            menu: centred(56, 6, 28),
+            // The most the menu may take: the run's own line, the seed and
+            // turn, the record's score and its numbers, and the choices
+            // under them, with a row to spare for the way back to the
+            // title. The engine closes the frame under the last row, so
+            // the shorter pause menu leaves no gap. Wide enough for the
+            // words a run is won with, which stand whole in its top
+            // border.
+            menu: centred(56, 2, 34),
             // Where the menu stands, since the menu is what opens it.
-            settings: centred(56, 6, 28),
+            settings: centred(56, 2, 34),
             records: centred(72, 2, 36),
         }
     }
@@ -169,8 +170,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
         GameMenuPanel::new(screen.menu).title("Undermere").died("The Undermere keeps you.").won("The Drowned King is dead, and the lake is still."),
     ));
     // What the player may set, opened from the menu: fullscreen is the
-    // engine's, declared by `RoguelikePlugins`.
-    app.add_plugins(SettingsPanel::new(screen.settings));
+    // engine's, declared by `RoguelikePlugins`. And every run that has
+    // ended, best first, which the title opens.
+    app.add_plugins((SettingsPanel::new(screen.settings), RecordsPanel::new(screen.records)));
 }
 
 /// Whether this run plays keys from a script of some kind: a replay, a

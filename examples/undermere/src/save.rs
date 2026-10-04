@@ -6,45 +6,53 @@
 //! way through leads, every place built, the clock and what the
 //! adventurer has seen. Undermere says only what each kind of thing it
 //! spawns is: the adventurer, a monster by its definition's name, an item
-//! by its definition's name, and a way through by which way it is. What
-//! Undermere keeps of a run outside its entities, the deepest floor
-//! reached, goes through [`SaveableState`], and the engine's `Quests` and
-//! `Counters` are saved the same way wherever a run keeps them.
+//! by its definition's name and how much of it the tally has counted, and
+//! a way through by which way it is. What Undermere keeps of a run outside
+//! its entities, the [`Tally`], goes through [`SaveableState`], and the
+//! engine's `Quests` and `Counters` are saved the same way wherever a run
+//! keeps them.
 //!
 //! The run is written on the way out, by the engine's stash when the
 //! window closes or the menu quits, by the engine again when the menu
 //! leaves the run for the title, and on every arrival, so a crash loses at
 //! most the floor in hand. There is no save key. Death and a win delete
 //! it. Continue reads it back through [`run::resume`](crate::run::resume).
+//!
+//! The records of every run that has ended are kept apart, in a slot of
+//! their own that no run's end deletes, by the engine's
+//! `RecordsSavePlugin`.
 
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState, UnloadPlugin};
+use rl_engine::rl_save::{AddSaveable, RecordsSavePlugin, SavePlugin, Saveable, SaveableState, UnloadPlugin};
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemKind};
 use crate::bestiary::{Bestiary, Kind};
-use crate::run::{Adventurer, Deepest};
+use crate::run::Adventurer;
 use crate::stairs::Way;
+use crate::tally::{Counted, Tally};
 
 /// Bump when a kind's shape below changes so an old save would parse
 /// wrongly.
 // v1: the first shape.
-pub const VERSION: u32 = 1;
+// v2: the tally in place of the deepest floor, and how much of an item the
+// tally has counted.
+pub const VERSION: u32 = 2;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
 
 /// What the save is made of: the engine's plugins, the four kinds, and
-/// the three resources.
+/// the three resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
-    app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin))
+    app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
-        .save_state::<Deepest>()
+        .save_state::<Tally>()
         .save_state::<Quests>()
         .save_state::<Counters>();
 }
@@ -112,13 +120,19 @@ impl Saveable for Kind {
     }
 }
 
-/// An item, as the save writes it: its definition, by name. Its stack and
-/// its charges are the engine's to keep, and what it lends is its
-/// definition's, made again with it.
+/// An item, as the save writes it: its definition, by name, and how much
+/// of it the tally has counted as found. Its stack and its charges are the
+/// engine's to keep, and what it lends is its definition's, made again
+/// with it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemSave {
     /// The definition's name.
     pub def: String,
+    /// How many of it the tally has counted, nought for what the
+    /// adventurer has never held: a pile of gold they carry or dropped is
+    /// not counted again in the run carried on.
+    #[serde(default)]
+    pub counted: u32,
 }
 
 impl Saveable for ItemKind {
@@ -126,7 +140,8 @@ impl Saveable for ItemKind {
 
     fn capture(world: &World, entity: Entity) -> ItemSave {
         let kind = world.get::<ItemKind>(entity).expect("an item's kind");
-        ItemSave { def: world.resource::<Armory>().defs.name(kind.0).to_string() }
+        let counted = world.get::<Counted>(entity).map_or(0, |c| c.0);
+        ItemSave { def: world.resource::<Armory>().defs.name(kind.0).to_string(), counted }
     }
 
     fn restore(world: &mut World, saved: &ItemSave) -> Entity {
@@ -135,7 +150,11 @@ impl Saveable for ItemKind {
             return world.spawn_empty().id();
         };
         let registries = world.resource::<Registries>().clone();
-        spawned(world, |commands, world| crate::armory::spawn_item(commands, world.resource::<Armory>(), id, &registries))
+        let item = spawned(world, |commands, world| crate::armory::spawn_item(commands, world.resource::<Armory>(), id, &registries));
+        if saved.counted > 0 {
+            world.entity_mut(item).insert(Counted(saved.counted));
+        }
+        item
     }
 }
 
@@ -158,15 +177,18 @@ impl Saveable for Way {
     }
 }
 
-impl SaveableState for Deepest {
-    type Saved = u32;
+/// The tally, as the save writes it: the whole of it, every field
+/// defaulted, so a field added later reads as nought in a run saved
+/// before it.
+impl SaveableState for Tally {
+    type Saved = Tally;
 
-    fn capture(&self) -> u32 {
-        self.0
+    fn capture(&self) -> Tally {
+        self.clone()
     }
 
-    fn restore(&mut self, saved: u32) {
-        self.0 = saved;
+    fn restore(&mut self, saved: Tally) {
+        *self = saved;
     }
 }
 
@@ -224,7 +246,7 @@ mod tests {
             pack: carried,
             worn: worn(app, me),
             lantern,
-            deepest: world.resource::<Deepest>().0,
+            deepest: world.resource::<Tally>().deepest,
             monsters,
             ways,
         }
