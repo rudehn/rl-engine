@@ -17,9 +17,10 @@
 //! left.
 //!
 //! The ending screen shows the game's own words as well as the engine's:
-//! whatever sections a game pushed onto [`EndingView`] in
-//! `ViewSet::Annotate`, each under its heading, clipped to the rectangle
-//! the game gave the menu.
+//! the run's own line, the summary of the record filed for it, under the
+//! title, and whatever sections are on [`EndingView`], the record's and
+//! any a game pushed in `ViewSet::Annotate`, each under its heading,
+//! clipped to the rectangle the game gave the menu.
 //!
 //! It used to write them to a file instead, through a `Morgue` in
 //! `rl-save`, composed and filed by this presenter. Nothing read the file
@@ -416,6 +417,10 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
         if !ending.epitaph.is_empty() {
             words.extend(wrap(&ending.epitaph, width).into_iter().map(|line| (line, Tones::TEXT)));
         }
+        // The run's own line, which the records list will show it by, said
+        // here first: the title is what any ending in this outcome says,
+        // and this is what this one came to.
+        words.extend(wrap(&view.summary, width).into_iter().map(|line| (line, Tones::TEXT)));
         words.push((clip(&format!("Seed {}, turn {}.", ending.seed.0, ending.turn), width), Tones::MUTED));
         // Then whatever the game had to say, each section under its own
         // heading, the way the records screen draws one too: clipped by
@@ -602,6 +607,19 @@ mod tests {
         assert!(body.iter().all(|l| !l.contains("morgue")), "nothing is written anywhere: {body:?}");
         stage.press(KeyCode::Escape);
         assert!(stage.app.world().resource::<Modals>().any_open(), "escape does not leave an ending");
+    }
+
+    /// The run's own line, the summary of the record filed for it, stands
+    /// under the frame's title and the epitaph, above the seed: what the
+    /// records list will say of the run, said here first.
+    #[test]
+    fn the_ending_says_the_runs_own_line_under_its_title() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
+        stage.app.add_systems(Update, (|mut view: ResMut<EndingView>| view.summary = "Eaten on the second floor".into()).in_set(crate::ViewSet::Annotate));
+        die(&mut stage);
+        assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
+        assert_eq!(inside(&stage, 1), "Eaten on the second floor", "first under the title");
+        assert!(inside(&stage, 2).starts_with("Seed 5, turn "), "then the seed: {:?}", inside(&stage, 2));
     }
 
     /// How many runs the game's start began.

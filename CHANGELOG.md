@@ -6,6 +6,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The screen a run ends on says the run's own line: the summary of the record `RecordsPlugin` filed for it, under the menu's title and any epitaph, above the seed and the turn, so what the records list will show the run by is said on its end screen first.
+  `EndingView` gains `summary`, which `collect_ending` fills from `RunRecords::this_run` and empties when there is none, so a game with no records shows nothing new.
 - A run's facts are forgotten when it ends: in `EndRun`, `FactsPlugin` puts every counter in `Counters` back to nought, keeping the rules that feed them, and every quest in `Quests` back where a fresh tracker over the same quests puts it.
   A run begun after another in the same launch, by a restart or from the title, used to inherit the last one's counts and quest progress whenever a game inserted them once rather than in `NewRun`, so a quest counting kills could finish before the new run had done anything.
   `Ledger::reset` in `rl-rules` is the counters' half.

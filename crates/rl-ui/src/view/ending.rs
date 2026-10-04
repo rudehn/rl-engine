@@ -35,6 +35,9 @@ pub struct EndingSection {
 /// starts again shows nothing until something pushes again.
 #[derive(Resource, Debug, Default)]
 pub struct EndingView {
+    /// The run in one line, the summary of the record filed for it, which
+    /// the records list shows it by; empty when there is none.
+    pub summary: String,
     /// The sections, in the order they were pushed.
     pub sections: Vec<EndingSection>,
 }
@@ -53,7 +56,8 @@ impl EndingView {
 }
 
 /// Empties [`EndingView`] so the frame's annotate systems refill it, then
-/// adds the record `RecordsPlugin` filed for this run, when there is one.
+/// adds the record `RecordsPlugin` filed for this run, when there is one:
+/// its summary and its sections.
 ///
 /// Almost nothing to collect on its own: everything the engine itself
 /// knows about an ending is already in [`Ending`], which the menu reads
@@ -63,6 +67,7 @@ impl EndingView {
 /// what the run came to. A game with no `RecordsPlugin` at all reads
 /// `records` as `None` and gets exactly the old behaviour.
 pub fn collect_ending(mut view: ResMut<EndingView>, ending: Option<Res<Ending>>, records: Option<Res<RunRecords>>) {
+    view.summary.clear();
     view.sections.clear();
     // Nothing to say while the run is still going: a game that pushes
     // unconditionally still gets an empty screen until there is an ending
@@ -72,6 +77,7 @@ pub fn collect_ending(mut view: ResMut<EndingView>, ending: Option<Res<Ending>>,
         return;
     }
     if let Some(record) = records.as_deref().and_then(|kept| kept.this_run.as_ref()) {
+        view.summary.clone_from(&record.summary);
         view.sections.extend(record.sections.iter().map(|section| EndingSection { heading: section.heading.clone(), body: section.body.clone() }));
     }
 }
@@ -115,6 +121,22 @@ mod tests {
         app.world_mut().run_system_once(collect_ending).expect("the collector runs");
         let view = app.world().resource::<EndingView>();
         assert_eq!(view.sections, vec![EndingSection { heading: "Score".into(), body: "100".into() }]);
+    }
+
+    /// The record's one line comes with its sections, so the end screen
+    /// says what the records list says of the run, and a new run, with no
+    /// record yet, has none.
+    #[test]
+    fn the_ending_screen_shows_the_summary_of_this_runs_record() {
+        let mut app = App::new();
+        app.init_resource::<EndingView>();
+        app.insert_resource(Ending { outcome: Outcome::Died { by: None }, epitaph: String::new(), seed: RunSeed(1), turn: 10 });
+        app.insert_resource(RunRecords { records: Vec::new(), this_run: Some(RunRecord { summary: "Lost on the third day".into(), ..RunRecord::default() }) });
+        app.world_mut().run_system_once(collect_ending).expect("the collector runs");
+        assert_eq!(app.world().resource::<EndingView>().summary, "Lost on the third day");
+        app.world_mut().resource_mut::<RunRecords>().this_run = None;
+        app.world_mut().run_system_once(collect_ending).expect("the collector runs");
+        assert_eq!(app.world().resource::<EndingView>().summary, "", "forgotten with the record");
     }
 
     /// A game with no `RecordsPlugin` at all, Foundry's case: nothing to
