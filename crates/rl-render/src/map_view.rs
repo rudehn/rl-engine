@@ -26,7 +26,7 @@ use rl_rules::GasId;
 
 use crate::fields::{ShownFields, Wavefronts, churn, track_fields};
 use crate::shade::{Memory, Shading, Vary};
-use crate::terminal::{Cell, Terminal, WideCells};
+use crate::terminal::{Cell, Terminal};
 
 /// How an entity is drawn.
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
@@ -283,12 +283,12 @@ impl MapView {
         (0..high).flat_map(move |y| (0..wide).map(move |x| origin + Point::new(x, y)))
     }
 
-    /// Writes `cell` over the whole of a world tile: the glyph in its
-    /// first cell, and the same colours with no glyph in the rest. What
-    /// the terminal's [`WideCells`] then draws centred across them.
+    /// Writes `cell` over the whole of a world tile, as one wide cell of
+    /// the terminal: the glyph drawn centred across the tile's cells, and
+    /// the same colours in every one.
     pub fn set(&self, terminal: &mut Terminal, p: Point, cell: Cell) {
-        for (i, at) in self.cells(p).enumerate() {
-            terminal.set(at.x, at.y, if i == 0 { cell } else { Cell { glyph: ' ', ..cell } });
+        if let Some(at) = self.to_screen(p) {
+            terminal.set_wide(at.x, at.y, self.across, cell);
         }
     }
 
@@ -297,10 +297,16 @@ impl MapView {
     /// hiding.
     pub fn wash(&self, terminal: &mut Terminal, p: Point, bg: Color) {
         for at in self.cells(p) {
-            if let Some(mut drawn) = terminal.get(at.x, at.y) {
-                drawn.bg = bg;
-                terminal.set(at.x, at.y, drawn);
-            }
+            terminal.set_bg(at.x, at.y, bg);
+        }
+    }
+
+    /// Writes a glyph and its colour over a world tile, keeping its
+    /// colours: what stands on the tile, drawn on it as the tile's own
+    /// glyph is, centred across it.
+    pub fn put(&self, terminal: &mut Terminal, p: Point, glyph: char, fg: Color) {
+        if let Some(at) = self.to_screen(p) {
+            terminal.put(at.x, at.y, glyph, fg);
         }
     }
 
@@ -349,9 +355,6 @@ impl Plugin for MapViewPlugin {
             // play-only set, because props are put down while a place is
             // built and `Added` matches for one frame only.
             .add_systems(Update, (dress_props, redress_emptied).before(draw_map));
-        if self.across > 1 {
-            app.insert_resource(WideCells { region: self.viewport, span: self.across });
-        }
     }
 
     fn finish(&self, app: &mut App) {
@@ -480,7 +483,9 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
         if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !viewshed.is_some_and(|v| v.can_see(pos.0)) {
             continue;
         }
-        let Some(s) = view.to_screen(pos.0) else { continue };
+        if view.to_screen(pos.0).is_none() {
+            continue;
+        }
         if let Some(existing) = drawn.iter_mut().find(|(q, _)| *q == pos.0) {
             if existing.1 >= glyph.layer {
                 continue;
@@ -493,7 +498,7 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             Some(l) => look.shading.light(glyph.fg, l.at(pos.0), pos.0, t),
             None => glyph.fg,
         };
-        terminal.put(s.x, s.y, glyph.ch, fg);
+        view.put(&mut terminal, pos.0, glyph.ch, fg);
     }
 }
 
@@ -606,9 +611,14 @@ mod tests {
         v.set(&mut terminal, Point::new(103, 51), Cell::new('@', Color::WHITE).on(Color::srgb(0.2, 0.2, 0.2)));
         assert_eq!(terminal.get(16, 3).map(|c| c.glyph), Some('@'));
         assert_eq!(terminal.get(17, 3).map(|c| (c.glyph, c.bg)), Some((' ', Color::srgb(0.2, 0.2, 0.2))), "the glyph once, the colours across");
+        assert_eq!((terminal.span(16, 3), terminal.span(17, 3)), (Some(2), Some(0)), "one glyph drawn across the tile's two cells");
         v.wash(&mut terminal, Point::new(103, 51), Color::srgb(1.0, 0.0, 0.0));
         assert_eq!(terminal.get(16, 3).map(|c| (c.glyph, c.bg)), Some(('@', Color::srgb(1.0, 0.0, 0.0))), "a wash keeps the glyph");
         assert_eq!(terminal.get(17, 3).map(|c| c.bg), Some(Color::srgb(1.0, 0.0, 0.0)), "and covers the whole tile");
+        assert_eq!(terminal.span(16, 3), Some(2), "and keeps it one tile");
+        v.put(&mut terminal, Point::new(103, 51), 'g', Color::WHITE);
+        assert_eq!((v.get(&terminal, Point::new(103, 51)).map(|c| c.glyph), terminal.span(16, 3)), (Some('g'), Some(2)), "what stands on it, across it");
+        v.put(&mut terminal, Point::new(103, 51), '@', Color::WHITE);
         assert_eq!(v.get(&terminal, Point::new(103, 51)).map(|c| c.glyph), Some('@'));
     }
 

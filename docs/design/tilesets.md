@@ -62,9 +62,14 @@ A game with square cells has square pictures and letters spaced like a banner, w
 
 So a map tile may be more than one cell across: `MapViewPlugin::new(rect).across(2)`, or `RoguelikePlugins::across(2)`.
 `MapView` is the only thing that knows: `to_screen` answers a tile's first cell, `to_world` takes any of its cells back to the tile, and `set` and `wash` write a tile whole, which is what the map, the particles, the cursors and the panel highlights now call.
-The terminal is told the same cells come in runs, as `WideCells`, and draws the first cell's glyph or picture centred across the run, the picture as wide as the run.
+`MapView::set` writes a tile as one wide cell of the terminal, `Terminal::set_wide`, and the terminal draws its glyph or picture centred across the run, the picture as wide as the run.
 
-Nothing else changes: the cells are still cells, a panel drawn over the map still draws a character to a cell, and a game that says nothing has a cell to a tile as before.
+The run is the buffer's, written with the tile, rather than a region of the screen declared wide once.
+The same cell is half of a tile one frame and a letter of the pack the next, and a region declared wide drew every other letter of a screen over the map half a cell to the right, over its neighbour.
+So a run lasts until something else is written into it: text, a cell set whole, a fill or a clear makes the cells it touches cells of their own.
+A glyph put on a run's first cell is the run's, which is how what stands on a tile is drawn on it, and a background repainted under a run leaves it whole, which is how a tile is highlighted.
+
+Nothing else changes: the cells are still cells, a panel drawn over the map draws a character to a cell, and a game that says nothing has a cell to a tile as before.
 A map drawn in letters on runs of two has each letter centred in a square, which is how a letters-and-pictures setting keeps one layout.
 
 ## 4. What waits
