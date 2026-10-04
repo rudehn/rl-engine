@@ -220,8 +220,14 @@ pub fn draw_sheet(
                 if let Some(amount) = s.mends {
                     does.push(format!("mends {amount} a turn"));
                 }
-                let turns = if s.turns == 1 { "1 turn".to_string() } else { format!("{} turns", s.turns) };
-                if does.is_empty() { format!("{} {turns}", s.name) } else { format!("{} {turns}   {}", s.name, does.join(", ")) }
+                // A status that never runs out has no turns to count: its
+                // name stands alone, where a count would read as billions.
+                let named = match s.turns {
+                    rl_rules::UNTIL_CURED => s.name.clone(),
+                    1 => format!("{} 1 turn", s.name),
+                    turns => format!("{} {turns} turns", s.name),
+                };
+                if does.is_empty() { named } else { format!("{named}   {}", does.join(", ")) }
             })
             .collect();
         sections.push((statuses, lines));
@@ -310,6 +316,23 @@ mod tests {
 
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open());
+    }
+
+    /// A status that never runs out has no turns to count, and the
+    /// sheet says what it does with no count before it rather than the
+    /// four billion its turns are kept as.
+    #[test]
+    fn a_status_put_on_until_cured_shows_no_count_of_turns() {
+        let mut stage = stage();
+        let player = stage.player;
+        let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
+        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: rl_rules::UNTIL_CURED, by: None, held_by: None });
+        stage.tick();
+        stage.press(KeyCode::KeyC);
+        let rows = stage.rows();
+        let inside: Vec<&str> = rows.iter().map(|r| r.trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end()).collect();
+        let status = inside.iter().find(|r| r.starts_with("weak")).unwrap_or_else(|| panic!("no status in {rows:#?}"));
+        assert_eq!(*status, "weak   -3 might", "{rows:#?}");
     }
 
     #[test]

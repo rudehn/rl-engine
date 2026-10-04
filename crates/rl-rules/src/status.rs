@@ -1,5 +1,6 @@
 //! Statuses as data: a registered definition, and the instances an actor
-//! carries with their remaining duration.
+//! carries with their remaining duration, which for one put on
+//! [`UNTIL_CURED`] never runs down.
 //!
 //! What a status *does* is expressed as stat modifiers the engine can
 //! apply and remove, plus an optional damage-over-time the game's damage
@@ -231,12 +232,25 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
     Registry::from_defs(defs)
 }
 
+/// How long a status lasts that never runs out: one put on for this many
+/// turns is ticked every turn, its damage and its mending land, and it is
+/// never counted down, so it ends only when it is cured.
+///
+/// For what a body is rather than what happened to it: a creature that
+/// mends by its nature, or what a worn thing gives for as long as it is
+/// worn, which the thing's own hold ends. The largest count there is
+/// rather than a flag beside the count, so a save keeps it as it keeps any
+/// count, and the stacking rules leave it as it is: a refresh keeps the
+/// longer, and an extension saturates. A panel that counts a status's
+/// turns shows none for it.
+pub const UNTIL_CURED: u32 = u32::MAX;
+
 /// One status on one actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveStatus {
     /// Which status.
     pub id: StatusId,
-    /// Whole turns left.
+    /// Whole turns left, or [`UNTIL_CURED`] for one that never runs out.
     pub turns: u32,
     /// Who applied it, for credit on a tick. Opaque.
     pub source: Option<u64>,
@@ -364,7 +378,9 @@ impl Statuses {
     }
 
     /// Advances one turn: collects the damage each status deals, then
-    /// expires what ran out and removes its modifiers.
+    /// expires what ran out and removes its modifiers. A status put on
+    /// [`UNTIL_CURED`] bites and mends like any other and is never
+    /// counted down.
     pub fn tick(&mut self, defs: &Registry<StatusDef>, stats: &mut Stats) -> TickReport {
         let (mut ticks, mut mends) = (Vec::new(), Vec::new());
         for s in &self.active {
@@ -382,7 +398,9 @@ impl Statuses {
         for s in self.active.drain(..) {
             let instance = instance_of.iter().filter(|(id, _)| *id == s.id).count();
             instance_of.push((s.id, instance));
-            if s.turns <= 1 {
+            if s.turns == UNTIL_CURED {
+                kept.push(s);
+            } else if s.turns <= 1 {
                 stats.remove_source(source_tag(s.id, instance));
                 expired.push(s.id);
             } else {
@@ -469,6 +487,33 @@ mod tests {
         assert!(st.cure(poisoned, &mut stats));
         assert!(!st.has(poisoned));
         assert!(!st.cure(poisoned, &mut stats));
+    }
+
+    /// A status put on until it is cured bites and mends every turn like
+    /// any other, and is never counted down: a thousand turns later it has
+    /// as long left as it had, neither stacking rule shortens it, and only
+    /// a cure takes it off.
+    #[test]
+    fn a_status_put_on_until_cured_is_never_counted_down_and_ends_only_by_a_cure() {
+        let (stat_defs, defs) = world();
+        let speed = stat_defs.expect("speed");
+        let (slowed, burning) = (defs.expect("slowed"), defs.expect("burning"));
+        let mut stats = Stats::new();
+        let mut st = Statuses::new();
+        st.apply(slowed, UNTIL_CURED, None, &defs, &mut stats);
+        st.apply(burning, UNTIL_CURED, Some(9), &defs, &mut stats);
+        for turn in 0..1000 {
+            let report = st.tick(&defs, &mut stats);
+            assert!(report.expired.is_empty(), "turn {turn}: nothing ran out");
+            assert_eq!(report.ticks.len(), 1, "turn {turn}: the burn bit");
+        }
+        assert!(st.iter().all(|s| s.turns == UNTIL_CURED), "{:?}", st.iter().collect::<Vec<_>>());
+        st.apply(slowed, 3, None, &defs, &mut stats);
+        st.apply(burning, 3, None, &defs, &mut stats);
+        assert!(st.iter().all(|s| s.turns == UNTIL_CURED), "a refresh keeps the longer and an extension saturates");
+        assert_eq!(stats.value(speed, &stat_defs), 50, "still slowed");
+        assert!(st.cure(slowed, &mut stats));
+        assert_eq!(stats.value(speed, &stat_defs), 100, "and cured");
     }
 
     fn vocabulary() -> (Registry<StatDef>, Registry<crate::damage::DamageKind>) {

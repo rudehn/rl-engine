@@ -6,6 +6,13 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A mind no longer trades a strong blow of its own for a weaker weapon.
+  `OwnBlowScore(n)`, a new component in `rl_bevy::items` and the prelude, is what an actor's own blow is worth in its game's `GearScore` units, and a mind weighing a weapon it would strike with in place of its own blow counts it beside what the weapon displaces, so a brute with heavy fists leaves a knife lying and takes up a maul.
+  The engine strikes with the first worn thing that has a blow, so a weapon always replaced a claw rather than adding to it, and a mind used to take up anything scored above nothing for an empty hand.
+  An actor without the component weighs as before, its own blow worth nothing.
+- A status can last until it is cured: one put on for `UNTIL_CURED` turns, in `rl_rules` and the prelude, bites and mends every turn and is never counted down, where `u32::MAX` used to run down one a turn like any other count.
+  The character sheet shows such a status by its name and what it does, with no count of turns.
+  A game that holds a status for life, for what a body is or for as long as a worn thing is worn, writes `UNTIL_CURED` for its turns.
 - Foundry forgets a run's upgrades and the deepest deck it reached when the run ends, declared with `reset_on_new_run`, so a run begun after another in the same launch, by a restart or from the title, inherits neither.
 - Foundry's title screen is the engine's menu over Foundry's own picture of the works, and its pause and end menus offer Main menu with it.
   `main.rs` adds `TitlePanel` beside the other panels, in the rows under the gantry where Foundry's own menu stood, and `title::paint_backdrop` in `TitleSet::Backdrop`; the picture, its stamps and its motion are as they were.

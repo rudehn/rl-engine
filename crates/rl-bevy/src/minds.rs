@@ -1311,6 +1311,42 @@ mod tests {
         assert_eq!(w.get::<Position>(worse).map(|p| p.0), Some(start.offset(2, 0)), "and left the worse one lying");
     }
 
+    /// A brute whose own blow is worth five does not trade it for a club
+    /// worth three, which it would strike with in its place, and does take
+    /// up a maul worth eight: a weapon is weighed against the blow it
+    /// replaces as well as against what it displaces.
+    #[test]
+    fn a_mind_takes_up_a_weapon_only_when_it_beats_the_blow_of_its_own() {
+        use rl_rules::ai::tactics::Scavenge;
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, kind) = arena();
+        app.add_plugins(crate::items::ItemsPlugin);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let weapon = |worth: i32| (Item, Wearable(hand.clone()), GearScore(worth), MeleeAttack::new(kind, rl_core::DiceRoll::new(1, 4)));
+        let club = app.world_mut().spawn((weapon(3), Position(start.offset(2, 0)))).id();
+        let maul = app.world_mut().spawn((weapon(8), Position(start.offset(4, 0)))).id();
+        let brute = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(start.offset(3, 0)), Health::full(10), Faction(sides.theirs), Perception(8)),
+                (Inventory::default(), Equipped(Equipment::with_slot_count(1)), crate::items::OwnBlowScore(5)),
+                (Mind(Arc::new(Brain::new().then(Scavenge { reach: 3 }))), Intelligence(Wits::SAPIENT)),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..8 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        let w = app.world();
+        assert_eq!(w.get::<Equipped>(brute).unwrap().in_slot(SlotId::from_raw(0)), Some(maul), "it took up the maul");
+        assert_eq!(w.get::<Position>(club).map(|p| p.0), Some(start.offset(2, 0)), "and left the club, worse than its own blow, lying");
+    }
+
     #[test]
     fn a_mind_spawned_without_the_plugin_is_reported_once() {
         let mut without = headless_app();

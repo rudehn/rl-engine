@@ -76,11 +76,27 @@ pub struct Wearable(pub EquipShape);
 /// can tell better gear from worse without knowing what armor is.
 ///
 /// A mind weighs an item lying in sight against the worn items it would
-/// displace, and one worth more than all of them together is worth putting
-/// on. Gear without a score is never worth changing into; only the
-/// comparison matters, so any scale the game likes will do.
+/// displace, and a weapon it would strike with in place of its own blow
+/// against its [`OwnBlowScore`] as well; one worth more than all of that
+/// together is worth putting on. Gear without a score is never worth
+/// changing into; only the comparison matters, so any scale the game likes
+/// will do.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct GearScore(pub i32);
+
+/// How much the blow an actor strikes with by itself is worth, in the
+/// game's [`GearScore`] units: what a mind gives up when it takes up a
+/// weapon and strikes with that instead.
+///
+/// The engine strikes with the first worn thing that has a blow, and with
+/// an actor's own only while it wears none, so a weapon replaces a claw
+/// rather than adding to it. A mind weighing a weapon that would become
+/// the blow it strikes with counts this beside what the weapon displaces,
+/// so a brute does not trade its fists for a knife. Without it an actor's
+/// own blow is worth nothing, which is right for a bare hand and was the
+/// only rule before.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct OwnBlowScore(pub i32);
 
 /// An item's enchant level and affixes: what it is called and what a
 /// game writes its combat components and [`Bestows`] from when it spawns
@@ -621,6 +637,8 @@ pub struct Belongings<'w, 's> {
     missiles: Query<'w, 's, &'static Throwable>,
     scores: Query<'w, 's, &'static GearScore>,
     lying: Query<'w, 's, Lying, With<Item>>,
+    blows: Query<'w, 's, (), (With<Item>, With<crate::combat::MeleeAttack>)>,
+    own: Query<'w, 's, &'static OwnBlowScore>,
 }
 
 impl Belongings<'_, '_> {
@@ -631,13 +649,24 @@ impl Belongings<'_, '_> {
     }
 
     /// How much better `thinker` would be for wearing `item` in `shape`,
-    /// scored `score`, than for what it would displace; `None` when it wears
-    /// nothing or the item is not scored.
+    /// scored `score`, than for what it would displace and, for a weapon it
+    /// would strike with where it strikes with its own blow now, than for
+    /// its [`OwnBlowScore`]; `None` when it wears nothing or the item is not
+    /// scored.
     fn gain(&self, thinker: Entity, item: Entity, shape: &Wearable, score: &GearScore) -> Option<i32> {
         let Ok((_, Some(worn))) = self.bags.get(thinker) else { return None };
         // Tried on a copy: what the real equip would displace, and nothing moved.
-        let displaced = worn.0.clone().equip(item, &shape.0).ok()?;
-        Some(score.0 - displaced.iter().map(|d| self.scores.get(*d).map_or(0, |s| s.0)).sum::<i32>())
+        let mut after = worn.0.clone();
+        let displaced = after.equip(item, &shape.0).ok()?;
+        let given_up: i32 = displaced.iter().map(|d| self.scores.get(*d).map_or(0, |s| s.0)).sum();
+        // What it strikes with is the first worn thing with a blow, as
+        // `Loadout` reads it, and its own only while it wears none.
+        let strikes_with = |worn: &rl_rules::Equipment<Entity>| worn.worn().map(|(_, thing)| thing).find(|thing| self.blows.contains(*thing));
+        let own = match (strikes_with(&worn.0), strikes_with(&after)) {
+            (None, Some(blow)) if blow == item => self.own.get(thinker).map_or(0, |o| o.0),
+            _ => 0,
+        };
+        Some(score.0 - given_up - own)
     }
 }
 

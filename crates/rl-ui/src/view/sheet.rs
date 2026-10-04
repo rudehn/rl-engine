@@ -81,7 +81,8 @@ pub struct StatusLine {
     pub status: StatusId,
     /// Its registered name.
     pub name: String,
-    /// Whole turns left.
+    /// Whole turns left, or [`UNTIL_CURED`](rl_rules::UNTIL_CURED) for one
+    /// that never runs out, which the sheet shows with no count.
     pub turns: u32,
     /// What it does to which stat, by the stat's name.
     pub modifies: Vec<(String, Op)>,
