@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A run's facts are forgotten when it ends: in `EndRun`, `FactsPlugin` puts every counter in `Counters` back to nought, keeping the rules that feed them, and every quest in `Quests` back where a fresh tracker over the same quests puts it.
+  A run begun after another in the same launch, by a restart or from the title, used to inherit the last one's counts and quest progress whenever a game inserted them once rather than in `NewRun`, so a quest counting kills could finish before the new run had done anything.
+  `Ledger::reset` in `rl-rules` is the counters' half.
+  A game that inserts both afresh in `NewRun`, as Foundry and Corsair do, changes nothing, and a run left for the title has been written down before its teardown forgets them, so Continue gives them back.
 - The look panel says `here` for what lies where the player stands, the stairs they arrived by or what they dropped, where it said `0 tiles away`.
 - A mind no longer trades a strong blow of its own for a weaker one it could put on.
   `OwnBlowScore(n)`, a new component in `rl_bevy::items` and the prelude, is what an actor's own blow is worth in its game's `GearScore` units, and a mind weighing a thing whose blow it would strike with in place of its own counts it beside what the thing displaces, so an actor with a heavy blow of its own leaves a lighter one lying and puts on a heavier.

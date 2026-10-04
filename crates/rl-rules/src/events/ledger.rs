@@ -75,6 +75,12 @@ impl Ledger {
         }
     }
 
+    /// Puts every counter back to nought and keeps the rules that feed
+    /// them: what a new run counts from.
+    pub fn reset(&mut self) {
+        self.values.fill(0);
+    }
+
     /// Feeds a fact through every rule. Returns the counters it changed.
     pub fn feed(&mut self, fact: &Fact) -> Vec<CounterId> {
         let mut changed = Vec::new();
@@ -110,5 +116,9 @@ mod tests {
         assert_eq!(ledger.get(loot), 12);
         ledger.add(loot, -2);
         assert_eq!(ledger.get(loot), 10);
+        ledger.reset();
+        assert_eq!((ledger.get(kills), ledger.get(loot)), (0, 0), "reset to nought");
+        assert_eq!(ledger.feed(&Fact::new(killed).about(1)), vec![kills], "with the rules kept");
+        assert_eq!(ledger.get(kills), 1);
     }
 }
