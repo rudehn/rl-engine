@@ -16,9 +16,16 @@
 //! The places are [`dungeon`]'s: Mereholt, one hand-drawn piece, and the
 //! ten floors under it, each a chain of the engine's passes varied by its
 //! band. [`prefabs`] loads the pieces they are stamped from, [`stairs`]
-//! lays the ways between them and names each in the log, and [`light`]
-//! lights them. [`testing`] is a headless world with the places in it,
-//! for the tests.
+//! lays the ways between them and names each in the log, [`population`]
+//! puts each floor's people down the first time it is entered, and
+//! [`light`] lights them and dims the lantern as the adventurer descends.
+//!
+//! The run is [`run`]'s: the adventurer and what they set out with, the
+//! deepest floor reached, and a run carried on from a save, which
+//! [`save`] says how to write down. [`wearing`] gives a wearer what a worn
+//! thing lends, [`input`] turns keys into intents, and [`plugin`] is every
+//! one of these systems in one list, which the binary and [`testing`]'s
+//! headless world both add, so a test plays the game that ships.
 
 #![deny(missing_docs)]
 
@@ -26,8 +33,14 @@ pub mod armory;
 pub mod bestiary;
 pub mod content;
 pub mod dungeon;
+pub mod input;
 pub mod light;
+pub mod plugin;
+pub mod population;
 pub mod prefabs;
+pub mod run;
+pub mod save;
 pub mod stairs;
 pub mod testing;
 pub mod traits;
+pub mod wearing;

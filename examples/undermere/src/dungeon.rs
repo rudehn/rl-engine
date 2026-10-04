@@ -905,7 +905,8 @@ struct Mouth(Point);
 /// and before the way in is chosen: a hall a cell larger than the piece all
 /// round, carved over whatever the rooms put there, the piece in the middle
 /// of it facing south down the floor, and a corridor from under its mouth
-/// to the nearest room clear of the hall.
+/// to the nearest room clear of the hall. A floor with no room clear of
+/// the hall is refused, since nothing would reach the throne.
 ///
 /// The ordinary rooms are never large enough for the throne, so it does not
 /// wait for one. The hall's ring of floor is what keeps the floor whole: a
@@ -948,18 +949,21 @@ impl Pass<BaseContext> for ThroneHall {
             .map(|room| room.0)
             .filter(|room| room.intersection(&hall).is_none())
             .min_by_key(|room| (geometry::manhattan(room.center(), mouth), room.center()));
-        if let Some(room) = nearest {
-            // Straight down out of the hall, along the row under it, then
-            // up or down into the room: never back into the hall.
-            let to = room.center();
-            let corridor = (mouth.y..=under)
-                .map(|y| Point::new(mouth.x, y))
-                .chain((mouth.x.min(to.x)..=mouth.x.max(to.x)).map(|x| Point::new(x, under)))
-                .chain((under.min(to.y)..=under.max(to.y)).map(|y| Point::new(to.x, y)))
-                .collect::<Vec<_>>();
-            for p in corridor {
-                ctx.terrain_mut().set(p, self.floor);
-            }
+        // Refused rather than laid shut away: a hall with nothing to join
+        // its mouth to is a floor the walk to the throne cannot cross, and
+        // a change to the floor's size or the throne's that brings it about
+        // should fail where it happens.
+        let room = nearest.ok_or_else(|| BuildError::new("throne_hall", format!("no room clear of the {w}x{h} throne's hall to join its mouth to")))?;
+        // Straight down out of the hall, along the row under it, then up
+        // or down into the room: never back into the hall.
+        let to = room.center();
+        let corridor = (mouth.y..=under)
+            .map(|y| Point::new(mouth.x, y))
+            .chain((mouth.x.min(to.x)..=mouth.x.max(to.x)).map(|x| Point::new(x, under)))
+            .chain((under.min(to.y)..=under.max(to.y)).map(|y| Point::new(to.x, y)))
+            .collect::<Vec<_>>();
+        for p in corridor {
+            ctx.terrain_mut().set(p, self.floor);
         }
         ctx.emit(Mouth(mouth));
         Ok(())
@@ -1283,5 +1287,18 @@ mod tests {
             }
         }
         assert!(measured > 0, "some monster's post was measured");
+    }
+
+    /// A throne hall laid where no room is clear of it to join its mouth
+    /// to is refused, naming the pass, rather than laid shut away from the
+    /// rest of the floor for the walk test to find later, or never.
+    #[test]
+    fn a_throne_with_no_room_to_join_its_mouth_to_is_refused() {
+        let undermere = Undermere::new(RunSeed(0));
+        let floor = undermere.tile("throne floor");
+        let mut ctx = BaseContext::blank(70, 40, undermere.tiles().clone(), undermere.tile("throne wall"));
+        let hall = ThroneHall { piece: undermere.prefabs().piece("the throne").unwrap(), floor };
+        let refused = Chain::new().then(hall).run(&mut ctx, RunSeed(0)).expect_err("no rooms, so nothing to join the hall to");
+        assert_eq!(refused.pass, "throne_hall", "{refused}");
     }
 }

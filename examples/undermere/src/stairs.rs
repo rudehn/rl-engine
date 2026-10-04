@@ -91,18 +91,24 @@ pub fn place_line(map: MapId) -> String {
 
 /// Lays a place's ways through the first time it is entered, and names the
 /// place in the log on every arrival, coming up as well as going down.
-pub fn link_places(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, mut tell: MessageWriter<Tell>) {
+///
+/// On the run's first arrival, in Mereholt, it also says how to see the
+/// keys, under the town's own line: said when the run is begun, it would
+/// be written before the arrival and read as though it came first.
+pub fn link_places(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, help: Res<ControlsKeys>, mut tell: MessageWriter<Tell>) {
     for ev in entered.read() {
         tell.write(Tell::new(place_line(ev.map), Tones::NOTICE));
         if !ev.first {
             continue;
         }
         let Some(floor) = floor_of(ev.map) else {
-            // The town: the gate, its way on, leads to floor one's way in.
-            if ev.map == TOWN
-                && let Some(gate) = ev.exit
-            {
-                lay(&mut commands, Way::Gate, gate, ev.map, Destination::Place { map: map_of(1), arrive: Arrive::Entry });
+            // The town: how to see the keys, and the gate, its way on,
+            // leading to floor one's way in.
+            if ev.map == TOWN {
+                tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
+                if let Some(gate) = ev.exit {
+                    lay(&mut commands, Way::Gate, gate, ev.map, Destination::Place { map: map_of(1), arrive: Arrive::Entry });
+                }
             }
             continue;
         };
@@ -216,6 +222,60 @@ mod tests {
                 assert_eq!((up.0, up.1), (at(&app, me), Destination::Place { map: map_of(floor), arrive: Arrive::Exit }), "seed {s}, floor {}", floor + 1);
             }
         }
+    }
+
+    /// Enter on the gate, the way a player takes it, goes through to floor
+    /// one, at its way in.
+    #[test]
+    fn walking_through_the_gate_arrives_on_floor_one() {
+        use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+        for s in 0..3 {
+            let mut app = headless(RunSeed(s));
+            app.add_plugins(KeyScriptPlugin);
+            let me = crate::testing::adventurer(&mut app);
+            let gate = ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Gate).expect("Mereholt's gate").0;
+            stand_on(&mut app, me, gate);
+            assert_eq!(at(&app, me), gate, "seed {s}: on the gate");
+            press(&mut app, KeyCode::Enter);
+            assert_eq!(here(&app), map_of(1), "seed {s}: through the gate is floor one");
+            let entry = app.world().resource::<WorldMap>().place(map_of(1)).unwrap().entry;
+            assert_eq!(at(&app, me), entry, "seed {s}: at its way in");
+        }
+    }
+
+    /// Down every way from Mereholt to the throne, stood on each as
+    /// Foundry's lift tests stand on a lift: the gate to floor one, and
+    /// every floor's way down to the next, until the tenth.
+    #[test]
+    fn taking_every_way_down_reaches_floor_ten() {
+        for s in 0..3 {
+            let mut app = headless(RunSeed(s));
+            let me = crate::testing::adventurer(&mut app);
+            crate::testing::sturdy(&mut app, me);
+            let gate = ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Gate).expect("Mereholt's gate").0;
+            stand_on(&mut app, me, gate);
+            go_through(&mut app, me);
+            for floor in 1..FLOORS {
+                assert_eq!(here(&app), map_of(floor), "seed {s}");
+                let down =
+                    ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Down).unwrap_or_else(|| panic!("seed {s}: floor {floor} has a way down")).0;
+                stand_on(&mut app, me, down);
+                go_through(&mut app, me);
+            }
+            assert_eq!(here(&app), map_of(FLOORS), "seed {s}: the last way down reaches the throne's floor");
+        }
+    }
+
+    /// The run's first arrival names Mereholt and then, under it, how to
+    /// see the keys: said in the arrival rather than when the run is begun,
+    /// so it reads below the town's line rather than above it.
+    #[test]
+    fn the_log_names_mereholt_and_then_says_how_to_see_the_keys() {
+        let mut app = headless(RunSeed(1));
+        crate::testing::settle(&mut app);
+        let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
+        let line = |text: &str| lines.iter().position(|l| l == text).unwrap_or_else(|| panic!("{text:?} not in {lines:#?}"));
+        assert!(line(&place_line(TOWN)) < line("Press ? for the controls."), "{lines:#?}");
     }
 
     /// The log names the place on every arrival, not only the first, so

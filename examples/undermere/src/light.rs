@@ -26,9 +26,11 @@ use rl_engine::rl_bevy::Spot;
 use rl_engine::rl_rules::prefab::Slot;
 use rl_engine::rl_rules::prop::PropId;
 
+use crate::armory::{Armory, ItemKind};
 use crate::bestiary::MonsterDef;
 use crate::content::LightDef;
 use crate::dungeon::{Biome, TOWN, Undermere, floor_of};
+use crate::run::Adventurer;
 
 /// A lamp post's lantern: warm, and far enough to light the street round
 /// it.
@@ -85,6 +87,35 @@ pub fn ambient_of(map: MapId) -> Light {
         Some(Biome::ForgeOfEmbers) => Light::new(12, Rgb::new(210, 80, 50)),
         Some(Biome::Throne) => Light::new(5, Rgb::new(90, 140, 160)),
         None => Light::DARK,
+    }
+}
+
+/// Keeps every lantern the adventurer carries reaching as far as
+/// [`lantern_radius`] says for where they stand: seven tiles in Mereholt
+/// and on the first floors, and a tile less every third floor down.
+///
+/// Read off where the adventurer is every pass rather than set on an
+/// arrival, so a lantern picked up on floor seven, or brought back by a
+/// continued run, dims to the floor it is carried on at once. In
+/// `TurnSet::React`, so the floor a pass arrives on is lit by the lantern
+/// as it reaches there before anybody on it decides by that light. Only
+/// the lantern: a torch burns as it burns, and lies about to be found.
+pub fn dim_the_lantern(
+    adventurer: Query<(&Inventory, Option<&OnMap>), With<Adventurer>>,
+    mut lights: Query<(&ItemKind, &mut LightSource)>,
+    armory: Res<Armory>,
+) {
+    let Some(lantern) = armory.defs.id(crate::run::LANTERN) else { return };
+    for (bag, on) in &adventurer {
+        let radius = lantern_radius(floor_of(on.map_or(MapId::SURFACE, |m| m.0)));
+        for item in &bag.items {
+            if let Ok((kind, mut light)) = lights.get_mut(*item)
+                && kind.0 == lantern
+                && light.radius != radius
+            {
+                light.radius = radius;
+            }
+        }
     }
 }
 
@@ -282,6 +313,28 @@ mod tests {
             assert!(!beside.is_empty(), "the lamp post at {post:?} stands in the street");
             assert!(beside.iter().all(|p| lighting.band(*p) == LightBand::Lit), "the street beside the lamp post at {post:?} is lit");
         }
+    }
+
+    /// The lantern the adventurer carries reaches as far as the floor they
+    /// stand on allows, all the way down, and as far as ever back in town.
+    #[test]
+    fn the_lantern_dims_as_the_adventurer_descends() {
+        let mut app = crate::testing::headless(RunSeed(1));
+        let me = crate::testing::adventurer(&mut app);
+        crate::testing::sturdy(&mut app, me);
+        let lantern = {
+            let world = app.world();
+            let bag = &world.get::<Inventory>(me).expect("a pack").items;
+            bag.iter().copied().find(|i| world.get::<Name>(*i).is_some_and(|n| n.as_str() == crate::run::LANTERN)).expect("the lantern")
+        };
+        let reach = |app: &App| app.world().get::<LightSource>(lantern).map(|l| l.radius);
+        assert_eq!(reach(&app), Some(lantern_radius(None)), "in Mereholt");
+        for floor in 1..=FLOORS {
+            crate::testing::arrive(&mut app, map_of(floor));
+            assert_eq!(reach(&app), Some(lantern_radius(Some(floor))), "on floor {floor}");
+        }
+        crate::testing::arrive(&mut app, TOWN);
+        assert_eq!(reach(&app), Some(lantern_radius(None)), "and back in Mereholt");
     }
 
     #[test]

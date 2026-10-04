@@ -1,0 +1,124 @@
+//! `UndermerePlugin`: every one of Undermere's own systems and resources,
+//! and the engine's plugins the game plays with, in one place.
+//!
+//! A system registered in the binary and again in `testing::headless` is
+//! two places to keep in step, and nothing stops them drifting apart, so
+//! a test would exercise a different game from the one that ships. This
+//! is the one list instead: the binary adds it beside `RoguelikePlugins`
+//! and its panels, `testing::headless` adds it beside the few engine
+//! plugins a window would have brought, and neither registers a game
+//! system of its own.
+//!
+//! Foundry lists the engine's gameplay plugins in its binary and again in
+//! its harness; here they are part of the game, since which subsystems
+//! run is as much the game as its own systems are. What stays outside is
+//! what a window brings, `CorePlugin`, `FovPlugin` and `UiPlugin` among
+//! them, the narrator, which the binary and the harness add from
+//! [`narrator`], the run's `Seed` and the `Saves` it is written to, and
+//! drawing into a rectangle of the screen, which a headless test has no
+//! screen to cut.
+
+use bevy::prelude::*;
+use rl_engine::prelude::*;
+use rl_engine::rl_bevy::plugin::{NewRun, ResetsOnNewRun, Turn, TurnSet};
+use rl_engine::rl_bevy::{FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
+
+use crate::armory::Armory;
+use crate::bestiary::Bestiary;
+use crate::content::Library;
+
+/// What a sound carries, in steps of loudness over open ground: a step two
+/// tiles, so a keen-eared monster hears the adventurer coming and nothing
+/// else does; a blow ten, so a fight is heard down the corridor; a door
+/// or a thrown thing landing six; and three taken off by a shut door.
+pub const NOISE: NoiseRules = NoiseRules { step: 2, strike: 10, door: 6, landing: 6, door_muffle: 3 };
+
+/// The narrator as Undermere words it, for the binary and
+/// `testing::headless` both, so a test reads the log the player reads.
+///
+/// The engine's own words, as they stand: the adventurer is `you`, a
+/// monster is named by its kind and the Drowned King by his name, and a
+/// monster's ability as it is written. The one place to change them.
+pub fn narrator() -> NarratorPlugin {
+    NarratorPlugin::default()
+}
+
+/// Undermere's own systems, and the engine's plugins it plays with.
+pub struct UndermerePlugin;
+
+impl Plugin for UndermerePlugin {
+    fn build(&self, app: &mut App) {
+        // The engine's subsystems a run plays with: fighting and minds,
+        // statuses, things carried, worn, thrown and drunk, light and the
+        // dark, being noticed and heard, what monsters breathe and cast,
+        // fire, the props the places stand, the slots the pieces fill,
+        // and loot.
+        app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
+            .add_plugins((AbilitiesPlugin, FirePlugin, NoisePlugin::new(NOISE), PropsPlugin))
+            .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
+            // `Harm`, `Mend` and `Inflict`, for the potions, the flask and
+            // the breaths, beside the `Ignite` fire declares.
+            .add_engine_effects();
+        // The content, read once before any run begins against the
+        // effects and moments every plugin above declared: no run changes
+        // what a sword or a goblin is. A file that does not read stops the
+        // game here, by name.
+        let library = {
+            let world = app.world();
+            Library::load(world.resource::<EffectKinds>(), world.resource::<Moments>())
+        };
+        app.insert_resource(library.registries).insert_resource(library.abilities).insert_resource(library.armory).insert_resource(library.bestiary);
+
+        // The run's start, and a continued run after the fresh start has
+        // stood aside.
+        app.add_systems(NewRun, crate::run::start);
+        app.add_systems(NewRun, crate::run::resume.after(crate::run::start));
+        // What a run is saved as, and when: on the way out and on every
+        // arrival.
+        crate::save::register(app);
+        // The deepest floor reached, nought at the start and put back to
+        // nought when the run ends, so the next run in the same launch has
+        // been nowhere.
+        app.init_resource::<crate::run::Deepest>().reset_on_new_run::<crate::run::Deepest>();
+        // A place fills the moment it is first entered: the engine's slots
+        // in `PrefabSet::Fill`, then the depth, the ways through and the
+        // place's line in the log, the floor's people, and the fixtures'
+        // light, then the engine's loot in `LootSet::Scatter`, each reading
+        // the same `PlaceEntered` through its own cursor. After the slots,
+        // so the people keep off every cell a piece marked; before the
+        // loot, which lands where nothing stands. Chained, though no two of
+        // them share a cell: systems that spawn, left unordered, queue
+        // their commands in whatever order they finish in, and a place's
+        // entities would come out in a different order from one run to the
+        // next.
+        app.add_systems(
+            Turn,
+            (crate::run::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures)
+                .chain()
+                .in_set(TurnSet::React)
+                .after(PrefabSet::Fill)
+                .before(LootSet::Scatter),
+        );
+        // What the adventurer wears and carries, kept in step every pass:
+        // what a worn thing lends, then how far the lantern reaches where
+        // the adventurer stands. Chained, since both light things.
+        app.add_systems(Turn, (crate::wearing::lend, crate::light::dim_the_lantern).chain().in_set(TurnSet::React));
+        // Each place's ambient, set between the turns and the light, so the
+        // frame the stairs land on is drawn in the new place's light.
+        app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
+        // The keys, declared once so the controls screen lists what the
+        // input reads. `f` and `t` hand the engine's targeting cursor an
+        // `AimFire` or an `AimThrow`; registering both here is a no-op
+        // beside the cursor's own plugin, and lets a headless test with no
+        // cursor press the keys all the same.
+        crate::input::declare_controls(app);
+        app.add_message::<AimFire>().add_message::<AimThrow>();
+        app.add_systems(Update, crate::input::player_input.in_set(EngineSet::Input));
+    }
+
+    /// Every line Undermere says from inside a turn is a `Tell`, which
+    /// only the engine's narrator collects and speaks.
+    fn finish(&self, app: &mut App) {
+        rl_engine::rl_bevy::plugin::depends_on::<rl_engine::rl_ui::NarrationViewPlugin>(app, "UndermerePlugin");
+    }
+}

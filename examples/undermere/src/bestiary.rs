@@ -18,7 +18,9 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::DEFAULT_PERCEPTION;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, KeepPost, MeleeAdjacent, SearchLastKnown, ShootAtRange, UseAbility, Wander};
+use rl_engine::rl_rules::ai::tactics::{
+    FleeWhenHurt, Hunt, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander,
+};
 use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
@@ -31,9 +33,18 @@ const MONSTERS_RON: &str = include_str!("../assets/monsters.ron");
 /// Where each kind turns up, compiled in beside it.
 const MONSTER_SPAWNS_RON: &str = include_str!("../assets/monster_spawns.ron");
 
-/// How long a status a trait holds lasts: a whole life. A status counts
-/// its turns down, and this many never run out.
-pub const FOR_LIFE: u32 = u32::MAX;
+/// How long a status a trait holds lasts: a whole life, the engine's
+/// [`UNTIL_CURED`], which bites and mends every turn and is never counted
+/// down, so a panel that counts a status's turns shows none for it.
+pub const FOR_LIFE: u32 = UNTIL_CURED;
+
+/// How a monster notices an adventurer trying not to be seen, unless one
+/// of its traits says otherwise: sure of one beside it, a quarter of the
+/// time beyond that, and sure from four tiles further while the
+/// adventurer stands in light, so a lantern is seen coming and the dark
+/// is somewhere to hide. The engine's own default has no light bonus at
+/// all, which would make the lantern cost nothing.
+pub const NOTICE: NoticeStats = NoticeStats { certain: 1, chance_pct: 25, lit_bonus: 4, memory: 6 };
 
 /// One kind of monster, resolved: its core as written and its traits
 /// folded, with every name looked up.
@@ -294,6 +305,18 @@ const ABILITY_CHANCE_PCT: u32 = 40;
 /// How often a monster with nothing better to do takes a step.
 const WANDER_CHANCE_PCT: u32 = 30;
 
+/// How often a monster with something to throw throws it on a turn a
+/// throw is there to be made: half the time, so a thrower sometimes
+/// closes in instead, and a goblin with one flask does not spend it the
+/// moment it sees whom to spend it on.
+const THROW_CHANCE_PCT: u32 = 50;
+
+/// The furthest a monster goes for something worth having, in steps:
+/// Corsair's four, a short detour, so a goblin that sees a better blade
+/// across the room takes it up on its way and one at the far end of the
+/// floor is left for the adventurer.
+const SCAVENGE_REACH: i32 = 4;
+
 /// The brain a monster of `folded` decides with, built once per kind from
 /// what it is, so a monster that never runs has no `FleeWhenHurt` in it
 /// rather than one that checks a threshold of nothing every turn.
@@ -305,6 +328,15 @@ const WANDER_CHANCE_PCT: u32 = 30;
 /// all. With nowhere to run it fights, since the flight finds no step.
 /// An ability comes next, then the blow, then a shot for a kind that has
 /// one, which only ever fires at what is not beside it.
+///
+/// A kind whose wits use things uses what it finds, as `sapient` says it
+/// does: it throws what it carries to throw, and fetches gear better than
+/// what it wears, a weapon better than its own blow besides, or something
+/// to throw while it has nothing, from a few steps away. Both come before
+/// the hunt, so a goblin that sees a better
+/// blade on its way to a fight takes it up first, and both answer only
+/// when there is something to throw or to fetch, so a goblin with empty
+/// hands and nothing in sight hunts as any other kind does.
 ///
 /// Every kind ends the same way, as Foundry's do: hunt what it sees, search
 /// where it last saw it, walk back to the post a piece stood it at, and
@@ -322,7 +354,20 @@ fn brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
     if shoots {
         brain = brain.then(ShootAtRange::default());
     }
+    if folded.wits.has(Wits::THROWS) {
+        brain = brain.then(ThrowAtRange { chance_pct: THROW_CHANCE_PCT });
+    }
+    if uses_things(folded.wits) {
+        brain = brain.then(Scavenge { reach: SCAVENGE_REACH });
+    }
     brain.then(Hunt).then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: WANDER_CHANCE_PCT })
+}
+
+/// Whether a mind of `wits` takes things up: puts gear on, or picks up
+/// something to throw. Such a kind has hands, a pack and slots, and its
+/// brain fetches what it sees worth having.
+fn uses_things(wits: Wits) -> bool {
+    wits.has(Wits::EQUIPS) || wits.has(Wits::PICKS_UP.with(Wits::THROWS))
 }
 
 /// The engine's monsters are made here: one at a piece's slot is made
@@ -350,7 +395,13 @@ impl ActorMaker for Bestiary {
 /// give it as the engine's own components: health, armor, resistances,
 /// its side, its blow, how far it sees and how fast it moves, a mind and
 /// the wits it decides with, and how it notices what tries not to be
-/// seen, which every monster carries.
+/// seen, which every monster carries, by [`NOTICE`] unless a trait says.
+///
+/// A kind whose wits take things up has an empty pack and empty slots,
+/// one for every slot the registries hold, so what it finds it can carry
+/// and wear, and what its own blow is worth, since the engine strikes with
+/// a worn blade in place of its own and a blade worse than its own is no
+/// gain.
 ///
 /// Its shot, its dark sight, its hearing, its light, what it knows, the
 /// statuses it holds and what it drops are added only for a kind that has
@@ -363,11 +414,17 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     let mut e = commands.spawn((
         (Actor, Blocks, Position(at), OnMap(map), Kind(def.id)),
         (Health::full(def.hp), Armor(def.armor), Resists(f.resists.clone()), Faction(def.faction), def.attack),
-        (Perception(def.perception()), Speed(def.speed()), Mind(def.brain.clone()), Intelligence(f.wits), Notice(f.notice.unwrap_or_default())),
+        (Perception(def.perception()), Speed(def.speed()), Mind(def.brain.clone()), Intelligence(f.wits), Notice(f.notice.unwrap_or(NOTICE))),
         (Name::new(def.name.clone()), Glyph::new(def.glyph, Color::srgb(r, g, b)).on_layer(5)),
     ));
     if let Some(ranged) = def.ranged {
         e.insert(ranged);
+    }
+    if uses_things(f.wits) {
+        // And what its own blow is worth, which a weapon it would strike
+        // with instead has to beat: an ogre keeps its fists.
+        let own = OwnBlowScore(crate::armory::blow_score(def.attack.dice, def.attack.cost));
+        e.insert((Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len())), own));
     }
     if let Some(cells) = f.dark_sight {
         e.insert(DarkSight(cells));
@@ -680,5 +737,123 @@ mod tests {
         assert_eq!(held.turns, FOR_LIFE, "for life");
         assert!(world.get::<Intelligence>(e).is_some_and(|w| w.0 == Wits::SAPIENT), "sapient");
         assert_ne!(decides(&world, e, 1, king.hp, &library), Some("flee_when_hurt"), "deathless: he never runs");
+    }
+
+    /// Every monster is surer of an adventurer standing in light, so the
+    /// lantern is seen coming, except one whose trait says how it
+    /// notices: a keen nose notices by smell, in the dark as in the light.
+    #[test]
+    fn every_monster_notices_a_lit_adventurer_sooner_unless_a_trait_says_how_it_notices() {
+        let library = library();
+        for (_, def) in library.bestiary.defs.iter() {
+            let (world, e) = spawn(&library, def);
+            let notice = world.get::<Notice>(e).expect("every monster notices").0;
+            match def.folded.notice {
+                Some(own) => assert_eq!(notice, own, "{}: its trait's", def.name),
+                None => assert!(notice.lit_bonus > 0, "{}: sees a lantern coming", def.name),
+            }
+        }
+        let ghoul = library.bestiary.defs.get(library.bestiary.defs.expect("ghoul"));
+        assert_eq!(ghoul.folded.notice.map(|n| n.lit_bonus), Some(0), "keen-nosed");
+    }
+
+    /// A kind with the wits to use things has a pack and a slot for
+    /// everything the registries hold, so what it finds it can carry and
+    /// wear; a beast has neither.
+    #[test]
+    fn a_kind_that_uses_things_has_hands_and_a_beast_has_none() {
+        let library = library();
+        for (name, hands) in [("goblin", true), ("kobold", true), ("the Drowned King", true), ("rat", false), ("skeleton", false)] {
+            let def = library.bestiary.defs.get(library.bestiary.defs.expect(name));
+            let (world, e) = spawn(&library, def);
+            assert_eq!(world.get::<Inventory>(e).is_some(), hands, "{name}: a pack");
+            let slots = world.get::<Equipped>(e).map(|w| w.slot_count());
+            assert_eq!(slots, hands.then_some(library.registries.slots.len()), "{name}: slots");
+        }
+    }
+
+    /// An ogre's own two fists hit harder than any sword, so an ogre with
+    /// a sword lying beside it leaves it there, and the king, whose blow is
+    /// the hardest under the lake, would leave any weapon at all; a goblin's
+    /// own blow is worth less than the sword it would take up.
+    #[test]
+    fn an_ogre_leaves_a_sword_lying_that_would_hit_softer_than_its_fists() {
+        use crate::testing::{adventurer, arrive, at, clear_floor, clear_monsters, lay, lay_floor, make, monster, pass_turns, sturdy};
+        let library = library();
+        let worth = |name: &str| {
+            let (world, e) = spawn(&library, library.bestiary.defs.get(library.bestiary.defs.expect(name)));
+            world.get::<OwnBlowScore>(e).map(|s| s.0)
+        };
+        let armory = &library.armory;
+        let (world, made) = {
+            let mut world = World::new();
+            let mut queue = CommandQueue::default();
+            let made = crate::armory::spawn_item(&mut Commands::new(&mut queue, &world), armory, armory.defs.expect("war hammer"), &library.registries);
+            queue.apply(&mut world);
+            (world, made)
+        };
+        let hammer = world.get::<GearScore>(made).expect("a war hammer is worth something").0;
+        assert!(worth("the Drowned King").is_some_and(|king| king > hammer), "the king's blow is worth more than the heaviest weapon");
+        assert!(worth("goblin").is_some_and(|goblin| goblin < hammer), "a goblin's is worth less");
+
+        for s in 0..3 {
+            let mut app = crate::testing::headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            arrive(&mut app, crate::dungeon::map_of(1));
+            clear_monsters(&mut app);
+            clear_floor(&mut app);
+            let from = at(&app, me);
+            let width = app.world().resource::<WorldMap>().place(crate::dungeon::map_of(1)).unwrap().terrain.bounds().width;
+            let step = if from.x < width / 2 { 1 } else { -1 };
+            let lane: Vec<Point> = (1..=10).map(|d| from.offset(step * d, 0)).collect();
+            lay_floor(&mut app, &lane);
+            let ogre = monster(&mut app, "ogre", lane[6]);
+            let sword = make(&mut app, "sword");
+            lay(&mut app, sword, lane[8]);
+            pass_turns(&mut app, 8);
+            assert_eq!(app.world().get::<Position>(sword).map(|p| p.0), Some(lane[8]), "seed {s}: the sword lies where it lay");
+            assert!(app.world().get::<Inventory>(ogre).is_some_and(|bag| bag.items.is_empty()), "seed {s}: and the ogre carries nothing");
+        }
+    }
+
+    /// A goblin with a dagger in hand and a shield on its arm sees a sword
+    /// lying a few steps off and a second dagger nearer: it walks to the
+    /// sword, puts it on and keeps the dagger in its pack, and leaves the
+    /// dagger that would only replace its own where it lies. The shield is
+    /// what makes the second dagger worth nothing: a dagger fits either
+    /// hand, and a goblin with a hand free takes up any blade for it.
+    #[test]
+    fn a_goblin_picks_up_and_wears_a_better_weapon_it_sees() {
+        use crate::testing::{adventurer, arrive, at, clear_floor, clear_monsters, lay, lay_floor, make, monster, pass_turns, sturdy, wear};
+        for s in 0..3 {
+            let mut app = crate::testing::headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            arrive(&mut app, crate::dungeon::map_of(1));
+            clear_monsters(&mut app);
+            clear_floor(&mut app);
+            // A lane of open floor away from the adventurer, toward the
+            // side of the floor with more room, lit by the halls' own dim
+            // light whatever stood there.
+            let from = at(&app, me);
+            let width = app.world().resource::<WorldMap>().place(crate::dungeon::map_of(1)).unwrap().terrain.bounds().width;
+            let step = if from.x < width / 2 { 1 } else { -1 };
+            let lane: Vec<Point> = (1..=10).map(|d| from.offset(step * d, 0)).collect();
+            lay_floor(&mut app, &lane);
+            let goblin = monster(&mut app, "goblin", lane[5]);
+            let (dagger, shield) = (make(&mut app, "dagger"), make(&mut app, "shield"));
+            wear(&mut app, goblin, dagger);
+            wear(&mut app, goblin, shield);
+            let (nearer, sword) = (make(&mut app, "dagger"), make(&mut app, "sword"));
+            lay(&mut app, nearer, lane[7]);
+            lay(&mut app, sword, lane[8]);
+            pass_turns(&mut app, 8);
+            let world = app.world();
+            let main = world.resource::<Registries>().slots.expect("main hand");
+            assert_eq!(world.get::<Equipped>(goblin).and_then(|w| w.in_slot(main)), Some(sword), "seed {s}: it wields the sword");
+            assert!(world.get::<Inventory>(goblin).is_some_and(|bag| bag.contains(dagger)), "seed {s}: and keeps its dagger in its pack");
+            assert_eq!(world.get::<Position>(nearer).map(|p| p.0), Some(lane[7]), "seed {s}: the dagger no better than its own lies where it lay");
+        }
     }
 }

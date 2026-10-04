@@ -11,9 +11,11 @@
 //! An [`ItemDef`] is Foundry's item schema trimmed to what Undermere uses,
 //! plus `lends`: the traits a worn thing gives its wearer, the same traits
 //! a monster is written as, so a ring of the salamander and a salamander
-//! are fire-blooded for the same reason. The names resolve here, at load;
-//! what folds them onto a wearer is play, not content, and reads them off
-//! the definition through [`ItemKind`].
+//! are fire-blooded for the same reason. The names resolve here, at load,
+//! and are folded once into what each thing lends: its armor and its
+//! resistances join the thing's own, which the engine counts for whoever
+//! wears it, and the rest is the thing's [`Lends`], which
+//! [`wearing`](crate::wearing) puts on its wearer and takes off again.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -21,7 +23,8 @@ use rl_engine::rl_rules::ability::Look;
 use serde::Deserialize;
 
 use crate::content::LightDef;
-use crate::traits::TraitDef;
+use crate::traits::{Folded, TraitDef};
+use crate::wearing::Lends;
 
 /// The items file, compiled in so the binary runs from anywhere.
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
@@ -185,6 +188,9 @@ pub struct Armory {
     /// Each definition's triggers, built once and shared by every item
     /// spawned from it.
     triggers: Vec<Triggers>,
+    /// What each definition lends, its traits folded once, so a spawn
+    /// reads plain values.
+    lent: Vec<Folded>,
 }
 
 impl Armory {
@@ -200,8 +206,29 @@ impl Armory {
         let tags = |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect();
         let table = rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &names.clone().with("item", &defs), &defs, tags)
             .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
-        let mut triggers = Vec::new();
-        let mut errors = Vec::new();
+        Self::new(defs, table, registries, traits, kinds, moments).unwrap_or_else(|e| panic!("assets/items.ron: {e}"))
+    }
+
+    /// An armory of `defs`, found where `table` says, each definition's
+    /// triggers built against the effect `kinds` and `moments` and what it
+    /// lends folded through `traits`. Every trigger that cannot be built
+    /// and every lend that does not fold is reported at once, each under
+    /// its item.
+    ///
+    /// What [`load`](Self::load) builds the game's armory with, and what a
+    /// test builds one of its own with, from items [`read`] out of a
+    /// fixture: a thing the game does not have, made exactly as the
+    /// game's own things are.
+    pub fn new(
+        defs: Registry<ItemDef>,
+        table: LootTable<Id<ItemDef>>,
+        registries: &Registries,
+        traits: &Registry<TraitDef>,
+        kinds: &EffectKinds,
+        moments: &Moments,
+    ) -> Result<Self, ContentError> {
+        let names = registries.names();
+        let (mut triggers, mut lent, mut errors) = (Vec::new(), Vec::new(), Vec::new());
         for (_, d) in defs.iter() {
             triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &names) {
                 Ok(built) => built,
@@ -210,9 +237,16 @@ impl Armory {
                     Triggers::default()
                 }
             });
+            let lends: Vec<_> = d.lends.iter().map(|t| t.id()).collect();
+            lent.push(crate::traits::fold(&lends, traits).unwrap_or_else(|clash| {
+                errors.push(format!("{}: {clash}", d.name));
+                Folded::default()
+            }));
         }
-        assert!(errors.is_empty(), "assets/items.ron: {}", errors.join("; "));
-        Self { defs, table, triggers }
+        if !errors.is_empty() {
+            return Err(ContentError::Invalid(errors));
+        }
+        Ok(Self { defs, table, triggers, lent })
     }
 }
 
@@ -227,7 +261,8 @@ pub fn read(text: &str, registries: &Registries, traits: &Registry<TraitDef>) ->
 
 /// One item's own shape, checked against nothing but itself and the
 /// traits it lends: whether its slot claims make sense, whether a trigger
-/// can ever come round, and whether what it lends folds.
+/// can ever come round, whether a worn thing can give what it lends, and
+/// whether what it lends folds.
 fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>) -> Result<(), String> {
     if d.slot.is_none() && (d.either || !d.also.is_empty()) {
         return Err("either or also without a slot".into());
@@ -253,10 +288,73 @@ fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>) -> Result<(), String> 
     if d.slot.is_none() && !d.lends.is_empty() {
         return Err("lends traits, on a thing that is never worn".into());
     }
+    for lent in d.lends.iter().map(|t| traits.get(t.id())) {
+        if let Some(field) = unlendable(lent) {
+            return Err(format!("lends `{}`, whose `{field}` a worn thing cannot give", lent.name));
+        }
+    }
     // What it lends is folded onto a wearer the way a monster's traits are
     // folded, so two of them setting one value is the same mistake.
     let lends: Vec<_> = d.lends.iter().map(|t| t.id()).collect();
-    crate::traits::fold(&lends, traits).map(|_| ()).map_err(|clash| clash.to_string())
+    let folded = crate::traits::fold(&lends, traits).map_err(|clash| clash.to_string())?;
+    if folded.light.is_some() && d.light.is_some() {
+        return Err("lends a light, and sheds one of its own: a thing has the one light".into());
+    }
+    Ok(())
+}
+
+/// The first value `t` sets that a worn thing cannot give its wearer, by
+/// the name the traits file writes it under, or `None` when all of it can
+/// be given.
+///
+/// A worn thing gives what it is or carries: armor, resistances, a light,
+/// sight in the dark, a status held while it is worn. What a mind thinks
+/// with, how fast and how far a body moves, sees, notices and hears, when
+/// it runs and what it knows how to do are the body's own, read once when
+/// it is made, and a thing that lent them would lend nothing at all.
+fn unlendable(t: &TraitDef) -> Option<&'static str> {
+    let set = [
+        ("wits", t.wits.is_some()),
+        ("speed", t.speed.is_some()),
+        ("perception", t.perception.is_some()),
+        ("flee_at", t.flee_at.is_some()),
+        ("notice", t.notice.is_some()),
+        ("hearing", t.hearing.is_some()),
+        ("abilities", !t.abilities.is_empty()),
+    ];
+    set.into_iter().find_map(|(field, set)| set.then_some(field))
+}
+
+/// What wearing `d`, lending `lent`, is worth to a mind choosing between
+/// the things it finds, for the engine's `GearScore`, or `None` for a thing
+/// worth nothing to wear, a lantern or a torch.
+///
+/// In tenths of a point of damage a turn: a blow's average over what it
+/// costs, so a quick dagger is worth less than a sword but not as little
+/// as its roll alone says; half that for a shot, which a mind fighting
+/// beside its enemy has no use for; and two points a turn for each point
+/// of armor. Only the comparison matters, between a thing and what it
+/// would displace, so the numbers need agree with nothing else.
+fn gear_score(d: &ItemDef, lent: &Folded) -> Option<i32> {
+    let blow = d.melee.map_or(0.0, |m| damage_a_turn(m.roll, d.cost));
+    let shot = d.ranged.map_or(0.0, |r| damage_a_turn(r.roll, d.cost) / 2.0);
+    let armor = (d.armor + lent.armor.unwrap_or(0)) as f32 * 2.0;
+    let score = ((blow + shot + armor) * 10.0).round() as i32;
+    (score > 0).then_some(score)
+}
+
+/// What a blow of `roll` struck every `cost` hundredths of a step is worth,
+/// in the tenths of a point of damage a turn every `GearScore` here is
+/// counted in: the same measure for a sword lying on the floor and for a
+/// goblin's own claws, so a mind's own blow is weighed against a weapon it
+/// would strike with instead in the one unit.
+pub fn blow_score(roll: DiceRoll, cost: Option<u32>) -> i32 {
+    (damage_a_turn(roll, cost) * 10.0).round() as i32
+}
+
+/// The damage a turn a blow of `roll` deals when it costs `cost`.
+fn damage_a_turn(roll: DiceRoll, cost: Option<u32>) -> f32 {
+    roll.avg() * BASE_ACTION_COST as f32 / cost.unwrap_or(BASE_ACTION_COST) as f32
 }
 
 /// Every item definition in `items.ron`, checked, and nothing built from
@@ -292,15 +390,18 @@ pub struct ItemKind(pub Id<ItemDef>);
 /// Spawns `def` as an item entity carrying every component its definition
 /// implies, placed nowhere: what it is called and drawn as, what it counts
 /// as, what it does at its moments and what that costs it, and, for
-/// something worn, its shape, its armor, its resistances and whatever it
-/// strikes or shoots with. A stackable item spawns as a stack of one; the
-/// caller merges or grows it as it likes.
+/// something worn, its shape, what it is worth to wear, its armor, its
+/// resistances and whatever it strikes or shoots with. A stackable item
+/// spawns as a stack of one; the caller merges or grows it as it likes.
 ///
-/// What a worn thing lends is left on the definition, which play reads
-/// through [`ItemKind`]: a trait is folded onto a wearer, and an item
-/// lying on the floor has nobody to fold it onto.
+/// What a worn thing lends goes where the engine already reads a worn
+/// thing, as far as it can: the armor and the resistances it lends join
+/// its own, and the engine counts them for whoever wears it and for
+/// nobody else. The rest, a status, sight in the dark and a light, is its
+/// [`Lends`], which [`wearing`](crate::wearing) gives its wearer.
 pub fn spawn_item(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, registries: &Registries) -> Entity {
     let d = armory.defs.get(def);
+    let lent = &armory.lent[def.index()];
     let (r, g, b) = d.color;
     let mut e = commands.spawn((Item, ItemKind(def), Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(r, g, b)).on_layer(2)));
     if !d.tags.is_empty() {
@@ -321,16 +422,26 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, re
     }
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
+        // Worth something to a mind that puts things on, so a goblin
+        // knows a sword from a dagger without knowing what either is.
+        if let Some(score) = gear_score(d, lent) {
+            e.insert(GearScore(score));
+        }
     }
-    if d.armor != 0 {
-        e.insert(Armor(d.armor));
+    let armor = d.armor + lent.armor.unwrap_or(0);
+    if armor != 0 {
+        e.insert(Armor(armor));
     }
-    if !d.resists.is_empty() {
+    if !d.resists.is_empty() || lent.resists != Resistances::new() {
         let mut resists = Resistances::new();
         for (kind, pct) in &d.resists {
             resists.add(kind.id(), *pct);
         }
+        resists.plus(&lent.resists);
         e.insert(Resists(resists));
+    }
+    if let Some(lends) = Lends::of(lent) {
+        e.insert(lends);
     }
     if let Some(melee) = d.melee {
         e.insert(MeleeAttack { cost: d.cost, look: melee.look, ..MeleeAttack::new(melee.kind.id(), melee.roll) });
@@ -403,6 +514,15 @@ impl ItemMaker for Armory {
     /// weights, rather than how many.
     fn scatter(&self) -> ScatterRules {
         ScatterRules::new().loose(4, 6)
+    }
+
+    /// Nothing lies loose in Mereholt: the town is where a run sets out
+    /// from, and what is worth finding is under the lake.
+    fn loose(&self, area: LootArea, planned: u32) -> u32 {
+        match area {
+            LootArea::Place(crate::dungeon::TOWN) => 0,
+            _ => planned,
+        }
     }
 
     /// A floor's band is its number, since floor `n` is `MapId(n)`. A place
@@ -537,7 +657,7 @@ mod tests {
         let bad = r#"[
             (name: "odd helm", glyph: '^', color: (0.5, 0.6, 0.5), slot: "head", lends: ["sees in the drak"]),
             (name: "loose charm", glyph: '"', color: (0.5, 0.6, 0.5), lends: ["swift"]),
-            (name: "twisted helm", glyph: '^', color: (0.5, 0.6, 0.5), slot: "head", lends: ["swift", "slow"]),
+            (name: "twisted helm", glyph: '^', color: (0.5, 0.6, 0.5), slot: "head", lends: ["thick-hided", "armored"]),
         ]"#;
         let Err(ContentError::Invalid(errors)) = read(bad, registries, traits) else { panic!("bad lends loaded") };
         assert_eq!(errors.len(), 1, "an unknown name is reported before anything is checked: {errors:?}");
@@ -545,7 +665,7 @@ mod tests {
         let Err(ContentError::Invalid(errors)) = read(&bad.replace("drak", "dark"), registries, traits) else { panic!("bad lends loaded") };
         assert_eq!(errors.len(), 2, "{errors:?}");
         assert!(errors[0].starts_with("loose charm: "), "{errors:?}");
-        assert_eq!(errors[1], "twisted helm: `speed` is set by both `swift` and `slow`");
+        assert_eq!(errors[1], "twisted helm: `armor` is set by both `thick-hided` and `armored`");
     }
 
     /// A lantern sheds its light where it lies and from whoever carries
@@ -573,5 +693,68 @@ mod tests {
             assert!(world.get::<Consumable>(*e).is_some(), "and is spent doing it");
         }
         assert!(world.get::<Throwable>(made[1]).is_some(), "a flask is thrown");
+    }
+
+    /// What a thing is worth to a mind that wears things: a sword more than
+    /// a dagger, a war hammer more than a sword, plate more than leather,
+    /// and a light nothing at all, so no goblin takes up a lantern for its
+    /// worth.
+    #[test]
+    fn a_sword_is_worth_more_to_wear_than_a_dagger_and_a_lantern_nothing() {
+        let library = library();
+        let names = ["dagger", "sword", "war hammer", "leather armor", "plate armor", "lantern", "torch"];
+        let (world, made) = spawned(&library, &names);
+        let worth: Vec<Option<i32>> = made.iter().map(|e| world.get::<GearScore>(*e).map(|g| g.0)).collect();
+        let [dagger, sword, hammer, leather, plate, lantern, torch] = worth[..] else { unreachable!() };
+        assert!(dagger < sword && sword < hammer, "{worth:?}");
+        assert!(leather < plate, "{worth:?}");
+        assert_eq!((lantern, torch), (None, None), "{worth:?}");
+    }
+
+    /// A worn thing gives what it is or carries, and lending anything else,
+    /// a pace or the wits a mind thinks with, is refused naming the trait and
+    /// what it sets; so is a thing lending a light beside its own.
+    #[test]
+    fn a_thing_lending_what_a_worn_thing_cannot_give_is_refused() {
+        let library = library();
+        let (registries, traits) = (&library.registries, &library.traits);
+        let bad = r#"#![enable(implicit_some)]
+        [
+            (name: "boots of haste", glyph: '[', color: (0.5, 0.5, 0.5), slot: "body", lends: ["swift"]),
+            (name: "cap of wits", glyph: '^', color: (0.5, 0.5, 0.5), slot: "head", lends: ["sapient"]),
+            (name: "glowing lantern", glyph: '(', color: (0.5, 0.5, 0.5), slot: "light", light: (radius: 3, color: (1.0, 1.0, 1.0)), lends: ["fungal glow"]),
+        ]"#;
+        let Err(ContentError::Invalid(errors)) = read(bad, registries, traits) else { panic!("it read") };
+        assert_eq!(
+            errors,
+            [
+                "boots of haste: lends `swift`, whose `speed` a worn thing cannot give",
+                "cap of wits: lends `sapient`, whose `wits` a worn thing cannot give",
+                "glowing lantern: lends a light, and sheds one of its own: a thing has the one light",
+            ]
+        );
+    }
+
+    /// What a ring lends that the engine reads off a worn thing joins the
+    /// ring's own, and the rest is what the ring lends its wearer.
+    #[test]
+    fn a_things_lent_armor_and_resistances_are_its_own_and_the_rest_it_lends() {
+        let library = library();
+        let (registries, traits) = (&library.registries, &library.traits);
+        let ring = r#"#![enable(implicit_some)]
+        [(name: "stone ring", glyph: '=', color: (0.5, 0.5, 0.5), slot: "off hand", armor: 1, resists: [("cold", 10)],
+          lends: ["armored", "fire-blooded", "regenerates", "sees in the dark"])]"#;
+        let defs = read(ring, registries, traits).expect("the ring reads");
+        let armory = Armory::new(defs, LootTable::default(), registries, traits, &crate::content::effect_kinds(), &Moments::default()).expect("and is made");
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let made = spawn_item(&mut Commands::new(&mut queue, &world), &armory, armory.defs.expect("stone ring"), registries);
+        queue.apply(&mut world);
+        let kind = |name: &str| registries.damage_kinds.expect(name);
+        assert_eq!(world.get::<Armor>(made).map(|a| a.0), Some(5), "its own one and the four `armored` lends");
+        let resists = &world.get::<Resists>(made).expect("resistances").0;
+        assert_eq!((resists.get(kind("fire")), resists.get(kind("cold"))), (100, -40), "fire-blooded beside its own ten against cold");
+        let lends = world.get::<Lends>(made).expect("what it lends a wearer");
+        assert_eq!((lends.statuses.clone(), lends.dark_sight, lends.light), (vec![registries.statuses.expect("regenerating")], Some(6), None));
     }
 }

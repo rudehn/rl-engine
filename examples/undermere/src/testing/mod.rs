@@ -1,51 +1,44 @@
 //! A headless Undermere, for the tests this crate adds.
 //!
-//! The engine plugins the places need, with no window, and the places' own
-//! systems as the game orders them: the ways through and the fixtures'
-//! light laid on a first arrival after the engine has filled a piece's
-//! slots, and each place's ambient set between the turns and the light.
-//! Nothing begins a run yet, so a test stands a body in for the
-//! adventurer, with no side and no light of its own, wherever it wants one
-//! with [`arrive`].
+//! The engine plugins a window would have brought, with no window, and
+//! [`UndermerePlugin`](crate::plugin::UndermerePlugin): the same one the
+//! binary adds, so a test plays the game that ships rather than a harness
+//! that quietly fell behind it. The run begins at startup, as it does for
+//! a player who picked New Game, and is saved in memory, so a test never
+//! touches the disk and each starts with an empty slot of its own.
+//!
+//! The helpers stand the adventurer where a test wants them, through the
+//! engine's own warp, and put things in their hands the way the game
+//! makes them: by the armory, worn through the engine's own `Equip`.
 
+use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::RunSeed;
 
 use crate::armory::Armory;
 use crate::bestiary::Bestiary;
-use crate::content::Library;
-use crate::dungeon::Undermere;
-use crate::light::Fixtures;
+use crate::dungeon::{Biome, floor_of};
+use crate::run::Adventurer;
 
-/// A world with Undermere's places in it and nobody in them, seeded.
-///
-/// Combat and minds are there for the throne's court, which the engine
-/// stands at its posts on floor ten's first arrival: a monster nobody
-/// decides for would hold its turn for good. The narrator is there for the
-/// log, which every line a place says reaches through a `Tell`.
+/// A run with no window, seeded, begun on the first update.
 pub fn headless(seed: RunSeed) -> App {
     let mut app = rl_engine::rl_bevy::plugin::headless_app();
-    app.add_plugins((FovPlugin, LightingPlugin, CombatPlugin, MindsPlugin));
-    let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
-    let undermere = Undermere::new(seed);
-    let fixtures = Fixtures::new(&undermere, &library.registries);
-    let combat = crate::content::combat_rules(&library.registries);
-    app.insert_resource(Seed(seed))
-        .insert_resource(combat)
-        .insert_resource(WorldMap::new(undermere.tiles().tables()))
-        .insert_resource(undermere.prefabs().clone())
-        .insert_resource(fixtures)
-        .insert_resource(library.registries)
-        .insert_resource(library.bestiary)
-        .insert_resource(library.armory)
-        .insert_resource(PlaceRulesRes(Box::new(undermere)));
-    app.add_plugins(PrefabPlugin::<Bestiary, Armory>::default());
-    app.add_plugins((UiPlugin, NarratorPlugin::default()));
-    // Chained, the ways before the light, and after the slots are filled,
-    // so a place's entities are spawned in one order every run.
-    app.add_systems(Turn, (crate::stairs::link_places, crate::light::light_fixtures).chain().in_set(TurnSet::React).after(PrefabSet::Fill));
-    app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
+    app.add_plugins((FovPlugin, UiPlugin, crate::plugin::narrator()));
+    app.insert_resource(Seed(seed)).insert_resource(Saves::new(MemoryBackend::default()));
+    app.add_plugins(crate::plugin::UndermerePlugin);
+    app
+}
+
+/// A run continued from `text`, a save as the slot holds it: the save in
+/// the memory backend, `ContinueRun` asked for as the title's Continue
+/// asks for it, and the first frames run so the continued run stands.
+pub fn continued(text: &str) -> App {
+    let mut app = headless(RunSeed(0));
+    app.world().resource::<Saves>().persist(crate::save::SLOT, text).expect("the memory backend takes it");
+    app.insert_resource(ContinueRun);
+    settle(&mut app);
+    settle(&mut app);
     app
 }
 
@@ -56,38 +49,176 @@ pub fn settle(app: &mut App) {
     app.update();
 }
 
-/// The body standing in for the adventurer, if one has been put anywhere.
-pub fn player(app: &mut App) -> Option<Entity> {
-    app.world_mut().query_filtered::<Entity, With<Player>>().iter(app.world()).next()
+/// Waits the adventurer forward `n` whole turns, one at a time.
+pub fn pass_turns(app: &mut App, n: u32) {
+    let me = adventurer(app);
+    for _ in 0..n {
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+    }
 }
 
-/// Puts the body at `map`'s way in, making it first if there is none, the
-/// way a run warps the adventurer into Mereholt. Returns the body.
+/// The adventurer, the run begun first if it has not been.
+pub fn adventurer(app: &mut App) -> Entity {
+    let find = |app: &mut App| app.world_mut().query_filtered::<Entity, With<Adventurer>>().iter(app.world()).next();
+    if let Some(me) = find(app) {
+        return me;
+    }
+    settle(app);
+    find(app).expect("the run put the adventurer somewhere")
+}
+
+/// The place being read, which is the one the adventurer stands in.
+pub fn here(app: &App) -> MapId {
+    app.world().resource::<WorldMap>().current()
+}
+
+/// Where `who` stands.
+pub fn at(app: &App, who: Entity) -> Point {
+    app.world().get::<Position>(who).expect("standing somewhere").0
+}
+
+/// Warps the adventurer to `map`'s way in, the way the stairs would, and
+/// lets the arrival settle. Returns the adventurer.
 pub fn arrive(app: &mut App, map: MapId) -> Entity {
-    let me = match player(app) {
-        Some(me) => me,
-        None => {
-            let me = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(8), RevealsMap)).id();
-            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
-            settle(app);
-            me
-        }
-    };
+    let me = adventurer(app);
     app.world_mut().write_message(WarpRequest::into_place(me, map));
     settle(app);
     me
 }
 
-/// Moves the body to `at` on the map it is on, through the engine's own
+/// Moves `me` to `at` on the place it is in, through the engine's own
 /// warp, so what it stood on and what it stands on are both kept right.
 pub fn stand_on(app: &mut App, me: Entity, at: Point) {
-    let here = app.world().resource::<WorldMap>().current();
+    let here = here(app);
     app.world_mut().write_message(WarpRequest { actor: me, to: Destination::Place { map: here, arrive: Arrive::At(at) } });
     settle(app);
 }
 
-/// Takes the way through the body stands on.
+/// Takes the way through `me` stands on.
 pub fn go_through(app: &mut App, me: Entity) {
     app.world_mut().write_message(Intent::new(me, GoThrough));
     settle(app);
+}
+
+/// Gives `me` more health than anything under the lake can take in a
+/// test's few turns, for a test about where the adventurer goes rather
+/// than whether they live through it.
+pub fn sturdy(app: &mut App, me: Entity) {
+    app.world_mut().entity_mut(me).insert(Health::full(10_000));
+}
+
+/// Takes every monster off every place, for a test about the adventurer's
+/// own things rather than about who is near them.
+pub fn clear_monsters(app: &mut App) {
+    let world = app.world_mut();
+    let monsters: Vec<Entity> = world.query_filtered::<Entity, With<crate::bestiary::Kind>>().iter(world).collect();
+    for monster in monsters {
+        world.despawn(monster);
+    }
+}
+
+/// Takes every thing lying on the place being read, for a test about what
+/// it lays there itself: a floor's own loot lies where it fell, and a
+/// goblin fetching something to throw picks up everything on its cell.
+pub fn clear_floor(app: &mut App) {
+    let here = here(app);
+    let world = app.world_mut();
+    let lying: Vec<Entity> =
+        world.query_filtered::<(Entity, &OnMap), (With<Item>, With<Position>)>().iter(world).filter(|(_, on)| on.0 == here).map(|(e, _)| e).collect();
+    for thing in lying {
+        world.despawn(thing);
+    }
+}
+
+/// Paints `cells` of the place being read with its own floor, so a test
+/// has open ground there whatever the place built.
+pub fn lay_floor(app: &mut App, cells: &[Point]) {
+    let name = floor_of(here(app)).map_or("cobbles", |floor| Biome::of(floor).floor());
+    let mut map = app.world_mut().resource_mut::<WorldMap>();
+    let floor = TileId(map.tables().names.iter().position(|n| n == name).expect("the place's floor is a tile") as u16);
+    for p in cells {
+        map.set_tile(*p, floor);
+    }
+}
+
+/// Makes `name` by the game's armory, placed nowhere.
+pub fn make(app: &mut App, name: &str) -> Entity {
+    let mut queue = CommandQueue::default();
+    let thing = {
+        let world = app.world();
+        let armory = world.resource::<Armory>();
+        crate::armory::spawn_item(&mut Commands::new(&mut queue, world), armory, armory.defs.expect(name), world.resource::<Registries>())
+    };
+    queue.apply(app.world_mut());
+    thing
+}
+
+/// Lays `thing` on the floor of the place being read, at `at`.
+pub fn lay(app: &mut App, thing: Entity, at: Point) {
+    let here = here(app);
+    app.world_mut().entity_mut(thing).insert((Position(at), OnMap(here)));
+}
+
+/// Puts `thing` in `who`'s pack.
+pub fn give(app: &mut App, who: Entity, thing: Entity) {
+    app.world_mut().get_mut::<Inventory>(who).expect("a pack").items.push(thing);
+}
+
+/// Puts `thing` in `who`'s pack and on, by `Equip`, as a key would: for
+/// the adventurer while they hold the turn.
+pub fn equip(app: &mut App, who: Entity, thing: Entity) {
+    give(app, who, thing);
+    app.world_mut().write_message(Intent::new(who, Equip(thing)));
+    settle(app);
+}
+
+/// Takes `thing` off `who`, by `Unequip`, as a key would.
+pub fn unequip(app: &mut App, who: Entity, thing: Entity) {
+    app.world_mut().write_message(Intent::new(who, Unequip(thing)));
+    settle(app);
+}
+
+/// Puts `thing`, in `who`'s pack, straight into its slots, for a monster,
+/// which nobody's key equips: as if it had put it on itself.
+pub fn wear(app: &mut App, who: Entity, thing: Entity) {
+    give(app, who, thing);
+    let shape = app.world().get::<Wearable>(thing).expect("a thing to wear").0.clone();
+    app.world_mut().get_mut::<Equipped>(who).expect("slots").0.equip(thing, &shape).expect("it fits");
+}
+
+/// Spawns the monster `name` at `at` on the place being read, made as a
+/// floor's own are.
+pub fn monster(app: &mut App, name: &str, at: Point) -> Entity {
+    let registries = app.world().resource::<Registries>().clone();
+    let here = here(app);
+    let mut queue = CommandQueue::default();
+    let e = {
+        let world = app.world();
+        let bestiary = world.resource::<Bestiary>();
+        let mut commands = Commands::new(&mut queue, world);
+        crate::bestiary::spawn_monster(&mut commands, bestiary.defs.get(bestiary.defs.expect(name)), at, here, &registries)
+    };
+    queue.apply(app.world_mut());
+    e
+}
+
+/// The names of what `who` wears, slot by slot, `None` for an empty one.
+pub fn worn(app: &App, who: Entity) -> Vec<Option<String>> {
+    let world = app.world();
+    let equipped = world.get::<Equipped>(who).expect("slots");
+    let registries = world.resource::<Registries>();
+    registries.slots.iter().map(|(slot, _)| equipped.in_slot(slot).map(|item| name_of(app, item))).collect()
+}
+
+/// What `who` carries, by name and count, in pack order.
+pub fn pack(app: &App, who: Entity) -> Vec<(String, u32)> {
+    let world = app.world();
+    let bag = &world.get::<Inventory>(who).expect("a pack").items;
+    bag.iter().map(|item| (name_of(app, *item), world.get::<Stack>(*item).map_or(1, |s| s.count))).collect()
+}
+
+/// What `thing` is called.
+pub fn name_of(app: &App, thing: Entity) -> String {
+    app.world().get::<Name>(thing).expect("a name").as_str().to_string()
 }
