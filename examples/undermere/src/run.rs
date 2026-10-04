@@ -34,6 +34,12 @@ pub const KIT: [(&str, u32); 4] = [("sword", 1), ("leather armor", 1), (LANTERN,
 /// How the adventurer is drawn.
 pub const ADVENTURER: Color = Color::WHITE;
 
+/// The floor a run starts on, when it is not Mereholt: `main.rs` reads it
+/// from `UNDERMERE_START` for a photograph of a deeper floor. Absent, or
+/// nought, the run starts in Mereholt, which is every real run.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct StartFloor(pub u32);
+
 /// The adventurer, as a kind the save can name.
 ///
 /// A marker rather than the engine's `Player`, because a save names each
@@ -133,12 +139,20 @@ pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, r
 }
 
 /// Builds the Undermere, spawns the adventurer with their kit and warps
-/// them into Mereholt. Runs in [`NewRun`], for every run but one the title
-/// asked to continue with `ContinueRun`, which is [`resume`]'s.
+/// them into Mereholt, or onto [`StartFloor`]'s floor. Runs in [`NewRun`],
+/// for every run but one the title asked to continue with `ContinueRun`,
+/// which is [`resume`]'s.
 ///
 /// Asks nothing about a title: while one is up the engine runs no
 /// `NewRun` at all, and runs it once the player picks.
-pub fn start(mut commands: Commands, seed: Res<Seed>, content: Content, continuing: Option<Res<ContinueRun>>, mut begin: Begin) {
+pub fn start(
+    mut commands: Commands,
+    seed: Res<Seed>,
+    content: Content,
+    first: Option<Res<StartFloor>>,
+    continuing: Option<Res<ContinueRun>>,
+    mut begin: Begin,
+) {
     if continuing.is_some() {
         return;
     }
@@ -146,7 +160,11 @@ pub fn start(mut commands: Commands, seed: Res<Seed>, content: Content, continui
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
     equip_kit(&mut commands, adventurer, &content.armory, &content.registries);
     begin.log.notice(format!("Seed {}. Ten floors under the lake, the Drowned King waits.", seed.0.0), 0);
-    begin.warps.write(WarpRequest::into_place(adventurer, TOWN));
+    let place = match first.map_or(0, |f| f.0.min(FLOORS)) {
+        0 => TOWN,
+        floor => map_of(floor),
+    };
+    begin.warps.write(WarpRequest::into_place(adventurer, place));
     begin.next.set(EngineState::Playing);
 }
 
@@ -284,6 +302,20 @@ mod tests {
         app.world_mut().write_message(DamageEvent::new(salamander, rl_engine::rl_rules::Hit::by(me, registries.damage_kinds.expect("cold"), 10)));
         settle(&mut app);
         assert_eq!(health(&app), full.map(|h| h - 15), "and cold bites half as hard again");
+    }
+
+    /// A run started on a floor begins on that floor, at its way in, for
+    /// every floor there is: what a photograph of a deeper floor starts
+    /// from.
+    #[test]
+    fn a_run_started_on_a_floor_begins_on_that_floor() {
+        for floor in 1..=FLOORS {
+            let mut app = headless(RunSeed(7));
+            app.insert_resource(StartFloor(floor));
+            let me = adventurer(&mut app);
+            let entry = app.world().resource::<WorldMap>().place(map_of(floor)).map(|p| p.entry);
+            assert_eq!((here(&app), Some(at(&app, me))), (map_of(floor), entry), "floor {floor}: on it, at its way in");
+        }
     }
 
     /// A run begun after another in the same launch has been nowhere: the
