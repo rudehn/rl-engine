@@ -17,3 +17,8 @@ rl-engine.workspace = true
 bevy.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
+
+[dev-dependencies]
+# Reads the typeface's character map, so the tests hold every glyph the game
+# draws to the face it is drawn in.
+ttf-parser.workspace = true

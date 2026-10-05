@@ -5001,6 +5001,7 @@ dependencies = [
  "rand 0.9.5",
  "rl-engine",
  "serde",
+ "ttf-parser",
 ]
 
 [[package]]

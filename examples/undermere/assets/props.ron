@@ -7,7 +7,7 @@
 // Every field (the ones marked "optional" may be left out):
 //   name:      unique; the name the nearby rail and the look cursor show, and the
 //              name a piece's `Prop("name")` asks for
-//   glyph:     one character
+//   glyph:     one character, and one the typeface in `assets/fonts/` has
 //   color:     (r: 0..=255, g:, b:), the glyph's colour, as abilities.ron writes a look
 //   layer:     optional; draw order among entities on one cell, default 1
 //   blocks:    optional; whether it stands in the way, default false; nothing here

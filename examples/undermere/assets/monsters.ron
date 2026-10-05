@@ -6,7 +6,7 @@
 // Every field (the ones marked "optional" may be left out):
 //   name:    unique; the spawn table and the pieces name it by this, and a name that
 //            starts with a capital or an article, "the Drowned King", is said as written
-//   glyph:   one character
+//   glyph:   one character, and one the typeface in `assets/fonts/` has
 //   color:   (r, g, b) in 0..=1
 //   hp:      maximum health
 //   attack:  its blow, written "NdS+B kind", as "1d4 slash"; the kinds are "slash" |

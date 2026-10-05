@@ -11,6 +11,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
 use undermere::plugin::UndermerePlugin;
 use undermere::run::StartFloor;
+use undermere::typeface::DEJAVU_SANS_MONO;
 
 /// Terminal size in cells.
 const COLS: i32 = 160;
@@ -218,10 +219,10 @@ fn main() -> AppExit {
     }
     let screen = Screen::new();
     let mut app = App::new();
-    // The window, the terminal, the map and the engine's base; the game's
-    // subsystems are `UndermerePlugin`'s, added once there, since a second
-    // `CombatPlugin` would panic.
-    app.add_plugins(RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).map(screen.map).across(ACROSS))
+    // The window, the terminal in the game's own face, the map and the
+    // engine's base; the game's subsystems are `UndermerePlugin`'s, added
+    // once there, since a second `CombatPlugin` would panic.
+    app.add_plugins(RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS))
         .add_plugins(undermere::plugin::narrator())
         .insert_resource(Seed(seed))
         .insert_resource(saves_for(scripted()))
@@ -517,6 +518,64 @@ mod tests {
             app.update();
             assert!(rail(&app).ends_with(&format!("rat ({word})")), "{doing:?}, seen {sees:?}, heard {heard:?}: {:?}", rail(&app));
         }
+    }
+
+    /// Every glyph on the screen as it stands, kept beside the first
+    /// screen it was seen on.
+    fn see(app: &App, screen: &'static str, seen: &mut std::collections::BTreeMap<char, &'static str>) {
+        let terminal = app.world().resource::<Terminal>();
+        for cell in terminal.bounds().cells().filter_map(|at| terminal.get(at.x, at.y)) {
+            seen.entry(cell.glyph).or_insert(screen);
+        }
+    }
+
+    /// Opens the screen `modal` names over whatever is up, as its key or
+    /// its menu row would, and draws it.
+    fn open(app: &mut App, modal: impl Fn(&Modals) -> ModalId) {
+        let id = modal(app.world().resource::<Modals>());
+        app.world_mut().resource_mut::<Modals>().open(id);
+        app.update();
+    }
+
+    /// Every glyph on every screen a run passes through is one Undermere's
+    /// typeface has, read from the face's own character map: the title and
+    /// its settings, Mereholt with the rail and the log, the pack, the look
+    /// cursor, the menu, the controls, a floor, the screen the run ends on,
+    /// and the records of it. The engine's panels draw their frames,
+    /// rules, gauges and hints in glyphs past ASCII, and a glyph the face
+    /// has not is drawn from whatever face the system falls back on, or as
+    /// an empty box, and in a browser always as the box.
+    #[test]
+    fn every_glyph_on_every_screen_a_run_passes_through_is_one_the_typeface_has() {
+        let mut seen = std::collections::BTreeMap::new();
+        let mut app = at_the_title(RunSeed(7));
+        see(&app, "the title", &mut seen);
+        open(&mut app, |modals| settings_modal(modals).expect("a settings screen"));
+        see(&app, "the settings", &mut seen);
+        press(&mut app, KeyCode::Escape);
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        see(&app, "Mereholt", &mut seen);
+        for (key, screen) in [(KeyCode::KeyI, "the pack"), (KeyCode::KeyX, "the look cursor"), (KeyCode::Escape, "the menu")] {
+            press(&mut app, key);
+            see(&app, screen, &mut seen);
+            press(&mut app, KeyCode::Escape);
+        }
+        open(&mut app, controls_modal);
+        see(&app, "the controls", &mut seen);
+        press(&mut app, KeyCode::Escape);
+        undermere::testing::arrive(&mut app, undermere::dungeon::map_of(1));
+        see(&app, "floor one", &mut seen);
+        let me = undermere::testing::adventurer(&mut app);
+        undermere::testing::kill(&mut app, me, None);
+        see(&app, "the end of the run", &mut seen);
+        open(&mut app, |modals| records_modal(modals).expect("a records screen"));
+        see(&app, "the records", &mut seen);
+
+        assert!(seen.contains_key(&'\u{2500}') && seen.contains_key(&'\u{250c}'), "the screens draw rules and frames: {seen:?}");
+        let face = ttf_parser::Face::parse(DEJAVU_SANS_MONO, 0).expect("the typeface is a font");
+        let lacking: Vec<_> = seen.iter().filter(|(glyph, _)| face.glyph_index(**glyph).is_none()).collect();
+        assert!(lacking.is_empty(), "the typeface has no glyph for {lacking:?}");
     }
 
     /// A run played from a script, a replay, a recording or a capture,

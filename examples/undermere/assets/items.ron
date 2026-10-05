@@ -5,7 +5,7 @@
 //   name:       unique; the spawn table and drops refer to it; one of it, singular, since
 //               the engine says a stack as "12 arrows", so a thing counted by its measure is
 //               named by it: "gold coin", never "gold"
-//   glyph:      one character
+//   glyph:      one character, and one the typeface in `assets/fonts/` has
 //   color:      (r, g, b) in 0..=1
 //   slot:       optional; where it is worn: "main hand" | "off hand" | "head" | "body" | "light"
 //   either:     optional; true for a one-handed weapon that fits either hand

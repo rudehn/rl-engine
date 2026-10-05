@@ -31,7 +31,9 @@
 //! headless world both add, so a test plays the game that ships.
 //!
 //! Before any of it, [`title`] paints the screen the game opens on: the
-//! black lake at night under the engine's title menu.
+//! black lake at night under the engine's title menu. Every glyph of it
+//! is drawn in the face [`typeface`] holds, which the game ships, so it
+//! looks the same on every platform.
 
 #![deny(missing_docs)]
 
@@ -52,4 +54,5 @@ pub mod tally;
 pub mod testing;
 pub mod title;
 pub mod traits;
+pub mod typeface;
 pub mod wearing;

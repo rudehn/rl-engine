@@ -23,12 +23,10 @@
 //! is tiring to look at: the stars twinkle, the gate's glow breathes, and
 //! the mist drifts.
 //!
-//! **The glyphs.** Only ones the terminal's font has. The terminal asks
-//! for the system's monospace family, which on macOS is Courier and then
-//! Courier New for what Courier lacks, and a glyph neither has draws as
-//! the font's empty box. So the picture keeps to ASCII and a handful of
-//! box, shade and dot glyphs those two faces carry, listed where the
-//! tests check every glyph the picture draws.
+//! **The glyphs.** Only ones the game's typeface has: DejaVu Sans Mono,
+//! from [`typeface`](crate::typeface), whose own character map a test
+//! reads at every moment of the picture's motion. A glyph the face lacked
+//! would be drawn as an empty box in the night.
 
 use bevy::prelude::*;
 use rl_engine::rl_core::{Point, Rect};
@@ -302,7 +300,7 @@ fn stars(canvas: &mut Canvas, t: f32) {
             let tint = ink::STARS[(hashed(x + 13, y + 17) * 3.0) as usize % 3];
             let Some(cell) = canvas.at(x, y) else { continue };
             cell.glyph = match size {
-                s if s > 0.75 && twinkle > 0.93 => '*',
+                s if s > 0.75 && twinkle > 0.93 => '✦',
                 s if s > 0.75 => '+',
                 s if s > 0.35 => '•',
                 _ => '·',
@@ -352,8 +350,9 @@ fn far_shore(canvas: &mut Canvas) {
 /// read as a dark band round the disc; and a cell the edge crosses is
 /// moon or sky by how much of it the disc covers, mixed only where that
 /// is near half, so the edge is clean rather than smudged. A half-block
-/// glyph would split a cell finer, but where it falls is the font's, and
-/// the fonts a terminal is drawn in do not agree.
+/// glyph would split a cell finer, but a face draws its blocks to its own
+/// line, which at this size is a little shorter than a cell, so a moon of
+/// them would show a seam between its rows.
 fn moon(canvas: &mut Canvas) {
     let centre = moon_centre(canvas.width);
     let (cx, cy) = ((centre.x / 8.0) as i32, (centre.y / 16.0) as i32);
@@ -441,7 +440,8 @@ fn moon_path(canvas: &mut Canvas) {
                 continue;
             }
             cell.glyph = match (down < 4.0, hashed(x, y * 3) < 0.5) {
-                (true, _) => '─',
+                (true, true) => '━',
+                (true, false) => '─',
                 (false, true) => '-',
                 (false, false) => '~',
             };
@@ -882,36 +882,18 @@ mod tests {
         }
     }
 
-    /// The glyphs past ASCII the picture may draw: the box, shade and dot
-    /// glyphs the engine's own panels draw with, `─ ░ • ·`, and the frame
-    /// of a window, `┼`.
-    ///
-    /// Where they come from: the terminal asks for the system's monospace
-    /// family, which fontique gives on macOS as Courier and then Courier
-    /// New, and these are in the two faces' character maps between them,
-    /// the dots in Courier and the rest in Courier New. `━` and `✦` are in
-    /// neither, and drew as the missing-glyph box. The fonts are the
-    /// system's and not in the repository, so the test reads this list
-    /// rather than the faces.
-    const BEYOND_ASCII: &str = "\u{2500}\u{2591}\u{2022}\u{b7}\u{253c}";
-
     /// Every glyph the picture draws, at every moment of a minute of its
-    /// motion, is one the terminal's font has: printable ASCII, which
-    /// every face the terminal is drawn in has, or one of [`BEYOND_ASCII`].
-    /// A glyph the font has not draws as an empty box in the night.
+    /// motion, is one the typeface has, read from the face's own character
+    /// map. A glyph it has not is drawn from whatever face the system falls
+    /// back on, or as an empty box, and in a browser always as the box.
     #[test]
-    fn every_glyph_the_picture_draws_is_one_the_terminals_font_has() {
+    fn every_glyph_the_picture_draws_is_one_the_typeface_has() {
+        let face = crate::typeface::face();
         for tenth in (0..600).step_by(3) {
             let terminal = painted(tenth as f32 / 10.0);
-            let mut missing: Vec<char> = terminal
-                .bounds()
-                .cells()
-                .filter_map(|at| terminal.get(at.x, at.y))
-                .map(|c| c.glyph)
-                .filter(|g| !(*g == ' ' || g.is_ascii_graphic() || BEYOND_ASCII.contains(*g)))
-                .collect();
-            missing.dedup();
-            assert!(missing.is_empty(), "{} seconds in, the picture draws {missing:?}, which the font has not", tenth as f32 / 10.0);
+            let drawn: std::collections::BTreeSet<char> = terminal.bounds().cells().filter_map(|at| terminal.get(at.x, at.y)).map(|c| c.glyph).collect();
+            let lacking: Vec<char> = drawn.into_iter().filter(|g| face.glyph_index(*g).is_none()).collect();
+            assert!(lacking.is_empty(), "{} seconds in, the picture draws {lacking:?}, which the typeface has not", tenth as f32 / 10.0);
         }
     }
 
