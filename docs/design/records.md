@@ -32,7 +32,7 @@ Heist pushed the coin carried out and no other game pushed anything; Undermere w
 
 `RecordRun` is a message a game writes when its run is over, not a resource kept current through the run.
 How a game counts its run on the way is its own business, saved with its run if it wants Continue to keep it, and the record is what the count came to.
-A game writes it from whatever ends its run, often the same pass that writes `RunOver`, a frame before `end_runs` turns that into an `Ending`.
+A game writes it from whatever ends its run, often the same pass that writes `RunOver`, before `end_runs` in `PostUpdate` has turned that into an `Ending`.
 So `record_runs` keeps what arrives early and completes it the first frame there is an `Ending`, rather than dropping a record because it came first, or making every game order its system after the engine's.
 
 ## A slot apart from the run's

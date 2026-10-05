@@ -153,7 +153,7 @@ The title screen is a painting that breathes: the black lake under stars, mist o
    Along the way the engine gained a status that lasts until it is cured, a mind that weighs its own blow against a worn one, a run's facts forgotten when it ends, and wide tiles that keep a screen over the map a letter to a cell.
    It left the examine panel's trait words to part 3, where monsters' identities are designed, since naming a monster's traits wants the look panel to wrap long lines.
    It left dark sight doing nothing, since every floor is dim rather than dark, until parts 3 and 4 bring true darkness back in places; the adventurer with no abilities of their own and the bow with no ammunition until part 2; and a font of the game's own to part 7.
-   Two engine gaps it measured around are in `docs/TODO.md`: the engine's `FarthestExit` stops at a shut door, so `dungeon.rs` measures the way down with a pass of its own, and the `Doors` pass hangs two doors back to back where rooms sit two cells apart.
+   Two engine gaps it worked around are in `docs/TODO.md`: the engine's `FarthestExit` stops at a shut door, so `dungeon.rs` measures the way down with a pass of its own, and the `Doors` pass hangs two doors back to back where rooms sit two cells apart.
 2. **Items and builds**: enchanting, strength, identification, staffs, wands and charms, weapon shapes, curses, artifacts.
 3. **Monsters**: the bestiary by depth, mini-bosses and their lairs, the boss pool.
 4. **Dungeon generation**: biomes per band, mixed techniques, the three prefab kinds in pools, a lived-in dungeon. Built on the engine's layout work.

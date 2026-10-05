@@ -140,7 +140,7 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The three example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
+The five example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
 `examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
 
 ## If the build fails

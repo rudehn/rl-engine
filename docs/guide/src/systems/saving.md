@@ -23,7 +23,7 @@ What is saved reaches storage through one trait, so a game in a browser and a ga
 ## Turning it on
 
 `SavePlugin::new(slot)` is the loop around a save, and `.version(n)` is the number every save is matched against.
-It declares `needs::<Saves>`, the backend, with a hint naming `Saves::platform_default("my-game")`; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`'s `EndOfFrame::Save` stage, and deletes the slot in the `EndRun` schedule, unless the run was left for a title, and on entering `EngineState::Over`.
+It declares `needs::<Saves>`, the backend, with a hint naming `Saves::platform_default("my-game")`; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`'s `EndOfFrame::Save` stage, and deletes the slot on entering `EngineState::Over` and in the `EndRun` schedule, unless the run is being left for a title.
 For a title it does three things more: it reads the slot into `SavedRun` in its `finish`, before the first frame, forgets the slot the moment `AbandonRun` is triggered, and writes a run left with `LeaveRun` while still in play down through `save_on_leaving`, in the save stage ahead of the teardown; [The title screen](title.md) is the page for those.
 `.on_arrival()` also writes the slot through `save_on_arrival` on any frame the player arrived somewhere while playing, so each place entered is a save point; it runs in the same stage, which comes before the dead are buried and a restart or a leaving tears the run down, so it never writes a world with no run in it.
 It registers no key: saving reads the whole world, so a game's save key is its own exclusive system and calls `save_run`.

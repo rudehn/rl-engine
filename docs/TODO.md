@@ -144,7 +144,7 @@ The five items that opened this section were built in the six stages of `docs/de
   It moves Heist's maps, so item 2's fingerprints come first.
   Found on 2026-10-03 while building Undermere's floors, and measured over Heist's on 2026-10-04.
 - **The `Doors` pass hangs two doors back to back.**
-  It hangs a door on every cell of the ring round a room where a corridor meets it, and where two rooms sit two cells apart the corridor between them is one cell of each room's ring, so it gets a door at each end, one behind the other.
+  It hangs a door on every cell of the ring round a room where a corridor meets it, and where two rooms sit two cells apart the two cells of corridor between them lie one on each room's ring, so each gets a door, one behind the other.
   Two doors stand where one was meant, and where they are shut a walker opens both to cross one gap.
   Seen in Undermere's halls and crypts, and Foundry's decks share it, since every game that chains `Rooms` and `Doors` does.
   The fix is to skip a ring cell whose neighbour across the gap is already a door, or to hang one door per corridor rather than one per room it meets; either moves the maps of every game that hangs doors, so their fingerprints are re-baselined with it.
