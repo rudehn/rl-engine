@@ -42,7 +42,8 @@ pub use rl_world;
 ///
 /// Bevy's defaults, with a window sized to the terminal and nearest-pixel
 /// sampling so glyphs stay sharp; the [`TerminalPlugin`](rl_render::TerminalPlugin)
-/// grid, and the [`FullscreenPlugin`](rl_render::FullscreenPlugin) that
+/// grid, drawn in the game's own [`typeface`](Self::typeface) when it
+/// ships one, and the [`FullscreenPlugin`](rl_render::FullscreenPlugin) that
 /// declares filling the screen as a setting; the engine's [`CorePlugin`](rl_bevy::CorePlugin) and
 /// [`FovPlugin`](rl_bevy::FovPlugin); the map, drawn in [`map`](Self::map)'s
 /// rectangle, and the [`ParticlesPlugin`](rl_render::ParticlesPlugin) that
@@ -75,13 +76,34 @@ pub struct RoguelikePlugins {
     font: f32,
     map: Option<rl_core::Rect>,
     across: i32,
+    typeface: Option<Typeface>,
+}
+
+/// A typeface's bytes, which a derived `Debug` would print every one of:
+/// shown by how many there are instead.
+#[derive(Clone, Copy)]
+struct Typeface(&'static [u8]);
+
+impl std::fmt::Debug for Typeface {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Typeface({} bytes)", self.0.len())
+    }
 }
 
 impl RoguelikePlugins {
     /// A window titled `title`, `cols` by `rows` cells of ten by sixteen
     /// pixels, with the map filling it.
     pub fn new(title: impl Into<String>, cols: i32, rows: i32) -> Self {
-        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1 }
+        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1, typeface: None }
+    }
+
+    /// Draws every glyph in `face`, the bytes of a TrueType or OpenType
+    /// file the game ships, rather than in the system's monospace family,
+    /// which is another face on every platform and only ASCII in a
+    /// browser: see [`TerminalPlugin::typeface`](rl_render::TerminalPlugin::typeface).
+    pub fn typeface(mut self, face: &'static [u8]) -> Self {
+        self.typeface = Some(Typeface(face));
+        self
     }
 
     /// Each cell's size in pixels.
@@ -119,11 +141,15 @@ impl PluginGroup for RoguelikePlugins {
         // The field does nothing off the web.
         let window = Window { title: self.title, resolution: WindowResolution::new(width, height), fit_canvas_to_parent: true, ..default() };
         let map = self.map.unwrap_or(rl_core::Rect::new(0, 0, self.cols, self.rows));
+        let mut terminal = rl_render::TerminalPlugin::new(self.cols, self.rows, self.cell, self.font);
+        if let Some(Typeface(face)) = self.typeface {
+            terminal = terminal.typeface(face);
+        }
         PluginGroupBuilder::start::<Self>()
             .add_group(
                 DefaultPlugins.set(WindowPlugin { primary_window: Some(rl_render::capture::prepare(window)), ..default() }).set(ImagePlugin::default_nearest()),
             )
-            .add(rl_render::TerminalPlugin { width: self.cols, height: self.rows, cell_size: self.cell, font_size: self.font })
+            .add(terminal)
             // Filling the screen, as a setting the renderer declares.
             .add(rl_render::FullscreenPlugin)
             .add(rl_bevy::CorePlugin)

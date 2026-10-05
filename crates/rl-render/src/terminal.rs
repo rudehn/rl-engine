@@ -69,27 +69,51 @@ fn placing(span: u8, cell: Vec2) -> (Vec2, Vec2) {
 /// pixels, and the glyphs are drawn at the size they are shown; the camera
 /// never scales, since scaling stretches glyphs drawn for another size.
 ///
-/// Glyphs come from the system's generic monospace family, which needs
-/// Bevy's `system_font_discovery` feature; the workspace enables it. With
-/// it off, every cell draws its background and no glyph. A browser has no
-/// font database to search, so on wasm the glyphs come from the font Bevy
-/// embeds under `default_font`, which covers printable ASCII and nothing
-/// else: a game drawing box art or block shades picks its own font there.
+/// Glyphs are drawn in the game's own [`typeface`](Self::typeface) when it
+/// gives one. Otherwise they come from the system's generic monospace
+/// family, which needs Bevy's `system_font_discovery` feature; the
+/// workspace enables it, and with it off every cell draws its background
+/// and no glyph. That family is another face on every platform, Courier on
+/// macOS, and a glyph it lacks draws as an empty box. A browser has no
+/// font database to search at all, so on wasm the glyphs come from the
+/// font Bevy embeds under `default_font`, which covers printable ASCII and
+/// nothing else. A game whose picture should be its own everywhere, or
+/// that draws box art, shades or symbols, ships a typeface.
 pub struct TerminalPlugin {
-    /// Width in cells.
-    pub width: i32,
-    /// Height in cells.
-    pub height: i32,
-    /// Size of one cell in pixels.
-    pub cell_size: Vec2,
-    /// Font height in pixels, usually a little under the cell height.
-    pub font_size: f32,
+    width: i32,
+    height: i32,
+    cell_size: Vec2,
+    font_size: f32,
+    typeface: Option<&'static [u8]>,
+}
+
+impl TerminalPlugin {
+    /// A grid `width` by `height` cells of `cell_size` pixels, its glyphs
+    /// `font_size` pixels high, usually a little under the cell's height,
+    /// in the system's monospace family.
+    pub fn new(width: i32, height: i32, cell_size: Vec2, font_size: f32) -> Self {
+        Self { width, height, cell_size, font_size, typeface: None }
+    }
+
+    /// Draws every glyph in `face`, the bytes of a TrueType or OpenType
+    /// file the game ships, compiled in with `include_bytes!`, in place of
+    /// the system's family.
+    ///
+    /// Bytes rather than a path for Bevy's asset server: an asset arrives
+    /// after the first frames are drawn, and on the web only from a page
+    /// that serves the game's assets beside it, so a path would draw the
+    /// opening frames with no glyphs at all, and a page without the folder
+    /// would never draw any. The bytes are there before the grid is.
+    pub fn typeface(mut self, face: &'static [u8]) -> Self {
+        self.typeface = Some(face);
+        self
+    }
 }
 
 impl Plugin for TerminalPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Terminal::new(self.width, self.height, self.cell_size))
-            .insert_resource(TerminalFont { size: self.font_size })
+            .insert_resource(TerminalFont { size: self.font_size, typeface: self.typeface })
             .init_resource::<CellEntities>()
             .init_resource::<crate::pointer::Pointer>()
             .add_systems(Startup, spawn_grid)
@@ -302,6 +326,26 @@ impl Terminal {
 #[derive(Resource)]
 struct TerminalFont {
     size: f32,
+    /// The game's typeface, a font file's bytes, or `None` for the
+    /// system's family.
+    typeface: Option<&'static [u8]>,
+}
+
+/// What every glyph is drawn in: the game's typeface, added to the fonts
+/// Bevy draws text with, when it gave one; otherwise the system's
+/// monospace family, or in a browser, which has no font database to
+/// search, the font Bevy embeds.
+///
+/// Without `Assets<Font>`, as in an app with no text plugin, nothing draws
+/// text, so a typeface is not added either.
+fn face(typeface: Option<&'static [u8]>, fonts: Option<ResMut<Assets<Font>>>) -> FontSource {
+    match (typeface, fonts) {
+        (Some(bytes), Some(mut fonts)) => FontSource::Handle(fonts.add(Font::from_bytes(bytes.to_vec()))),
+        #[cfg(target_arch = "wasm32")]
+        _ => FontSource::default(),
+        #[cfg(not(target_arch = "wasm32"))]
+        _ => FontSource::Monospace,
+    }
 }
 
 #[derive(Resource, Default)]
@@ -339,17 +383,18 @@ impl CellEntities {
 #[derive(Component)]
 struct Picture;
 
-fn spawn_grid(mut commands: Commands, terminal: Res<Terminal>, font: Res<TerminalFont>, mut entities: ResMut<CellEntities>) {
+fn spawn_grid(
+    mut commands: Commands,
+    terminal: Res<Terminal>,
+    font: Res<TerminalFont>,
+    fonts: Option<ResMut<Assets<Font>>>,
+    mut entities: ResMut<CellEntities>,
+) {
     // No projection of its own: one world unit is one logical pixel, and
     // `relayout` sizes the grid for the window. A camera that scaled the
     // grid to fit would stretch glyphs drawn for another size.
     commands.spawn((Camera2d, Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() }));
-    // No system font database in a browser: take the embedded font.
-    #[cfg(target_arch = "wasm32")]
-    let family = FontSource::default();
-    #[cfg(not(target_arch = "wasm32"))]
-    let family = FontSource::Monospace;
-    let text_font = TextFont { font: family, font_size: FontSize::Px(font.size), font_smoothing: FontSmoothing::AntiAliased, ..default() };
+    let text_font = TextFont { font: face(font.typeface, fonts), font_size: FontSize::Px(font.size), font_smoothing: FontSmoothing::AntiAliased, ..default() };
     let count = (terminal.width() * terminal.height()) as usize;
     entities.background = Vec::with_capacity(count);
     entities.glyph = Vec::with_capacity(count);
@@ -639,7 +684,7 @@ mod tests {
     /// twenty, and a primary window of `width` by `height` physical pixels.
     fn windowed(width: u32, height: u32, scale: f32) -> (App, Entity) {
         let mut app = App::new();
-        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         let mut resolution = WindowResolution::new(width, height);
         resolution.set_scale_factor_override(Some(scale));
         resolution.set_physical_resolution(width, height);
@@ -692,12 +737,7 @@ mod tests {
     #[test]
     fn a_resize_is_where_it_will_be_drawn_in_the_same_frame() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, bevy::transform::TransformPlugin)).add_plugins(TerminalPlugin {
-            width: 8,
-            height: 4,
-            cell_size: Vec2::new(10.0, 20.0),
-            font_size: 16.0,
-        });
+        app.add_plugins((MinimalPlugins, bevy::transform::TransformPlugin)).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         let mut resolution = WindowResolution::new(80, 80);
         resolution.set_scale_factor_override(Some(1.0));
         let window = app.world_mut().spawn((Window { resolution, ..default() }, PrimaryWindow)).id();
@@ -751,7 +791,7 @@ mod tests {
         use crate::pointer::Pointer;
         use rl_core::{Point, Rect};
         let mut app = App::new();
-        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         app.insert_resource(Pointer::at(Point::new(5, 2)));
         app.update();
         let pointer = *app.world().resource::<Pointer>();
@@ -785,7 +825,7 @@ mod tests {
     fn a_tileset_draws_pictures_for_the_glyphs_it_names_where_it_covers_and_glyphs_everywhere_else() {
         use rl_core::Rect;
         let mut app = App::new();
-        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         let red = Color::srgb(1.0, 0.0, 0.0);
         let draw = |app: &mut App| {
             let mut terminal = app.world_mut().resource_mut::<Terminal>();
@@ -833,7 +873,7 @@ mod tests {
     #[test]
     fn a_wide_cell_draws_its_glyph_and_its_picture_centred_across_its_run_until_text_is_written_over_it() {
         let mut app = App::new();
-        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         app.insert_resource(Tileset::new(Handle::default(), Handle::default()).with('#', 1));
         let mut resolution = WindowResolution::new(160, 160);
         resolution.set_scale_factor_override(Some(1.0));
@@ -899,10 +939,48 @@ mod tests {
         assert_eq!(picture(&app), (Vec2::new(10.0, 20.0), Vec2::new(-35.0, 30.0)), "and laid out again with it");
     }
 
+    /// The font every glyph of an eight by four terminal asks for, after
+    /// one update of an app with somewhere to keep fonts, as the text
+    /// plugin keeps them.
+    fn faces(plugin: TerminalPlugin) -> (App, Vec<FontSource>) {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).init_resource::<Assets<Font>>().add_plugins(plugin);
+        app.update();
+        let glyphs = app.world().resource::<CellEntities>().glyph.clone();
+        let faces = glyphs.iter().map(|g| app.world().get::<TextFont>(*g).expect("a glyph has a font").font.clone()).collect();
+        (app, faces)
+    }
+
+    /// A terminal given a typeface draws every glyph in it: each cell's
+    /// text asks for one font, by its handle, and the font Bevy keeps
+    /// under that handle is the file the game gave, byte for byte.
+    #[test]
+    fn a_terminal_given_a_typeface_draws_every_glyph_in_it() {
+        // Any bytes: Bevy reads a font's file only when it lays text out,
+        // which an app with no text plugin never does.
+        const FACE: &[u8] = b"the bytes of a font the game ships";
+        let (app, faces) = faces(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0).typeface(FACE));
+        assert_eq!(faces.len(), 32, "a glyph for every cell");
+        let FontSource::Handle(handle) = &faces[0] else { panic!("the glyphs ask for a font by its handle, not {:?}", faces[0]) };
+        assert!(faces.iter().all(|f| *f == faces[0]), "and every glyph for the same one");
+        let font = app.world().resource::<Assets<Font>>().get(handle).expect("the font is kept");
+        assert_eq!(font.data.data(), FACE, "the typeface the game gave");
+    }
+
+    /// Without a typeface nothing changes: every glyph asks for the
+    /// system's monospace family, and no font is added for it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_terminal_given_no_typeface_draws_in_the_systems_monospace_family() {
+        let (app, faces) = faces(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
+        assert!(faces.iter().all(|f| *f == FontSource::Monospace), "{:?}", faces[0]);
+        assert_eq!(app.world().resource::<Assets<Font>>().len(), 0, "and no font of the game's");
+    }
+
     #[test]
     fn with_no_window_the_grid_is_spawned_as_declared_and_nothing_fails() {
         let mut app = App::new();
-        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin { width: 8, height: 4, cell_size: Vec2::new(10.0, 20.0), font_size: 16.0 });
+        app.add_plugins(MinimalPlugins).add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
         app.update();
         app.update();
         assert_eq!(first_cell(&mut app), (Vec2::new(10.0, 20.0), Vec2::new(-35.0, 30.0), 16.0));
