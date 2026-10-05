@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The starter template builds its dependencies without debug info, `debug = false` under `[profile.dev.package."*"]`, as the engine's own workspace does, so a generated game's first build of Bevy takes a fraction of the disk it did, and a backtrace still names the game's own code.
+  A game made from an earlier template adds that line to its own `Cargo.toml`.
+  `scripts/check-template.sh` fails when the template's dependency profile and the workspace's differ, since the check builds into the workspace's own target directory and the template's old profile built a second, heavier Bevy there.
 - `examples/undermere`, Undermere's first part: a delve from a lakeside town, Mereholt, through the Drowned Gate and down ten floors in five biomes to the Drowned King, whose death wins the run.
   It is the first game on the engine's title and run records, with a score of five lines on the screen a run ends on and in the records the title opens, monsters and what a worn thing lends written as named traits, and square map tiles two narrow cells wide.
   `examples/undermere/DESIGN.md` is the game and the parts still to come.

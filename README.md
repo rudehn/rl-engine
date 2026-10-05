@@ -54,7 +54,7 @@ cd my-game
 cargo run
 ```
 
-It plays from the first build. The one file holds a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and three tests that play it without a window.
+It plays from the first build. The one file holds a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and four tests that play it without a window.
 The guide below builds the same thing a step at a time.
 
 The template pins the engine to the release named by `--tag`, and takes the template from that release too.
