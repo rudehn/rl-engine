@@ -11,7 +11,7 @@
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: d71bdd95 -->
+     fingerprint: 9290f524 -->
 
 # Saving and the ending screen
 
@@ -60,7 +60,7 @@ Two numbers are matched, both exactly: `SaveSlot::version`, which a game bumps w
 `EndingView` is what the engine cannot know: `sections`, a `Vec` of an `EndingSection`'s `heading` and `body`, pushed with `EndingView::section` in `ViewSet::Annotate` the way a facet is pushed onto a row, and `summary`, the run in one line.
 `collect_ending` empties it in `ViewSet::Collect`, so a game pushes on every frame it wants the rows rather than once, and a run begun again shows nothing until something pushes again.
 Once the run is over it then fills it from the record `RecordsPlugin` filed for the run, when there is one, the summary and the record's sections ahead of anything a game pushes.
-`draw_game_menu` reads both: the epitaph wrapped, the summary wrapped, the seed and the turn on one line, then each section's heading with the lines of its body under it, clipped to the rectangle the menu was given, so a section longer than the screen is cut rather than scrolled.
+`draw_game_menu` reads both: the epitaph and the summary wrapped, each only when there is one, the seed and the turn on one line, then each section's heading with the lines of its body under it, clipped to the rectangle the menu was given, so a section longer than the screen is cut rather than scrolled.
 `describe_sheet` turns a `SheetView` into the lines a game pushes when what the player was made of is one of the things it wants said.
 
 ## Using it

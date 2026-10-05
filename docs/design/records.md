@@ -34,6 +34,8 @@ Heist pushed the coin carried out and no other game pushed anything; Undermere w
 How a game counts its run on the way is its own business, saved with its run if it wants Continue to keep it, and the record is what the count came to.
 A game writes it from whatever ends its run, often the same pass that writes `RunOver`, before `end_runs` in `PostUpdate` has turned that into an `Ending`.
 So `record_runs` keeps what arrives early and completes it the first frame there is an `Ending`, rather than dropping a record because it came first, or making every game order its system after the engine's.
+It waits only as long as its run stands.
+Kept as the filing system's own state, a record whose run was torn down before it ended outlived the run and was filed under the next run's outcome, seed and turn, so what waits is a resource the teardown reads in `EndRun`: a run that ended still has its `Ending` there and files what it wrote late, and a run that never ended drops what it wrote, with a warning.
 
 ## A slot apart from the run's
 

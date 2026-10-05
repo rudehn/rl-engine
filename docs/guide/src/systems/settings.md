@@ -7,7 +7,7 @@
             crates/rl-ui/src/panel/title.rs
             crates/rl-save/src/settings.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: f9e3cd5e -->
+     fingerprint: a6ca7afe -->
 
 # Settings
 
@@ -67,7 +67,7 @@ The game decides what else is the player's to choose: it declares the setting, k
 So there is no enum of settings and no typed value per setting; a registry is the extension point, as it is for controls, and a game's settings sit beside the engine's on one screen with nothing to tell them apart.
 A setting is a choice among a few named things and nothing finer: a slider, a key to rebind and a line of text are not settings in this sense, and a game that wants one writes its own screen.
 The settings screen is read and drawn outside the engine's sets, after the whole of `EngineSet::Present` and in any engine state, as the records screen is, because a title opens both before there is a world, where no presenter runs.
-The engine's own screens under it step aside by themselves: the menu is not drawn under it, and the title reads no keys and draws no rows while it is up and stands it over its own rows rather than where the game put it for a run, putting it back when a run begins.
+The engine's own screens under it step aside by themselves: the menu is not drawn under it, and the title reads no keys and draws no rows while it is up and stands it over its own rows rather than where the game put it for a run, risen only as far as the screen's rows need to end on the terminal, since it does not scroll, putting it back when a run begins.
 A screen of the game's own under it is the game's to put away.
 What is remembered is apart from the run and outlives it: a new run, a restart and an ending never touch the slot, and it is not the versioned envelope a run is saved in, which refuses a save whole when the version differs.
 A preference should survive an upgrade, so the file is read for what it still means.

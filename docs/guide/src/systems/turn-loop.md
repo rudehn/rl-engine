@@ -5,7 +5,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/components.rs
-     fingerprint: 53af5f43 -->
+     fingerprint: c9d9218f -->
 
 # The turn loop
 

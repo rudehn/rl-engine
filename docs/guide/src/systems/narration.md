@@ -8,7 +8,7 @@
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-rules/src/status.rs
-     fingerprint: e9be77db -->
+     fingerprint: 46347da1 -->
 
 # Narration
 

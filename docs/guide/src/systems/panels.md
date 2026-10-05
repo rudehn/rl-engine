@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 14ad52e5 -->
+     fingerprint: 75aa4da7 -->
 
 # Panels
 

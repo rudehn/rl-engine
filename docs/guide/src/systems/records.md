@@ -6,7 +6,7 @@
             crates/rl-ui/src/view/ending.rs
             crates/rl-ui/src/game_menu.rs
             crates/rl-ui/src/panel/title.rs
-     fingerprint: b6db979e -->
+     fingerprint: 6339c80d -->
 
 # Run records
 
@@ -16,7 +16,7 @@ The screen a run ends on reads the same record, so what it says of a run and wha
 
 ## Turning it on
 
-`RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update` ahead of `EngineSet::Present`, so whatever draws a record has it the frame it is filed, and forgets which record is this run's in `EndRun`.
+`RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update` ahead of `EngineSet::Present`, so whatever draws a record has it the frame it is filed, and forgets which record is this run's, and any still waiting, in `EndRun`.
 A game writes one `RecordRun` when its run is over, and a game that never writes one keeps no records.
 `RecordsSavePlugin`, in `rl-save`, keeps the list between launches: it needs `Saves`, says so through `app.needs`, reads the `records` slot in its `finish`, before the first frame, and writes it in `Last` on a frame the list changed.
 Without it the list lasts as long as the process.
@@ -41,7 +41,7 @@ A slot that does not parse is warned about and left as it is with the list start
 `RecordsPanel` lists the records in its rectangle, one row each as `rank. score  summary  date`, the date `YYYY-MM-DD`, or nothing for a record with no time, scrolled to keep the row picked out in view.
 The direction keys walk the list and wrap, and confirm opens the record picked out: its summary in the frame's title, the seed and the turn under it, then its sections drawn the way the end screen draws them, scrolled by the direction keys once they run past the rectangle.
 Close goes back from a record to the list, and from the list closes the screen.
-`RecordsScreen` is which record is picked out, whether it is open and how far it is scrolled, reset each time the screen opens, so the key that opened it is never read as its first move.
+`RecordsScreen` is `selected`, the record picked out, as every menu here names it, `open`, whether that record is shown, and `scroll`, how far it is scrolled, all reset each time the screen opens, so the key that opened it is never read as its first move.
 `RecordsPanel::title` and `empty` change the list's border and what it says with no records, and `records_modal` is the id a game's own menu opens it by.
 `TitlePanel` draws a Records row once the `records` modal is declared, and lets it be taken once the list holds a record.
 

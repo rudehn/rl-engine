@@ -6,7 +6,7 @@
             crates/rl-save/src/run.rs
             crates/rl-save/src/unload.rs
             crates/rl-ui/src/game_menu.rs
-     fingerprint: 224bdc4f -->
+     fingerprint: 72dd7038 -->
 
 # The title screen
 
@@ -30,7 +30,7 @@ A game's start takes one step of its own: it stands aside while `ContinueRun` is
 `begin_run(world)` is the one door a run comes through: it takes the hold away and runs `NewRun`, as the engine does at startup with no title and after every `Restart`, so no game's start asks whether a title is up.
 `LeaveRun` is a message answered in `EndOfFrame::Restart`: the run is torn down as a restart tears it down, `EndRun` and then `clear_run`, and `HoldStart` goes back in place of a new run, so the title is up again once the state is idle.
 It wins over a restart asked in the same frame, and with no run standing it changes nothing, so a title already up never runs a game's forgetting over the save it offers.
-The run left takes its seed with it: a fresh `Seed` is set for the next run as a restart sets one, so New Game never plays the run just left again, while Continue builds the world from the seed the save holds.
+The run left takes its seed with it: a fresh `Seed` is set for the next run as a restart that names none sets one, so New Game never replays the run that was left, while Continue builds the world from the seed the save holds.
 `SavedRun` is what the slot holds, `Empty`, `Readable` or `Unreadable`, plain data a screen reads knowing nothing of storage, and its absence says the game keeps no slot.
 `ContinueRun` is a marker resource asking the next `NewRun` to restore the saved run rather than begin one, and whichever system restores it removes it, so the run after it, a restart's, begins afresh.
 `AbandonRun` is an event triggered on the world rather than a message written for later, so whoever keeps the slot forgets it before the trigger returns, and a run begun in the same command never sees it.
@@ -42,7 +42,7 @@ Continue inserts `ContinueRun` and begins the run.
 New Game over anything saved, even a slot this build cannot read, asks "Abandon the run in progress?" with No picked out, any direction key moving between the answers and the close key answering No, and Yes triggers `AbandonRun` and begins.
 Each begins through a queued command, so the run comes up once the frame's commands are applied, and the menu forgets its place for the next time the title is up.
 Records and Settings open their screens over the menu, which reads no keys and draws nothing until the screen closes.
-The settings screen is moved to stand on the menu while the title is up, as wide and as tall as the game made it, rising from the menu's top only as far as its rows need to end on the terminal, since it does not scroll, and is put back where the game put it in `NewRun`, which also blanks the terminal, so every run begins on an empty screen.
+The settings screen is moved to stand on the menu while the title is up, as wide as the game made it and with room for every row its own rectangle shows, rising from the menu's top only as far as those rows need to end on the terminal, since it does not scroll, and is put back where the game put it in `NewRun`, which also blanks the terminal, so every run begins on an empty screen.
 `TitleWords` is what each row and the question say, changed with `TitlePanel::words`.
 `MenuItem::MainMenu` is the pause and end menus' row back, and it writes `LeaveRun`.
 With `SavePlugin`, a run left while still in play is written to the slot as it stands by `save_on_leaving` in `EndOfFrame::Save`, ahead of the teardown, which then keeps the slot rather than deleting it; a run that is over, or ends in the frame it is left, is only left, and its save forgotten.
@@ -97,7 +97,7 @@ pub fn start(
 
 ## The line
 
-The engine decides what a title offers and when: the rows, which of them can be taken, the question asked before a run is given up, and the one door every run comes through.
+The engine decides what a title offers and when: the rows, which of them can be taken, the question asked before a run is given up, the one door every run comes through, and that a run begun after one was left is on a seed of its own.
 The game decides how it looks and what it says: its picture, painted under the rows on a cleared terminal, the rectangle the rows stand in, and the words of each row and of the question.
 Whether the slot holds a run is the save's to say and the menu's to read, never the menu's to find out, so a game that saves nothing has a title with no Continue and a screen that never touches storage.
 What restoring a run means is the game's: the engine says Continue was picked with `ContinueRun`, and the game's own `NewRun` systems build the world from the saved seed and restore the run into it, as they would from any save.
