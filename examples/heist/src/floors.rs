@@ -166,4 +166,33 @@ mod tests {
             }
         }
     }
+
+    /// The way on used to stand four to fifteen tiles from the way in on
+    /// most floors, since the flood that places it stopped at the first
+    /// shut door and every room behind one read as unreached. Over a span
+    /// of seeds its distance from the way in now averages at least half
+    /// the map's own span, not every floor individually: the farthest
+    /// cell by the winding path the flood actually takes can still fall
+    /// geometrically near the way in on a floor whose rooms happen to
+    /// loop back close to where they started, which is the flood
+    /// measuring correctly rather than a door stopping it.
+    #[test]
+    fn over_a_span_of_seeds_the_way_on_averages_at_least_half_the_maps_span_from_the_way_in() {
+        use rl_engine::rl_core::geometry::chebyshev;
+        let mut total = 0i64;
+        let mut count = 0i64;
+        let mut span = 0;
+        for seed in 0u64..40 {
+            let house = House::new(RunSeed(seed));
+            for floor in 1..=FLOORS {
+                let built = house.build(map_of(floor), None).unwrap_or_else(|e| panic!("seed {seed} floor {floor}: {e}"));
+                let exit = built.exit.expect("a way on");
+                span = built.terrain.width().max(built.terrain.height());
+                total += i64::from(chebyshev(built.entry, exit));
+                count += 1;
+            }
+        }
+        let average = total / count;
+        assert!(average >= i64::from(span) / 2, "over {count} floors the way on averaged {average} from the way in, less than half the map's span of {span}");
+    }
 }

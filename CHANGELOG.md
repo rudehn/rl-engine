@@ -6,6 +6,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `FarthestExit` now floods through a shut door as well as open floor, since a door can be passable without being walkable, where before it measured only what could be walked on now and so stopped at the first door, finding no farther than the room the start already stood in. The cell it picks is still always one to stand on, never the door itself, and where two cells are equally far it now always breaks the tie toward the lower one by `Point`'s own ordering rather than whichever an iterator happened to visit last. Heist's maps move: its way on used to average about eleven tiles from the way in and now averages past half the map's own span. Delve's move too, by a few tiles here and there, only from the tie-break, since its own doors are walkable and never met the bug.
 - The starter template builds its dependencies without debug info, `debug = false` under `[profile.dev.package."*"]`, as the engine's own workspace does, so a generated game's first build of Bevy takes a fraction of the disk it did, and a backtrace still names the game's own code.
   A game made from an earlier template adds that line to its own `Cargo.toml`.
   `scripts/check-template.sh` fails when the template's dependency profile and the workspace's differ, since the check builds into the workspace's own target directory and the template's old profile built a second, heavier Bevy there.

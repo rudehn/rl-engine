@@ -15,8 +15,8 @@
 //! A few passes are Undermere's own, each small and each here because the
 //! engine's leave something a floor needs: caves joined the way a body
 //! walks, water and lava that never cut a floor in two, furniture that
-//! never shuts a way, a way on measured through doors, a slot that stands
-//! on the floor drawn round it, and the throne's hall. Everything that
+//! never shuts a way, a slot that stands on the floor drawn round it, and
+//! the throne's hall, as far from it as the floor allows. Everything that
 //! decides what a place is made of is in this module and nowhere else, so
 //! a later part's generation changes this file and nothing that reads a
 //! built place.
@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_mapgen::dungeon::{Bsp, Doors, ExitPoint, RandomStart, Room, Rooms};
+use rl_engine::rl_mapgen::dungeon::{Bsp, Doors, ExitPoint, FarthestExit, RandomStart, Room, Rooms};
 use rl_engine::rl_mapgen::passes::{CellularCave, StartPoint};
 use rl_engine::rl_render::TileAppearance;
 
@@ -322,7 +322,7 @@ impl Undermere {
                     .then(Rooms { floor: hall, attempts: 40, min_size: 5, max_size: 11, min_rooms: 5 })
                     .then(Doors { door: t("door") })
                     .then(start)
-                    .then(WayOn)
+                    .then(FarthestExit)
                     .then(Patches { name: "rubble", tile: t("rubble"), on: hall, count: (5, 9), size: (2, 6), phase: Phase::Finish })
                     .then(Furnish { name: "braziers", piece: self.prefabs.piece("brazier")?, count: (3, 5) })
                     .then(chests);
@@ -337,7 +337,7 @@ impl Undermere {
                     .then(CellularCave { wall, floor: moss, fill_pct: CAVE_FILL_PCT, ..Default::default() })
                     .then(JoinCaves { floor: moss, wall })
                     .then(start)
-                    .then(WayOn)
+                    .then(FarthestExit)
                     .then(Patches { name: "glowcaps", tile: t("glowcaps"), on: moss, count: (8, 12), size: (2, 6), phase: Phase::Finish })
                     .then(chests)
                     .then(Underfoot)
@@ -348,7 +348,7 @@ impl Undermere {
                     .then(Bsp { floor: crypt, min_leaf: 9, padding: 1 })
                     .then(Doors { door: t("door") })
                     .then(start)
-                    .then(WayOn)
+                    .then(FarthestExit)
                     .then(Patches { name: "bones", tile: t("bones"), on: crypt, count: (6, 10), size: (1, 4), phase: Phase::Finish })
                     .then(Furnish { name: "candles", piece: self.prefabs.piece("candelabra")?, count: (5, 8) })
                     .then(chests)
@@ -360,7 +360,7 @@ impl Undermere {
                     .then(Rooms { floor: marble, attempts: 40, min_size: 6, max_size: 12, min_rooms: 4 })
                     .then(Patches { name: "pools", tile: deep, on: marble, count: (4, 7), size: (6, 24), phase: Phase::Structures })
                     .then(start)
-                    .then(WayOn)
+                    .then(FarthestExit)
                     .then(Rim { name: "shallows", tile: flooded, on: marble, around: deep, chance_pct: 70 })
                     .then(Patches { name: "puddles", tile: flooded, on: marble, count: (3, 6), size: (2, 6), phase: Phase::Finish })
                     .then(Patches { name: "shafts", tile: t("moonlit marble"), on: marble, count: (3, 5), size: (1, 1), phase: Phase::Finish })
@@ -374,7 +374,7 @@ impl Undermere {
                     .then(JoinCaves { floor: ash, wall })
                     .then(Patches { name: "lava", tile: t("lava"), on: ash, count: (5, 8), size: (8, 30), phase: Phase::Connect })
                     .then(start)
-                    .then(WayOn)
+                    .then(FarthestExit)
                     .then(chests)
                     .then(Underfoot)
             }
@@ -495,32 +495,6 @@ impl Pass<BaseContext> for TileExit {
             return Err(BuildError::new("tile_exit", format!("{} cells hold the way on, where one should", cells.len())));
         };
         ctx.emit(ExitPoint(*at));
-        Ok(())
-    }
-}
-
-/// Emits as the way on the cell farthest from the way in by walking, doors
-/// opened on the way.
-///
-/// The engine's `FarthestExit` measures through what can be walked on now,
-/// which a shut door is not, so on a floor of rooms behind doors it
-/// measures no farther than the doors round the room the floor starts in.
-/// Never a door itself: the way on is somewhere to stand.
-struct WayOn;
-
-impl Pass<BaseContext> for WayOn {
-    fn name(&self) -> &'static str {
-        "way_on"
-    }
-
-    fn phase(&self) -> Phase {
-        Phase::Exits
-    }
-
-    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
-        let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| BuildError::new("way_on", "no way in to measure from"))?.0;
-        let far = farthest(ctx, start, |_| false).ok_or_else(|| BuildError::new("way_on", "nowhere to walk to from the way in"))?;
-        ctx.emit(ExitPoint(far));
         Ok(())
     }
 }
