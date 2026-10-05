@@ -9,7 +9,7 @@
 //! so a quiet change to the order of a roll, a spawn or a system is a red
 //! test rather than a run that plays differently in someone's hands. A
 //! change that means to move them re-baselines the numbers on purpose and
-//! says so in a `CHANGELOG.md` line.
+//! says why in its commit.
 
 use std::collections::BTreeSet;
 
@@ -201,7 +201,7 @@ const TURNS: usize = 400;
 
 /// Fingerprint tripwire: the same seed and the same script come to the
 /// same run, and these runs come to these numbers. Re-baseline
-/// deliberately, with a `CHANGELOG.md` line.
+/// deliberately, saying why in the commit.
 ///
 /// Seed one twice and two and three once, each an app of its own, so the
 /// four play side by side.
@@ -221,7 +221,7 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [1_013_749_883_908_192_543, 15_563_241_465_122_433_280, 3_869_962_252_870_364_858],
-        "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say so in the changelog"
+        [15_860_340_449_837_140_439, 10_513_964_125_794_806_173, 4_126_844_237_202_850_391],
+        "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say why in the commit"
     );
 }

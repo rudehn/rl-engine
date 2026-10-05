@@ -2,12 +2,12 @@
 //! fixtures each place is lit by, and how far the adventurer's lantern
 //! reaches as the dark grows with the danger.
 //!
-//! The dark is the design's: the town at dusk and the Upper Halls are lit
-//! enough to see by, and below them a cell is seen only when something
-//! lights it, so the lantern, a brazier, a clump of glowcaps or a pool of
-//! lava is what a floor is seen by. The engine's lighting does the rest:
-//! a fixture is a `LightSource` on an entity with no turns, cast once and
-//! cast again only when the map changes.
+//! The dark is the design's, and Brogue's: every place is seen dimly by
+//! its own ambient, so a floor's shape reads beyond the lantern, and the
+//! lantern, a brazier, a clump of glowcaps or a pool of lava is what makes
+//! a place bright, warm and plain to read. The engine's lighting does the
+//! rest: a fixture is a `LightSource` on an entity with no turns, cast
+//! once and cast again only when the map changes.
 //!
 //! What a place is lit by is read off the place itself, by [`Fixtures`]:
 //! the tiles that glow, and the props a piece stood at its slots that shed
@@ -75,24 +75,29 @@ pub fn lantern_radius(floor: Option<u32>) -> i32 {
     7 - dimmed as i32
 }
 
-/// The light everywhere in `map` before anything in it is lit.
+/// The light everywhere in `map` before anything in it is lit: in every
+/// place, the engine's dim band, above the least a cell needs to be seen
+/// and below the bright band.
 ///
-/// Mereholt is at dusk, blue and low but enough to see the town by, and
-/// the Upper Halls keep a dim, warm grey, so the first floors are learned
-/// in sight of what is coming. Every band below is darker than the seen
-/// threshold, its own colour tinting only what something else lights. Any
-/// other map is dark.
+/// Mereholt is at dusk, blue and low; the Upper Halls keep a warm grey;
+/// and each band below is a little darker than the one above, in a colour
+/// of its own, down to the throne's, the darkest. Seen at all, so a
+/// floor's shape reads beyond the lantern in deep, dark colour and is
+/// remembered where it was seen, as Brogue keeps it; and no brighter than
+/// dim, so a body out there with no light of its own is harder to pick
+/// out than one in a lamp's light, and the lantern's pool stands out warm
+/// and bright. Any other map is dark.
 pub fn ambient_of(map: MapId) -> Light {
     if map == TOWN {
         return Light::new(30, Rgb::new(120, 140, 215));
     }
     match floor_of(map).map(Biome::of) {
-        Some(Biome::UpperHalls) => Light::new(22, Rgb::new(205, 190, 170)),
-        Some(Biome::FungalDeeps) => Light::new(10, Rgb::new(90, 170, 150)),
-        Some(Biome::Catacombs) => Light::new(9, Rgb::new(150, 160, 205)),
-        Some(Biome::DrownedCathedral) => Light::new(11, Rgb::new(80, 115, 210)),
-        Some(Biome::ForgeOfEmbers) => Light::new(12, Rgb::new(210, 80, 50)),
-        Some(Biome::Throne) => Light::new(5, Rgb::new(90, 140, 160)),
+        Some(Biome::UpperHalls) => Light::new(26, Rgb::new(205, 190, 170)),
+        Some(Biome::FungalDeeps) => Light::new(23, Rgb::new(90, 170, 150)),
+        Some(Biome::Catacombs) => Light::new(21, Rgb::new(150, 160, 205)),
+        Some(Biome::DrownedCathedral) => Light::new(20, Rgb::new(80, 115, 210)),
+        Some(Biome::ForgeOfEmbers) => Light::new(18, Rgb::new(210, 80, 50)),
+        Some(Biome::Throne) => Light::new(17, Rgb::new(90, 140, 160)),
         None => Light::DARK,
     }
 }
@@ -212,7 +217,6 @@ pub fn light_place(commands: &mut Commands, map: &WorldMap, place: MapId, fixtur
 mod tests {
     use std::collections::BTreeSet;
 
-    use rl_engine::rl_bevy::lighting::DEFAULT_THRESHOLD;
     use rl_engine::rl_core::RunSeed;
     use rl_engine::rl_rules::prefab::Slot;
 
@@ -226,21 +230,71 @@ mod tests {
         assert_eq!(down, [7, 7, 7, 6, 6, 6, 5, 5, 5, 4]);
     }
 
-    /// The town at dusk and the first band are lit enough to see by, so the
-    /// first fights are learned with the lights on; below them a cell is
-    /// seen only by what lights it. Each band has an ambient of its own.
+    /// Every place is seen by its own ambient, and only dimly, by the
+    /// lines the game plays by: above the least a cell needs to be seen,
+    /// so a floor's shape reads beyond the lantern and is remembered where
+    /// it was seen, and below the bright band, so a body outside every
+    /// light is dim to whoever watches, never lit. The dark deepens band by
+    /// band down to the throne's, and each band and the town have an
+    /// ambient of their own.
     #[test]
-    fn the_town_and_the_upper_halls_are_lit_enough_to_see_by_and_the_floors_below_are_not() {
-        let seen = |map: MapId| ambient_of(map).intensity >= DEFAULT_THRESHOLD;
-        assert!(seen(TOWN), "Mereholt at dusk");
-        assert!(seen(map_of(1)) && seen(map_of(2)), "the Upper Halls");
-        for floor in 3..=FLOORS {
-            assert!(!seen(map_of(floor)), "floor {floor} is dark");
+    fn every_biomes_ambient_falls_in_the_dim_band_and_deepens_with_depth() {
+        let mut app = crate::testing::headless(RunSeed(0));
+        crate::testing::settle(&mut app);
+        let lighting = app.world().resource::<Lighting>();
+        let band = |light: Light| LightBand::of(light.intensity, lighting.threshold, lighting.bright);
+        assert_eq!(band(ambient_of(TOWN)), LightBand::Dim, "Mereholt at dusk");
+        let mut bands: Vec<Light> = Vec::new();
+        for biome in Biome::ALL {
+            let ambient = ambient_of(map_of((1..=FLOORS).find(|f| Biome::of(*f) == biome).expect("a floor of every band")));
+            assert_eq!(band(ambient), LightBand::Dim, "{}: {ambient:?}", biome.name());
+            bands.push(ambient);
         }
-        let mut bands: Vec<Light> = Biome::ALL.iter().map(|b| ambient_of(map_of((1..=FLOORS).find(|f| Biome::of(*f) == *b).unwrap()))).collect();
+        assert!(bands.windows(2).all(|pair| pair[0].intensity > pair[1].intensity), "the dark deepens band by band: {bands:?}");
         bands.push(ambient_of(TOWN));
         let distinct: BTreeSet<(u8, u8, u8, u8)> = bands.iter().map(|l| (l.intensity, l.color.r, l.color.g, l.color.b)).collect();
         assert_eq!(distinct.len(), bands.len(), "each band and the town have their own ambient");
+    }
+
+    /// On every floor, whatever the adventurer has a line to beyond every
+    /// light is seen, and seen dimly: the floor's shape reads past the
+    /// lantern's pool, and a body standing out there with no light of its
+    /// own is in the dim band, which stealth reads as harder to pick out
+    /// than the lit one. Over two seeds, every band has such cells in sight
+    /// on one of its floors' arrivals.
+    #[test]
+    fn beyond_every_light_a_floor_is_seen_dimly() {
+        let mut checked = BTreeSet::new();
+        for s in 0..2 {
+            let mut app = crate::testing::headless(RunSeed(s));
+            let me = crate::testing::adventurer(&mut app);
+            crate::testing::sturdy(&mut app, me);
+            for floor in 1..=FLOORS {
+                crate::testing::arrive(&mut app, map_of(floor));
+                let world = app.world_mut();
+                // Every light on the floor: what stands or lies with one, and
+                // what anyone carries, the adventurer's lantern among them,
+                // which sheds from where its carrier stands.
+                let mut lights: Vec<(Point, i32)> = Vec::new();
+                let mut q = world.query::<(&Position, &OnMap, Option<&LightSource>, Option<&Inventory>)>();
+                for (p, _, light, bag) in q.iter(world).filter(|(_, on, _, _)| on.0 == map_of(floor)) {
+                    lights.extend(light.map(|l| (p.0, l.radius)));
+                    let carried = bag.map_or(&[][..], |b| &b.items[..]).iter().filter_map(|item| world.get::<LightSource>(*item));
+                    lights.extend(carried.map(|l| (p.0, l.radius)));
+                }
+                let (sight, lighting) = (world.get::<Viewshed>(me).expect("eyes"), world.resource::<Lighting>());
+                let unlit = |p: &Point| lights.iter().all(|(light, radius)| geometry::chebyshev(*p, *light) > *radius);
+                let beyond: Vec<Point> = sight.line.iter().map(|p| p + sight.origin).filter(unlit).collect();
+                let unseen: Vec<&Point> = beyond.iter().filter(|p| !sight.can_see(**p)).collect();
+                assert!(unseen.is_empty(), "seed {s}, floor {floor}: in sight beyond every light, yet unseen: {unseen:?}");
+                let bright: Vec<(Point, LightBand)> = beyond.iter().map(|p| (*p, lighting.band(*p))).filter(|(_, band)| *band != LightBand::Dim).collect();
+                assert!(bright.is_empty(), "seed {s}, floor {floor}: beyond every light is dim, not {bright:?}");
+                if !beyond.is_empty() {
+                    checked.insert(Biome::of(floor));
+                }
+            }
+        }
+        assert_eq!(checked.len(), Biome::ALL.len(), "every band had something in sight beyond its lights: {checked:?}");
     }
 
     /// Everything that glows in a place has its light and nothing else
