@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A thing used from the pack can be aimed, as an ability is: a `use` trigger may carry an `aim`, written `aim: (mode: Bolt(range: 7), at: Ground, sight: false)`, the shape, what it wants under it and whether its cell must be seen, in the words an ability is written in and a foe in sight unless it says otherwise; `Targeting` in `rl_rules` is the type, and `AbilityDef::targeting` gives an ability's.
+  The bag's use key on such a thing writes `AimUse { user, item }`, which opens the targeting cursor as `AimThrow` does and previews through `Bystanders::land`; confirming writes `UseItemAt { item, at }`, `UseItem`'s sibling, and putting the cursor away spends nothing and passes no turn.
+  The items resolver refuses an aim by the rule an ability's is refused by, so a use the cursor shows as legal is one it takes, and `land_triggers` lands the trigger on its footprint from where its user stands, with the thing's `EffectBonus`; with a `look` it is seen to fly there, and the turns wait while it does.
+  A `UseItem` of a thing whose use is aimed and a `UseItemAt` of one whose use is not are refused for nothing, and `AimUse` of a thing whose use lands on its user uses it at once, so a game's own key may write `AimUse` for anything.
+  An `aim` is refused on any trigger but a `use`, aimed at nobody but its user, or beside a second `use` trigger, and an item file that lists every trigger field, as Foundry's, Corsair's and Undermere's do, gains a line for it.
+  `Aimed` carries a `Source` and a `Targeting` in place of an ability and its definition, `Aimed::ability` builds one for an ability, `aim_blocked` takes a `Targeting`, and a `Trigger` written out by hand says `aim: None`.
 - A status can take its holder's turns: `StatusDef::holds`, written `holds: true` in a status file, and while one is on an actor `StatusPlugin` spends each of its turns as a wait before its mind or its player is asked, as work claims a worker's, so paralysis, a snare and sleep are each one line of a game's statuses.
   A held player's keys come to nothing and its turns pass without them, and a worker caught at its work loses those turns rather than working them.
   The hold ends when the status does, by its time or by a cure, and `Statuses::holding` says which status holds an actor, if any.

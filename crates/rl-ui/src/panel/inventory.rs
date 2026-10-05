@@ -7,20 +7,21 @@
 //! using are the engine's own item actions, so the screen writes their
 //! intents itself; throwing opens the targeting cursor through
 //! [`AimThrow`], the way a game's throw key would. A game binds nothing.
-//! Using an item with a `use` trigger uses it where it stands; an item is
-//! aimed only by throwing it or firing it, never by using it. Nothing else
-//! is used from here; an item a game answers itself from
-//! [`ItemEvent::Used`] is used by the game's own key, since the bag cannot
-//! know it does anything and a use that did nothing would spend a turn.
-//! The footer offers only the keys that do something to the row picked
-//! out: wear or take off, drop, use, throw, and close.
+//! Using an item with a `use` trigger uses it where it stands, and using
+//! one whose use is aimed opens the targeting cursor through [`AimUse`], as
+//! throwing does, and puts it away again for nothing. Nothing else is used
+//! from here; an item a game answers itself from [`ItemEvent::Used`] is
+//! used by the game's own key, since the bag cannot know it does anything
+//! and a use that did nothing would spend a turn. The footer offers only
+//! the keys that do something to the row picked out: wear or take off,
+//! drop, use, throw, and close.
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
 //! to armor or a stat, what it resists, how far it flies, where it is worn
 //! or could be and what else it takes, what it does at each of its
-//! moments, how many charges are left, and whatever the game pushed onto
-//! it in [`ViewSet::Annotate`](crate::ViewSet).
+//! moments and how a use is aimed, how many charges are left, and whatever
+//! the game pushed onto it in [`ViewSet::Annotate`](crate::ViewSet).
 //!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
@@ -34,13 +35,14 @@ use rl_render::{Cell, Terminal};
 
 use crate::controls::{AddControls, Chord, ControlInput, EngineKey, key_name};
 use crate::modal::{ModalId, Modals};
+use crate::panel::ability::reach;
 use crate::panel::sheet::plain_op;
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::ability::turns;
 use crate::view::inventory::{InventoryView, InventoryViewPlugin, ItemRow};
 use crate::view::sheet::Strike;
-use crate::view::target::AimThrow;
+use crate::view::target::{AimThrow, AimUse};
 
 /// The name the bag's modal is declared under.
 pub const INVENTORY_MODAL: &str = "inventory";
@@ -154,6 +156,7 @@ impl Plugin for InventoryPanel {
             .add_message::<Intent<Unequip>>()
             .add_message::<Intent<DropItem>>()
             .add_message::<Intent<UseItem>>()
+            .add_message::<AimUse>()
             .add_message::<AimThrow>();
         app.insert_resource(self.0.clone()).init_resource::<InventoryMenu>().init_resource::<InventoryKeys>();
         app.add_systems(Update, inventory_keys.in_set(EngineSet::Input)).add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
@@ -185,6 +188,7 @@ pub struct BagIntents<'w> {
     unequips: MessageWriter<'w, Intent<Unequip>>,
     drops: MessageWriter<'w, Intent<DropItem>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
+    aimed_uses: MessageWriter<'w, AimUse>,
     throws: MessageWriter<'w, AimThrow>,
 }
 
@@ -244,12 +248,18 @@ pub fn inventory_keys(
     } else if binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm) {
         // What does something when used, with a charge to spend. Anything
         // else is not used from here: it would spend a turn on nothing, and
-        // the footer never offers it.
-        if row.usable() {
-            intents.uses.write(Intent::new(user, UseItem(item)));
-            true
-        } else {
-            false
+        // the footer never offers it. A use pointed somewhere closes the
+        // bag and opens the targeting cursor in its place, as a throw does.
+        match (row.usable(), row.aim) {
+            (true, Some(_)) => {
+                intents.aimed_uses.write(AimUse { user, item });
+                true
+            }
+            (true, None) => {
+                intents.uses.write(Intent::new(user, UseItem(item)));
+                true
+            }
+            (false, _) => false,
         }
     } else if binds.throw.just_pressed(input) && row.throw_range.is_some() {
         // The bag closes and the targeting cursor opens in its place.
@@ -347,6 +357,11 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     }
     for what in &row.used {
         say(what.clone(), Tones::TEXT);
+    }
+    // How far a use reaches and what it wants there, in the ability
+    // list's own words.
+    if let Some(aim) = row.aim {
+        say(format!("aimed {}", reach(aim.at, aim.mode)), Tones::MUTED);
     }
     if let Some((left, max)) = row.charges {
         say(format!("{left}/{max} charges"), Tones::MUTED);
@@ -769,6 +784,72 @@ mod tests {
             "a charged one taken off loses its charge going back on, and says so: {:?}",
             detail(&stage)
         );
+    }
+
+    /// A thing used at somewhere says how it is aimed, in the words the
+    /// ability list uses, and its use key asks for the targeting cursor
+    /// rather than using it where the player stands.
+    #[test]
+    fn a_thing_used_at_somewhere_says_how_it_is_aimed_and_its_use_key_asks_for_the_cursor() {
+        let (mut stage, triggers) =
+            with_triggers(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#);
+        let player = stage.player;
+        let rod = stage.app.world_mut().spawn((Item, Name::new("rod"), triggers, Consumable::new(3, WhenEmpty::Kept))).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![rod] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        assert!(detail(&stage).iter().any(|l| l == "aimed at a foe, a bolt up to 6 away"), "{:?}", detail(&stage));
+        stage.press(KeyCode::KeyU);
+        let aims: Vec<AimUse> = stage.app.world_mut().resource_mut::<Messages<AimUse>>().drain().collect();
+        assert_eq!(aims, vec![AimUse { user: player, item: rod }], "the cursor is asked for");
+        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and nothing is used yet");
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "the bag closed for the cursor");
+    }
+
+    /// The whole of it from the bag: a rod aimed and put away spends no
+    /// charge and passes no turn, and aimed again and confirmed it lands
+    /// its bolt on the foe it was pointed at and not on whoever used it.
+    #[test]
+    fn a_use_aimed_from_the_bag_and_put_away_spends_nothing_and_confirmed_lands_where_it_was_pointed() {
+        let mut stage =
+            Stage::new_with((rl_bevy::EffectsPlugin, ConsumablesPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14))), |app| {
+                app.add_engine_effects();
+            })
+            .screen(52, 14);
+        let specs: Vec<rl_rules::TriggerSpec> = Names::new()
+            .load_list(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
+            .expect("the trigger parses");
+        let triggers = {
+            let world = stage.app.world();
+            let names = world.resource::<Registries>().names();
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<EffectKinds>(), &names).expect("it builds")
+        };
+        let player = stage.player;
+        let rod = stage.app.world_mut().spawn((Item, Name::new("rod"), triggers, Consumable::new(3, WhenEmpty::Kept))).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![rod] });
+        let foe = stage.actor("rat", 'r', 3, 0);
+        stage.tick();
+        let hp = |stage: &Stage, who: Entity| stage.app.world().get::<Health>(who).expect("health").current;
+        let charges = |stage: &Stage| stage.app.world().get::<Consumable>(rod).expect("charges").left;
+        let now = |stage: &Stage| stage.app.world().resource::<Turns>().now();
+        let before = now(&stage);
+
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyU);
+        let view = stage.app.world().resource::<crate::TargetView>();
+        assert_eq!((view.using, view.cursor), (Some(rod), stage.at.offset(3, 0)), "the cursor opened on the rat");
+        stage.press(KeyCode::Escape);
+        assert!(!stage.app.world().resource::<crate::TargetView>().aiming() && !stage.app.world().resource::<Modals>().any_open(), "put away");
+        assert_eq!((charges(&stage), now(&stage), hp(&stage, foe)), (3, before, 10), "no charge, no time, no harm");
+        assert!(stage.app.world().get::<MyTurn>(player).is_some(), "and the turn is still the player's");
+
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyU);
+        stage.press(KeyCode::Enter);
+        assert_eq!((hp(&stage, foe), hp(&stage, player)), (6, 30), "the bolt landed on the rat, not on its user");
+        assert_eq!(charges(&stage), 2, "for a charge");
+        assert!(now(&stage) > before, "and the turn");
     }
 
     /// The last turn of a charge is one turn, not one turns.

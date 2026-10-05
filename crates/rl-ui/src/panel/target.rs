@@ -285,6 +285,31 @@ mod tests {
         assert!(stage.row(9).contains("[tab] next"), "the hints are in the bottom border: {:?}", stage.row(9));
     }
 
+    /// A thing used at somewhere is boxed as an ability is: by its own name,
+    /// how far the cursor is against how far its aim reaches, and who it
+    /// would land on, with no chance, since a use is never rolled.
+    #[test]
+    fn the_box_names_a_thing_used_at_somewhere_how_far_it_reaches_and_who_it_lands_on() {
+        let mut stage = staged();
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new()
+            .load_list(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#)
+            .expect("the trigger parses");
+        let triggers = {
+            let world = stage.app.world();
+            let names = world.resource::<rl_bevy::Registries>().names();
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<rl_bevy::EffectKinds>(), &names).expect("it builds")
+        };
+        let user = stage.player;
+        let rod = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("rod"), triggers)).id();
+        stage.app.world_mut().get_mut::<rl_bevy::Inventory>(user).expect("a bag").items.push(rod);
+        stage.actor("them", 't', 2, 0);
+        stage.tick();
+
+        stage.app.world_mut().write_message(crate::view::target::AimUse { user, item: rod });
+        stage.tick();
+        assert_eq!(boxed(&stage, 10)[..4], ["rod", "Range: 2 / 6", "Target: them", ""]);
+    }
+
     /// An aim past where the bolt reaches is refused, and the part of the
     /// line the bolt does not reach is painted as out of reach.
     #[test]

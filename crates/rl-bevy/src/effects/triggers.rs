@@ -6,8 +6,10 @@
 //! [`land_triggers`] is the one system that answers: it finds the carrier's
 //! [`Triggers`] for that moment, works out the cells its [`Area`] covers
 //! around where the moment happened, and lands the effects on everyone
-//! standing there. What a use costs the thing is the consumables' business,
-//! read off the same messages.
+//! standing there. A use aimed somewhere is landed as an ability is, on
+//! its footprint from its user to the cell it was pointed at, and with a
+//! look is seen to fly there before it lands. What a use costs the thing
+//! is the consumables' business, read off the same messages.
 //!
 //! Moments are interned in [`Moments`] rather than enumerated, so a game
 //! adds its own, an overheating gun or a charged console, with
@@ -17,10 +19,12 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_core::{Interner, Point};
-use rl_rules::{Area, EffectSpec, Names, TriggerSpec};
+use rl_rules::{Area, EffectSpec, Names, Targeting, TriggerSpec};
 
 use super::{EffectKinds, EffectWorld, Effects, Landing, Source};
-use crate::cue::{Anchor, Cue, Cued, LookOf};
+use crate::ability::{Aimed, Bystanders};
+use crate::cue::{Airborne, Cued, LookOf, TurnHold};
+use crate::turn::Turns;
 use crate::world::WorldMap;
 
 /// What sets a trigger off: a thing used, a throw come to rest, an attack
@@ -120,6 +124,10 @@ pub struct Trigger {
     /// nowhere else. A game reads its carrier's base period back off it
     /// rather than keeping a second copy.
     pub every: Option<u32>,
+    /// How a `use` is pointed, `Some` on the one `use` trigger of a thing
+    /// used at somewhere and nowhere else: it lands on the footprint where
+    /// it was pointed rather than around where its moment happened.
+    pub aim: Option<Targeting>,
 }
 
 /// Written by hand, since the effects themselves are boxed trait objects:
@@ -133,6 +141,7 @@ impl std::fmt::Debug for Trigger {
             .field("fires", &self.fires)
             .field("look", &self.look)
             .field("every", &self.every)
+            .field("aim", &self.aim)
             .finish_non_exhaustive()
     }
 }
@@ -150,10 +159,19 @@ impl Triggers {
     /// A spec with no list of its own takes `shared`, which is how a thing
     /// says what it contains once and lets each trigger deliver it. Every
     /// problem is reported, not the first: an unknown moment by its name,
-    /// an unregistered effect by [`Effects::build`]'s own message, and a
-    /// trigger with neither a list nor a shared one as the typo it is.
+    /// an unregistered effect by [`Effects::build`]'s own message, a
+    /// trigger with neither a list nor a shared one as the typo it is, and
+    /// an aim anywhere but on a thing's one `use` trigger, or aimed at
+    /// nobody but its user.
     pub fn build(specs: &[TriggerSpec], shared: &[EffectSpec], moments: &Moments, kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, Vec<String>> {
         let mut errors = Vec::new();
+        // A use is pointed once, so an aimed one is the thing's only use: a
+        // second would land around where the first was pointed, which
+        // nobody chose.
+        let uses: Vec<&TriggerSpec> = specs.iter().filter(|s| moments.get(&s.on) == Some(Moments::USE)).collect();
+        if uses.len() > 1 && uses.iter().any(|s| s.aim.is_some()) {
+            errors.push("a thing whose use is aimed has one `use` trigger, the aimed one; write what it lands in its one list".to_string());
+        }
         let shared = if shared.is_empty() {
             None
         } else {
@@ -180,6 +198,15 @@ impl Triggers {
             } else if spec.every.is_some() {
                 errors.push(format!("the trigger on {:?} carries an `every`; `every` is only for a pulse trigger", spec.on));
             }
+            match spec.aim {
+                Some(_) if on != Moments::USE => {
+                    errors.push(format!("the trigger on {:?} carries an `aim`; only a \"use\" is pointed by whoever makes it", spec.on));
+                }
+                Some(aim) if !aim.at.needs_cursor() => {
+                    errors.push("a use aimed at its own user is a use with no aim; leave `aim` out".to_string());
+                }
+                _ => {}
+            }
             let effects = match (&spec.effects, &shared) {
                 (Some(own), _) => match Effects::build(own, kinds, names) {
                     Ok(e) => Arc::new(e),
@@ -194,9 +221,17 @@ impl Triggers {
                     continue;
                 }
             };
-            built.push(Trigger { on, area: spec.area, fires: spec.fires, effects, look: spec.look, every: spec.every });
+            built.push(Trigger { on, area: spec.area, fires: spec.fires, effects, look: spec.look, every: spec.every, aim: spec.aim });
         }
         if errors.is_empty() { Ok(Self(built)) } else { Err(errors) }
+    }
+
+    /// How this carrier's use is pointed, when it is pointed somewhere:
+    /// what the bag asks the targeting cursor for in place of using it at
+    /// once, and what the items resolver refuses an aim by. `None` for a
+    /// thing whose use lands on its user, or that has none.
+    pub fn aim(&self) -> Option<Targeting> {
+        self.on(Moments::USE).find_map(|t| t.aim)
     }
 
     /// The triggers on `moment`, in the order they were written.
@@ -225,7 +260,9 @@ pub struct Fired {
     pub moment: MomentId,
     /// Who set it off, when anyone did.
     pub by: Option<Entity>,
-    /// Where it happened.
+    /// Where it happened: for a use pointed somewhere, the cell it was
+    /// pointed at, which its aimed trigger flies to from wherever `by`
+    /// stands.
     pub at: Point,
 }
 
@@ -292,6 +329,87 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
 /// if it has one.
 type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<&'static super::EffectBonus>);
 
+/// A use aimed somewhere that has left its user and not yet come down:
+/// the landing its trigger worked out as the use was made, what it lands,
+/// and how it is seen.
+///
+/// Worked out when the use is made, as an ability's is when it is cast, so
+/// it comes down on whoever stood under it then, followed by the cues
+/// wherever they have gone. The list is held rather than looked up again,
+/// since the thing may be spent to nothing and gone before its last use
+/// lands.
+#[derive(Clone)]
+pub struct UseLanding {
+    landing: Landing,
+    effects: Arc<Effects>,
+    look: Option<rl_rules::ability::Look>,
+}
+
+/// Written by hand, since the effects are boxed trait objects.
+impl std::fmt::Debug for UseLanding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UseLanding").field("landing", &self.landing).field("look", &self.look).finish_non_exhaustive()
+    }
+}
+
+impl crate::cue::Lands for UseLanding {}
+
+impl UseLanding {
+    /// Comes down: the burst over the footprint in the trigger's look, when
+    /// it has one, then the effects, so a cue an effect adds plays after it.
+    fn land(self, world: &mut EffectWorld<'_, '_>) {
+        if let Some(burst) = self.look.and_then(|look| self.landing.burst(world, LookOf::Given(look))) {
+            world.cues.write(Cued { actor: self.landing.user, cue: burst });
+        }
+        self.effects.land(&self.landing, world);
+    }
+}
+
+/// Where a use aimed somewhere goes and who it catches, and the hold its
+/// flight keeps on the turns while it is seen.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct AimedUses<'w, 's> {
+    bystanders: Bystanders<'w, 's>,
+    hold: ResMut<'w, TurnHold>,
+    airborne: ResMut<'w, Airborne<UseLanding>>,
+}
+
+impl AimedUses<'_, '_> {
+    /// Lands `trigger` as `aimed` points it, on its footprint, with `bonus`
+    /// added: at once, or once its flight has been seen when it is seen to
+    /// fly and something watches.
+    ///
+    /// Whether it might be pointed there was the resolver's question, asked
+    /// before the use was spent, so nothing here refuses: a moment reported
+    /// is a moment that happened.
+    fn land(&mut self, aimed: Aimed, trigger: &Trigger, bonus: super::EffectBonus, world: &mut EffectWorld) {
+        let mut landing = self.bystanders.land(aimed, world.map(), world.occupancy()).landing;
+        landing.bonus = bonus;
+        let shot = UseLanding { landing, effects: trigger.effects.clone(), look: trigger.look };
+        let Some(flight) = shot.look.and_then(|look| shot.landing.flight(world, LookOf::Given(look))) else {
+            shot.land(world);
+            return;
+        };
+        world.cues.write(Cued { actor: aimed.user, cue: flight });
+        if let Some(shot) = self.airborne.launched(&mut self.hold, shot) {
+            shot.land(world);
+        }
+    }
+}
+
+/// Lands every use aimed somewhere that is in the air, on the first pass
+/// after its flight has been seen. Landing counts as progress, so the loop
+/// goes on to deal the next turn once the burst has been seen in turn.
+///
+/// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers), where
+/// triggers land, ahead of [`land_triggers`]: no turn is dealt while
+/// anything flies, so nothing new is used in the pass that lands it.
+pub fn land_aimed_uses(mut hold: ResMut<TurnHold>, mut airborne: ResMut<Airborne<UseLanding>>, mut turns: ResMut<Turns>, mut world: EffectWorld) {
+    for shot in airborne.landing(&mut hold, &mut turns) {
+        shot.land(&mut world);
+    }
+}
+
 /// Lands every carrier's triggers for each moment reported this pass.
 ///
 /// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers), after
@@ -303,11 +421,18 @@ type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<
 /// [`LandsAsItself`] or nobody did. A carrier with an
 /// [`EffectBonus`](super::EffectBonus) lands its effects with it added,
 /// and a plain one adds nothing.
+///
+/// A use aimed somewhere is the exception, and is landed the way an
+/// ability is, by [`Bystanders::land`]: from where its user stands to the
+/// cell it was pointed at, on whoever its aim wants under its shape. With
+/// a look it is seen to fly there first, and with something watching it
+/// waits in the air for [`land_aimed_uses`] until it has been.
 pub fn land_triggers(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
     mut carriers: Query<Carrier>,
     alive: Query<(), (With<crate::combat::Health>, Without<crate::combat::Dead>)>,
+    mut uses: AimedUses,
     mut world: EffectWorld,
 ) {
     for f in fired.read() {
@@ -318,34 +443,33 @@ pub fn land_triggers(
             if trigger.fires == Some(0) {
                 continue;
             }
-            let cells = area_cells(trigger.area, f.at, world.map());
-            let mut targets: Vec<Entity> = Vec::new();
-            for cell in &cells {
-                for who in world.occupancy().at(*cell) {
-                    if alive.contains(*who) && !targets.contains(who) {
-                        targets.push(*who);
+            let source = Source::Trigger { on: f.on, moment: f.moment };
+            match trigger.aim {
+                // From wherever its user stands to the cell it was pointed
+                // at, which is where the use is reported to have happened.
+                Some(targeting) => {
+                    let origin = world.position(user).unwrap_or(f.at);
+                    uses.land(Aimed { user, source, targeting, origin, aim: f.at, sees_aim: None }, trigger, bonus, &mut world);
+                }
+                None => {
+                    let cells = area_cells(trigger.area, f.at, world.map());
+                    let mut targets: Vec<Entity> = Vec::new();
+                    for cell in &cells {
+                        for who in world.occupancy().at(*cell) {
+                            if alive.contains(*who) && !targets.contains(who) {
+                                targets.push(*who);
+                            }
+                        }
                     }
+                    let landing = Landing { user, source, origin: f.at, aim: f.at, cells, path: Vec::new(), landed_at: Some(f.at), targets, bonus };
+                    // Cued before any effect runs, as an ability's burst is,
+                    // so a cue an effect adds plays after it.
+                    if let Some(burst) = trigger.look.and_then(|look| landing.burst(&world, LookOf::Given(look))) {
+                        world.cues.write(Cued { actor: user, cue: burst });
+                    }
+                    trigger.effects.land(&landing, &mut world);
                 }
             }
-            let landing = Landing {
-                user,
-                source: Source::Trigger { on: f.on, moment: f.moment },
-                origin: f.at,
-                aim: f.at,
-                cells,
-                path: Vec::new(),
-                landed_at: Some(f.at),
-                targets,
-                bonus,
-            };
-            // Cued before any effect runs, as an ability's burst is, so a
-            // cue an effect adds plays after it.
-            if let Some(look) = trigger.look {
-                let on = landing.cells.iter().map(|c| anchor(&landing, &world, *c)).collect();
-                let from = Some(anchor(&landing, &world, f.at));
-                world.cues.write(Cued { actor: user, cue: Cue::Burst { on, look: LookOf::Given(look), from } });
-            }
-            trigger.effects.land(&landing, &mut world);
             if let Some(left) = trigger.fires.as_mut() {
                 *left -= 1;
             }
@@ -354,12 +478,6 @@ pub fn land_triggers(
             commands.entity(f.on).despawn();
         }
     }
-}
-
-/// Where a cue plays on `cell`: on whoever stands there, so it follows
-/// them, or on the cell.
-fn anchor(landing: &Landing, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
-    landing.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
 }
 
 #[cfg(test)]
@@ -657,5 +775,44 @@ mod tests {
         let (app, _) = floor();
         let triggers = build(&app, r#"[(on: "use")]"#, &harm("1")).unwrap();
         assert_eq!(triggers.pulse_every(), None);
+    }
+
+    /// Only a use is pointed by whoever makes it: an aim on a landing or a
+    /// hit has nobody choosing where it goes.
+    #[test]
+    fn an_aim_on_any_trigger_but_a_use_fails_the_build_naming_the_reason() {
+        let (app, _) = floor();
+        let errs = build(&app, r#"[(on: "land", aim: (mode: Bolt(range: 5)))]"#, &harm("1")).expect_err("a landing is not pointed");
+        assert!(errs.iter().any(|e| e.contains("only a \"use\"")), "{errs:?}");
+    }
+
+    /// A use aimed at its user is a use with no aim, and saying both is a
+    /// mistake rather than a choice.
+    #[test]
+    fn a_use_aimed_at_its_own_user_fails_the_build() {
+        let (app, _) = floor();
+        let errs = build(&app, r#"[(on: "use", aim: (mode: Own, at: SelfOnly))]"#, &harm("1")).expect_err("aimed at nobody but its user");
+        assert!(errs.iter().any(|e| e.contains("leave `aim` out")), "{errs:?}");
+    }
+
+    /// A use is pointed once, so a thing whose use is aimed has that one
+    /// `use` trigger: a second would land around where the first was
+    /// pointed, which nobody chose.
+    #[test]
+    fn a_thing_whose_use_is_aimed_has_no_other_use_trigger() {
+        let (app, _) = floor();
+        let errs = build(&app, r#"[(on: "use", aim: (mode: Bolt(range: 5))), (on: "use")]"#, &harm("1")).expect_err("two uses, one aimed");
+        assert!(errs.iter().any(|e| e.contains("one `use` trigger")), "{errs:?}");
+    }
+
+    /// What the bag and the cursor ask of a thing: how its use is pointed,
+    /// when it is.
+    #[test]
+    fn a_carriers_aim_is_its_use_triggers_and_none_for_a_use_that_lands_on_its_user() {
+        let (app, _) = floor();
+        let aimed = build(&app, r#"[(on: "use", aim: (mode: Bolt(range: 5), at: Ground)), (on: "land")]"#, &harm("1")).unwrap();
+        let bolt = rl_rules::Targeting { mode: rl_grid::TargetMode::Bolt { range: 5 }, at: rl_rules::Aim::Ground, sight: true };
+        assert_eq!(aimed.aim(), Some(bolt));
+        assert_eq!(build(&app, r#"[(on: "use"), (on: "land")]"#, &harm("1")).unwrap().aim(), None);
     }
 }

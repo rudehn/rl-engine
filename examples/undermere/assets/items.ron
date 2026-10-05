@@ -15,15 +15,21 @@
 //   effects:    optional; [(kind:, chance:, args:)] what the thing holds, written as an
 //               ability's effects are in abilities.ron: landed by any trigger with no list of
 //               its own
-//   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:)] what it does at its
-//               moments: on is "use" (used from the pack; lands on the user) | "land" (a
-//               throw comes to rest) | "fire" (an attack is made with it) | "hit" (that
-//               attack strikes) | "pulse" (a worn thing's clock came round); area is Here
-//               (default) | Burst(radius:); fires is how many times it may go off, every time
-//               when left out; effects is its own list, the thing's shared effects when left
-//               out; look is optional, (glyph:, color: (r:, g:, b:)) in bytes, shown over every
-//               cell it lands on; every is hundredths of a step between pulses, required on a
-//               "pulse" trigger, refused on any other, and a "pulse" trigger is for a worn thing
+//   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, aim:)] what it does at
+//               its moments: on is "use" (used from the pack; lands on the user, or where it is
+//               aimed) | "land" (a throw comes to rest) | "fire" (an attack is made with it) |
+//               "hit" (that attack strikes) | "pulse" (a worn thing's clock came round); area is
+//               Here (default) | Burst(radius:); fires is how many times it may go off, every
+//               time when left out; effects is its own list, the thing's shared effects when
+//               left out; look is optional, (glyph:, color: (r:, g:, b:)) in bytes, shown over
+//               every cell it lands on and flying there for an aimed use; every is hundredths of
+//               a step between pulses, required on a "pulse" trigger, refused on any other, and
+//               a "pulse" trigger is for a worn thing; aim is optional, (mode:, at:, sight:), and
+//               only on a thing's one "use" trigger, for a staff or a wand used at somewhere and
+//               pointed as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
+//               Ball(range:, radius:) | Beam(range:) | Cone(length:), at what it wants under it,
+//               Foe (default) | Ally | Ground | Anyone, and sight whether the cell it is pointed
+//               at must be seen, true when left out; the pack's use key then opens the cursor
 //   consumable: optional; (charges:, when_empty:) what a use or a landing costs it: charges a
 //               fresh one holds, and Destroyed | Kept at the last
 //   armor:      optional; flat armor while worn

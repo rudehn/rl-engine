@@ -11,7 +11,10 @@
 //! rolls from, so a trap cannot shift a spell's dice.
 //!
 //! `engine` holds the effects the engine ships, and `triggers` the moments,
-//! [`Triggers`] and the one system that lands them. [`EffectsPlugin`] is the
+//! [`Triggers`] and the one system that lands them, with the uses aimed
+//! somewhere that wait in the air to be seen. [`Landing`] says how a
+//! landing is seen, its flight and its burst, so an ability and a thing's
+//! aimed use are seen the same way. [`EffectsPlugin`] is the
 //! whole of it, added by whichever of abilities, props or consumables a game
 //! adds first. A game's own effects sit beside the engine's through
 //! [`AddEffect::add_effect`], and nothing that lands them can tell the
@@ -34,7 +37,7 @@ use rl_rules::ability::RawValue;
 
 use crate::combat::DamageEvent;
 use crate::components::{Blocks, Position, Viewshed};
-use crate::cue::Cued;
+use crate::cue::{Anchor, Cue, Cued, LookOf};
 use crate::registries::Registries;
 use crate::status::{Afflict, Cure};
 use crate::turn::Occupancy;
@@ -87,6 +90,34 @@ impl Landing {
             _ => None,
         }
     }
+
+    /// Where a cue plays on `cell`: on the target standing there, so a
+    /// burst on someone knocked back goes with them and a bolt at someone
+    /// walking away still lands on them, or on the cell when nobody does.
+    fn anchor(&self, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
+        self.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
+    }
+
+    /// The flight to where a projectile stopped, drawn as `look`, for a
+    /// shape that has one: a bolt or a ball flies, a cone or a nova does
+    /// not. One answer for an ability and a thing's aimed use, so the two
+    /// are seen to fly the same way.
+    pub(crate) fn flight(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Option<Cue> {
+        let stop = self.landed_at.filter(|stop| *stop != self.origin)?;
+        Some(Cue::Flight { from: Anchor::on(self.user, self.origin), to: self.anchor(world, stop), look })
+    }
+
+    /// The burst over the footprint, drawn as `look`, for a shape that
+    /// covers anything, spreading out from where a projectile stopped, or
+    /// else from the user: a ball goes off where it lands, and a nova, a
+    /// cone or a line goes out from whoever sent it.
+    pub(crate) fn burst(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Option<Cue> {
+        if self.cells.is_empty() {
+            return None;
+        }
+        let from = self.landed_at.map(|stop| self.anchor(world, stop)).unwrap_or(Anchor::on(self.user, self.origin));
+        Some(Cue::Burst { on: self.cells.iter().map(|c| self.anchor(world, *c)).collect(), look, from: Some(from) })
+    }
 }
 
 /// What a carrier's effects land stronger by: turns added to every status
@@ -125,10 +156,11 @@ pub struct Landing {
     pub path: Vec<Point>,
     /// Where a projectile stopped, if the shape had one.
     pub landed_at: Option<Point>,
-    /// Everyone under the footprint the ability's
-    /// [`Aim`](rl_rules::ability::Aim) wanted there.
-    /// An effect that means to hit whoever is standing in the fire reads
-    /// this; one that means to change the ground reads `cells`.
+    /// Everyone under the footprint the [`Aim`](rl_rules::ability::Aim)
+    /// of an ability or an aimed use wanted there, and every living actor
+    /// under any other trigger's. An effect that means to hit whoever is
+    /// standing in the fire reads this; one that means to change the ground
+    /// reads `cells`.
     pub targets: Vec<Entity>,
     /// What landed it grows its effects by: a worn or thrown thing's own
     /// [`EffectBonus`], copied here, and the default, which adds nothing,
@@ -438,8 +470,9 @@ impl Effects {
 
 /// Effects: what every carrier of an effect list shares.
 ///
-/// The registry of effect kinds, the stream every effect rolls from, and
-/// the messages an effect writes. Added by whatever lands effects,
+/// The registry of effect kinds, the stream every effect rolls from, the
+/// messages an effect writes, and the uses aimed somewhere that are in the
+/// air, put back when a run ends. Added by whatever lands effects,
 /// abilities, props or consumables, when a game has not already added it,
 /// so a game names the subsystems it wants and this comes with them.
 pub struct EffectsPlugin;
@@ -450,6 +483,7 @@ struct EffectsBuilt;
 
 impl Plugin for EffectsPlugin {
     fn build(&self, app: &mut App) {
+        use crate::cue::AddAirborne;
         use crate::plugin::Reads;
         use crate::plugin::{ResolveSet, Turn};
         use crate::seed::AddStream;
@@ -475,7 +509,9 @@ impl Plugin for EffectsPlugin {
             .add_message::<DamageEvent>()
             .add_message::<crate::combat::Heal>()
             .reads::<Cued>()
-            .add_systems(Turn, (report_remnants, land_triggers).chain().in_set(ResolveSet::Triggers));
+            .add_airborne::<UseLanding>()
+            // What came down this pass, then what was set off in it.
+            .add_systems(Turn, (report_remnants, land_aimed_uses, land_triggers).chain().in_set(ResolveSet::Triggers));
     }
 
     /// Not unique, so adding it after a plugin that already added it is

@@ -10,7 +10,8 @@
 //!
 //! What an item does is its [`Triggers`], one line per effect, each named
 //! by the moment that sets it off: `use: mends 5`, `on landing: 3 kinetic
-//! in a burst of 1`. What a use costs it is its [`Consumable`], counted on the
+//! in a burst of 1`, and how its use is pointed when it is used at
+//! somewhere. What a use costs it is its [`Consumable`], counted on the
 //! row when it holds more than one charge. Anything else an item means is a
 //! [`Facet`] the game pushes in [`ViewSet::Annotate`](crate::ViewSet), and
 //! the panel prints it under the row.
@@ -71,6 +72,10 @@ pub struct ItemRow {
     /// Whether it has a `use` trigger at all, which is not the same as
     /// having something to say about it.
     pub uses_something: bool,
+    /// How its use is pointed, for a thing used at somewhere rather than on
+    /// whoever uses it: the bag asks for the targeting cursor for it rather
+    /// than using it at once, and says how far it reaches.
+    pub aim: Option<rl_rules::Targeting>,
     /// Charges left and the most it holds, for a thing that holds more than
     /// one; a stack of single-charge things is counted by `count` instead.
     pub charges: Option<(u16, u16)>,
@@ -239,6 +244,7 @@ pub fn collect_inventory(
             entity: item,
             used,
             uses_something: triggers.is_some_and(|t| t.on(Moments::USE).next().is_some()),
+            aim: triggers.and_then(Triggers::aim),
             charges: consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max)),
             empty: consumable.is_some_and(|c| c.is_empty()),
             label: name.map(|n| n.as_str().to_string()).unwrap_or_default(),
@@ -357,6 +363,7 @@ mod tests {
             effects: std::sync::Arc::new(rl_bevy::Effects::default()),
             look: None,
             every: None,
+            aim: None,
         };
         let plate = stage.app.world_mut().spawn((Item, Name::new("plate"), Wearable(EquipShape::in_slot(torso)), rl_bevy::Triggers(vec![on_use]))).id();
         stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![plate] }, Equipped(Equipment::with_slot_count(1))));
@@ -393,8 +400,15 @@ mod tests {
         let args = rl_rules::ability::parse_args(r#"(status: "cloaked", turns: 10)"#).unwrap();
         let specs = vec![rl_rules::EffectSpec { kind: "Inflict".to_string(), chance: 100, args }];
         let effects = Effects::build(&specs, &kinds, &registries.names()).unwrap();
-        let trigger =
-            rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires: None, effects: std::sync::Arc::new(effects), look: None, every: None };
+        let trigger = rl_bevy::Trigger {
+            on: Moments::USE,
+            area: rl_rules::Area::Here,
+            fires: None,
+            effects: std::sync::Arc::new(effects),
+            look: None,
+            every: None,
+            aim: None,
+        };
         let plate = stage.app.world_mut().spawn((Item, Name::new("cloak plate"), Triggers(vec![trigger]), EffectBonus { turns: 4, amount: 0 })).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![plate] });
         stage.tick();

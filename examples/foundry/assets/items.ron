@@ -20,17 +20,23 @@
 //              in steps of open deck, sound "blast" | "hiss" | "alarm" or one of the engine's
 //              ("step" | "strike" | "door" | "landing"); no effect carries a level rule, which
 //              is the enchant block's
-//   triggers:  optional; [(on:, area:, fires:, effects:, look:, every:)] what it does at its
-//              moments: on is "use" (used from the pack, or while worn for a thing that is
-//              worn; lands on the user where they stand) | "land" (a throw comes to rest) |
-//              "fire" (an attack is made with it) | "hit" (that attack strikes, lands where
-//              the target stands) | "pulse" (a worn thing's clock came round; lands on the
-//              wearer); area is Here (default) | Burst(radius:); fires is how many times it
-//              may go off, every time when left out; effects is its own list, the thing's
-//              shared effects when left out; look is optional, (glyph:, color: (r:, g:, b:))
-//              shown over every cell it lands on; every is hundredths of a step between
-//              pulses at +0, required on a "pulse" trigger and refused on any other, and a
-//              "pulse" trigger is only for a thing that is worn
+//   triggers:  optional; [(on:, area:, fires:, effects:, look:, every:, aim:)] what it does at
+//              its moments: on is "use" (used from the pack, or while worn for a thing that
+//              is worn; lands on the user where they stand, or where it is aimed) | "land" (a
+//              throw comes to rest) | "fire" (an attack is made with it) | "hit" (that attack
+//              strikes, lands where the target stands) | "pulse" (a worn thing's clock came
+//              round; lands on the wearer); area is Here (default) | Burst(radius:); fires is
+//              how many times it may go off, every time when left out; effects is its own
+//              list, the thing's shared effects when left out; look is optional, (glyph:,
+//              color: (r:, g:, b:)) shown over every cell it lands on, and flying there for
+//              an aimed use; every is hundredths of a step between pulses at +0, required on
+//              a "pulse" trigger and refused on any other, and a "pulse" trigger is only for a
+//              thing that is worn; aim is optional, (mode:, at:, sight:), and only on a thing's
+//              one "use" trigger, for a thing used at somewhere rather than on its user and
+//              pointed as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
+//              Ball(range:, radius:) | Beam(range:) | Cone(length:), at what it wants under it,
+//              Foe (default) | Ally | Ground | Anyone, and sight whether the cell it is pointed
+//              at must be seen, true when left out; the pack's use key then opens the cursor
 //   consumable: optional; (charges:, when_empty:, recharge:) what a use, a landing or a shot
 //              costs it: charges a fresh unit holds, Destroyed | Kept at the last, and
 //              recharge, optional, (every:, while_worn:) with every the hundredths of a step

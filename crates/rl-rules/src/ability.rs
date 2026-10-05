@@ -247,6 +247,31 @@ pub enum Area {
     },
 }
 
+/// How a use is pointed: the shape it covers with its range inside it, what
+/// it wants under that shape, and whether the cell it is pointed at must be
+/// in sight.
+///
+/// The three answers an ability's own `mode`, `aim` and `sight` give,
+/// gathered so a thing's `use` trigger can give them too: a thing used at
+/// somewhere is pointed, previewed and landed by the rules a bolt an actor
+/// knows is, and not by a second set that could drift from them. Written
+/// `(mode: Bolt(range: 7), at: Ground, sight: false)`, a foe and in sight
+/// unless it says otherwise, as an ability is. A word nobody reads is an
+/// error rather than a default, since a misspelt `at` would otherwise aim
+/// at foes without a word said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Targeting {
+    /// The shape, its range inside it.
+    pub mode: TargetMode,
+    /// What it wants under the shape.
+    #[serde(default)]
+    pub at: Aim,
+    /// Whether the cell it is pointed at must be one its user can see.
+    #[serde(default = "yes")]
+    pub sight: bool,
+}
+
 /// A trigger as a content file writes it: `(on: "land", area: Burst(radius: 1))`,
 /// with `look: (glyph: '*', color: (r: 255, g: 128, b: 0))` to be seen.
 ///
@@ -270,9 +295,10 @@ pub struct TriggerSpec {
     /// What it lands; absent, its carrier's shared list.
     #[serde(default)]
     pub effects: Option<Vec<EffectSpec>>,
-    /// What shows over the cells it lands on; absent, nothing does, which
-    /// is right for a trap nobody should see go off and wrong for a
-    /// grenade, where the burst is the point.
+    /// What shows over the cells it lands on, and what flies there for a
+    /// use that is aimed; absent, nothing does, which is right for a trap
+    /// nobody should see go off and wrong for a grenade, where the burst is
+    /// the point.
     #[serde(default)]
     pub look: Option<Look>,
     /// Hundredths of a step between pulses, for a `pulse` trigger only: a
@@ -281,6 +307,15 @@ pub struct TriggerSpec {
     /// its own.
     #[serde(default)]
     pub every: Option<u32>,
+    /// How a `use` is pointed, for a thing used at somewhere rather than
+    /// on its user where they stand: a bolt sent from the pack. Absent, a
+    /// use lands on its user. Refused on any other moment, since only a
+    /// use is pointed by whoever makes it: a landing is where the throw
+    /// came down and a hit is whoever the shot struck. Still the thing's
+    /// own trigger and not an ability it lends, so what it lands and what
+    /// it spends stay the thing's.
+    #[serde(default)]
+    pub aim: Option<Targeting>,
 }
 
 /// An ability, as the engine reads it.
@@ -314,6 +349,15 @@ pub struct AbilityDef {
     pub cooldown: u32,
     /// What lands, in order.
     pub effects: Vec<EffectSpec>,
+}
+
+impl AbilityDef {
+    /// How it is pointed: its shape, what it wants under it and whether
+    /// its cell must be seen, in the form a thing's aimed use is written
+    /// in, so the two are landed and refused by the one rule.
+    pub fn targeting(&self) -> Targeting {
+        Targeting { mode: self.mode, at: self.aim, sight: self.sight }
+    }
 }
 
 impl Named for AbilityDef {
@@ -428,17 +472,18 @@ pub fn blocked(def: &AbilityDef, gates: &Gates<'_>, purse: &Purse<'_>, now: u32,
 /// ability: [`blocked`] answers whether it may be used at all, this whether
 /// it may be used *here*.
 ///
-/// `cells` is the footprint the aim resolved to and `sees_aim` whether the
-/// user can see the cell it is pointed at, `None` for a user with no sight
-/// to ask, which is a mind trusted with its tactic's choice. A shape with
-/// nowhere to go, such as a bolt pointed at the caster's own feet, is
-/// refused rather than paid for, so the player keeps the turn and a
-/// preview can say so before it is spent. An ability aimed at its user
-/// needs no footprint and no sight.
-pub fn aim_blocked(def: &AbilityDef, cells: &[Point], sees_aim: Option<bool>) -> Vec<Blocked> {
-    let pointed = def.aim.needs_cursor();
+/// `targeting` is how the use is pointed, an ability's own or a thing's
+/// aimed use, `cells` the footprint the aim resolved to and `sees_aim`
+/// whether the user can see the cell it is pointed at, `None` for a user
+/// with no sight to ask, which is a mind trusted with its tactic's choice.
+/// A shape with nowhere to go, such as a bolt pointed at the caster's own
+/// feet, is refused rather than paid for, so the player keeps the turn and
+/// a preview can say so before it is spent. A use aimed at its user needs
+/// no footprint and no sight.
+pub fn aim_blocked(targeting: Targeting, cells: &[Point], sees_aim: Option<bool>) -> Vec<Blocked> {
+    let pointed = targeting.at.needs_cursor();
     let nowhere = pointed && cells.is_empty();
-    let unseen = pointed && def.sight && sees_aim == Some(false);
+    let unseen = pointed && targeting.sight && sees_aim == Some(false);
     if nowhere || unseen { vec![Blocked::NoTarget] } else { Vec::new() }
 }
 
@@ -641,6 +686,22 @@ mod tests {
             .unwrap();
         assert_eq!((full.area, full.fires, full.every), (Area::Burst { radius: 2 }, Some(3), Some(1000)));
         assert_eq!(full.effects.as_ref().map(|e| e[0].kind.as_str()), Some("Harm"));
+        assert!(bare.aim.is_none() && full.aim.is_none(), "a trigger with no aim lands where its moment happened");
+    }
+
+    /// A use is pointed in the words an ability is: a shape with its range,
+    /// what it wants under it, and whether its cell must be seen, the last
+    /// two a foe and yes unless the trigger says otherwise.
+    #[test]
+    fn a_use_trigger_is_aimed_in_the_abilities_own_words() {
+        let read = |text: &str| -> TriggerSpec { Options::default().with_default_extension(Extensions::IMPLICIT_SOME).from_str(text).unwrap() };
+        let bolt = read(r#"(on: "use", aim: (mode: Bolt(range: 7)))"#);
+        assert_eq!(bolt.aim, Some(Targeting { mode: TargetMode::Bolt { range: 7 }, at: Aim::Foe, sight: true }));
+        let lob = read(r#"(on: "use", aim: (mode: Ball(range: 5, radius: 1), at: Ground, sight: false))"#);
+        assert_eq!(lob.aim, Some(Targeting { mode: TargetMode::Ball { range: 5, radius: 1 }, at: Aim::Ground, sight: false }));
+        let typo: Result<TriggerSpec, _> =
+            Options::default().with_default_extension(Extensions::IMPLICIT_SOME).from_str(r#"(on: "use", aim: (mode: Bolt(range: 7), att: Ally))"#);
+        assert!(typo.is_err(), "a misspelt word in an aim is an error, not a foe");
     }
     use crate::damage::DamageKind;
     use crate::equip::SlotDef;
@@ -716,6 +777,11 @@ mod tests {
         assert!(fireball.sight, "the default");
         assert_eq!(fireball.time, rl_core::turn::BASE_ACTION_COST, "the default");
         assert_eq!(fireball.effects[0].chance, 100, "the default");
+        assert_eq!(
+            fireball.targeting(),
+            Targeting { mode: TargetMode::Ball { range: 8, radius: 2 }, at: Aim::Foe, sight: true },
+            "how it is pointed, gathered as a thing's aimed use writes it"
+        );
         let bash = r.get(r.expect("shield bash"));
         assert_eq!(bash.requires, vec![Requirement::InSlot(w.slots.expect("off hand"), w.tags.expect("shield"))]);
         assert_eq!(bash.effects[0].chance, 60);
@@ -885,7 +951,8 @@ mod tests {
             &world.names(),
         )
         .unwrap();
-        let (bolt, lob, steel) = (defs.get(defs.expect("bolt")), defs.get(defs.expect("lob")), defs.get(defs.expect("steel")));
+        let get = |name: &str| defs.get(defs.expect(name)).targeting();
+        let (bolt, lob, steel) = (get("bolt"), get("lob"), get("steel"));
         let some = [Point::new(3, 0)];
         assert_eq!(aim_blocked(bolt, &[], Some(true)), vec![Blocked::NoTarget], "nowhere to fly");
         assert_eq!(aim_blocked(bolt, &some, Some(false)), vec![Blocked::NoTarget], "out of sight");

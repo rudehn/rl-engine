@@ -261,7 +261,9 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_interactions),
             id(items::resolve_items),
-            &[&claims[..], &["Position"]].concat(),
+            // Who stands where and what the user sees, for an aimed use's
+            // refusals, read as an ability's resolver reads them.
+            &[&claims[..], &["Position", "Occupancy", "Viewshed"]].concat(),
             "one action a pass: an interaction and an item action are never resolved in the same one",
         ),
         pair(
