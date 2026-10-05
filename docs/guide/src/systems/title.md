@@ -102,7 +102,7 @@ Whether the slot holds a run is the save's to say and the menu's to read, never 
 What restoring a run means is the game's: the engine says Continue was picked with `ContinueRun`, and the game's own `NewRun` systems build the world from the saved seed and restore the run into it, as they would from any save.
 A row that cannot be taken now but could be later, Continue before anything is saved and Records before any run has ended, is drawn dim, while one that never can, Settings with nothing to set, is not drawn at all, since whether a game has a settings screen cannot change while it runs.
 The hold is on the whole of `NewRun`, not only on a game's start, so an `Update` system that reads a resource a run inserts must take it as optional, or the first frame of a launch panics.
-Leaving a run is not ending it: a run still in play is written down to be continued, and only a run that is over has nothing to keep.
+Leaving a run is not ending it: in a game that saves, a run still in play is written down to be continued, and only a run that is over has nothing to keep.
 A headless test has no title unless it adds one, so its run begins at startup as it always did.
 
 ## Where it lives

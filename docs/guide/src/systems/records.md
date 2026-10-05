@@ -99,7 +99,7 @@ The engine decides what is the same in every game's records: that a run ends in 
 The game decides what a run is worth and what it is said to have been: the score, the summary and every section are its own words, because only the game knows whether a run is measured in floors, in coin or in a king slain.
 So a record is the game's account rather than a dump of the engine's counters: the engine fills in only what it already holds, the outcome, the seed and the turn, and never adds a line to a game's sections.
 A record is written once, when the run is over, and how the game tallies its score on the way is the game's own business.
-The list lives apart from the run's slot because it outlives every run: a death, a win and a run given up each delete the run's slot, and each files into this one.
+The list lives apart from the run's slot because it outlives every run: the death or the win a record is filed for is also what deletes the run's slot.
 It is not the versioned envelope a run is saved in, which refuses a save whole when the version differs; a hundred runs outlast one build, so a record is read for what it still says.
 The end screen reads the record rather than having the game push the same sections a second time, so the two screens cannot disagree about what a run came to.
 A game may still push sections of its own onto `EndingView`, which the end screen shows after the record's, for anything it wants said and not kept.
