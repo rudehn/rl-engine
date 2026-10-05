@@ -369,6 +369,23 @@ impl ItemIntents<'_, '_> {
     }
 }
 
+/// Whether `item` may be used out of `bag` by whoever wears `worn`, how its
+/// use is pointed aside: carried, with a charge to spend when it is
+/// `consumable`, and worn when it is `wearable`.
+///
+/// The one rule the items resolver refuses a use by, public so the
+/// targeting cursor opens no aim the resolver would refuse before looking
+/// at where it was pointed. An empty thing is still a thing, and using one
+/// is a mistake the player keeps the turn for, as for any impossible item
+/// action. A thing that can be worn is used by wearing it: one used from
+/// the bottom of the bag would let a wearer keep one plate on and spend
+/// another's charge.
+pub fn may_use(item: Entity, bag: &Inventory, worn: Option<&Equipped>, consumable: Option<&crate::consumable::Consumable>, wearable: bool) -> bool {
+    let empty = consumable.is_some_and(|c| c.is_empty());
+    let off_the_body = wearable && !worn.is_some_and(|w| w.slot_of(item).is_some());
+    bag.contains(item) && !empty && !off_the_body
+}
+
 /// Resolves pickups, drops, equips, unequips and uses, aimed somewhere or
 /// not, for the actor holding the turn. Each costs one action, and
 /// equipping from the ground half as much again. An impossible one, such as
@@ -386,19 +403,7 @@ pub fn resolve_items(
     let ItemWorld { mut carriers, ground, stacks, wearables, consumables, map, triggers, occupancy, bystanders } = world;
     let this_map = map.current();
     let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map);
-    // Whether `item` may be used out of `bag` by whoever wears `worn`, how
-    // it is pointed aside: carried, with a charge to spend when it counts
-    // them, and worn when it can be worn.
-    let may_use = |item: Entity, bag: &Inventory, worn: Option<&Equipped>| {
-        // An empty wand is still a wand, and using one is a mistake the
-        // player keeps the turn for, as for any impossible item action.
-        let empty = consumables.get(item).is_ok_and(|c| c.is_empty());
-        // A thing that can be worn is used by wearing it: one used from the
-        // bottom of the bag would let a wearer keep one plate on and spend
-        // another's charge.
-        let off_the_body = wearables.contains(item) && !worn.is_some_and(|w| w.slot_of(item).is_some());
-        bag.contains(item) && !empty && !off_the_body
-    };
+    let usable = |item: Entity, bag: &Inventory, worn: Option<&Equipped>| may_use(item, bag, worn, consumables.get(item).ok(), wearables.contains(item));
     // How `item`'s use is pointed, when it is pointed somewhere.
     let aim_of = |item: Entity| triggers.get(item).ok().and_then(Triggers::aim);
     for (actor, which) in intents.drain() {
@@ -498,7 +503,7 @@ pub fn resolve_items(
                     // A thing whose use is pointed somewhere is used at a
                     // cell: used here it would land around its user, which
                     // its aim says it does not.
-                    if may_use(item, bag, worn) && aim_of(item).is_none() {
+                    if usable(item, bag, worn) && aim_of(item).is_none() {
                         events.write(ItemEvent::Used { actor, item });
                         fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at: pos.0 });
                         true
@@ -514,7 +519,7 @@ pub fn resolve_items(
                     // nowhere to go, out of reach, or out of sight.
                     let source = crate::effects::Source::Trigger { on: item, moment: crate::effects::Moments::USE };
                     let aimed = Aimed { user: actor, source, targeting, origin: pos.0, aim: at, sees_aim: sight.map(|v| v.can_see(at)) };
-                    if may_use(item, bag, worn) && bystanders.land(aimed, &map, &occupancy).refused.is_empty() {
+                    if usable(item, bag, worn) && bystanders.land(aimed, &map, &occupancy).refused.is_empty() {
                         events.write(ItemEvent::Used { actor, item });
                         // At the cell it was pointed at, which is where an
                         // aimed trigger lands; it flies from its user.

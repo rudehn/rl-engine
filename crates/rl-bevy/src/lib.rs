@@ -78,7 +78,7 @@ pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
     Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore,
-    PickUp, Pulse, Stack, Tagged, Unequip, UseItem, UseItemAt, Wearable,
+    PickUp, Pulse, Stack, Tagged, Unequip, UseItem, UseItemAt, Wearable, may_use,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, TileSet};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};

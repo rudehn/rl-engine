@@ -79,8 +79,9 @@ pub struct AimAt {
 /// [`Bystanders::land`] the footprint and who stands in it, and writes the
 /// [`UseItemAt`] when the player confirms. A thing whose use lands on its
 /// user is used at once and no screen opens, so a game binds every use the
-/// same way and never asks which kind it is. Put away, it spends nothing
-/// and passes no turn.
+/// same way and never asks which kind it is, and one that cannot be used
+/// now, an empty one or one worn to be used and not worn, opens nothing.
+/// Put away, it spends nothing and passes no turn.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AimUse {
     /// Who is using it.
@@ -300,12 +301,23 @@ pub struct Aiming<'w, 's> {
     loadout: Loadout<'w, 's>,
     /// What a thing does, for how its use is pointed.
     triggers: Query<'w, 's, &'static Triggers>,
+    /// What a user carries and wears, and what a thing used out of it
+    /// spends and is worn in, for whether it may be used at all.
+    bags: Query<'w, 's, (&'static Inventory, Option<&'static Equipped>)>,
+    things: Query<'w, 's, (Option<&'static Consumable>, Has<Wearable>)>,
 }
 
 impl Aiming<'_, '_> {
     /// How `item`'s use is pointed, when it is pointed somewhere.
     fn use_aim(&self, item: Entity) -> Option<Targeting> {
         self.triggers.get(item).ok().and_then(Triggers::aim)
+    }
+
+    /// Whether `user` may use `item` now, wherever it is pointed, by the
+    /// rule the items resolver refuses a use by.
+    fn may_use(&self, user: Entity, item: Entity) -> bool {
+        let (Ok((bag, worn)), Ok((consumable, wearable))) = (self.bags.get(user), self.things.get(item)) else { return false };
+        rl_bevy::may_use(item, bag, worn, consumable, wearable)
     }
 
     /// The aim a pointing is judged by. A throw and a shot are for foes,
@@ -407,12 +419,18 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
     }
     for request in requests.uses.read() {
         // A thing whose use lands on its user is used where it stands, as
-        // an ability that wants no cursor is.
+        // an ability that wants no cursor is, and refused there when it
+        // cannot be.
         if aiming.use_aim(request.item).is_none() {
             intents.item_uses.write(Intent::new(request.user, UseItem(request.item)));
             continue;
         }
-        asked = Some((request.user, Pointing::Use(request.item)));
+        // One that cannot be used now, wherever it is pointed, opens no
+        // aim, as a thing that cannot be thrown opens none for a throw: a
+        // cursor that showed it as legal would be refused on confirm.
+        if aiming.may_use(request.user, request.item) {
+            asked = Some((request.user, Pointing::Use(request.item)));
+        }
     }
     for request in requests.throws.read() {
         if aiming.missiles.contains(request.item) {
@@ -1539,6 +1557,26 @@ mod uses {
         let used: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
         assert_eq!(used, vec![draught], "used where it stands");
         assert!(!stage.app.world().resource::<Modals>().any_open(), "and nothing opened");
+    }
+
+    /// A thing that cannot be used now opens no cursor, as something that
+    /// cannot be thrown opens none for a throw: an empty one, and one that
+    /// is worn to be used and is not, by the rule the resolver refuses a
+    /// use by, asked before the aim rather than after it.
+    #[test]
+    fn asked_to_aim_a_thing_that_cannot_be_used_now_the_cursor_opens_nothing() {
+        let mut stage = staged();
+        let empty = carry(&mut stage, "empty rod", BURST);
+        stage.app.world_mut().entity_mut(empty).insert(Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) });
+        let unworn = carry(&mut stage, "unworn rod", BURST);
+        stage.app.world_mut().entity_mut(unworn).insert(Wearable(rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))));
+        let user = stage.player;
+        for item in [empty, unworn] {
+            stage.app.world_mut().write_message(AimUse { user, item });
+            stage.tick();
+            assert!(!stage.app.world().resource::<TargetView>().aiming(), "no aim for {item:?}");
+            assert!(!stage.app.world().resource::<Modals>().any_open(), "and no screen");
+        }
     }
 
     /// The property the preview exists for, held for a thing's aimed use as
