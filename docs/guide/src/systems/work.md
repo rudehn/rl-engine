@@ -8,7 +8,7 @@
             crates/rl-ui/src/panel/nearby.rs
             crates/rl-ui/src/panel/inspect.rs
             crates/rl-save/src/run.rs
-     fingerprint: 921699d6 -->
+     fingerprint: f7423761 -->
 
 # Work
 

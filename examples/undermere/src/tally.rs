@@ -344,6 +344,7 @@ impl Credit<'_, '_> {
     }
 }
 
+// ANCHOR: record
 /// Writes the run down once it is over: one [`RecordRun`] with its
 /// score, its summary and its two sections, which the engine completes
 /// with the outcome, the seed and the clock, files, and shows on the end
@@ -367,6 +368,7 @@ pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<Wo
         sections: sections(&lines, &tally, ending.turn),
     });
 }
+// ANCHOR_END: record
 
 #[cfg(test)]
 mod tests {

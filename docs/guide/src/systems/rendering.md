@@ -14,7 +14,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: c82c1383 -->
+     fingerprint: 0f67c120 -->
 
 # Rendering
 
@@ -115,6 +115,7 @@ The engine will not animate a game's own action: a resolver says what is worth s
 Without a watcher the cues are written and forgotten and the loop runs as if there were none, which is what a headless game gets and why the same rules run with and without a window.
 The pace is the engine's and the look is the game's: `ParticleStyle` is one resource, and a game with a look of its own writes `Animation`s to `Particles` directly.
 The terminal is not a widget toolkit and the map view is not a camera: there is no scene graph, no z-ordering beyond a glyph's layer, and nothing between turns is interpolated but how thick fire and gas look.
+A run of cells drawn as one is the buffer's, written with the tile, rather than a region of the screen declared wide once: the same cell is half of a tile one frame and a letter of a screen over the map the next, and only what was written there knows which.
 A tileset is a font and not a second renderer: everything that writes cells, the light, memory, fire, particles, cursors and a game's own overlays, is drawn in pictures without changing, and a picture is chosen by the character in the cell, so the terminal still knows nothing of content.
 The engine says which cell and which tile the mouse is over and nothing more: what a click there means, and which button, is the game's, read from Bevy's own `ButtonInput<MouseButton>`.
 One sprite and one text entity per cell is fine at a hundred columns and would be replaced by an instanced grid for a bigger one, and nothing above this crate would notice.

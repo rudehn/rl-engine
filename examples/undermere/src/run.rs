@@ -125,6 +125,7 @@ pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, r
     commands.entity(adventurer).insert((Inventory { items: pack }, Equipped(worn)));
 }
 
+// ANCHOR: start
 /// Builds the Undermere, spawns the adventurer with their kit and warps
 /// them into Mereholt, or onto [`StartFloor`]'s floor. Runs in [`NewRun`],
 /// for every run but one the title asked to continue with `ContinueRun`,
@@ -154,6 +155,7 @@ pub fn start(
     begin.warps.write(WarpRequest::into_place(adventurer, place));
     begin.next.set(EngineState::Playing);
 }
+// ANCHOR_END: start
 
 /// Continues the saved run, when the title's Continue asked for it with
 /// `ContinueRun`: the Undermere built again from the saved seed, the run

@@ -20,7 +20,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 18167745 -->
+     fingerprint: 0cb3f664 -->
 
 # Items and equipment
 
@@ -49,7 +49,7 @@ Either view plugin can be added alone by a game that wants the data and draws it
 A two-hander is `EquipShape::in_slot(main).and_claims(off)` and a ring is `in_any([left, right])`, and `equip` answers with everything it displaced or with an `EquipError`, which is `NoSlot` for a shape that names nowhere to go and `UnknownSlot` for one that names a slot this wearer does not have.
 `Stack { key, count }` makes an item countable: picking one up merges it into a carried item with the same key instead of adding a row, and the key is the game's, usually the definition id.
 `Tagged` is what an item counts as, by registered tag; `Enchant` is its `+N` and rolled affixes; `Bestows` is what it does to registered stats while worn, as `(StatId, Op)` pairs the game writes when it spawns the item with the enchant already applied, and `EffectBonus` is what its triggers' effects land stronger by, written the same way.
-`GearScore` is what wearing it is worth in the game's own units, and only the comparison matters: a mind weighs an item in sight against everything it would displace and puts on what is worth more than all of them together.
+`GearScore` is what wearing it is worth in the game's own units, and only the comparison matters: a mind weighs an item in sight against everything it would displace and, for a thing whose blow would replace its own, against its `OwnBlowScore` too, and puts on what is worth more than all of them together.
 `EquipFromGround` costs `EQUIP_FROM_GROUND_COST`, half a step more than picking up or putting on alone, so taking up a sword in the middle of a fight is a real choice rather than a free one or two turns wasted.
 `resolve_items` reads all six intents into one list, so one turn spends one item action whichever kind it is; an impossible one is refused for the player and charged as a wait to anyone else, the way an impossible move is.
 A use of an empty `Consumable` is impossible, so it costs the player nothing. So is a use of a thing that can be worn and is not, since a worn thing is used by wearing it.

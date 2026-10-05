@@ -54,7 +54,7 @@ crates/<name>/benches/          criterion, on realistic maps, only for hot paths
 docs/PLAN.md                    the design and milestones
 docs/design/                    how one subsystem works, and why: abilities, accuracy, charts, effects,
                                 fields, items, lighting, loot, minds, noise, prefabs, props,
-                                remains, settings, stealth, tilesets, ui, watching, work
+                                records, remains, settings, stealth, tilesets, ui, watching, work
 docs/guide/                     the mdBook; every chapter quotes examples/tutorial
 docs/reviews/                   the evidence
 scripts/check-tiers.sh          the tier boundary check
@@ -64,7 +64,7 @@ scripts/check-systems.py        the reference keeps up with the code
 scripts/check-systems-style.sh  the mechanical half of a system page's review
 ```
 
-The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, equipment and what a worn thing lends, places and streaming, saving and the end of a run, registries and content loading, and the controls, modals and cursors.
+The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, equipment and what a worn thing lends, places and streaming, saving and the end of a run, the title and its hold on a run's start, registries and content loading, and the controls, modals and cursors.
 Each is documented in its crate's module docs and in the overview; what is missing is the page that says why it is shaped that way.
 Writing one is a welcome slice, not a prerequisite for touching the code.
 

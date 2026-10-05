@@ -35,7 +35,7 @@ Whether the adventurer can come back to town mid-run is the town part's call (pa
 
 Square map tiles, each two text cells wide with its glyph centred, so light pools, blasts and sight are round, and text keeps a terminal's proportions.
 The grid is 160 by 45 cells: the map on the left following the adventurer, a rail on the right with vitals, gear and what is nearby, and the log along the bottom.
-Examine and targeting panels float over the map as Foundry's do.
+The examine panel floats over the map and the targeting box over the foot of the rail, as Foundry's do, so neither hides what is being looked at or aimed at.
 
 ## The content model
 
@@ -148,6 +148,12 @@ The title screen is a painting that breathes: the black lake under stars, mist o
 ## The parts
 
 1. **Skeleton**: the whole loop, thin. Title menu and run records in the engine, Foundry moved onto the engine's title menu, the town map, the gate, ten floors from the engine's current passes, a starter bestiary and armory in the trait model, the Drowned King, score, end screen, records, saving.
+   Built on the `undermere` branch, finished 2026-10-04, as `docs/superpowers/specs/2026-10-02-undermere-skeleton-design.md` set out.
+   It built the engine's title and records, with Foundry on the title; Mereholt at dusk and its gate; ten floors in five biomes, each seen dimly by its own ambient beyond a lantern that dims with depth; sixteen monsters and nineteen items in the trait model, an item lending its traits while worn; the Drowned King and his court, whose death wins; the score in five lines on the end screen and in the records; and saving, Continue and Main menu.
+   Along the way the engine gained a status that lasts until it is cured, a mind that weighs its own blow against a worn one, a run's facts forgotten when it ends, and wide tiles that keep a screen over the map a letter to a cell.
+   It left the examine panel's trait words to part 3, where monsters' identities are designed, since naming a monster's traits wants the look panel to wrap long lines.
+   It left dark sight doing nothing, since every floor is dim rather than dark, until parts 3 and 4 bring true darkness back in places; the adventurer with no abilities of their own and the bow with no ammunition until part 2; and a font of the game's own to part 7.
+   Two engine gaps it measured around are in `docs/TODO.md`: the engine's `FarthestExit` stops at a shut door, so `dungeon.rs` measures the way down with a pass of its own, and the `Doors` pass hangs two doors back to back where rooms sit two cells apart.
 2. **Items and builds**: enchanting, strength, identification, staffs, wands and charms, weapon shapes, curses, artifacts.
 3. **Monsters**: the bestiary by depth, mini-bosses and their lairs, the boss pool.
 4. **Dungeon generation**: biomes per band, mixed techniques, the three prefab kinds in pools, a lived-in dungeon. Built on the engine's layout work.

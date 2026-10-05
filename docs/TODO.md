@@ -27,50 +27,53 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 |---|------|---------|--------|--------|
 | 1 | Corsair's tests play a different game from its binary | 3 | medium | medium |
 | 2 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
-| 3 | `OnMap` as a required component | 4 | medium | medium |
-| 4 | What the save holds is stated where the save is | 7 | medium | medium |
-| 5 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
-| 6 | A searcher dithers where it lost the trail | 2 | medium | low |
-| 7 | No game fields a kind that travels | 3 | medium | medium |
-| 8 | Movement profiles that change costs | 3 | medium | high |
-| 9 | The narrator hears what registers itself | 7 | medium | high |
-| 10 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 11 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 12 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 13 | Admission scans its waiting actors linearly | 4 | low | low |
-| 14 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 15 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 16 | `HalveIfBlocked` can never fire | 3 | low | low |
-| 17 | Two engine types are named for a theme word | 4 | low | low |
-| 18 | A light that moved costs a second cast, unmeasured | 8 | low | low |
-| 19 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 20 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 21 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
-| 22 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 23 | Furnishing a room of any size | 1 | medium | medium |
-| 24 | A furnishing pool with bands and a budget | 1 | low | medium |
-| 25 | Furnishing a map that is not rooms | 1 | low | medium |
+| 3 | `FarthestExit` stops at a shut door | 3 | medium | low |
+| 4 | `OnMap` as a required component | 4 | medium | medium |
+| 5 | What the save holds is stated where the save is | 7 | medium | medium |
+| 6 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
+| 7 | A searcher dithers where it lost the trail | 2 | medium | low |
+| 8 | No game fields a kind that travels | 3 | medium | medium |
+| 9 | Movement profiles that change costs | 3 | medium | high |
+| 10 | The narrator hears what registers itself | 7 | medium | high |
+| 11 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 12 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 13 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 14 | Admission scans its waiting actors linearly | 4 | low | low |
+| 15 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 16 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 17 | The `Doors` pass hangs two doors back to back | 3 | low | low |
+| 18 | `HalveIfBlocked` can never fire | 3 | low | low |
+| 19 | Two engine types are named for a theme word | 4 | low | low |
+| 20 | A light that moved costs a second cast, unmeasured | 8 | low | low |
+| 21 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 22 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 23 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 24 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
+| 25 | Furnishing a room of any size | 1 | medium | medium |
+| 26 | A furnishing pool with bands and a budget | 1 | low | medium |
+| 27 | Furnishing a map that is not rooms | 1 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
-The table was renumbered that day, so a number here is a place in the order as it stands and not the one an older note may cite.
+The table was renumbered that day, and again on 2026-10-04 for two gaps Undermere's floors found, so a number here is a place in the order as it stands and not the one an older note may cite.
 
 Why the order that is left, in four moves:
 
-1. **The middle band first, 1 to 7.**
+1. **The middle band first, 1 to 8.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-   Item 7 is the newest: travel is built and tested in the engine and no game's content asks for it, which is the shape of the failure `docs/PLAN.md` section 1 was written against.
-2. **Then 8 and 9**, the high-effort ones, of which only the narrator's registry is structural.
+   Item 3 is the newest, found while building Undermere's floors, and is a bug a player of Heist meets: on most of its floors the way on stands in or beside the room the floor begins in, and the fix wants item 2's fingerprints first, so the maps it moves move on purpose.
+   Item 8 is travel: built and tested in the engine, and no game's content asks for it, which is the shape of the failure `docs/PLAN.md` section 1 was written against.
+2. **Then 9 and 10**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
-3. **Items 10 to 19 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
-   Item 18 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
+3. **Items 11 to 21 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
+   Item 20 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
 4. **The rest wait on something.**
-   Item 20 waits on a game that actually wants the tactics it would add, and item 21 on a second game asking for it.
-   Items 22 to 25 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 22 is what the furnished rooms most visibly lack, 23 what the larger rooms do, and 24 and 25 wait on Foundry's zones and on a game that furnishes a cave.
+   Item 22 waits on a game that actually wants the tactics it would add, and item 23 on a second game asking for it.
+   Items 24 to 27 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 24 is what the furnished rooms most visibly lack, 25 what the larger rooms do, and 26 and 27 wait on Foundry's zones and on a game that furnishes a cave.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -133,6 +136,18 @@ The five items that opened this section were built in the six stages of `docs/de
   Asked for three rooms sized 8 to 10 on a 40x30 map, it fails roughly one seed in sixty inside its default thirty attempts.
   Whether that is a tuning problem, a default `attempts` too low for the room sizes it is asked to fit, or a limit the pass should just document is not yet decided.
   Either way, a test that stamps rooms on a small map has to know this failure rate exists rather than treat every seed as good.
+- **`FarthestExit` stops at a shut door.**
+  It floods from the start through what can be walked on now, `TerrainView`'s `walkable`, and a shut door is passable but not walkable, so on a map of rooms behind shut doors it measures no farther than the doors round the room the map starts in.
+  Heist builds every floor that way, `Rooms`, then `Doors` with a door that opens, then `RandomStart` and `FarthestExit`: over five seeds, ten of its fifteen floors flood only the starting room, a few dozen cells of some eight hundred, and put the way on four to fifteen tiles from the way in, where the code's own comment promises the far end of the floor.
+  Foundry's hatch, Delve's sinew and the tutorial's roots are walkable, so none of those games meet it, and Corsair measures only caves with no doors.
+  Undermere measures its way down with a pass of its own, `WayOn` in `examples/undermere/src/dungeon.rs`, over a cost source that reads `passable`, as a flow field reads a closed door as the turn it takes to open; that is the fix, in the engine's pass.
+  It moves Heist's maps, so item 2's fingerprints come first.
+  Found on 2026-10-03 while building Undermere's floors, and measured over Heist's on 2026-10-04.
+- **The `Doors` pass hangs two doors back to back.**
+  It hangs a door on every cell of the ring round a room where a corridor meets it, and where two rooms sit two cells apart the corridor between them is one cell of each room's ring, so it gets a door at each end, one behind the other.
+  Two doors stand where one was meant, and where they are shut a walker opens both to cross one gap.
+  Seen in Undermere's halls and crypts, and Foundry's decks share it, since every game that chains `Rooms` and `Doors` does.
+  The fix is to skip a ring cell whose neighbour across the gap is already a door, or to hang one door per corridor rather than one per room it meets; either moves the maps of every game that hangs doors, so their fingerprints are re-baselined with it.
 - **Corsair's tests play a different game from its binary.**
   Corsair's binary runs `honour_portals`, `populate_places`, `drop_loot` and `inflict_on_hit`, and its test harness adds none of the four, so no Corsair test exercises them.
   One plugin that both the binary and the harness add, as Foundry's `FoundryPlugin` is, would close the gap for good.

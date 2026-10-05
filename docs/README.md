@@ -35,6 +35,7 @@ These are the reasoning; the overview is the list.
 - [noise.md](design/noise.md), what a sound is and who hears it.
 - [prefabs.md](design/prefabs.md), a piece of a place as data: slots for props, items and monsters drawn at the place's depth, roles, and guards that hold their post.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.
+- [records.md](design/records.md), what a run came to: a record in the game's own words, kept in a slot apart from the run, and read by the screen the run ends on.
 - [remains.md](design/remains.md), what is left where something died.
 - [settings.md](design/settings.md), what a player chooses once: a registry three crates read, and a terminal laid out for its window.
 - [stealth.md](design/stealth.md), being noticed, and being looked for.

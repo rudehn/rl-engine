@@ -35,8 +35,10 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
 - **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, fuel that burns down, dark sight, a viewshed cut to what is lit, and three bands, dark, dim and lit, that stealth and the to-hit roll read; opt-in per game, with ambient a value the game writes.
 - **Glyphs or pictures**: a diffed glyph grid renderer, and a tileset that draws a picture in place of any glyph it names with nothing else changing, so one game is letters or sprites at the flick of a setting; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory fades to a cold blue; animations played from what the turns cued, with the turns held so a bolt is seen to arrive before it hurts; which cell and which map tile the mouse is over, in a window of any size; and a capture tool that plays keys and photographs the window.
-- **UI you can take apart**: thirteen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, a controls screen built from the registry every key is declared in, and an overworld map screen.
+- **UI you can take apart**: seventeen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, a controls screen built from the registry every key is declared in, and an overworld map screen.
 - **Settings a player keeps**: a registry a game adds its own choices to, a screen that lists them, and a file that remembers them between launches, with fullscreen declared by the engine and a glyph grid that is laid out for its window, so text is sharp windowed, maximized or filling the screen.
+- **A title screen**: the engine's menu over a game's own picture, holding the first run back until the player picks Continue, New Game, Records, Settings or Exit, asking before a saved run is given up, and offered again from the pause and end menus, with a run left there written down to be continued.
+- **Records of every run**: a run ends in a record in the game's own words, a score, a line and its sections, filed best first and a hundred deep, kept between launches, and shown on the screen the run ends on and on a records screen the title opens.
 - **Telling a run afterwards**: keys written down as they are played and pressed again against the clock they were read at, and a screen the run ends on with the outcome, the seed, the turn and whatever the game has to say about it.
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
 - **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
@@ -246,6 +248,21 @@ FOUNDRY_START=3 cargo run -p foundry -- --seed 7   # start on the reactor deck, 
 
 Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for the lifts, `f` to fire, `t` to throw a blade, `g` to pick up, `e` to set a charge beside the console, `L` to switch the shoulder lamp off or on, `i` for the pack, `a` for abilities, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
 
+### Undermere, a delve under a lake
+
+`examples/undermere` is a fantasy roguelike written to be a whole game rather than the worked example of one system, and this is its first part: the whole loop, thin.
+A lakeside town, Mereholt, stands over the Drowned Gate, and under it ten floors of a sunken kingdom in five biomes go down to the Drowned King, whose death wins the run.
+A monster is a core and a list of named traits in RON, an item lends traits to whoever wears it, and every floor is lit by its own ambient, its fixtures and the adventurer's lantern, which dims as they descend.
+It opens on the engine's title over a painted night on the black lake, and every run ends in an itemized score, line by line, kept in the records the title opens.
+Its map tiles are square, each two narrow cells wide.
+
+```sh
+cargo run -p undermere -- --seed 7
+UNDERMERE_START=5 cargo run -p undermere -- --seed 7   # start on floor five, for a screenshot
+```
+
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` or `,` to pick up, `>` `<` or Enter for the stairs and the gate, `f` to shoot, `t` to throw from the pack, `i` for the pack, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
+
 ### Abilities in any genre
 
 Abilities being data that serves any genre is proved by a test, not a game: `crates/rl-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.
@@ -279,7 +296,7 @@ The window opens above the others without taking focus, and the screen must be u
 - **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable chapters, from a map on screen to an action of your own. Start here, at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/) for the sidebar and the search. Every chapter is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
 - **[The systems reference](docs/guide/src/systems/)** is the same book's page per subsystem, checked against the code it documents: what it is, its plugins, and where to read the source.
 - [**docs/OVERVIEW.md**](docs/OVERVIEW.md) is the inventory of what exists and what is not built yet, kept current, with a table of every plugin and every panel.
-- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for abilities, fire and gas, lighting, minds, noise, props, remains, stealth and the UI.
+- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for twenty of them, from abilities, fire and gas, lighting and minds to run records, stealth and the UI, listed in [the docs index](docs/README.md).
 - [**docs/PLAN.md**](docs/PLAN.md) is the design: what was decided, why, and which milestone each piece lands in.
 - [**docs/TODO.md**](docs/TODO.md) is the work that has been found and not started.
 - [**docs/reviews/**](docs/reviews/) holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.

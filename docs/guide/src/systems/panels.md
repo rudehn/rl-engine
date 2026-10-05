@@ -35,7 +35,7 @@
             crates/rl-bevy/src/plugin.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 49af4c18 -->
+     fingerprint: 14ad52e5 -->
 
 # Panels
 
@@ -50,7 +50,7 @@ So a game takes all three, or the first two and draws its own, or neither.
 The log lives here rather than with the panels that draw it because a game writes to it from its own systems whether or not anything draws it, so a headless test adds this plugin and has a log with no panel in sight.
 It chains `ViewSet::Sight`, `Collect`, `Annotate` and `Speak` inside `PresentSet::Narrate`, the frame's work-out-what-to-say phase, and `finish` declares `depends_on::<CorePlugin>`.
 Each panel after that is its own plugin, constructed with the `Rect` it draws in and whatever titles and hints it carries, and it adds its view plugin behind it when the game did not.
-A strip draws in `PresentSet::Chrome` and a screen in `PresentSet::Overlay`, which is what makes a modal cover the thing it is about; the settings screen alone is drawn after the whole of `EngineSet::Present`, for the reason its own page gives.
+A strip draws in `PresentSet::Chrome` and a screen in `PresentSet::Overlay`, which is what makes a modal cover the thing it is about; the settings and records screens are drawn after the whole of `EngineSet::Present`, and the title ahead of the input phase, for the reasons their own pages give.
 `VitalsPanel`, `NearbyPanel`, `GearPanel` and `LogPanel` are strips; `InspectPanel`, `AbilityPanel`, `SheetPanel`, `OffersPanel`, `ScrollbackPanel` and `TargetPanel` are screens, and every screen has a modal.
 Which of the two layers declares it is not the same for all six, and the rule is that it goes wherever the behaviour is: the two cursors are the view's, so `InspectViewPlugin` and `TargetViewPlugin` declare the modal and the key themselves and a game that takes the view alone still gets a cursor it can open, while `AbilityPanel`, `SheetPanel`, `ScrollbackPanel` and `OffersPanel` declare theirs in the presenter.
 A key that opens a screen is declared in `finish`, after the game's own so a controls screen lists the game's groups first; the offers screen is the one with no key of its own, since it opens on a crowded bump or on the interact key.
@@ -87,14 +87,14 @@ An aim put away, fired or not, leaves nothing picked out, so the rail is not lef
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
 Each side's chance of landing what it would attack with from there comes from `Marksmanship::at_distance` and scales its `Combatant` through `hitting`, and the player's own is kept as `odds` for the panel to print under the forecast, the same lines the targeting cursor prints.
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.
-`InspectPanel` sits over the map but never over what it describes, which is the engine's rule since a panel hiding its subject is wrong in every game: `place_inspect` moves it into `InspectPlacement` at the mirror of its rectangle in the map, or where the game's `else_at` says, while the cursor or a tick would sit under it, and keeps it there until the cursor goes under it again so it does not swap sides at every step.
+`InspectPanel` sits over the map but never over what it describes, which is the engine's rule since a panel hiding its subject is wrong in every game: `place_inspect` moves it into `InspectPlacement` at the mirror of its rectangle in the map, or where the game's `else_at` says, while any cell of the cursor's tile or of a tile a tick stands on would sit under it, and keeps it there until the cursor goes under it again so it does not swap sides at every step; it says how far off its subject stands, `here` for what lies where the player stands.
 `AbilityView` is an `AbilityRow` per ability the turn-holder knows, in registration order so a key bound to the third row stays bound to it, each carrying its costs, requirements and effects as sentences and every reason it is refused.
 `TargetView` is what is being aimed, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, and a `Row` per target.
 `TargetPanel` draws the footprint over the map and describes the aim in a framed box, drawn only while the cursor is up so a game sets it over the bottom of its rail: what is aimed, the range, the target in its relation's tone, then the chance to hit and each of the model's lines, or the reason the aim is refused where the chance would be.
 The view also holds the `AimRange`, how far the aim reaches against how far the weapon reaches with no penalty and at all, and the `Odds` against whoever living a shot or a throw would strike, asked of `Marksmanship` as the resolver asks it, so a throw a body intercepts shows the chance against that body and the range to it.
 `AimAt`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm.
 `OffersView` is an `OfferRow` per verb the player is offered where it stands, with its cost in hundredths and the reason a refused one is refused.
-`SheetView` is the character sheet: stats with every `Change` that made them what they are, resists, strikes, statuses and what is worn.
+`SheetView` is the character sheet: stats with every `Change` that made them what they are, resists, strikes, statuses with their turns left and what is worn, and the sheet shows a status put on until it is cured with no count at all.
 A presenter reads a view, reads the `Palette`, and writes cells to the `Terminal`; it owns no state and makes no decision a game might want made differently.
 `panel::split_right`, `split_bottom` and `split_top` hand back both halves of a cut, which is the whole of the engine's opinion about layout: no resource holds every panel's rectangle.
 `clear`, `frame`, `section` and `bar` are public so a game taking the view and drawing its own does not rewrite a box-drawing routine, and `ListMenu` is the selection a screen keeps.
@@ -165,8 +165,8 @@ Which of the two attacks that forecast counts is the resolver's own rule, held i
 A game's annotate system names `ViewSet::Annotate` and never orders itself after a collector function, so the engine may split a collector in two without breaking it.
 Views are rebuilt every frame rather than on a turn boundary: a frame already rewrites every cell of the map, and a panel that is one turn stale is the kind of bug that survives to a release.
 The engine never opens or closes a modal; a key handler does, and the run conditions read the stack.
-What the engine does not get is a widget toolkit: no text entry, no scrollbars, no drag, no focus traversal, and no main menu, settings or key-rebinding screen, because those belong to an application rather than to a roguelike.
-The test for whether a panel belongs here is whether it needs engine state to build one: the nearby list needs the viewshed, and a settings screen needs nothing.
+What the engine does not get is a widget toolkit: no text entry, no scrollbars, no drag, no focus traversal and no key-rebinding screen, because those belong to an application rather than to a roguelike.
+The test for whether a panel belongs here is whether it needs engine state to build one: the nearby list needs the viewshed, the settings screen the registry three crates read, and the title the hold on the run and what its save slot holds.
 A view carries an `Entity`, which is why views are tier 2 and only their arithmetic is not.
 
 ## Where it lives
@@ -174,5 +174,5 @@ A view carries an `Entity`, which is why views are tier 2 and only their arithme
 `rl-rules` is tier 1 and holds the derivations, so `expected_damage`, `blows_to_fell`, `turns_for` and `duel` are property-tested over plain numbers with no `App`, and are as usable by a balance report as by a screen.
 `rl-ui` is tier 2 and holds everything that names an `Entity`: `view/` is the data and the collectors, `panel/` is one terminal presenter each, and `tone.rs`, `facet.rs`, `modal.rs` and `focus.rs` are the four small registries they all share.
 Keeping the presenters in a module of their own is what lets two of them draw one view, and what lets a game delete all of them and keep the data.
-`rl-render` sits below and owns the surface: a presenter writes `Cell`s into a `Terminal`, and one that paints over the map asks `MapView` where a tile sits.
+`rl-render` sits below and owns the surface: a presenter writes `Cell`s into a `Terminal`, and one that paints over the map writes a tile through `MapView`, which knows where the tile sits and how many cells it spans.
 `rl-bevy` gains nothing from any of this; it fixes `PresentSet`, and the components a collector reads are the ones the engine already had.

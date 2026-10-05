@@ -11,7 +11,7 @@
             crates/rl-bevy/src/effects/engine.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: e7bb3f51 -->
+     fingerprint: 591bcee7 -->
 
 # Fire and gas
 

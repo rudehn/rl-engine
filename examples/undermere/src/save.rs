@@ -44,6 +44,7 @@ pub const VERSION: u32 = 2;
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
 
+// ANCHOR: register
 /// What the save is made of: the engine's plugins, the four kinds, and
 /// the three resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
@@ -56,6 +57,7 @@ pub fn register(app: &mut App) {
         .save_state::<Quests>()
         .save_state::<Counters>();
 }
+// ANCHOR_END: register
 
 /// Runs `spawn` against the world through a command queue, the way a
 /// restore makes what a system would have made.

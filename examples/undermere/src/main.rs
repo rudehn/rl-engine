@@ -177,10 +177,12 @@ fn add_panels(app: &mut App, screen: &Screen) {
     // fullscreen is the engine's, declared by `RoguelikePlugins`. And
     // every run that has ended, best first, which the title opens.
     app.add_plugins((SettingsPanel::new(screen.settings), RecordsPanel::new(screen.records)));
+    // ANCHOR: title
     // The screen before there is a run: the engine's menu, which holds the
     // run back until the player picks, over the night Undermere paints
     // under it. With it up, the pause and end menus offer the way back.
     app.add_plugins(TitlePanel::new(screen.title_menu)).add_systems(Update, undermere::title::paint_backdrop.in_set(TitleSet::Backdrop));
+    // ANCHOR_END: title
 }
 
 /// Whether this run plays keys from a script of some kind: a replay, a

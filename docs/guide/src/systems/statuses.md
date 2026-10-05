@@ -16,7 +16,7 @@
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 4d2d18be -->
+     fingerprint: fa078a2f -->
 
 # Statuses
 
@@ -32,6 +32,7 @@ It registers `Afflict`, `Cure` and `StatusEvent`, and chains `resolve_affliction
 Every `Actor` is given an empty `Afflicted` and an empty `StatBlock` the moment it is spawned, so a monster spawned without either still takes a status rather than shrugging it off; the stats are registered with `try_register_required_components`, since the items plugin asks for the same one and the order a game lists its plugins in must not matter.
 They are required on `Actor` here rather than in the core, so a game with no statuses carries neither component.
 `FactsPlugin` is the opposite shape: it registers `Happened` and `QuestChange`, runs `track_facts` in `PostUpdate` while play is on, and asks for `Quests` or `Counters`, either of which will do.
+Both are a run's, so in `EndRun` it puts every counter back to nought and every quest back where a fresh tracker over the same quests puts it, and a game may insert either once for every run rather than again in `NewRun`.
 That is why it asserts on entering `Playing` rather than declaring a `needs`: a `needs` names one resource, and this plugin works with either of two.
 A game that inserted neither has nothing listening and is told so, loudly, the moment play begins.
 
@@ -42,12 +43,13 @@ An unseen status hides whoever holds it from every mind while it lasts and ends 
 `status::load` reads them from RON by name, resolving every stat and damage kind through `Names` and reporting every unknown name in the file at once, so a game authors statuses in the words its other content uses.
 The definition is never deserialized as it stands, because its ids index registries a content file cannot see and a number written in one would land on a different stat the day the stat list is reordered.
 `Stacking` is `Refresh`, where the longer duration wins and which is the default, `Extend`, where durations add, `Stack`, where a second instance sits beside the first, and `Ignore`.
-`Afflicted` is the `Statuses` an actor carries, each an `ActiveStatus` of an id, the whole turns left, an opaque source so a tick can credit whoever applied it, and an opaque `held_by`, the worn thing it lasts only while, if one holds it.
+`Afflicted` is the `Statuses` an actor carries, each an `ActiveStatus` of an id, the whole turns left or `UNTIL_CURED`, an opaque source so a tick can credit whoever applied it, and an opaque `held_by`, the worn thing it lasts only while, if one holds it.
 `Afflict { target, status, turns, by, held_by }` puts one on and `Cure { target, status }` takes one off, and each answers with a `StatusEvent`: `Applied` for a fresh one, a refresh or an extension, `Expired` when the time ran out, `Cured` when it was lifted.
 `Statuses::apply` installs the definition's modifiers under a `Source::Status` tagged with the id and the instance, which is what makes removal exact when the same status stacks three deep.
 `Statuses::apply_held` does the same held by a thing, and a refresh or an extension it makes is held by that thing from then on, while one by `apply` leaves the holder as it was.
 The status plugin never acts on the holder, only `resolve_afflictions` reads it to choose `apply_held` over `apply`: the items plugin's `end_unworn_holds` writes a `Cure` for every held status whose thing its holder is not wearing, in `ResolveSet::Effects` before `resolve_afflictions`, so it ends in the pass the thing comes off, and one landed on somebody not wearing the thing ends on the next pass.
 `Statuses::tick` collects what every status deals into a `TickReport`, then takes a turn off each and strips the modifiers of whatever ran out.
+A status put on for `UNTIL_CURED` turns bites and mends like any other and is never counted down, so only a cure ends it.
 `tick_statuses` runs it once per `TurnEnd` and only for actors on the current map, so a monster on a floor nobody is standing on does not burn down while the player is elsewhere.
 Its damage becomes a `DamageEvent` carrying `Hit::from_status`, which names the status and credits whoever applied it but leaves `attacker` empty, so a poison tick cannot set off the riders a blow would.
 That event is built with `DamageEvent::new`, so its `Reach` is `Effect` and rides through to `DamageDealt` as one: a game hanging a rule off a blow can tell a blow from a tick without reading `status` at all.
@@ -57,7 +59,7 @@ A status that mends says `mends`, and its tick becomes a `Heal` by whoever appli
 The `Source` is a tagged value rather than an opaque number because several systems fold modifiers into one `Stats` without knowing about each other: statuses remove theirs one instance at a time, the gear fold strips every item's and puts the worn ones back, and a game's own sit under `Source::Game` where nothing in the engine touches them.
 A `Fact` is a registered `FactKind`, an optional subject, an optional object and an amount that is one unless the fact is about a quantity, all of it in the game's own numbering.
 A `Matcher` picks facts out by kind and optionally by subject and object, and a fact with no subject is not about anyone.
-`Ledger` is a value per registered `CounterDef` and a list of `Tally` rules, and feeding it a fact adds that fact's amount to every counter whose rule matches.
+`Ledger` is a value per registered `CounterDef` and a list of `Tally` rules, and feeding it a fact adds that fact's amount to every counter whose rule matches; `reset` puts every value back to nought and keeps the rules.
 `Tracker` is where every quest stands: an `Objective` is a matcher and a `Need`, either a `Total` the matching amounts add up to or a `Latest` a single fact must reach.
 A `QuestDef` opens when every quest in its `after` is done and is done when every objective is, and `victory` on it says the run is won.
 `Tracker::feed` reports what one fact changed, in the order it happened: `Progress`, then `ObjectiveDone`, then `QuestDone`, then `QuestOpened`.
@@ -94,6 +96,7 @@ A fact is the game's reading of an engine message, which is the only translation
 
 The status plugin acts on two things a status says: it installs and removes the stat modifiers, and it turns the tick into a hit; `unseen` is read by stealth, because who can see whom is stealth's question.
 Whether a status outlasts the thing that gave it is the game's to write, as `while_worn` on the `Inflict` that lands it, and the engine's to keep: which way it came off never matters, only whether the thing is still worn.
+A status that lasts for what a body is, or for as long as a worn thing is worn, is put on for `UNTIL_CURED` turns rather than flagged beside its count, so a save keeps it as it keeps any count and a refresh or an extension leaves it as it is.
 Everything richer is the game's, keyed by the id: a status that silences an ability, one that walls a door, one that turns a body to stone is a system reading `StatusEvent` or `Afflicted` and doing the rest.
 Whether anything is inflicted at all is the game's too, and the shape the randomness rule points at is a system reading `DamageDealt` and writing `Afflict` with a chance drawn from the game's own stream, never the engine's, so a rule a game adds cannot shift the dice of the blows the engine has yet to throw.
 The engine also never decides that a status is worth saying out loud: it writes the three events and a game turns the ones about its player into words, which is why every phrase about an affliction lives in a game or in the narrator's table.
@@ -111,5 +114,5 @@ The one thing the engine insists on is when: `track_facts` runs after the frame'
 `status.rs` holds the stacking rules and the tick, so a status applied three times, extended, and expiring one instance at a time is a test over a `Statuses` and a `Stats` built by hand.
 `stats.rs` holds the order of operations and the source tagging, and the test that matters is the one where an item's modifier, a status's and a game's share a number and only the item's is stripped.
 `events/` is `fact.rs`, `ledger.rs` and `quest.rs`, and none of the three knows what a fact is about, so a quest chain is tested by feeding facts made of integers.
-`rl-bevy` is tier 2 and thin over both: `status.rs` is the two components, the two requests and the system that ticks the current map, and `events.rs` is a message, two optional resources and one system that feeds them.
+`rl-bevy` is tier 2 and thin over both: `status.rs` is the two components, the two requests and the system that ticks the current map, and `events.rs` is a message, two optional resources, one system that feeds them and one that forgets them when a run ends.
 Thin on purpose, because the parts worth testing are the parts that never needed a world.
