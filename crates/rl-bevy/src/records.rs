@@ -14,6 +14,7 @@
 //! `rl-save`'s `RecordsSavePlugin` keeps the list between launches, in a
 //! slot of its own.
 
+use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;
 use rl_core::RunSeed;
 use serde::{Deserialize, Serialize};
@@ -134,6 +135,7 @@ impl Plugin for RecordsPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<RecordRun>()
             .init_resource::<RunRecords>()
+            .init_resource::<Waiting>()
             // Before anything draws, so the screen a run ends on shows its
             // record from its first frame rather than from whichever frame
             // the executor first ran the filing ahead of the drawing in.
@@ -144,48 +146,77 @@ impl Plugin for RecordsPlugin {
             // in `EndRun` rather than `NewRun`, so the record stands
             // through every frame the ended run's own screen reads it in
             // and is gone before the next run begins.
-            .add_systems(EndRun, forget_this_run);
+            .add_systems(EndRun, forget_the_run);
     }
 }
 
-/// Completes each pending [`RecordRun`] once the [`Ending`] it waits for
+/// The [`RecordRun`]s a game wrote that wait on their run's [`Ending`],
+/// and how far the messages have been read.
+///
+/// A record is completed from the ending of the run it was written in, so
+/// one whose run is torn down before it ends, by a restart or a leaving,
+/// has no ending coming. A resource rather than the filing system's own
+/// state, so the teardown can read what is left and forget it; kept by the
+/// filing system alone, it waited on and was filed against the next run's
+/// ending, under that run's outcome, seed and turn.
+#[derive(Resource, Default)]
+struct Waiting {
+    /// Where the filing and the teardown have read the messages up to, one
+    /// cursor for the two, so neither reads a record the other has.
+    read: MessageCursor<RecordRun>,
+    /// Read and not yet filed.
+    records: Vec<RecordRun>,
+}
+
+impl Waiting {
+    /// Takes every record written since the last look.
+    fn take(&mut self, written: &Messages<RecordRun>) {
+        let Self { read, records } = self;
+        records.extend(read.read(written).cloned());
+    }
+
+    /// Completes every waiting record from `ending` and `seed` and files it.
+    fn file(&mut self, ending: &Ending, seed: Option<&Seed>, kept: &mut RunRecords) {
+        let seed = seed.map_or(RunSeed(0), |s| s.0);
+        for run in self.records.drain(..) {
+            let record = RunRecord {
+                outcome: match ending.outcome {
+                    Outcome::Won => RecordOutcome::Won,
+                    Outcome::Died { .. } => RecordOutcome::Died,
+                    Outcome::Abandoned => RecordOutcome::Abandoned,
+                },
+                summary: run.summary,
+                score: run.score,
+                seed: seed.0,
+                turn: u64::from(ending.turn),
+                when: seconds_since_epoch(),
+                sections: run.sections,
+            };
+            kept.this_run = Some(record.clone());
+            kept.file(record);
+        }
+    }
+}
+
+/// Completes each waiting [`RecordRun`] once the [`Ending`] it waits for
 /// exists, and files the result.
 ///
 /// A game may write `RecordRun` from the same pass that writes the
 /// [`RunOver`](crate::state::RunOver) its ending answers to, which
 /// `end_runs` (`crate::state::end_runs`, in `PostUpdate`) has not yet
 /// turned into an `Ending` that same frame. Rather than drop what arrived
-/// too early, it waits in `pending` and is completed the first frame
-/// `Ending` exists, however many frames that takes.
+/// too early, it waits and is completed the first frame `Ending` exists,
+/// however many frames that takes, as long as its run stands.
 fn record_runs(
-    mut runs: MessageReader<RecordRun>,
-    mut pending: Local<Vec<RecordRun>>,
+    written: Res<Messages<RecordRun>>,
+    mut waiting: ResMut<Waiting>,
     ending: Option<Res<Ending>>,
     seed: Option<Res<Seed>>,
-    mut records: ResMut<RunRecords>,
+    mut kept: ResMut<RunRecords>,
 ) {
-    pending.extend(runs.read().cloned());
-    let Some(ending) = ending else { return };
-    if pending.is_empty() {
-        return;
-    }
-    let seed = seed.map(|s| s.0).unwrap_or(RunSeed(0));
-    for run in pending.drain(..) {
-        let record = RunRecord {
-            outcome: match ending.outcome {
-                Outcome::Won => RecordOutcome::Won,
-                Outcome::Died { .. } => RecordOutcome::Died,
-                Outcome::Abandoned => RecordOutcome::Abandoned,
-            },
-            summary: run.summary,
-            score: run.score,
-            seed: seed.0,
-            turn: u64::from(ending.turn),
-            when: seconds_since_epoch(),
-            sections: run.sections,
-        };
-        records.this_run = Some(record.clone());
-        records.file(record);
+    waiting.take(&written);
+    if let Some(ending) = ending {
+        waiting.file(&ending, seed.as_deref(), &mut kept);
     }
 }
 
@@ -204,10 +235,33 @@ fn seconds_since_epoch() -> Option<u64> {
     }
 }
 
-/// Forgets which record was this run's, so the next run does not show an
-/// old ending before one of its own exists.
-fn forget_this_run(mut records: ResMut<RunRecords>) {
-    records.this_run = None;
+/// Forgets the run's records as it is torn down: which record was this
+/// run's, so the next run does not show an old ending before one of its
+/// own exists, and every record still waiting, so none is filed against
+/// the next run's ending.
+///
+/// A run that ended still has its `Ending` here, before the teardown takes
+/// it, so a record written late in the frame its run is left is filed
+/// rather than lost. One whose run never ended cannot be completed, and
+/// is dropped with a warning: a game that records a run given up ends it
+/// with [`RunOver`](crate::state::RunOver) first.
+fn forget_the_run(
+    written: Res<Messages<RecordRun>>,
+    mut waiting: ResMut<Waiting>,
+    ending: Option<Res<Ending>>,
+    seed: Option<Res<Seed>>,
+    mut kept: ResMut<RunRecords>,
+) {
+    waiting.take(&written);
+    match ending {
+        Some(ending) => waiting.file(&ending, seed.as_deref(), &mut kept),
+        None if !waiting.records.is_empty() => {
+            warn!("{} run record(s) dropped: written for a run torn down before it ended, with no Ending to complete them from", waiting.records.len());
+            waiting.records.clear();
+        }
+        None => {}
+    }
+    kept.this_run = None;
 }
 
 #[cfg(test)]
@@ -286,6 +340,60 @@ mod tests {
         let records = app.world().resource::<RunRecords>();
         assert_eq!(records.records.len(), 1, "filed once the ending exists");
         assert_eq!(records.this_run.as_ref().map(|r| r.score), Some(42));
+    }
+
+    /// A record still waiting for its ending when its run is torn down, by
+    /// a restart before the ending came, goes with the run: the next run's
+    /// ending files its own record and not the last run's under its name.
+    #[test]
+    fn a_record_still_waiting_when_its_run_is_torn_down_is_not_filed_against_the_next() {
+        let mut app = crate::plugin::headless_app();
+        app.add_plugins(RecordsPlugin);
+        app.insert_resource(Seed(RunSeed(1)));
+        app.world_mut().write_message(RecordRun { score: 1, summary: "the run torn down".into(), sections: Vec::new() });
+        app.update();
+        app.world_mut().write_message(Restart::fresh());
+        app.update();
+        app.update();
+        app.world_mut().insert_resource(Ending { outcome: Outcome::Won, epitaph: String::new(), seed: RunSeed(2), turn: 3 });
+        app.world_mut().write_message(RecordRun { score: 2, summary: "the next run".into(), sections: Vec::new() });
+        app.update();
+        let records = app.world().resource::<RunRecords>();
+        assert_eq!(records.records.iter().map(|r| r.summary.as_str()).collect::<Vec<_>>(), ["the next run"]);
+        assert_eq!(records.this_run.as_ref().map(|r| r.summary.as_str()), Some("the next run"));
+    }
+
+    /// The same for a record written in the frame its run is torn down,
+    /// after that frame's filing has run: a run that never ended drops it,
+    /// and one that did files it under its own ending before the teardown
+    /// takes the ending away.
+    #[test]
+    fn a_record_written_as_its_run_is_torn_down_is_filed_only_under_that_runs_ending() {
+        for (ended, filed) in [(false, vec!["the next run"]), (true, vec!["the next run", "the run left"])] {
+            let mut app = crate::plugin::headless_app();
+            app.add_plugins(RecordsPlugin);
+            app.insert_resource(Seed(RunSeed(1)));
+            if ended {
+                app.world_mut().insert_resource(Ending { outcome: Outcome::Died { by: None }, epitaph: String::new(), seed: RunSeed(1), turn: 9 });
+            }
+            let late = |mut records: MessageWriter<RecordRun>, mut once: Local<bool>| {
+                if !std::mem::replace(&mut *once, true) {
+                    records.write(RecordRun { score: 1, summary: "the run left".into(), sections: Vec::new() });
+                }
+            };
+            app.add_systems(Last, late.before(crate::plugin::EndOfFrame::Restart));
+            app.world_mut().write_message(Restart::fresh());
+            app.update();
+            app.update();
+            app.world_mut().insert_resource(Ending { outcome: Outcome::Won, epitaph: String::new(), seed: RunSeed(2), turn: 3 });
+            app.world_mut().write_message(RecordRun { score: 2, summary: "the next run".into(), sections: Vec::new() });
+            app.update();
+            let records = app.world().resource::<RunRecords>();
+            let summaries: Vec<&str> = records.records.iter().map(|r| r.summary.as_str()).collect();
+            assert_eq!(summaries, filed, "the run left had ended: {ended}");
+            let left = records.records.iter().find(|r| r.summary == "the run left");
+            assert!(left.is_none_or(|r| r.outcome == RecordOutcome::Died && r.turn == 9), "under its own ending: {left:?}");
+        }
     }
 
     #[test]

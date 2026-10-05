@@ -9,8 +9,8 @@
 //! by its definition's name and how much of it the tally has counted, and
 //! a way through by which way it is. What Undermere keeps of a run outside
 //! its entities, the [`Tally`], goes through [`SaveableState`], and the
-//! engine's `Quests` and `Counters` are saved the same way wherever a run
-//! keeps them.
+//! engine's `Quests` is saved the same way. It keeps no `Counters`, since
+//! the tally counts what the score is made of.
 //!
 //! The run is written on the way out, by the engine's stash when the
 //! window closes or the menu quits, by the engine again when the menu
@@ -46,7 +46,7 @@ pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
 /// What the save is made of: the engine's plugins, the four kinds, and
-/// the three resources; and the records, in their own slot.
+/// the two resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
@@ -54,8 +54,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
         .save_state::<Tally>()
-        .save_state::<Quests>()
-        .save_state::<Counters>();
+        .save_state::<Quests>();
 }
 // ANCHOR_END: register
 

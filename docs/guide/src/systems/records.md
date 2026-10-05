@@ -28,7 +28,8 @@ The screen a run ends on takes nothing more: the `EndingViewPlugin` that `GameMe
 `RecordRun` is the game's half: a `score`, a `summary` and `sections`, each section a `RecordSection` of a `heading` and a `body`.
 `RunRecord` is the whole: the game's three, the `outcome` as a `RecordOutcome` of `Won`, `Died` or `Abandoned`, the run's `seed`, the whole `turn` it ended on, and `when`, seconds since the Unix epoch, or `None` on wasm, where the engine has no wall clock to read.
 `record_runs` completes each `RecordRun` once there is an `Ending`: the outcome and the turn from the `Ending`, the seed from the run's `Seed`, and the time from the clock.
-A record written in the same pass as the `RunOver` it answers arrives before the `Ending` does, so it waits for one rather than being dropped, however many frames that takes.
+A record written in the same pass as the `RunOver` it answers arrives before the `Ending` does, so it waits for one rather than being dropped, however many frames that takes, as long as its run stands.
+A record still waiting when its run is torn down goes with it in `EndRun`: filed if the run had ended, since the `Ending` is still there, and otherwise dropped with a warning, never filed against the next run's ending.
 `RunRecords` holds `records`, best score first, and `this_run`, the record filed for the run that is ending.
 `RunRecords::file` puts a record in its place, a tie keeping the newer ahead, and drops whatever falls past `MAX_RECORDS`, a hundred, so the list keeps the hundred best rather than the first hundred.
 `this_run` is cleared in `EndRun`, so the record stands for every frame the ended run's screen is up and is gone before the next run begins, while `records` is never cleared by a run.
@@ -80,7 +81,7 @@ Keeping the list between launches is one more plugin beside the ones a game alre
 <!-- include: ../../../../examples/undermere/src/save.rs:register -->
 ```rust,no_run
 /// What the save is made of: the engine's plugins, the four kinds, and
-/// the three resources; and the records, in their own slot.
+/// the two resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
@@ -88,8 +89,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
         .save_state::<Tally>()
-        .save_state::<Quests>()
-        .save_state::<Counters>();
+        .save_state::<Quests>();
 }
 ```
 

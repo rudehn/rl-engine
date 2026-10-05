@@ -23,14 +23,10 @@ use rl_render::{Cell, Terminal};
 
 use crate::controls::ControlInput;
 use crate::modal::{ModalId, Modals};
+use crate::panel::records::records_modal;
 use crate::panel::settings::{SettingsLayout, rows_drawn, settings_keys, settings_modal};
 use crate::panel::{clear, clip};
 use crate::tone::{Palette, Tones};
-
-/// The name a records screen declares its modal under. The title offers a
-/// Records row once a modal of this name was declared, and knows nothing
-/// more of records than that and whether [`RunRecords`] holds one.
-const RECORDS_MODAL: &str = "records";
 
 /// One row the title can draw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -268,7 +264,7 @@ impl TitleReads<'_> {
     /// to set no frame changes, so a row that could never be taken is not
     /// drawn at all.
     fn rows(&self, modals: &Modals) -> Vec<(TitleRow, bool)> {
-        let records = modals.get(RECORDS_MODAL).map(|_| self.records.as_deref().is_some_and(|kept| !kept.records.is_empty()));
+        let records = records_modal(modals).map(|_| self.records.as_deref().is_some_and(|kept| !kept.records.is_empty()));
         let settings = crate::game_menu::settings_offered(modals, self.settings.as_deref()).is_some();
         TitleRow::ALL
             .into_iter()
@@ -355,7 +351,7 @@ pub fn title_keys(
         TitleRow::NewGame if reads.holds_a_run() => menu.confirm = Some(false),
         TitleRow::NewGame => lower(&mut menu, &mut commands, begin_run),
         TitleRow::Records => {
-            let screen = modals.get(RECORDS_MODAL);
+            let screen = records_modal(&modals);
             cover(&mut menu, &mut modals, screen);
         }
         TitleRow::Settings => {
@@ -540,6 +536,7 @@ fn draw_question(terminal: &mut Terminal, title: &TitleLayout, yes: bool, palett
 mod tests {
     use super::*;
     use crate::modal::AddModal;
+    use crate::panel::records::RECORDS_MODAL;
     use crate::panel::settings::SettingsPanel;
     use crate::tone::ToneId;
     use bevy::ecs::system::RunSystemOnce;
@@ -712,7 +709,7 @@ mod tests {
         let mut app = title_over(SavedRun::Empty, |app| {
             // A records screen with no record on it yet, so its row is
             // drawn and cannot be taken, and a settings screen that can.
-            app.add_modal("records");
+            app.add_modal(RECORDS_MODAL);
             with_settings(app);
         });
         assert_eq!(drawn(&app), ["Continue", "New Game", "Records", "Settings", "Exit"]);
@@ -889,7 +886,7 @@ mod tests {
     #[test]
     fn with_a_record_kept_the_records_row_opens_the_records_screen_over_the_menu() {
         let mut app = title_over(SavedRun::Empty, |app| {
-            app.add_modal("records");
+            app.add_modal(RECORDS_MODAL);
             app.insert_resource(RunRecords { records: vec![RunRecord { score: 12, ..RunRecord::default() }], this_run: None });
         });
         assert_eq!(menu(&app).rows(), [TitleRow::NewGame, TitleRow::Records, TitleRow::Exit]);
@@ -897,7 +894,7 @@ mod tests {
         assert_eq!(picked(&app), TitleRow::Records);
         press(&mut app, KeyCode::Enter);
         let modals = app.world().resource::<Modals>();
-        assert!(modals.get("records").is_some_and(|screen| modals.is_top(screen)), "Enter opened the records screen");
+        assert!(records_modal(modals).is_some_and(|screen| modals.is_top(screen)), "Enter opened the records screen");
         assert!(menu(&app).covered, "which stands over the menu");
         assert_eq!(seen(&app).begun, 0, "and began nothing");
     }

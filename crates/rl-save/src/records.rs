@@ -135,6 +135,21 @@ mod tests {
         assert_eq!(records[0].score, 500);
     }
 
+    /// A record an earlier build wrote, before the time it ended and the
+    /// sections were kept, reads with no time and no sections, as the
+    /// list's own docs promise, rather than failing the whole list.
+    #[test]
+    fn a_record_from_a_build_with_fewer_fields_still_reads() {
+        let backend = Arc::new(MemoryBackend::default());
+        let text = r#"[(outcome: Died, summary: "Slain on the third floor", score: 300, seed: 4, turn: 120)]"#;
+        backend.persist(RECORDS_SLOT, text).unwrap();
+        let app = game(&backend);
+        let records = &app.world().resource::<RunRecords>().records;
+        assert_eq!(records.len(), 1, "the list read: {records:?}");
+        assert_eq!((records[0].summary.as_str(), records[0].score, records[0].turn), ("Slain on the third floor", 300, 120));
+        assert_eq!((records[0].when, records[0].sections.len()), (None, 0), "what it never wrote reads as nothing");
+    }
+
     #[test]
     fn a_slot_that_is_not_ron_is_warned_about_and_replaced_by_the_next_record() {
         let backend = Arc::new(MemoryBackend::default());
