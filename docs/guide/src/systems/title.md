@@ -30,6 +30,7 @@ A game's start takes one step of its own: it stands aside while `ContinueRun` is
 `begin_run(world)` is the one door a run comes through: it takes the hold away and runs `NewRun`, as the engine does at startup with no title and after every `Restart`, so no game's start asks whether a title is up.
 `LeaveRun` is a message answered in `EndOfFrame::Restart`: the run is torn down as a restart tears it down, `EndRun` and then `clear_run`, and `HoldStart` goes back in place of a new run, so the title is up again once the state is idle.
 It wins over a restart asked in the same frame, and with no run standing it changes nothing, so a title already up never runs a game's forgetting over the save it offers.
+The run left takes its seed with it: a fresh `Seed` is set for the next run as a restart sets one, so New Game never plays the run just left again, while Continue builds the world from the seed the save holds.
 `SavedRun` is what the slot holds, `Empty`, `Readable` or `Unreadable`, plain data a screen reads knowing nothing of storage.
 `ContinueRun` is a marker resource asking the next `NewRun` to restore the saved run rather than begin one, and whichever system restores it removes it, so the run after it, a restart's, begins afresh.
 `AbandonRun` is an event triggered on the world rather than a message written for later, so whoever keeps the slot forgets it before the trigger returns, and a run begun in the same command never sees it.

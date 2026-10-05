@@ -352,6 +352,33 @@ mod tests {
         assert_eq!(whereabouts(&mut app), left, "carried on where it was left");
     }
 
+    /// A run that ended, left for the title from the screen it ended on,
+    /// and New Game: the run begun is a new one, on a seed of its own, and
+    /// its first line says so, rather than the Mereholt, the floors and
+    /// the rolls of the run just played begun again from its first turn.
+    #[test]
+    fn new_game_after_a_run_ends_and_is_left_for_the_title_begins_on_a_fresh_seed() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        undermere::testing::kill(&mut app, me, None);
+        undermere::testing::settle(&mut app);
+        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Over, "the run is over");
+        // Up from A new run, round past Quit, to Main menu.
+        press(&mut app, KeyCode::ArrowUp);
+        press(&mut app, KeyCode::ArrowUp);
+        press(&mut app, KeyCode::Enter);
+        let title = app.world().resource::<TitleMenu>();
+        assert_eq!(title.rows().get(title.picked), Some(&TitleRow::NewGame), "the title, New Game picked out: {:#?}", written(&app));
+
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let seed = app.world().resource::<Seed>().0.0;
+        assert_ne!(seed, 7, "a seed of its own");
+        let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|line| line.text.clone()).collect();
+        assert!(lines.iter().any(|line| line.starts_with(&format!("Seed {seed}."))), "the log names it: {lines:#?}");
+        assert!(!lines.iter().any(|line| line.starts_with("Seed 7.")), "and not the run left: {lines:#?}");
+    }
+
     /// Row `y` of the screen, as text.
     fn row(app: &App, y: i32) -> String {
         let t = app.world().resource::<Terminal>();

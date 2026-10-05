@@ -89,7 +89,8 @@ pub struct Turn;
 /// Run once at startup, unless a title holds the start with [`HoldStart`]
 /// and runs it through [`begin_run`] when the player picks, and again
 /// after every [`Restart`], with the previous run torn down and the
-/// [`Seed`](crate::seed::Seed) set for the next. A game puts here what it
+/// [`Seed`](crate::seed::Seed) set for the next, as it is set for the run
+/// a title begins after one was left. A game puts here what it
 /// used to put in `Startup`: the rules, the map, the player, the warp in
 /// and the flip to [`EngineState::Playing`]. Nothing of the old run is
 /// left when it runs, so the same system starts the first run and the
@@ -378,7 +379,7 @@ struct PendingRun {
 /// game forgets the run, the engine tears it down, and the state goes back
 /// to [`EngineState::Idle`]. After a restart the next run is begun there,
 /// through the same door the first was; after leaving, [`HoldStart`] holds
-/// it back for the title to begin.
+/// it back for the title to begin, on a fresh seed set here.
 pub fn restart_runs(world: &mut World) {
     let restart: Option<Restart> = world.resource_mut::<Messages<Restart>>().drain().last();
     // Leaving needs a run to leave. At a title already up there is none,
@@ -392,8 +393,13 @@ pub fn restart_runs(world: &mut World) {
     world.run_schedule(EndRun);
     clear_run(world);
     // Leaving wins over a restart asked in the same frame: the run left was
-    // written down to be continued, and a new one would bury it.
+    // written down to be continued, and a new one would bury it. Its seed
+    // is spent all the same: a title begins every run through `begin_run`,
+    // which keeps whatever seed stands, so New Game would otherwise play
+    // the run just left again. A game continuing it restores the seed its
+    // save holds.
     if leave {
+        seed_next_run(world, None);
         world.insert_resource(HoldStart);
     } else if let Some(restart) = restart {
         world.insert_resource(PendingRun { seed: restart.seed });
@@ -405,10 +411,15 @@ pub fn restart_runs(world: &mut World) {
 /// idle: sets the seed and runs the game's start.
 fn begin_pending_run(world: &mut World) {
     let Some(PendingRun { seed }) = world.remove_resource::<PendingRun>() else { return };
-    let previous = world.get_resource::<crate::seed::Seed>().map(|s| s.0).unwrap_or(RunSeed(0));
-    let seed = seed.unwrap_or_else(|| next_run_seed(previous));
-    world.insert_resource(crate::seed::Seed(seed));
+    seed_next_run(world, seed);
     begin_run(world);
+}
+
+/// Sets the [`Seed`](crate::seed::Seed) the next run begins on: the one a
+/// [`Restart`] named, or else one of its own, never the last run's again.
+fn seed_next_run(world: &mut World, named: Option<RunSeed>) {
+    let previous = world.get_resource::<crate::seed::Seed>().map(|s| s.0).unwrap_or(RunSeed(0));
+    world.insert_resource(crate::seed::Seed(named.unwrap_or_else(|| next_run_seed(previous))));
 }
 
 /// The seed for a run no [`Restart`] named, given the one the last run used.

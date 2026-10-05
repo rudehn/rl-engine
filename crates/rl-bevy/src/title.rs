@@ -37,8 +37,10 @@ pub struct HoldStart;
 /// The one door a title uses, and the one the engine uses itself at
 /// startup and after a restart. `NewRun` rather than a
 /// [`Restart`](crate::state::Restart), since a restart tears a run down and
-/// at a title there is none. Exclusive, so a screen that reads its keys in
-/// a system queues it as a command.
+/// at a title there is none. It begins on whatever
+/// [`Seed`](crate::seed::Seed) stands, the game's own at launch or the
+/// fresh one [`LeaveRun`] set, so it has no seed to choose. Exclusive, so
+/// a screen that reads its keys in a system queues it as a command.
 pub fn begin_run(world: &mut World) {
     world.remove_resource::<HoldStart>();
     world.run_schedule(NewRun);
@@ -97,6 +99,12 @@ pub struct AbandonRun;
 /// it up where it was left; a run that is over is only left. It wins over
 /// a restart asked for in the same frame, whose new run would bury the one
 /// just written down, and with no run standing it changes nothing.
+///
+/// The run's seed goes with it: the next run the title begins is on a
+/// fresh one, set as a restart without a seed sets it, since New Game on
+/// the seed just played would be that run again from its first turn.
+/// Continue is unaffected, since a game's restore builds the world again
+/// from the seed its save holds.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct LeaveRun;
 
@@ -105,29 +113,34 @@ mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Position, RevealsMap, Viewshed};
     use crate::plugin::{EndRun, headless_app};
+    use crate::seed::Seed;
     use crate::state::{EngineState, Restart};
     use crate::world::WorldMap;
+    use rl_core::RunSeed;
 
-    /// How many runs the game's start has begun and its end has forgotten.
+    /// How many runs the game's start has begun and its end has forgotten,
+    /// and the seed each run was begun on.
     #[derive(Resource, Default)]
     struct Runs {
         begun: u32,
         forgotten: u32,
+        seeds: Vec<u64>,
     }
 
-    fn begin(mut runs: ResMut<Runs>) {
+    fn begin(mut runs: ResMut<Runs>, seed: Res<Seed>) {
         runs.begun += 1;
+        runs.seeds.push(seed.0.0);
     }
 
     fn forget(mut runs: ResMut<Runs>) {
         runs.forgotten += 1;
     }
 
-    /// An engine app whose game counts its starts and its ends, where a
-    /// game's start and its forgetting would run.
+    /// An engine app launched on seed five, whose game counts its starts
+    /// and its ends, where a game's start and its forgetting would run.
     fn counted() -> App {
         let mut app = headless_app();
-        app.init_resource::<Runs>().add_systems(NewRun, begin).add_systems(EndRun, forget);
+        app.insert_resource(Seed(RunSeed(5))).init_resource::<Runs>().add_systems(NewRun, begin).add_systems(EndRun, forget);
         app
     }
 
@@ -186,6 +199,23 @@ mod tests {
         assert!(app.world_mut().query::<&Player>().iter(app.world()).next().is_none(), "the player with it");
         assert!(app.world().contains_resource::<HoldStart>(), "and the start is held for the title");
         assert_eq!(runs(&app), (1, 1), "the game forgot the run, and no other was begun");
+    }
+
+    /// The title's New Game after a run was left for it, from the screen a
+    /// run ends on or from the pause menu: the run it begins is a new one,
+    /// on a seed of its own as a restart's is, and not the run just left
+    /// played again from its first turn.
+    #[test]
+    fn a_run_begun_after_one_was_left_is_on_a_fresh_seed() {
+        let mut app = playing();
+        app.world_mut().write_message(LeaveRun);
+        app.update();
+        app.update();
+        begin_run(app.world_mut());
+        let seeds = &app.world().resource::<Runs>().seeds;
+        assert_eq!(seeds.len(), 2, "two runs begun: {seeds:?}");
+        assert_eq!(seeds[0], 5, "the first on the seed the launch named");
+        assert_ne!(seeds[1], seeds[0], "and the second on a seed of its own");
     }
 
     /// A restart and a leaving in one frame leave: the run left is written

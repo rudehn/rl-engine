@@ -52,6 +52,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - The start of a run can be held by a title screen, and the save slot says what it holds; the names are in `rl_bevy::title` and the prelude.
   `HoldStart`, a resource, makes the engine begin no run at startup while it is present, and `begin_run(world)` takes it away and runs `NewRun`, the door the engine begins every run through, so a game's start system never asks whether a title is up.
   `LeaveRun` tears a run down as a `Restart` does, through `EndRun` and `clear_run`, and holds the start again rather than beginning another run; it wins over a restart asked in the same frame, and with no run standing it changes nothing.
+  The run left takes its seed with it: a fresh `Seed` is set for the next run as a restart without a seed sets one, so a title's New Game never plays the run just left again, while a game's Continue restores the seed its save holds and the first run of a launch is still on the seed the game set.
   `SavedRun` is what the run's slot holds, `Empty`, `Readable` or `Unreadable`: `CorePlugin` initialises it, and `SavePlugin` reads the slot into it before the first frame and keeps it current whenever the slot is written or deleted.
   `ContinueRun` asks a game's `NewRun` systems to restore the saved run rather than begin one, and whichever restores it removes it.
   `AbandonRun`, triggered with `world.trigger(AbandonRun)`, is answered by `SavePlugin` before the trigger returns: the stash cleared and the slot deleted.
