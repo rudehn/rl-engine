@@ -7,16 +7,22 @@
 //! frame until the player holds a turn or nothing moves, so every monster
 //! due before the player's next turn acts in the frame the player did. An
 //! actor holding [`MyTurn`] is out of the queue until something reports
-//! [`ActionDone`] or [`ActionRefused`] for it.
+//! [`ActionDone`] or [`ActionRefused`] for it, and is put back as far ahead
+//! as its action costs at its speed, as [`Speeds`] reads it: its own
+//! [`Speed`], and the stat [`TurnRules`] names, which is what makes haste
+//! and slowness statuses.
 
 use bevy::prelude::*;
 use rl_core::turn::{BASE_ACTION_COST, scaled_cost};
 use rl_core::{Direction, Point, TurnQueue};
 use rl_grid::SpatialGrid;
+use rl_rules::StatId;
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Speed, Viewshed};
 use crate::cue::TurnHold;
 use crate::places::{MapId, OnMap};
+use crate::registries::Registries;
+use crate::status::StatBlock;
 use crate::world::WorldMap;
 
 /// The scheduler.
@@ -534,7 +540,7 @@ pub fn admit_new_actors(
 type TurnHolder<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>), With<MyTurn>>;
 
 /// The actor holding the turn, as the cleanup sees it.
-type Holding<'w, 's> = Query<'w, 's, (Entity, Option<&'static Speed>, Has<Player>), With<MyTurn>>;
+type Holding<'w, 's> = Query<'w, 's, (Entity, Has<Player>), With<MyTurn>>;
 
 /// Resolves a move.
 ///
@@ -614,26 +620,102 @@ pub fn sweep_unclaimed<A: Action>(mut intents: MessageReader<Intent<A>>, mut res
     }
 }
 
+/// Which stat makes an actor faster or slower than its own [`Speed`].
+///
+/// A rule rather than content, as the stats a blow reads are
+/// [`CombatRules`](crate::combat::CombatRules)': the stat is a registry
+/// entry, and this says it is the one the turn loop reads, so haste and
+/// slowness are statuses that put a modifier on it, and a worn thing that
+/// quickens its wearer bestows one. Optional data: without it, or with no
+/// stat named, every actor is as fast as its own `Speed`.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TurnRules {
+    /// The stat whose value is a percentage added to the hundred of every
+    /// actor's [`Speed`], if any.
+    pub speed: Option<StatId>,
+}
+
+impl TurnRules {
+    /// No stat read: every actor as fast as its own [`Speed`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Reads `stat` as how much faster an actor is than its own [`Speed`]:
+    /// its value is a percentage added to the hundred of it, so a hundred
+    /// is twice as fast and minus fifty half as fast, whatever the actor's
+    /// own speed. A stat whose base is nought, then, so an actor with
+    /// nothing on it is as fast as it always was; the stat's own bounds are
+    /// where a game says how fast is fastest and how slow is slowest.
+    pub fn speed_stat(mut self, stat: StatId) -> Self {
+        self.speed = Some(stat);
+        self
+    }
+}
+
+/// How fast every actor is, as the turn loop reads it: its own [`Speed`],
+/// with the stat [`TurnRules`] names on top.
+///
+/// The one reader, so the queue and whatever shows a speed, a sheet or a
+/// forecast, never disagree about who is hasted.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Speeds<'w, 's> {
+    rules: Option<Res<'w, TurnRules>>,
+    registries: Option<Res<'w, Registries>>,
+    actors: Query<'w, 's, (Option<&'static Speed>, Option<&'static StatBlock>)>,
+}
+
+impl Speeds<'_, '_> {
+    /// `who`'s speed in percent of normal: its own [`Speed`], a hundred
+    /// when it has none, with the value of the stat [`TurnRules`] names
+    /// added as a percentage of it, and nothing added when no stat is
+    /// named or `who` has no stats.
+    ///
+    /// Never below one, the slowest the queue deals a turn to: an actor
+    /// that is not to act at all is held by a status, not slowed to
+    /// nothing.
+    pub fn of(&self, who: Entity) -> u32 {
+        let Ok((speed, stats)) = self.actors.get(who) else { return Speed::default().0 };
+        let own = speed.map_or(Speed::default().0, |s| s.0);
+        let percent = match (self.rules.as_deref().and_then(|r| r.speed), self.registries.as_deref(), stats) {
+            (Some(stat), Some(registries), Some(stats)) => stats.value(stat, &registries.stats),
+            _ => 0,
+        };
+        quickened(own, percent)
+    }
+}
+
+/// `speed` with `percent` of it added: a hundred doubles it, minus fifty
+/// halves it, and nothing takes it below one, as
+/// [`scaled_cost`] already reads a speed of nothing.
+fn quickened(speed: u32, percent: i32) -> u32 {
+    let scaled = i64::from(speed) * (100 + i64::from(percent)) / 100;
+    scaled.clamp(1, i64::from(u32::MAX)) as u32
+}
+
 /// Requeues actors that finished, keeps the turn of actors that were
 /// refused, and recovers any non-player still holding a turn nobody used.
 ///
 /// One turn is requeued once: a second [`ActionDone`] for the same actor
 /// in one pass is ignored, so two resolvers answering two intents for one
-/// holder cannot put it in the queue twice.
+/// holder cannot put it in the queue twice. Every cost is scaled by the
+/// actor's speed as [`Speeds`] reads it, so a stat [`TurnRules`] names
+/// counts wherever a turn is put back.
 pub fn cleanup_turns(
     mut commands: Commands,
     mut turns: ResMut<Turns>,
     mut done: MessageReader<ActionDone>,
     mut refused: MessageReader<ActionRefused>,
     holding: Holding,
+    speeds: Speeds,
 ) {
     let mut handled: Vec<Entity> = Vec::new();
     for d in done.read() {
         if handled.contains(&d.actor) {
             continue;
         }
-        if let Ok((e, speed, _)) = holding.get(d.actor) {
-            let cost = scaled_cost(d.cost, speed.map(|s| s.0).unwrap_or(100));
+        if let Ok((e, _)) = holding.get(d.actor) {
+            let cost = scaled_cost(d.cost, speeds.of(e));
             debug!("actor {e:?} finished an action costing {cost}");
             turns.queue.insert_after(e, cost);
             turns.progress = true;
@@ -647,11 +729,11 @@ pub fn cleanup_turns(
     }
     // A non-player still holding a turn after Decide and Resolve had their
     // say is stranded. Charge it a wait rather than freeze the game.
-    for (e, speed, is_player) in &holding {
+    for (e, is_player) in &holding {
         if is_player || handled.contains(&e) {
             continue;
         }
-        let cost = scaled_cost(BASE_ACTION_COST, speed.map(|s| s.0).unwrap_or(100));
+        let cost = scaled_cost(BASE_ACTION_COST, speeds.of(e));
         debug!("actor {e:?} held a turn nobody used; charged a wait");
         turns.queue.insert_after(e, cost);
         turns.progress = true;
@@ -696,3 +778,113 @@ impl AddAction for App {
 /// Present once `A` has a sweeper, so a second registration adds none.
 #[derive(Resource)]
 struct Swept<A: Action>(std::marker::PhantomData<A>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::combat::Health;
+    use crate::plugin::{Turn, TurnSet, headless_app};
+    use crate::registries::Registries;
+    use crate::state::EngineState;
+    use crate::status::{Afflict, StatusPlugin};
+    use rl_rules::{Op, Registry, StatDef, StatusDef, StatusId, UNTIL_CURED};
+
+    /// A world with statuses in it and a stat, `quickness`, that `hasted`
+    /// adds a hundred to and `slowed` takes fifty from, read as speed when
+    /// `rules` says so; and a player to pass the turns, holding the first.
+    fn quick_arena(rules: bool) -> (App, Point, Entity, [StatusId; 2]) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, StatusPlugin));
+        let start = crate::testing::surface(&mut app);
+        crate::testing::two_sides(&mut app);
+        let stats = Registry::from_defs(vec![StatDef::new("quickness", 0)]).unwrap();
+        let quickness = stats.expect("quickness");
+        let statuses =
+            Registry::from_defs(vec![StatusDef::new("hasted").modifies(quickness, Op::Add(100)), StatusDef::new("slowed").modifies(quickness, Op::Add(-50))])
+                .unwrap();
+        let both = [statuses.expect("hasted"), statuses.expect("slowed")];
+        {
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.stats = stats;
+            registries.statuses = statuses;
+        }
+        if rules {
+            app.insert_resource(TurnRules::new().speed_stat(quickness));
+        }
+        app.init_resource::<Dealt>().add_systems(Turn, record_deals.in_set(TurnSet::Decide));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, start, player, both)
+    }
+
+    /// Every turn dealt: to whom, and when.
+    #[derive(Resource, Default)]
+    struct Dealt(Vec<(Entity, u32)>);
+
+    fn record_deals(fresh: Query<Entity, Added<MyTurn>>, turns: Res<Turns>, mut dealt: ResMut<Dealt>) {
+        dealt.0.extend(fresh.iter().map(|e| (e, turns.now())));
+    }
+
+    /// How many turns `who` was dealt before the clock read `before`.
+    fn dealt_before(app: &App, who: Entity, before: u32) -> usize {
+        app.world().resource::<Dealt>().0.iter().filter(|(e, at)| *e == who && *at < before).count()
+    }
+
+    fn afflict(app: &mut App, target: Entity, status: StatusId) {
+        app.world_mut().write_message(Afflict { target, status, turns: UNTIL_CURED, by: None, held_by: None });
+    }
+
+    /// Nobody decides for the three, so each is charged a wait for every
+    /// turn it is dealt, at the speed the loop reads: over twenty of the
+    /// player's turns the hasted one is dealt twice the turns of the one
+    /// with nothing on it, and the slowed one half, whatever speed the
+    /// three share, give or take the turn a rounded cost moves.
+    #[test]
+    fn a_speed_stat_of_a_hundred_doubles_how_often_an_actor_acts_and_one_of_minus_fifty_halves_it() {
+        for speed in [50, 75, 100, 150, 200] {
+            let (mut app, start, player, [hasted, slowed]) = quick_arena(true);
+            let [plain, quick, slow] = [2, 3, 4].map(|dx| app.world_mut().spawn((Actor, Blocks, Position(start.offset(dx, 2)), Speed(speed))).id());
+            afflict(&mut app, quick, hasted);
+            afflict(&mut app, slow, slowed);
+            for _ in 0..20 {
+                app.world_mut().write_message(Intent::new(player, Wait));
+                app.update();
+            }
+            let span = 20 * BASE_ACTION_COST;
+            assert_eq!(app.world().resource::<Turns>().now(), span, "speed {speed}: twenty of the player's turns");
+            let [plain, quick, slow] = [plain, quick, slow].map(|e| dealt_before(&app, e, span));
+            assert!(plain >= 10, "speed {speed}: dealt {plain}");
+            assert!(quick.abs_diff(2 * plain) <= 1, "speed {speed}: the hasted one was dealt {quick} against {plain}");
+            assert!((2 * slow).abs_diff(plain) <= 1, "speed {speed}: the slowed one was dealt {slow} against {plain}");
+        }
+    }
+
+    /// The player's own wait is spent by its resolver rather than charged
+    /// by the recovery net, and is scaled the same way; and a stat no rule
+    /// names is only a number, whatever is on it.
+    #[test]
+    fn the_stat_the_rules_name_scales_what_the_players_wait_costs_and_one_they_do_not_name_changes_nothing() {
+        for (rules, which, next) in [(false, 0, 100), (true, 0, 50), (true, 1, 200)] {
+            let (mut app, _, player, statuses) = quick_arena(rules);
+            afflict(&mut app, player, statuses[which]);
+            app.update();
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+            assert!(app.world().get::<MyTurn>(player).is_some(), "the player holds its next turn");
+            assert_eq!(app.world().resource::<Turns>().now(), next, "named {rules}, status {which}");
+        }
+    }
+
+    #[test]
+    fn a_speed_stat_is_a_percentage_of_the_actors_own_speed_and_never_takes_it_below_the_slowest_there_is() {
+        assert_eq!(quickened(100, 0), 100);
+        assert_eq!(quickened(150, 100), 300);
+        assert_eq!(quickened(150, -50), 75);
+        assert_eq!(quickened(100, -100), 1, "an actor that is not to act is held, not slowed to nothing");
+        assert_eq!(quickened(100, -500), 1);
+        assert_eq!(quickened(0, 0), 1, "as `scaled_cost` reads a speed of nothing");
+        assert_eq!(quickened(u32::MAX, 100), u32::MAX, "and nothing wraps");
+    }
+}

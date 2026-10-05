@@ -6,6 +6,14 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A status can take its holder's turns: `StatusDef::holds`, written `holds: true` in a status file, and while one is on an actor `StatusPlugin` spends each of its turns as a wait before its mind or its player is asked, as work claims a worker's, so paralysis, a snare and sleep are each one line of a game's statuses.
+  A held player's keys come to nothing and its turns pass without them, and a worker caught at its work loses those turns rather than working them.
+  The hold ends when the status does, by its time or by a cure, and `Statuses::holding` says which status holds an actor, if any.
+  A status file that lists every field in its header, as Corsair's does, gains a line for `holds`.
+- A stat can make an actor faster or slower: `TurnRules::new().speed_stat(stat)`, in `rl_bevy` and the prelude, names a stat whose value is a percentage added to the hundred of every actor's own `Speed` wherever the turn loop reads it, so a hundred is twice as fast and minus fifty half as fast, and haste and slowness are statuses that put a modifier on it.
+  The stat is one whose base is nought, and nothing takes an actor below a speed of one: an actor that is not to act at all is held by a status, not slowed to nothing.
+  `Speeds` is the one reader, and `SheetView::speed` and `InspectView`'s duel forecast read it too, so neither disagrees with the turns about who is hasted.
+  A game that names no stat, as none here does, changes nothing.
 - A blow or a shot may have a shape: `MeleeAttack::shaped` and `RangedAttack::shaped` take an `AttackShape`, in `rl_bevy` and the prelude and read from RON, `Sweep` for every foe beside the attacker and `Pierce(n)` for the target and the foes in the next `n` cells beyond it in line, short of a wall and, for a shot, of its range.
   Each foe struck is rolled for on its own and takes the weapon's `hit` triggers where it stands, and the whole is one swing, one `Struck` and one `fire` moment, so whatever counts heat or ammunition counts swings; a foe is whoever the attacker is hostile to, so an ally or a bystander beside a swing is passed over.
   A blow on a target that has not noticed its attacker lands harder: at `CombatRules::unaware(percent)` for every blow, or at the blow's own `MeleeAttack::unaware(percent)` in its place, read from stealth's `Aware` through the new `Watchers::unaware`; without `StealthPlugin` nobody is unaware, and a shot is never multiplied.

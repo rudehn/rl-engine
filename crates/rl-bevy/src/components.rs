@@ -43,6 +43,12 @@ pub struct Player;
 pub struct Blocks;
 
 /// Speed as a percentage of normal: 100 is normal, 200 twice as fast.
+///
+/// What the actor is, not what has happened to it: the turn loop reads it
+/// through [`Speeds`](crate::turn::Speeds), with the stat
+/// [`TurnRules`](crate::turn::TurnRules) names added as a percentage of
+/// it, so haste and slowness are statuses that come and go and this stays
+/// as the actor was spawned.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Speed(pub u32);
 

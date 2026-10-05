@@ -190,18 +190,22 @@ pub struct Duelists<'w, 's> {
     props: Query<'w, 's, (), With<rl_bevy::Prop>>,
     /// The odds either side lands, by the call the resolver rolls with.
     marks: Marksmanship<'w, 's>,
+    /// How fast either side is, by the speed the turns are dealt by.
+    speeds: Speeds<'w, 's>,
     /// What the subject is working at.
     work: crate::view::Workings<'w, 's>,
 }
 
-/// What a side of a duel is made of, apart from what its [`Loadout`] says.
-type Fighter = (Option<&'static Health>, Option<&'static Speed>);
+/// What a side of a duel is made of, apart from what its [`Loadout`] says
+/// and how fast [`Speeds`] says it is.
+type Fighter = Option<&'static Health>;
 
 /// Fills [`InspectView`] from whatever the cursor is over.
 ///
 /// The forecast's armor, resistances and blows come from each side's
 /// [`Loadout`], so a jerkin the subject wears and a blade the player wields
-/// count in the panel exactly as they will in the fight.
+/// count in the panel exactly as they will in the fight, and its speed from
+/// [`Speeds`], so haste counts as the turns count it.
 pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
@@ -237,7 +241,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let count = duelists.stacks.get(entity).map_or(1, |s| s.count);
     let mut row = Row::new(entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();
-    if let Some(((health, _), _)) = theirs {
+    if let Some((health, _)) = theirs {
         row.health = health.map(|h| (h.current, h.max));
     }
     if let (Some(mine_f), Some((_, Some(theirs_f)))) = (my_faction, theirs) {
@@ -254,8 +258,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         return;
     }
     let Some((subject, _)) = theirs else { return };
-    let (my_health, my_speed) = mine;
-    let (their_health, their_speed) = subject;
+    let (my_health, their_health) = (mine, subject);
     let (my_resists, their_resists) = (duelists.loadout.resistances(me), duelists.loadout.resistances(entity));
     let (Some(my_health), Some(their_health)) = (my_health, their_health) else { return };
     // Both of what each side can do, and the gap between them; the
@@ -277,11 +280,10 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     // room still says what it would take rather than "never"; only a side
     // with no attack at all reads never. The chance to hit stays what it is
     // from here, which is why it is shown only while something reaches.
-    let asker = Combatant::closing(my_health.current, duelists.loadout.armor(me), my_speed.map(|s| s.0).unwrap_or(100), &my_resists, &my_arms, apart)
+    let asker = Combatant::closing(my_health.current, duelists.loadout.armor(me), duelists.speeds.of(me), &my_resists, &my_arms, apart)
         .hitting(mine.as_ref().map_or(100, Odds::percent));
-    let other =
-        Combatant::closing(their_health.current, duelists.loadout.armor(entity), their_speed.map(|s| s.0).unwrap_or(100), &their_resists, &their_arms, apart)
-            .hitting(theirs.as_ref().map_or(100, Odds::percent));
+    let other = Combatant::closing(their_health.current, duelists.loadout.armor(entity), duelists.speeds.of(entity), &their_resists, &their_arms, apart)
+        .hitting(theirs.as_ref().map_or(100, Odds::percent));
     view.odds = mine;
     let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = duelists.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
     view.duel = Some(duel(&asker, &other, &duelists.registries.damage_kinds, &stages));
@@ -538,6 +540,33 @@ mod tests {
         // The weakling's own blow is untouched by the player's weapon, so
         // its side of the duel does not move.
         assert_eq!(quicker.turns_to_fall, ordinary.turns_to_fall, "the weakling's own cost never changed");
+    }
+
+    /// Haste counts in the forecast as it counts in the turns: the player
+    /// made twice as fast by the stat the turn rules name swings the same
+    /// three blows in a turn and a half, and the weakling's side is as it
+    /// was.
+    #[test]
+    fn a_hasted_player_is_forecast_to_fell_in_the_turns_its_speed_gives_it() {
+        let mut stage = Stage::new_with(InspectViewPlugin, |app| {
+            let stats = rl_rules::Registry::from_defs(vec![rl_rules::StatDef::new("quickness", 0)]).unwrap();
+            app.insert_resource(TurnRules::new().speed_stat(stats.expect("quickness")));
+            app.world_mut().resource_mut::<Registries>().stats = stats;
+        });
+        stage.actor("a weakling", 'w', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let ordinary = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        let quickness = stage.app.world().resource::<Registries>().stats.expect("quickness");
+        let haste = rl_rules::Modifier::new(quickness, rl_rules::Op::Add(100), rl_rules::Source::Game(1));
+        stage.app.world_mut().get_mut::<StatBlock>(stage.player).expect("every actor has stats").add(haste);
+        stage.tick();
+        let hasted = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        assert_eq!(ordinary.turns_to_fell, Some(3), "three blows at the ordinary speed");
+        assert_eq!(hasted.turns_to_fell, Some(2), "the same three at twice the speed, a turn and a half rounded up");
+        assert_eq!(hasted.turns_to_fall, ordinary.turns_to_fall, "the weakling is as fast as it was");
     }
 
     /// A droid that only shoots, inspected from across the room and then

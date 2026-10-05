@@ -1188,6 +1188,53 @@ mod offers {
         app.update();
         assert!(app.world().resource::<Seen>().0.is_empty(), "a walk key does not choose between two offers");
     }
+
+    /// Asked for: the next turn dealt is spent in the decide stage.
+    #[derive(Resource)]
+    struct SpendNext;
+
+    /// Spends the turn of whoever holds it in the decide stage, before any
+    /// intent is read, as a status that holds spends one; once.
+    fn spend_next(
+        mut commands: Commands,
+        mut acting: ResMut<crate::turn::Acting>,
+        mut done: MessageWriter<crate::turn::ActionDone>,
+        holders: Query<Entity, With<crate::components::MyTurn>>,
+    ) {
+        for actor in &holders {
+            acting.claim_decision(actor);
+            if acting.claim_action(actor) {
+                done.write(crate::turn::ActionDone { actor, cost: rl_core::turn::BASE_ACTION_COST });
+            }
+        }
+        commands.remove_resource::<SpendNext>();
+    }
+
+    #[derive(Resource, Default)]
+    struct Asked(Vec<crate::bump::Bumped>);
+
+    fn record_asked(mut bumps: MessageReader<crate::bump::Bumped>, mut asked: ResMut<Asked>) {
+        asked.0.extend(bumps.read().copied());
+    }
+
+    /// A key that finds its turn already spent comes to nothing: not the
+    /// question a bench offering two things raises, which would open a
+    /// screen for a turn that is gone.
+    #[test]
+    fn a_bump_by_an_actor_whose_turn_is_already_spent_asks_nothing_of_a_prop() {
+        let (mut app, start) = arena();
+        let _bench = put(&mut app, "workbench", start.offset(1, 0));
+        let player = player_at(&mut app, start);
+        app.init_resource::<Asked>().insert_resource(SpendNext).add_systems(
+            crate::plugin::Turn,
+            (spend_next.run_if(resource_exists::<SpendNext>).in_set(crate::plugin::DecideSet::Game), record_asked.in_set(crate::plugin::TurnSet::Record)),
+        );
+        app.world_mut().write_message(Intent::new(player, crate::bump::Bump(rl_core::Direction::East)));
+        app.update();
+        assert!(app.world().resource::<Asked>().0.is_empty(), "no question asked of the bench");
+        assert_eq!(app.world().resource::<Turns>().now(), rl_core::turn::BASE_ACTION_COST, "the turn was spent once, as a wait");
+        assert_eq!(app.world().get::<Position>(player).map(|p| p.0), Some(start), "and the player stayed where it was");
+    }
 }
 
 #[cfg(test)]
