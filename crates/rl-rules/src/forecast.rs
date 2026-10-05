@@ -28,6 +28,16 @@
 //! [`Arms::closing`] are the same fight as the two would have it once in
 //! reach, for a panel that still wants numbers when nothing reaches yet: a
 //! brawler across the room says how many blows it needs rather than never.
+//!
+//! A shape on a blow or a shot, a sweep round the attacker or a pierce
+//! through the target, is not asked for and changes nothing here. It
+//! strikes each one it reaches with a roll of its own of the same rolls,
+//! so what it does to the one subject of a duel is exactly what the same
+//! blow with no shape does, and whoever else it reaches is in another fight,
+//! which this is not the forecast of. Nor is a blow on a subject that has
+//! not noticed the asker: it lands once, the subject is awake for every
+//! blow after it, and the duel counted here is the one fought then, so an
+//! asker who opens from hiding does one blow better than it is told.
 
 use rl_core::DiceRoll;
 use rl_core::turn::BASE_ACTION_COST;

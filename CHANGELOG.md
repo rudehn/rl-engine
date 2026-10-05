@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A blow or a shot may have a shape: `MeleeAttack::shaped` and `RangedAttack::shaped` take an `AttackShape`, in `rl_bevy` and the prelude and read from RON, `Sweep` for every foe beside the attacker and `Pierce(n)` for the target and the foes in the next `n` cells beyond it in line, short of a wall and, for a shot, of its range.
+  Each foe struck is rolled for on its own and takes the weapon's `hit` triggers where it stands, and the whole is one swing, one `Struck` and one `fire` moment, so whatever counts heat or ammunition counts swings; a foe is whoever the attacker is hostile to, so an ally or a bystander beside a swing is passed over.
+  A blow on a target that has not noticed its attacker lands harder: at `CombatRules::unaware(percent)` for every blow, or at the blow's own `MeleeAttack::unaware(percent)` in its place, read from stealth's `Aware` through the new `Watchers::unaware`; without `StealthPlugin` nobody is unaware, and a shot is never multiplied.
+  A game that builds these through `MeleeAttack::new`, `RangedAttack::new` and `CombatRules::new`, as every game here does, changes nothing; one that wrote either attack as a struct literal with every field names `shape`, and for a blow `unaware`, as `None`.
 - A game may ship its own typeface: `RoguelikePlugins::typeface` and `TerminalPlugin::typeface` take the bytes of a TrueType or OpenType file, compiled in with `include_bytes!`, and the terminal draws every glyph in it rather than in the system's monospace family, which is another face on every platform, lacks box rules and symbols on some, and is only ASCII in a browser.
   Bytes rather than an asset path: an asset arrives after the first frames are drawn, and on the web only from a page that serves the game's assets beside it.
   A game that gives none draws as before.

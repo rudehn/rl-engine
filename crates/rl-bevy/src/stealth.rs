@@ -154,6 +154,7 @@ pub struct Watchers<'w, 's> {
     map: Option<Res<'w, WorldMap>>,
     rules: Option<Res<'w, CombatRules>>,
     unseen: Query<'w, 's, (), With<Unseen>>,
+    hiders: Query<'w, 's, (), With<Stealth>>,
 }
 
 impl Watchers<'_, '_> {
@@ -188,6 +189,26 @@ impl Watchers<'_, '_> {
         let Ok((_, _, faction, _, _, aware, _)) = self.watchers.get(watcher) else { return false };
         let theirs = self.subjects.get(subject).ok().and_then(|(_, f, _)| f);
         watcher != subject && at_odds(self.rules.as_deref(), faction, theirs) && aware.is_some_and(|a| a.knows(subject))
+    }
+
+    /// Whether `watcher` has not noticed `subject` at all, which a blow by
+    /// `subject` asks before it lands harder for it, by
+    /// [`CombatRules::unaware`](crate::combat::CombatRules::unaware).
+    ///
+    /// True only where stealth could have hidden the one from the other:
+    /// stealth is running, `watcher` keeps an [`Aware`] and is at odds with
+    /// `subject`, `subject` carries [`Stealth`], and nothing of it is
+    /// remembered. Everywhere else the answer is no, since that is where
+    /// stealth hides nothing: a watcher with no `Aware` sees on sight, a
+    /// subject that does not hide is always seen, the player is no watcher
+    /// and is never caught unaware, and without the plugin nobody's memory
+    /// is kept, so an empty one would otherwise read as everyone unaware.
+    /// One that lost the trail and is searching still remembers, and is not
+    /// caught unaware.
+    pub fn unaware(&self, watcher: Entity, subject: Entity) -> bool {
+        let Ok((_, _, faction, _, _, Some(aware), _)) = self.watchers.get(watcher) else { return false };
+        let theirs = self.subjects.get(subject).ok().and_then(|(_, f, _)| f);
+        self.running() && watcher != subject && self.hiders.contains(subject) && at_odds(self.rules.as_deref(), faction, theirs) && !aware.knows(subject)
     }
 
     fn judge(&self, (watcher, pos, faction, perception, sight, aware, on): Watcher<'_>, subject: Entity) -> bool {

@@ -59,8 +59,8 @@ pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use charts::{ChartId, ChartSave, Charting, Charts, ChartsSave};
 pub use combat::{
-    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
-    Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+    Armor, Attack, AttackShape, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
+    Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
@@ -131,8 +131,8 @@ pub mod prelude {
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::charts::{ChartId, Charting, Charts};
     pub use crate::combat::{
-        Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
-        Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+        Armor, Attack, AttackShape, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
+        Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, WhenEmpty};
