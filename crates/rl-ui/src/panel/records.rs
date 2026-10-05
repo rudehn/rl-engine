@@ -4,10 +4,11 @@
 //! A modal the engine draws end to end, in two parts that share one
 //! screen rather than two modals on the stack: the list, best score
 //! first, and the detail view over the record confirmed from it, showing
-//! the sections [`RecordsPlugin`] filed for that run. Confirm opens the
-//! detail; close goes back a level from it, and closes the screen from
-//! the list. [`RecordsScreen`] is which of the two is showing, not two
-//! resources, because only one is ever on screen at once.
+//! the run's seed and turn and the sections [`RecordsPlugin`] filed for
+//! it, as the ending screen shows them. Confirm opens the detail; close
+//! goes back a level from it, and closes the screen from the list.
+//! [`RecordsScreen`] is which of the two is showing, not two resources,
+//! because only one is ever on screen at once.
 //!
 //! The list is drawn in whatever rectangle the game gave it and scrolled
 //! to keep the row picked out in view, the way [`ScrollbackPanel`](crate::panel::ScrollbackPanel)
@@ -31,7 +32,7 @@ use crate::controls::{ControlInput, key_name};
 use crate::game_menu::section_lines;
 use crate::modal::{AddModal, ModalId, Modals};
 use crate::panel::{clear, clip, frame};
-use crate::tone::{Palette, Tones};
+use crate::tone::{Palette, ToneId, Tones};
 
 /// The name the records screen's modal is declared under. [`TitlePanel`](crate::TitlePanel)
 /// looks for a modal of this same name to decide whether to offer a
@@ -157,8 +158,7 @@ pub fn records_keys(
         if let Some(record) = records.as_deref().and_then(|kept| kept.records.get(screen.picked.min(count.saturating_sub(1)))) {
             let width = (layout.rect.width - 4).max(0) as usize;
             let page = (layout.rect.height - 2).max(1) as usize;
-            let lines = section_lines(record.sections.iter().map(|s| (s.heading.as_str(), s.body.as_str())), width).len();
-            let furthest = lines.saturating_sub(page);
+            let furthest = detail_lines(record, width).len().saturating_sub(page);
             match direction {
                 Some(Direction::North) => screen.scroll = screen.scroll.saturating_sub(1),
                 Some(Direction::South) => screen.scroll = (screen.scroll + 1).min(furthest),
@@ -262,14 +262,30 @@ fn draw_list(terminal: &mut Terminal, rect: Rect, layout: &RecordsLayout, record
     }
 }
 
-/// The picked record's sections, drawn as the ending screen draws them,
-/// scrolled by `scroll` lines once they run past the rectangle.
+/// The detail view's lines for `record`, `width` wide: the seed and the
+/// turn the run ended on, as the ending screen says them under the run's
+/// summary, then each of its sections under its heading as the ending
+/// screen draws them.
+///
+/// The seed and the turn are the engine's half of the record, which a
+/// game's own sections leave out so the ending screen does not say them
+/// twice. One list for the keys and the drawing both, so the view scrolls
+/// exactly as far as there is to read.
+fn detail_lines(record: &RunRecord, width: usize) -> Vec<(String, ToneId)> {
+    let mut lines = vec![(clip(&format!("Seed {}, turn {}.", record.seed, record.turn), width), Tones::MUTED)];
+    lines.extend(section_lines(record.sections.iter().map(|s| (s.heading.as_str(), s.body.as_str())), width));
+    lines
+}
+
+/// The picked record in full under its summary, the frame's title:
+/// [`detail_lines`], scrolled by `scroll` lines once they run past the
+/// rectangle.
 fn draw_detail(terminal: &mut Terminal, rect: Rect, record: &RunRecord, scroll: usize, hints: &str, palette: &Palette) {
     frame(terminal, rect, &record.summary, hints, palette);
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
-    let lines = section_lines(record.sections.iter().map(|s| (s.heading.as_str(), s.body.as_str())), width);
+    let lines = detail_lines(record, width);
     let page = inner.height.max(1) as usize;
     for (row, (line, tone)) in lines.iter().skip(scroll).take(page).enumerate() {
         terminal.print_on(inner.x, inner.y + row as i32, line, palette.get(*tone), surface);
@@ -367,6 +383,39 @@ mod tests {
         press(&mut app, KeyCode::Escape);
         assert!(!screen(&app).open, "close went back to the list");
         assert!(app.world().resource::<Modals>().any_open(), "the screen itself is still open");
+    }
+
+    /// The detail view says the run's seed and the turn it ended on first
+    /// under its summary, as the ending screen does, and the game's own
+    /// sections after them: a game's record leaves both to the engine.
+    #[test]
+    fn the_detail_view_says_the_seed_and_the_turn_under_the_summary() {
+        let score = RecordSection { heading: "Score".into(), body: "100".into() };
+        let kept = RunRecord { seed: 77, turn: 900, sections: vec![score], ..record(100, "Won on the tenth floor") };
+        let mut app = opened(RunRecords { records: vec![kept], this_run: None });
+        press(&mut app, KeyCode::Enter);
+        let rows = rows(&app);
+        assert!(rows[0].contains("Won on the tenth floor"), "the summary in the frame's title: {rows:#?}");
+        assert!(rows[1].contains("Seed 77, turn 900."), "the seed and the turn first under it: {rows:#?}");
+        assert!(rows[3].contains("Score") && rows[4].contains("100"), "then the record's own sections: {rows:#?}");
+    }
+
+    /// A record longer than the screen scrolls down to its last line and
+    /// no further: the keys count the seed's line with the sections, as
+    /// the drawing does.
+    #[test]
+    fn a_record_longer_than_the_screen_scrolls_to_its_last_line_and_stops() {
+        let body = (1..=20).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+        let long = RunRecord { sections: vec![RecordSection { heading: "The run".into(), body }], ..record(10, "Died on floor three") };
+        let mut app = opened(RunRecords { records: vec![long], this_run: None });
+        press(&mut app, KeyCode::Enter);
+        for _ in 0..30 {
+            press(&mut app, KeyCode::ArrowDown);
+        }
+        let rows = rows(&app);
+        assert!(rows[8].contains("line 20"), "the last line on the last row: {rows:#?}");
+        // The seed, a blank, the heading and twenty lines, eight to a page.
+        assert_eq!(screen(&app).scroll, 23 - 8, "and scrolled no further than that");
     }
 
     #[test]
