@@ -18,12 +18,17 @@
 //! the gate, the mist, onto a canvas the terminal is written from once at
 //! the end, so a layer of light can add to what is already there. The
 //! shapes are `art`'s, the word and the town drawn as marks and the gate
-//! as its stones, so a change to the picture is a change to one const,
-//! and a cell is split across its middle only by the one glyph that
-//! fills its lower part, which the moon's edge uses. Three things move,
-//! and only three, because a
-//! title that never settles is tiring to look at: the stars twinkle, the
-//! gate's glow breathes, and the mist drifts.
+//! as its stones, so a change to the picture is a change to one const.
+//! Three things move, and only three, because a title that never settles
+//! is tiring to look at: the stars twinkle, the gate's glow breathes, and
+//! the mist drifts.
+//!
+//! **The glyphs.** Only ones the terminal's font has. The terminal asks
+//! for the system's monospace family, which on macOS is Courier and then
+//! Courier New for what Courier lacks, and a glyph neither has draws as
+//! the font's empty box. So the picture keeps to ASCII and a handful of
+//! box, shade and dot glyphs those two faces carry, listed where the
+//! tests check every glyph the picture draws.
 
 use bevy::prelude::*;
 use rl_engine::rl_core::{Point, Rect};
@@ -253,13 +258,16 @@ fn breath(t: f32) -> f32 {
 }
 
 /// Where the moon's centre stands on a terminal `width` across, in
-/// pixels: over the middle of the far shore, under the word.
+/// pixels: over the middle of the far shore, under the word, at the
+/// middle of a row, so with [`MOON_RADIUS`] its top and its foot fall on
+/// the edges of rows.
 fn moon_centre(width: i32) -> Vec2 {
     Vec2::new(width as f32 * 4.0, 15.5 * 16.0)
 }
 
-/// The moon's radius in pixels.
-const MOON_RADIUS: f32 = 60.0;
+/// The moon's radius in pixels: three and a half rows, so it is seven
+/// whole rows tall.
+const MOON_RADIUS: f32 = 56.0;
 
 /// The sky: the last of the dusk at the far shore going up to black, and
 /// the air round the moon lit by it.
@@ -280,7 +288,7 @@ fn sky(canvas: &mut Canvas) {
 
 /// The stars, each twinkling at its own slow pace, from a little under
 /// half its light to all of it over five to fifteen seconds. Most are
-/// faint; the few large ones flare to a four-pointed star at the top of
+/// faint; the few large ones flare from a cross to a spark at the top of
 /// their twinkle. Fewer near the moon, which drowns them.
 fn stars(canvas: &mut Canvas, t: f32) {
     let moon = moon_centre(canvas.width);
@@ -294,7 +302,7 @@ fn stars(canvas: &mut Canvas, t: f32) {
             let tint = ink::STARS[(hashed(x + 13, y + 17) * 3.0) as usize % 3];
             let Some(cell) = canvas.at(x, y) else { continue };
             cell.glyph = match size {
-                s if s > 0.75 && twinkle > 0.93 => '✦',
+                s if s > 0.75 && twinkle > 0.93 => '*',
                 s if s > 0.75 => '+',
                 s if s > 0.35 => '•',
                 _ => '·',
@@ -337,31 +345,28 @@ fn far_shore(canvas: &mut Canvas) {
 }
 
 /// The moon, low over the far shore: a disc a little dimmer at its edge,
-/// with its seas on it.
+/// with its seas on it, painted in whole cells' backgrounds.
 ///
-/// Round at a cell's coarse grain because each cell is measured as two:
-/// its upper part painted as the background and its lower part as a
-/// lower half block over it, which is where the terminal's `▄` falls, a
-/// little under the middle of the cell. A cell the edge crosses from side
-/// to side is then split along it rather than smudged grey all over, and
-/// one it crosses from top to bottom is mixed.
+/// Its top and its foot fall on the edges of rows, so its first and last
+/// rows are mostly moon rather than a row of grey cells across it, which
+/// read as a dark band round the disc; and a cell the edge crosses is
+/// moon or sky by how much of it the disc covers, mixed only where that
+/// is near half, so the edge is clean rather than smudged. A half-block
+/// glyph would split a cell finer, but where it falls is the font's, and
+/// the fonts a terminal is drawn in do not agree.
 fn moon(canvas: &mut Canvas) {
     let centre = moon_centre(canvas.width);
     let (cx, cy) = ((centre.x / 8.0) as i32, (centre.y / 16.0) as i32);
     let reach = (MOON_RADIUS / 8.0) as i32 + 1;
     for y in cy - reach / 2 - 1..=cy + reach / 2 + 1 {
         for x in cx - reach..=cx + reach {
-            // How much of the cell's rows from `top` to `bottom`, in
-            // pixels from its top, is the moon's, on a four by four grid.
-            let covered = |top: f32, bottom: f32| {
-                let inside = (0..16).filter(|i| {
-                    let at = Vec2::new(x as f32 * 8.0 + (i % 4) as f32 * 2.0 + 1.0, y as f32 * 16.0 + top + ((i / 4) as f32 + 0.5) * (bottom - top) / 4.0);
-                    at.distance(centre) <= MOON_RADIUS
-                });
-                inside.count() as f32 / 16.0
-            };
-            let (upper, lower) = (covered(0.0, HALF_BLOCK), covered(HALF_BLOCK, 16.0));
-            if upper + lower == 0.0 {
+            // How much of the cell is the moon's, on a four by four grid.
+            let inside = (0..16).filter(|i| {
+                Vec2::new(x as f32 * 8.0 + (i % 4) as f32 * 2.0 + 1.0, y as f32 * 16.0 + (i / 4) as f32 * 4.0 + 2.0).distance(centre) <= MOON_RADIUS
+            });
+            let cover = inside.count() as f32 / 16.0;
+            let cover = ((cover - 0.2) / 0.6).clamp(0.0, 1.0);
+            if cover == 0.0 {
                 continue;
             }
             let at = pixel(x, y) - centre;
@@ -369,19 +374,10 @@ fn moon(canvas: &mut Canvas) {
             let edge = (at.length() / MOON_RADIUS).min(1.0);
             let face = ink::MOON.lerp(ink::MARE, ((seas - 0.42) * 2.4).clamp(0.0, 1.0) * 0.7) * (1.0 - 0.16 * edge * edge);
             let Some(cell) = canvas.at(x, y) else { continue };
-            let sky = cell.bg;
-            *cell = match upper == lower {
-                true => Paint { glyph: ' ', fg: sky, bg: sky.lerp(face, upper) },
-                false => Paint { glyph: '▄', fg: sky.lerp(face, lower), bg: sky.lerp(face, upper) },
-            };
+            *cell = Paint { glyph: ' ', fg: face, bg: cell.bg.lerp(face, cover) };
         }
     }
 }
-
-/// Where the terminal's lower half block `▄` begins, in pixels from the
-/// top of a sixteen-pixel cell: the glyph is the font's, and its top
-/// falls a little under the middle.
-const HALF_BLOCK: f32 = 9.0;
 
 /// The water the menu stands on, and a margin round it: the picture
 /// leaves it dark and puts no glyph in it, so the rows read over nothing.
@@ -445,8 +441,7 @@ fn moon_path(canvas: &mut Canvas) {
                 continue;
             }
             cell.glyph = match (down < 4.0, hashed(x, y * 3) < 0.5) {
-                (true, true) => '━',
-                (true, false) => '─',
+                (true, _) => '─',
                 (false, true) => '-',
                 (false, false) => '~',
             };
@@ -884,6 +879,39 @@ mod tests {
                 .filter(|at| terminal.get(at.x, at.y).is_some_and(|c| c.glyph == before.glyph || c.fg == before.fg || c.bg == before.bg))
                 .collect();
             assert!(left.is_empty(), "{} seconds in, {} cells are left unpainted, the first {:?}", tenth as f32 / 10.0, left.len(), left.first());
+        }
+    }
+
+    /// The glyphs past ASCII the picture may draw: the box, shade and dot
+    /// glyphs the engine's own panels draw with, `─ ░ • ·`, and the frame
+    /// of a window, `┼`.
+    ///
+    /// Where they come from: the terminal asks for the system's monospace
+    /// family, which fontique gives on macOS as Courier and then Courier
+    /// New, and these are in the two faces' character maps between them,
+    /// the dots in Courier and the rest in Courier New. `━` and `✦` are in
+    /// neither, and drew as the missing-glyph box. The fonts are the
+    /// system's and not in the repository, so the test reads this list
+    /// rather than the faces.
+    const BEYOND_ASCII: &str = "\u{2500}\u{2591}\u{2022}\u{b7}\u{253c}";
+
+    /// Every glyph the picture draws, at every moment of a minute of its
+    /// motion, is one the terminal's font has: printable ASCII, which
+    /// every face the terminal is drawn in has, or one of [`BEYOND_ASCII`].
+    /// A glyph the font has not draws as an empty box in the night.
+    #[test]
+    fn every_glyph_the_picture_draws_is_one_the_terminals_font_has() {
+        for tenth in (0..600).step_by(3) {
+            let terminal = painted(tenth as f32 / 10.0);
+            let mut missing: Vec<char> = terminal
+                .bounds()
+                .cells()
+                .filter_map(|at| terminal.get(at.x, at.y))
+                .map(|c| c.glyph)
+                .filter(|g| !(*g == ' ' || g.is_ascii_graphic() || BEYOND_ASCII.contains(*g)))
+                .collect();
+            missing.dedup();
+            assert!(missing.is_empty(), "{} seconds in, the picture draws {missing:?}, which the font has not", tenth as f32 / 10.0);
         }
     }
 
