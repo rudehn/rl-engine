@@ -29,6 +29,9 @@
 //! thing lends, [`input`] turns keys into intents, and [`plugin`] is every
 //! one of these systems in one list, which the binary and [`testing`]'s
 //! headless world both add, so a test plays the game that ships.
+//!
+//! Before any of it, [`title`] paints the screen the game opens on: the
+//! black lake at night under the engine's title menu.
 
 #![deny(missing_docs)]
 
@@ -47,5 +50,6 @@ pub mod save;
 pub mod stairs;
 pub mod tally;
 pub mod testing;
+pub mod title;
 pub mod traits;
 pub mod wearing;

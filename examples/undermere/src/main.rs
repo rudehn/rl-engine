@@ -70,6 +70,7 @@ struct Screen {
     menu: Rect,
     settings: Rect,
     records: Rect,
+    title_menu: Rect,
 }
 
 impl Screen {
@@ -123,6 +124,9 @@ impl Screen {
             // Where the menu stands, since the menu is what opens it.
             settings: centred(56, 2, 34),
             records: centred(72, 2, 36),
+            // The title's rows: on the dark water under the middle of the
+            // lake, where its picture leaves room for them.
+            title_menu: undermere::title::menu(COLS),
         }
     }
 }
@@ -169,10 +173,14 @@ fn add_panels(app: &mut App, screen: &Screen) {
         ControlsPanel::new(screen.controls).hint(screen.hint),
         GameMenuPanel::new(screen.menu).title("Undermere").died("The Undermere keeps you.").won("The Drowned King is dead, and the lake is still."),
     ));
-    // What the player may set, opened from the menu: fullscreen is the
-    // engine's, declared by `RoguelikePlugins`. And every run that has
-    // ended, best first, which the title opens.
+    // What the player may set, opened from the menu and from the title:
+    // fullscreen is the engine's, declared by `RoguelikePlugins`. And
+    // every run that has ended, best first, which the title opens.
     app.add_plugins((SettingsPanel::new(screen.settings), RecordsPanel::new(screen.records)));
+    // The screen before there is a run: the engine's menu, which holds the
+    // run back until the player picks, over the night Undermere paints
+    // under it. With it up, the pause and end menus offer the way back.
+    app.add_plugins(TitlePanel::new(screen.title_menu)).add_systems(Update, undermere::title::paint_backdrop.in_set(TitleSet::Backdrop));
 }
 
 /// Whether this run plays keys from a script of some kind: a replay, a
@@ -229,16 +237,18 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::KeyScriptPlugin;
+    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
     use rl_engine::rl_render::{MapView, MapViewPlugin, Terminal};
+    use undermere::run::Adventurer;
 
     use super::*;
 
-    /// The window's own screen drawn into a terminal no window shows, a few
-    /// frames into a run: the same cut, the same panels, the same map view
-    /// at the same width of tile, and the fullscreen setting the window's
-    /// plugins declare, so a test reads back the text the player would see.
-    fn on_screen(seed: RunSeed) -> App {
+    /// The window's own screen drawn into a terminal no window shows, at
+    /// the title it opens on: the same cut, the same panels, the same map
+    /// view at the same width of tile, and the fullscreen setting the
+    /// window's plugins declare, so a test reads back the text the player
+    /// would see and the menus offer the rows theirs do.
+    fn at_the_title(seed: RunSeed) -> App {
         let mut app = undermere::testing::headless(seed);
         let screen = Screen::new();
         app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
@@ -246,10 +256,98 @@ mod tests {
         add_panels(&mut app, &screen);
         app.finish();
         app.cleanup();
+        app.update();
+        app
+    }
+
+    /// The same screen a few frames into a run begun from its title, the
+    /// way a player begins one: New Game, picked out with nothing saved.
+    fn on_screen(seed: RunSeed) -> App {
+        let mut app = at_the_title(seed);
+        press(&mut app, KeyCode::Enter);
         for _ in 0..4 {
             app.update();
         }
         app
+    }
+
+    /// Every row of the screen with something on it, trimmed.
+    fn written(app: &App) -> Vec<String> {
+        (0..ROWS).map(|y| row(app, y).trim().to_string()).filter(|r| !r.is_empty()).collect()
+    }
+
+    /// How many adventurers stand anywhere.
+    fn adventurers(app: &mut App) -> usize {
+        app.world_mut().query_filtered::<(), With<Adventurer>>().iter(app.world()).count()
+    }
+
+    /// At launch the title stands over Undermere's picture and holds the
+    /// run back: nothing is built and no adventurer stands anywhere. The
+    /// engine's rows are drawn one to a line from the top of the dark the
+    /// picture leaves for them, on one column, with New Game picked out,
+    /// since nothing is saved for Continue to take.
+    #[test]
+    fn the_title_is_up_at_launch_and_no_run_has_begun() {
+        let mut app = at_the_title(RunSeed(7));
+        assert!(app.world().contains_resource::<HoldStart>(), "the run is held");
+        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Idle, "and nothing plays");
+        assert!(!app.world().contains_resource::<WorldMap>(), "no place is built behind the title");
+        assert_eq!(adventurers(&mut app), 0, "and no adventurer stands anywhere");
+
+        let menu = Screen::new().title_menu;
+        let rows: Vec<String> = (menu.y..menu.y + 5).map(|y| row(&app, y).chars().skip(menu.x as usize).take(menu.width as usize).collect()).collect();
+        assert_eq!(rows.iter().map(|r| r.trim()).collect::<Vec<_>>(), ["Continue", "New Game", "Records", "Settings", "Exit"], "{rows:#?}");
+        let column: Vec<_> = rows.iter().map(|r| r.chars().position(|c| c != ' ')).collect();
+        assert!(column.iter().all(|c| *c == column[0]), "on one column: {rows:#?}");
+        let title = app.world().resource::<TitleMenu>();
+        assert_eq!(title.rows().get(title.picked), Some(&TitleRow::NewGame), "New Game picked out");
+    }
+
+    /// New Game, picked out first with nothing saved, begins the run with
+    /// one adventurer, in Mereholt where it marks the arrival, and nothing
+    /// of the title's menu is left on the screen.
+    #[test]
+    fn new_game_from_the_title_puts_the_adventurer_in_mereholt() {
+        let mut app = at_the_title(RunSeed(7));
+        assert!(written(&app).iter().any(|r| r.contains("New Game")) && adventurers(&mut app) == 0, "the title waits on New Game: {:#?}", written(&app));
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        assert_eq!(adventurers(&mut app), 1, "one adventurer, begun once");
+        let me = undermere::testing::adventurer(&mut app);
+        let entry = app.world().resource::<WorldMap>().place(undermere::dungeon::TOWN).expect("Mereholt was built").entry;
+        assert_eq!((undermere::testing::here(&app), undermere::testing::at(&app, me)), (undermere::dungeon::TOWN, entry), "in Mereholt, at its arrival");
+        assert!(!written(&app).iter().any(|r| r.contains("New Game") || r.contains("Continue")), "and the title is gone: {:#?}", written(&app));
+    }
+
+    /// Where the adventurer is: the place, the cell and the turn.
+    fn whereabouts(app: &mut App) -> (MapId, Point, u32) {
+        let me = undermere::testing::adventurer(app);
+        (undermere::testing::here(app), undermere::testing::at(app, me), app.world().resource::<Turns>().now())
+    }
+
+    /// The pause menu offers Main menu once there is a title to go back
+    /// to, and taking it leaves the run for the title, written down as it
+    /// stood. Continue, picked out on the title that comes back, carries
+    /// the run on from the same cell of the same place on the same turn.
+    #[test]
+    fn leaving_for_the_main_menu_and_continuing_carries_the_run_on_from_where_it_was_left() {
+        let mut app = on_screen(RunSeed(7));
+        undermere::testing::pass_turns(&mut app, 3);
+        let left = whereabouts(&mut app);
+        press(&mut app, KeyCode::Escape);
+        // Past Back to the run, A new run, This seed again and Settings.
+        for _ in 0..4 {
+            press(&mut app, KeyCode::ArrowDown);
+        }
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.world().contains_resource::<WorldMap>(), "the run is left");
+        let title = app.world().resource::<TitleMenu>();
+        assert_eq!(title.rows().get(title.picked), Some(&TitleRow::Continue), "for the title, which offers it back: {:#?}", written(&app));
+
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        assert_eq!(adventurers(&mut app), 1, "one adventurer, restored once");
+        assert_eq!(whereabouts(&mut app), left, "carried on where it was left");
     }
 
     /// Row `y` of the screen, as text.
@@ -331,7 +429,7 @@ mod tests {
     #[test]
     fn a_screen_over_the_map_is_drawn_a_letter_to_a_cell() {
         let mut app = on_screen(RunSeed(7));
-        rl_engine::rl_bevy::testing::press(&mut app, KeyCode::KeyI);
+        press(&mut app, KeyCode::KeyI);
         app.update();
         let screen = Screen::new();
         let pack = screen.pack;

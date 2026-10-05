@@ -16,7 +16,10 @@
 //! them, the narrator, which the binary and the harness add from
 //! [`narrator`], the run's `Seed` and the `Saves` it is written to, and
 //! drawing into a rectangle of the screen, which a headless test has no
-//! screen to cut.
+//! screen to cut. The title is one of those: the engine's `TitlePanel`,
+//! with [`title`](crate::title)'s picture painted under it, holds the
+//! first run back, so the binary adds it with the panels and a headless
+//! run, which has none, begins at startup.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
