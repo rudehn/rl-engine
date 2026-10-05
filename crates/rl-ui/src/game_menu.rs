@@ -419,8 +419,12 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
         }
         // The run's own line, which the records list will show it by, said
         // here first: the title is what any ending in this outcome says,
-        // and this is what this one came to.
-        words.extend(wrap(&view.summary, width).into_iter().map(|line| (line, Tones::TEXT)));
+        // and this is what this one came to. Only when there is one, as
+        // with the epitaph: a game that files no record has no line, and
+        // an empty one would wrap to a blank row.
+        if !view.summary.is_empty() {
+            words.extend(wrap(&view.summary, width).into_iter().map(|line| (line, Tones::TEXT)));
+        }
         words.push((clip(&format!("Seed {}, turn {}.", ending.seed.0, ending.turn), width), Tones::MUTED));
         // Then whatever the game had to say, each section under its own
         // heading, the way the records screen draws one too: clipped by
@@ -565,6 +569,16 @@ mod tests {
     /// Ends the run in the player's death: a blow the player cannot
     /// survive, from something beside them, and the frames for it to land.
     fn die(stage: &mut Stage) {
+        strike_the_last_blow(stage);
+        for _ in 0..4 {
+            stage.tick();
+        }
+        assert_eq!(*stage.app.world().resource::<State<EngineState>>().get(), EngineState::Over);
+    }
+
+    /// Writes a blow the player cannot survive, from something beside
+    /// them, leaving the frames it lands in to the test.
+    fn strike_the_last_blow(stage: &mut Stage) {
         let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
         stage.app.world_mut().get_mut::<Health>(player).unwrap().current = 1;
         let ogre = stage
@@ -585,22 +599,20 @@ mod tests {
         // The harness has no minds, so the ogre's blow is written for it.
         stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(ogre, kind, 30)));
         stage.app.world_mut().write_message(Intent::new(player, Wait));
-        for _ in 0..4 {
-            stage.tick();
-        }
-        assert_eq!(*stage.app.world().resource::<State<EngineState>>().get(), EngineState::Over);
     }
 
     /// The player's death ends the run: the menu opens by itself under the
     /// game's words with no way back, and the game's sections are on it.
+    /// A game that files no record has no line of its own to say, so the
+    /// seed stands first under the title, with no blank row above it.
     #[test]
     fn the_players_death_opens_the_ending_and_shows_what_the_game_had_to_say() {
         let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
         stage.app.add_systems(Update, note_the_haul.in_set(crate::ViewSet::Annotate));
         die(&mut stage);
         assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
+        assert!(inside(&stage, 1).starts_with("Seed 5, turn "), "the seed first under the title: {:?}", inside(&stage, 1));
         let body: Vec<String> = (1..19).map(|y| inside(&stage, y)).collect();
-        assert!(body.iter().any(|l| l.starts_with("Seed 5, turn ")), "{body:?}");
         assert!(body.contains(&"The haul".to_string()), "the game's heading is on the screen: {body:?}");
         assert!(body.contains(&"nine bones".to_string()), "and its words under it: {body:?}");
         assert!(body.contains(&"A new run".to_string()) && !body.contains(&"Back to the run".to_string()), "no way back: {body:?}");
@@ -620,6 +632,30 @@ mod tests {
         assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
         assert_eq!(inside(&stage, 1), "Eaten on the second floor", "first under the title");
         assert!(inside(&stage, 2).starts_with("Seed 5, turn "), "then the seed: {:?}", inside(&stage, 2));
+    }
+
+    /// A record a game writes as its run ends, the frame the state turns
+    /// over, is on the first frame of the screen the run ends on: filed
+    /// before anything draws, not on a later frame or an earlier one by
+    /// whichever order the executor happens to run the two in.
+    #[test]
+    fn the_first_frame_of_the_ending_shows_the_runs_record() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), RecordsPlugin)).screen(44, 20);
+        let summary = || "Eaten on the second floor".to_string();
+        stage.app.add_systems(OnEnter(EngineState::Over), move |mut records: MessageWriter<RecordRun>| {
+            records.write(RecordRun { score: 12, summary: summary(), sections: vec![RecordSection { heading: "Score".into(), body: "12".into() }] });
+        });
+        strike_the_last_blow(&mut stage);
+        for _ in 0..8 {
+            if *stage.app.world().resource::<State<EngineState>>().get() == EngineState::Over {
+                break;
+            }
+            stage.tick();
+        }
+        assert!(stage.row(0).contains(" You are dead. "), "the ending is drawn: {:?}", stage.row(0));
+        let body: Vec<String> = (1..19).map(|y| inside(&stage, y)).collect();
+        assert_eq!(body[0], summary(), "the record's line on the first frame: {body:?}");
+        assert!(body.contains(&"Score".to_string()) && body.contains(&"12".to_string()), "and its sections: {body:?}");
     }
 
     /// How many runs the game's start began.

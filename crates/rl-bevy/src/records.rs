@@ -18,7 +18,7 @@ use bevy::prelude::*;
 use rl_core::RunSeed;
 use serde::{Deserialize, Serialize};
 
-use crate::plugin::EndRun;
+use crate::plugin::{EndRun, EngineSet};
 use crate::seed::Seed;
 use crate::state::{Ending, Outcome};
 
@@ -134,7 +134,10 @@ impl Plugin for RecordsPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<RecordRun>()
             .init_resource::<RunRecords>()
-            .add_systems(Update, record_runs)
+            // Before anything draws, so the screen a run ends on shows its
+            // record from its first frame rather than from whichever frame
+            // the executor first ran the filing ahead of the drawing in.
+            .add_systems(Update, record_runs.before(EngineSet::Present))
             // Not `reset_on_new_run::<RunRecords>()`: that puts the whole
             // resource back to its default, forgetting every filed record
             // along with `this_run`. Only the field is cleared here, and
@@ -211,6 +214,29 @@ fn forget_this_run(mut records: ResMut<RunRecords>) {
 mod tests {
     use super::*;
     use crate::state::Restart;
+
+    /// Whatever reads the records while the frame is drawn is ordered after
+    /// the filing, so an end screen shows its run's record on its first
+    /// frame. A pair left unordered still passes a test that watches the
+    /// screen whenever the executor happens to run them in the right order,
+    /// so this asks the schedule itself.
+    #[test]
+    fn a_record_is_filed_before_anything_draws() {
+        fn draws(_: Res<RunRecords>) {}
+        let mut app = crate::plugin::headless_app();
+        app.add_plugins(RecordsPlugin).add_systems(Update, draws.in_set(EngineSet::Present));
+        let (files, reads) = (IntoSystem::into_system(record_runs).system_type(), IntoSystem::into_system(draws).system_type());
+        app.world_mut().schedule_scope(Update, |world, schedule| {
+            schedule.initialize(world).expect("Update builds");
+            let types: Vec<_> = schedule.systems().expect("just built").map(|(key, system)| (key, system.system_type())).collect();
+            let type_of = |key| types.iter().find(|(k, _)| *k == key).map(|(_, t)| *t);
+            let left_to_chance = schedule.graph().conflicting_systems().iter().any(|(a, b, _)| {
+                let pair = (type_of(*a), type_of(*b));
+                pair == (Some(files), Some(reads)) || pair == (Some(reads), Some(files))
+            });
+            assert!(!left_to_chance, "filing a record and drawing it are left to the executor's order");
+        });
+    }
 
     fn record(score: i64) -> RunRecord {
         RunRecord { score, ..Default::default() }

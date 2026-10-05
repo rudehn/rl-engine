@@ -16,7 +16,7 @@ The screen a run ends on reads the same record, so what it says of a run and wha
 
 ## Turning it on
 
-`RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update`, and forgets which record is this run's in `EndRun`.
+`RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update` ahead of `EngineSet::Present`, so whatever draws a record has it the frame it is filed, and forgets which record is this run's in `EndRun`.
 A game writes one `RecordRun` when its run is over, and a game that never writes one keeps no records.
 `RecordsSavePlugin`, in `rl-save`, keeps the list between launches: it needs `Saves`, says so through `app.needs`, reads the `records` slot in its `finish`, before the first frame, and writes it in `Last` on a frame the list changed.
 Without it the list lasts as long as the process.
@@ -33,7 +33,7 @@ A record written in the same pass as the `RunOver` it answers arrives before the
 `RunRecords::file` puts a record in its place, a tie keeping the newer ahead, and drops whatever falls past `MAX_RECORDS`, a hundred, so the list keeps the hundred best rather than the first hundred.
 `this_run` is cleared in `EndRun`, so the record stands for every frame the ended run's screen is up and is gone before the next run begins, while `records` is never cleared by a run.
 `collect_ending` reads it in `ViewSet::Collect`: `EndingView::summary` is its summary, and its sections are pushed ahead of any a game pushes in `ViewSet::Annotate`.
-So the end screen says the run's line under its title and any epitaph, then the seed and the turn, then the sections.
+So the end screen says the run's line, when a record was filed, under its title and any epitaph, then the seed and the turn, then the sections.
 `RecordsSavePlugin` writes the list as RON in the `records` slot, apart from the run's slot and never deleted with it, and only when the list differs from what the slot is known to hold.
 Every field of `RunRecord` is `#[serde(default)]` and a field it does not know is passed over, so a record an earlier or a later build wrote reads as far as it can.
 A slot that does not parse is warned about and left as it is with the list starting empty, and the next record filed writes a fresh list over it.
