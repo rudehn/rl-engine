@@ -15,6 +15,7 @@
 
 pub mod ability;
 pub mod accuracy;
+pub mod ammo;
 pub mod bump;
 pub mod charts;
 pub mod combat;
@@ -56,11 +57,12 @@ pub mod world;
 
 pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
+pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
 pub use charts::{ChartId, ChartSave, Charting, Charts, ChartsSave};
 pub use combat::{
     Armor, Attack, AttackShape, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
-    Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+    Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
@@ -130,11 +132,12 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 pub mod prelude {
     pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Use};
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
+    pub use crate::ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
     pub use crate::charts::{ChartId, Charting, Charts};
     pub use crate::combat::{
         Armor, Attack, AttackShape, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
-        Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+        Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, WhenEmpty};

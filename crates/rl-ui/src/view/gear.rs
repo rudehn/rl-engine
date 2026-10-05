@@ -15,6 +15,8 @@ use rl_bevy::prelude::*;
 use rl_render::Glyph;
 use rl_rules::SlotId;
 
+use crate::facet::Facets;
+use crate::tone::Tones;
 use crate::view::Row;
 
 /// One equipment slot and what fills it.
@@ -72,7 +74,11 @@ impl Plugin for GearViewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GearView>()
             .needs::<Registries>("GearViewPlugin", "`Registries`, with the equipment slots the worn ids index into")
-            .add_systems(Update, collect_gear.in_set(crate::ViewSet::Collect));
+            .add_systems(Update, collect_gear.in_set(crate::ViewSet::Collect))
+            // After `collect_gear`, in the same `ViewSet::Collect`, so it
+            // annotates the slots this pass just rebuilt rather than the
+            // slots left over from the last one.
+            .add_systems(Update, note_ammo.after(collect_gear).in_set(crate::ViewSet::Collect));
     }
 
     fn finish(&self, app: &mut App) {
@@ -101,6 +107,37 @@ pub fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, pla
         });
         let charges = consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max));
         view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges, primary });
+    }
+}
+
+/// Notes each worn ammunition-fed weapon's rounds on its gear row: `N left`,
+/// counted fresh from the wearer's own bag, or `dry` in [`Tones::BAD`],
+/// since the panel is built from what the engine knows and a player should
+/// not have to open the pack to learn whether the next shot is there.
+///
+/// A facet, not a field on [`Row`]: `Row` is the one shape vitals and
+/// nearby share too, and a magazine's count is a fact about an
+/// ammunition-fed weapon rather than about every row a panel might show,
+/// the same reasoning that keeps a wielded weapon's own detail a facet
+/// instead of a field (`rl-ui/src/lib.rs`'s rules say why). Unconditional
+/// rather than reading `GearView` as `Option<ResMut<_>>`: this system is
+/// only ever added by [`GearViewPlugin`] itself, which has already put the
+/// resource there.
+pub fn note_ammo(
+    mut view: ResMut<GearView>,
+    mut facets: ResMut<Facets>,
+    bag: Query<&Inventory, With<Player>>,
+    ammos: Query<&Ammo>,
+    tagged: Query<&Tagged>,
+    stacks: Query<&Stack>,
+) {
+    let Ok(bag) = bag.single() else { return };
+    for row in view.rows_mut() {
+        let Ok(ammo) = ammos.get(row.entity) else { continue };
+        let left: u32 =
+            bag.items.iter().filter(|i| tagged.get(**i).is_ok_and(|t| t.0.contains(&ammo.tag))).filter_map(|i| stacks.get(*i).ok()).map(|s| s.count).sum();
+        let facet = if left == 0 { facets.facet("ammo", "dry").toned(Tones::BAD) } else { facets.facet("ammo", format!("{left} left")) };
+        row.facets.push(facet);
     }
 }
 
@@ -199,5 +236,52 @@ mod tests {
         let view = stage.app.world().resource::<GearView>();
         assert!(view.by_name("main hand").unwrap().primary, "the slot it was equipped into");
         assert!(!view.by_name("body").unwrap().primary, "the slot it only claims");
+    }
+
+    /// The facet under `key`'s text and tone, for a row on `view`.
+    fn ammo_facet(app: &App, row: &Row) -> Option<(String, crate::tone::ToneId)> {
+        row.facet(app.world().resource::<Facets>().get("ammo")?).map(|f| (f.text.clone(), f.tone))
+    }
+
+    #[test]
+    fn a_worn_ammunition_fed_weapons_row_counts_the_tag_left_in_the_bag() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let tag = rl_rules::TagId::from_raw(0);
+        let rifle = stage.app.world_mut().spawn((Item, Name::new("rifle"), Ammo { tag })).id();
+        let rounds = stage.app.world_mut().spawn((Tagged(vec![tag]), Stack { key: 0, count: 5 })).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(rifle, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert((worn, Inventory { items: vec![rifle, rounds] }));
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        let row = view.by_name("main hand").unwrap().item.as_ref().unwrap();
+        assert_eq!(ammo_facet(&stage.app, row).map(|(text, _)| text).as_deref(), Some("5 left"));
+    }
+
+    /// Nothing of the tag anywhere in the bag, not even a unit with nothing
+    /// left in it, reads as dry.
+    #[test]
+    fn a_worn_ammunition_fed_weapon_with_none_of_its_tag_in_the_bag_reads_dry() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let tag = rl_rules::TagId::from_raw(0);
+        let rifle = stage.app.world_mut().spawn((Item, Name::new("rifle"), Ammo { tag })).id();
+        let spent = stage.app.world_mut().spawn((Tagged(vec![tag]), Stack { key: 0, count: 0 })).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(rifle, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert((worn, Inventory { items: vec![rifle, spent] }));
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        let row = view.by_name("main hand").unwrap().item.as_ref().unwrap();
+        assert_eq!(ammo_facet(&stage.app, row), Some(("dry".to_string(), Tones::BAD)));
     }
 }

@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use crate::climb::Deepest;
 use crate::droids::{Kind, Roster};
 use crate::gear::ItemKind;
-use crate::heat::{Heat, Stowed};
+use crate::heat::Heat;
 use crate::lifts::{Lift, LiftOut};
 use crate::run::Commando;
 use crate::upgrades::{Taken, Upgrade};

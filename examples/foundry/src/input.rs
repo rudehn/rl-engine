@@ -12,7 +12,6 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-use crate::ammo::Dry;
 use crate::heat::Heat;
 
 /// Every key Foundry answers to, by name.

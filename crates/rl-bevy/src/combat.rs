@@ -621,6 +621,27 @@ type Gear = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'stat
 /// yields them.
 type WornRef<'a> = (Entity, Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&'a RangedAttack>, Option<&'a Strikes>);
 
+/// An attack a worn item cannot make right now, put by until whatever
+/// benched it lifts the ban.
+///
+/// Taking the attack off the item entirely, rather than leaving it in
+/// place behind some other flag, is what makes [`Loadout`] fall through to
+/// the next worn item with no knowledge of why one went quiet: a
+/// dual-wielded pair alternates because the benched one simply has
+/// nothing to strike or shoot with. [`crate::ammo`] is the one reason the
+/// engine itself knows (a shot with nothing left to spend); a game may
+/// have reasons of its own, a weapon that runs hot among them, and reuses
+/// this same holder rather than inventing a second one, since both answer
+/// the same question a worn item's missing attack always asks: put by, or
+/// simply never had one.
+#[derive(Component, Debug, Clone, Copy)]
+pub enum Stowed {
+    /// A blow, put by.
+    Melee(MeleeAttack),
+    /// A shot, put by.
+    Ranged(RangedAttack),
+}
+
 /// What an actor fights with, summed at the moment it matters.
 ///
 /// Three layers, added together: the actor's own [`Armor`], [`Resists`],
@@ -647,6 +668,7 @@ pub struct Loadout<'w, 's> {
     equipped: Query<'w, 's, &'static Equipped>,
     resists: Query<'w, 's, &'static Resists>,
     spent: Query<'w, 's, &'static crate::consumable::Consumable>,
+    dry: Query<'w, 's, (), With<crate::ammo::Dry>>,
     stats: Query<'w, 's, &'static StatBlock>,
     rules: Option<Res<'w, CombatRules>>,
     registries: Option<Res<'w, Registries>>,
@@ -668,6 +690,19 @@ impl Loadout<'_, '_> {
     /// resists still count: it is empty, not gone.
     fn charged(&self, item: Entity) -> bool {
         !self.spent.get(item).is_ok_and(|c| c.is_empty())
+    }
+
+    /// Whether `item` has gone dry: an ammunition-fed weapon
+    /// [`ammo::sync_ammo`](crate::ammo::sync_ammo) most recently found
+    /// nothing in its wielder's bag to feed it, the same "empty, not gone"
+    /// standing as [`charged`](Self::charged). [`melee_with`](Self::melee_with)
+    /// and [`ranged_with`](Self::ranged_with) already skip it, because its
+    /// attack came off with the ammunition and was put by as [`Stowed`];
+    /// this is the one place the engine answers "can this worn item act at
+    /// all right now" by name, rather than leaving every reader to
+    /// rediscover it from what is merely absent.
+    pub fn dry(&self, item: Entity) -> bool {
+        self.dry.get(item).is_ok()
     }
 
     /// The value of the stat `pick` names on `who`, or zero when the game
@@ -1717,6 +1752,19 @@ mod tests {
         let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
         let loadout = state.get(app.world()).expect("every input is optional");
         (loadout.armor(who), loadout.melee(who).map(|m| m.dice), loadout.strikes(who))
+    }
+
+    /// `Loadout::dry` answers by the item's own `Dry` marker, nothing else,
+    /// so it reads the same whether or not the item is also worn.
+    #[test]
+    fn loadout_answers_dry_from_an_items_own_marker() {
+        let mut app = headless_app();
+        let marked = app.world_mut().spawn(crate::ammo::Dry).id();
+        let plain = app.world_mut().spawn_empty().id();
+        let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let loadout = state.get(app.world()).expect("every input is optional");
+        assert!(loadout.dry(marked));
+        assert!(!loadout.dry(plain));
     }
 
     /// Armor is three layers summed at the blow: the defender's own hide,

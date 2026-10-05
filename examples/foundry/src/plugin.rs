@@ -96,43 +96,50 @@ impl Plugin for FoundryPlugin {
         // `fired` for the turn that is only just starting, and the turn
         // that actually just ended quietly would wrongly skip its vent.
         app.add_systems(Turn, (crate::heat::vent_heat, crate::heat::heat_on_struck).chain().in_set(TurnSet::React));
-        // Correct with or without a gear panel: `note_heat` and
-        // `note_ammo` read `GearView` as `Option<ResMut<_>>` and do nothing
-        // until a game adds `GearViewPlugin`, as the binary's `GearPanel`
-        // does and a headless test need not. Unordered against each
-        // other: no weapon carries both `Heat` and `Ammo`, so no row ever
-        // gets a facet from both.
-        app.add_systems(Update, (crate::heat::note_heat, crate::ammo::note_ammo).in_set(ViewSet::Annotate));
+        // Ammunition is the engine's own plugin now: `spend_ammo` takes a
+        // slug off the bag a `Struck` just fired from, and `sync_ammo`,
+        // chained right after it in `AmmoSet::Resolve`, reads whatever bag
+        // every `Ammo` item's wielder now has and dries or reloads from it.
+        // Unordered against the heat chain above, on purpose: `Heat` and
+        // `Ammo` never share an item (`gear::Armory::load` refuses a file
+        // that tries), so neither economy ever touches an entity the
+        // other's systems do. Nor do the two ever need ordering against a
+        // *different* actor's turn the way heat's pair does against a
+        // `TurnEnd` the scheduler can deal in the same pass as the next
+        // turn: `Resolution::claim` (crates/rl-bevy/src/turn.rs, around
+        // line 212) is `Acting::claim_action` underneath, and it lets one
+        // actor resolve at most one action per pass, so one actor's own
+        // shot and its own bag changing (dropping, picking up, equipping)
+        // can never land in the same pass to race each other in the first
+        // place.
+        app.add_plugins(rl_engine::rl_bevy::AmmoPlugin);
+        // Correct with or without a gear panel: `note_heat` reads
+        // `GearView` as `Option<ResMut<_>>` and does nothing until a game
+        // adds `GearViewPlugin`, as the binary's `GearPanel` does and a
+        // headless test need not. An ammunition-fed weapon's own row is
+        // `rl-ui`'s own to note now, in `ViewSet::Collect` rather than
+        // here: the engine knows ammunition, and `Annotate` is only for
+        // what it cannot know.
+        app.add_systems(Update, crate::heat::note_heat.in_set(ViewSet::Annotate));
         // The pack's rows, the same way, with or without a pack panel.
-        // After the gear notes, which fill another view but intern the
-        // same facet keys, so each key is declared in one order every run.
-        app.add_systems(Update, crate::gear::note_the_pack.after(crate::heat::note_heat).after(crate::ammo::note_ammo).in_set(ViewSet::Annotate));
-        // Ammunition's own economy, chained in this order: `spend_ammo`
-        // takes a slug off the bag a `Struck` just fired from, and
-        // `sync_ammo` reads whatever bag every `Ammo` item's wielder now
-        // has and dries or reloads from it. Reversed, a pass that spent
-        // the last slug would leave every one of that bag's weapons
-        // reading as loaded into the next pass's `Resolve`, and a shot
-        // would go out on a bag `spend_ammo` had already emptied.
-        // Unordered against the heat systems above: `Heat` and `Ammo`
-        // never share an item (`gear::Armory::load` refuses a file that
-        // tries), so neither ammo system ever touches an entity
-        // `vent_heat` or `heat_on_struck` does.
-        //
-        // The two never need ordering against a *different* actor's turn
-        // the way heat's pair does against a `TurnEnd` the scheduler can
-        // deal in the same pass as the next turn: `Resolution::claim`
-        // (crates/rl-bevy/src/turn.rs, around line 212) is `Acting::claim_action`
-        // underneath, and it lets one actor resolve at most one action
-        // per pass, so one actor's own shot and its own bag changing
-        // (dropping, picking up, equipping) can never land in the same
-        // pass to race each other in the first place.
-        //
-        // After heat's pair, only for the log: every line Foundry tells in
-        // one pass reads in one fixed order, the deck arrived on, then the
-        // alarm, then the weapon's heat, then its ammunition, rather than
+        // After the heat notes, which fill another view but intern the
+        // same facet keys, so each key is declared in one order every run;
+        // nothing to order against for ammunition's own facet any more,
+        // since `ViewSet::Collect`, where it is filled now, already runs
+        // before `ViewSet::Annotate`, where this does, for every game,
+        // ammunition-fed weapons or none.
+        app.add_systems(Update, crate::gear::note_the_pack.after(crate::heat::note_heat).in_set(ViewSet::Annotate));
+        // Only for the log, and only Foundry's own word choice: the engine
+        // writes `AmmoChanged` for every weapon that dries or loads again,
+        // and `narrate_ammo` is this game's reaction to it, the way
+        // `heat::heat_on_struck` and `heat::vent_heat` tell their own
+        // lines directly. After `AmmoSet::Resolve`, so it reads this
+        // pass's own transitions rather than last pass's; after heat's
+        // pair too, only for the log: every line Foundry tells in one pass
+        // reads in one fixed order, the deck arrived on, then the alarm,
+        // then the weapon's heat, then its ammunition, rather than
         // whichever order the executor ran the tellers in.
-        app.add_systems(Turn, (crate::ammo::spend_ammo, crate::ammo::sync_ammo).chain().after(crate::heat::heat_on_struck).in_set(TurnSet::React));
+        app.add_systems(Turn, crate::ammo::narrate_ammo.after(crate::heat::heat_on_struck).after(rl_engine::rl_bevy::AmmoSet::Resolve).in_set(TurnSet::React));
         // The run's depth memory, one at the start, only ever raised, and
         // put back to one when the run ends: the next run in the same
         // launch, a restart's or one begun from the title, has been nowhere.
@@ -213,9 +220,13 @@ impl Plugin for FoundryPlugin {
         app.add_systems(Update, crate::mission::answer_victory.before(EngineSet::Input));
         // The lift out: a refused `GoThrough` on it, answered in the pass.
         app.add_systems(Turn, crate::lifts::ride_out.in_set(TurnSet::React));
-        // Uplink's own reach bonus: after `heat`'s and `ammo`'s chains
-        // above, for the reason `upgrades::react_uplink` gives.
-        app.add_systems(Turn, crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(crate::ammo::sync_ammo).in_set(TurnSet::React));
+        // Uplink's own reach bonus: after `heat`'s chain and ammunition's
+        // own `AmmoSet::Resolve`, for the reason `upgrades::react_uplink`
+        // gives.
+        app.add_systems(
+            Turn,
+            crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(rl_engine::rl_bevy::AmmoSet::Resolve).in_set(TurnSet::React),
+        );
         // The pick screen: declared while building, the way Corsair
         // declares its ledger, so `upgrades::modal` finds it the moment
         // anything looks. `choice_keys` is exclusive (it calls

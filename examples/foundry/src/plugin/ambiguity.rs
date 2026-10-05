@@ -49,10 +49,10 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("heat::vent_heat", id(heat::vent_heat)),
         ("heat::heat_on_struck", id(heat::heat_on_struck)),
         ("heat::note_heat", id(heat::note_heat)),
-        ("ammo::note_ammo", id(ammo::note_ammo)),
+        ("ammo::narrate_ammo", id(ammo::narrate_ammo)),
         ("gear::note_the_pack", id(gear::note_the_pack)),
-        ("ammo::spend_ammo", id(ammo::spend_ammo)),
-        ("ammo::sync_ammo", id(ammo::sync_ammo)),
+        ("engine ammo::spend_ammo", id(rl_engine::rl_bevy::ammo::spend_ammo)),
+        ("engine ammo::sync_ammo", id(rl_engine::rl_bevy::ammo::sync_ammo)),
         ("droids::populate_deck", id(droids::populate_deck)),
         ("droids::sound_alarm", id(droids::sound_alarm)),
         ("droids::sense_alarm", id(droids::sense_alarm)),
@@ -159,7 +159,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Inventory", c.component_id::<Inventory>()),
         ("Position", c.component_id::<Position>()),
         ("RangedAttack", c.component_id::<RangedAttack>()),
-        ("Stowed", c.component_id::<crate::heat::Stowed>()),
+        ("Stowed", c.component_id::<rl_engine::rl_bevy::Stowed>()),
         ("DarkSight", c.component_id::<DarkSight>()),
         ("Jammed", c.component_id::<crate::droids::Jammed>()),
         // What props, traps and the lines a pass leaves brought in.
@@ -216,7 +216,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &["Aware"],
             "a probe shouts in its own pass and strikes nobody, so no blow wakes it in the pass it shouts in",
         ),
-        pair(id(ammo::note_ammo), id(heat::note_heat), &["GearView", "Facets"], "no weapon has both Ammo and Heat, so no row gets a facet from both"),
         // Props, and what they meet. Every entry below is about one of
         // three invariants: one action a pass, one contributor per field of
         // the snapshot, and a container's bag is never a commando's.
@@ -330,14 +329,14 @@ fn allowed(world: &World) -> Vec<Allowed> {
         // opened in, which is a pass nothing else spent a slug or fired in.
         pair(
             id(props::spend_the_keycard),
-            id(ammo::spend_ammo),
+            id(rl_engine::rl_bevy::ammo::spend_ammo),
             &["Inventory", "Stack"],
             "one action a pass: a locker opened and a shot fired are never the same one",
         ),
         pair(
             id(props::spend_the_keycard),
-            id(ammo::sync_ammo),
-            &["Messages<Tell>", "Inventory", "Stack"],
+            id(rl_engine::rl_bevy::ammo::sync_ammo),
+            &["Inventory", "Stack"],
             "a card is not a slug, and a bag with one card fewer still holds whatever the guns draw from",
         ),
         pair(
@@ -355,13 +354,13 @@ fn allowed(world: &World) -> Vec<Allowed> {
         // A container's bag and a commando's are never the same bag.
         pair(
             id(engine_props::close_emptied_containers),
-            id(ammo::spend_ammo),
+            id(rl_engine::rl_bevy::ammo::spend_ammo),
             &["Inventory"],
             "a crate's bag and a commando's are never the same bag, and only a commando fires",
         ),
         pair(
             id(engine_props::close_emptied_containers),
-            id(ammo::sync_ammo),
+            id(rl_engine::rl_bevy::ammo::sync_ammo),
             &["Inventory"],
             "a crate's bag and a commando's are never the same bag, and only a commando wields",
         ),

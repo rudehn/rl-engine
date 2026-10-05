@@ -495,7 +495,7 @@ mod tests {
     fn the_pack_says_what_a_dry_gun_shoots_at_its_level_and_that_it_is_dry() {
         let mut app = on_screen(RunSeed(7));
         let rifle = in_the_pack(&mut app, "slug rifle", 2);
-        assert!(app.world().get::<foundry::ammo::Dry>(rifle).is_some(), "no slugs in the pack, so it is dry");
+        assert!(app.world().get::<rl_engine::rl_bevy::Dry>(rifle).is_some(), "no slugs in the pack, so it is dry");
         let row = pack_row(&app, rifle);
         assert_eq!(row.shot.map(|s| s.dice.to_string()).as_deref(), Some("1d10+5"), "damage: 2, so four more at +2");
         assert!(row.facets.iter().any(|f| f.text == "dry"), "{:?}", row.facets);

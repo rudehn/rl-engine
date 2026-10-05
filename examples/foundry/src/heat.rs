@@ -16,7 +16,7 @@
 //! naming the item an attack came from, and a whole [`TurnEnd`].
 
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Struck, TurnEnd};
+use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Stowed, Struck, TurnEnd};
 use rl_engine::rl_ui::{Facets, GearView, Tell, Tones};
 
 /// How hot a weapon may run before it locks.
@@ -81,20 +81,6 @@ impl Heat {
         }
         unlocks
     }
-}
-
-/// An attack a locked weapon had, put by until it cools.
-///
-/// Taking the attack off the item entirely, rather than leaving it in
-/// place behind some other flag, is what makes the engine's own loadout
-/// pass over a locked weapon for the next one worn: nothing about combat
-/// has to learn what heat is.
-#[derive(Component, Debug, Clone, Copy)]
-pub enum Stowed {
-    /// A blow, put by.
-    Melee(MeleeAttack),
-    /// A shot, put by.
-    Ranged(RangedAttack),
 }
 
 /// Reacts to every [`Struck`] whose weapon runs hot: records the shot on
