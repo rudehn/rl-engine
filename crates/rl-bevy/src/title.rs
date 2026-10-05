@@ -49,10 +49,12 @@ pub fn begin_run(world: &mut World) {
 /// What the run's save slot holds, read by a title: whether Continue can
 /// be offered, and whether New Game must ask before a run is given up.
 ///
-/// Plain data, so a screen reads it knowing nothing of storage. Kept by
-/// whoever keeps the slot, `rl-save`'s `SavePlugin`, from before the first
-/// frame; in a game that saves nothing it stays [`Empty`](Self::Empty),
-/// which is true.
+/// Plain data, so a screen reads it knowing nothing of storage. Inserted
+/// and kept by whoever keeps the slot, `rl-save`'s `SavePlugin`, from
+/// before the first frame. A game that saves nothing has none, and that is
+/// the word for it: there is no slot, so nothing could ever be continued
+/// and a title offers no Continue at all, where an [`Empty`](Self::Empty)
+/// slot could hold a run once one is left for the title.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SavedRun {
     /// Nothing: there is no run to continue.
@@ -83,8 +85,7 @@ pub struct ContinueRun;
 /// new run in the same command, and the new run's start never sees the
 /// old one's slot. Whoever keeps the slot observes it, and `rl-save`'s
 /// observer expects `Saves` to be present, which it is wherever
-/// [`SavedRun`] can be other than [`Empty`](SavedRun::Empty), the only
-/// time a title asks.
+/// [`SavedRun`] holds something, the only time a title asks.
 #[derive(Event, Debug, Clone, Copy)]
 pub struct AbandonRun;
 

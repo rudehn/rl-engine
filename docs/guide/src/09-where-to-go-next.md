@@ -77,7 +77,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 
 - **Add** `TitlePanel::new(rect)`, with the rectangle its rows stand in.
 - **You supply** your picture, painted in `TitleSet::Backdrop`, and a start in `NewRun` that stands aside while `ContinueRun` is present, for the system of yours that restores the saved run.
-- **You get** the first run held back until the player picks: Continue over a save this build can read, New Game, which asks before it gives a saved run up, Records and Settings when there is something behind them, and Exit.
+- **You get** the first run held back until the player picks: Continue, in a game with `SavePlugin`, over a save this build can read, New Game, which asks before it gives a saved run up, Records and Settings when there is something behind them, and Exit.
   The pause and end menus offer Main menu, and with `SavePlugin` a run left that way is written down for Continue.
 - **Worked examples** `undermere`, a night over a black lake, and `foundry`, a foundry's works.
 - **Reference** [The title screen](systems/title.md).

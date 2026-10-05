@@ -8,7 +8,7 @@ use crate::components::{Actor, MyTurn, Player, Position};
 use crate::cue::TurnHold;
 use crate::knowledge::Knowledge;
 use crate::state::{EngineState, Restart, RunOver};
-use crate::title::{HoldStart, LeaveRun, SavedRun, begin_run};
+use crate::title::{HoldStart, LeaveRun, begin_run};
 use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, Pace, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
 use crate::{places, turn};
@@ -235,7 +235,6 @@ impl Plugin for CorePlugin {
             .init_resource::<crate::minds::FlowFields>()
             .init_resource::<crate::minds::Thinking>()
             .init_resource::<TurnHold>()
-            .init_resource::<SavedRun>()
             .add_message::<crate::cue::Cued>()
             .add_message::<ActionDone>()
             .add_message::<ActionRefused>()

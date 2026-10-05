@@ -64,7 +64,7 @@ pub struct RecordsScreen {
     /// The row picked out in the list, indexing [`RunRecords::records`]
     /// best score first. Clamped to the records there are when the keys
     /// or the drawing read it.
-    pub picked: usize,
+    pub selected: usize,
     /// Whether the picked record's sections are shown in place of the
     /// list.
     pub open: bool,
@@ -140,7 +140,7 @@ pub fn records_keys(
     let Some(modal) = records_modal(&modals) else { return };
     let top = modals.is_top(modal);
     if top && modals.just_opened() {
-        screen.picked = 0;
+        screen.selected = 0;
         screen.open = false;
         screen.scroll = 0;
         return;
@@ -155,7 +155,7 @@ pub fn records_keys(
     let count = records.as_deref().map_or(0, |kept| kept.records.len());
 
     if screen.open {
-        if let Some(record) = records.as_deref().and_then(|kept| kept.records.get(screen.picked.min(count.saturating_sub(1)))) {
+        if let Some(record) = records.as_deref().and_then(|kept| kept.records.get(screen.selected.min(count.saturating_sub(1)))) {
             let width = (layout.rect.width - 4).max(0) as usize;
             let page = (layout.rect.height - 2).max(1) as usize;
             let furthest = detail_lines(record, width).len().saturating_sub(page);
@@ -178,8 +178,8 @@ pub fn records_keys(
         }
         return;
     }
-    let picked = screen.picked.min(count - 1);
-    screen.picked = match direction {
+    let picked = screen.selected.min(count - 1);
+    screen.selected = match direction {
         Some(Direction::North) => (picked + count - 1) % count,
         Some(Direction::South) => (picked + 1) % count,
         _ => picked,
@@ -228,7 +228,7 @@ fn draw_records(terminal: Option<ResMut<Terminal>>, screen: Screen) {
         None => &[],
     };
     if screen.open
-        && let Some(record) = kept.get(screen.picked.min(kept.len().saturating_sub(1)))
+        && let Some(record) = kept.get(screen.selected.min(kept.len().saturating_sub(1)))
     {
         let hints = format!("\u{2191}\u{2193} scroll \u{2022} {close} back");
         draw_detail(&mut terminal, rect, record, screen.scroll, &hints, palette);
@@ -236,7 +236,7 @@ fn draw_records(terminal: Option<ResMut<Terminal>>, screen: Screen) {
     }
     let confirm = key_name(bindings.cursor.confirm);
     let hints = if kept.is_empty() { close } else { format!("\u{2191}\u{2193} pick \u{2022} {confirm} open \u{2022} {close} close") };
-    draw_list(&mut terminal, rect, layout, kept, screen.picked, &hints, palette);
+    draw_list(&mut terminal, rect, layout, kept, screen.selected, &hints, palette);
 }
 
 /// The list, best score first: each row clipped to the rectangle, scrolled
@@ -376,7 +376,7 @@ mod tests {
     fn confirm_opens_the_record_picked_out_and_close_goes_back_to_the_list() {
         let mut app = opened(RunRecords { records: vec![record(100, "Won on the tenth floor"), record(50, "Died on floor three")], this_run: None });
         press(&mut app, KeyCode::ArrowDown);
-        assert_eq!(screen(&app).picked, 1);
+        assert_eq!(screen(&app).selected, 1);
         press(&mut app, KeyCode::Enter);
         assert!(screen(&app).open, "confirm opened the detail view");
         assert!(rows(&app).join("\n").contains("Died on floor three"), "the record picked out, not the first");

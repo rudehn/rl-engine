@@ -741,9 +741,10 @@ pub struct SaveSlot {
 /// player arrives somewhere. Registers no key: a game's save key calls
 /// [`save_run`].
 ///
-/// For a title: reads the slot into [`SavedRun`] before the first frame
-/// and keeps it current as the slot is written and deleted, writes a run
-/// left with [`LeaveRun`] down rather than forgetting it with its
+/// For a title: inserts [`SavedRun`], which is how a title knows there is
+/// a slot to continue from at all, reads the slot into it before the first
+/// frame and keeps it current as the slot is written and deleted, writes a
+/// run left with [`LeaveRun`] down rather than forgetting it with its
 /// teardown, and forgets the slot the moment [`AbandonRun`] is triggered.
 pub struct SavePlugin {
     slot: String,
@@ -780,6 +781,9 @@ impl Plugin for SavePlugin {
             .save_kind::<PropKind>()
             .init_resource::<Stash>()
             .init_resource::<Leaving>()
+            // Empty until `finish` reads the slot, and there from the
+            // start, even without a backend, since it says a slot exists.
+            .init_resource::<SavedRun>()
             .insert_resource(SaveSlot { slot: self.slot.clone(), version: self.version })
             .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as `Saves::platform_default(\"my-game\")`")
             .reads::<LeaveRun>()

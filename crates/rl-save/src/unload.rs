@@ -95,15 +95,19 @@ impl Plugin for UnloadPlugin {
 
 /// Writes the stash on the frame the app is told to exit, which is the
 /// frame a native window's close button produces. When what it writes is
-/// the run's slot, [`SavedRun`] says the slot holds a run.
-pub fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>, run: Option<Res<SaveSlot>>, mut saved: ResMut<SavedRun>) {
+/// the run's slot, [`SavedRun`] says the slot holds a run. Both are
+/// `SavePlugin`'s and read as optional, since a game may stash what it
+/// writes on the way out without keeping a run's slot at all.
+pub fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>, run: Option<Res<SaveSlot>>, saved: Option<ResMut<SavedRun>>) {
     if exits.read().next().is_none() {
         return;
     }
     match stash.flush(saves.0.as_ref()) {
         Ok(true) => {
             info!("the stashed save was written on exit");
-            if run.is_some_and(|run| stash.pending().as_deref() == Some(run.slot.as_str())) {
+            if let (Some(run), Some(mut saved)) = (run, saved)
+                && stash.pending().as_deref() == Some(run.slot.as_str())
+            {
                 *saved = SavedRun::Readable;
             }
         }
@@ -172,6 +176,7 @@ mod tests {
         app.world_mut().write_message(AppExit::Success);
         app.update();
         assert_eq!(backend.load("run").unwrap().as_deref(), Some("(turn: 7)"));
+        assert!(!app.world().contains_resource::<SavedRun>(), "and a game keeping no run's slot is not given one to offer");
     }
 
     /// The run's slot written on the way out says it holds a run; a stash

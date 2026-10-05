@@ -302,7 +302,7 @@ mod tests {
         let column: Vec<_> = rows.iter().map(|r| r.chars().position(|c| c != ' ')).collect();
         assert!(column.iter().all(|c| *c == column[0]), "on one column: {rows:#?}");
         let title = app.world().resource::<TitleMenu>();
-        assert_eq!(title.rows().get(title.picked), Some(&TitleRow::NewGame), "New Game picked out");
+        assert_eq!(title.rows().get(title.selected), Some(&TitleRow::NewGame), "New Game picked out");
     }
 
     /// New Game, picked out first with nothing saved, begins the run with
@@ -344,7 +344,7 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         assert!(!app.world().contains_resource::<WorldMap>(), "the run is left");
         let title = app.world().resource::<TitleMenu>();
-        assert_eq!(title.rows().get(title.picked), Some(&TitleRow::Continue), "for the title, which offers it back: {:#?}", written(&app));
+        assert_eq!(title.rows().get(title.selected), Some(&TitleRow::Continue), "for the title, which offers it back: {:#?}", written(&app));
 
         press(&mut app, KeyCode::Enter);
         undermere::testing::settle(&mut app);
@@ -368,7 +368,7 @@ mod tests {
         press(&mut app, KeyCode::ArrowUp);
         press(&mut app, KeyCode::Enter);
         let title = app.world().resource::<TitleMenu>();
-        assert_eq!(title.rows().get(title.picked), Some(&TitleRow::NewGame), "the title, New Game picked out: {:#?}", written(&app));
+        assert_eq!(title.rows().get(title.selected), Some(&TitleRow::NewGame), "the title, New Game picked out: {:#?}", written(&app));
 
         press(&mut app, KeyCode::Enter);
         undermere::testing::settle(&mut app);

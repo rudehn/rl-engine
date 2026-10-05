@@ -10,7 +10,8 @@
 //!
 //! It knows nothing of storage, which is `rl-save`'s, a crate this one may
 //! not depend on. What the slot holds is [`SavedRun`], kept by whoever
-//! keeps the slot; Continue asks the game's start to restore it with [`ContinueRun`],
+//! keeps the slot, and a game with none keeps no slot, so its title has no
+//! Continue to offer; Continue asks the game's start to restore it with [`ContinueRun`],
 //! and New Game over a save gives it up with [`AbandonRun`], both through
 //! [`begin_run`], the door every run begins by. A run left with
 //! [`LeaveRun`] raises the hold again, and the menu with it.
@@ -22,7 +23,7 @@ use rl_render::{Cell, Terminal};
 
 use crate::controls::ControlInput;
 use crate::modal::{ModalId, Modals};
-use crate::panel::settings::{SettingsLayout, settings_keys, settings_modal};
+use crate::panel::settings::{SettingsLayout, rows_drawn, settings_keys, settings_modal};
 use crate::panel::{clear, clip};
 use crate::tone::{Palette, Tones};
 
@@ -113,7 +114,7 @@ impl Default for TitleWords {
 #[derive(Resource, Debug, Default)]
 pub struct TitleMenu {
     /// Which of [`rows`](Self::rows) is picked out.
-    pub picked: usize,
+    pub selected: usize,
     /// The question New Game asks over a save, while it is asked: `Some`,
     /// with whether Yes is picked out.
     pub confirm: Option<bool>,
@@ -127,11 +128,21 @@ pub struct TitleMenu {
 
 impl TitleMenu {
     /// The rows that can be taken, in the order they are drawn, as the
-    /// keys last saw them: [`picked`](Self::picked) counts these, so a row
-    /// that cannot be taken is never the one picked out. Empty until the
-    /// title's first frame.
+    /// keys last saw them: [`selected`](Self::selected) counts these, so a
+    /// row that cannot be taken is never the one picked out. Empty until
+    /// the title's first frame.
     pub fn rows(&self) -> Vec<TitleRow> {
         self.drawn.iter().filter(|(_, takes)| *takes).map(|(row, _)| *row).collect()
+    }
+
+    /// Every row drawn, in order, and whether it can be taken now, as the
+    /// keys last saw them: what a game drawing the menu its own way reads,
+    /// the rows drawn dim included, which [`rows`](Self::rows) leaves out.
+    /// Read-only, since the keys refill it every frame and a row a game
+    /// added would be a row no key could take. Empty until the title's
+    /// first frame.
+    pub fn drawn(&self) -> &[(TitleRow, bool)] {
+        &self.drawn
     }
 }
 
@@ -236,10 +247,11 @@ impl Plugin for TitlePanel {
 }
 
 /// What decides which rows the title can offer: what the run's slot
-/// holds, the settings declared, and the records kept.
+/// holds, if the game keeps one, the settings declared, and the records
+/// kept.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct TitleReads<'w> {
-    saved: Res<'w, SavedRun>,
+    saved: Option<Res<'w, SavedRun>>,
     settings: Option<Res<'w, Settings>>,
     records: Option<Res<'w, RunRecords>>,
 }
@@ -248,11 +260,12 @@ impl TitleReads<'_> {
     /// Every row the title draws, and whether it can be taken now.
     ///
     /// A row is drawn when the game has what it opens, and taken only when
-    /// there is something there: Continue always, to say a run can be
-    /// continued one day, and taken over a run this build can read;
-    /// Records once a records screen was declared, and taken once there is
-    /// a record; Settings when the settings screen has a setting to list,
-    /// which no frame changes, so a row that could never be taken is not
+    /// there is something there: Continue when the game keeps a save
+    /// slot, to say a run can be continued one day, and taken over a run
+    /// this build can read; Records once a records screen was declared,
+    /// and taken once there is a record; Settings when the settings screen
+    /// has a setting to list. Whether a game keeps a slot or has anything
+    /// to set no frame changes, so a row that could never be taken is not
     /// drawn at all.
     fn rows(&self, modals: &Modals) -> Vec<(TitleRow, bool)> {
         let records = modals.get(RECORDS_MODAL).map(|_| self.records.as_deref().is_some_and(|kept| !kept.records.is_empty()));
@@ -260,12 +273,18 @@ impl TitleReads<'_> {
         TitleRow::ALL
             .into_iter()
             .filter_map(|row| match row {
-                TitleRow::Continue => Some((row, *self.saved == SavedRun::Readable)),
+                TitleRow::Continue => self.saved.as_deref().map(|saved| (row, *saved == SavedRun::Readable)),
                 TitleRow::NewGame | TitleRow::Exit => Some((row, true)),
                 TitleRow::Records => records.map(|kept| (row, kept)),
                 TitleRow::Settings => settings.then_some((row, true)),
             })
             .collect()
+    }
+
+    /// Whether the slot holds a run, one this build can read or not, which
+    /// a new run would replace: what New Game asks about first.
+    fn holds_a_run(&self) -> bool {
+        self.saved.as_deref().is_some_and(|saved| *saved != SavedRun::Empty)
     }
 }
 
@@ -313,8 +332,8 @@ pub fn title_keys(
     }
     // Never empty: New Game and Exit can always be taken.
     let rows = menu.rows();
-    let (count, picked) = (rows.len(), menu.picked.min(rows.len() - 1));
-    menu.picked = match direction {
+    let (count, picked) = (rows.len(), menu.selected.min(rows.len() - 1));
+    menu.selected = match direction {
         Some(Direction::North) => (picked + count - 1) % count,
         Some(Direction::South) => (picked + 1) % count,
         _ => picked,
@@ -326,14 +345,14 @@ pub fn title_keys(
     if !take {
         return;
     }
-    match rows[menu.picked] {
+    match rows[menu.selected] {
         TitleRow::Continue => {
             commands.insert_resource(ContinueRun);
             lower(&mut menu, &mut commands, begin_run);
         }
         // Over anything saved, even what this build cannot read, New Game
         // asks first: a run given up by a slip of the key is gone for good.
-        TitleRow::NewGame if *reads.saved != SavedRun::Empty => menu.confirm = Some(false),
+        TitleRow::NewGame if reads.holds_a_run() => menu.confirm = Some(false),
         TitleRow::NewGame => lower(&mut menu, &mut commands, begin_run),
         TitleRow::Records => {
             let screen = modals.get(RECORDS_MODAL);
@@ -364,7 +383,7 @@ fn cover(menu: &mut TitleMenu, modals: &mut Modals, screen: Option<ModalId>) {
 /// next comes up its first row is the one picked out, whatever the slot
 /// then holds.
 fn lower(menu: &mut TitleMenu, commands: &mut Commands, begin: fn(&mut World)) {
-    menu.picked = 0;
+    menu.selected = 0;
     menu.confirm = None;
     commands.queue(begin);
 }
@@ -382,28 +401,38 @@ fn abandon_and_begin(world: &mut World) {
 ///
 /// Where the game put it for a run is where a run's screens go, often
 /// across the title's picture, and the player is looking at the menu.
-/// Centred on the menu from its top, as wide and as tall as the game made
-/// it, and stopping at the terminal's edges. Done once each time the title
-/// comes up; a run's beginning puts it back.
+/// Centred across the menu, as wide as the game made it, from the menu's
+/// top, and risen only as far as its rows need to end on the terminal: it
+/// does not scroll, so a row run past the terminal's foot would be a
+/// setting the player could not reach from the title, and a screen risen
+/// further would stand over the picture rather than the menu. Never
+/// taller than the game made it. Done once each time the title comes up;
+/// a run's beginning puts it back.
 fn stand_settings_over_title(
     title: Res<TitleLayout>,
-    settings: Option<ResMut<SettingsLayout>>,
+    layout: Option<ResMut<SettingsLayout>>,
+    declared: Option<Res<Settings>>,
     terminal: Option<Res<Terminal>>,
     mut aside: ResMut<SettingsAside>,
 ) {
-    let Some(mut settings) = settings else { return };
+    let Some(mut layout) = layout else { return };
     if aside.0.is_some() {
         return;
     }
-    let (menu, in_run) = (title.rect, settings.rect);
+    let (menu, in_run) = (title.rect, layout.rect);
     aside.0 = Some(in_run);
-    let (width, height) = match terminal.as_deref() {
-        Some(terminal) => (in_run.width.min(terminal.width()), in_run.height.min(terminal.height() - menu.y).max(0)),
-        None => (in_run.width, in_run.height),
+    let Some(terminal) = terminal else {
+        layout.rect = Rect::new((menu.x + (menu.width - in_run.width) / 2).max(0), menu.y, in_run.width, in_run.height);
+        return;
     };
-    let x = (menu.x + (menu.width - width) / 2).max(0);
-    let x = terminal.map_or(x, |terminal| x.min(terminal.width() - width));
-    settings.rect = Rect::new(x, menu.y, width, height);
+    let (columns, rows) = (terminal.width(), terminal.height());
+    let width = in_run.width.min(columns);
+    let x = (menu.x + (menu.width - width) / 2).clamp(0, columns - width);
+    // As tall as its rows, as the screen draws itself, never taller than
+    // the game made it, and on the terminal from its top row to its foot.
+    let tall = declared.as_deref().map_or(in_run.height, rows_drawn).min(in_run.height).min(rows);
+    let y = menu.y.min(rows - tall).max(0);
+    layout.rect = Rect::new(x, y, width, in_run.height.min(rows - y));
 }
 
 /// Gives back what the title borrowed, as a run begins: the settings
@@ -462,7 +491,7 @@ fn draw_title_menu(terminal: Option<ResMut<Terminal>>, title: Res<TitleLayout>, 
 /// over the picture, on whatever it painted under them.
 fn draw_rows(terminal: &mut Terminal, title: &TitleLayout, menu: &TitleMenu, palette: &Palette) {
     let rect = title.rect;
-    let picked = menu.rows().get(menu.picked).copied();
+    let picked = menu.rows().get(menu.selected).copied();
     let widest = menu.drawn.iter().map(|(row, _)| row.label(&title.words).chars().count()).max().unwrap_or(0);
     let band = (widest as i32 + 2).min(rect.width);
     let (x, room) = (rect.x + (rect.width - band) / 2, (band - 2).max(0) as usize);
@@ -540,13 +569,16 @@ mod tests {
         seen.abandoned += 1;
     }
 
-    /// An engine app with `panel` up over a slot holding `saved`, a small
-    /// terminal to draw on, `setup` run before the first frame, and that
-    /// frame run.
-    fn titled(panel: TitlePanel, saved: SavedRun, setup: impl FnOnce(&mut App)) -> App {
+    /// An engine app with `panel` up over a slot holding `saved`, or with
+    /// no slot at all, as in a game that saves nothing, a small terminal to
+    /// draw on, `setup` run before the first frame, and that frame run.
+    fn titled(panel: TitlePanel, saved: Option<SavedRun>, setup: impl FnOnce(&mut App)) -> App {
         let mut app = rl_bevy::plugin::headless_app();
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin, panel));
-        app.insert_resource(Terminal::new(40, 12, Vec2::ONE)).insert_resource(saved);
+        app.insert_resource(Terminal::new(40, 12, Vec2::ONE));
+        if let Some(saved) = saved {
+            app.insert_resource(saved);
+        }
         app.init_resource::<Seen>().add_systems(NewRun, start).add_observer(forget);
         setup(&mut app);
         app.finish();
@@ -555,9 +587,10 @@ mod tests {
         app
     }
 
-    /// The title over the whole of the small terminal.
+    /// The title over the whole of the small terminal, over a slot holding
+    /// `saved`.
     fn title_over(saved: SavedRun, setup: impl FnOnce(&mut App)) -> App {
-        titled(TitlePanel::new(Rect::new(0, 0, 40, 12)), saved, setup)
+        titled(TitlePanel::new(Rect::new(0, 0, 40, 12)), Some(saved), setup)
     }
 
     /// A settings screen with one setting on it, `glow`, which is `Off`.
@@ -581,7 +614,7 @@ mod tests {
 
     /// The row picked out.
     fn picked(app: &App) -> TitleRow {
-        let (rows, picked) = (menu(app).rows(), menu(app).picked);
+        let (rows, picked) = (menu(app).rows(), menu(app).selected);
         *rows.get(picked).unwrap_or_else(|| panic!("row {picked} of {rows:?} is picked out"))
     }
 
@@ -623,13 +656,37 @@ mod tests {
         assert!(app.world_mut().run_system_once(title_is_up).expect("the condition runs"), "and the title is up");
     }
 
+    /// A game with no save slot, no `SavePlugin`, has nothing it could
+    /// ever continue, and that cannot change while it runs: Continue is
+    /// left out rather than drawn dim, as Settings is with nothing to set,
+    /// and New Game has no save to ask about.
     #[test]
-    fn with_nothing_saved_the_title_offers_new_game_first_and_never_continue() {
+    fn a_game_that_keeps_no_save_slot_is_offered_no_continue() {
+        let mut app = titled(TitlePanel::new(Rect::new(0, 0, 40, 12)), None, |_| {});
+        assert_eq!(drawn(&app), ["New Game", "Exit"], "no Continue row, dim or otherwise");
+        assert_eq!(picked(&app), TitleRow::NewGame);
+        press(&mut app, KeyCode::Enter);
+        assert_eq!((menu(&app).confirm, seen(&app).begun), (None, 1), "New Game begins without asking");
+    }
+
+    /// A slot that holds nothing yet could hold a run once one is left for
+    /// the title, so Continue is drawn dim, to say a run can be continued.
+    #[test]
+    fn with_an_empty_slot_the_title_picks_new_game_out_first_and_draws_continue_dim() {
         let app = title_over(SavedRun::Empty, |_| {});
         assert_eq!(menu(&app).rows(), [TitleRow::NewGame, TitleRow::Exit], "Continue cannot be taken");
         assert_eq!(picked(&app), TitleRow::NewGame, "New Game is picked out");
         assert_eq!(drawn(&app), ["Continue", "New Game", "Exit"], "Continue is drawn all the same, to say a run can be continued one day");
         assert_eq!(cell_of(&app, "Continue").fg, tone(&app, Tones::MUTED), "and drawn dim");
+    }
+
+    /// A game drawing the menu its own way reads what the panel draws:
+    /// every row in order and whether it can be taken now, the dim ones
+    /// included, which the takeable `rows` leave out.
+    #[test]
+    fn a_game_drawing_its_own_menu_reads_every_row_and_whether_it_can_be_taken() {
+        let app = title_over(SavedRun::Empty, |_| {});
+        assert_eq!(menu(&app).drawn(), [(TitleRow::Continue, false), (TitleRow::NewGame, true), (TitleRow::Exit, true)]);
     }
 
     #[test]
@@ -796,7 +853,7 @@ mod tests {
         for (open_title_first, close_title_first) in [(true, true), (true, false), (false, true), (false, false)] {
             let orders = format!("opened with the title first: {open_title_first}, closed with it first: {close_title_first}");
             let mut app = title_over(SavedRun::Empty, with_settings);
-            app.world_mut().resource_mut::<TitleMenu>().picked = 1;
+            app.world_mut().resource_mut::<TitleMenu>().selected = 1;
             assert_eq!(picked(&app), TitleRow::Settings, "{orders}");
 
             frame(&mut app, KeyCode::Enter, open_title_first);
@@ -864,13 +921,14 @@ mod tests {
     #[test]
     fn the_settings_screen_stands_over_the_menu_while_the_title_is_up_and_goes_back_when_a_run_begins() {
         let in_run = Rect::new(28, 6, 44, 13);
-        let mut app = titled(TitlePanel::new(Rect::new(30, 30, 40, 8)), SavedRun::Empty, |app| {
+        let mut app = titled(TitlePanel::new(Rect::new(30, 30, 40, 8)), Some(SavedRun::Empty), |app| {
             app.insert_resource(Terminal::new(100, 40, Vec2::ONE));
             app.add_plugins(SettingsPanel::new(in_run));
             app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
         });
         // Centred on the menu, from its top, as wide as the game made it,
-        // and stopping at the terminal's foot rather than running past it.
+        // and stopping at the terminal's foot rather than running past it:
+        // its four rows fit under the menu's top, so it has no need to rise.
         let over_the_menu = Rect::new(28, 30, 44, 10);
         assert_eq!(app.world().resource::<SettingsLayout>().rect, over_the_menu);
         press(&mut app, KeyCode::Enter);
@@ -883,13 +941,36 @@ mod tests {
         assert_eq!(app.world().resource::<SettingsLayout>().rect, over_the_menu);
     }
 
+    /// A settings screen taller than the room under the menu rises until
+    /// its last row is on the terminal: it does not scroll, so a row cut at
+    /// the terminal's foot would be a setting the player could not reach
+    /// from the title. Nine settings under one heading, in a frame, are
+    /// twelve rows, two more than the ten from the menu's top down.
+    #[test]
+    fn a_settings_screen_too_tall_for_the_room_under_the_menu_rises_to_show_every_row() {
+        let in_run = Rect::new(28, 6, 44, 13);
+        let mut app = titled(TitlePanel::new(Rect::new(30, 30, 40, 8)), Some(SavedRun::Empty), |app| {
+            app.insert_resource(Terminal::new(100, 40, Vec2::ONE));
+            app.add_plugins(SettingsPanel::new(in_run));
+            for n in 1..=9 {
+                app.add_setting(Setting::new(format!("s{n}"), "Display", format!("Setting {n}"), ["Off", "On"]));
+            }
+        });
+        assert_eq!(app.world().resource::<SettingsLayout>().rect, Rect::new(28, 28, 44, 12), "two rows up, and as tall as its rows");
+        press(&mut app, KeyCode::ArrowDown);
+        press(&mut app, KeyCode::Enter);
+        let rows = screen(&app);
+        assert!(rows[38].contains("Setting 9"), "the last setting on the last row inside the frame: {rows:#?}");
+        assert!(rows[39].trim_start().starts_with('\u{2514}'), "and the frame closed on the terminal's last row: {rows:#?}");
+    }
+
     /// The words line up on one column, so they do not shift as the pick
     /// moves, and the band the picked one is drawn on is as wide as the
     /// widest word and a cell either side.
     #[test]
     fn the_rows_line_up_centred_across_the_menu_in_the_games_own_words() {
         let words = TitleWords { new_game: "Descend".into(), ..TitleWords::default() };
-        let app = titled(TitlePanel::new(Rect::new(0, 0, 40, 12)).words(words), SavedRun::Empty, |_| {});
+        let app = titled(TitlePanel::new(Rect::new(0, 0, 40, 12)).words(words), Some(SavedRun::Empty), |_| {});
         let rows = screen(&app);
         // The widest word is eight cells, so the band is ten, from column
         // fifteen, and every word starts at sixteen.
