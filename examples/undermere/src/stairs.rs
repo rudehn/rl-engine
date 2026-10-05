@@ -1,5 +1,5 @@
-//! The ways between places, and the line the log gives each place as it
-//! is entered.
+//! The ways between places, the line the log gives each place as it is
+//! entered, and the town the adventurer knows by heart.
 //!
 //! A place's builder reports a way in and a way on; this stands a way
 //! through on each the first time the place is entered, the way Foundry's
@@ -15,6 +15,10 @@
 //! drawn by a glyph of their own, as Foundry's lifts are. The gate is drawn
 //! by the tile it stands on, which shimmers and glows violet on both its
 //! sides, so it carries no glyph to hide the tile under.
+//!
+//! Mereholt is where the adventurer lives, so its first arrival writes the
+//! whole town into what they remember, [`know_the_town`], where a floor
+//! below is learned only as it is seen.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -89,26 +93,53 @@ pub fn place_line(map: MapId) -> String {
     format!("Floor {floor}: {}. {mood}", Biome::of(floor).name())
 }
 
+/// Writes every cell of Mereholt into what the adventurer remembers, so
+/// the town's shape is there from the first frame rather than the slivers
+/// of it in sight, which read as walls strewn about.
+///
+/// Remembered, not seen: what is in view is still what sight and the light
+/// allow, and the rest is drawn as memory draws anything. Written into the
+/// town's own memory whatever place is being read, since a warp later in
+/// the same pass may already have moved the adventurer on.
+pub fn know_the_town(map: &WorldMap, knowledge: &mut Knowledge) {
+    let Some(town) = map.place(TOWN) else { return };
+    let reading = knowledge.current();
+    knowledge.switch(TOWN);
+    for p in town.terrain.bounds().cells() {
+        knowledge.mark(p);
+    }
+    knowledge.switch(reading);
+}
+
 /// Lays a place's ways through the first time it is entered, and names the
 /// place in the log on every arrival, coming up as well as going down.
 ///
-/// On the run's first arrival, in Mereholt, it also says how to see the
+/// On the run's first arrival in Mereholt it also says how to see the
 /// keys, under the town's own line: said when the run is begun, it would
-/// be written before the arrival and read as though it came first.
-pub fn link_places(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, help: Res<ControlsKeys>, mut tell: MessageWriter<Tell>) {
+/// be written before the arrival and read as though it came first. And
+/// the adventurer knows the town they live in, [`know_the_town`].
+pub fn link_places(
+    mut commands: Commands,
+    mut entered: MessageReader<PlaceEntered>,
+    help: Res<ControlsKeys>,
+    mut tell: MessageWriter<Tell>,
+    map: Res<WorldMap>,
+    mut knowledge: ResMut<Knowledge>,
+) {
     for ev in entered.read() {
         tell.write(Tell::new(place_line(ev.map), Tones::NOTICE));
         if !ev.first {
             continue;
         }
         let Some(floor) = floor_of(ev.map) else {
-            // The town: how to see the keys, and the gate, its way on,
-            // leading to floor one's way in.
+            // The town: how to see the keys, the gate, its way on, leading
+            // to floor one's way in, and the whole of it known.
             if ev.map == TOWN {
                 tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
                 if let Some(gate) = ev.exit {
                     lay(&mut commands, Way::Gate, gate, ev.map, Destination::Place { map: map_of(1), arrive: Arrive::Entry });
                 }
+                know_the_town(&map, &mut knowledge);
             }
             continue;
         };
@@ -276,6 +307,34 @@ mod tests {
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let line = |text: &str| lines.iter().position(|l| l == text).unwrap_or_else(|| panic!("{text:?} not in {lines:#?}"));
         assert!(line(&place_line(TOWN)) < line("Press ? for the controls."), "{lines:#?}");
+    }
+
+    /// The adventurer lives in Mereholt, so the first arrival there knows
+    /// the whole of it, every cell of the town remembered from the first
+    /// frame, while sight and light still decide what is seen: the town is
+    /// known, not all in view. A floor below is learned as it is seen, and
+    /// the town is as well known on the way back up.
+    #[test]
+    fn the_whole_of_mereholt_is_remembered_on_arrival() {
+        for s in 0..3 {
+            let mut app = headless(RunSeed(s));
+            let me = crate::testing::adventurer(&mut app);
+            let town = app.world().resource::<WorldMap>().place(TOWN).expect("Mereholt was built").terrain.bounds();
+            let unknown = |app: &App| {
+                let knowledge = app.world().resource::<Knowledge>();
+                town.cells().filter(|p| !knowledge.is_explored(*p)).count()
+            };
+            assert_eq!((here(&app), unknown(&app)), (TOWN, 0), "seed {s}: every cell of Mereholt is known on arrival");
+            let sight = app.world().get::<Viewshed>(me).expect("eyes");
+            assert!(town.cells().any(|p| !sight.can_see(p)), "seed {s}: known, not seen: some of the town is out of sight");
+
+            arrive(&mut app, map_of(1));
+            let floor = app.world().resource::<WorldMap>().place(map_of(1)).expect("floor one").terrain.bounds();
+            let known = app.world().resource::<Knowledge>().explored_count();
+            assert!(known > 0 && known < floor.area() as usize / 2, "seed {s}: floor one is learned as it is seen, {known} cells of it so far");
+            arrive(&mut app, TOWN);
+            assert_eq!(unknown(&app), 0, "seed {s}: and Mereholt is as well known coming back");
+        }
     }
 
     /// The log names the place on every arrival, not only the first, so

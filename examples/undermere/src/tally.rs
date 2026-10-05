@@ -261,9 +261,9 @@ pub fn count_what_is_found(
 }
 
 /// How wide a ledger line is, label to value: room for the longest label
-/// and the longest value, a seed of twenty digits, with dots between, and
-/// narrower than both the end screen and the records screen, so a line is
-/// never wrapped.
+/// and the longest value, the name of the deadliest kill, with dots
+/// between, and narrower than both the end screen and the records screen,
+/// so a line is never wrapped.
 const LEDGER: usize = 34;
 
 /// `rows` as a ledger: each label and its value at either end of a line,
@@ -300,11 +300,15 @@ pub fn summary(outcome: Outcome, by: Option<&str>, place: MapId, tally: &Tally) 
     }
 }
 
-/// The record's two sections: the score line by line with its total, and
-/// the run's numbers, `turns` long on `seed`.
-pub fn sections(lines: &[(String, i64)], tally: &Tally, turns: u32, seed: RunSeed) -> Vec<RecordSection> {
-    let mut points: Vec<(&str, String)> = lines.iter().map(|(name, points)| (name.as_str(), points.to_string())).collect();
-    points.push(("Total", total(lines).to_string()));
+/// The record's two sections: the score line by line, then its total set
+/// off from the lines by a rule of the ledger's own dots, the way a sum is
+/// ruled off under the column it adds; and the run's numbers, `turns` long.
+///
+/// No seed among them: the end screen says it under the run's summary, in
+/// the engine's words, and a second line saying it again is noise.
+pub fn sections(lines: &[(String, i64)], tally: &Tally, turns: u32) -> Vec<RecordSection> {
+    let points: Vec<(&str, String)> = lines.iter().map(|(name, points)| (name.as_str(), points.to_string())).collect();
+    let score = [ledger(&points), ".".repeat(LEDGER), ledger(&[("Total", total(lines).to_string())])].join("\n");
     let none = || "none".to_string();
     let run: Vec<(&str, String)> = vec![
         ("Turns", turns.to_string()),
@@ -316,9 +320,8 @@ pub fn sections(lines: &[(String, i64)], tally: &Tally, turns: u32, seed: RunSee
         ("Potions drunk", tally.potions_drunk.to_string()),
         ("Items found", tally.items_found.to_string()),
         ("Gold found", tally.gold_found.to_string()),
-        ("Seed", seed.0.to_string()),
     ];
-    vec![RecordSection { heading: "Score".to_string(), body: ledger(&points) }, RecordSection { heading: "The run".to_string(), body: ledger(&run) }]
+    vec![RecordSection { heading: "Score".to_string(), body: score }, RecordSection { heading: "The run".to_string(), body: ledger(&run) }]
 }
 
 /// What a record says gets the credit for the adventurer's death.
@@ -361,7 +364,7 @@ pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<Wo
     records.write(RecordRun {
         score: total(&lines),
         summary: summary(ending.outcome, by.as_deref(), map.current(), &tally),
-        sections: sections(&lines, &tally, ending.turn, ending.seed),
+        sections: sections(&lines, &tally, ending.turn),
     });
 }
 
@@ -384,7 +387,8 @@ mod tests {
 
     /// Over a span of tallies, won and lost: the five lines in the
     /// design's order, each by its own rule, a total that is their sum,
-    /// and a record whose Score section lists the same lines and the same
+    /// and a record whose Score section lists the same lines and then,
+    /// set off from them by a row that is no line of points, the same
     /// total as its score.
     #[test]
     fn the_score_is_the_sum_of_its_lines() {
@@ -411,11 +415,12 @@ mod tests {
                 ];
                 assert_eq!(lines.iter().map(|(_, p)| *p).collect::<Vec<_>>(), expected, "tally {s}, won {won}");
                 assert_eq!(total(&lines), expected.iter().sum::<i64>(), "tally {s}, won {won}");
-                let written = &sections(&lines, &t, 100, RunSeed(s))[0];
+                let written = &sections(&lines, &t, 100)[0];
                 let rows: Vec<&str> = written.body.lines().collect();
-                assert_eq!((written.heading.as_str(), rows.len()), ("Score", 6), "five lines and the total: {rows:?}");
+                assert_eq!((written.heading.as_str(), rows.len()), ("Score", 7), "five lines, a row setting them off, and the total: {rows:?}");
                 assert_eq!(rows[..5].iter().map(|r| points(r)).collect::<Vec<_>>(), expected, "{rows:?}");
-                assert!(rows[5].starts_with("Total ") && points(rows[5]) == total(&lines), "{rows:?}");
+                assert!(!rows[5].chars().any(char::is_alphanumeric), "the total is set off from the lines: {rows:?}");
+                assert!(rows[6].starts_with("Total ") && points(rows[6]) == total(&lines), "{rows:?}");
             }
         }
     }
@@ -564,17 +569,32 @@ mod tests {
         assert_eq!(record.sections.iter().map(|s| s.heading.as_str()).collect::<Vec<_>>(), ["Score", "The run"]);
         let score_rows = rows(&record, "Score");
         assert_eq!(score_rows[..5].iter().map(|r| points(r)).sum::<i64>(), record.score, "the lines add up to the score: {score_rows:?}");
-        assert_eq!((points(score_rows[0]), points(score_rows[5])), (300, record.score), "three floors down, and the total: {score_rows:?}");
+        assert_eq!((points(score_rows[0]), points(score_rows[6])), (300, record.score), "three floors down, and the total: {score_rows:?}");
         let run = rows(&record, "The run");
         let labels: Vec<&str> = run.iter().map(|r| r.split(" .").next().unwrap_or_default()).collect();
         assert_eq!(
             labels,
-            ["Turns", "Deepest floor", "Kills", "Deadliest", "Damage dealt", "Damage taken", "Potions drunk", "Items found", "Gold found", "Seed"],
+            ["Turns", "Deepest floor", "Kills", "Deadliest", "Damage dealt", "Damage taken", "Potions drunk", "Items found", "Gold found"],
             "{run:?}"
         );
-        assert!(run[1].ends_with(" 3") && run[9].ends_with(" 8"), "floor three, seed eight: {run:?}");
+        assert!(run[1].ends_with(" 3"), "floor three: {run:?}");
         let kept = app.world().resource::<Saves>().load(rl_engine::rl_save::RECORDS_SLOT).expect("the slot reads").expect("the records were written down");
         assert!(kept.contains("Slain by a goblin on floor 3"), "kept beyond the run: {kept}");
+    }
+
+    /// The end screen says the run's seed under its summary, in the
+    /// engine's words, and the engine keeps it on the record: so the
+    /// record's own sections never say it a second time.
+    #[test]
+    fn the_record_says_the_seed_once() {
+        let mut app = headless(RunSeed(8));
+        let me = arrive(&mut app, map_of(2));
+        kill(&mut app, me, None);
+        settle(&mut app);
+        let record = app.world().resource::<RunRecords>().this_run.clone().expect("the run's end filed a record");
+        assert_eq!(record.seed, 8, "the engine's own account of the run carries its seed");
+        let again: Vec<&str> = record.sections.iter().flat_map(|s| s.body.lines()).filter(|row| row.split(" .").next() == Some("Seed")).collect();
+        assert!(again.is_empty(), "and no section of the game's says it again: {again:?}");
     }
 
     /// The Drowned King falls on floor ten to the adventurer's blow: the

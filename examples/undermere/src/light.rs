@@ -59,6 +59,13 @@ pub const LAVA: LightDef = LightDef { radius: 3, color: (1.0, 0.52, 0.15), flick
 /// marble.
 pub const SHAFT: LightDef = LightDef { radius: 2, color: (0.72, 0.84, 1.0), flicker: 0.0 };
 
+/// Every tile that glows by itself, by its name in `assets/tiles.ron`, and
+/// the light it sheds: the town's lit windows and the gate, and below them
+/// the glowcaps, the lava and the cathedral's shafts of light. Each is
+/// drawn brighter than the walls round it, as a light is, where every
+/// other floor is darker than its band's wall.
+pub const GLOWING: [(&str, LightDef); 5] = [("lit window", WINDOW), ("gate", GATE), ("glowcaps", GLOWCAP), ("lava", LAVA), ("moonlit marble", SHAFT)];
+
 /// How far the adventurer's lantern reaches on `floor`, `None` for the
 /// town: seven tiles at the top, and a tile less every third floor, down
 /// to four before the throne, so the dark closes in as the floors grow
@@ -149,15 +156,14 @@ pub struct Fixtures {
 
 impl Fixtures {
     /// What lights the places of `undermere`, with the props named in
-    /// `registries`: of the tiles, the town's lit windows and the gate, and
-    /// below it the glowcaps, the lava and the cathedral's shafts of light;
-    /// of the props, lamp posts, the forge and the hearth, the altar and
+    /// `registries`: of the tiles, every one [`GLOWING`] names; of the
+    /// props, lamp posts, the forge and the hearth, the altar and
     /// candelabras, and braziers wherever they stand.
     pub fn new(undermere: &Undermere, registries: &Registries) -> Self {
         let tile = |name: &str| undermere.tiles().expect(name);
         let prop = |name: &str| registries.props.expect(name);
         Self {
-            tiles: vec![(tile("lit window"), WINDOW), (tile("gate"), GATE), (tile("glowcaps"), GLOWCAP), (tile("lava"), LAVA), (tile("moonlit marble"), SHAFT)],
+            tiles: GLOWING.iter().map(|(name, light)| (tile(name), *light)).collect(),
             props: vec![(prop("lamp post"), LAMP), (prop("forge"), FIRE), (prop("hearth"), FIRE), (prop("altar"), CANDLES), (prop("candelabra"), CANDLES)],
             brazier: prop("brazier"),
             prefabs: undermere.prefabs().clone(),

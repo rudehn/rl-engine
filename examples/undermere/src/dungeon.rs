@@ -1243,6 +1243,60 @@ mod tests {
         }
     }
 
+    /// Brogue draws a wall lighter than the floor it bounds, so the shape
+    /// of a room or a cave reads at a glance even in the dark. Every band's
+    /// wall has a ground lighter than each of its floors, the doors hung in
+    /// it and the tiles that glow aside: in every channel, so it is the
+    /// lighter under any light that lands on both, and by a margin the eye
+    /// reads, in full light and remembered alike.
+    #[test]
+    fn every_biomes_walls_are_lighter_than_its_floors() {
+        let undermere = Undermere::new(RunSeed(0));
+        let look = undermere.appearance();
+        let glows = |name: &str| crate::light::GLOWING.iter().any(|(glowing, _)| *glowing == name);
+        for biome in Biome::ALL {
+            for floor in biome.tiles().iter().filter(|t| **t != biome.wall() && !["door", "open door"].contains(*t) && !glows(t)) {
+                reads_against(&undermere, &look, biome.name(), biome.wall(), floor);
+            }
+        }
+    }
+
+    /// The walls of Mereholt's houses read against its streets as a band's
+    /// walls do against its floors, the more for the town being known:
+    /// most of it is drawn remembered from the first frame. Its trees are a
+    /// dark canopy rather than a wall, and a lit window glows.
+    #[test]
+    fn mereholts_walls_are_lighter_than_its_streets() {
+        let undermere = Undermere::new(RunSeed(0));
+        let look = undermere.appearance();
+        for wall in ["timber wall", "stone wall"] {
+            for street in ["grass", "cobbles", "road", "planks", "garden"] {
+                reads_against(&undermere, &look, "Mereholt", wall, street);
+            }
+        }
+    }
+
+    /// Asserts that `wall` reads against `floor` in `place` as a Brogue
+    /// wall reads against its room: a ground lighter in every channel, so
+    /// it stays the lighter under any light that lands on both, and by a
+    /// margin the eye reads, in full light and remembered.
+    fn reads_against(undermere: &Undermere, look: &TileAppearance, place: &str, wall: &str, floor: &str) {
+        use bevy::color::{Color, Oklaba};
+        // Oklab lightness, 0 to 1, which steps as evenly as the eye sees:
+        // the Upper Halls' rooms read in the photographs at these.
+        const IN_FULL_LIGHT: f32 = 0.15;
+        const REMEMBERED: f32 = 0.09;
+        let ground = |name: &str| look.lit(undermere.tiles().expect(name)).bg;
+        let lightness = |c: Color| Oklaba::from(c).lightness;
+        let (w, f) = (ground(wall), ground(floor));
+        let (lw, lf) = (w.to_linear(), f.to_linear());
+        assert!(lw.red >= lf.red && lw.green >= lf.green && lw.blue >= lf.blue, "{place}: the {wall} is darker than the {floor} in some channel");
+        for (how, margin, w, f) in [("in full light", IN_FULL_LIGHT, w, f), ("remembered", REMEMBERED, look.memory.recall(w), look.memory.recall(f))] {
+            let (w, f) = (lightness(w), lightness(f));
+            assert!(w - f >= margin, "{place}: the {wall}'s ground is {w:.2} against the {floor}'s {f:.2} {how}, where a wall reads at {margin} lighter");
+        }
+    }
+
     /// A piece's file paints one ground under every slot, and each slot then
     /// stands on the floor drawn round it: in Mereholt a table stands on the
     /// tavern's planks, a counter boxed in by others and by barrels on the
