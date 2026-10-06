@@ -468,6 +468,33 @@ mod tests {
         assert!(continued.world().get::<Unseen>(me).is_none(), "the plate came off, and so did the cloak");
     }
 
+    /// A slug pistol run dry before the save is still dry after the run is
+    /// continued: ammunition has no save field of its own (unlike
+    /// `Heat`'s `now` and `locked`, which the save does carry), because
+    /// `sync_ammo` derives `Dry` fresh from the bag on the very next pass,
+    /// and the bag itself is saved and restored the way any other
+    /// inventory is. Giving the continued run slugs loads the pistol
+    /// again, the same as it would any other turn.
+    #[test]
+    fn a_slug_pistol_run_dry_before_the_save_is_still_dry_after_the_continue_and_loads_again_once_given_slugs() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        let (me, pistol) = crate::testing::slug_pistol_with(&mut app, 1);
+        crate::testing::fire_at_a_target(&mut app, me, 1);
+        assert!(app.world().get::<RangedAttack>(pistol).is_none(), "dry before the save");
+
+        save_run(app.world_mut()).expect("the run saves");
+        let text = app.world().resource::<Saves>().load(SLOT).unwrap().expect("a save");
+        let mut continued = crate::testing::continued(&text);
+        let me = player(&mut continued);
+        let pistol = in_pack(&continued, me, "slug pistol");
+        assert!(continued.world().get::<RangedAttack>(pistol).is_none(), "still dry after the continue");
+        assert!(crate::testing::fire_at_a_target(&mut continued, me, 1).is_empty(), "nothing to fire with");
+
+        crate::testing::give_slugs(&mut continued, me, 2);
+        continued.update();
+        assert!(continued.world().get::<RangedAttack>(pistol).is_some(), "loaded again");
+    }
+
     /// Spawns `name` at `level` into `me`'s pack.
     fn carried_at(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
         let registries = app.world().resource::<Registries>().clone();

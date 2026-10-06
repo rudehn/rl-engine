@@ -11,7 +11,8 @@
 //! comes off the item and is put by as [`Stowed`](crate::combat::Stowed),
 //! so [`Loadout`](crate::combat::Loadout) falls through to the next worn
 //! item exactly as it does for any other benched weapon, with no knowledge
-//! of ammunition at all.
+//! of ammunition at all; [`Loadout::dry`](crate::combat::Loadout::dry) is
+//! the one place it answers by name whether a worn thing is dry.
 //!
 //! An opt-in plugin, [`AmmoPlugin`], rather than part of [`CombatPlugin`](crate::combat::CombatPlugin):
 //! a game with no ammunition-fed weapon (Corsair's cutlasses, Heist's
@@ -206,6 +207,7 @@ impl Plugin for AmmoPlugin {
 
     fn finish(&self, app: &mut App) {
         crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "AmmoPlugin");
+        crate::plugin::depends_on::<crate::items::ItemsPlugin>(app, "AmmoPlugin");
     }
 }
 
@@ -409,5 +411,18 @@ mod tests {
         app.world_mut().run_schedule(Turn);
         app.world_mut().run_schedule(Turn);
         assert!(app.world().get::<RangedAttack>(weapon).is_none(), "dry: never fired, never any slug, and nothing panicked for want of a turn");
+    }
+
+    /// `AmmoPlugin` needs `ItemsPlugin` for the bag `spend_ammo` and
+    /// `sync_ammo` both read, the same shape `ThrowingPlugin` declares for
+    /// the same reason: a game that adds the one without the other is
+    /// told so loudly, at `finish`, rather than failing quietly the first
+    /// time a shot finds no bag to spend from.
+    #[test]
+    #[should_panic(expected = "AmmoPlugin needs")]
+    fn ammo_plugin_without_items_plugin_says_so_at_build() {
+        let mut app = headless_app();
+        app.add_plugins((crate::combat::CombatPlugin, AmmoPlugin));
+        app.finish();
     }
 }
