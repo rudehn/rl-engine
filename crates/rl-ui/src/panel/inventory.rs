@@ -1131,6 +1131,25 @@ mod tests {
         assert_eq!(uses, vec![draught], "and it is used as what it is");
     }
 
+    /// A thing not yet known that can be thrown says nothing of how far it
+    /// flies or what it strikes for, and its key still throws it.
+    #[test]
+    fn an_unknown_thing_that_can_be_thrown_shows_no_reach_and_is_still_thrown() {
+        let (mut stage, _, _, knives) = staged();
+        stage.app.world_mut().entity_mut(knives).insert(Unknown);
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::ArrowDown);
+        assert_eq!(inside(&stage, 3), "3 knives", "by its name and how many");
+        let said: Vec<String> = detail(&stage)[4..].iter().filter(|l| !l.is_empty()).cloned().collect();
+        assert_eq!(said, ["unknown"], "not how far it flies, nor what it strikes for");
+        assert!(stage.row(13).contains("t throw"), "{:?}", stage.row(13));
+        stage.press(KeyCode::KeyT);
+        let thrown: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<AimThrow>>().drain().map(|a| a.item).collect();
+        assert_eq!(thrown, vec![knives], "and it is thrown as what it is");
+    }
+
     /// The last turn of a charge is one turn, not one turns.
     #[test]
     fn a_plate_a_turn_from_ready_says_one_turn() {

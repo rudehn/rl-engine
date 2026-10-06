@@ -30,7 +30,8 @@ pub struct GearSlot {
     pub item: Option<Row>,
     /// Charges left and the most it holds, for a worn thing that holds more
     /// than one: a wand. On the slot rather than the row because the row is
-    /// every panel's and a count of charges is gear's.
+    /// every panel's and a count of charges is gear's. `None` for a thing
+    /// not yet known, [`Unknown`], whose bag row withholds them too.
     pub charges: Option<(u16, u16)>,
     /// Whether this is the slot the item was equipped into, rather than one
     /// it also claims: false only on a two-hander's off hand. A claimed
@@ -87,10 +88,14 @@ impl Plugin for GearViewPlugin {
 }
 
 /// What a worn thing shows on its slot: its name, its look, how many,
-/// and its charges.
-type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Consumable>);
+/// and its charges, and whether it is known, which decides the last.
+type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Consumable>, Has<Unknown>);
 
 /// Fills [`GearView`] from what the player wears.
+///
+/// A thing not yet known shows its name, its look, how many and where it
+/// is worn, as its bag row does, and nothing of what it is worth, so the
+/// rail never says what the bag keeps back.
 pub fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, player: Query<&Equipped, With<Player>>, items: Query<Worn>) {
     view.slots.clear();
     let worn = player.single().ok();
@@ -100,12 +105,12 @@ pub fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, pla
             Some(e) => worn.is_some_and(|w| w.slot_of(e) == Some(slot)),
             None => true,
         };
-        let (name, glyph, stack, consumable) = entity.and_then(|e| items.get(e).ok()).unwrap_or((None, None, None, None));
+        let (name, glyph, stack, consumable, unknown) = entity.and_then(|e| items.get(e).ok()).unwrap_or((None, None, None, None, false));
         let item = entity.map(|entity| {
             let shown = name.map(|n| rl_core::noun::listed(n.as_str(), stack.map_or(1, |s| s.count))).unwrap_or_default();
             Row::new(entity, shown, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE)))
         });
-        let charges = consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max));
+        let charges = consumable.filter(|c| c.max > 1 && !unknown).map(|c| (c.left, c.max));
         view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges, primary });
     }
 }
@@ -196,6 +201,29 @@ mod tests {
         let view = stage.app.world().resource::<GearView>();
         assert_eq!(view.by_name("main hand").and_then(|s| s.charges), Some((3, 5)));
         assert_eq!(view.by_name("body").and_then(|s| s.charges), None);
+    }
+
+    /// A worn thing not yet known shows on its slot by its name and nothing
+    /// of what it holds: a wand's charges wait, as on its bag row, for the
+    /// game to say it is known.
+    #[test]
+    fn an_unknown_worn_things_slot_shows_its_name_and_no_charges() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let held = Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) };
+        let wand = stage.app.world_mut().spawn((Item, Name::new("teak wand"), held, Unknown)).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(2));
+        worn.equip(wand, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        let slot = view.by_name("main hand").expect("listed");
+        assert_eq!(slot.item.as_ref().map(|i| i.label.as_str()), Some("teak wand"), "by its name, on its slot");
+        assert_eq!(slot.charges, None, "and nothing of what it holds");
     }
 
     #[test]
