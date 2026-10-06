@@ -276,3 +276,57 @@ pub fn pack(app: &App, who: Entity) -> Vec<(String, u32)> {
 pub fn name_of(app: &App, thing: Entity) -> String {
     app.world().get::<Name>(thing).expect("a name").as_str().to_string()
 }
+
+/// How far round the adventurer [`arena`] clears the ground.
+pub const REACH: i32 = 5;
+
+/// A fresh run's adventurer, sturdy, strong enough for anything the armory
+/// holds and with nothing in their hands, with nobody else about and open
+/// ground [`REACH`] round them with nothing standing on it: where every
+/// fight and every zap a test stages is staged, so what a test puts in
+/// their hands is what strikes, and a miss for want of strength or a lamp
+/// post in the way is never what it reads.
+///
+/// Empty-handed, since a blow is struck with the first weapon worn in slot
+/// order: a dagger put on beside the sword they set out with goes to the
+/// free hand, and the sword would strike.
+pub fn arena(seed: u64) -> (App, Entity, Point) {
+    let mut app = headless(RunSeed(seed));
+    let me = adventurer(&mut app);
+    sturdy(&mut app, me);
+    clear_monsters(&mut app);
+    let hand = app.world().resource::<Registries>().slots.expect("main hand");
+    let sword = app.world().get::<Equipped>(me).and_then(|worn| worn.in_slot(hand)).expect("the sword they set out with");
+    unequip(&mut app, me, sword);
+    let here = at(&app, me);
+    let ground: Vec<Point> = geometry::square(here, REACH).collect();
+    lay_floor(&mut app, &ground);
+    let world = app.world_mut();
+    let standing: Vec<Entity> = world
+        .query_filtered::<(Entity, &Position), With<Prop>>()
+        .iter(world)
+        .filter(|(_, p)| geometry::chebyshev(p.0, here) <= REACH)
+        .map(|(e, _)| e)
+        .collect();
+    for prop in standing {
+        world.despawn(prop);
+    }
+    let strength = world.resource::<Registries>().stats.expect(crate::content::STRENGTH);
+    world.get_mut::<StatBlock>(me).expect("stats").0.set_base(strength, 20);
+    settle(&mut app);
+    (app, me, here)
+}
+
+/// A `name` made as a floor's own is, at `at`, that stands where it is
+/// put and never strikes back, with health enough to take any blow: a
+/// target, for a test about what the adventurer's blow or zap reaches.
+pub fn still(app: &mut App, name: &str, at: Point) -> Entity {
+    let e = monster(app, name, at);
+    app.world_mut().entity_mut(e).remove::<Mind>().insert(Health::full(1000));
+    e
+}
+
+/// What `who` has lost of the thousand [`still`] gave it.
+pub fn lost(app: &App, who: Entity) -> i32 {
+    1000 - app.world().get::<Health>(who).expect("still standing").current
+}

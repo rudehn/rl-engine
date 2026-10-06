@@ -28,8 +28,18 @@
 //               ability's effects are in abilities.ron, with Undermere's own besides: Enchant,
 //               one more level on the thing a use is made on; Identify, that thing made known;
 //               RemoveCurse, everything the user wears free to come off; Strengthen(by:), the
-//               user's strength raised by that much for good. Landed by any trigger with no list
-//               of its own
+//               user's strength raised by that much for good; Blink(reach:, per_level:), the
+//               user along the line aimed, up to reach cells and per_level more for each of
+//               the thing's effect_per_level amount; TeleportOther, whoever it strikes sent far
+//               off; Beckon, whoever it strikes pulled to the user's side; Polymorph, whoever
+//               it strikes made a monster of another kind at the same share of its health;
+//               Plenty, whoever it strikes made two at half its health each; Conjure(blades:,
+//               turns:), that many spectral blades on the user's side for that many turns, one
+//               more and each blow one harder for each of the thing's amount; Dominate, whoever
+//               it strikes bound to the user's side, surely at a quarter of its health or under
+//               and otherwise as often in a hundred as it has lost. Each of Undermere's own takes
+//               only the arguments it names, and none where it names none. Landed by any trigger
+//               with no list of its own
 //   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, aim:, asks:)] what it does at
 //               its moments: on is "use" (used from the pack; lands on the user, or where it is
 //               aimed) | "land" (a throw comes to rest) | "fire" (an attack is made with it) |
@@ -37,7 +47,8 @@
 //               Here (default) | Burst(radius:); fires is how many times it may go off, every
 //               time when left out; effects is its own list, the thing's shared effects when
 //               left out; look is optional, (glyph:, color: (r:, g:, b:)) in bytes, shown over
-//               every cell it lands on and flying there for an aimed use; every is hundredths of
+//               every cell it lands on and flying there for an aimed use, which must have one,
+//               or its zap is never seen; every is hundredths of
 //               a step between pulses, required on a "pulse" trigger, refused on any other, and
 //               a "pulse" trigger is for a worn thing; aim is optional, (mode:, at:, sight:), and
 //               only on a thing's one "use" trigger, for a staff or a wand used at somewhere and
@@ -53,10 +64,20 @@
 //               effects. A thing not yet known asks under its prompt all the same, so every
 //               thing that asks asks "Read it on which?", and of any thing, and gives nothing
 //               away
-//   consumable: optional; (charges:, when_empty:, per_level:) what a use or a landing costs
-//               it: charges a fresh one holds at level nought, Destroyed | Kept at the last,
-//               and per_level, optional, the charges each level adds, for a thing that takes
-//               levels
+//   consumable: optional; (charges:, when_empty:, per_level:, recharge:) what a use or a
+//               landing costs it: charges a fresh one holds at level nought, Destroyed | Kept at
+//               the last, per_level, optional, the charges each level adds, for a thing that
+//               takes levels, and recharge, optional, the whole turns a spent charge takes to
+//               come back at level one, divided by the level above it; absent, a spent charge
+//               is gone until something refills it
+//   effect_per_level: optional; (amount:, turns:) what each level adds to whatever its
+//               triggers land, either left out for nothing: amount to every Harm and Mend roll
+//               and to Undermere's own effects' reach and number, turns to every status; only
+//               on a thing that takes levels
+//   found_at:   optional; (lowest, highest) the levels it is found at, drawn evenly: a wand's
+//               charges; absent, a ring is found at one to three or cursed below nought, a
+//               staff at two and better deeper, a weapon or armor plain, better deeper or
+//               cursed, and anything else at nought; only on a thing that takes levels
 //   armor:      optional; flat armor while worn
 //   resists:    optional; [(damage kind, percent removed)] while worn: "slash" | "pierce" |
 //               "crush" | "fire" | "cold" | "poison"
@@ -166,6 +187,56 @@
      triggers: [(on: "use", asks: (prompt: "Read it on which?"), effects: [(kind: "Identify")])]),
     (name: "scroll of remove curse", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "RemoveCurse")])]),
+    // The staffs, zapped from the pack: a staff's level is its power and its
+    // charges both, found at two and better deeper, and a spent charge comes
+    // back over the turns its line says, divided by its level. Each level
+    // adds two to a bolt's roll, which keeps a firebolt near the content
+    // sheet's (L+1)d4 on average with less to it by luck, five turns of
+    // poison, two of slowness, two cells to a blink and a blade to a
+    // conjuring. Every bolt is seen to fly.
+    (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), tags: ["staff"], effect_per_level: (amount: 2),
+     consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
+                 effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4+1")), (kind: "Ignite", args: (turns: 3))])]),
+    (name: "staff of lightning", glyph: '/', color: (0.7, 0.75, 1.0), tags: ["staff"], effect_per_level: (amount: 2),
+     consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
+     triggers: [(on: "use", aim: (mode: Beam(range: 8)), look: (glyph: '~', color: (r: 190, g: 210, b: 255)),
+                 effects: [(kind: "Harm", args: (kind: "lightning", roll: "1d4+1"))])]),
+    (name: "staff of poison", glyph: '/', color: (0.45, 0.8, 0.3), tags: ["staff"], effect_per_level: (turns: 5),
+     consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 120, g: 220, b: 80)),
+                 effects: [(kind: "Inflict", args: (status: "poisoned", turns: 5))])]),
+    (name: "staff of slowness", glyph: '/', color: (0.55, 0.6, 0.75), tags: ["staff"], effect_per_level: (turns: 2),
+     consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 150, g: 160, b: 200)),
+                 effects: [(kind: "Inflict", args: (status: "slowed", turns: 5))])]),
+    (name: "staff of blinking", glyph: '/', color: (0.8, 0.85, 1.0), tags: ["staff"], effect_per_level: (amount: 1),
+     consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 12), at: Ground), look: (glyph: '*', color: (r: 220, g: 230, b: 255)),
+                 effects: [(kind: "Blink", args: (reach: 2, per_level: 2))])]),
+    (name: "staff of conjuration", glyph: '/', color: (0.75, 0.85, 1.0), tags: ["staff"], effect_per_level: (amount: 1),
+     consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
+     triggers: [(on: "use", effects: [(kind: "Conjure", args: (blades: 1, turns: 15))])]),
+    // The wands, zapped as a staff is, with a few charges that never come
+    // back unless a scroll of recharging puts one back: found with a
+    // charge or two, or three to five of the commoner, and enchanting adds
+    // one. Every bolt is seen to fly; all but domination may be zapped at a
+    // friend as well as a foe.
+    (name: "wand of domination", glyph: '~', color: (0.7, 0.5, 0.9), tags: ["wand"], found_at: (0, 1),
+     consumable: (charges: 1, per_level: 1, when_empty: Kept),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 200, g: 120, b: 255)), effects: [(kind: "Dominate")])]),
+    (name: "wand of teleport other", glyph: '~', color: (0.5, 0.6, 1.0), tags: ["wand"], found_at: (0, 2),
+     consumable: (charges: 3, per_level: 1, when_empty: Kept),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 120, g: 150, b: 255)), effects: [(kind: "TeleportOther")])]),
+    (name: "wand of polymorph", glyph: '~', color: (0.9, 0.6, 0.8), tags: ["wand"], found_at: (0, 2),
+     consumable: (charges: 3, per_level: 1, when_empty: Kept),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 255, g: 140, b: 220)), effects: [(kind: "Polymorph")])]),
+    (name: "wand of beckoning", glyph: '~', color: (0.9, 0.85, 0.5), tags: ["wand"], found_at: (0, 2),
+     consumable: (charges: 2, per_level: 1, when_empty: Kept),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 255, g: 230, b: 130)), effects: [(kind: "Beckon")])]),
+    (name: "wand of plenty", glyph: '~', color: (0.6, 0.85, 0.5), tags: ["wand"], found_at: (0, 1),
+     consumable: (charges: 1, per_level: 1, when_empty: Kept),
+     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 160, g: 240, b: 120)), effects: [(kind: "Plenty")])]),
     // The rings, worn on either hand, each worth what its level makes it:
     // found at one to three, or cursed below nought and stuck on.
     (name: "ring of regeneration", glyph: '=', color: (0.9, 0.3, 0.35), slot: "left finger", either: true, tags: ["ring"], per_level: [("mending", 1)]),

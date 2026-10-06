@@ -34,6 +34,20 @@
     (item: "scroll of enchanting",  bands: (1, 10), weight: 20),
     (item: "scroll of identify",    bands: (1, 10), weight: 15),
     (item: "scroll of remove curse", bands: (1, 10), weight: 8),
+    // Staffs, at any depth, by Brogue's weights among them: the bolts that
+    // burn most, then a blink, poison and slowness, and conjuring least.
+    (item: "staff of firebolt",    bands: (1, 10), weight: 15),
+    (item: "staff of lightning",   bands: (1, 10), weight: 15),
+    (item: "staff of blinking",    bands: (1, 10), weight: 11),
+    (item: "staff of poison",      bands: (1, 10), weight: 10),
+    (item: "staff of slowness",    bands: (1, 10), weight: 10),
+    (item: "staff of conjuration", bands: (1, 10), weight: 8),
+    // Wands, at any depth, domination the rarest and plenty nearly so.
+    (item: "wand of teleport other", bands: (1, 10), weight: 3),
+    (item: "wand of polymorph",      bands: (1, 10), weight: 3),
+    (item: "wand of beckoning",      bands: (1, 10), weight: 3),
+    (item: "wand of plenty",         bands: (1, 10), weight: 2),
+    (item: "wand of domination",     bands: (1, 10), weight: 1),
     // Rings, each as likely as another, at any depth.
     (item: "ring of regeneration", bands: (1, 10), weight: 1),
     (item: "ring of stealth",      bands: (1, 10), weight: 1),

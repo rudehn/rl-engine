@@ -32,11 +32,13 @@ use bevy::prelude::*;
 use rand::Rng;
 use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
+use rl_engine::rl_bevy::{Aimed, Bystanders};
 use rl_engine::rl_core::noun::{plural, with_article};
 use rl_engine::rl_rules::ability::RawValue;
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemDef, ItemKind};
+use crate::effects::ShowedNothing;
 use crate::run::Adventurer;
 
 /// The faces file, compiled in so the binary runs from anywhere.
@@ -378,6 +380,11 @@ enum Shown {
 /// moment it is on. A thing thrown that does nothing where it lands
 /// showed nothing, and stays as unknown as it was.
 ///
+/// A use that showed nothing, by what its effects or [`weigh_zaps`] put in
+/// [`ShowedNothing`], a potion of descent on the deepest floor or a wand
+/// zapped at nobody, is said to have done nothing, known or not, and
+/// teaches nothing.
+///
 /// Only the adventurer's: what a monster does with a thing is not
 /// something they learn from. In `TurnSet::React`, where the pass's item
 /// events are read; the names follow in the same pass's cleanup, once the
@@ -388,8 +395,10 @@ pub fn learn_by_use(
     things: Query<(&ItemKind, Option<&Triggers>)>,
     armory: Res<Armory>,
     mut lore: ResMut<Lore>,
+    mut nothing: ResMut<ShowedNothing>,
     mut tell: MessageWriter<Tell>,
 ) {
+    let showed_nothing = std::mem::take(&mut nothing.0);
     let Ok(me) = adventurer.single() else { return };
     for ev in events.read() {
         let (item, shown) = match *ev {
@@ -398,6 +407,10 @@ pub fn learn_by_use(
             ItemEvent::Equipped { actor, item } if actor == me => (item, Shown::Worn),
             _ => continue,
         };
+        if matches!(shown, Shown::Used) && showed_nothing.contains(&item) {
+            tell.write(Tell::new("Nothing seems to happen.", Tones::MUTED));
+            continue;
+        }
         let Ok((kind, triggers)) = things.get(item) else { continue };
         if matches!(shown, Shown::Thrown) && triggers.is_none_or(|t| t.on(Moments::LAND).next().is_none()) {
             continue;
@@ -412,6 +425,52 @@ pub fn learn_by_use(
         };
         tell.write(Tell::new(line, Tones::NOTICE));
     }
+}
+
+/// Weighs each use aimed at somewhere this pass before it lands, and puts
+/// in [`ShowedNothing`] each one whose footprint holds nobody it would
+/// strike and that shows nothing without someone there: a wand of
+/// polymorph zapped at bare floor. A blink, which moves its user, and a
+/// bolt of fire, which sets the floor alight, show what they are whoever
+/// stands there, as [`Armory::shows_unstruck`] says.
+///
+/// Weighed by [`Bystanders::land`], the call the items resolver let the
+/// zap through by and the call that lands it, so the footprint weighed is
+/// the one it comes down on; and before it lands, between the actions and
+/// the triggers, since what it does to whoever it strikes, sending them
+/// far off or making them something else, would leave nobody there to
+/// count once it has. A zap seen to fly comes down a pass or more after
+/// the one it was made in, and what it struck was settled when it was
+/// made, so this answers for it either way.
+pub fn weigh_zaps(
+    mut fired: MessageReader<Fired>,
+    things: Query<(&ItemKind, &Triggers)>,
+    origins: Query<&Position>,
+    ground: Footprints,
+    armory: Res<Armory>,
+    mut nothing: ResMut<ShowedNothing>,
+) {
+    for f in fired.read().filter(|f| f.moment == Moments::USE) {
+        let (Ok((kind, triggers)), Some(user)) = (things.get(f.on), f.by) else { continue };
+        let (Some(targeting), Ok(origin)) = (triggers.aim(), origins.get(user)) else { continue };
+        if armory.shows_unstruck(kind.0) || nothing.0.contains(&f.on) {
+            continue;
+        }
+        let source = rl_engine::rl_bevy::Source::Trigger { on: f.on, moment: Moments::USE };
+        let aimed = Aimed { user, source, targeting, origin: origin.0, aim: f.at, sees_aim: None };
+        if ground.bystanders.land(aimed, &ground.map, &ground.occupancy).landing.targets.is_empty() {
+            nothing.0.push(f.on);
+        }
+    }
+}
+
+/// What a footprint is worked out over: who stands in it and how they
+/// stand to whoever made it, on the map being read.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Footprints<'w, 's> {
+    bystanders: Bystanders<'w, 's>,
+    map: Res<'w, WorldMap>,
+    occupancy: Res<'w, Occupancy>,
 }
 
 /// Counts the turns the adventurer wears each [`Unfamiliar`] thing, and

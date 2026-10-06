@@ -114,13 +114,23 @@ impl Saveable for Adventurer {
     }
 }
 
-/// A monster, as the save writes it: its definition, by name. The engine
+/// A monster, as the save writes it: its definition, by name, whether it
+/// fights for the adventurer, and when a conjured one fades. The engine
 /// gives back where it stood, its health, what it carried and wore, its
 /// statuses and the post it held.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonsterSave {
     /// The definition's name.
     pub def: String,
+    /// Whether it fights for the adventurer, dominated, conjured or made
+    /// of one that did, which is for good; false in a save written before
+    /// anything could.
+    #[serde(default)]
+    pub ally: bool,
+    /// The moment on the turn clock a conjured thing fades at, which the
+    /// save keeps with the clock; `None` for anything else.
+    #[serde(default)]
+    pub fades: Option<u32>,
 }
 
 impl Saveable for Kind {
@@ -128,7 +138,11 @@ impl Saveable for Kind {
 
     fn capture(world: &World, entity: Entity) -> MonsterSave {
         let kind = world.get::<Kind>(entity).expect("a monster's kind");
-        MonsterSave { def: world.resource::<Bestiary>().defs.name(kind.0).to_string() }
+        MonsterSave {
+            def: world.resource::<Bestiary>().defs.name(kind.0).to_string(),
+            ally: world.get::<crate::allies::Ally>(entity).is_some(),
+            fades: world.get::<crate::allies::Fades>(entity).map(|f| f.at),
+        }
     }
 
     fn restore(world: &mut World, saved: &MonsterSave) -> Entity {
@@ -137,10 +151,17 @@ impl Saveable for Kind {
             return world.spawn_empty().id();
         };
         let registries = world.resource::<Registries>().clone();
-        spawned(world, |commands, world| {
+        let monster = spawned(world, |commands, world| {
             // Nowhere and on no place: the engine puts it back where it was.
             crate::bestiary::spawn_monster(commands, world.resource::<Bestiary>().defs.get(id), Point::ZERO, MapId::SURFACE, &registries)
-        })
+        });
+        if saved.ally {
+            crate::allies::befriend(world, monster);
+        }
+        if let Some(at) = saved.fades {
+            world.entity_mut(monster).insert(crate::allies::Fades { at });
+        }
+        monster
     }
 }
 

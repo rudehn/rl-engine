@@ -14,7 +14,8 @@
 //   ranged:  optional; its shot, written "NdS+B kind @range", as "1d6 pierce @6", range in
 //            tiles; with one it shoots whatever it sees in reach and strikes what is beside it
 //   armor:   optional; flat armor of its own, 0 when left out, added to what a trait gives
-//   faction: "beasts" | "goblins" | "undead"
+//   faction: "beasts" | "goblins" | "undead", or "adventurer" for what fights on the
+//            adventurer's side from the moment it is made
 //   traits:  names from `traits.ron`, each at most once, in the order the examine panel
 //            lists them; two that set the same single value are refused, naming both
 //   boss:    optional; true for the one whose death wins the run, false when left out
@@ -52,4 +53,9 @@
     (name: "skeleton knight", glyph: 'z', color: (0.95, 0.92, 0.75), hp: 22, attack: "1d8 slash", armor: 3, faction: "undead", traits: ["mindless", "deathless"]),
     (name: "the Drowned King", glyph: 'K', color: (0.55, 0.9, 0.95), hp: 120, attack: "2d8 slash", armor: 4, faction: "undead",
      traits: ["sapient", "deathless", "grave light", "regenerates", "drowning grasp", "keen-eared"], boss: true),
+    // What a staff of conjuration calls up beside the adventurer, on their
+    // side, for a few turns: quick, and gone at the first blow. Nowhere in
+    // the spawn table, so it is never found, only made.
+    (name: "spectral blade", glyph: '†', color: (0.72, 0.86, 1.0), hp: 1, attack: "1d3 slash", faction: "adventurer",
+     traits: ["mindless", "swift", "deathless"]),
 ]

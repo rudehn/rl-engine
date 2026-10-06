@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::DEFAULT_PERCEPTION;
 use rl_engine::rl_rules::ai::tactics::{
-    FleeWhenHurt, Hunt, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander,
+    FleeWhenHurt, Hunt, Keep, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander,
 };
 use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::faction::FactionDef;
@@ -83,6 +83,9 @@ pub struct MonsterDef {
     /// The brain every one of its kind decides with, built once from what
     /// it is.
     brain: Arc<Brain<Entity>>,
+    /// The brain one of its kind decides with once it fights for the
+    /// adventurer, built beside the other.
+    allied: Arc<Brain<Entity>>,
 }
 
 impl Named for MonsterDef {
@@ -112,6 +115,13 @@ impl MonsterDef {
     /// never.
     pub fn flee_at(&self) -> i32 {
         self.folded.flee_at.unwrap_or(0)
+    }
+
+    /// The mind one of its kind thinks with once it fights for the
+    /// adventurer, built once for the kind: it strikes as its kind does,
+    /// then keeps station on the adventurer's side, then hunts.
+    pub fn ally_mind(&self) -> Mind {
+        Mind(self.allied.clone())
     }
 }
 
@@ -274,6 +284,7 @@ fn resolve(a: &Authored, id: Id<MonsterDef>, names: &Names<'_>, traits: &Registr
         return Err(errors);
     }
     let brain = Arc::new(brain(&folded, ranged.is_some()));
+    let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
     Ok(MonsterDef {
         name: a.name.clone(),
         glyph: a.glyph,
@@ -290,6 +301,7 @@ fn resolve(a: &Authored, id: Id<MonsterDef>, names: &Names<'_>, traits: &Registr
         folded,
         id,
         brain,
+        allied,
     })
 }
 
@@ -392,6 +404,34 @@ fn brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
     brain.then(Hunt).then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: WANDER_CHANCE_PCT })
 }
 
+/// How far an ally lets the adventurer get before it follows: three
+/// steps, so it fights what comes near without wandering off after
+/// whatever it sees across the room, and stays a step or two behind.
+const ALLY_KEEPS_WITHIN: i32 = 3;
+
+/// The brain a monster of `folded` decides with once it fights for the
+/// adventurer, dominated or conjured: what it runs from, breathes and
+/// strikes as its own kind does, and then it keeps station on its allies,
+/// whom the faction matrix says are the adventurer's side, before it
+/// hunts, so it fights what reaches it and otherwise follows. It neither
+/// fetches nor throws, so an ally never picks up what the adventurer meant
+/// to, nor goes back to a post a piece stood it at, and it does not
+/// wander: with nothing to fight and the adventurer near, it waits there.
+fn ally_brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
+    let mut brain = Brain::new();
+    if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
+        brain = brain.then(FleeWhenHurt { at_pct });
+    }
+    if !folded.abilities.is_empty() {
+        brain = brain.then(UseAbility { chance_pct: ABILITY_CHANCE_PCT });
+    }
+    brain = brain.then(MeleeAdjacent);
+    if shoots {
+        brain = brain.then(ShootAtRange::default());
+    }
+    brain.then(Keep::allies(ALLY_KEEPS_WITHIN, 1)).then(Hunt)
+}
+
 /// Whether a mind of `wits` takes things up: puts gear on, or picks up
 /// something to throw. Such a kind has hands, a pack and slots, and its
 /// brain fetches what it sees worth having.
@@ -418,6 +458,21 @@ impl ActorMaker for Bestiary {
     fn band(&self, map: MapId) -> i32 {
         map.0 as i32
     }
+}
+
+/// Spawns the kind `def` on `map` at `at` from inside something that holds
+/// the whole world, an effect's closure, made by [`spawn_monster`] as a
+/// floor's own are: what a wand of plenty, a staff of conjuration and a
+/// scroll of summoning make, and what a polymorphed foe becomes.
+pub fn spawn_monster_now(world: &mut World, def: Id<MonsterDef>, at: Point, map: MapId) -> Entity {
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let made = {
+        let mut commands = Commands::new(&mut queue, world);
+        let bestiary = world.resource::<Bestiary>();
+        spawn_monster(&mut commands, bestiary.defs.get(def), at, map, world.resource::<Registries>())
+    };
+    queue.apply(world);
+    made
 }
 
 /// Spawns `def` on `map` at `at`, carrying what its core and its traits
@@ -550,8 +605,8 @@ mod tests {
     }
 
     /// A tripwire over the skeleton's bestiary, by name, so a kind is
-    /// added or dropped on purpose; and the king is the one death that
-    /// wins the run.
+    /// added or dropped on purpose, and the spectral blade a staff
+    /// conjures; and the king is the one death that wins the run.
     #[test]
     fn every_monster_of_the_skeleton_is_in_the_file_and_the_drowned_king_is_its_one_boss() {
         let library = library();
@@ -572,6 +627,7 @@ mod tests {
             "salamander",
             "skeleton knight",
             "the Drowned King",
+            "spectral blade",
         ];
         let defs = &library.bestiary.defs;
         for name in skeleton {

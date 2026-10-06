@@ -1,7 +1,7 @@
-//! The armory: the weapons, armor, potions, lights and gold of the
-//! Undermere, loaded once from `items.ron` into the [`Armory`] resource,
-//! found where `item_spawns.ron` says, and spawned as items an actor can
-//! find, carry, wear and use.
+//! The armory: the weapons, armor, staffs, wands, rings, potions, scrolls,
+//! lights and gold of the Undermere, loaded once from `items.ron` into the
+//! [`Armory`] resource, found where `item_spawns.ron` says, and spawned as
+//! items an actor can find, carry, wear, zap and use.
 //!
 //! The [`Armory`] is Undermere's [`ItemMaker`]: [`finds`](crate::finds)
 //! decides what lies on a floor, the engine's loot what a kill leaves and
@@ -17,7 +17,11 @@
 //! and the tag a shot spends, a bow's arrows. What sets one coat apart is
 //! its armor, the strength it asks and how much louder it makes every
 //! step, which it gives its wearer's footfall as any worn thing gives a
-//! stat.
+//! stat. What sets one staff apart is the bolt its use is aimed as, what
+//! the bolt lands, and what its level makes of it: the charges it holds,
+//! how soon a spent one comes back, and the [`EffectPerLevel`] that makes
+//! a deeper staff's bolt the stronger. A wand is a staff that never
+//! refills.
 //!
 //! An [`ItemDef`] is Foundry's item schema trimmed to what Undermere uses,
 //! plus `lends`: the traits a worn thing gives its wearer, the same traits
@@ -107,7 +111,7 @@ pub struct ThrowDef {
 }
 
 /// A thing's charges as `items.ron` writes them: what a use or a landing
-/// costs it. No recharge yet, since nothing in Undermere refills.
+/// costs it, and, for a staff, how long a charge takes to come back.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConsumableDef {
@@ -119,6 +123,12 @@ pub struct ConsumableDef {
     /// that takes levels; absent, none.
     #[serde(default)]
     pub per_level: u16,
+    /// Whole turns a spent charge takes to come back at level one, and that
+    /// divided by the level above it, so a staff two better refills twice
+    /// as fast; absent, a spent charge is gone until something refills it,
+    /// which is what a wand is.
+    #[serde(default)]
+    pub recharge: Option<u32>,
 }
 
 impl ConsumableDef {
@@ -127,6 +137,35 @@ impl ConsumableDef {
     pub fn charges_at(&self, level: i32) -> u16 {
         (i32::from(self.charges) + i32::from(self.per_level) * level).clamp(1, i32::from(u16::MAX)) as u16
     }
+
+    /// Hundredths of a step a spent charge takes to come back at `level`,
+    /// before whatever its carrier adds to the pace: [`recharge`](Self::recharge)
+    /// turns over the level, a level below one counted as one. `None` for a
+    /// thing that does not refill.
+    pub fn recharge_at(&self, level: i32) -> Option<u32> {
+        self.recharge.map(|turns| turns * BASE_ACTION_COST / level.max(1) as u32)
+    }
+}
+
+/// What each level of a thing adds to whatever its triggers land, as
+/// `items.ron` writes it: `(amount: 2)` on a staff of firebolt, two more
+/// on every bolt's roll a level, `(turns: 5)` on a staff of poison, five
+/// more turns poisoned a level.
+///
+/// The engine's [`EffectBonus`] at the thing's level, fitted with the rest
+/// of what a level changes. `amount` is added to every harm and mend roll,
+/// and Undermere's own effects read it as how much stronger they land: a
+/// staff of blinking's reach, a staff of conjuration's blades.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EffectPerLevel {
+    /// Added to every harm and mend roll a level, and what Undermere's own
+    /// effects grow by.
+    #[serde(default)]
+    pub amount: i32,
+    /// Whole turns added to every status a level.
+    #[serde(default)]
+    pub turns: u32,
 }
 
 /// One kind of item, as authored in `items.ron`.
@@ -210,6 +249,15 @@ pub struct ItemDef {
     /// worn, and each level under nought takes away: a ring's whole worth.
     #[serde(default)]
     pub per_level: Vec<(NameRef<StatDef>, i32)>,
+    /// What each of its levels adds to whatever its triggers land: a
+    /// staff's power. Absent, a level adds nothing there.
+    #[serde(default)]
+    pub effect_per_level: Option<EffectPerLevel>,
+    /// The levels a thing of it is found at, drawn evenly from the first to
+    /// the second: how many charges a wand turns up with. Absent, its
+    /// kind's own rule, [`found_level`](Armory::found_level)'s.
+    #[serde(default)]
+    pub found_at: Option<(i32, i32)>,
     /// Whether copies merge into one counted entry rather than one item
     /// each.
     #[serde(default)]
@@ -247,6 +295,9 @@ pub struct Armory {
     lent: Vec<Folded>,
     /// Whether each definition takes levels, read once off its tags.
     levelled: Vec<bool>,
+    /// Whether each definition's use, aimed at somewhere, shows what it is
+    /// with nobody under it, read once off its use trigger.
+    shows_unstruck: Vec<bool>,
 }
 
 impl Armory {
@@ -286,6 +337,7 @@ impl Armory {
         let names = registries.names();
         let (mut triggers, mut lent, mut errors) = (Vec::new(), Vec::new(), Vec::new());
         let levelled = defs.iter().map(|(_, d)| takes_levels(d, registries)).collect();
+        let shows_unstruck = defs.iter().map(|(_, d)| shows_unstruck(d)).collect();
         for (_, d) in defs.iter() {
             triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &names) {
                 Ok(built) => built,
@@ -303,7 +355,22 @@ impl Armory {
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Ok(Self { defs, table, triggers, lent, levelled })
+        Ok(Self { defs, table, triggers, lent, levelled, shows_unstruck })
+    }
+
+    /// Whether `def`'s use, aimed at somewhere and landing on nobody, still
+    /// shows what it is: one that moves its user to where it is aimed, or
+    /// one that changes the ground it lands on, a bolt of fire burning.
+    /// What a zap that strikes nobody is known by, or not.
+    pub fn shows_unstruck(&self, def: Id<ItemDef>) -> bool {
+        self.shows_unstruck.get(def.index()).copied().unwrap_or(false)
+    }
+
+    /// Hundredths of a step a spent charge of a `def` at `level` takes to
+    /// come back, before its carrier's pace: `None` for a thing that does
+    /// not refill.
+    pub fn recharge_at(&self, def: Id<ItemDef>, level: i32) -> Option<u32> {
+        self.defs.get(def).consumable.and_then(|c| c.recharge_at(level))
     }
 
     /// Whether `def` takes levels: a weapon, armor, a ring, a staff or a
@@ -325,8 +392,9 @@ impl Armory {
     /// minus one to minus three, however deep; a weapon or a piece of armor
     /// cursed [`CURSED_GEAR_IN_FIVE`] times in five, at one of
     /// [`CURSED_GEAR_LEVELS`] below nought, and otherwise the more often
-    /// better the deeper it lies, as [`better_by`] says; anything else at
-    /// nought.
+    /// better the deeper it lies, as [`better_by`] says; a thing whose line
+    /// says where it is found, a wand, there, and a staff at [`STAFF_LEVEL`]
+    /// and better deeper as a weapon is; anything else at nought.
     ///
     /// Drawn from `rng`, the loot's own stream, and only for a thing whose
     /// level is rolled, so finding a potion draws nothing.
@@ -334,6 +402,12 @@ impl Armory {
         let tagged = |name: &str| self.defs.get(def).tags.iter().any(|t| Some(t.id()) == registries.tags.id(name));
         if !self.takes_levels(def) {
             return 0;
+        }
+        if let Some((low, high)) = self.defs.get(def).found_at {
+            return rng.random_range(low..=high);
+        }
+        if tagged("staff") {
+            return STAFF_LEVEL + better_by(band, rng.random_range(0..100));
         }
         if tagged("ring") {
             let level = rng.random_range(RING_LEVELS);
@@ -410,6 +484,27 @@ pub const ACCURACY_PER_LEVEL: i32 = 5;
 /// What one level adds to a piece of armor's armor.
 pub const ARMOR_PER_LEVEL: i32 = 1;
 
+/// The level a staff is found at on the first floors, its power and its
+/// charges both: two, as Brogue's are, so the first staff found is worth
+/// zapping twice before it needs time.
+pub const STAFF_LEVEL: i32 = 2;
+
+/// The effects that change the cells they land on whoever stands there,
+/// by the names content writes them under: a zap landing one on nobody is
+/// still seen to do something.
+pub const GROUND_EFFECTS: [&str; 2] = ["Ignite", "Emit"];
+
+/// Whether `d`'s use, when it is aimed, shows what it is with nobody under
+/// it: aimed at the ground, which is a use that moves its user there, or
+/// landing an effect that changes the ground.
+fn shows_unstruck(d: &ItemDef) -> bool {
+    d.triggers.iter().filter(|t| t.on == "use").any(|t| {
+        let at_ground = t.aim.is_some_and(|aim| aim.at == rl_engine::rl_rules::ability::Aim::Ground);
+        let effects = t.effects.as_deref().unwrap_or(&d.effects);
+        at_ground || effects.iter().any(|e| GROUND_EFFECTS.contains(&e.kind.as_str()))
+    })
+}
+
 /// Whether `d` takes levels: it carries one of the [`LEVELLED_TAGS`] and
 /// does not stack, since every copy in a stack is one thing to the bag and
 /// a level is one thing's own.
@@ -456,8 +551,21 @@ fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>, registries: &Registrie
     if d.slot.is_none() && (d.strength.is_some() || !d.bestows.is_empty() || !d.per_level.is_empty()) {
         return Err("asks strength of, or gives stats to, a wearer of a thing that is never worn".into());
     }
-    if !takes_levels(d, registries) && (!d.per_level.is_empty() || d.consumable.is_some_and(|c| c.per_level != 0)) {
+    if !takes_levels(d, registries) && (!d.per_level.is_empty() || d.consumable.is_some_and(|c| c.per_level != 0) || d.effect_per_level.is_some()) {
         return Err("gives something by its level, on a thing that takes no levels".into());
+    }
+    if let Some((low, high)) = d.found_at
+        && (!takes_levels(d, registries) || low > high)
+    {
+        return Err(format!("found at levels {low} to {high}, on a thing that takes none or a range that is empty"));
+    }
+    if d.consumable.is_some_and(|c| c.recharge == Some(0)) {
+        return Err("a charge that comes back in no turns at all is never spent".into());
+    }
+    // A zap is seen by its flight: one that flies as nothing is a turn spent
+    // and a foe hurt by nothing the player saw leave their hands.
+    if d.triggers.iter().any(|t| t.aim.is_some() && t.look.is_none()) {
+        return Err("a use aimed at somewhere, with no look for what flies there".into());
     }
     if d.throw.is_none() && d.triggers.iter().any(|t| t.on == "land") {
         return Err("a land trigger on a thing that cannot be thrown never lands".into());
@@ -635,8 +743,14 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
     if let Some(every) = triggers.and_then(Triggers::pulse_every) {
         e.insert(Pulse::every(every));
     }
+    // A staff refills at its level's pace, which its carrier's wisdom
+    // quickens: `staffs` keeps the pace current from here on.
     if let Some(c) = d.consumable {
-        e.insert(Consumable::new(c.charges_at(level), c.when_empty));
+        let held = Consumable::new(c.charges_at(level), c.when_empty);
+        e.insert(match c.recharge_at(level) {
+            Some(every) => held.recharging(every),
+            None => held,
+        });
     }
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
@@ -736,6 +850,17 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
     } else {
         e.insert(Bestows(gives));
     }
+    // What its triggers land stronger by, its power at this level: a
+    // staff's bolt, a staff of blinking's reach.
+    let stronger = d.effect_per_level.map(|per| EffectBonus { amount: per.amount * level, turns: (per.turns as i32 * level).max(0) as u32 });
+    match stronger.filter(|bonus| *bonus != EffectBonus::default()) {
+        Some(bonus) => {
+            e.insert(bonus);
+        }
+        None => {
+            e.remove::<EffectBonus>();
+        }
+    }
     // Worth something to a mind that puts things on, so a goblin knows a
     // sword from a dagger without knowing what either is.
     let score = d.slot.and_then(|_| gear_score(melee.map(|m| m.dice), ranged.map(|r| r.dice), d.cost, armor));
@@ -780,6 +905,9 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
             let grown = i32::from(max) - i32::from(held.max);
             held.left = (i32::from(held.left) + grown).clamp(0, i32::from(max)) as u16;
             held.max = max;
+            if let (Some(every), Some(pace)) = (c.recharge_at(level), held.recharge.as_mut()) {
+                pace.every = every;
+            }
         }
         true
     });
@@ -882,6 +1010,8 @@ impl ItemMaker for Armory {
 }
 
 #[cfg(test)]
+mod magic;
+#[cfg(test)]
 mod play;
 
 #[cfg(test)]
@@ -943,6 +1073,17 @@ mod tests {
             "scroll of enchanting",
             "scroll of identify",
             "scroll of remove curse",
+            "staff of firebolt",
+            "staff of lightning",
+            "staff of poison",
+            "staff of slowness",
+            "staff of blinking",
+            "staff of conjuration",
+            "wand of domination",
+            "wand of teleport other",
+            "wand of polymorph",
+            "wand of beckoning",
+            "wand of plenty",
             "ring of regeneration",
             "ring of stealth",
             "ring of light",
@@ -1162,6 +1303,54 @@ mod tests {
                 "odd helm: either, on the head slot, which is one of no pair",
             ]
         );
+    }
+
+    /// A zap that flies as nothing, a level's power on a thing that takes
+    /// no levels, a wand found at levels that run backwards and a charge
+    /// that comes back in no time are each refused, naming the thing.
+    #[test]
+    fn an_unseen_zap_a_power_without_levels_a_backwards_find_and_an_instant_recharge_are_refused() {
+        let library = library();
+        let bad = r#"[
+            (name: "dark rod", glyph: '~', color: (0.5, 0.5, 0.5), tags: ["wand"], consumable: (charges: 1, when_empty: Kept),
+             triggers: [(on: "use", aim: (mode: Bolt(range: 8)), effects: [(kind: "Beckon")])]),
+            (name: "strong draught", glyph: '!', color: (0.5, 0.5, 0.5), tags: ["potion"], effect_per_level: (amount: 1)),
+            (name: "odd wand", glyph: '~', color: (0.5, 0.5, 0.5), tags: ["wand"], found_at: (2, 1)),
+            (name: "quick staff", glyph: '/', color: (0.5, 0.5, 0.5), tags: ["staff"], consumable: (charges: 1, when_empty: Kept, recharge: 0)),
+        ]"#;
+        let Err(ContentError::Invalid(errors)) = read(bad, &library.registries, &library.traits) else { panic!("it read") };
+        assert_eq!(
+            errors,
+            [
+                "dark rod: a use aimed at somewhere, with no look for what flies there",
+                "strong draught: gives something by its level, on a thing that takes no levels",
+                "odd wand: found at levels 2 to 1, on a thing that takes none or a range that is empty",
+                "quick staff: a charge that comes back in no turns at all is never spent",
+            ]
+        );
+    }
+
+    /// A staff's level is its power, its charges and its pace: a staff of
+    /// firebolt two better holds two more charges, refills twice as fast and
+    /// adds four to its bolt's roll, fitted again whenever its level moves,
+    /// and found at two, or better deeper.
+    #[test]
+    fn a_staffs_level_is_its_charges_its_pace_and_its_power_and_it_is_found_at_two_or_better_deeper() {
+        let library = library();
+        let staff = library.armory.defs.expect("staff of firebolt");
+        let (mut world, made) = at_level(&library, "staff of firebolt", 2);
+        let read = |world: &World| {
+            let c = world.get::<Consumable>(made).expect("charges");
+            (c.max, c.recharge.map(|r| r.every), world.get::<EffectBonus>(made).map(|b| b.amount))
+        };
+        assert_eq!(read(&world), (2, Some(25_000), Some(4)), "two charges, two hundred and fifty turns a charge, four on the roll");
+        level_up(&mut world, made, 2);
+        assert_eq!(read(&world), (4, Some(12_500), Some(8)), "two better: four, half the time, eight");
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let levels: Vec<i32> = (0..200).map(|_| library.armory.found_level(staff, 1, &library.registries, &mut rng)).collect();
+        assert!(levels.iter().all(|l| *l >= STAFF_LEVEL), "never below two: {levels:?}");
+        let deep: Vec<i32> = (0..200).map(|_| library.armory.found_level(staff, 10, &library.registries, &mut rng)).collect();
+        assert!(deep.iter().all(|l| *l > STAFF_LEVEL), "on the throne's floor, always better");
     }
 
     /// A pile of gold is its roll times the floor it was found on, so a

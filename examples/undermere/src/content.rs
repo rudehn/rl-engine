@@ -139,7 +139,8 @@ pub fn stats() -> Registry<StatDef> {
 pub fn registries() -> Registries {
     // Armor turns a blow and nothing else. The elements go through plate,
     // since a tick of `poisoned` or `scorched` that armor could stop would
-    // never tick at all, and a resistance is what answers them.
+    // never tick at all, and a resistance is what answers them; so does a
+    // staff's lightning, which nothing yet resists.
     let damage_kinds = Registry::from_defs(vec![
         DamageKind::new("slash"),
         DamageKind::new("pierce"),
@@ -147,6 +148,7 @@ pub fn registries() -> Registries {
         DamageKind::new("fire").unarmored(),
         DamageKind::new("cold").unarmored(),
         DamageKind::new("poison").unarmored(),
+        DamageKind::new("lightning").unarmored(),
     ])
     .unwrap();
     let (fire, poison) = (damage_kinds.expect("fire"), damage_kinds.expect("poison"));
@@ -158,13 +160,15 @@ pub fn registries() -> Registries {
     // badge, since it is what the monster is rather than something that
     // happened to it. The last two are boons, so the log tells them as
     // good news. `chilled` is the drowning grasp's, a quarter off its
-    // holder's speed, which the turn loop reads through the speed stat.
+    // holder's speed, which the turn loop reads through the speed stat, and
+    // `slowed`, a staff's, is half off it.
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('p'), ..StatusDef::new("poisoned").ticks(poison, 1) },
         StatusDef { badge: Some('*'), ..StatusDef::new("scorched").ticks(fire, 1) },
         StatusDef { badge: Some('+'), ..StatusDef::new("mending").mends(2).boon() },
         StatusDef::new("regenerating").mends(1).boon(),
         StatusDef { badge: Some('c'), ..StatusDef::new("chilled").modifies(stats.expect(SPEED), Op::Add(-25)) },
+        StatusDef { badge: Some('s'), ..StatusDef::new("slowed").modifies(stats.expect(SPEED), Op::Add(-50)) },
     ])
     .unwrap();
     let mut registries = Registries {
@@ -249,13 +253,18 @@ pub fn effect_kinds() -> EffectKinds {
 
 /// Declares the effects Undermere writes itself, the ones that reach what
 /// the engine knows nothing of: a thing's level, what is known of it, a
-/// curse, and the adventurer's strength. The one list, for the app and for
-/// [`effect_kinds`] alike.
+/// curse, the adventurer's strength, and what [`effects`](crate::effects)
+/// holds, where someone stands, who they are and whose side they are on.
+/// The one list, for the app and for [`effect_kinds`] alike.
 pub fn add_game_effects(app: &mut App) {
+    use crate::effects::{bodies, minds, moving};
     app.add_effect::<crate::enchant::Enchanting>()
         .add_effect::<crate::enchant::RemoveCurse>()
         .add_effect::<crate::lore::Identify>()
         .add_effect::<crate::strength::Strengthen>();
+    app.add_effect::<moving::Blink>().add_effect::<moving::TeleportOther>().add_effect::<moving::Beckon>();
+    app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>();
+    app.add_effect::<minds::Dominate>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through

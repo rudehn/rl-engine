@@ -64,8 +64,9 @@ impl Plugin for UndermerePlugin {
             // `Harm`, `Mend` and `Inflict`, for the potions, the flask and
             // the breaths, beside the `Ignite` fire declares.
             .add_engine_effects();
-        // And Undermere's own, for the scrolls and the potion of strength:
-        // a thing's level, what is known of it, a curse, a strength.
+        // And Undermere's own, for the scrolls, the potions, the staffs and
+        // the wands: a thing's level, what is known of it, a curse, a
+        // strength, where someone stands, what they are and whose side.
         crate::content::add_game_effects(app);
         // The content, read once before any run begins against the
         // effects and moments every plugin above declared: no run changes
@@ -152,6 +153,16 @@ impl Plugin for UndermerePlugin {
         // know yet: chained, since each says so in the log, and the lines
         // land in this order.
         app.add_systems(Turn, (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::grow_familiar).chain().in_set(TurnSet::React));
+        // What a zap at somewhere strikes, weighed between the actions that
+        // make one and the triggers that land it, so a wand zapped at
+        // nobody is not learned by it; and what any use showed nothing of,
+        // which the reactions above read and empty.
+        app.init_resource::<crate::effects::ShowedNothing>();
+        app.add_systems(Turn, crate::lore::weigh_zaps.in_set(TurnSet::Resolve).after(ResolveSet::Act).before(ResolveSet::Triggers));
+        // Who fights beside the adventurer: a conjured blade gone when its
+        // time is up, and a walk into an ally a change of places with it.
+        app.add_systems(Turn, crate::allies::fade.in_set(TurnSet::React));
+        app.insert_resource(BumpRules::new().swap_allies());
         // Every thing called what is known of it: after the narrator has
         // read the pass, so nothing is told of under a name it had not yet
         // earned, and before the spent are taken out; at the start of every
