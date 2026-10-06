@@ -175,6 +175,39 @@ pub fn make(app: &mut App, name: &str) -> Entity {
     thing
 }
 
+/// Makes `name` by the game's armory at `level`, as a thing found rather
+/// than set out with, placed nowhere: one whose level its wearer learns by
+/// wearing it is not known to be any level yet. Called what the run knows
+/// of it once a pass or a frame has gone by.
+pub fn find(app: &mut App, name: &str, level: i32) -> Entity {
+    let mut queue = CommandQueue::default();
+    let thing = {
+        let world = app.world();
+        let armory = world.resource::<Armory>();
+        crate::armory::spawn_found(&mut Commands::new(&mut queue, world), armory, armory.defs.expect(name), level, world.resource::<Registries>())
+    };
+    queue.apply(app.world_mut());
+    thing
+}
+
+/// Uses `thing`, out of `who`'s pack, as the pack's use key does.
+pub fn use_thing(app: &mut App, who: Entity, thing: Entity) {
+    app.world_mut().write_message(Intent::new(who, UseItem(thing)));
+    settle(app);
+}
+
+/// Reads `scroll`, out of `who`'s pack, on `on`, as the pack's choosing
+/// does once the thing is picked.
+pub fn read_on(app: &mut App, who: Entity, scroll: Entity, on: Entity) {
+    app.world_mut().write_message(Intent::new(who, UseOn { item: scroll, on }));
+    settle(app);
+}
+
+/// Every line of the log, oldest first.
+pub fn said(app: &App) -> Vec<String> {
+    app.world().resource::<MessageLog>().iter().map(|line| line.text.clone()).collect()
+}
+
 /// Lays `thing` on the floor of the place being read, at `at`.
 pub fn lay(app: &mut App, thing: Entity, at: Point) {
     let here = here(app);

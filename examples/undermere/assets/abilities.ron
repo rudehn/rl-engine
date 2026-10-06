@@ -12,7 +12,10 @@
 //   sight:       optional; whether the aim must be a cell the user can see (default true)
 //   requires:    optional; Has(status) | Lacks(status) | Wielding(tag) | InSlot(slot, tag) |
 //                Above(stat, n); the slots are "main hand" | "off hand" | "head" | "body" |
-//                "light", and the tags "weapon" | "armor" | "potion" | "gold" | "arrow" | "light"
+//                "left finger" | "right finger" | "light", the tags "weapon" | "armor" |
+//                "potion" | "scroll" | "staff" | "wand" | "ring" | "gold" | "arrow" | "light",
+//                and the stats "strength" | "accuracy" | "evasion" | "speed" | "stealth" |
+//                "mending" | "light" | "armor"
 //   costs:       optional; Pool(stat, n) | Health(n) | Item(tag, n); Undermere has no pools
 //   time:        optional; hundredths of a step the turn costs (default 100)
 //   cooldown:    optional; hundredths before it may be used again, from the moment of use
@@ -21,7 +24,7 @@
 //                Mend(roll:), Inflict(status:, turns:), Cleanse, Shove, Pull, Teleport;
 //                Ignite(turns:), which sets what it lands on alight. The damage kinds are
 //                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison", and the statuses
-//                "poisoned" | "scorched" | "mending" | "regenerating"
+//                "poisoned" | "scorched" | "mending" | "regenerating" | "chilled"
 #![enable(implicit_some)]
 [
     // The salamander's: a cone of flame that sets the ground it reaches
@@ -37,15 +40,17 @@
             (kind: "Ignite", args: (turns: 3)),
         ],
     ),
-    // The Drowned King's: a grip of cold water reaching out of the dark.
-    // Cold and nothing more, since what would slow its catch is a status
-    // the engine has no speed to take from.
+    // The Drowned King's: a grip of cold water reaching out of the dark,
+    // which chills what it catches, a quarter slower for four turns.
     (
         name: "drowning grasp",
         description: "A grip of cold water that reaches out of the dark for the living.",
         look: (glyph: '~', color: (r: 140, g: 225, b: 205)),
         mode: Bolt(range: 5),
         cooldown: 500,
-        effects: [(kind: "Harm", args: (kind: "cold", roll: "2d4"))],
+        effects: [
+            (kind: "Harm", args: (kind: "cold", roll: "2d4")),
+            (kind: "Inflict", args: (status: "chilled", turns: 4)),
+        ],
     ),
 ]

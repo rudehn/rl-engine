@@ -17,6 +17,7 @@
 //! wears it, and the rest is the thing's [`Lends`], which
 //! [`wearing`](crate::wearing) puts on its wearer and takes off again.
 
+use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ability::Look;
@@ -87,10 +88,22 @@ pub struct ThrowDef {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConsumableDef {
-    /// What a fresh unit holds.
+    /// What a fresh unit holds at level nought.
     pub charges: u16,
     /// What happens at the last.
     pub when_empty: WhenEmpty,
+    /// Charges each level adds to what a fresh unit holds, for a thing
+    /// that takes levels; absent, none.
+    #[serde(default)]
+    pub per_level: u16,
+}
+
+impl ConsumableDef {
+    /// What a fresh unit holds at `level`: never fewer than one, since a
+    /// thing with nothing to spend is spent before it is found.
+    pub fn charges_at(&self, level: i32) -> u16 {
+        (i32::from(self.charges) + i32::from(self.per_level) * level).clamp(1, i32::from(u16::MAX)) as u16
+    }
 }
 
 /// One kind of item, as authored in `items.ron`.
@@ -111,7 +124,8 @@ pub struct ItemDef {
     /// Where it is worn, if it is worn at all.
     #[serde(default)]
     pub slot: Option<NameRef<SlotDef>>,
-    /// True for a one-handed weapon that fits either hand.
+    /// True for a thing that fits either slot of the pair its slot is one
+    /// of: a one-handed weapon either hand, a ring either hand's finger.
     #[serde(default)]
     pub either: bool,
     /// Slots it also claims when worn, for a two-hander.
@@ -156,6 +170,19 @@ pub struct ItemDef {
     /// The traits it gives whoever wears it, while it is worn.
     #[serde(default)]
     pub lends: Vec<NameRef<TraitDef>>,
+    /// The strength it asks of whoever wears it; absent, none. Each point
+    /// short costs a weapon's wielder four accuracy and armor's wearer a
+    /// point of armor.
+    #[serde(default)]
+    pub strength: Option<i32>,
+    /// What wearing it adds to its wearer's stats whatever its level: a
+    /// shield's evasion.
+    #[serde(default)]
+    pub bestows: Vec<(NameRef<StatDef>, i32)>,
+    /// What each of its levels adds to its wearer's stats while it is
+    /// worn, and each level under nought takes away: a ring's whole worth.
+    #[serde(default)]
+    pub per_level: Vec<(NameRef<StatDef>, i32)>,
     /// Whether copies merge into one counted entry rather than one item
     /// each.
     #[serde(default)]
@@ -191,6 +218,8 @@ pub struct Armory {
     /// What each definition lends, its traits folded once, so a spawn
     /// reads plain values.
     lent: Vec<Folded>,
+    /// Whether each definition takes levels, read once off its tags.
+    levelled: Vec<bool>,
 }
 
 impl Armory {
@@ -229,6 +258,7 @@ impl Armory {
     ) -> Result<Self, ContentError> {
         let names = registries.names();
         let (mut triggers, mut lent, mut errors) = (Vec::new(), Vec::new(), Vec::new());
+        let levelled = defs.iter().map(|(_, d)| takes_levels(d, registries)).collect();
         for (_, d) in defs.iter() {
             triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &names) {
                 Ok(built) => built,
@@ -246,8 +276,66 @@ impl Armory {
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Ok(Self { defs, table, triggers, lent })
+        Ok(Self { defs, table, triggers, lent, levelled })
     }
+
+    /// Whether `def` takes levels: a weapon, armor, a ring, a staff or a
+    /// wand, and nothing that stacks.
+    pub fn takes_levels(&self, def: Id<ItemDef>) -> bool {
+        self.levelled.get(def.index()).copied().unwrap_or(false)
+    }
+
+    /// Whether `def`'s level is learned by wearing it, as well as by being
+    /// told: a thing that takes levels and is worn. A staff or a wand is
+    /// known as a whole once its kind is, since its level is its charges,
+    /// which are seen being spent.
+    pub fn learned_by_wear(&self, def: Id<ItemDef>) -> bool {
+        self.takes_levels(def) && self.defs.get(def).slot.is_some()
+    }
+
+    /// The level a thing of `def` is found at: a ring at one to three, or,
+    /// [`CURSED_RINGS_IN_TEN`] times in ten, cursed, at minus one to minus
+    /// three; anything else at nought.
+    ///
+    /// Drawn from `rng`, the loot's own stream, and only for a thing whose
+    /// level is rolled, so finding a sword or a potion draws nothing it did
+    /// not draw before rings were found.
+    pub fn found_level(&self, def: Id<ItemDef>, registries: &Registries, rng: &mut impl rand::Rng) -> i32 {
+        let ring = registries.tags.id("ring");
+        if !self.defs.get(def).tags.iter().any(|t| Some(t.id()) == ring) {
+            return 0;
+        }
+        let level = rng.random_range(RING_LEVELS);
+        if rng.random_ratio(CURSED_RINGS_IN_TEN, 10) { -level } else { level }
+    }
+}
+
+/// The levels a ring is found at, above nought or, cursed, below it.
+pub const RING_LEVELS: std::ops::RangeInclusive<i32> = 1..=3;
+
+/// How many rings in ten are found cursed: below nought, and stuck on
+/// whoever puts one on.
+pub const CURSED_RINGS_IN_TEN: u32 = 3;
+
+/// The tags of the things that take levels: what a scroll of enchanting
+/// makes better.
+pub const LEVELLED_TAGS: [&str; 5] = ["weapon", "armor", "ring", "staff", "wand"];
+
+/// What one level adds to every damage roll a weapon makes, its blow, its
+/// shot and its thrown strike alike, and takes away below nought.
+pub const DAMAGE_PER_LEVEL: i32 = 1;
+
+/// What one level adds to the accuracy of whoever wields a weapon.
+pub const ACCURACY_PER_LEVEL: i32 = 5;
+
+/// What one level adds to a piece of armor's armor.
+pub const ARMOR_PER_LEVEL: i32 = 1;
+
+/// Whether `d` takes levels: it carries one of the [`LEVELLED_TAGS`] and
+/// does not stack, since every copy in a stack is one thing to the bag and
+/// a level is one thing's own.
+fn takes_levels(d: &ItemDef, registries: &Registries) -> bool {
+    !d.stack && d.tags.iter().any(|t| LEVELLED_TAGS.contains(&registries.tags.name(t.id())))
 }
 
 /// Reads an items file against `registries` and the `traits` an item
@@ -255,20 +343,27 @@ impl Armory {
 /// the file at once, each under the item it is in.
 pub fn read(text: &str, registries: &Registries, traits: &Registry<TraitDef>) -> Result<Registry<ItemDef>, ContentError> {
     let defs: Registry<ItemDef> = registries.names().with("trait", traits).load(text)?;
-    defs.validate(|d, _| validate_def(d, traits))?;
+    defs.validate(|d, _| validate_def(d, traits, registries))?;
     Ok(defs)
 }
 
-/// One item's own shape, checked against nothing but itself and the
-/// traits it lends: whether its slot claims make sense, whether a trigger
-/// can ever come round, whether a worn thing can give what it lends, and
-/// whether what it lends folds.
-fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>) -> Result<(), String> {
+/// One item's own shape, checked against nothing but itself, the traits
+/// it lends and the registries it names: whether its slot claims make
+/// sense, whether a trigger can ever come round, whether a worn thing can
+/// give what it lends, whether what it lends folds, and whether what it
+/// asks of a wearer and gives one by its level is on a thing that is worn
+/// and takes levels.
+fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>, registries: &Registries) -> Result<(), String> {
     if d.slot.is_none() && (d.either || !d.also.is_empty()) {
         return Err("either or also without a slot".into());
     }
     if d.either && !d.also.is_empty() {
         return Err("either with also".into());
+    }
+    if let Some(slot) = d.slot.filter(|_| d.either)
+        && pair_of(registries.slots.name(slot.id())).is_none()
+    {
+        return Err(format!("either, on the {} slot, which is one of no pair", registries.slots.name(slot.id())));
     }
     if d.stack && d.slot.is_some() {
         return Err("a worn item cannot stack".into());
@@ -276,8 +371,14 @@ fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>) -> Result<(), String> 
     if d.pile.is_some() && !d.stack {
         return Err("a pile of a thing that does not stack is that many things lying apart".into());
     }
-    if d.consumable.is_some_and(|c| c.charges == 0) {
+    if d.consumable.is_some_and(|c| c.charges == 0 && c.per_level == 0) {
         return Err("a consumable with no charges is spent before it is found".into());
+    }
+    if d.slot.is_none() && (d.strength.is_some() || !d.bestows.is_empty() || !d.per_level.is_empty()) {
+        return Err("asks strength of, or gives stats to, a wearer of a thing that is never worn".into());
+    }
+    if !takes_levels(d, registries) && (!d.per_level.is_empty() || d.consumable.is_some_and(|c| c.per_level != 0)) {
+        return Err("gives something by its level, on a thing that takes no levels".into());
     }
     if d.throw.is_none() && d.triggers.iter().any(|t| t.on == "land") {
         return Err("a land trigger on a thing that cannot be thrown never lands".into());
@@ -325,21 +426,22 @@ fn unlendable(t: &TraitDef) -> Option<&'static str> {
     set.into_iter().find_map(|(field, set)| set.then_some(field))
 }
 
-/// What wearing `d`, lending `lent`, is worth to a mind choosing between
-/// the things it finds, for the engine's `GearScore`, or `None` for a thing
-/// worth nothing to wear, a lantern or a torch.
+/// What wearing a thing that strikes `blow`, shoots `shot`, each every
+/// `cost` hundredths of a step, and turns `armor`, is worth to a mind
+/// choosing between the things it finds, for the engine's `GearScore`, or
+/// `None` for a thing worth nothing to wear, a lantern or a torch.
 ///
 /// In tenths of a point of damage a turn: a blow's average over what it
 /// costs, so a quick dagger is worth less than a sword but not as little
 /// as its roll alone says; half that for a shot, which a mind fighting
 /// beside its enemy has no use for; and two points a turn for each point
 /// of armor. Only the comparison matters, between a thing and what it
-/// would displace, so the numbers need agree with nothing else.
-fn gear_score(d: &ItemDef, lent: &Folded) -> Option<i32> {
-    let blow = d.melee.map_or(0.0, |m| damage_a_turn(m.roll, d.cost));
-    let shot = d.ranged.map_or(0.0, |r| damage_a_turn(r.roll, d.cost) / 2.0);
-    let armor = (d.armor + lent.armor.unwrap_or(0)) as f32 * 2.0;
-    let score = ((blow + shot + armor) * 10.0).round() as i32;
+/// would displace, so the numbers need agree with nothing else. Read at
+/// the thing's level, so a sword a level better is worth a level more.
+fn gear_score(blow: Option<DiceRoll>, shot: Option<DiceRoll>, cost: Option<u32>, armor: i32) -> Option<i32> {
+    let blow = blow.map_or(0.0, |roll| damage_a_turn(roll, cost));
+    let shot = shot.map_or(0.0, |roll| damage_a_turn(roll, cost) / 2.0);
+    let score = ((blow + shot + armor as f32 * 2.0) * 10.0).round() as i32;
     (score > 0).then_some(score)
 }
 
@@ -364,18 +466,31 @@ pub fn load_defs(registries: &Registries, traits: &Registry<TraitDef>) -> Regist
     read(ITEMS_RON, registries, traits).unwrap_or_else(|e| panic!("assets/items.ron: {e}"))
 }
 
+/// The other slot of the pair `slot` is one of, by name, or `None` for a
+/// slot that goes alone: what `either` reaches for besides the slot named.
+fn pair_of(slot: &str) -> Option<&'static str> {
+    crate::content::PAIRS.iter().find_map(|(one, other)| match slot {
+        s if s == *one => Some(*other),
+        s if s == *other => Some(*one),
+        _ => None,
+    })
+}
+
 /// Where `d` is worn, or `None` for something never worn, such as a
 /// potion.
 ///
-/// `either` reaches for both hands directly, since a one-handed weapon
-/// that fits either is not naming one slot at all; `also` folds each
-/// extra slot a two-hander claims onto the one it starts in.
+/// `either` reaches for both slots of its slot's pair directly, since a
+/// one-handed weapon that fits either hand, or a ring that fits either
+/// finger, is not naming one slot at all; `also` folds each extra slot a
+/// two-hander claims onto the one it starts in.
 pub fn shape_of(d: &ItemDef, registries: &Registries) -> Option<EquipShape> {
-    if d.either {
-        let hands = [registries.slots.expect("main hand"), registries.slots.expect("off hand")];
-        return Some(EquipShape::in_any(hands));
+    let slot = d.slot?.id();
+    if d.either
+        && let Some(other) = pair_of(registries.slots.name(slot))
+    {
+        return Some(EquipShape::in_any([slot, registries.slots.expect(other)]));
     }
-    let mut shape = EquipShape::in_slot(d.slot?.id());
+    let mut shape = EquipShape::in_slot(slot);
     for also in &d.also {
         shape = shape.and_claims(also.id());
     }
@@ -388,19 +503,40 @@ pub fn shape_of(d: &ItemDef, registries: &Registries) -> Option<EquipShape> {
 pub struct ItemKind(pub Id<ItemDef>);
 
 /// Spawns `def` as an item entity carrying every component its definition
-/// implies, placed nowhere: what it is called and drawn as, what it counts
-/// as, what it does at its moments and what that costs it, and, for
-/// something worn, its shape, what it is worth to wear, its armor, its
-/// resistances and whatever it strikes or shoots with. A stackable item
-/// spawns as a stack of one; the caller merges or grows it as it likes.
+/// implies, placed nowhere, at level nought: what it is called and drawn
+/// as, what it counts as, what it does at its moments and what that costs
+/// it, and, for something worn, its shape, what it is worth to wear, its
+/// armor, its resistances, what it gives its wearer's stats and whatever
+/// it strikes or shoots with. A stackable item spawns as a stack of one;
+/// the caller merges or grows it as it likes.
 ///
 /// What a worn thing lends goes where the engine already reads a worn
 /// thing, as far as it can: the armor and the resistances it lends join
 /// its own, and the engine counts them for whoever wears it and for
 /// nobody else. The rest, a status, sight in the dark and a light, is its
 /// [`Lends`], which [`wearing`](crate::wearing) gives its wearer.
+///
+/// It is spawned under its own name and as it is: what the adventurer
+/// knows of it, and what it is called for that, is
+/// [`lore`](crate::lore)'s, which names everything the pass it appears.
 pub fn spawn_item(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, registries: &Registries) -> Entity {
+    spawn_item_at(commands, armory, def, 0, registries)
+}
+
+/// Spawns `def` as [`spawn_item`] does, at `level`, which a thing that
+/// takes no levels ignores.
+///
+/// The level is the engine's [`Enchant`], and everything it changes is
+/// fitted by the one function a change of level runs again, so the level
+/// is applied once, here, and never on top of itself: a save keeps the
+/// level, and a continued run's `+2` is this function run again. A thing
+/// made below nought is cursed, and [`Stuck`]: it will not come off once
+/// it is put on, until its level is raised to nought or the curse is
+/// lifted.
+pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let d = armory.defs.get(def);
+    let levelled = armory.takes_levels(def);
+    let level = if levelled { level } else { 0 };
     let lent = &armory.lent[def.index()];
     let (r, g, b) = d.color;
     let mut e = commands.spawn((Item, ItemKind(def), Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(r, g, b)).on_layer(2)));
@@ -418,20 +554,18 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, re
         e.insert(Pulse::every(every));
     }
     if let Some(c) = d.consumable {
-        e.insert(Consumable::new(c.charges, c.when_empty));
+        e.insert(Consumable::new(c.charges_at(level), c.when_empty));
     }
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
-        // Worth something to a mind that puts things on, so a goblin
-        // knows a sword from a dagger without knowing what either is.
-        if let Some(score) = gear_score(d, lent) {
-            e.insert(GearScore(score));
+    }
+    if levelled {
+        e.insert(Enchant(Enchanted { level, affixes: Vec::new() }));
+        if level < 0 {
+            e.insert(Stuck);
         }
     }
-    let armor = d.armor + lent.armor.unwrap_or(0);
-    if armor != 0 {
-        e.insert(Armor(armor));
-    }
+    fit(&mut e, armory, def, level, None, registries.stats.id(crate::content::ACCURACY));
     if !d.resists.is_empty() || lent.resists != Resistances::new() {
         let mut resists = Resistances::new();
         for (kind, pct) in &d.resists {
@@ -443,20 +577,6 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, re
     if let Some(lends) = Lends::of(lent) {
         e.insert(lends);
     }
-    if let Some(melee) = d.melee {
-        e.insert(MeleeAttack { cost: d.cost, look: melee.look, ..MeleeAttack::new(melee.kind.id(), melee.roll) });
-    }
-    if let Some(ranged) = d.ranged {
-        e.insert(RangedAttack {
-            cost: d.cost,
-            look: ranged.look,
-            effective: ranged.effective,
-            ..RangedAttack::new(ranged.kind.id(), ranged.roll, ranged.range)
-        });
-    }
-    if let Some(throw) = d.throw {
-        e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), dice))) });
-    }
     if let Some(light) = d.light {
         e.insert(light.source());
     }
@@ -464,6 +584,141 @@ pub fn spawn_item(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, re
         e.insert(Stack { key: def.index() as u64, count: 1 });
     }
     e.id()
+}
+
+/// Puts on `e` every component of `def` that its level decides, as it is
+/// at `level`, and takes off any it no longer has: its armor, its blow,
+/// its shot, its thrown strike, what it gives its wearer's stats and what
+/// it is worth to a mind that wears things.
+///
+/// The one place a level reaches a thing, run when the thing is made and
+/// again whenever its level changes, and every number worked out from the
+/// definition rather than from the thing as it stands: so a level is never
+/// added to a number that already carries one. A weapon's level adds to
+/// every damage roll it makes and to its wielder's `accuracy`, the stat
+/// `accuracy` names; armor's to its armor; and each `per_level` stat a
+/// level's worth. An attack the thing has put by while it cannot make it,
+/// `stowed`, is changed where it is put by rather than put back, so
+/// raising a dry bow does not load it.
+fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, stowed: Option<Stowed>, accuracy: Option<StatId>) {
+    let d = armory.defs.get(def);
+    let lent = &armory.lent[def.index()];
+    let plus = |dice: DiceRoll| DiceRoll { bonus: dice.bonus + DAMAGE_PER_LEVEL * level, ..dice };
+    let melee = d.melee.map(|m| MeleeAttack { cost: d.cost, look: m.look, ..MeleeAttack::new(m.kind.id(), plus(m.roll)) });
+    let ranged = d.ranged.map(|r| RangedAttack { cost: d.cost, look: r.look, effective: r.effective, ..RangedAttack::new(r.kind.id(), plus(r.roll), r.range) });
+    match (melee, stowed) {
+        (Some(attack), Some(Stowed::Melee(_))) => {
+            e.insert(Stowed::Melee(attack));
+        }
+        (Some(attack), _) => {
+            e.insert(attack);
+        }
+        (None, _) => {
+            e.remove::<MeleeAttack>();
+        }
+    }
+    match (ranged, stowed) {
+        (Some(attack), Some(Stowed::Ranged(_))) => {
+            e.insert(Stowed::Ranged(attack));
+        }
+        (Some(attack), _) => {
+            e.insert(attack);
+        }
+        (None, _) => {
+            e.remove::<RangedAttack>();
+        }
+    }
+    if let Some(throw) = d.throw {
+        e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), plus(dice)))) });
+    }
+    let own = if d.armor != 0 { d.armor + ARMOR_PER_LEVEL * level } else { 0 };
+    let armor = own + lent.armor.unwrap_or(0);
+    if armor != 0 {
+        e.insert(Armor(armor));
+    } else {
+        e.remove::<Armor>();
+    }
+    let mut gives: Vec<(StatId, Op)> = d.bestows.iter().map(|(stat, n)| (stat.id(), Op::Add(*n))).collect();
+    gives.extend(d.per_level.iter().map(|(stat, n)| (stat.id(), Op::Add(n * level))));
+    if let Some(accuracy) = accuracy.filter(|_| melee.is_some() || ranged.is_some()) {
+        gives.push((accuracy, Op::Add(ACCURACY_PER_LEVEL * level)));
+    }
+    gives.retain(|(_, op)| *op != Op::Add(0));
+    if gives.is_empty() {
+        e.remove::<Bestows>();
+    } else {
+        e.insert(Bestows(gives));
+    }
+    // Worth something to a mind that puts things on, so a goblin knows a
+    // sword from a dagger without knowing what either is.
+    let score = d.slot.and_then(|_| gear_score(melee.map(|m| m.dice), ranged.map(|r| r.dice), d.cost, armor));
+    match score {
+        Some(score) => {
+            e.insert(GearScore(score));
+        }
+        None => {
+            e.remove::<GearScore>();
+        }
+    }
+}
+
+/// Raises `item`'s level by `by`, or lowers it for a `by` below nought,
+/// and fits it to the new level by the function that made it, so its
+/// armor, its blows and what it gives its wearer are its definition's at
+/// the new level and never the old numbers with a level added twice.
+///
+/// The most it holds grows with the level, and what it has left by as
+/// much. A cursed thing whose level reaches nought comes unstuck. A thing
+/// someone wears has their stats folded again, since the engine folds a
+/// wearer's stats when what is worn changes and a level is not that.
+/// Returns the new level, or `None` for a thing that takes no levels,
+/// which is left as it was.
+pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
+    let def = world.get::<ItemKind>(item)?.0;
+    let level = world.get::<Enchant>(item).map_or(0, |e| e.level) + by;
+    let changed = world.resource_scope(|world, armory: Mut<Armory>| {
+        if !armory.takes_levels(def) {
+            return false;
+        }
+        let accuracy = world.resource::<Registries>().stats.id(crate::content::ACCURACY);
+        let stowed = world.get::<Stowed>(item).copied();
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, world);
+        let mut e = commands.entity(item);
+        e.insert(Enchant(Enchanted { level, affixes: Vec::new() }));
+        fit(&mut e, &armory, def, level, stowed, accuracy);
+        queue.apply(world);
+        if let (Some(c), Some(mut held)) = (armory.defs.get(def).consumable, world.get_mut::<Consumable>(item)) {
+            let max = c.charges_at(level);
+            let grown = i32::from(max) - i32::from(held.max);
+            held.left = (i32::from(held.left) + grown).clamp(0, i32::from(max)) as u16;
+            held.max = max;
+        }
+        true
+    });
+    if !changed {
+        return None;
+    }
+    if level >= 0 {
+        world.entity_mut(item).remove::<Stuck>();
+    }
+    let wearer = world.query::<(Entity, &Equipped)>().iter(world).find(|(_, worn)| worn.contains(item)).map(|(wearer, _)| wearer);
+    if let Some(mut worn) = wearer.and_then(|wearer| world.get_mut::<Equipped>(wearer)) {
+        worn.set_changed();
+    }
+    Some(level)
+}
+
+/// Spawns `def` at `level` as [`spawn_item_at`] does, as a thing found
+/// rather than set out with: one whose level its wearer learns by wearing
+/// it is [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until
+/// it has been worn long enough or is identified.
+pub fn spawn_found(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
+    let thing = spawn_item_at(commands, armory, def, level, registries);
+    if armory.learned_by_wear(def) {
+        commands.entity(thing).insert(crate::lore::Unfamiliar::default());
+    }
+    thing
 }
 
 /// Spawns `count` of `def`: one stack of `count` for a thing that stacks,
@@ -485,6 +740,12 @@ impl ItemMaker for Armory {
     /// Makes `count` of `def`, and for a thing with a `pile`, `count` piles
     /// in one stack: each its own roll, times the band it was found at, so
     /// a pile on floor eight is worth eight of one on floor one.
+    ///
+    /// What is found is not yet known for what it is: each thing that takes
+    /// levels at the level [`found_level`](Self::found_level) rolls, and a
+    /// thing whose level its wearer learns by wearing it marked
+    /// [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until it
+    /// has been worn long enough or is identified.
     fn make(
         &self,
         commands: &mut Commands,
@@ -498,7 +759,10 @@ impl ItemMaker for Armory {
             Some(pile) => (0..count).map(|_| pile.roll(rng).max(1) as u32 * from.band.max(1) as u32).sum(),
             None => count,
         };
-        spawn_items(commands, self, def, count, registries)
+        if !self.takes_levels(def) {
+            return spawn_items(commands, self, def, count, registries);
+        }
+        (0..count).map(|_| spawn_found(commands, self, def, self.found_level(def, registries, rng), registries)).collect()
     }
 
     fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {
@@ -561,12 +825,13 @@ mod tests {
         (world, made)
     }
 
-    /// A tripwire over the skeleton's armory, by name, so a thing is added
-    /// or dropped on purpose; and every floor has something to find.
+    /// A tripwire over the armory, by name, so a thing is added or dropped
+    /// on purpose: the skeleton's, and what knowing, enchanting, strength
+    /// and curses are carried by; and every floor has something to find.
     #[test]
     fn every_item_in_the_file_loads_and_every_floor_has_something_to_find() {
         let library = library();
-        let skeleton = [
+        let armory = [
             "dagger",
             "sword",
             "axe",
@@ -582,15 +847,22 @@ mod tests {
             "helm",
             "potion of healing",
             "potion of mending",
+            "potion of strength",
             "fire flask",
+            "scroll of enchanting",
+            "scroll of identify",
+            "scroll of remove curse",
+            "ring of regeneration",
+            "ring of stealth",
+            "ring of light",
             "gold coin",
             "lantern",
             "torch",
         ];
-        for name in skeleton {
+        for name in armory {
             assert!(library.armory.defs.id(name).is_some(), "no item called {name:?}");
         }
-        assert_eq!(library.armory.defs.len(), skeleton.len(), "an item this list does not name");
+        assert_eq!(library.armory.defs.len(), armory.len(), "an item this list does not name");
         assert!(library.armory.table.gaps(1..=10).is_empty(), "a floor with nothing to find");
     }
 
@@ -606,6 +878,153 @@ mod tests {
         assert_eq!((dagger.dice, dagger.kind, dagger.cost), (DiceRoll::new(1, 4), kind("pierce"), Some(70)));
         let bow = world.get::<RangedAttack>(made[2]).expect("the bow shoots");
         assert_eq!((bow.dice, bow.range, bow.effective_range()), (DiceRoll::new(1, 6), 8, 4));
+    }
+
+    /// Spawns `name` at `level` through the library's armory into a bare
+    /// world, beside the registries a level is fitted against.
+    fn at_level(library: &Library, name: &str, level: i32) -> (World, Entity) {
+        let mut world = World::new();
+        world.insert_resource(library.registries.clone());
+        world.insert_resource(library.armory.clone());
+        let mut queue = CommandQueue::default();
+        let armory = &library.armory;
+        let made = spawn_item_at(&mut Commands::new(&mut queue, &world), armory, armory.defs.expect(name), level, &library.registries);
+        queue.apply(&mut world);
+        (world, made)
+    }
+
+    /// What `thing` gives its wearer's stat `stat`, summed.
+    fn gives(world: &World, library: &Library, thing: Entity, stat: &str) -> i32 {
+        let stat = library.registries.stats.expect(stat);
+        world.get::<Bestows>(thing).map_or(0, |b| b.0.iter().filter(|(s, _)| *s == stat).map(|(_, op)| if let Op::Add(n) = op { *n } else { 0 }).sum())
+    }
+
+    /// A weapon's level adds one to its every damage roll and five to its
+    /// wielder's accuracy, armor's adds a point of armor, a ring's adds its
+    /// stat for each level and takes it away for each below nought, and a
+    /// thing below nought is stuck. A shield turns a tenth of what is aimed
+    /// at its wearer whatever its level.
+    #[test]
+    fn a_level_adds_to_a_weapons_rolls_and_aim_to_armors_armor_and_to_a_rings_stat_and_one_below_nought_is_stuck() {
+        let library = library();
+        let (world, sword) = at_level(&library, "sword", 2);
+        assert_eq!(world.get::<MeleeAttack>(sword).map(|m| m.dice), Some(DiceRoll { bonus: 2, ..DiceRoll::new(1, 7) }));
+        assert_eq!((gives(&world, &library, sword, "accuracy"), world.get::<Enchant>(sword).map(|e| e.level)), (10, Some(2)));
+        let (world, mail) = at_level(&library, "chain mail", -1);
+        assert_eq!((world.get::<Armor>(mail).map(|a| a.0), world.get::<Stuck>(mail).is_some()), (Some(2), true), "a cursed coat");
+        let (world, ring) = at_level(&library, "ring of stealth", 2);
+        assert_eq!((gives(&world, &library, ring, "stealth"), world.get::<Stuck>(ring).is_some()), (20, false));
+        let (world, ring) = at_level(&library, "ring of stealth", -3);
+        assert_eq!((gives(&world, &library, ring, "stealth"), world.get::<Stuck>(ring).is_some()), (-30, true));
+        let (world, shield) = at_level(&library, "shield", 1);
+        assert_eq!((gives(&world, &library, shield, "evasion"), world.get::<Armor>(shield).map(|a| a.0)), (10, Some(2)));
+        let (world, potion) = at_level(&library, "potion of healing", 3);
+        assert!(world.get::<Enchant>(potion).is_none(), "a potion takes no levels, whatever it is made at");
+    }
+
+    /// A level is fitted from the definition every time, never on top of
+    /// the numbers a thing already has: raised by one and by one again,
+    /// chain mail is two better, not three, and a cursed ring raised to
+    /// nought comes unstuck.
+    #[test]
+    fn a_level_raised_is_fitted_from_the_definition_and_never_twice() {
+        let library = library();
+        let (mut world, mail) = at_level(&library, "chain mail", 0);
+        assert_eq!(level_up(&mut world, mail, 1), Some(1));
+        assert_eq!(level_up(&mut world, mail, 1), Some(2));
+        assert_eq!(world.get::<Armor>(mail).map(|a| a.0), Some(5), "three and two");
+        let (mut world, ring) = at_level(&library, "ring of light", -1);
+        assert_eq!(level_up(&mut world, ring, 1), Some(0));
+        assert!(world.get::<Stuck>(ring).is_none(), "at nought it comes unstuck");
+        assert_eq!(gives(&world, &library, ring, "light"), 0);
+        let (mut world, potion) = at_level(&library, "potion of healing", 0);
+        assert_eq!(level_up(&mut world, potion, 1), None, "a potion takes no levels");
+    }
+
+    /// A thing whose charges grow with its level holds one more for each
+    /// level it is raised, and has one more left: a rod of the test's own,
+    /// as a staff or a wand will be written.
+    #[test]
+    fn a_thing_whose_charges_grow_with_its_level_holds_and_has_one_more_for_each_level_raised() {
+        let library = library();
+        let rod = r#"[(name: "rod", glyph: '/', color: (0.5, 0.5, 0.5), tags: ["staff"], consumable: (charges: 1, when_empty: Kept, per_level: 1),
+                      triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "1d4"))])])]"#;
+        let defs = read(rod, &library.registries, &library.traits).expect("the rod reads");
+        let armory = Armory::new(defs, LootTable::default(), &library.registries, &library.traits, &crate::content::effect_kinds(), &Moments::default())
+            .expect("and is made");
+        let mut world = World::new();
+        world.insert_resource(library.registries.clone());
+        world.insert_resource(armory.clone());
+        let mut queue = CommandQueue::default();
+        let rod = spawn_item_at(&mut Commands::new(&mut queue, &world), &armory, armory.defs.expect("rod"), 2, &library.registries);
+        queue.apply(&mut world);
+        assert_eq!(world.get::<Consumable>(rod).map(|c| (c.left, c.max)), Some((3, 3)), "one and two");
+        world.get_mut::<Consumable>(rod).expect("charges").left = 1;
+        assert_eq!(level_up(&mut world, rod, 1), Some(3));
+        assert_eq!(world.get::<Consumable>(rod).map(|c| (c.left, c.max)), Some((2, 4)), "one more held, one more left");
+    }
+
+    /// A ring is found at one to three, or cursed at minus one to minus
+    /// three about three times in ten, over a span of seeds; a sword is
+    /// found at nought and draws nothing from the stream, so finding one
+    /// deals the floor's loot as it was dealt before rings were found.
+    #[test]
+    fn a_ring_is_found_at_one_to_three_or_cursed_about_three_times_in_ten_and_a_sword_draws_nothing() {
+        use rand::RngCore;
+        let library = library();
+        let (ring, sword) = (library.armory.defs.expect("ring of light"), library.armory.defs.expect("sword"));
+        let mut cursed = 0;
+        for seed in 0..1000 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let level = library.armory.found_level(ring, &library.registries, &mut rng);
+            assert!(RING_LEVELS.contains(&level.abs()), "seed {seed}: {level}");
+            cursed += u32::from(level < 0);
+            let (mut drew, mut fresh) = (rand::rngs::StdRng::seed_from_u64(seed), rand::rngs::StdRng::seed_from_u64(seed));
+            assert_eq!(library.armory.found_level(sword, &library.registries, &mut drew), 0);
+            assert_eq!(drew.next_u64(), fresh.next_u64(), "seed {seed}: a sword draws nothing");
+        }
+        assert!((240..=360).contains(&cursed), "{cursed} in a thousand");
+    }
+
+    /// A thing found that takes levels and is worn is not known to be any
+    /// level yet; one found that is not worn, or that takes none, is.
+    #[test]
+    fn what_is_found_and_worn_is_unfamiliar_and_nothing_else_is() {
+        let library = library();
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, &world);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let from = Provenance { found: Found::Scatter, band: 1 };
+        let made: Vec<Entity> = ["sword", "ring of light", "potion of healing"]
+            .iter()
+            .flat_map(|n| library.armory.make(&mut commands, &library.registries, library.armory.defs.expect(n), 1, from, &mut rng))
+            .collect();
+        queue.apply(&mut world);
+        let unfamiliar: Vec<bool> = made.iter().map(|e| world.get::<crate::lore::Unfamiliar>(*e).is_some()).collect();
+        assert_eq!(unfamiliar, [true, true, false]);
+    }
+
+    /// What asks strength of a wearer or gives one stats, on a thing never
+    /// worn, a level's worth on a thing that takes no levels, and `either`
+    /// on a slot of no pair are refused, naming the item.
+    #[test]
+    fn strength_and_stats_on_a_thing_never_worn_and_levels_on_one_that_takes_none_are_refused() {
+        let library = library();
+        let bad = r#"[
+            (name: "heavy draught", glyph: '!', color: (0.5, 0.5, 0.5), tags: ["potion"], strength: 14),
+            (name: "lucky stone", glyph: '*', color: (0.5, 0.5, 0.5), slot: "head", per_level: [("stealth", 5)]),
+            (name: "odd helm", glyph: '^', color: (0.5, 0.5, 0.5), slot: "head", either: true, tags: ["armor"], armor: 1),
+        ]"#;
+        let Err(ContentError::Invalid(errors)) = read(bad, &library.registries, &library.traits) else { panic!("it read") };
+        assert_eq!(
+            errors,
+            [
+                "heavy draught: asks strength of, or gives stats to, a wearer of a thing that is never worn",
+                "lucky stone: gives something by its level, on a thing that takes no levels",
+                "odd helm: either, on the head slot, which is one of no pair",
+            ]
+        );
     }
 
     /// A pile of gold is its roll times the floor it was found on, so a

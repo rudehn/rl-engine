@@ -7,14 +7,25 @@
 //               named by it: "gold coin", never "gold"
 //   glyph:      one character, and one the typeface in `assets/fonts/` has
 //   color:      (r, g, b) in 0..=1
-//   slot:       optional; where it is worn: "main hand" | "off hand" | "head" | "body" | "light"
-//   either:     optional; true for a one-handed weapon that fits either hand
+//   slot:       optional; where it is worn: "main hand" | "off hand" | "head" | "body" |
+//               "left finger" | "right finger" | "light"
+//   either:     optional; true for a thing that fits either slot of the pair its slot is one
+//               of: a one-handed weapon either hand, "main hand" | "off hand", and a ring
+//               either hand's finger, "left finger" | "right finger"
 //   also:       optional; slots it also claims when worn, for a two-hander
-//   tags:       optional; "weapon" | "armor" | "potion" | "gold" | "arrow" | "light"; what a
-//               chest's row asks for by tag
+//   tags:       optional; "weapon" | "armor" | "potion" | "scroll" | "staff" | "wand" | "ring" |
+//               "gold" | "arrow" | "light"; what a chest's row asks for by tag. A weapon, armor,
+//               ring, staff or wand that does not stack takes levels: each level adds one to a
+//               weapon's every damage roll and five to its wielder's accuracy, one to armor's
+//               armor, and what per_level says; one below nought is cursed, and will not come off
+//               once it is put on. A potion, scroll, staff, wand or ring wears a face from
+//               `lore.ron` until its kind is known
 //   effects:    optional; [(kind:, chance:, args:)] what the thing holds, written as an
-//               ability's effects are in abilities.ron: landed by any trigger with no list of
-//               its own
+//               ability's effects are in abilities.ron, with Undermere's own besides: Enchant,
+//               one more level on the thing a use is made on; Identify, that thing made known;
+//               RemoveCurse, everything the user wears free to come off; Strengthen(by:), the
+//               user's strength raised by that much for good. Landed by any trigger with no list
+//               of its own
 //   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, aim:, asks:)] what it does at
 //               its moments: on is "use" (used from the pack; lands on the user, or where it is
 //               aimed) | "land" (a throw comes to rest) | "fire" (an attack is made with it) |
@@ -35,9 +46,13 @@
 //               choice is asked under, tag one of the tags above that the thing chosen must
 //               carry, any thing carried but itself when left out; the pack's use key then
 //               chooses, and the use lands on the user with the thing chosen for the game's own
-//               effects
-//   consumable: optional; (charges:, when_empty:) what a use or a landing costs it: charges a
-//               fresh one holds, and Destroyed | Kept at the last
+//               effects. A thing not yet known asks under its prompt all the same, so every
+//               thing that asks asks "Read it on which?", and of any thing, and gives nothing
+//               away
+//   consumable: optional; (charges:, when_empty:, per_level:) what a use or a landing costs
+//               it: charges a fresh one holds at level nought, Destroyed | Kept at the last,
+//               and per_level, optional, the charges each level adds, for a thing that takes
+//               levels
 //   armor:      optional; flat armor while worn
 //   resists:    optional; [(damage kind, percent removed)] while worn: "slash" | "pierce" |
 //               "crush" | "fire" | "cold" | "poison"
@@ -56,6 +71,15 @@
 //               (radius: tiles, color: (r, g, b) in 0..=1, flicker: 0..=1, may be left out)
 //   lends:      optional; names from `traits.ron` it gives whoever wears it, while it is worn;
 //               only on a thing with a slot, and two lent traits may not set one value
+//   strength:   optional; the strength it asks of whoever wears it: each point they are short
+//               costs a weapon's wielder four accuracy and armor's wearer one armor; only on a
+//               thing with a slot
+//   bestows:    optional; [(stat, amount)] added to its wearer's stats while it is worn, whatever
+//               its level: "strength" | "accuracy" | "evasion" | "speed" | "stealth" |
+//               "mending" | "light" | "armor"; only on a thing with a slot
+//   per_level:  optional; [(stat, amount)] added to its wearer's stats for each of its levels
+//               while it is worn, and taken away for each below nought; only on a thing with a
+//               slot that takes levels
 //   stack:      optional; whether copies merge into one counted entry; never on a worn thing
 //   pile:       optional; how many make a pile where one is found, as "NdS+B", times the
 //               floor it is found on; only on a thing that stacks; absent, one
@@ -63,20 +87,21 @@
 [
     // The weapons: a dagger is quick, an axe and a hammer slow, and a
     // spear, a hammer and a bow take both hands.
-    (name: "dagger", glyph: ')', color: (0.75, 0.75, 0.8), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d4", kind: "pierce"), cost: 70),
-    (name: "sword", glyph: ')', color: (0.8, 0.82, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d7", kind: "slash")),
-    (name: "axe", glyph: ')', color: (0.7, 0.62, 0.5), slot: "main hand", tags: ["weapon"], melee: (roll: "1d9", kind: "slash"), cost: 120),
-    (name: "mace", glyph: ')', color: (0.62, 0.62, 0.66), slot: "main hand", tags: ["weapon"], melee: (roll: "2d4", kind: "crush")),
-    (name: "spear", glyph: ')', color: (0.72, 0.62, 0.45), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "1d10", kind: "pierce")),
-    (name: "war hammer", glyph: ')', color: (0.6, 0.6, 0.68), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6", kind: "crush"), cost: 130),
-    (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 8, effective: 4, roll: "1d6", kind: "pierce")),
+    (name: "dagger", glyph: ')', color: (0.75, 0.75, 0.8), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d4", kind: "pierce"), cost: 70, strength: 10),
+    (name: "sword", glyph: ')', color: (0.8, 0.82, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d7", kind: "slash"), strength: 12),
+    (name: "axe", glyph: ')', color: (0.7, 0.62, 0.5), slot: "main hand", tags: ["weapon"], melee: (roll: "1d9", kind: "slash"), cost: 120, strength: 13),
+    (name: "mace", glyph: ')', color: (0.62, 0.62, 0.66), slot: "main hand", tags: ["weapon"], melee: (roll: "2d4", kind: "crush"), strength: 16),
+    (name: "spear", glyph: ')', color: (0.72, 0.62, 0.45), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "1d10", kind: "pierce"), strength: 13),
+    (name: "war hammer", glyph: ')', color: (0.6, 0.6, 0.68), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6", kind: "crush"), cost: 130, strength: 20),
+    (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 8, effective: 4, roll: "1d6", kind: "pierce"), strength: 12),
     (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), tags: ["arrow"], stack: true, throw: (range: 4, strike: ("1d2", "pierce"))),
-    // The armor: the heavier, the deeper it is found.
-    (name: "leather armor", glyph: '[', color: (0.6, 0.45, 0.3), slot: "body", tags: ["armor"], armor: 1),
-    (name: "chain mail", glyph: '[', color: (0.68, 0.7, 0.75), slot: "body", tags: ["armor"], armor: 3),
-    (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), slot: "body", tags: ["armor"], armor: 5),
-    (name: "shield", glyph: ']', color: (0.62, 0.52, 0.4), slot: "off hand", tags: ["armor"], armor: 1),
-    (name: "helm", glyph: '^', color: (0.7, 0.7, 0.75), slot: "head", tags: ["armor"], armor: 1),
+    // The armor: the heavier, the deeper it is found. A shield turns one
+    // blow in ten aside, the one thing under the lake that does.
+    (name: "leather armor", glyph: '[', color: (0.6, 0.45, 0.3), slot: "body", tags: ["armor"], armor: 1, strength: 10),
+    (name: "chain mail", glyph: '[', color: (0.68, 0.7, 0.75), slot: "body", tags: ["armor"], armor: 3, strength: 13),
+    (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), slot: "body", tags: ["armor"], armor: 5, strength: 19),
+    (name: "shield", glyph: ']', color: (0.62, 0.52, 0.4), slot: "off hand", tags: ["armor"], armor: 1, strength: 12, bestows: [("evasion", 10)]),
+    (name: "helm", glyph: '^', color: (0.7, 0.7, 0.75), slot: "head", tags: ["armor"], armor: 1, strength: 11),
     // The potions, each spent by its use: healing closes a wound now, and
     // mending gives about as much back over eight turns, which the
     // adventurer has to live through to collect.
@@ -84,10 +109,30 @@
      triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "3d6+4"))])]),
     (name: "potion of mending", glyph: '!', color: (0.95, 0.55, 0.65), tags: ["potion"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "mending", turns: 8))])]),
+    // Strength for good: what heavy gear asks for, and what nothing else
+    // gives back.
+    (name: "potion of strength", glyph: '!', color: (0.85, 0.35, 0.2), tags: ["potion"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Strengthen", args: (by: 1))])]),
     // Thrown, it bursts where it lands and leaves the ground there burning.
     (name: "fire flask", glyph: '!', color: (1.0, 0.55, 0.15), tags: ["potion"], stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
                  effects: [(kind: "Harm", args: (kind: "fire", roll: "2d4")), (kind: "Ignite", args: (turns: 3))])]),
+    // The scrolls, each spent by its reading. One read onto another thing
+    // asks which under the one question every such scroll asks, and of any
+    // thing at all, so an unknown scroll gives nothing away by asking. They
+    // do not stack: a stack is said in the plural, and the engine's plural
+    // of "scroll titled ZUMOR KA" pluralises the title.
+    (name: "scroll of enchanting", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", asks: (prompt: "Read it on which?"), effects: [(kind: "Enchant")])]),
+    (name: "scroll of identify", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", asks: (prompt: "Read it on which?"), effects: [(kind: "Identify")])]),
+    (name: "scroll of remove curse", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "RemoveCurse")])]),
+    // The rings, worn on either hand, each worth what its level makes it:
+    // found at one to three, or cursed below nought and stuck on.
+    (name: "ring of regeneration", glyph: '=', color: (0.9, 0.3, 0.35), slot: "left finger", either: true, tags: ["ring"], per_level: [("mending", 1)]),
+    (name: "ring of stealth", glyph: '=', color: (0.5, 0.5, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("stealth", 10)]),
+    (name: "ring of light", glyph: '=', color: (1.0, 0.9, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("light", 1)]),
     // The lights: the lantern the adventurer walks out of Mereholt with,
     // and a torch, worse to carry and better to throw into a dark room.
     (name: "lantern", glyph: '(', color: (1.0, 0.85, 0.55), slot: "light", tags: ["light"], light: (radius: 7, color: (1.0, 0.85, 0.6), flicker: 0.1)),

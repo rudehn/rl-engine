@@ -30,6 +30,14 @@
 //! one of these systems in one list, which the binary and [`testing`]'s
 //! headless world both add, so a test plays the game that ships.
 //!
+//! What the adventurer finds is what makes them: [`lore`] is what they
+//! know of it, the faces a run's potions, scrolls, staffs, wands and rings
+//! wear until they are known and the levels of what they wear until they
+//! are familiar with it; [`enchant`] is a thing made better by a level,
+//! and the curse a level below nought holds it on by; [`strength`] is what
+//! heavy gear asks of its wearer; and [`stats`] reads the stats the engine
+//! does not.
+//!
 //! Before any of it, [`title`] paints the screen the game opens on: the
 //! black lake at night under the engine's title menu. Every glyph of it
 //! is drawn in the face [`typeface`] holds, which the game ships, so it
@@ -41,8 +49,10 @@ pub mod armory;
 pub mod bestiary;
 pub mod content;
 pub mod dungeon;
+pub mod enchant;
 pub mod input;
 pub mod light;
+pub mod lore;
 pub mod plugin;
 pub mod population;
 pub mod prefabs;
@@ -50,6 +60,8 @@ pub mod quest;
 pub mod run;
 pub mod save;
 pub mod stairs;
+pub mod stats;
+pub mod strength;
 pub mod tally;
 pub mod testing;
 pub mod title;

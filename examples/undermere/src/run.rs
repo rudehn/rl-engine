@@ -16,6 +16,7 @@ use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor};
 use crate::armory::Armory;
 use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of, map_of};
 use crate::light::Fixtures;
+use crate::lore::{Faces, Lore};
 use crate::tally::Counted;
 
 /// The adventurer's health at the start of a run, and the most they ever
@@ -58,6 +59,10 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     commands.insert_resource(undermere.appearance());
     commands.insert_resource(WorldMap::new(undermere.tiles().tables()));
     commands.insert_resource(crate::content::combat_rules(registries));
+    // Whether a blow lands is accuracy against evasion, and how fast a
+    // body moves its speed with the speed stat on it.
+    commands.insert_resource(crate::content::hit_rules());
+    commands.insert_resource(crate::content::turn_rules(registries));
     // Resistance first, then armor: the traits' resistances are what make
     // fire nothing to a salamander and poison nothing to the dead, and the
     // engine's default list is armor alone, which would leave them written
@@ -89,7 +94,7 @@ pub fn spawn_adventurer(commands: &mut Commands, registries: &Registries) -> Ent
             // Noticeable, not sneaky: a subject a monster has to notice
             // rather than one it sees the moment it comes into view, so
             // whether the lantern is lit decides how soon it does.
-            Stealth(StealthStats::default()),
+            Stealth(crate::stats::OWN_STEALTH),
             // Ears, so the floor's noise reads on the vitals: the
             // adventurer hears what a keen-eared monster hears.
             Hearing(HearingStats { threshold: 0, memory: 6 }),
@@ -98,15 +103,48 @@ pub fn spawn_adventurer(commands: &mut Commands, registries: &Registries) -> Ent
         .id()
 }
 
+/// Things put in the adventurer's pack as if they had been found, beside
+/// the kit, for a photograph of the pack: `main.rs` reads them from
+/// `UNDERMERE_PACK`, written `potion of mending*2, ring of light:-2`, each
+/// a name from `items.ron` with a count after `*` and a level after `:`.
+/// Absent, nothing, which is every real run.
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtraPack(pub Vec<(String, i32, u32)>);
+
+impl ExtraPack {
+    /// Reads `text`, comma by comma: a name, then `:level` and `*count` in
+    /// either order, each optional, level nought and one of it otherwise.
+    /// A count or a level that is not a number is read as none.
+    pub fn parse(text: &str) -> Self {
+        let mut things = Vec::new();
+        for thing in text.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+            let (mut name, mut level, mut count) = (thing, 0, 1);
+            // Each mark peeled off the end, whichever order they came in.
+            while let Some(at) = name.rfind([':', '*']) {
+                let number = name[at + 1..].trim();
+                match &name[at..at + 1] {
+                    ":" => level = number.parse().unwrap_or(0),
+                    _ => count = number.parse().unwrap_or(1),
+                }
+                name = &name[..at];
+            }
+            things.push((name.trim().to_string(), level, count));
+        }
+        Self(things)
+    }
+}
+
 /// Gives `adventurer` the [`KIT`], made by the `armory`: every piece in the
-/// pack, and each that is worn in its slot.
+/// pack, and each that is worn in its slot. And `extra`, as if found, into
+/// the pack alone.
 ///
 /// Put on straight into the slots rather than asked for with `Equip`,
 /// which would spend the adventurer's first turns dressing: a run begins
 /// with them dressed. Every piece is [`Counted`] whole, since what the
 /// adventurer set out with is nothing they found, however often they put
-/// it down and take it up again.
-pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, registries: &Registries) {
+/// it down and take it up again. Whatever they set out with they know,
+/// kind and level: [`start`] makes its kinds known.
+pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, registries: &Registries, extra: &ExtraPack) {
     let mut pack = Vec::new();
     let mut worn = Equipment::with_slot_count(registries.slots.len());
     for (name, count) in KIT {
@@ -120,6 +158,16 @@ pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, r
                 worn.equip(item, &shape).expect("the kit fits the adventurer's slots");
             }
             pack.push(item);
+        }
+    }
+    for (name, level, count) in &extra.0 {
+        let Some(id) = armory.defs.id(name) else {
+            warn!("UNDERMERE_PACK names {name:?}, which items.ron has no thing called");
+            continue;
+        };
+        match armory.defs.get(id).stack {
+            true => pack.extend(crate::armory::spawn_items(commands, armory, id, *count, registries)),
+            false => pack.extend((0..*count).map(|_| crate::armory::spawn_found(commands, armory, id, *level, registries))),
         }
     }
     commands.entity(adventurer).insert((Inventory { items: pack }, Equipped(worn)));
@@ -145,8 +193,16 @@ pub fn start(
         return;
     }
     prepare(&mut commands, &seed, &content.registries);
+    // The faces this run's things wear, and the kinds of what the
+    // adventurer sets out with, which they know.
+    let mut lore = Lore::draw(&content.faces, &content.armory.defs, &seed);
+    for (name, _) in KIT {
+        lore.learn(name);
+    }
+    commands.insert_resource(lore);
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
-    equip_kit(&mut commands, adventurer, &content.armory, &content.registries);
+    let extra = content.extra.as_deref().cloned().unwrap_or_default();
+    equip_kit(&mut commands, adventurer, &content.armory, &content.registries, &extra);
     begin.log.notice(format!("Seed {}. Ten floors under the lake, the Drowned King waits.", seed.0.0), 0);
     let place = match first.map_or(0, |f| f.0.min(FLOORS)) {
         0 => TOWN,
@@ -222,11 +278,14 @@ fn begin_afresh(world: &mut World) {
     }
 }
 
-/// The content a run is made from, loaded once before any run begins.
+/// The content a run is made from, loaded once before any run begins, and
+/// what a photograph asked for in the pack besides.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Content<'w> {
     registries: Res<'w, Registries>,
     armory: Res<'w, Armory>,
+    faces: Res<'w, Faces>,
+    extra: Option<Res<'w, ExtraPack>>,
 }
 
 /// What starting a run writes beyond the world itself: the log's first
@@ -258,8 +317,12 @@ mod tests {
             assert_eq!((here(&app), at(&app, me)), (TOWN, entry), "seed {s}: in Mereholt, where it marks the arrival");
             assert_eq!(app.world_mut().query_filtered::<(), With<Player>>().iter(app.world()).count(), 1, "seed {s}: one adventurer");
             assert_eq!(app.world().get::<Health>(me).map(|h| (h.current, h.max)), Some((HEALTH, HEALTH)), "seed {s}");
-            let named = |names: [Option<&str>; 5]| names.map(|n| n.map(String::from)).to_vec();
-            assert_eq!(worn(&app, me), named([Some("sword"), None, None, Some("leather armor"), Some(LANTERN)]), "seed {s}: hands, head, body and light");
+            let named = |names: [Option<&str>; 7]| names.map(|n| n.map(String::from)).to_vec();
+            assert_eq!(
+                worn(&app, me),
+                named([Some("sword"), None, None, Some("leather armor"), None, None, Some(LANTERN)]),
+                "seed {s}: hands, head, body, fingers and light"
+            );
             let mut carried = pack(&app, me);
             carried.sort();
             let kit: Vec<(String, u32)> =
@@ -291,6 +354,25 @@ mod tests {
         app.world_mut().write_message(DamageEvent::new(salamander, rl_engine::rl_rules::Hit::by(me, registries.damage_kinds.expect("cold"), 10)));
         settle(&mut app);
         assert_eq!(health(&app), full.map(|h| h - 15), "and cold bites half as hard again");
+    }
+
+    /// What a photograph asks for in the pack is read a thing to a comma,
+    /// a level after a colon and a count after a star in either order, and
+    /// it goes into the pack as found: a ring not known to be any level, a
+    /// stack of potions counted.
+    #[test]
+    fn what_a_photograph_asks_for_goes_into_the_pack_as_found() {
+        let asked = ExtraPack::parse(" ring of light:-2, potion of mending*2 ,chain mail*2:1, scroll of identify ");
+        let want = [("ring of light", -2, 1), ("potion of mending", 0, 2), ("chain mail", 1, 2), ("scroll of identify", 0, 1)];
+        assert_eq!(asked, ExtraPack(want.map(|(n, l, c)| (n.to_string(), l, c)).to_vec()));
+        let mut app = headless(RunSeed(1));
+        app.insert_resource(ExtraPack::parse("ring of light:-2, potion of mending*2"));
+        let me = adventurer(&mut app);
+        let bag = app.world().get::<Inventory>(me).expect("a pack").items.clone();
+        let ring = bag[bag.len() - 2];
+        assert_eq!(app.world().get::<Enchant>(ring).map(|e| e.level), Some(-2));
+        assert!(app.world().get::<crate::lore::Unfamiliar>(ring).is_some(), "found, not set out with");
+        assert_eq!(app.world().get::<Stack>(bag[bag.len() - 1]).map(|s| s.count), Some(2));
     }
 
     /// A run started on a floor begins on that floor, at its way in, for

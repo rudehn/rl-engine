@@ -28,7 +28,7 @@
 //               "cold" | "poison"; 100 immune, negative a weakness
 //   armor:      flat armor, added to the monster's own
 //   abilities:  names from `abilities.ron`: "fire breath" | "drowning grasp"
-//   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating"
+//   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating" | "chilled"
 //
 // Lists add up across a monster's traits: wits, resists, abilities and statuses.
 // Every other field may be set by one of a monster's traits only, and a monster

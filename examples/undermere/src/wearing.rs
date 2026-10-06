@@ -23,12 +23,14 @@
 //!   whoever carries it, lit while the thing is worn and put out when it
 //!   is not.
 //!
-//! Undermere registers no stats, so nothing it lends goes through the
-//! engine's `Bestows`, which folds a worn thing's changes to a stat:
+//! Nothing a trait sets is a stat, so nothing a thing lends goes through
+//! the engine's `Bestows`, which folds a worn thing's changes to a stat:
 //! armor, the one number a trait sets that a stat could have carried, is
-//! the engine's `Armor` instead. What a worn thing cannot give at all, a
-//! mind's wits, a pace, how far a body sees, notices and hears, when it
-//! runs and what it knows how to do, is refused where the item is read.
+//! the engine's `Armor` instead. What a thing gives a stat it gives by
+//! its own `bestows` and `per_level`, which the armory writes as the
+//! engine's `Bestows`. What a worn thing cannot give at all, a mind's
+//! wits, a pace, how far a body sees, notices and hears, when it runs and
+//! what it knows how to do, is refused where the item is read.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -176,12 +178,13 @@ mod tests {
     use crate::dungeon::map_of;
     use crate::testing::{arrive, clear_monsters, equip, headless, pass_turns, unequip};
 
-    /// A ring of the salamander, which the skeleton has no use for yet:
-    /// a fixture, as the content's own tests write theirs. It is worn on
-    /// the off hand, since the skeleton has no finger to put it on either.
+    /// A ring of the salamander, which the armory has no use for yet: a
+    /// fixture, as the content's own tests write theirs, worn on either
+    /// hand's finger as the armory's rings are. Not tagged a ring, so it
+    /// wears no face and takes no level, and what it lends is all it is.
     const RING: &str = r#"#![enable(implicit_some)]
     [
-        (name: "ring of the salamander", glyph: '=', color: (1.0, 0.45, 0.2), slot: "off hand",
+        (name: "ring of the salamander", glyph: '=', color: (1.0, 0.45, 0.2), slot: "left finger", either: true,
          lends: ["fire-blooded", "regenerates", "sees in the dark", "ember glow"]),
     ]"#;
 

@@ -102,24 +102,37 @@ pub fn ambient_of(map: MapId) -> Light {
     }
 }
 
+/// The adventurer as the lantern reads them: what they carry, where, and
+/// the stats a light reaches by.
+type Carrying = (&'static Inventory, Option<&'static OnMap>, Option<&'static StatBlock>);
+
 /// Keeps every lantern the adventurer carries reaching as far as
 /// [`lantern_radius`] says for where they stand: seven tiles in Mereholt
-/// and on the first floors, and a tile less every third floor down.
+/// and on the first floors, and a tile less every third floor down; and
+/// as many tiles further as the adventurer's light stat says, never less
+/// than the one they stand in.
 ///
 /// Read off where the adventurer is every pass rather than set on an
 /// arrival, so a lantern picked up on floor seven, or brought back by a
-/// continued run, dims to the floor it is carried on at once. In
-/// `TurnSet::React`, so the floor a pass arrives on is lit by the lantern
-/// as it reaches there before anybody on it decides by that light. Only
-/// the lantern: a torch burns as it burns, and lies about to be found.
+/// continued run, dims to the floor it is carried on at once, and a ring
+/// of light put on brightens it at once. In `TurnSet::React`, so the floor
+/// a pass arrives on is lit by the lantern as it reaches there before
+/// anybody on it decides by that light. Only the lantern: a torch burns as
+/// it burns, and lies about to be found.
 pub fn dim_the_lantern(
-    adventurer: Query<(&Inventory, Option<&OnMap>), With<Adventurer>>,
+    adventurer: Query<Carrying, With<Adventurer>>,
     mut lights: Query<(&ItemKind, &mut LightSource)>,
     armory: Res<Armory>,
+    registries: Res<Registries>,
 ) {
     let Some(lantern) = armory.defs.id(crate::run::LANTERN) else { return };
-    for (bag, on) in &adventurer {
-        let radius = lantern_radius(floor_of(on.map_or(MapId::SURFACE, |m| m.0)));
+    let light = registries.stats.id(crate::content::LIGHT);
+    for (bag, on, stats) in &adventurer {
+        let brighter = match (light, stats) {
+            (Some(light), Some(stats)) => stats.0.value(light, &registries.stats),
+            _ => 0,
+        };
+        let radius = (lantern_radius(floor_of(on.map_or(MapId::SURFACE, |m| m.0))) + brighter).max(1);
         for item in &bag.items {
             if let Ok((kind, mut light)) = lights.get_mut(*item)
                 && kind.0 == lantern

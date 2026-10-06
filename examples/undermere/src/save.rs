@@ -5,12 +5,15 @@
 //! worn thing holds each, a stack's count and a thing's charges, where a
 //! way through leads, every place built, the clock and what the
 //! adventurer has seen. Undermere says only what each kind of thing it
-//! spawns is: the adventurer, a monster by its definition's name, an item
-//! by its definition's name and how much of it the tally has counted, and
+//! spawns is: the adventurer and the strength they have come to, a
+//! monster by its definition's name, an item by its definition's name,
+//! its level, whether it is still cursed on, how long it has been worn
+//! towards knowing its level and how much of it the tally has counted, and
 //! a way through by which way it is. What Undermere keeps of a run outside
-//! its entities, the [`Tally`], goes through [`SaveableState`], and the
-//! engine's `Quests` is saved the same way. It keeps no `Counters`, since
-//! the tally counts what the score is made of.
+//! its entities, the [`Tally`] and the [`Lore`] of what is known, goes
+//! through [`SaveableState`], and the engine's `Quests` is saved the same
+//! way. It keeps no `Counters`, since the tally counts what the score is
+//! made of.
 //!
 //! The run is written on the way out, by the engine's stash when the
 //! window closes or the menu quits, by the engine again when the menu
@@ -30,6 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemKind};
 use crate::bestiary::{Bestiary, Kind};
+use crate::lore::{Lore, Unfamiliar};
 use crate::run::Adventurer;
 use crate::stairs::Way;
 use crate::tally::{Counted, Tally};
@@ -39,14 +43,16 @@ use crate::tally::{Counted, Tally};
 // v1: the first shape.
 // v2: the tally in place of the deepest floor, and how much of an item the
 // tally has counted.
-pub const VERSION: u32 = 2;
+// v3: an item's level, curse and familiarity, the adventurer's strength,
+// what is known of the run's things, and a finger slot on either hand.
+pub const VERSION: u32 = 3;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
 /// What the save is made of: the engine's plugins, the four kinds, and
-/// the two resources; and the records, in their own slot.
+/// the three resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
@@ -54,6 +60,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
         .save_state::<Tally>()
+        .save_state::<Lore>()
         .save_state::<Quests>();
 }
 // ANCHOR_END: register
@@ -71,23 +78,39 @@ fn spawned(world: &mut World, spawn: impl FnOnce(&mut Commands, &World) -> Entit
     e
 }
 
-/// The adventurer, as the save writes them: nothing of their own, since
-/// everything they are, where they stand, their health, their pack, what
-/// they wear and the statuses on them, is the engine's to keep, and their
-/// light is the lantern's, which is an item.
+/// The adventurer, as the save writes them: the strength they have come
+/// to, and nothing else of their own, since everything else they are,
+/// where they stand, their health, their pack, what they wear and the
+/// statuses on them, is the engine's to keep, and their light is the
+/// lantern's, which is an item.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-pub struct AdventurerSave {}
+pub struct AdventurerSave {
+    /// Their strength with nothing on it, which a potion of strength
+    /// raised for good; `None` in a save written before strength was, read
+    /// as the stat's own base. What is worn and the statuses put their own
+    /// changes back on top of it.
+    #[serde(default)]
+    pub strength: Option<i32>,
+}
 
 impl Saveable for Adventurer {
     type Saved = AdventurerSave;
 
-    fn capture(_: &World, _: Entity) -> AdventurerSave {
-        AdventurerSave {}
+    fn capture(world: &World, entity: Entity) -> AdventurerSave {
+        let registries = world.resource::<Registries>();
+        let stat = registries.stats.id(crate::content::STRENGTH);
+        AdventurerSave { strength: stat.zip(world.get::<StatBlock>(entity)).map(|(stat, stats)| stats.0.base(stat, &registries.stats)) }
     }
 
-    fn restore(world: &mut World, _: &AdventurerSave) -> Entity {
+    fn restore(world: &mut World, saved: &AdventurerSave) -> Entity {
         let registries = world.resource::<Registries>().clone();
-        spawned(world, |commands, _| crate::run::spawn_adventurer(commands, &registries))
+        let adventurer = spawned(world, |commands, _| crate::run::spawn_adventurer(commands, &registries));
+        if let (Some(strength), Some(stat)) = (saved.strength, registries.stats.id(crate::content::STRENGTH))
+            && let Some(mut stats) = world.get_mut::<StatBlock>(adventurer)
+        {
+            stats.0.set_base(stat, strength);
+        }
+        adventurer
     }
 }
 
@@ -121,10 +144,11 @@ impl Saveable for Kind {
     }
 }
 
-/// An item, as the save writes it: its definition, by name, and how much
-/// of it the tally has counted as found. Its stack and its charges are the
-/// engine's to keep, and what it lends is its definition's, made again
-/// with it.
+/// An item, as the save writes it: its definition, by name, its level,
+/// whether it is still cursed on, how long the adventurer has worn it
+/// towards knowing its level, and how much of it the tally has counted as
+/// found. Its stack and its charges are the engine's to keep, and what it
+/// lends is its definition's, made again with it at its level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemSave {
     /// The definition's name.
@@ -134,6 +158,17 @@ pub struct ItemSave {
     /// not counted again in the run carried on.
     #[serde(default)]
     pub counted: u32,
+    /// Its level, nought for a thing that takes none.
+    #[serde(default)]
+    pub level: i32,
+    /// Whether it will not come off once worn: a thing below nought is
+    /// made stuck, and one a scroll freed is not, at the same level.
+    #[serde(default)]
+    pub stuck: bool,
+    /// The turns the adventurer has worn it towards knowing its level, for
+    /// a thing whose level they do not know yet; `None` once they do.
+    #[serde(default)]
+    pub unfamiliar: Option<u32>,
 }
 
 impl Saveable for ItemKind {
@@ -141,21 +176,51 @@ impl Saveable for ItemKind {
 
     fn capture(world: &World, entity: Entity) -> ItemSave {
         let kind = world.get::<ItemKind>(entity).expect("an item's kind");
-        let counted = world.get::<Counted>(entity).map_or(0, |c| c.0);
-        ItemSave { def: world.resource::<Armory>().defs.name(kind.0).to_string(), counted }
+        ItemSave {
+            def: world.resource::<Armory>().defs.name(kind.0).to_string(),
+            counted: world.get::<Counted>(entity).map_or(0, |c| c.0),
+            level: world.get::<Enchant>(entity).map_or(0, |e| e.level),
+            stuck: world.get::<Stuck>(entity).is_some(),
+            unfamiliar: world.get::<Unfamiliar>(entity).map(|u| u.worn),
+        }
     }
 
+    /// Made again at its level by the function that made it, so the level
+    /// is applied once and never on top of itself, then held on or let go
+    /// as it was when it was saved.
     fn restore(world: &mut World, saved: &ItemSave) -> Entity {
         let Some(id) = world.resource::<Armory>().defs.id(&saved.def) else {
             warn!("a saved item is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
             return world.spawn_empty().id();
         };
         let registries = world.resource::<Registries>().clone();
-        let item = spawned(world, |commands, world| crate::armory::spawn_item(commands, world.resource::<Armory>(), id, &registries));
+        let item = spawned(world, |commands, world| crate::armory::spawn_item_at(commands, world.resource::<Armory>(), id, saved.level, &registries));
+        let mut e = world.entity_mut(item);
         if saved.counted > 0 {
-            world.entity_mut(item).insert(Counted(saved.counted));
+            e.insert(Counted(saved.counted));
+        }
+        match saved.stuck {
+            true => e.insert(Stuck),
+            false => e.remove::<Stuck>(),
+        };
+        if let Some(worn) = saved.unfamiliar {
+            e.insert(Unfamiliar::worn_for(worn));
         }
         item
+    }
+}
+
+/// What is known of the run's things, as the save writes it: the face each
+/// kind wears and which kinds are known, both by name.
+impl SaveableState for Lore {
+    type Saved = Lore;
+
+    fn capture(&self) -> Lore {
+        self.clone()
+    }
+
+    fn restore(&mut self, saved: Lore) {
+        *self = saved;
     }
 }
 

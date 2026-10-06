@@ -4,13 +4,15 @@
 //! itself, and its docs, live in `lib.rs`.
 //!
 //! `cargo run -p undermere -- --seed 7`. For a picture of a deeper floor,
-//! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt.
+//! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
+//! and for one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
+//! mending*2"` puts those in it as if found.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
 use undermere::plugin::UndermerePlugin;
-use undermere::run::StartFloor;
+use undermere::run::{ExtraPack, StartFloor};
 use undermere::typeface::DEJAVU_SANS_MONO;
 
 /// Terminal size in cells.
@@ -43,10 +45,10 @@ const TARGET_ROWS: i32 = 10;
 /// badges, blank most turns, which sets what is worn off from the gauges.
 const VITALS_ROWS: i32 = 8;
 /// Rows the rail gives to what is worn: the heading and its rule, one
-/// apiece for the five slots, and a blank row setting the list off from
+/// apiece for the seven slots, and a blank row setting the list off from
 /// what is nearby under it, the gap the badges' row leaves above. Nothing
 /// Undermere wears says anything beside its name yet, so no slot wraps.
-const GEAR_ROWS: i32 = 8;
+const GEAR_ROWS: i32 = 10;
 
 /// The screen, cut up once so every panel and the map agree on it.
 ///
@@ -107,8 +109,12 @@ impl Screen {
             // cursor is under it.
             inspect: Rect::new(map.x + 2, map.bottom() - 12, 52, 10),
             target,
-            // The pack's rows, a rule, and what the row picked out is.
-            pack: centred(64, 4, 20),
+            // The pack's rows, a rule, and what the row picked out is: the
+            // engine gives the rows half of it, so fifteen of them, enough
+            // for a pack of potions, scrolls and rings to be seen whole. A
+            // longer one scrolls, and nothing on the screen says there is
+            // more of it.
+            pack: centred(64, 4, 32),
             // What is in a chest, and the keys that take it.
             chest: centred(48, 6, 14),
             // What can be done here, when here is more than one thing.
@@ -234,6 +240,9 @@ fn main() -> AppExit {
     add_panels(&mut app, &screen);
     if let Some(floor) = std::env::var("UNDERMERE_START").ok().and_then(|f| f.parse().ok()) {
         app.insert_resource(StartFloor(floor));
+    }
+    if let Ok(pack) = std::env::var("UNDERMERE_PACK") {
+        app.insert_resource(ExtraPack::parse(&pack));
     }
     app.run()
 }

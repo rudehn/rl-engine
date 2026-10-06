@@ -23,7 +23,7 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::plugin::{NewRun, ResetsOnNewRun, Turn, TurnSet};
+use rl_engine::rl_bevy::plugin::{CleanupSet, NewRun, ResetsOnNewRun, Turn, TurnSet};
 use rl_engine::rl_bevy::{FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
 
 use crate::armory::Armory;
@@ -63,6 +63,9 @@ impl Plugin for UndermerePlugin {
             // `Harm`, `Mend` and `Inflict`, for the potions, the flask and
             // the breaths, beside the `Ignite` fire declares.
             .add_engine_effects();
+        // And Undermere's own, for the scrolls and the potion of strength:
+        // a thing's level, what is known of it, a curse, a strength.
+        crate::content::add_game_effects(app);
         // The content, read once before any run begins against the
         // effects and moments every plugin above declared: no run changes
         // what a sword or a goblin is. A file that does not read stops the
@@ -77,6 +80,11 @@ impl Plugin for UndermerePlugin {
         let (quests, facts) = crate::quest::load(&library.registries);
         app.insert_resource(quests).insert_resource(facts);
         app.insert_resource(library.registries).insert_resource(library.abilities).insert_resource(library.armory).insert_resource(library.bestiary);
+        app.insert_resource(library.faces);
+        // What the adventurer knows of the run's things, dealt out afresh
+        // by every run's start and given back by a continued run's save;
+        // nothing between two runs, so the next one's faces are its own.
+        app.init_resource::<crate::lore::Lore>().reset_on_new_run::<crate::lore::Lore>();
 
         // The run's start, and a continued run after the fresh start has
         // stood aside.
@@ -129,8 +137,22 @@ impl Plugin for UndermerePlugin {
         );
         // What the adventurer wears and carries, kept in step every pass:
         // what a worn thing lends, then how far the lantern reaches where
-        // the adventurer stands. Chained, since both light things.
+        // the adventurer stands. Chained, since both light things. Beside
+        // them what too heavy a thing costs, and how sneaky the stealth
+        // stat makes the adventurer, each reading its own numbers.
         app.add_systems(Turn, (crate::wearing::lend, crate::light::dim_the_lantern).chain().in_set(TurnSet::React));
+        app.add_systems(Turn, (crate::strength::keep_strength, crate::stats::keep_stealth).in_set(TurnSet::React));
+        // What the adventurer's hands showed of their things, then a curse
+        // closing on them, then the turns they have worn what they do not
+        // know yet: chained, since each says so in the log, and the lines
+        // land in this order.
+        app.add_systems(Turn, (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::grow_familiar).chain().in_set(TurnSet::React));
+        // Every thing called what is known of it: after the narrator has
+        // read the pass, so nothing is told of under a name it had not yet
+        // earned, and before the spent are taken out; and again before the
+        // frame is drawn, for what came into the world between the turns.
+        app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
+        app.add_systems(Update, crate::lore::keep_names.after(EngineSet::Turns).before(EngineSet::Present));
         // Each place's ambient, set between the turns and the light, so the
         // frame the stairs land on is drawn in the new place's light.
         app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
