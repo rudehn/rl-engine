@@ -341,6 +341,60 @@ mod tests {
         assert_eq!(*continued.world().resource::<State<EngineState>>().get(), EngineState::Playing, "and it plays on");
     }
 
+    /// What `who` wears on the slot called `slot`.
+    fn on(app: &App, who: Entity, slot: &str) -> Entity {
+        let slot = app.world().resource::<Registries>().slots.expect(slot);
+        app.world().get::<Equipped>(who).and_then(|w| w.in_slot(slot)).expect("something worn there")
+    }
+
+    /// A continued run keeps what is known and what holds on: the faces
+    /// the run's things wear and which kinds are known, the strength a
+    /// potion gave for good, a curse still on, one lifted at the level it
+    /// was, and the turns a thing has been worn towards knowing its level.
+    #[test]
+    fn a_continued_run_keeps_the_faces_the_strength_the_curses_and_the_turns_worn() {
+        use crate::testing::{equip, find, give, use_thing};
+        let mut app = headless(RunSeed(3));
+        let me = adventurer(&mut app);
+        let strength = find(&mut app, "potion of strength", 0);
+        give(&mut app, me, strength);
+        use_thing(&mut app, me, strength);
+        let freed = find(&mut app, "ring of light", -2);
+        equip(&mut app, me, freed);
+        let scroll = find(&mut app, "scroll of remove curse", 0);
+        give(&mut app, me, scroll);
+        use_thing(&mut app, me, scroll);
+        let held = find(&mut app, "ring of stealth", -1);
+        equip(&mut app, me, held);
+        let draught = find(&mut app, "potion of mending", 0);
+        give(&mut app, me, draught);
+        pass_turns(&mut app, 10);
+        let face = app.world().get::<Name>(draught).map(|n| n.as_str().to_string());
+        let worn_for = |app: &App, ring: Entity| app.world().get::<Unfamiliar>(ring).map(|u| u.worn);
+        let before = (worn_for(&app, freed), worn_for(&app, held));
+        assert!(before.0.is_some_and(|w| w >= 10) && before.1.is_some_and(|w| w >= 10), "{before:?}");
+        app.world().resource::<Saves>().delete(SLOT).expect("the slot can be emptied");
+        arrive(&mut app, map_of(1));
+        let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("the arrival wrote the run down");
+        let lore = app.world().resource::<Lore>().clone();
+        let before = (worn_for(&app, freed), worn_for(&app, held));
+
+        let mut carried = continued(&text);
+        let me = adventurer(&mut carried);
+        assert_eq!(*carried.world().resource::<Lore>(), lore, "the faces and what is known");
+        let registries = carried.world().resource::<Registries>().clone();
+        let stats = &carried.world().get::<StatBlock>(me).expect("stats").0;
+        assert_eq!(stats.base(registries.stats.expect(crate::content::STRENGTH), &registries.stats), 13, "the strength a potion gave");
+        let (freed, held) = (on(&carried, me, "left finger"), on(&carried, me, "right finger"));
+        let level = |ring: Entity| carried.world().get::<Enchant>(ring).map(|e| e.level);
+        assert_eq!((level(freed), carried.world().get::<Stuck>(freed).is_some()), (Some(-2), false), "lifted, at the level it was");
+        assert_eq!((level(held), carried.world().get::<Stuck>(held).is_some()), (Some(-1), true), "still held on");
+        assert_eq!((worn_for(&carried, freed), worn_for(&carried, held)), before, "and the turns each has been worn");
+        let bag = &carried.world().get::<Inventory>(me).expect("a pack").items;
+        let names: Vec<Option<String>> = bag.iter().map(|i| carried.world().get::<Name>(*i).map(|n| n.as_str().to_string())).collect();
+        assert!(names.contains(&face), "the draught under its face: {names:?}");
+    }
+
     /// A save naming something the content no longer has, a thing renamed
     /// since, continues without it rather than failing to start.
     #[test]
