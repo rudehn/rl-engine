@@ -1015,6 +1015,8 @@ mod draughts;
 mod magic;
 #[cfg(test)]
 mod play;
+#[cfg(test)]
+mod scrolls;
 
 #[cfg(test)]
 mod tests {
@@ -1082,6 +1084,12 @@ mod tests {
             "scroll of enchanting",
             "scroll of identify",
             "scroll of remove curse",
+            "scroll of teleportation",
+            "scroll of recharging",
+            "scroll of magic mapping",
+            "scroll of discord",
+            "scroll of aggravate monsters",
+            "scroll of summon monsters",
             "staff of firebolt",
             "staff of lightning",
             "staff of poison",

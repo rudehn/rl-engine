@@ -1,6 +1,7 @@
 //! Where someone stands: a staff of blinking's step of several cells, a
-//! wand of teleport other's, which sends what it strikes far off, a wand
-//! of beckoning's, which pulls it close, and a potion of descent's, which
+//! scroll of teleportation's, which sends its reader far off, a wand of
+//! teleport other's, which sends what it strikes far off, a wand of
+//! beckoning's, which pulls it close, and a potion of descent's, which
 //! sinks its drinker to the floor below.
 //!
 //! Each on the same floor moves through [`EffectWorld::place`] or
@@ -105,6 +106,37 @@ impl Effect for TeleportOther {
 
 impl FromArgs for TeleportOther {
     const KIND: &'static str = "TeleportOther";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Sends the user to a free cell of the floor far from where they stand: a
+/// scroll of teleportation's. Undermere's own, in place of the engine's
+/// `Teleport`, which moves its user to where a use landed and so, for a
+/// scroll read where its reader stands, nowhere. With nowhere free on the
+/// floor it shows nothing. Takes no arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Teleport;
+
+impl Effect for Teleport {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        match far_cell(world, landing.origin) {
+            Some(to) => {
+                world.place(landing.user, to);
+            }
+            None => super::shows_nothing(world, landing),
+        }
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "sends you far away".to_string()
+    }
+}
+
+impl FromArgs for Teleport {
+    const KIND: &'static str = "Teleport";
 
     fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
         no_args(args, Self::KIND).map(|_| Self)

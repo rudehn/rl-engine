@@ -20,11 +20,15 @@
 //   time:        optional; hundredths of a step the turn costs (default 100)
 //   cooldown:    optional; hundredths before it may be used again, from the moment of use
 //                (default 0)
-//   effects:     each (kind:, chance:, args:); kind is one the engine ships: Harm(kind:, roll:),
-//                Mend(roll:), Inflict(status:, turns:), Cleanse, Shove, Pull, Teleport;
-//                Ignite(turns:), which sets what it lands on alight. The damage kinds are
-//                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison", and the statuses
-//                "poisoned" | "scorched" | "mending" | "regenerating" | "chilled"
+//   effects:     each (kind:, chance:, args:); kind is one of the engine's Undermere registers:
+//                Harm(kind:, roll:), Mend(roll:), Inflict(status:, turns:), Cleanse(status:),
+//                Shove(cells:), Pull(cells:); Ignite(turns:), which sets what it lands on alight;
+//                Emit(gas:, amount:); or one of Undermere's own, as `items.ron` lists them,
+//                Teleport among them, which sends its user far off. The damage kinds are
+//                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison" | "lightning", and the
+//                statuses "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
+//                "slowed" | "hasted" | "fireproof" | "shrouded" | "paralysed" | "confused" |
+//                "discordant"
 #![enable(implicit_some)]
 [
     // The salamander's: a cone of flame that sets the ground it reaches

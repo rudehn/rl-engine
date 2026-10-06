@@ -1,14 +1,20 @@
-//! Whose side someone is on: a wand of domination's foe bound to the
-//! adventurer for good.
+//! Whose side someone is on, and what they know of the adventurer: a wand
+//! of domination's foe bound to the adventurer for good, a scroll of
+//! discord's foes turned on everyone near them for a while, and a scroll
+//! of aggravate monsters' whole floor woken to where its reader stands.
 //!
 //! A side is the faction matrix's, which every mind and every blow reads
 //! live, so binding a foe is changing its faction and its mind, which
-//! [`befriend`] does, and nothing in the rules has to be told.
+//! [`befriend`] does, and a discordant one's side is changed for as long as
+//! its status lasts by [`conditions`](crate::conditions); nothing in the
+//! rules has to be told. What a monster knows of the adventurer is
+//! stealth's [`Aware`], which a shriek fills in.
 
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::EffectRng;
+use rl_engine::rl_rules::StatusId;
 use rl_engine::rl_rules::ability::RawValue;
 
 use super::moving::no_args;
@@ -76,3 +82,119 @@ pub fn dominate(world: &mut World, target: Entity) {
     };
     world.write_message(Tell::new(line, tone));
 }
+
+/// Every foe its user can see made discordant for `turns` turns, at odds
+/// with every side, its own among them: a scroll of discord's. With no foe
+/// in sight it shows nothing. Written `(kind: "Discord", args: (turns:
+/// 10))`; the status is the game's own `discordant`, looked up as the file
+/// is read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Discord {
+    /// Whole turns each foe stays discordant, before any bonus.
+    pub turns: u32,
+    /// `discordant`.
+    status: StatusId,
+}
+
+impl Effect for Discord {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (landing, status, turns) = (landing.clone(), self.status, self.turns + landing.bonus.turns);
+        world.commands.queue(move |world: &mut World| {
+            let foes = in_sight(world, landing.user);
+            if foes.is_empty() {
+                super::showed_nothing(world, &landing);
+                return;
+            }
+            for foe in foes {
+                world.write_message(Afflict { target: foe, status, turns, by: Some(landing.user), held_by: None });
+            }
+            world.write_message(Tell::new("A wail of discord rises, and your foes turn on each other!", Tones::GOOD));
+        });
+    }
+
+    fn describe(&self, _: &Registries, bonus: EffectBonus) -> String {
+        format!("every foe in sight fights everyone near it for {} turns", self.turns + bonus.turns)
+    }
+}
+
+impl FromArgs for Discord {
+    const KIND: &'static str = "Discord";
+
+    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            turns: u32,
+        }
+        let a: Args = rl_engine::rl_rules::ability::read_args(args)?;
+        Ok(Self { turns: a.turns, status: names.status(crate::content::DISCORDANT)? })
+    }
+}
+
+/// Every monster `who` can see that is at odds with them, by the faction
+/// matrix and their viewshed, in spawn order. Nobody for one with no sight
+/// to ask.
+pub fn in_sight(world: &mut World, who: Entity) -> Vec<Entity> {
+    let (Some(sight), Some(side)) = (world.get::<Viewshed>(who).cloned(), world.get::<Faction>(who).copied()) else { return Vec::new() };
+    let here = world.resource::<WorldMap>().current();
+    let factions = world.resource::<CombatRules>().factions.clone();
+    let mut seen = world.query_filtered::<(Entity, &Position, &OnMap, &Faction), (With<Kind>, With<Actor>)>();
+    let mut foes: Vec<Entity> =
+        seen.iter(world).filter(|(_, at, on, theirs)| on.0 == here && sight.can_see(at.0) && factions.is_hostile(side.0, theirs.0)).map(|(e, ..)| e).collect();
+    foes.sort_by_key(|e| e.index());
+    foes
+}
+
+/// A shriek heard over the whole floor, and every monster on it made aware
+/// of where its user stands: a scroll of aggravate monsters'. Takes no
+/// arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Aggravate;
+
+impl Effect for Aggravate {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let user = landing.user;
+        world.commands.queue(move |world: &mut World| aggravate(world, user));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "every monster on the floor knows where you are".to_string()
+    }
+}
+
+impl FromArgs for Aggravate {
+    const KIND: &'static str = "Aggravate";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// How far the shriek carries over open ground, in steps of loudness:
+/// across any floor under the lake, so whatever has ears hears it.
+pub const SHRIEK: i32 = 200;
+
+/// Makes the shriek where `reader` stands and every monster on their floor
+/// aware of them there, as [`Aggravate`] says.
+pub fn aggravate(world: &mut World, reader: Entity) {
+    let Some(at) = world.get::<Position>(reader).map(|p| p.0) else { return };
+    let here = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
+    let mut woken = world.query_filtered::<(&OnMap, &mut Aware), With<Kind>>();
+    for (on, mut aware) in woken.iter_mut(world) {
+        if on.0 != here {
+            continue;
+        }
+        let mut knows = aware.of(reader);
+        knows.alerted_to(at);
+        aware.0.insert(reader, knows);
+    }
+    if let Some(sound) = world.resource::<Sounds>().get(SHRIEK_SOUND) {
+        world.write_message(MakeNoise { at, loudness: SHRIEK, sound, maker: Some(reader) });
+    }
+    if world.get::<Player>(reader).is_some() {
+        world.write_message(Tell::new("A piercing shriek echoes through the floor!", Tones::BAD));
+    }
+}
+
+/// What the shriek sounds like, declared by the game with its noise.
+pub const SHRIEK_SOUND: &str = "shriek";

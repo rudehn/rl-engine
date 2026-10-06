@@ -60,14 +60,13 @@ impl Plugin for UndermerePlugin {
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
             .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
-            .add_plugins((FactsPlugin, RecordsPlugin))
-            // `Harm`, `Mend`, `Inflict` and `Cleanse`, for the potions, the
-            // staffs and the breaths, beside the `Ignite` fire declares and
-            // the `Emit` the clouds do.
-            .add_engine_effects();
-        // And Undermere's own, for the scrolls, the potions, the staffs and
-        // the wands: a thing's level, what is known of it, a curse, a
-        // strength, where someone stands, what they are and whose side.
+            .add_plugins((FactsPlugin, RecordsPlugin));
+        // The engine's effects Undermere names, for the potions, the staffs
+        // and the breaths, beside the `Ignite` fire declares and the `Emit`
+        // the clouds do; and Undermere's own, for the scrolls, the potions,
+        // the staffs and the wands: a thing's level, what is known of it, a
+        // curse, a strength, where someone stands, what they are, whose
+        // side, what they see and what their things hold.
         crate::content::add_game_effects(app);
         // The content, read once before any run begins against the
         // effects and moments every plugin above declared: no run changes
@@ -180,7 +179,9 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, crate::bestiary::throw_what_strikes.in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
         app.add_stream::<crate::conditions::Stumbles>("UndermerePlugin");
         app.add_systems(Turn, crate::conditions::stumble.in_set(DecideSet::Game));
-        app.add_systems(Turn, crate::conditions::keep_fireproof.in_set(TurnSet::React));
+        app.add_systems(Turn, (crate::conditions::keep_fireproof, crate::conditions::keep_discord).in_set(TurnSet::React));
+        // The shriek a scroll of aggravate monsters lets out.
+        app.add_sound(crate::effects::minds::SHRIEK_SOUND);
         // A drinker of descent set down on the floor below once it stands:
         // after the arrival has built and filled it.
         app.add_systems(Turn, crate::effects::moving::land_sinking.in_set(TurnSet::React).after(crate::finds::lay));

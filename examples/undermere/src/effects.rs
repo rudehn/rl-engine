@@ -8,12 +8,15 @@
 //! known. They sit beside the engine's, and nothing that lands them can
 //! tell the difference.
 //!
-//! [`moving`] is where someone stands: a blink, a bolt that sends its
-//! target far off or pulls it close, a draught that sinks its drinker to
-//! the floor below. [`bodies`] is who someone is: a foe made into another,
-//! made into two, blades called up out of nothing, and a drinker given
-//! more life. [`minds`] is whose side someone is on, and [`senses`] what is
-//! seen: a dark to hide in.
+//! [`moving`] is where someone stands: a blink, a scroll that sends its
+//! reader far off, a bolt that sends its target far off or pulls it close,
+//! a draught that sinks its drinker to the floor below. [`bodies`] is who
+//! someone is: a foe made into another, made into two, blades called up
+//! out of nothing, monsters summoned to its reader, and a drinker given
+//! more life. [`minds`] is whose side someone is on and what they know of
+//! the adventurer: a foe bound, foes turned on each other, a floor woken.
+//! [`senses`] is what is seen: a dark to hide in, a floor's whole layout.
+//! [`charges`] is what a reader's things hold.
 //!
 //! An effect that needs more of the world than [`EffectWorld`] holds, a
 //! monster's kind or its health, queues a closure on its commands and does
@@ -23,6 +26,7 @@
 //! it: [`lore`](crate::lore) reads that before it makes a kind known.
 
 pub mod bodies;
+pub mod charges;
 pub mod minds;
 pub mod moving;
 pub mod senses;
@@ -57,11 +61,24 @@ pub fn showed_nothing(world: &mut World, landing: &Landing) {
     }
 }
 
+/// Marks the thing `landing` came from as having shown nothing this pass,
+/// from inside an effect, where the world is not to hand: queued, and done
+/// before the pass's reactions read it.
+pub fn shows_nothing(world: &mut EffectWorld<'_, '_>, landing: &Landing) {
+    let landing = landing.clone();
+    world.commands.queue(move |world: &mut World| showed_nothing(world, &landing));
+}
+
 /// `name` as the subject of a line: `The goblin`, and a name that is said
 /// as written, `the Drowned King`, with its first letter raised.
 pub fn the(name: &str) -> String {
     let said = if name.starts_with(char::is_uppercase) || name.starts_with("the ") { name.to_string() } else { format!("the {name}") };
-    let mut letters = said.chars();
+    capital(&said)
+}
+
+/// `words` with the first letter raised, to begin a line.
+pub fn capital(words: &str) -> String {
+    let mut letters = words.chars();
     letters.next().map(|first| first.to_uppercase().chain(letters).collect()).unwrap_or_default()
 }
 

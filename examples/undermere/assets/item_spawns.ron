@@ -39,9 +39,15 @@
     (item: "potion of confusion",     bands: (1, 10), weight: 11),
     // Scrolls, out of a hundred: enchanting the commonest, besides the one
     // laid on every floor.
-    (item: "scroll of enchanting",  bands: (1, 10), weight: 20),
-    (item: "scroll of identify",    bands: (1, 10), weight: 15),
-    (item: "scroll of remove curse", bands: (1, 10), weight: 8),
+    (item: "scroll of enchanting",         bands: (1, 10), weight: 20),
+    (item: "scroll of identify",           bands: (1, 10), weight: 15),
+    (item: "scroll of teleportation",      bands: (1, 10), weight: 10),
+    (item: "scroll of remove curse",       bands: (1, 10), weight: 8),
+    (item: "scroll of recharging",         bands: (1, 10), weight: 8),
+    (item: "scroll of magic mapping",      bands: (1, 10), weight: 10),
+    (item: "scroll of discord",            bands: (1, 10), weight: 9),
+    (item: "scroll of aggravate monsters", bands: (1, 10), weight: 10),
+    (item: "scroll of summon monsters",    bands: (1, 10), weight: 10),
     // Staffs, at any depth, by Brogue's weights among them: the bolts that
     // burn most, then a blink, poison and slowness, and conjuring least.
     (item: "staff of firebolt",    bands: (1, 10), weight: 15),

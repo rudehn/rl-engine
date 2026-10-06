@@ -293,14 +293,30 @@ pub const REACH: i32 = 5;
 pub fn arena(seed: u64) -> (App, Entity, Point) {
     let mut app = headless(RunSeed(seed));
     let me = adventurer(&mut app);
-    sturdy(&mut app, me);
-    clear_monsters(&mut app);
+    let here = stage(&mut app, me);
+    (app, me, here)
+}
+
+/// An [`arena`] on floor `floor` rather than in Mereholt, where the floor's
+/// own monsters are found, for what is about the floor: a summoning, a
+/// shriek heard over it, its map.
+pub fn arena_on(seed: u64, floor: u32) -> (App, Entity, Point) {
+    let mut app = headless(RunSeed(seed));
+    let me = arrive(&mut app, crate::dungeon::map_of(floor));
+    let here = stage(&mut app, me);
+    (app, me, here)
+}
+
+/// Makes the [`arena`] round `me` where they stand, and says where that is.
+fn stage(app: &mut App, me: Entity) -> Point {
+    sturdy(app, me);
+    clear_monsters(app);
     let hand = app.world().resource::<Registries>().slots.expect("main hand");
     let sword = app.world().get::<Equipped>(me).and_then(|worn| worn.in_slot(hand)).expect("the sword they set out with");
-    unequip(&mut app, me, sword);
-    let here = at(&app, me);
+    unequip(app, me, sword);
+    let here = at(app, me);
     let ground: Vec<Point> = geometry::square(here, REACH).collect();
-    lay_floor(&mut app, &ground);
+    lay_floor(app, &ground);
     let world = app.world_mut();
     let standing: Vec<Entity> = world
         .query_filtered::<(Entity, &Position), With<Prop>>()
@@ -313,8 +329,8 @@ pub fn arena(seed: u64) -> (App, Entity, Point) {
     }
     let strength = world.resource::<Registries>().stats.expect(crate::content::STRENGTH);
     world.get_mut::<StatBlock>(me).expect("stats").0.set_base(strength, 20);
-    settle(&mut app);
-    (app, me, here)
+    settle(app);
+    here
 }
 
 /// A `name` made as a floor's own is, at `at`, that stands where it is

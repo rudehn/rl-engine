@@ -650,7 +650,7 @@ mod tests {
             [
                 "potion: 2 faces for 11 kinds",
                 "potion: the face \"murky\" twice",
-                "scroll: titles to be made for 2 of its 3 kinds",
+                "scroll: titles to be made for 2 of its 9 kinds",
                 "ring: faces and titles both",
                 "ring: called \"a ring\", with nowhere for the face to go",
                 "ring: a colour outside 0..=1"

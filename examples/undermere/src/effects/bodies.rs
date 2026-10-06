@@ -169,6 +169,82 @@ pub fn plenty(world: &mut World, target: Entity) {
     world.write_message(Tell::new(format!("{} splits in two!", the(&was.name)), Tones::NOTICE));
 }
 
+/// Monsters of the floor its user stands on called up on the free cells
+/// nearest them, knowing just where they are: a scroll of summon monsters'.
+/// Written `(kind: "Summon", args: (fewest: 2, most: 3))`, how many, each
+/// drawn from the floor's own spawn table as its people were. Where no
+/// monster is ever found, in Mereholt, it shows nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Summon {
+    /// The fewest that come.
+    pub fewest: u32,
+    /// The most that come.
+    pub most: u32,
+}
+
+impl Effect for Summon {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let count = world.rng.random_range(self.fewest..=self.most);
+        let landing = landing.clone();
+        world.commands.queue(move |world: &mut World| {
+            if summon(world, landing.user, count) == 0 {
+                super::showed_nothing(world, &landing);
+            }
+        });
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("{} to {} monsters appear beside you", self.fewest, self.most)
+    }
+}
+
+impl FromArgs for Summon {
+    const KIND: &'static str = "Summon";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            fewest: u32,
+            most: u32,
+        }
+        let a: Args = read_args(args)?;
+        if a.fewest > a.most {
+            return Err(format!("summons {} to {}, a range that is empty", a.fewest, a.most));
+        }
+        Ok(Self { fewest: a.fewest, most: a.most })
+    }
+}
+
+/// Calls up `count` monsters of `reader`'s floor beside them, aware of
+/// them, as [`Summon`] says, and says so. Returns how many came.
+pub fn summon(world: &mut World, reader: Entity, count: u32) -> usize {
+    let Some(at) = world.get::<Position>(reader).map(|p| p.0) else { return 0 };
+    let map = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
+    let band = map.0 as i32;
+    let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize);
+    let mut came = Vec::new();
+    for cell in cells {
+        let kind = world.resource_scope(|world, mut rng: Mut<EffectRng>| world.resource::<Bestiary>().spawns.pick(band, &mut rng.0).map(|row| row.item));
+        let Some(kind) = kind else { break };
+        let made = spawn_monster_now(world, kind, cell, map);
+        if let Some(mut aware) = world.get_mut::<Aware>(made) {
+            let mut knows = aware.of(reader);
+            knows.alerted_to(at);
+            aware.0.insert(reader, knows);
+        }
+        came.push(world.resource::<Bestiary>().defs.get(kind).name.clone());
+    }
+    if !came.is_empty() && world.get::<Player>(reader).is_some() {
+        let line = match came.as_slice() {
+            [one] => format!("{} appears beside you!", super::capital(&rl_engine::rl_core::noun::with_article(one))),
+            _ => "Monsters appear all round you!".to_string(),
+        };
+        world.write_message(Tell::new(line, Tones::BAD));
+    }
+    came.len()
+}
+
 /// Raises the user's greatest health by `by` for good and heals them whole:
 /// a potion of life's. Written `(kind: "Life", args: (by: 10))`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

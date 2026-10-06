@@ -2,13 +2,15 @@
 //! a budget of things drawn by kind, a scroll of enchanting besides, and
 //! some gold.
 //!
-//! [`plan`] is the pure half, tested without an `App`: [`things_on`] a
-//! floor's number of things, each a kind drawn by its weight in [`KINDS`]
-//! among the kinds with anything to find at the floor's depth, then a thing
-//! of that kind as `item_spawns.ron` weights it there, as many together as
-//! its row says. [`lay`] is the Bevy over it: on the arrival that builds a
-//! floor it plans the floor's things, adds the [`LAID`] scroll and a few
-//! piles of gold, and puts each on a cell of its own, made by the
+//! [`plan`] and [`laid_out`] are the pure half, tested without an `App`:
+//! [`things_on`] a floor's number of things, each a kind drawn by its
+//! weight in [`KINDS`] among the kinds with anything to find at the floor's
+//! depth, then a thing of that kind as `item_spawns.ron` weights it there,
+//! as many together as its row says; and where each goes, the [`LAID`]
+//! scroll's cell drawn before anything else's, so a floor too crowded for
+//! its whole budget drops some of the budget and never the scroll. [`lay`]
+//! is the Bevy over it: on the arrival that builds a floor it lays the
+//! floor's things, its scroll and a few piles of gold, made by the
 //! [`Armory`] as anything found is, so a weapon found deep is the more
 //! often better and a ring may be cursed.
 //!
@@ -123,36 +125,48 @@ pub struct Ground<'w, 's> {
     standing: Query<'w, 's, (&'static Position, &'static OnMap), Standing>,
 }
 
-/// Lays every floor's things on the arrival that builds it: its
-/// [`things_on`] planned at its own band, the [`LAID`] scroll and
-/// [`GOLD_PILES`] piles of [`GOLD`], each made by the [`Armory`] as a
-/// thing found on that floor and put on a cell of its own.
+/// What floor `floor` holds and where, among the `open` cells: the `laid`
+/// scroll on a cell drawn before anything else, so however crowded the
+/// floor it holds its scroll; then its [`things_on`] planned at its own
+/// band, each with how many lie together, and [`GOLD_PILES`] piles of
+/// `gold`, each on a cell of its own while cells last, so a floor with too
+/// few drops the last of its budget and never the scroll.
+///
+/// The pure half of [`lay`], tested without an `App`: the scroll's cell,
+/// the plan, the gold, then each cell in turn, from `rng`.
+pub fn laid_out(kinds: &Kinds, laid: Id<ItemDef>, gold: Id<ItemDef>, floor: u32, mut open: Vec<Point>, rng: &mut impl Rng) -> Vec<(Id<ItemDef>, u32, Point)> {
+    let draw = |open: &mut Vec<Point>, rng: &mut dyn rand::RngCore| (!open.is_empty()).then(|| open.swap_remove(rng.random_range(0..open.len())));
+    let mut out: Vec<(Id<ItemDef>, u32, Point)> = draw(&mut open, rng).map(|at| (laid, 1, at)).into_iter().collect();
+    let mut things = plan(kinds, floor as i32, things_on(floor), rng);
+    things.extend((0..rng.random_range(GOLD_PILES)).map(|_| (gold, 1)));
+    for (def, count) in things {
+        let Some(at) = draw(&mut open, rng) else { break };
+        out.push((def, count, at));
+    }
+    out
+}
+
+/// Lays every floor's things on the arrival that builds it, as
+/// [`laid_out`] places them, each made by the [`Armory`] as a thing found
+/// on that floor.
 ///
 /// A cell one could walk to with nothing standing on it: no prop, since a
 /// thing under a chest is one nothing can pick up, and no way through,
 /// since a thing lying on the stairs would be drawn over them. Draws from
 /// `Seed::stream(b"undermere.finds", floor)`, a stream for each floor
 /// alone, so what lies on floor two never depends on what floor one drew
-/// or which was entered first; the plan, then the gold, then each cell and
-/// what is made there, in that order.
+/// or which was entered first; where everything goes, then what is made
+/// there, in that order.
 pub fn lay(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ground: Ground) {
     let Ground { armory, registries, map, seed, standing } = &ground;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
         let mut rng = seed.stream(b"undermere.finds", u64::from(floor));
-        let band = floor as i32;
-        let mut things = plan(&Kinds::of(armory, registries), band, things_on(floor), &mut rng);
-        things.push((armory.defs.expect(LAID), 1));
-        let gold = armory.defs.expect(GOLD);
-        things.extend((0..rng.random_range(GOLD_PILES)).map(|_| (gold, 1)));
         let taken: Vec<Point> = standing.iter().filter(|(_, on)| on.0 == ev.map).map(|(at, _)| at.0).collect();
-        let mut open: Vec<Point> = place.terrain.bounds().cells().filter(|p| map.is_walkable_on(ev.map, *p) && !taken.contains(p)).collect();
-        let found = Provenance { found: Found::Scatter, band };
-        for (def, count) in things {
-            if open.is_empty() {
-                break;
-            }
-            let at = open.swap_remove(rng.random_range(0..open.len()));
+        let open: Vec<Point> = place.terrain.bounds().cells().filter(|p| map.is_walkable_on(ev.map, *p) && !taken.contains(p)).collect();
+        let (laid, gold) = (armory.defs.expect(LAID), armory.defs.expect(GOLD));
+        let found = Provenance { found: Found::Scatter, band: floor as i32 };
+        for (def, count, at) in laid_out(&Kinds::of(armory, registries), laid, gold, floor, open, &mut rng) {
             for thing in armory.make(&mut commands, registries, def, count, found, &mut rng) {
                 commands.entity(thing).insert((Position(at), OnMap(ev.map)));
             }
@@ -262,6 +276,31 @@ mod tests {
                 let gold = on_floor(&mut app, floor, true);
                 assert!(GOLD_PILES.contains(&(gold.len() as u32)), "seed {seed}, floor {floor}: {} piles of gold", gold.len());
             }
+        }
+    }
+
+    /// A floor with room for one thing holds its scroll of enchanting and
+    /// nothing of its budget; one with room for all of it holds the scroll,
+    /// its things and its gold, each on a cell of its own, over a span of
+    /// seeds.
+    #[test]
+    fn a_crowded_floor_drops_from_its_budget_and_never_its_scroll_of_enchanting_over_a_span_of_seeds() {
+        let library = library();
+        let (armory, registries) = (&library.armory, &library.registries);
+        let kinds = Kinds::of(armory, registries);
+        let (laid, gold) = (armory.defs.expect(LAID), armory.defs.expect(GOLD));
+        let cells = |n: i32| (0..n).map(|x| Point::new(x, 0)).collect::<Vec<_>>();
+        for seed in 0..40 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let crowded = laid_out(&kinds, laid, gold, 5, cells(1), &mut rng);
+            assert_eq!(crowded, [(laid, 1, Point::new(0, 0))], "seed {seed}: the one cell holds the scroll");
+            let roomy = laid_out(&kinds, laid, gold, 5, cells(100), &mut rng);
+            assert_eq!(roomy[0].0, laid, "seed {seed}: the scroll first");
+            assert!(roomy.len() as u32 > things_on(5), "seed {seed}: and its budget besides: {}", roomy.len());
+            let mut at: Vec<Point> = roomy.iter().map(|(_, _, p)| *p).collect();
+            at.sort_by_key(|p| p.x);
+            at.dedup();
+            assert_eq!(at.len(), roomy.len(), "seed {seed}: each on a cell of its own");
         }
     }
 

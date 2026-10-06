@@ -1,6 +1,7 @@
 //! What a status does that the engine's statuses do not: a confused body's
-//! every step turned a random way, and fire immunity's hundred percent kept
-//! on whoever holds it.
+//! every step turned a random way, a discordant one's side changed for as
+//! long as it lasts, and fire immunity's hundred percent kept on whoever
+//! holds it.
 //!
 //! The engine's statuses change stats, tick, hide and hold; the rest is a
 //! game's, keyed by the status. Each here reads the status off its holder
@@ -11,7 +12,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
 
-use crate::content::{CONFUSED, FIREPROOF};
+use crate::content::{CONFUSED, DISCORDANT, FIREPROOF};
 
 /// The draws a confused body's steps are turned by: a stream of the run's
 /// own, so a stumble never shifts a blow's roll or a cloud's spread.
@@ -62,6 +63,40 @@ pub fn stumble(
     for walk in walks.read() {
         if let Some(turned) = way(walk.actor) {
             walk.action.0 = turned;
+        }
+    }
+}
+
+/// A body fighting for the discordant side while its `discordant` lasts,
+/// and the side it goes back to after.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Discordant {
+    /// The side it fought for before.
+    pub was: Faction,
+}
+
+/// Keeps every body holding `discordant` on the discordant side, at odds
+/// with every side and with every other discordant body, and puts each
+/// back on the side it was on the pass its discord ends.
+///
+/// The faction matrix is read live by every mind and every blow, so the
+/// side is the whole of it. In `TurnSet::React`, so a body the scroll
+/// turned this pass is turned before anyone decides again. A continued
+/// run's discordant body, its status put back and its side its kind's, is
+/// turned again here with its kind's side to go back to.
+pub fn keep_discord(mut commands: Commands, registries: Res<Registries>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&Discordant>)>) {
+    let (Some(status), Some(side)) = (registries.statuses.id(DISCORDANT), registries.factions.id(DISCORDANT)) else { return };
+    for (body, held, mut faction, turned) in &mut bodies {
+        match (held.0.has(status), turned) {
+            (true, None) => {
+                commands.entity(body).insert(Discordant { was: *faction });
+                *faction = Faction(side);
+            }
+            (false, Some(turned)) => {
+                *faction = turned.was;
+                commands.entity(body).remove::<Discordant>();
+            }
+            _ => {}
         }
     }
 }

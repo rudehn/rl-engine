@@ -46,7 +46,13 @@
 //               turns:), that many spectral blades on the user's side for that many turns, one
 //               more and each blow one harder for each of the thing's amount; Dominate, whoever
 //               it strikes bound to the user's side, surely at a quarter of its health or under
-//               and otherwise as often in a hundred as it has lost. Each of Undermere's own takes
+//               and otherwise as often in a hundred as it has lost; Teleport, the user sent to a
+//               free cell far off, in place of the engine's own; Recharge, every staff the user
+//               carries full and every wand a charge more; MagicMapping, the floor's layout
+//               known; Discord(turns:), every foe in sight at odds with everyone for that many
+//               turns; Aggravate, a shriek and every monster on the floor aware of the user;
+//               Summon(fewest:, most:), that many of the floor's monsters beside the user, aware
+//               of them. Each of Undermere's own takes
 //               only the arguments it names, and none where it names none. Landed by any trigger
 //               with no list of its own
 //   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, aim:, asks:)] what it does at
@@ -239,6 +245,22 @@
      triggers: [(on: "use", asks: (prompt: "Read it on which?"), effects: [(kind: "Identify")])]),
     (name: "scroll of remove curse", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "RemoveCurse")])]),
+    // The rest are read where the reader stands: away to somewhere far,
+    // every staff refilled, the floor mapped, foes in sight set on each
+    // other; and two that hurt, a shriek that wakes the floor and monsters
+    // called up beside the reader.
+    (name: "scroll of teleportation", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Teleport")])]),
+    (name: "scroll of recharging", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Recharge")])]),
+    (name: "scroll of magic mapping", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "MagicMapping")])]),
+    (name: "scroll of discord", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Discord", args: (turns: 10))])]),
+    (name: "scroll of aggravate monsters", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Aggravate")])]),
+    (name: "scroll of summon monsters", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Summon", args: (fewest: 2, most: 3))])]),
     // The staffs, zapped from the pack: a staff's level is its power and its
     // charges both, found at two and better deeper, and a spent charge comes
     // back over the turns its line says, divided by its level. Each level

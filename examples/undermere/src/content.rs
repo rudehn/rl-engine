@@ -121,6 +121,9 @@ pub const SHROUDED: &str = "shrouded";
 pub const PARALYSED: &str = "paralysed";
 /// A confusing cloud's: every step its holder takes goes a random way.
 pub const CONFUSED: &str = "confused";
+/// A scroll of discord's, and the side its holder fights for while it
+/// lasts, at odds with every side and with itself.
+pub const DISCORDANT: &str = "discordant";
 /// The cloud a potion of paralysis bursts into.
 pub const PARALYTIC: &str = "paralytic";
 /// The cloud a potion of confusion bursts into.
@@ -204,8 +207,9 @@ pub fn registries() -> Registries {
     // its own again. `fireproof` is a potion's hundred percent against
     // fire, which `conditions` keeps on its holder's resistances;
     // `shrouded` is darkness's thirty points of stealth, with the lantern
-    // put out; `paralysed` holds its holder's turns; and `confused` turns
-    // every step it takes a random way.
+    // put out; `paralysed` holds its holder's turns; `confused` turns
+    // every step it takes a random way; and `discordant`, a scroll's,
+    // fights for the side of the same name while it lasts.
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('p'), ..StatusDef::new("poisoned").ticks(poison, 1) },
         StatusDef { badge: Some('*'), ..StatusDef::new("scorched").ticks(fire, 1) },
@@ -218,6 +222,7 @@ pub fn registries() -> Registries {
         StatusDef { badge: Some('d'), ..StatusDef::new(SHROUDED).modifies(stats.expect(STEALTH), Op::Add(30)).boon() },
         StatusDef { badge: Some('P'), ..StatusDef::new(PARALYSED).holds() },
         StatusDef { badge: Some('?'), ..StatusDef::new(CONFUSED) },
+        StatusDef { badge: Some('!'), ..StatusDef::new(DISCORDANT) },
     ])
     .unwrap();
     // Each potion's cloud: what breathing it does, while it is thick
@@ -235,7 +240,7 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead"].map(FactionDef::new).to_vec()).unwrap(),
+        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
         tags: Registry::from_defs(
             ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(TagDef::new).to_vec(),
         )
@@ -250,6 +255,8 @@ pub fn registries() -> Registries {
 /// Who fights whom: the adventurer against every side, beasts and goblins
 /// against each other, and the dead against everything living, so a
 /// crypt's dead and a goblin band fight and the dungeon fights itself.
+/// The discordant fight everyone, each other among them, which is what a
+/// scroll of discord turns a foe into for a while.
 ///
 /// And which stats a blow and a heal read: accuracy against evasion for
 /// whether it lands, the armor stat beside whatever armor is worn, and
@@ -257,19 +264,19 @@ pub fn registries() -> Registries {
 /// attacker lands at [`UNAWARE`] percent, unless the weapon names its own.
 pub fn combat_rules(registries: &Registries) -> CombatRules {
     let [adventurer, beasts, goblins, undead] = ["adventurer", "beasts", "goblins", "undead"].map(|name| registries.factions.expect(name));
+    let discord = registries.factions.expect(DISCORDANT);
     let stat = |name: &str| registries.stats.expect(name);
-    CombatRules::new(&registries.factions)
+    let mut rules = CombatRules::new(&registries.factions)
         .hostile(adventurer, beasts)
         .hostile(adventurer, goblins)
         .hostile(adventurer, undead)
         .hostile(beasts, goblins)
         .hostile(undead, beasts)
-        .hostile(undead, goblins)
-        .accuracy_stat(stat(ACCURACY))
-        .evasion_stat(stat(EVASION))
-        .armor_stat(stat(ARMOR))
-        .mending_stat(stat(MENDING))
-        .unaware(UNAWARE)
+        .hostile(undead, goblins);
+    for (side, _) in registries.factions.iter() {
+        rules = rules.hostile(discord, side);
+    }
+    rules.accuracy_stat(stat(ACCURACY)).evasion_stat(stat(EVASION)).armor_stat(stat(ARMOR)).mending_stat(stat(MENDING)).unaware(UNAWARE)
 }
 
 /// What a blow on a foe that has not noticed its attacker is worth, in
@@ -299,34 +306,47 @@ pub fn hit_rules() -> HitRules {
 }
 
 /// The effect kinds an Undermere app has, for reading the content where no
-/// app is running, as a test does: whatever `add_engine_effects` declares,
-/// the `Ignite` that `FirePlugin` declares for the fire breath, a staff of
-/// firebolt and a potion of incineration, the `Emit` that `GasPlugin`
-/// declares for the potions that burst into a cloud, and Undermere's own,
-/// by [`add_game_effects`]. The throwaway `App` is there so the list is the
-/// engine's own and never one kept beside it.
+/// app is running, as a test does: [`add_game_effects`]' list, the `Ignite`
+/// that `FirePlugin` declares for the fire breath, a staff of firebolt and
+/// a potion of incineration, and the `Emit` that `GasPlugin` declares for
+/// the potions that burst into a cloud. The throwaway `App` is there so the
+/// list is the engine's own and never one kept beside it.
 pub fn effect_kinds() -> EffectKinds {
     let mut app = App::new();
-    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
+    app.add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
     add_game_effects(&mut app);
     std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
 }
 
-/// Declares the effects Undermere writes itself, the ones that reach what
-/// the engine knows nothing of: a thing's level, what is known of it, a
-/// curse, the adventurer's strength, and what [`effects`](crate::effects)
-/// holds, where someone stands, who they are and whose side they are on.
-/// The one list, for the app and for [`effect_kinds`] alike.
+/// Declares every effect Undermere's content names but the two its plugins
+/// declare: the engine's `Harm`, `Mend`, `Inflict`, `Cleanse`, `Shove` and
+/// `Pull`, and the ones Undermere writes itself, which reach what the
+/// engine knows nothing of: a thing's level, what is known of it, a curse,
+/// the adventurer's strength, and what [`effects`](crate::effects) holds,
+/// where someone stands, who they are, whose side they are on, what they
+/// see and what their things hold. The one list, for the app and for
+/// [`effect_kinds`] alike.
+///
+/// The engine's one by one rather than by `add_engine_effects`, whose
+/// `Teleport` moves its user to where a use landed: Undermere's scroll of
+/// teleportation is its own `Teleport`, which sends its reader far off,
+/// and two effects registered under one name would be the second quietly
+/// taking the first's place.
 pub fn add_game_effects(app: &mut App) {
-    use crate::effects::{bodies, minds, moving, senses};
+    use crate::effects::{bodies, charges, minds, moving, senses};
+    use rl_engine::rl_bevy::{Cleanse, Harm, Inflict, Mend, Pull, Shove};
+    app.add_effect::<Harm>().add_effect::<Mend>().add_effect::<Inflict>().add_effect::<Cleanse>().add_effect::<Shove>().add_effect::<Pull>();
     app.add_effect::<crate::enchant::Enchanting>()
         .add_effect::<crate::enchant::RemoveCurse>()
         .add_effect::<crate::lore::Identify>()
         .add_effect::<crate::strength::Strengthen>();
     app.add_effect::<moving::Blink>().add_effect::<moving::TeleportOther>().add_effect::<moving::Beckon>().add_effect::<moving::Descend>();
+    app.add_effect::<moving::Teleport>();
     app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>().add_effect::<bodies::Life>();
-    app.add_effect::<minds::Dominate>();
-    app.add_effect::<senses::Darkness>();
+    app.add_effect::<bodies::Summon>();
+    app.add_effect::<minds::Dominate>().add_effect::<minds::Discord>().add_effect::<minds::Aggravate>();
+    app.add_effect::<senses::Darkness>().add_effect::<senses::MagicMapping>();
+    app.add_effect::<charges::Recharge>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through
