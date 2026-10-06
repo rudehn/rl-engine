@@ -319,7 +319,7 @@ mod tests {
             assert_eq!(on(&mut app, TOWN), (0, 0), "seed {s}: on the run's first arrival");
             arrive(&mut app, map_of(1));
             let (monsters, lying) = on(&mut app, map_of(1));
-            assert!(monsters > 0 && lying >= 4, "seed {s}: floor one has its people and its four to six things: {monsters} and {lying}");
+            assert!(monsters > 0 && lying as u32 >= crate::finds::things_on(1), "seed {s}: floor one has its people and its things: {monsters} and {lying}");
             arrive(&mut app, TOWN);
             assert_eq!(on(&mut app, TOWN), (0, 0), "seed {s}: and on coming back");
         }

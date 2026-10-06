@@ -221,7 +221,7 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [10_700_493_589_118_619_091, 12_076_058_939_167_888_548, 11_696_174_969_958_663_498],
+        [3_325_909_799_346_578_113, 1_026_591_927_634_308_457, 18_325_774_284_782_725_301],
         "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say why in the commit"
     );
 }

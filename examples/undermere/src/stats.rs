@@ -3,14 +3,14 @@
 //! [`content`](crate::content) registers the stats and names four of them
 //! to the engine's blows, heals and turns. The rest are Undermere's: the
 //! strength heavy gear asks for is [`strength`](crate::strength)'s, the
-//! light stat reaches the lantern in [`light`](crate::light), and the
-//! stealth stat reaches the adventurer's own stealth here, by
-//! [`keep_stealth`].
+//! light stat reaches the lantern in [`light`](crate::light), the stealth
+//! stat reaches the adventurer's own stealth here, by [`keep_stealth`],
+//! and footfall how loud every actor's steps are, by [`keep_footfall`].
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-use crate::content::STEALTH;
+use crate::content::{FOOTFALL, STEALTH};
 use crate::run::Adventurer;
 
 /// What the adventurer's own stealth is with nothing on it: noticeable,
@@ -32,6 +32,33 @@ pub fn keep_stealth(registries: Res<Registries>, mut adventurer: Query<(&StatBlo
         let now = StealthStats { subtlety, ..OWN_STEALTH };
         if stealth.0 != now {
             stealth.0 = now;
+        }
+    }
+}
+
+/// Keeps every actor's steps as loud as its footfall stat says: the
+/// engine's `Footfall`, which its noise reads for a step in place of the
+/// house's, so plate is heard further off than leather.
+///
+/// At the start of every pass, in `TurnSet::Schedule`, from the stat as it
+/// stands. What is worn is folded onto its wearer's stats in the pass it
+/// goes on, unordered against the game's own reactions there, so reading
+/// the stat before anyone steps in the next pass is what makes the first
+/// step after plate goes on as loud as every step after it. Written only
+/// where it differs from what the actor's steps carry already, so a body
+/// with nothing heavy on carries no `Footfall` at all and steps as the
+/// house's [`NoiseRules`] say, as it did before footfall was a stat.
+pub fn keep_footfall(
+    mut commands: Commands,
+    registries: Res<Registries>,
+    rules: Res<NoiseRules>,
+    actors: Query<(Entity, &StatBlock, Option<&Footfall>), With<Actor>>,
+) {
+    let Some(stat) = registries.stats.id(FOOTFALL) else { return };
+    for (actor, stats, now) in &actors {
+        let loudness = stats.0.value(stat, &registries.stats);
+        if now.map_or(rules.step, |f| f.0) != loudness {
+            commands.entity(actor).insert(Footfall(loudness));
         }
     }
 }

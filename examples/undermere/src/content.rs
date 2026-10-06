@@ -92,6 +92,9 @@ pub const LIGHT: &str = "light";
 /// Added to whatever armor a defender and its gear already have: what
 /// gear too heavy to carry well takes away.
 pub const ARMOR: &str = "armor";
+/// How many steps of loudness each of an actor's steps carries over open
+/// ground: what heavy armor adds to.
+pub const FOOTFALL: &str = "footfall";
 
 /// The slots that go in pairs, by name: a thing that fits `either` of a
 /// pair is worn in whichever is free, a one-handed blade in either hand
@@ -107,7 +110,9 @@ pub const PAIRS: [(&str, &str); 2] = [("main hand", "off hand"), ("left finger",
 /// turn loop adds it to an actor's own speed as a percentage of it: a base
 /// of a hundred would have everyone move twice as fast. It is held between
 /// a tenth of an actor's speed and four times it, so no stack of chills
-/// stops a body dead.
+/// stops a body dead. Footfall's base is the house's step,
+/// [`NOISE`](crate::plugin::NOISE)'s, so a body with nothing on it steps
+/// exactly as loud as it did before footfall was a stat.
 pub fn stats() -> Registry<StatDef> {
     Registry::from_defs(vec![
         StatDef::new(STRENGTH, 12),
@@ -118,6 +123,7 @@ pub fn stats() -> Registry<StatDef> {
         StatDef::new(MENDING, 0),
         StatDef::new(LIGHT, 0),
         StatDef::new(ARMOR, 0),
+        StatDef::new(FOOTFALL, crate::plugin::NOISE.step),
     ])
     .unwrap()
 }
@@ -166,8 +172,10 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead"].map(FactionDef::new).to_vec()).unwrap(),
-        tags: Registry::from_defs(["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light"].map(TagDef::new).to_vec())
-            .unwrap(),
+        tags: Registry::from_defs(
+            ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(TagDef::new).to_vec(),
+        )
+        .unwrap(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
         ..Registries::default()
     };
@@ -181,7 +189,8 @@ pub fn registries() -> Registries {
 ///
 /// And which stats a blow and a heal read: accuracy against evasion for
 /// whether it lands, the armor stat beside whatever armor is worn, and
-/// mending on every heal.
+/// mending on every heal. A blow on a foe that has not noticed its
+/// attacker lands at [`UNAWARE`] percent, unless the weapon names its own.
 pub fn combat_rules(registries: &Registries) -> CombatRules {
     let [adventurer, beasts, goblins, undead] = ["adventurer", "beasts", "goblins", "undead"].map(|name| registries.factions.expect(name));
     let stat = |name: &str| registries.stats.expect(name);
@@ -196,7 +205,15 @@ pub fn combat_rules(registries: &Registries) -> CombatRules {
         .evasion_stat(stat(EVASION))
         .armor_stat(stat(ARMOR))
         .mending_stat(stat(MENDING))
+        .unaware(UNAWARE)
 }
+
+/// What a blow on a foe that has not noticed its attacker is worth, in
+/// percent of its roll: three times, Brogue's sneak attack, which is what
+/// creeping up unseen in the dark pays for. A dagger's own five outranks
+/// it. Only the adventurer can be unnoticed, since only they carry a
+/// stealth for a watcher to fail to notice.
+pub const UNAWARE: u32 = 300;
 
 /// How fast everyone is: their own speed, with the speed stat added as a
 /// percentage of it, so a haste or a chill is a status changing a stat.
@@ -321,7 +338,7 @@ mod tests {
         for slot in ["main hand", "off hand", "head", "body", "left finger", "right finger", "light"] {
             assert!(r.slots.id(slot).is_some(), "{slot}");
         }
-        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light"] {
+        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"] {
             assert!(r.tags.id(tag).is_some(), "{tag}");
         }
         for (one, other) in PAIRS {
@@ -332,21 +349,26 @@ mod tests {
     /// Every stat starts where the content sheet puts it, the adventurer's
     /// strength at twelve and accuracy at a hundred, and speed at nought,
     /// since the turn loop adds it to an actor's own: at a hundred,
-    /// everyone would move twice as fast.
+    /// everyone would move twice as fast. A step carries as far as the
+    /// house's noise says one does, so nobody steps louder for having
+    /// stats at all.
     #[test]
     fn every_stat_starts_where_the_sheet_says_and_speed_at_nought_so_nobody_moves_faster() {
         let r = registries();
         let base = |name: &str| r.stats.get(r.stats.expect(name)).base;
-        let bases: Vec<(&str, i32)> = [STRENGTH, ACCURACY, EVASION, SPEED, STEALTH, MENDING, LIGHT, ARMOR].map(|s| (s, base(s))).to_vec();
-        assert_eq!(bases, [(STRENGTH, 12), (ACCURACY, 100), (EVASION, 0), (SPEED, 0), (STEALTH, 0), (MENDING, 0), (LIGHT, 0), (ARMOR, 0)], "the sheet's bases");
-        assert_eq!(r.stats.len(), 8, "a stat this test does not name");
+        let bases: Vec<(&str, i32)> = [STRENGTH, ACCURACY, EVASION, SPEED, STEALTH, MENDING, LIGHT, ARMOR, FOOTFALL].map(|s| (s, base(s))).to_vec();
+        let sheet = [(STRENGTH, 12), (ACCURACY, 100), (EVASION, 0), (SPEED, 0), (STEALTH, 0), (MENDING, 0), (LIGHT, 0), (ARMOR, 0), (FOOTFALL, 2)];
+        assert_eq!(bases, sheet, "the sheet's bases");
+        assert_eq!(base(FOOTFALL), crate::plugin::NOISE.step, "a step as loud as the house's");
+        assert_eq!(r.stats.len(), 9, "a stat this test does not name");
         let speed = r.stats.get(r.stats.expect(SPEED));
         assert_eq!((speed.min, speed.max), (Some(-90), Some(300)), "no chill stops a body dead");
     }
 
     /// The run's rules name the stats they read: accuracy against evasion
     /// for a blow, the armor stat beside what is worn, mending on a heal,
-    /// and speed in the turn loop.
+    /// and speed in the turn loop. A blow on the unaware lands at three
+    /// times, the house's, which a dagger's own outranks.
     #[test]
     fn a_blow_a_heal_and_the_turn_loop_read_the_stats_that_change_them() {
         let r = registries();
@@ -354,6 +376,7 @@ mod tests {
         let rules = combat_rules(&r);
         assert_eq!((rules.accuracy, rules.evasion, rules.armor, rules.mending), (stat(ACCURACY), stat(EVASION), stat(ARMOR), stat(MENDING)));
         assert_eq!(rules.attack, None, "a blow's roll is the weapon's own");
+        assert_eq!(rules.unaware, Some(300), "three times on the unaware");
         assert_eq!(turn_rules(&r).speed, stat(SPEED));
     }
 

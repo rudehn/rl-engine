@@ -54,10 +54,11 @@ impl Plugin for UndermerePlugin {
         // The engine's subsystems a run plays with: fighting and minds,
         // statuses, things carried, worn, thrown and drunk, light and the
         // dark, being noticed and heard, what monsters breathe and cast,
-        // fire, the props the places stand, the slots the pieces fill,
-        // loot, the facts the quest counts, and the record a run ends in.
+        // fire, the props the places stand, the arrows a bow spends, the
+        // slots the pieces fill, loot, the facts the quest counts, and the
+        // record a run ends in.
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
-            .add_plugins((AbilitiesPlugin, FirePlugin, NoisePlugin::new(NOISE), PropsPlugin))
+            .add_plugins((AbilitiesPlugin, FirePlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
             // `Harm`, `Mend` and `Inflict`, for the potions, the flask and
@@ -118,18 +119,18 @@ impl Plugin for UndermerePlugin {
         app.add_systems(OnEnter(EngineState::Over), crate::tally::record);
         // A place fills the moment it is first entered: the engine's slots
         // in `PrefabSet::Fill`, then the depth, the ways through and the
-        // place's line in the log, the floor's people, and the fixtures'
-        // light, then the engine's loot in `LootSet::Scatter`, each reading
-        // the same `PlaceEntered` through its own cursor. After the slots,
-        // so the people keep off every cell a piece marked; before the
-        // loot, which lands where nothing stands. Chained, though no two of
-        // them share a cell: systems that spawn, left unordered, queue
-        // their commands in whatever order they finish in, and a place's
-        // entities would come out in a different order from one run to the
-        // next.
+        // place's line in the log, the floor's people, the fixtures' light
+        // and the floor's things, before the engine's loot in
+        // `LootSet::Scatter`, each reading the same `PlaceEntered` through
+        // its own cursor. After the slots, so the people keep off every
+        // cell a piece marked; the things after the ways through, which
+        // they keep off. Chained, though no two of them share a cell:
+        // systems that spawn, left unordered, queue their commands in
+        // whatever order they finish in, and a place's entities would come
+        // out in a different order from one run to the next.
         app.add_systems(
             Turn,
-            (crate::tally::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures)
+            (crate::tally::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures, crate::finds::lay)
                 .chain()
                 .in_set(TurnSet::React)
                 .after(PrefabSet::Fill)
@@ -142,6 +143,10 @@ impl Plugin for UndermerePlugin {
         // stat makes the adventurer, each reading its own numbers.
         app.add_systems(Turn, (crate::wearing::lend, crate::light::dim_the_lantern).chain().in_set(TurnSet::React));
         app.add_systems(Turn, (crate::strength::keep_strength, crate::stats::keep_stealth).in_set(TurnSet::React));
+        // How loud every step is, read off the footfall stat at the start
+        // of every pass, before anyone steps in it: what is worn is folded
+        // onto the stat in the reactions, unordered against these.
+        app.add_systems(Turn, crate::stats::keep_footfall.in_set(TurnSet::Schedule));
         // What the adventurer's hands showed of their things, then a curse
         // closing on them, then the turns they have worn what they do not
         // know yet: chained, since each says so in the log, and the lines

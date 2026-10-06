@@ -22,7 +22,9 @@
 //              drawn from item_spawns.ron at the floor the container stands on plus
 //              band (optional, 0 by default); count is n or (fewest, most), how many
 //              of the item or how many draws of the tag; the tags are "weapon" |
-//              "armor" | "potion" | "gold" | "arrow" | "light"; locked is the tag an
+//              "armor" | "potion" | "scroll" | "staff" | "wand" | "ring" | "gold" | "arrow" |
+//              "light" | "thrown", as `items.ron` lists them, and a row asks only for a
+//              tag something in item_spawns.ron carries; locked is the tag an
 //              opener must carry; opened is the look once emptied
 //   triggers:  optional; [(on:, area:, fires:, effects: [...], look:)], what it does at
 //              the moments it answers: "entered" | "destroyed" or a moment a game

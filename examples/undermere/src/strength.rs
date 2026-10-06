@@ -209,7 +209,7 @@ mod tests {
         assert_eq!((armor(&mut app), stat(&app, me, ARMOR)), (2, -1), "chain mail's three, a point short");
         let plate = make(&mut app, "plate armor");
         equip(&mut app, me, plate);
-        assert_eq!((armor(&mut app), stat(&app, me, ARMOR)), (0, -5), "plate's five, seven short, and no less than nothing");
+        assert_eq!((armor(&mut app), stat(&app, me, ARMOR)), (0, -6), "plate's six, seven short, and no less than nothing");
         let shield = make(&mut app, "shield");
         equip(&mut app, me, shield);
         assert_eq!(armor(&mut app), 1, "and a shield's one, which asks twelve");

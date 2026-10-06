@@ -15,7 +15,10 @@
 //               either hand's finger, "left finger" | "right finger"
 //   also:       optional; slots it also claims when worn, for a two-hander
 //   tags:       optional; "weapon" | "armor" | "potion" | "scroll" | "staff" | "wand" | "ring" |
-//               "gold" | "arrow" | "light"; what a chest's row asks for by tag. A weapon, armor,
+//               "gold" | "arrow" | "light" | "thrown"; what a chest's row asks for by tag, and
+//               the kinds a floor's things are drawn by: potions, scrolls, weapons, armor,
+//               staffs, wands, rings and thrown things, each kind as often as `finds.rs` weighs
+//               it and each thing of a kind as `item_spawns.ron` does. A weapon, armor,
 //               ring, staff or wand that does not stack takes levels: each level adds one to a
 //               weapon's every damage roll and five to its wielder's accuracy, one to armor's
 //               armor, and what per_level says; one below nought is cursed, and will not come off
@@ -57,12 +60,19 @@
 //   armor:      optional; flat armor while worn
 //   resists:    optional; [(damage kind, percent removed)] while worn: "slash" | "pierce" |
 //               "crush" | "fire" | "cold" | "poison"
-//   melee:      optional; (roll:, kind:, look:) while wielded, roll as "NdS+B"; look is
-//               optional, (glyph:, color: (r:, g:, b:)) in bytes, and a blow bursts on its
-//               target in its colour
+//   melee:      optional; (roll:, kind:, look:, shape:, unaware:) while wielded, roll as
+//               "NdS+B"; look is optional, (glyph:, color: (r:, g:, b:)) in bytes, and a blow
+//               bursts in its colour on everyone it strikes; shape is optional, Sweep, every
+//               foe beside the wielder struck too, or Pierce(n), the foes in the next n cells
+//               behind the target, the target alone when left out; unaware is optional, what
+//               a blow on a foe that has not noticed the wielder is worth in percent, in
+//               place of the house's three hundred
 //   ranged:     optional; (range:, effective:, roll:, kind:, look:) while wielded; effective
 //               is optional, the furthest cell with no range penalty, a third of range when
 //               absent; look is optional, what a shot flies as
+//   ammo:       optional; a tag from the list above, what one shot spends from the wielder's
+//               pack; with none of it there the weapon is dry and does not shoot; only on a
+//               thing with a ranged attack
 //   throw:      optional; (range:, effective:, strike:) when thrown, effective as for ranged,
 //               strike optional as (roll, kind) for the blow it deals whoever it hits;
 //               absent, it cannot be thrown
@@ -77,7 +87,9 @@
 //               thing with a slot
 //   bestows:    optional; [(stat, amount)] added to its wearer's stats while it is worn, whatever
 //               its level: "strength" | "accuracy" | "evasion" | "speed" | "stealth" |
-//               "mending" | "light" | "armor"; only on a thing with a slot
+//               "mending" | "light" | "armor" | "footfall"; footfall is how many steps of
+//               loudness each of the wearer's steps carries, two for anyone, and heavy armor
+//               adds to it; only on a thing with a slot
 //   per_level:  optional; [(stat, amount)] added to its wearer's stats for each of its levels
 //               while it is worn, and taken away for each below nought; only on a thing with a
 //               slot that takes levels
@@ -86,21 +98,46 @@
 //               floor it is found on; only on a thing that stacks; absent, one
 #![enable(implicit_some)]
 [
-    // The weapons: a dagger is quick, an axe and a hammer slow, and a
-    // spear, a hammer and a bow take both hands.
-    (name: "dagger", glyph: ')', color: (0.75, 0.75, 0.8), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d4", kind: "pierce"), cost: 70, strength: 10),
-    (name: "sword", glyph: ')', color: (0.8, 0.82, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d7", kind: "slash"), strength: 12),
-    (name: "axe", glyph: ')', color: (0.7, 0.62, 0.5), slot: "main hand", tags: ["weapon"], melee: (roll: "1d9", kind: "slash"), cost: 120, strength: 13),
-    (name: "mace", glyph: ')', color: (0.62, 0.62, 0.66), slot: "main hand", tags: ["weapon"], melee: (roll: "2d4", kind: "crush"), strength: 16),
-    (name: "spear", glyph: ')', color: (0.72, 0.62, 0.45), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "1d10", kind: "pierce"), strength: 13),
-    (name: "war hammer", glyph: ')', color: (0.6, 0.6, 0.68), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6", kind: "crush"), cost: 130, strength: 20),
-    (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), slot: "main hand", also: ["off hand"], tags: ["weapon"], ranged: (range: 8, effective: 4, roll: "1d6", kind: "pierce"), strength: 12),
-    (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), tags: ["arrow"], stack: true, throw: (range: 4, strike: ("1d2", "pierce"))),
-    // The armor: the heavier, the deeper it is found. A shield turns one
-    // blow in ten aside, the one thing under the lake that does.
+    // The weapons, each with the trade it makes. A dagger is a light blade
+    // that strikes a foe that has not noticed its wielder five times over,
+    // where any other blow strikes three; an axe sweeps every foe round
+    // its wielder, and a spear runs on through to the foe behind; a mace
+    // and a war hammer take two turns a blow and hit the harder for it;
+    // the two-handers leave no hand for a shield; and the heavier the
+    // weapon, the more strength it asks. A blow that strikes more than
+    // its target bursts on each foe it strikes, so a sweep is seen to go
+    // round; the bow's arrow is seen to fly.
+    (name: "dagger", glyph: ')', color: (0.75, 0.75, 0.8), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d4+1", kind: "pierce", unaware: 500), strength: 10),
+    (name: "sword", glyph: ')', color: (0.8, 0.82, 0.9), slot: "main hand", either: true, tags: ["weapon"], melee: (roll: "1d7+1", kind: "slash"), strength: 12),
+    (name: "broadsword", glyph: ')', color: (0.88, 0.9, 0.98), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "2d6+1", kind: "slash"), strength: 14),
+    (name: "axe", glyph: ')', color: (0.7, 0.62, 0.5), slot: "main hand", tags: ["weapon"], strength: 13,
+     melee: (roll: "1d7", kind: "slash", shape: Sweep, look: (glyph: '*', color: (r: 235, g: 225, b: 205)))),
+    (name: "war axe", glyph: ')', color: (0.62, 0.52, 0.4), slot: "main hand", also: ["off hand"], tags: ["weapon"], strength: 15,
+     melee: (roll: "2d5", kind: "slash", shape: Sweep, look: (glyph: '*', color: (r: 235, g: 225, b: 205)))),
+    (name: "mace", glyph: ')', color: (0.62, 0.62, 0.66), slot: "main hand", tags: ["weapon"], melee: (roll: "2d6+2", kind: "crush"), cost: 200, strength: 16),
+    (name: "war hammer", glyph: ')', color: (0.55, 0.55, 0.62), slot: "main hand", also: ["off hand"], tags: ["weapon"], melee: (roll: "3d6+2", kind: "crush"), cost: 200, strength: 20),
+    (name: "spear", glyph: ')', color: (0.72, 0.62, 0.45), slot: "main hand", tags: ["weapon"], strength: 13,
+     melee: (roll: "1d8+1", kind: "pierce", shape: Pierce(1), look: (glyph: '*', color: (r: 205, g: 220, b: 240)))),
+    (name: "war pike", glyph: ')', color: (0.64, 0.56, 0.42), slot: "main hand", also: ["off hand"], tags: ["weapon"], strength: 18,
+     melee: (roll: "2d6+2", kind: "pierce", shape: Pierce(1), look: (glyph: '*', color: (r: 205, g: 220, b: 240)))),
+    (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), slot: "main hand", also: ["off hand"], tags: ["weapon"], ammo: "arrow", strength: 12,
+     ranged: (range: 8, effective: 5, roll: "1d6+1", kind: "pierce", look: (glyph: '|', color: (r: 191, g: 173, b: 128)))),
+    // What is thrown, found by the handful: arrows, which the bow spends
+    // a shot at a time and which fly badly from the hand, and darts and
+    // javelins, made to be thrown and picked up again where they land.
+    (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), tags: ["arrow", "thrown"], stack: true, throw: (range: 4, strike: ("1d2", "pierce"))),
+    (name: "dart", glyph: '|', color: (0.7, 0.72, 0.78), tags: ["thrown"], stack: true, throw: (range: 6, effective: 4, strike: ("1d3", "pierce"))),
+    (name: "javelin", glyph: '/', color: (0.7, 0.6, 0.42), tags: ["thrown"], stack: true, throw: (range: 6, effective: 4, strike: ("2d4", "pierce"))),
+    // The armor: the heavier, the more it turns, the more strength it
+    // asks, and the louder every step taken in it, which whatever has ears
+    // hears the further off. A shield turns one blow in ten aside, the
+    // one thing under the lake that does.
     (name: "leather armor", glyph: '[', color: (0.6, 0.45, 0.3), slot: "body", tags: ["armor"], armor: 1, strength: 10),
-    (name: "chain mail", glyph: '[', color: (0.68, 0.7, 0.75), slot: "body", tags: ["armor"], armor: 3, strength: 13),
-    (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), slot: "body", tags: ["armor"], armor: 5, strength: 19),
+    (name: "scale mail", glyph: '[', color: (0.55, 0.62, 0.55), slot: "body", tags: ["armor"], armor: 2, strength: 13, bestows: [("footfall", 1)]),
+    (name: "chain mail", glyph: '[', color: (0.68, 0.7, 0.75), slot: "body", tags: ["armor"], armor: 3, strength: 13, bestows: [("footfall", 1)]),
+    (name: "banded mail", glyph: '[', color: (0.72, 0.62, 0.48), slot: "body", tags: ["armor"], armor: 4, strength: 15, bestows: [("footfall", 2)]),
+    (name: "splint mail", glyph: '[', color: (0.6, 0.65, 0.75), slot: "body", tags: ["armor"], armor: 5, strength: 17, bestows: [("footfall", 2)]),
+    (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), slot: "body", tags: ["armor"], armor: 6, strength: 19, bestows: [("footfall", 3)]),
     (name: "shield", glyph: ']', color: (0.62, 0.52, 0.4), slot: "off hand", tags: ["armor"], armor: 1, strength: 12, bestows: [("evasion", 10)]),
     (name: "helm", glyph: '^', color: (0.7, 0.7, 0.75), slot: "head", tags: ["armor"], armor: 1, strength: 11),
     // The potions, each spent by its use: healing closes a wound now, and
@@ -135,10 +172,12 @@
     (name: "ring of stealth", glyph: '=', color: (0.5, 0.5, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("stealth", 10)]),
     (name: "ring of light", glyph: '=', color: (1.0, 0.9, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("light", 1)]),
     // The lights: the lantern the adventurer walks out of Mereholt with,
-    // and a torch, worse to carry and better to throw into a dark room.
+    // and a torch, worse to carry and better to throw into a dark room, so
+    // found among the thrown things.
     (name: "lantern", glyph: '(', color: (1.0, 0.85, 0.55), slot: "light", tags: ["light"], light: (radius: 7, color: (1.0, 0.85, 0.6), flicker: 0.1)),
-    (name: "torch", glyph: '(', color: (0.85, 0.55, 0.25), slot: "light", tags: ["light"], throw: (range: 6), light: (radius: 5, color: (1.0, 0.62, 0.3), flicker: 0.35)),
+    (name: "torch", glyph: '(', color: (0.85, 0.55, 0.25), slot: "light", tags: ["light", "thrown"], throw: (range: 6), light: (radius: 5, color: (1.0, 0.62, 0.3), flicker: 0.35)),
     // A pile is three to twenty-four coins on floor one, and floor times
-    // that further down.
+    // that further down; a floor's piles are laid besides its things, and
+    // what the dead leave is their own.
     (name: "gold coin", glyph: '$', color: (1.0, 0.85, 0.3), tags: ["gold"], stack: true, pile: "3d8"),
 ]

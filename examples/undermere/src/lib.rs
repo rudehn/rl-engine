@@ -17,8 +17,10 @@
 //! ten floors under it, each a chain of the engine's passes varied by its
 //! band. [`prefabs`] loads the pieces they are stamped from, [`stairs`]
 //! lays the ways between them and names each in the log, [`population`]
-//! puts each floor's people down the first time it is entered, and
-//! [`light`] lights them and dims the lantern as the adventurer descends.
+//! puts each floor's people down the first time it is entered and
+//! [`finds`] its things, drawn a kind at a time with a scroll of
+//! enchanting besides, and [`light`] lights them and dims the lantern as
+//! the adventurer descends.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -50,6 +52,7 @@ pub mod bestiary;
 pub mod content;
 pub mod dungeon;
 pub mod enchant;
+pub mod finds;
 pub mod input;
 pub mod light;
 pub mod lore;

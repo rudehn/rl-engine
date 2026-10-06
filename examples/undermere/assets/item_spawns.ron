@@ -1,47 +1,74 @@
 // What lies about on Undermere's floors before anyone has dropped anything: on
 // which floors, and how often. What each thing is and does is `items.ron`; this is
-// only where. What a kill drops is its kind's `drops` in `monsters.ron`.
+// only where. What a kill drops is its kind's `drops` in `monsters.ron`, and the
+// gold a floor holds is laid besides its things, in `finds.rs`.
 //
-// The engine's loot reads it: what a floor scatters when it is first entered, and
-// what a chest draws when it asks for a tag.
+// A floor's things are drawn a kind at a time: a kind by the weight `finds.rs`
+// gives it, potions and scrolls most, then one of the rows whose item carries that
+// kind's tag, by these weights. A chest asking for a tag draws among the same rows.
+// So a weight here is only ever against the other things of its kind: a sword
+// against the other weapons, never against a potion.
 //
 // Every field (the ones marked "optional" may be left out):
 //   item:   a name from `items.ron`
 //   bands:  (first, last), the floors the row applies on, both included
-//   weight: how often it is drawn against every other row that applies on a floor;
-//           only the ratio matters
+//   weight: how often it is drawn against every other row of its kind that applies
+//           on a floor; only the ratio matters
 //   group:  optional; (fewest, most) lying together where it is found, one when left
-//           out; a thing with a pile, gold, rolls its pile for each
+//           out
 //
 // An item may have several rows; one with no row is never found lying about. The
 // engine sorts the rows by item name before it draws, so the order they are written
 // in here changes nothing; adding or removing one does.
 [
-    // Potions everywhere, healing most of all.
-    (item: "potion of healing", bands: (1, 10), weight: 8),
-    (item: "potion of mending", bands: (2, 10), weight: 4),
-    (item: "fire flask",        bands: (2, 10), weight: 4),
-    (item: "gold coin",         bands: (1, 10), weight: 8),
-    // The weapons grow heavier with the depth: a dagger is a shallow find,
-    // a war hammer a deep one.
-    (item: "dagger",            bands: (1, 4),  weight: 3),
-    (item: "sword",             bands: (1, 6),  weight: 3),
-    (item: "sword",             bands: (7, 10), weight: 1),
-    (item: "axe",               bands: (2, 10), weight: 2),
-    (item: "mace",              bands: (2, 10), weight: 2),
-    (item: "spear",             bands: (3, 10), weight: 2),
-    (item: "war hammer",        bands: (5, 10), weight: 2),
-    // Arrows where the bow is found, by the handful.
-    (item: "bow",               bands: (2, 10), weight: 2),
-    (item: "arrow",             bands: (2, 10), weight: 3, group: (6, 12)),
+    // Potions, out of a hundred: healing most of all, as the content sheet
+    // has it. Mending and the fire flask stand where extra healing and
+    // incineration will. Strength is weighted so that about four turn up
+    // over a run, chests and all.
+    (item: "potion of healing",  bands: (1, 10), weight: 25),
+    (item: "potion of mending",  bands: (2, 10), weight: 12),
+    (item: "fire flask",         bands: (2, 10), weight: 11),
+    (item: "potion of strength", bands: (2, 10), weight: 5),
+    // Scrolls, out of a hundred: enchanting the commonest, besides the one
+    // laid on every floor.
+    (item: "scroll of enchanting",  bands: (1, 10), weight: 20),
+    (item: "scroll of identify",    bands: (1, 10), weight: 15),
+    (item: "scroll of remove curse", bands: (1, 10), weight: 8),
+    // Rings, each as likely as another, at any depth.
+    (item: "ring of regeneration", bands: (1, 10), weight: 1),
+    (item: "ring of stealth",      bands: (1, 10), weight: 1),
+    (item: "ring of light",        bands: (1, 10), weight: 1),
+    // The weapons grow heavier with the depth: a dagger and a sword are
+    // shallow finds, a war hammer a deep one.
+    (item: "dagger",     bands: (1, 4),  weight: 3),
+    (item: "dagger",     bands: (5, 10), weight: 1),
+    (item: "sword",      bands: (1, 6),  weight: 3),
+    (item: "sword",      bands: (7, 10), weight: 2),
+    (item: "axe",        bands: (1, 10), weight: 2),
+    (item: "spear",      bands: (1, 10), weight: 2),
+    (item: "mace",       bands: (2, 10), weight: 2),
+    (item: "bow",        bands: (2, 10), weight: 2),
+    (item: "broadsword", bands: (3, 10), weight: 2),
+    (item: "war axe",    bands: (4, 10), weight: 2),
+    (item: "war pike",   bands: (4, 10), weight: 2),
+    (item: "war hammer", bands: (5, 10), weight: 2),
     // And the armor with them: leather near the top, plate from floor six.
-    (item: "leather armor",     bands: (1, 3),  weight: 3),
-    (item: "leather armor",     bands: (4, 6),  weight: 1),
-    (item: "chain mail",        bands: (2, 4),  weight: 1),
-    (item: "chain mail",        bands: (5, 10), weight: 2),
-    (item: "plate armor",       bands: (6, 7),  weight: 1),
-    (item: "plate armor",       bands: (8, 10), weight: 2),
-    (item: "shield",            bands: (1, 10), weight: 2),
-    (item: "helm",              bands: (1, 10), weight: 2),
-    (item: "torch",             bands: (1, 10), weight: 2),
+    (item: "leather armor", bands: (1, 3),  weight: 3),
+    (item: "leather armor", bands: (4, 6),  weight: 1),
+    (item: "scale mail",    bands: (1, 5),  weight: 2),
+    (item: "scale mail",    bands: (6, 10), weight: 1),
+    (item: "chain mail",    bands: (2, 4),  weight: 1),
+    (item: "chain mail",    bands: (5, 10), weight: 2),
+    (item: "banded mail",   bands: (4, 10), weight: 2),
+    (item: "splint mail",   bands: (5, 10), weight: 2),
+    (item: "plate armor",   bands: (6, 7),  weight: 1),
+    (item: "plate armor",   bands: (8, 10), weight: 2),
+    (item: "shield",        bands: (1, 10), weight: 2),
+    (item: "helm",          bands: (1, 10), weight: 2),
+    // What is thrown, by the handful: arrows most, for the bow, then darts,
+    // the heavier javelins from floor three, and a torch to light the dark.
+    (item: "arrow",   bands: (1, 10), weight: 4, group: (6, 12)),
+    (item: "dart",    bands: (1, 10), weight: 3, group: (4, 8)),
+    (item: "javelin", bands: (3, 10), weight: 2, group: (2, 4)),
+    (item: "torch",   bands: (1, 10), weight: 1),
 ]

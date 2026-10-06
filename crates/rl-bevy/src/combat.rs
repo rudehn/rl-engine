@@ -2495,6 +2495,19 @@ mod tests {
         assert_eq!(taken(&app, &foes), [3, 3, 3], "and what it carries landed on each");
     }
 
+    /// A shaped blow with a look is seen on everyone it struck: one burst,
+    /// anchored once on each foe, the target first and the rest in the
+    /// order the sweep went round, and on nobody it passed over.
+    #[test]
+    fn a_shaped_blow_with_a_look_bursts_once_on_each_foe_it_struck_and_on_nobody_else() {
+        let around = [((1, 0), THEIRS), ((0, 1), THEIRS), ((-1, -1), THEIRS), ((1, 1), OURS), ((-1, 0), BYSTANDERS)];
+        let (mut app, start, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)).shaped(AttackShape::Sweep).looking(LOOK), &around);
+        attack(&mut app, player, others[0]);
+        let on = [(0, (1, 0)), (1, (0, 1)), (2, (-1, -1))].map(|(i, (dx, dy))| Anchor::on(others[i], start.offset(dx, dy))).to_vec();
+        let burst = Cue::Burst { on, look: LookOf::Given(LOOK), from: None };
+        assert_eq!(app.world().resource::<Seen>().cues, vec![Cued { actor: player, cue: burst }]);
+    }
+
     /// Strikes `target` once, with it made to know of `player` first or of
     /// nobody, and answers what it took.
     fn strike(app: &mut App, player: Entity, target: Entity, knows: bool) -> i32 {

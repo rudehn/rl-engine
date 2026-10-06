@@ -3,10 +3,21 @@
 //! found where `item_spawns.ron` says, and spawned as items an actor can
 //! find, carry, wear and use.
 //!
-//! The [`Armory`] is Undermere's [`ItemMaker`]: the engine's loot decides
-//! what lies on a floor, what a kill leaves and what a chest holds, and
-//! asks the armory to make each thing. A pile of gold is rolled there,
-//! since how much a pile holds depends on how deep it was found.
+//! The [`Armory`] is Undermere's [`ItemMaker`]: [`finds`](crate::finds)
+//! decides what lies on a floor, the engine's loot what a kill leaves and
+//! what a chest holds, and both ask the armory to make each thing. A pile
+//! of gold is rolled there, since how much a pile holds depends on how deep
+//! it was found, and so is the level of a weapon, a piece of armor or a
+//! ring, better the deeper and sometimes cursed.
+//!
+//! What sets one weapon apart from another is written on its line and
+//! played by the engine: a blow's shape, an axe's sweep round its wielder
+//! or a spear's thrust through to the foe behind, its own percent on the
+//! unaware, a dagger's five times, what a blow costs, a mace's two turns,
+//! and the tag a shot spends, a bow's arrows. What sets one coat apart is
+//! its armor, the strength it asks and how much louder it makes every
+//! step, which it gives its wearer's footfall as any worn thing gives a
+//! stat.
 //!
 //! An [`ItemDef`] is Foundry's item schema trimmed to what Undermere uses,
 //! plus `lends`: the traits a worn thing gives its wearer, the same traits
@@ -33,7 +44,9 @@ const ITEMS_RON: &str = include_str!("../assets/items.ron");
 const ITEM_SPAWNS_RON: &str = include_str!("../assets/item_spawns.ron");
 
 /// A blow as `items.ron` writes it: `(roll: "1d6", kind: "slash")`, with
-/// an optional `look`, as Foundry writes one.
+/// an optional `look`, as Foundry writes one, and the `shape` and the
+/// `unaware` percent that make an axe, a spear and a dagger more than
+/// their rolls.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MeleeDef {
@@ -45,6 +58,16 @@ pub struct MeleeDef {
     /// nothing.
     #[serde(default)]
     pub look: Option<Look>,
+    /// Who else a blow strikes: `Sweep`, every foe beside the wielder, or
+    /// `Pierce(n)`, the next `n` cells behind the target; absent, the
+    /// target alone.
+    #[serde(default)]
+    pub shape: Option<AttackShape>,
+    /// What a blow on a foe that has not noticed the wielder is worth, in
+    /// percent, in place of the house's
+    /// [`UNAWARE`](crate::content::UNAWARE); absent, the house's.
+    #[serde(default)]
+    pub unaware: Option<u32>,
 }
 
 /// A shot as `items.ron` writes it: `(range: 8, roll: "1d6", kind:
@@ -156,6 +179,10 @@ pub struct ItemDef {
     /// The shot it fires, while wielded.
     #[serde(default)]
     pub ranged: Option<RangedDef>,
+    /// The tag of what one shot spends from its wielder's pack, for a
+    /// weapon that shoots something it has to be fed: a bow's arrows.
+    #[serde(default)]
+    pub ammo: Option<NameRef<TagDef>>,
     /// How far it flies when thrown, and what it strikes; absent, it
     /// cannot be thrown.
     #[serde(default)]
@@ -293,22 +320,74 @@ impl Armory {
         self.takes_levels(def) && self.defs.get(def).slot.is_some()
     }
 
-    /// The level a thing of `def` is found at: a ring at one to three, or,
-    /// [`CURSED_RINGS_IN_TEN`] times in ten, cursed, at minus one to minus
-    /// three; anything else at nought.
+    /// The level a thing of `def` found on floor `band` is at: a ring at
+    /// one to three, or, [`CURSED_RINGS_IN_TEN`] times in ten, cursed, at
+    /// minus one to minus three, however deep; a weapon or a piece of armor
+    /// cursed [`CURSED_GEAR_IN_FIVE`] times in five, at one of
+    /// [`CURSED_GEAR_LEVELS`] below nought, and otherwise the more often
+    /// better the deeper it lies, as [`better_by`] says; anything else at
+    /// nought.
     ///
     /// Drawn from `rng`, the loot's own stream, and only for a thing whose
-    /// level is rolled, so finding a sword or a potion draws nothing it did
-    /// not draw before rings were found.
-    pub fn found_level(&self, def: Id<ItemDef>, registries: &Registries, rng: &mut impl rand::Rng) -> i32 {
-        let ring = registries.tags.id("ring");
-        if !self.defs.get(def).tags.iter().any(|t| Some(t.id()) == ring) {
+    /// level is rolled, so finding a potion draws nothing.
+    pub fn found_level(&self, def: Id<ItemDef>, band: i32, registries: &Registries, rng: &mut impl rand::Rng) -> i32 {
+        let tagged = |name: &str| self.defs.get(def).tags.iter().any(|t| Some(t.id()) == registries.tags.id(name));
+        if !self.takes_levels(def) {
             return 0;
         }
-        let level = rng.random_range(RING_LEVELS);
-        if rng.random_ratio(CURSED_RINGS_IN_TEN, 10) { -level } else { level }
+        if tagged("ring") {
+            let level = rng.random_range(RING_LEVELS);
+            return if rng.random_ratio(CURSED_RINGS_IN_TEN, 10) { -level } else { level };
+        }
+        if !tagged("weapon") && !tagged("armor") {
+            return 0;
+        }
+        if rng.random_ratio(CURSED_GEAR_IN_FIVE, 5) {
+            return -rng.random_range(CURSED_GEAR_LEVELS);
+        }
+        better_by(band, rng.random_range(0..100))
     }
 }
+
+/// How much better than plain a weapon or a piece of armor found uncursed
+/// on floor `floor` is, for a roll of `pct` out of a hundred: two better
+/// under [`PLUS_TWO_PER_FLOOR`] percent a floor from floor
+/// [`PLUS_TWO_FROM`], one better under [`PLUS_ONE_PER_FLOOR`] percent a
+/// floor, and plain from there.
+///
+/// One roll, the two chances nested inside each other, so the chance of
+/// finding a thing better at all is ten percent a floor however deep, and
+/// a two better is a share of that rather than a second roll on top: on
+/// floor four two in five are better, half of those by two, and from floor
+/// ten every one is.
+pub fn better_by(floor: i32, pct: u32) -> i32 {
+    let floor = floor.max(0) as u32;
+    if floor >= PLUS_TWO_FROM && pct < PLUS_TWO_PER_FLOOR * floor {
+        2
+    } else if pct < PLUS_ONE_PER_FLOOR * floor {
+        1
+    } else {
+        0
+    }
+}
+
+/// How many weapons and pieces of armor in five are found cursed, however
+/// deep: one, so a find is worth putting on and not a thing put on blind.
+pub const CURSED_GEAR_IN_FIVE: u32 = 1;
+
+/// How far below nought a cursed weapon or piece of armor is found.
+pub const CURSED_GEAR_LEVELS: std::ops::RangeInclusive<i32> = 1..=3;
+
+/// The percent, for each floor down, of uncursed weapons and armor found at
+/// least one better than plain: a tenth on floor one, all of them on ten.
+pub const PLUS_ONE_PER_FLOOR: u32 = 10;
+
+/// The percent, for each floor down, of uncursed weapons and armor found
+/// two better, from [`PLUS_TWO_FROM`]: a fifth on floor four, half on ten.
+pub const PLUS_TWO_PER_FLOOR: u32 = 5;
+
+/// The shallowest floor a weapon or a piece of armor is found two better.
+pub const PLUS_TWO_FROM: u32 = 4;
 
 /// The levels a ring is found at, above nought or, cursed, below it.
 pub const RING_LEVELS: std::ops::RangeInclusive<i32> = 1..=3;
@@ -382,6 +461,9 @@ fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>, registries: &Registrie
     }
     if d.throw.is_none() && d.triggers.iter().any(|t| t.on == "land") {
         return Err("a land trigger on a thing that cannot be thrown never lands".into());
+    }
+    if d.ammo.is_some() && d.ranged.is_none() {
+        return Err("spends ammunition, on a thing that shoots nothing".into());
     }
     if d.slot.is_none() && d.triggers.iter().any(|t| t.on == "pulse") {
         return Err("a pulse trigger on a thing that is never worn never comes round".into());
@@ -559,6 +641,11 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
     if let Some(shape) = shape_of(d, registries) {
         e.insert(Wearable(shape));
     }
+    // What a shot spends is the engine's to take from the wielder's pack,
+    // and to put the shot by while the pack has none.
+    if let Some(tag) = d.ammo {
+        e.insert(Ammo { tag: tag.id() });
+    }
     if levelled {
         e.insert(Enchant(Enchanted { level, affixes: Vec::new() }));
         if level < 0 {
@@ -604,7 +691,7 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
     let d = armory.defs.get(def);
     let lent = &armory.lent[def.index()];
     let plus = |dice: DiceRoll| DiceRoll { bonus: dice.bonus + DAMAGE_PER_LEVEL * level, ..dice };
-    let melee = d.melee.map(|m| MeleeAttack { cost: d.cost, look: m.look, ..MeleeAttack::new(m.kind.id(), plus(m.roll)) });
+    let melee = d.melee.map(|m| MeleeAttack { cost: d.cost, look: m.look, shape: m.shape, unaware: m.unaware, ..MeleeAttack::new(m.kind.id(), plus(m.roll)) });
     let ranged = d.ranged.map(|r| RangedAttack { cost: d.cost, look: r.look, effective: r.effective, ..RangedAttack::new(r.kind.id(), plus(r.roll), r.range) });
     match (melee, stowed) {
         (Some(attack), Some(Stowed::Melee(_))) => {
@@ -762,7 +849,7 @@ impl ItemMaker for Armory {
         if !self.takes_levels(def) {
             return spawn_items(commands, self, def, count, registries);
         }
-        (0..count).map(|_| spawn_found(commands, self, def, self.found_level(def, registries, rng), registries)).collect()
+        (0..count).map(|_| spawn_found(commands, self, def, self.found_level(def, from.band, registries, rng), registries)).collect()
     }
 
     fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {
@@ -773,20 +860,13 @@ impl ItemMaker for Armory {
         &self.table
     }
 
-    /// Four to six things lying loose on every floor, a first cut: what
-    /// changes with the depth is what they are, which `item_spawns.ron`
-    /// weights, rather than how many.
+    /// Nothing for the engine to lay loose: what lies about on a floor is
+    /// [`finds`](crate::finds)'s, drawn a kind at a time and then a thing
+    /// of that kind, where the engine's scatter draws every thing from the
+    /// one table at once and would find potions only as often as the table
+    /// happens to hold them. Chests and the dead are still the engine's.
     fn scatter(&self) -> ScatterRules {
-        ScatterRules::new().loose(4, 6)
-    }
-
-    /// Nothing lies loose in Mereholt: the town is where a run sets out
-    /// from, and what is worth finding is under the lake.
-    fn loose(&self, area: LootArea, planned: u32) -> u32 {
-        match area {
-            LootArea::Place(crate::dungeon::TOWN) => 0,
-            _ => planned,
-        }
+        ScatterRules::new()
     }
 
     /// A floor's band is its number, since floor `n` is `MapId(n)`. A place
@@ -800,6 +880,9 @@ impl ItemMaker for Armory {
         }
     }
 }
+
+#[cfg(test)]
+mod play;
 
 #[cfg(test)]
 mod tests {
@@ -834,14 +917,22 @@ mod tests {
         let armory = [
             "dagger",
             "sword",
+            "broadsword",
             "axe",
+            "war axe",
             "mace",
-            "spear",
             "war hammer",
+            "spear",
+            "war pike",
             "bow",
             "arrow",
+            "dart",
+            "javelin",
             "leather armor",
+            "scale mail",
             "chain mail",
+            "banded mail",
+            "splint mail",
             "plate armor",
             "shield",
             "helm",
@@ -866,18 +957,26 @@ mod tests {
         assert!(library.armory.table.gaps(1..=10).is_empty(), "a floor with nothing to find");
     }
 
+    /// What each weapon's line says reaches the blow it strikes: its roll
+    /// and kind, how long a blow takes, who else it strikes and what it
+    /// makes of the unaware; a two-hander claims the off hand, and the bow
+    /// shoots as far as its line says and spends an arrow a shot.
     #[test]
     fn a_weapons_numbers_reach_its_attack_and_a_two_hander_claims_the_off_hand() {
         let library = library();
-        let (world, made) = spawned(&library, &["war hammer", "dagger", "bow"]);
+        let (world, made) = spawned(&library, &["war hammer", "dagger", "bow", "axe", "war pike", "sword"]);
         let kind = |name: &str| library.registries.damage_kinds.expect(name);
+        let plus = |n, sides, bonus| DiceRoll { bonus, ..DiceRoll::new(n, sides) };
         let hammer = world.get::<MeleeAttack>(made[0]).expect("the hammer swings");
-        assert_eq!((hammer.dice, hammer.kind, hammer.cost), (DiceRoll::new(2, 6), kind("crush"), Some(130)));
+        assert_eq!((hammer.dice, hammer.kind, hammer.cost), (plus(3, 6, 2), kind("crush"), Some(200)));
         assert_eq!(world.get::<Wearable>(made[0]).unwrap().0.slots().count(), 2, "main hand and off hand");
         let dagger = world.get::<MeleeAttack>(made[1]).expect("the dagger stabs");
-        assert_eq!((dagger.dice, dagger.kind, dagger.cost), (DiceRoll::new(1, 4), kind("pierce"), Some(70)));
+        assert_eq!((dagger.dice, dagger.kind, dagger.cost, dagger.unaware), (plus(1, 4, 1), kind("pierce"), None, Some(500)));
         let bow = world.get::<RangedAttack>(made[2]).expect("the bow shoots");
-        assert_eq!((bow.dice, bow.range, bow.effective_range()), (DiceRoll::new(1, 6), 8, 4));
+        assert_eq!((bow.dice, bow.range, bow.effective_range()), (plus(1, 6, 1), 8, 5));
+        assert_eq!(world.get::<Ammo>(made[2]).map(|a| a.tag), library.registries.tags.id("arrow"), "and spends an arrow a shot");
+        let shapes: Vec<_> = made[3..].iter().map(|e| world.get::<MeleeAttack>(*e).and_then(|m| m.shape)).collect();
+        assert_eq!(shapes, [Some(AttackShape::Sweep), Some(AttackShape::Pierce(1)), None], "an axe sweeps, a pike runs on, a sword strikes its target");
     }
 
     /// Spawns `name` at `level` through the library's armory into a bare
@@ -908,7 +1007,7 @@ mod tests {
     fn a_level_adds_to_a_weapons_rolls_and_aim_to_armors_armor_and_to_a_rings_stat_and_one_below_nought_is_stuck() {
         let library = library();
         let (world, sword) = at_level(&library, "sword", 2);
-        assert_eq!(world.get::<MeleeAttack>(sword).map(|m| m.dice), Some(DiceRoll { bonus: 2, ..DiceRoll::new(1, 7) }));
+        assert_eq!(world.get::<MeleeAttack>(sword).map(|m| m.dice), Some(DiceRoll { bonus: 3, ..DiceRoll::new(1, 7) }), "its own one, and two");
         assert_eq!((gives(&world, &library, sword, "accuracy"), world.get::<Enchant>(sword).map(|e| e.level)), (10, Some(2)));
         let (world, mail) = at_level(&library, "chain mail", -1);
         assert_eq!((world.get::<Armor>(mail).map(|a| a.0), world.get::<Stuck>(mail).is_some()), (Some(2), true), "a cursed coat");
@@ -965,25 +1064,63 @@ mod tests {
     }
 
     /// A ring is found at one to three, or cursed at minus one to minus
-    /// three about three times in ten, over a span of seeds; a sword is
-    /// found at nought and draws nothing from the stream, so finding one
-    /// deals the floor's loot as it was dealt before rings were found.
+    /// three about three times in ten, however deep, over a span of seeds;
+    /// a potion takes no levels and draws nothing from the stream, so
+    /// finding one deals the floor's loot as it was dealt before levels
+    /// were found.
     #[test]
-    fn a_ring_is_found_at_one_to_three_or_cursed_about_three_times_in_ten_and_a_sword_draws_nothing() {
+    fn a_ring_is_found_at_one_to_three_or_cursed_about_three_times_in_ten_and_a_potion_draws_nothing() {
         use rand::RngCore;
         let library = library();
-        let (ring, sword) = (library.armory.defs.expect("ring of light"), library.armory.defs.expect("sword"));
+        let (ring, potion) = (library.armory.defs.expect("ring of light"), library.armory.defs.expect("potion of healing"));
         let mut cursed = 0;
         for seed in 0..1000 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-            let level = library.armory.found_level(ring, &library.registries, &mut rng);
+            let level = library.armory.found_level(ring, 1 + (seed % 10) as i32, &library.registries, &mut rng);
             assert!(RING_LEVELS.contains(&level.abs()), "seed {seed}: {level}");
             cursed += u32::from(level < 0);
             let (mut drew, mut fresh) = (rand::rngs::StdRng::seed_from_u64(seed), rand::rngs::StdRng::seed_from_u64(seed));
-            assert_eq!(library.armory.found_level(sword, &library.registries, &mut drew), 0);
-            assert_eq!(drew.next_u64(), fresh.next_u64(), "seed {seed}: a sword draws nothing");
+            assert_eq!(library.armory.found_level(potion, 10, &library.registries, &mut drew), 0);
+            assert_eq!(drew.next_u64(), fresh.next_u64(), "seed {seed}: a potion draws nothing");
         }
         assert!((240..=360).contains(&cursed), "{cursed} in a thousand");
+    }
+
+    /// How many of two thousand `name`s found on floor `floor` came at each
+    /// level from minus three to plus two.
+    fn found_on(library: &Library, name: &str, floor: i32) -> [u32; 6] {
+        let def = library.armory.defs.expect(name);
+        let mut at = [0; 6];
+        for seed in 0..2000 {
+            let level = library.armory.found_level(def, floor, &library.registries, &mut rand::rngs::StdRng::seed_from_u64(seed));
+            assert!((-3..=2).contains(&level), "{name} on floor {floor}, seed {seed}: {level}");
+            at[(level + 3) as usize] += 1;
+        }
+        at
+    }
+
+    /// A weapon or a piece of armor is cursed one time in five, at minus
+    /// one to minus three, however deep it is found; otherwise it is at
+    /// least one better ten times in a hundred for every floor down, and
+    /// from floor four two better five times in a hundred for every floor,
+    /// over a span of seeds: on floor one a tenth of what is not cursed is
+    /// better, on floor four two fifths and half of that two better, and
+    /// on floor ten all of it, half two better.
+    #[test]
+    fn a_weapon_or_armor_found_deeper_is_more_often_better_and_one_in_five_is_cursed_over_a_span_of_seeds() {
+        let library = library();
+        // Of the uncursed, the percent at +1 and at +2, each within five.
+        let near = |got: u32, of: u32, pct: u32| (got * 100).abs_diff(of * pct) <= of * 5;
+        for name in ["sword", "chain mail"] {
+            for (floor, one, two) in [(1, 10, 0), (4, 20, 20), (10, 50, 50)] {
+                let at = found_on(&library, name, floor);
+                let cursed: u32 = at[..3].iter().sum();
+                assert!((340..=460).contains(&cursed), "{name} on floor {floor}: {cursed} of 2000 cursed, {at:?}");
+                assert!(at[..3].iter().all(|n| n * 3 * 10 >= cursed * 8), "{name} on floor {floor}: each of minus one to three alike, {at:?}");
+                let whole = 2000 - cursed;
+                assert!(near(at[4], whole, one) && near(at[5], whole, two), "{name} on floor {floor}: {at:?}");
+            }
+        }
     }
 
     /// A thing found that takes levels and is worn is not known to be any
