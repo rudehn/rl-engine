@@ -318,11 +318,12 @@ type Named<'a> = (Entity, &'a ItemKind, Option<&'a Enchant>, Has<Unfamiliar>, Ha
 /// Whenever something changed what that is: a thing appeared, a level or
 /// a kind became known, a level changed. In `TurnSet::Cleanup`, after the
 /// narrator has read what the pass's things were called, so a potion drunk
-/// is told of under the face it was drunk under and only then renamed, and
-/// again between the turns and the drawing, for what appeared outside a
-/// pass, a run's kit or a continued run's things. Every thing of a kind
-/// at once, wherever it lies: in the pack, on any floor, in a goblin's
-/// bag.
+/// is told of under the face it was drunk under and only then renamed; at
+/// the start of every pass, for what appeared between the passes, a run's
+/// kit or a continued run's things, before anything in the pass is told
+/// of; and between the turns and the drawing, for a frame no pass runs in.
+/// Every thing of a kind at once, wherever it lies: in the pack, on any
+/// floor, in a goblin's bag.
 pub fn keep_names(
     mut commands: Commands,
     lore: Res<Lore>,
@@ -705,6 +706,26 @@ mod tests {
         assert!(put_on.is_some() && put_on < is, "{lines:#?}");
         let gear = app.world().resource::<GearView>();
         assert_eq!(gear.by_name("left finger").and_then(|s| s.item.as_ref()).map(|r| r.label.clone()), Some("+? ring of light".to_string()));
+    }
+
+    /// A thing made between the passes, as a continued run makes every
+    /// thing it had, is called by its face from the first pass on: taken
+    /// up in the very pass after it was made, it is taken up under its
+    /// face.
+    #[test]
+    fn a_thing_made_between_the_passes_is_called_by_its_face_in_the_first_pass_after() {
+        let mut app = headless(RunSeed(5));
+        let me = arrive(&mut app, map_of(1));
+        clear_monsters(&mut app);
+        crate::testing::clear_floor(&mut app);
+        let potion = find(&mut app, "potion of mending", 0);
+        let face = app.world().resource::<Lore>().face("potion of mending").expect("a potion wears a face").called.clone();
+        let here = at(&app, me);
+        lay(&mut app, potion, here);
+        take_up(&mut app, me);
+        let lines = said(&app);
+        assert!(lines.iter().any(|l| *l == format!("You pick up {}.", with_article(&face))), "{lines:#?}");
+        assert!(!lines.iter().any(|l| l.contains("potion of mending")), "{lines:#?}");
     }
 
     /// The kit is known whole, its kinds and its levels: the potions of

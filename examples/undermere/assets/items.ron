@@ -6,7 +6,8 @@
 //               the engine says a stack as "12 arrows", so a thing counted by its measure is
 //               named by it: "gold coin", never "gold"
 //   glyph:      one character, and one the typeface in `assets/fonts/` has
-//   color:      (r, g, b) in 0..=1
+//   color:      (r, g, b) in 0..=1; a thing wearing a face from `lore.ron` is drawn in the
+//               face's colour instead, known or not, so its colour gives nothing away
 //   slot:       optional; where it is worn: "main hand" | "off hand" | "head" | "body" |
 //               "left finger" | "right finger" | "light"
 //   either:     optional; true for a thing that fits either slot of the pair its slot is one

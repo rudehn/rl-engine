@@ -149,9 +149,12 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::grow_familiar).chain().in_set(TurnSet::React));
         // Every thing called what is known of it: after the narrator has
         // read the pass, so nothing is told of under a name it had not yet
-        // earned, and before the spent are taken out; and again before the
-        // frame is drawn, for what came into the world between the turns.
+        // earned, and before the spent are taken out; at the start of every
+        // pass, for what came into the world between the passes, a
+        // continued run's things, before anything in the pass is told of;
+        // and before the frame is drawn, for a frame no pass runs in.
         app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
+        app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Schedule));
         app.add_systems(Update, crate::lore::keep_names.after(EngineSet::Turns).before(EngineSet::Present));
         // Each place's ambient, set between the turns and the light, so the
         // frame the stairs land on is drawn in the new place's light.
