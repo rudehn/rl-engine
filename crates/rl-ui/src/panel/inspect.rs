@@ -253,6 +253,11 @@ pub fn draw_inspect(
         terminal.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
+    // A thing not yet known is no more than its name here, as in the bag.
+    if view.unknown && y < inner.bottom() {
+        terminal.print_on(inner.x, y, &clip("unknown", width), palette.get(Tones::MUTED), bg);
+        y += 1;
+    }
     if let Some(work) = &subject.work
         && y < inner.bottom()
     {
@@ -507,6 +512,19 @@ mod tests {
         stage.press(CursorKeys::default().next);
         let rows = stage.rows();
         assert!(rows.iter().any(|r| r.contains("2 tiles away, on floor")), "{rows:#?}");
+    }
+
+    /// A thing not yet known under the cursor is named, placed and said
+    /// to be unknown, and nothing more.
+    #[test]
+    fn a_thing_not_yet_known_is_said_to_be_unknown_under_where_it_lies() {
+        let mut stage = staged();
+        let vial = stage.thing("murky vial", '!', 2, 0);
+        stage.app.world_mut().entity_mut(vial).insert(rl_bevy::Unknown);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
+        assert_eq!([inner(22), inner(23), inner(24), inner(25)], ["! murky vial", "2 tiles away, on floor", "unknown", ""]);
     }
 
     #[test]

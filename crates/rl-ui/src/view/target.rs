@@ -10,6 +10,9 @@
 //! would hit, resolved by [`Bystanders::land`] for an ability and for a
 //! thing's aimed use alike, [`flight`] for a throw and [`shot`] for a shot,
 //! the calls the resolvers act on, so what is shown is what will happen.
+//! For a thing not yet known only its reach is left out, since how far it
+//! goes is part of what it is; where it lands is still shown, since it
+//! still has to be aimed.
 //!
 //! Cycling steps through what is in sight in the nearby list's order, held
 //! to what the aim can take by [`Aim::cycles_to`]: foes for an ability or a
@@ -78,10 +81,12 @@ pub struct AimAt {
 /// opens as it does for an ability aimed the same way, previews through
 /// [`Bystanders::land`] the footprint and who stands in it, and writes the
 /// [`UseItemAt`] when the player confirms. A thing whose use lands on its
-/// user is used at once and no screen opens, so a game binds every use the
-/// same way and never asks which kind it is, and one that cannot be used
-/// now, an empty one or one worn to be used and not worn, opens nothing.
-/// Put away, it spends nothing and passes no turn.
+/// user is used at once and no screen opens, and one whose use asks for
+/// another of its user's things opens the bag choosing for it, when the
+/// game has the bag, so a game binds every use the same way and never asks
+/// which kind it is; one that cannot be used now, an empty one or one worn
+/// to be used and not worn, opens nothing. Put away, it spends nothing and
+/// passes no turn.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AimUse {
     /// Who is using it.
@@ -145,6 +150,11 @@ pub struct TargetView {
     /// the used or thrown item's. Empty for a shot, which has no name of its
     /// own.
     pub what: String,
+    /// Whether what is named is a thing not yet known, [`Unknown`]: the box
+    /// says so, and `span` is left out, since how far a thing reaches is
+    /// part of what it is. Where it would land is still previewed, since
+    /// the player still has to aim it.
+    pub unknown: bool,
     /// Who is aiming it.
     pub user: Option<Entity>,
     /// The world tile the cursor is on.
@@ -418,6 +428,11 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
         asked = Some((request.user, Pointing::Ability(request.ability)));
     }
     for request in requests.uses.read() {
+        // A thing whose use asks for another of its user's things is chosen
+        // for in the bag, which reads the same request, and not aimed.
+        if aiming.triggers.get(request.item).is_ok_and(|t| t.asks().is_some()) {
+            continue;
+        }
         // A thing whose use lands on its user is used where it stands, as
         // an ability that wants no cursor is, and refused there when it
         // cannot be.
@@ -540,6 +555,7 @@ fn forget(view: &mut TargetView) {
     view.throwing = None;
     view.firing = false;
     view.what.clear();
+    view.unknown = false;
     view.user = None;
     view.cells.clear();
     view.path.clear();
@@ -583,6 +599,8 @@ pub struct Reach<'w, 's> {
     names: Query<'w, 's, &'static Name>,
     /// What a thing does, for how its use is pointed.
     triggers: Query<'w, 's, &'static Triggers>,
+    /// What is not yet known, whose reach the box leaves out.
+    unknown: Query<'w, 's, (), With<Unknown>>,
 }
 
 impl Reach<'_, '_> {
@@ -625,6 +643,7 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     view.legal = false;
     view.span = None;
     view.odds = None;
+    view.unknown = false;
     let Some(user) = view.user else { return };
     let Ok((from, sight, bag)) = reach.users.get(user) else { return };
     let from = from.0;
@@ -634,7 +653,9 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         let has_melee = reach.loadout.melee(user).is_some();
         // The worn gun's name, empty for a shot that is the user's own.
         view.what = from_item.and_then(|item| reach.names.get(item).ok()).map(|n| n.as_str().to_string()).unwrap_or_default();
-        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: gun.effective_range(), max: gun.range });
+        view.unknown = from_item.is_some_and(|item| reach.unknown.contains(item));
+        let span = AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: gun.effective_range(), max: gun.range };
+        view.span = (!view.unknown).then_some(span);
         let flies = shot(&reach.map, &reach.occupancy, from, view.cursor, gun.range);
         let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who));
         // Point blank is a blow, struck with whatever the user fights with
@@ -674,7 +695,9 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
             (Some(_), Some(end)) => *end,
             _ => view.cursor,
         };
-        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range });
+        view.unknown = reach.unknown.contains(item);
+        let span = AimRange { distance: rl_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range };
+        view.span = (!view.unknown).then_some(span);
         view.odds = struck.and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
         // It lands on whoever it strikes, or wherever it comes to rest.
         let lands = match (thrown.struck, thrown.path.last()) {
@@ -705,6 +728,10 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         preview(&mut view, &reach, Aimed { user, source, targeting, origin: from, aim: cursor, sees_aim }, &[]);
         // A thing no longer carried is refused, as the resolver refuses it.
         view.legal = view.legal && bag.is_some_and(|b| b.contains(item));
+        view.unknown = reach.unknown.contains(item);
+        if view.unknown {
+            view.span = None;
+        }
         return;
     }
 
@@ -1577,6 +1604,38 @@ mod uses {
             assert!(!stage.app.world().resource::<TargetView>().aiming(), "no aim for {item:?}");
             assert!(!stage.app.world().resource::<Modals>().any_open(), "and no screen");
         }
+    }
+
+    /// A thing whose use asks for another of its user's things is chosen
+    /// for in the bag rather than aimed: the cursor opens no aim for it and
+    /// does not use it on nothing.
+    #[test]
+    fn asked_to_aim_a_use_that_asks_for_a_thing_the_cursor_leaves_it_to_the_bag() {
+        let mut stage = staged();
+        let polish = carry(&mut stage, "polish", r#"[(on: "use", asks: (prompt: "Polish which?"), effects: [(kind: "Struck")])]"#);
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimUse { user, item: polish });
+        stage.tick();
+        assert!(!stage.app.world().resource::<TargetView>().aiming(), "no aim");
+        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and no use on nothing");
+    }
+
+    /// A thing not yet known is aimed as what it is, and the box names it
+    /// and leaves out how far it reaches, which is its use's to say.
+    #[test]
+    fn an_unknown_thing_aimed_is_named_and_its_reach_left_out() {
+        let mut stage = staged();
+        let rod = carry(&mut stage, "teak rod", BURST);
+        stage.app.world_mut().entity_mut(rod).insert(rl_bevy::Unknown);
+        stage.actor("near", 'n', 2, 0);
+        stage.tick();
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimUse { user, item: rod });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert!(view.aiming() && view.unknown, "aimed, and said to be unknown");
+        assert_eq!((view.what.as_str(), view.span), ("teak rod", None), "by its name, and no reach");
+        assert!(view.legal && !view.cells.is_empty(), "still previewed where it will land");
     }
 
     /// The property the preview exists for, held for a thing's aimed use as

@@ -9,19 +9,28 @@
 //! [`AimThrow`], the way a game's throw key would. A game binds nothing.
 //! Using an item with a `use` trigger uses it where it stands, and using
 //! one whose use is aimed opens the targeting cursor through [`AimUse`], as
-//! throwing does, and puts it away again for nothing. Nothing else is used
+//! throwing does, and puts it away again for nothing. Using one whose use
+//! asks for another of the player's things turns the bag to choosing,
+//! titled with the use's own prompt and listing only what it may be made
+//! on: confirm writes [`UseOn`] for the thing picked out, and putting the
+//! bag away spends nothing; a game's own use key writing [`AimUse`] for
+//! such a thing opens the bag choosing the same way. Nothing else is used
 //! from here; an item a game answers itself from [`ItemEvent::Used`] is
 //! used by the game's own key, since the bag cannot know it does anything
 //! and a use that did nothing would spend a turn. The footer offers only
 //! the keys that do something to the row picked out: wear or take off,
-//! drop, use, throw, and close.
+//! drop, use, throw, and close, and for a worn thing that will not come
+//! off, none that would take it off.
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
 //! to armor or a stat, what it resists, how far it flies, where it is worn
-//! or could be and what else it takes, what it does at each of its
-//! moments and how a use is aimed, how many charges are left, and whatever
-//! the game pushed onto it in [`ViewSet::Annotate`](crate::ViewSet).
+//! or could be and what else it takes, whether it will come off, what it
+//! does at each of its moments and how a use is aimed, how many charges
+//! are left, and whatever the game pushed onto it in
+//! [`ViewSet::Annotate`](crate::ViewSet). A thing not yet known is
+//! described as unknown, by where it goes and what the game pushed, and by
+//! nothing else.
 //!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
@@ -90,24 +99,42 @@ pub struct InventoryLayout {
     pub empty: String,
 }
 
-/// Which row the cursor is on. The screen's own state, since a view holds
-/// no cursor.
+/// Which row the cursor is on, and what the bag is choosing for. The
+/// screen's own state, since a view holds no cursor.
 #[derive(Resource, Debug, Default)]
 pub struct InventoryMenu {
     /// The row picked out, clamped to the rows there are when drawn.
     pub selected: usize,
+    /// While the bag is choosing what a use is made on: the thing used, and
+    /// which of its choices the cursor is on. Put away whenever the bag is,
+    /// so it never opens choosing for a use nobody asked for again.
+    pub choosing: Option<ChoosingFor>,
 }
 
 impl InventoryMenu {
     /// Moves the cursor `by` rows over `rows` of them, wrapping at either
     /// end.
     pub fn move_by(&mut self, by: i32, rows: usize) {
-        if rows == 0 {
-            self.selected = 0;
-            return;
-        }
-        self.selected = (self.selected as i64 + by as i64).rem_euclid(rows as i64) as usize;
+        self.selected = stepped(self.selected, by, rows);
     }
+}
+
+/// The bag choosing what a use is made on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChoosingFor {
+    /// The thing whose use asks for another.
+    pub item: Entity,
+    /// Which of its choices the cursor is on, clamped to the choices there
+    /// are when drawn.
+    pub selected: usize,
+}
+
+/// `at` moved `by` rows over `rows` of them, wrapping at either end.
+fn stepped(at: usize, by: i32, rows: usize) -> usize {
+    if rows == 0 {
+        return 0;
+    }
+    (at as i64 + by as i64).rem_euclid(rows as i64) as usize
 }
 
 /// Draws [`InventoryView`] as a list with the row picked out described
@@ -156,10 +183,14 @@ impl Plugin for InventoryPanel {
             .add_message::<Intent<Unequip>>()
             .add_message::<Intent<DropItem>>()
             .add_message::<Intent<UseItem>>()
+            .add_message::<Intent<UseOn>>()
             .add_message::<AimUse>()
             .add_message::<AimThrow>();
         app.insert_resource(self.0.clone()).init_resource::<InventoryMenu>().init_resource::<InventoryKeys>();
-        app.add_systems(Update, inventory_keys.in_set(EngineSet::Input)).add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
+        // A game's own use key opens the bag choosing before the bag reads
+        // its keys, so the press that asked is not read again inside it.
+        app.add_systems(Update, (choose_when_asked, inventory_keys).chain().in_set(EngineSet::Input))
+            .add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
     }
 
     fn finish(&self, app: &mut App) {
@@ -188,15 +219,37 @@ pub struct BagIntents<'w> {
     unequips: MessageWriter<'w, Intent<Unequip>>,
     drops: MessageWriter<'w, Intent<DropItem>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
+    uses_on: MessageWriter<'w, Intent<UseOn>>,
     aimed_uses: MessageWriter<'w, AimUse>,
     throws: MessageWriter<'w, AimThrow>,
+}
+
+/// Opens the bag choosing for a thing a game's own use key asked to use,
+/// written as [`AimUse`] for anything, when its use asks for another of the
+/// player's things: what `AimUse` means for such a thing, as the targeting
+/// cursor answers it for one whose use is aimed.
+///
+/// Its own system because the bag's keys write `AimUse` for an aimed
+/// thing, and one system may not read the messages it writes. Only with no
+/// screen up, as a game's key opens nothing over another.
+pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryView>, mut menu: ResMut<InventoryMenu>, mut modals: ResMut<Modals>) {
+    let modal = inventory_modal(&modals);
+    for asked in asked.read() {
+        let wants_a_thing = view.rows.iter().any(|r| r.entity == asked.item && r.asks.is_some() && r.usable());
+        if view.entity == Some(asked.user) && wants_a_thing && !modals.any_open() {
+            menu.choosing = Some(ChoosingFor { item: asked.item, selected: 0 });
+            modals.open(modal);
+        }
+    }
 }
 
 /// Opens, closes and walks the bag, and acts on the row picked out.
 ///
 /// An action is taken only while the player holds the turn, since an intent
 /// written for anyone else is dropped unread; the screen stays up until it
-/// does.
+/// does. A use that asks for another of the player's things turns the bag
+/// to choosing among what it may be made on, under its prompt: confirm uses
+/// it on the thing picked out, and putting the bag away spends nothing.
 pub fn inventory_keys(
     keys: ControlInput,
     binds: Res<InventoryKeys>,
@@ -207,8 +260,13 @@ pub fn inventory_keys(
     mut intents: BagIntents,
 ) {
     let modal = inventory_modal(&modals);
+    // A choice lasts only while the bag is up, however it was put away.
+    if !modals.is_open(modal) {
+        menu.choosing = None;
+    }
     if binds.toggle.just_pressed(keys.input()) && (modals.is_top(modal) || !modals.any_open()) {
         modals.toggle(modal);
+        menu.choosing = None;
         return;
     }
     // Not in the frame it went up: a game may open the bag on a key the
@@ -220,6 +278,25 @@ pub fn inventory_keys(
     let input = keys.input();
     if input.just_pressed(bindings.cursor.close) {
         modals.close_one(modal);
+        menu.choosing = None;
+        return;
+    }
+    let confirmed = binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm);
+    if let Some(choosing) = menu.choosing {
+        let choices = view.rows.iter().find(|r| r.entity == choosing.item).and_then(|r| r.asks.as_ref()).map(|a| a.choices.as_slice()).unwrap_or_default();
+        let by = match bindings.directions.just_pressed(input) {
+            Some(Direction::North) => -1,
+            Some(Direction::South) => 1,
+            _ => 0,
+        };
+        let selected = stepped(choosing.selected.min(choices.len().saturating_sub(1)), by, choices.len());
+        menu.choosing = Some(ChoosingFor { selected, ..choosing });
+        let (Some(user), Some(&on)) = (view.entity, choices.get(selected)) else { return };
+        if confirmed && holding.contains(user) {
+            intents.uses_on.write(Intent::new(user, UseOn { item: choosing.item, on }));
+            menu.choosing = None;
+            modals.close_all();
+        }
         return;
     }
     match bindings.directions.just_pressed(input) {
@@ -232,36 +309,43 @@ pub fn inventory_keys(
         return;
     }
     let item = row.entity;
+    // A worn thing that will not come off is offered no key that would take
+    // it off, and the keys the footer leaves out do nothing to it.
     let acted = if binds.wear.just_pressed(input) {
-        if row.worn() {
+        if row.worn() && !row.stuck {
             intents.unequips.write(Intent::new(user, Unequip(item)));
             true
-        } else if row.wearable() {
+        } else if !row.worn() && row.wearable() {
             intents.equips.write(Intent::new(user, Equip(item)));
             true
         } else {
             false
         }
-    } else if binds.drop.just_pressed(input) {
+    } else if binds.drop.just_pressed(input) && !row.stuck {
         intents.drops.write(Intent::new(user, DropItem(item)));
         true
-    } else if binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm) {
+    } else if confirmed {
         // What does something when used, with a charge to spend. Anything
         // else is not used from here: it would spend a turn on nothing, and
         // the footer never offers it. A use pointed somewhere closes the
-        // bag and opens the targeting cursor in its place, as a throw does.
-        match (row.usable(), row.aim) {
-            (true, Some(_)) => {
+        // bag and opens the targeting cursor in its place, as a throw does,
+        // and one made on a thing keeps the bag up, choosing for it.
+        match (row.usable(), row.aim, row.asks.is_some()) {
+            (true, _, true) => {
+                menu.choosing = Some(ChoosingFor { item, selected: 0 });
+                false
+            }
+            (true, Some(_), false) => {
                 intents.aimed_uses.write(AimUse { user, item });
                 true
             }
-            (true, None) => {
+            (true, None, false) => {
                 intents.uses.write(Intent::new(user, UseItem(item)));
                 true
             }
-            (false, _) => false,
+            (false, _, _) => false,
         }
-    } else if binds.throw.just_pressed(input) && row.throw_range.is_some() {
+    } else if binds.throw.just_pressed(input) && row.throw_range.is_some() && !row.stuck {
         // The bag closes and the targeting cursor opens in its place.
         intents.throws.write(AimThrow { user, item });
         true
@@ -277,22 +361,25 @@ pub fn inventory_keys(
 
 /// The keys that do something to `row`, and the one that closes the bag.
 ///
-/// Only what applies, so the footer never offers to wear a pebble. Short
+/// Only what applies, so the footer never offers to wear a pebble, or to
+/// take off, drop or throw a worn thing that will not come off. Short
 /// enough for a narrow frame: the direction keys walk the rows on every
 /// screen and need no saying here.
 fn hints(row: Option<&ItemRow>, binds: &InventoryKeys, confirm: String, close: String) -> String {
     let mut keys = Vec::new();
     if let Some(row) = row {
-        if row.worn() {
+        if row.worn() && !row.stuck {
             keys.push(format!("{} take off", binds.wear.label()));
-        } else if row.wearable() {
+        } else if !row.worn() && row.wearable() {
             keys.push(format!("{} wear", binds.wear.label()));
         }
-        keys.push(format!("{} drop", binds.drop.label()));
+        if !row.stuck {
+            keys.push(format!("{} drop", binds.drop.label()));
+        }
         if row.usable() {
             keys.push(format!("{confirm} use"));
         }
-        if row.throw_range.is_some() {
+        if row.throw_range.is_some() && !row.stuck {
             keys.push(format!("{} throw", binds.throw.label()));
         }
     }
@@ -309,10 +396,15 @@ fn strike(s: &Strike) -> String {
 }
 
 /// The lines describing `row`: its numbers and what the game added, then
-/// where it goes, then what it does and has left.
+/// where it goes and whether it will come off, then what it does and has
+/// left. A thing not yet known says so in place of its numbers and of what
+/// it does and has left, and is described by the rest.
 fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     let mut lines: Vec<(String, ToneId)> = Vec::new();
     let mut say = |text: String, tone: ToneId| lines.extend(wrap(&text, width).into_iter().map(|l| (l, tone)));
+    if row.unknown {
+        say("unknown".to_string(), Tones::MUTED);
+    }
     if let Some(blow) = &row.blow {
         say(strike(blow), Tones::TEXT);
     }
@@ -336,8 +428,8 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     }
     match (&row.thrown, row.throw_range) {
         (Some(thrown), _) => say(format!("thrown {}", strike(thrown)), Tones::TEXT),
-        (None, Some(range)) => say(format!("thrown to {range}"), Tones::TEXT),
-        (None, None) => {}
+        (None, Some(range)) if !row.unknown => say(format!("thrown to {range}"), Tones::TEXT),
+        (None, _) => {}
     }
     // What the game added is a fact about the thing the engine could not
     // know, a sight it lends or why a gun cannot fire, so it reads with the
@@ -354,6 +446,13 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     } else if row.wearable() {
         let also = if also.is_empty() { also } else { format!(", and takes {also}") };
         say(format!("goes on the {}{also}", row.goes_on.join(" or the ")), Tones::MUTED);
+    }
+    // Why the footer offers nothing that would take it off.
+    if row.stuck {
+        say("will not come off".to_string(), Tones::BAD);
+    }
+    if row.unknown {
+        return lines;
     }
     for what in &row.used {
         say(what.clone(), Tones::TEXT);
@@ -391,7 +490,8 @@ pub struct BagScreen<'w> {
 }
 
 /// Paints the bag while its modal is open: the rows, a rule, and the row
-/// picked out described under it.
+/// picked out described under it. Choosing what a use is made on, it is
+/// titled with the use's prompt and lists only what it may be made on.
 pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<InventoryMenu>, screen: BagScreen) {
     let BagScreen { layout, view, binds, keys, modals, palette } = &screen;
     if !modals.is_open(inventory_modal(modals)) {
@@ -402,27 +502,39 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
         return;
     }
     let bindings = keys.bindings();
+    let (confirm, close) = (key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
+    let asking = menu.choosing.and_then(|c| view.rows.iter().find(|r| r.entity == c.item)?.asks.as_ref().map(|a| (c, a)));
     // The cursor survives the rebuild, clamped to the rows there are now,
     // before the footer asks which row it is on.
-    menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
-    let hints = hints(view.row(menu.selected), binds, key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
+    let (title, rows, at, hints) = match asking {
+        Some((choosing, asks)) => {
+            let rows: Vec<&ItemRow> = asks.choices.iter().filter_map(|on| view.rows.iter().find(|r| r.entity == *on)).collect();
+            let at = choosing.selected.min(rows.len().saturating_sub(1));
+            menu.choosing = Some(ChoosingFor { selected: at, ..choosing });
+            (asks.prompt.as_str(), rows, at, format!("{confirm} choose \u{2022} {close}"))
+        }
+        None => {
+            menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
+            (layout.title.as_str(), view.rows.iter().collect(), menu.selected, hints(view.row(menu.selected), binds, confirm, close))
+        }
+    };
     clear(&mut terminal, rect, palette);
-    frame(&mut terminal, rect, &layout.title, &hints, palette);
+    frame(&mut terminal, rect, title, &hints, palette);
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
 
-    if view.rows.is_empty() {
+    if rows.is_empty() {
         terminal.print_on(inner.x, inner.y, &clip(&layout.empty, width), palette.get(Tones::MUTED), surface);
         return;
     }
     // Half the height to the rows, the rest to the words about the one
     // picked out, and never fewer than three rows.
-    let list_rows = ((inner.height / 2) as usize).max(3).min(view.rows.len());
-    let first = menu.selected.saturating_sub(list_rows - 1).min(view.rows.len().saturating_sub(list_rows));
-    for (i, row) in view.rows.iter().enumerate().skip(first).take(list_rows) {
+    let list_rows = ((inner.height / 2) as usize).max(3).min(rows.len());
+    let first = at.saturating_sub(list_rows - 1).min(rows.len().saturating_sub(list_rows));
+    for (i, row) in rows.iter().enumerate().skip(first).take(list_rows) {
         let y = inner.y + (i - first) as i32;
-        let selected = i == menu.selected;
+        let selected = i == at;
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
         let fg = palette.get(if row.worn() { Tones::NOTICE } else { Tones::TEXT });
         terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
@@ -445,7 +557,7 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
     for x in inner.x..inner.right() {
         terminal.put(x, rule_y, '\u{2500}', palette.get(Tones::FRAME));
     }
-    let Some(row) = view.row(menu.selected) else { return };
+    let Some(row) = rows.get(at) else { return };
     for (y, (line, tone)) in (rule_y + 1..inner.bottom()).zip(describe(row, width)) {
         terminal.print_on(inner.x, y, &clip(&line, width), palette.get(tone), surface);
     }
@@ -850,6 +962,173 @@ mod tests {
         assert_eq!((hp(&stage, foe), hp(&stage, player)), (6, 30), "the bolt landed on the rat, not on its user");
         assert_eq!(charges(&stage), 2, "for a charge");
         assert!(now(&stage) > before, "and the turn");
+    }
+
+    /// What a game's own effect leaves on the thing a use was made on.
+    #[derive(Component)]
+    struct Marked;
+
+    /// A game's own effect for a use made on a thing: it marks the thing.
+    struct Mark;
+
+    impl rl_bevy::Effect for Mark {
+        fn apply(&self, landing: &rl_bevy::Landing, world: &mut rl_bevy::EffectWorld<'_, '_>) {
+            if let Some(on) = landing.on {
+                world.commands.entity(on).insert(Marked);
+            }
+        }
+    }
+
+    impl rl_bevy::FromArgs for Mark {
+        const KIND: &'static str = "Mark";
+        fn from_args(_: &rl_rules::ability::RawValue, _: &Names<'_>) -> Result<Self, String> {
+            Ok(Self)
+        }
+    }
+
+    /// A bag holding a polish whose use asks for kit, three charges of it;
+    /// a coat counted as kit and worn; a stone; and boots counted as kit;
+    /// with the effects and charges a use resolves through, and the
+    /// targeting cursor, which a game's own use key reaches.
+    fn chooser() -> (Stage, Entity, Entity, Entity, Entity) {
+        let plugins = (rl_bevy::EffectsPlugin, ConsumablesPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"));
+        let mut stage = Stage::new_with(plugins, |app| {
+            app.add_engine_effects();
+            rl_bevy::AddEffect::add_effect::<Mark>(app);
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.tags = Registry::from_defs(vec![rl_rules::TagDef::new("kit")]).unwrap();
+            registries.slots = Registry::from_defs(vec![SlotDef::new("body")]).unwrap();
+        })
+        .screen(52, 14);
+        let player = stage.player;
+        let (kit, body) = {
+            let r = stage.app.world().resource::<Registries>();
+            (r.tags.expect("kit"), EquipShape::in_slot(r.slots.expect("body")))
+        };
+        let triggers = {
+            let world = stage.app.world();
+            let names = world.resource::<Registries>().names();
+            let specs: Vec<rl_rules::TriggerSpec> =
+                names.load_list(r#"[(on: "use", asks: (prompt: "Polish which?", tag: "kit"), effects: [(kind: "Mark")])]"#).expect("the trigger parses");
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<EffectKinds>(), &names).expect("it builds")
+        };
+        let polish = stage.app.world_mut().spawn((Item, Name::new("polish"), triggers, Consumable::new(3, WhenEmpty::Kept))).id();
+        let coat = stage.app.world_mut().spawn((Item, Name::new("coat"), Tagged(vec![kit]), Wearable(body.clone()))).id();
+        let stone = stage.app.world_mut().spawn((Item, Name::new("stone"))).id();
+        let boots = stage.app.world_mut().spawn((Item, Name::new("boots"), Tagged(vec![kit]))).id();
+        let mut worn = Equipped(Equipment::with_slot_count(1));
+        worn.equip(coat, &body).unwrap();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![polish, coat, stone, boots] }, worn));
+        stage.tick();
+        (stage, polish, coat, stone, boots)
+    }
+
+    /// A use that asks for a thing opens the bag again choosing, under the
+    /// trigger's own prompt and among only what it may be made on; confirm
+    /// writes the use on the thing picked out and puts every screen away.
+    #[test]
+    fn a_use_that_asks_for_a_thing_chooses_under_its_prompt_and_confirm_writes_use_on() {
+        let (mut stage, polish, _, _, boots) = chooser();
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyU);
+        assert!(stage.row(0).contains(" Polish which? "), "under the trigger's prompt: {:?}", stage.row(0));
+        assert!(inside(&stage, 1).starts_with("coat") && inside(&stage, 2) == "boots", "only what it may be made on: {:?}", stage.rows());
+        assert!(stage.row(13).contains("enter choose \u{2022} esc"), "{:?}", stage.row(13));
+        assert!(stage.app.world().resource::<Modals>().any_open(), "still up, choosing");
+
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::Enter);
+        let uses: Vec<UseOn> = stage.app.world_mut().resource_mut::<Messages<Intent<UseOn>>>().drain().map(|i| i.action).collect();
+        assert_eq!(uses, vec![UseOn { item: polish, on: boots }], "the use, on the thing picked out");
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "and every screen put away");
+    }
+
+    /// The whole of it from the bag: a choice put away spends no charge
+    /// and passes no turn, and one made lands on the thing chosen, worn as
+    /// it is, for a charge and the turn.
+    #[test]
+    fn a_choice_put_away_spends_nothing_and_one_made_lands_on_the_thing_chosen() {
+        let (mut stage, polish, coat, stone, boots) = chooser();
+        let charges = |stage: &Stage| stage.app.world().get::<Consumable>(polish).expect("charges").left;
+        let now = |stage: &Stage| stage.app.world().resource::<Turns>().now();
+        let marked = |stage: &Stage, thing: Entity| stage.app.world().get::<Marked>(thing).is_some();
+        let before = now(&stage);
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyU);
+        stage.press(KeyCode::Escape);
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "put away");
+        assert_eq!((charges(&stage), now(&stage)), (3, before), "no charge, no time");
+        assert!(!marked(&stage, coat) && !marked(&stage, boots), "and nothing done to anything");
+        assert!(stage.app.world().get::<MyTurn>(stage.player).is_some(), "and the turn is still the player's");
+
+        stage.press(KeyCode::KeyI);
+        assert_eq!(inside(&stage, 1), "polish", "the bag opens as it always does, not choosing");
+        stage.press(KeyCode::KeyU);
+        stage.press(KeyCode::Enter);
+        assert!(marked(&stage, coat) && !marked(&stage, boots) && !marked(&stage, stone), "on the coat picked out, worn as it is");
+        assert_eq!(charges(&stage), 2, "for a charge");
+        assert!(now(&stage) > before, "and the turn");
+    }
+
+    /// A game's own use key may write `AimUse` for anything; for a thing
+    /// whose use asks for another, the bag opens choosing for it, and no
+    /// cursor opens and nothing is used on nothing.
+    #[test]
+    fn a_games_own_use_key_on_a_thing_that_asks_opens_the_bag_choosing() {
+        let (mut stage, polish, _, _, _) = chooser();
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimUse { user, item: polish });
+        stage.tick();
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(modals.is_top(inventory_modal(modals)), "the bag is up");
+        assert!(stage.row(0).contains(" Polish which? "), "choosing: {:?}", stage.row(0));
+        assert!(!stage.app.world().resource::<crate::TargetView>().aiming(), "no cursor");
+        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and nothing used on nothing");
+    }
+
+    /// A worn thing that will not come off is offered no key that would
+    /// take it off or drop it, says so, and those keys do nothing to it.
+    #[test]
+    fn a_stuck_thing_worn_offers_no_key_that_would_take_it_off_and_says_it_will_not_come_off() {
+        let (mut stage, blade, _, _) = staged();
+        stage.app.world_mut().entity_mut(blade).insert(Stuck);
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        let footer = stage.row(13);
+        assert!(!footer.contains("take off") && !footer.contains("drop") && footer.contains("esc"), "{footer:?}");
+        assert!(detail(&stage).iter().any(|l| l == "will not come off"), "{:?}", detail(&stage));
+        stage.press(KeyCode::KeyE);
+        stage.press(KeyCode::KeyD);
+        let w = stage.app.world_mut();
+        assert!(w.resource_mut::<Messages<Intent<Unequip>>>().drain().next().is_none(), "nothing taken off");
+        assert!(w.resource_mut::<Messages<Intent<DropItem>>>().drain().next().is_none(), "nothing dropped");
+        assert!(stage.app.world().resource::<Modals>().any_open(), "and the bag stays up");
+    }
+
+    /// A thing not yet known reads as unknown and where it goes and nothing
+    /// else, not what its use does nor what it holds, and its use key still
+    /// uses it.
+    #[test]
+    fn an_unknown_thing_reads_as_unknown_and_where_it_goes_and_nothing_else() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "5"))])]"#);
+        stage.app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("finger")]).unwrap();
+        let player = stage.player;
+        let finger = stage.app.world().resource::<Registries>().slots.expect("finger");
+        let held = Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) };
+        let draught = stage.app.world_mut().spawn((Item, Name::new("murky draught"), triggers, held, Unknown)).id();
+        let ring = stage.app.world_mut().spawn((Item, Name::new("jade ring"), Wearable(EquipShape::in_slot(finger)), Armor(1), Unknown)).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![draught, ring] });
+        stage.tick();
+        let said = |stage: &Stage| detail(stage)[3..].iter().filter(|l| !l.is_empty()).cloned().collect::<Vec<_>>();
+
+        stage.press(KeyCode::KeyI);
+        assert_eq!(said(&stage), ["unknown"], "not what it does, nor what it holds");
+        stage.press(KeyCode::ArrowDown);
+        assert_eq!(said(&stage), ["unknown", "goes on the finger"], "not its armor, and where it goes");
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::KeyU);
+        let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
+        assert_eq!(uses, vec![draught], "and it is used as what it is");
     }
 
     /// The last turn of a charge is one turn, not one turns.

@@ -130,6 +130,10 @@ pub enum Phrase {
     YouTakeOff,
     /// Someone else did.
     TakesOff,
+    /// Something you wear would not come off: you tried to take it off,
+    /// drop or throw it, or to put on something that would have pushed it
+    /// off.
+    WillNotComeOff,
     /// You threw something.
     YouThrow,
     /// Someone else did.
@@ -641,6 +645,10 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
                 (actor, item, phrase)
             }
             ItemEvent::Unequipped { actor, item } => (actor, item, if witness.is_you(actor) { Phrase::YouTakeOff } else { Phrase::TakesOff }),
+            // Why the player's try came to nothing; anyone else's refusal
+            // is a wait nobody needs told.
+            ItemEvent::WouldNotComeOff { actor, item } if witness.is_you(actor) => (actor, item, Phrase::WillNotComeOff),
+            ItemEvent::WouldNotComeOff { .. } => continue,
             ItemEvent::Thrown { actor, item, .. } => (actor, item, if witness.is_you(actor) { Phrase::YouThrow } else { Phrase::Throws }),
             // A use the engine landed is said; what using anything else
             // means is the game's, and so are the words.
@@ -835,7 +843,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 66] = [
+        let table: [(Phrase, &str, ToneId); 67] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -873,6 +881,7 @@ impl Default for Phrasebook {
             (Wields, "{Who} wields {what}.", Tones::NOTICE),
             (YouTakeOff, "You take off {what}.", Tones::MUTED),
             (TakesOff, "{Who} takes off {what}.", Tones::MUTED),
+            (WillNotComeOff, "{What} will not come off.", Tones::BAD),
             (YouThrow, "You throw {what}.", Tones::TEXT),
             (Throws, "{Who} throws {what}.", Tones::NOTICE),
             (YouUseThing, "You use {what}.", Tones::TEXT),
@@ -1423,6 +1432,24 @@ mod tests {
     /// The lines a test cares about, oldest first.
     fn spoken(stage: &Stage, starts: &[&str]) -> Vec<String> {
         lines(stage).into_iter().map(|(t, _)| t).filter(|t| starts.iter().any(|s| t.starts_with(s))).collect()
+    }
+
+    /// A worn thing that will not come off says so, in words and as bad
+    /// news, when the player's try to take it off came to nothing.
+    #[test]
+    fn a_thing_that_will_not_come_off_says_so() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let finger = rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0));
+        let ring = stage.app.world_mut().spawn((Item, Name::new("ring"), Wearable(finger.clone()), Stuck)).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(ring, &finger).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![ring] }, worn));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Unequip(ring)));
+        stage.tick();
+        let said = lines(&stage);
+        assert!(said.contains(&("A ring will not come off.".to_string(), Tones::BAD)), "{said:?}");
     }
 
     /// The player strikes a slime and the slime's mind strikes back in the

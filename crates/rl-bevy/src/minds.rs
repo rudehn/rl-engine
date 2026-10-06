@@ -1311,6 +1311,50 @@ mod tests {
         assert_eq!(w.get::<Position>(worse).map(|p| p.0), Some(start.offset(2, 0)), "and left the worse one lying");
     }
 
+    /// Better gear is worth nothing to a mind whose slot holds a thing that
+    /// will not come off, by the rule the resolver equips by, so it leaves
+    /// the gear lying rather than spending its turns being refused.
+    #[test]
+    fn a_mind_wants_nothing_that_would_push_off_a_stuck_thing() {
+        use rl_rules::ai::tactics::Scavenge;
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, _) = arena();
+        app.add_plugins(crate::items::ItemsPlugin);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let old = app.world_mut().spawn((Item, Wearable(hand.clone()), GearScore(1), crate::items::Stuck)).id();
+        let better = app.world_mut().spawn((Item, Position(start.offset(4, 0)), Wearable(hand.clone()), GearScore(3))).id();
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(old, &hand).unwrap();
+        let marine = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(3, 0)),
+                Health::full(10),
+                Faction(sides.theirs),
+                Perception(8),
+                Inventory { items: vec![old] },
+                Equipped(worn),
+                Mind(Arc::new(Brain::new().then(Scavenge { reach: 3 }))),
+                Intelligence(Wits::SAPIENT),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..8 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        let w = app.world();
+        assert_eq!(w.get::<Equipped>(marine).unwrap().in_slot(SlotId::from_raw(0)), Some(old), "the stuck one stayed on");
+        assert_eq!(w.get::<Position>(better).map(|p| p.0), Some(start.offset(4, 0)), "and the better one was left lying");
+        assert_eq!(w.get::<Position>(marine).map(|p| p.0), Some(start.offset(3, 0)), "where it never went to try");
+    }
+
     /// A mind whose own blow is worth five does not trade it for a worn
     /// blow worth three, which it would strike with in its place, and does
     /// put on one worth eight: a thing with a blow is weighed against the

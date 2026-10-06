@@ -399,7 +399,7 @@ impl Bystanders<'_, '_> {
                 }
             }
         }
-        Landed { landing: Landing { user, source, origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default() }, refused }
+        Landed { landing: Landing { user, source, origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default(), on: None }, refused }
     }
 }
 

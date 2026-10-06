@@ -69,8 +69,8 @@ pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Rechar
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
-    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FromArgs,
-    Harm, Ignite, Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers,
+    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn,
+    FromArgs, Harm, Ignite, Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers,
     area_cells, land_triggers, report_remnants,
 };
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
@@ -80,7 +80,7 @@ pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
     Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore,
-    PickUp, Pulse, Stack, Tagged, Unequip, UseItem, UseItemAt, Wearable, may_use,
+    PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, TileSet};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
@@ -153,7 +153,7 @@ pub mod prelude {
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
     pub use crate::items::{
         Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore, PickUp, Pulse, Stack,
-        Tagged, Unequip, UseItem, UseItemAt, Wearable,
+        Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};

@@ -54,6 +54,10 @@ pub struct InspectView {
     pub odds: Option<Odds>,
     /// What the game added about the subject.
     pub facets: Vec<Facet>,
+    /// Whether the subject is a thing not yet known, [`Unknown`]: a panel
+    /// says so where it would say what the thing is, so a look at a thing
+    /// tells no more than the bag does.
+    pub unknown: bool,
 }
 
 impl InspectView {
@@ -194,6 +198,8 @@ pub struct Duelists<'w, 's> {
     speeds: Speeds<'w, 's>,
     /// What the subject is working at.
     work: crate::view::Workings<'w, 's>,
+    /// What is not yet known.
+    unknown: Query<'w, 's, (), With<Unknown>>,
 }
 
 /// What a side of a duel is made of, apart from what its [`Loadout`] says
@@ -214,6 +220,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.ground.clear();
     view.burning = false;
     view.gas = None;
+    view.unknown = false;
     if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
         return;
     }
@@ -249,6 +256,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     }
     row.work = duelists.work.row(entity);
     view.subject = Some(row);
+    view.unknown = duelists.unknown.contains(entity);
 
     // A prop is never duelled, whatever health it carries. A crate has
     // health so it can be broken, not so a panel can work out how many
@@ -446,6 +454,23 @@ mod tests {
         let view = stage.app.world().resource::<InspectView>();
         assert_eq!(view.cursor, stage.at.offset(2, 0));
         assert!(view.subject.is_none(), "one tile further there is nothing");
+    }
+
+    /// A thing not yet known under the cursor is described as unknown,
+    /// and a known one beside it is not.
+    #[test]
+    fn a_thing_not_yet_known_under_the_cursor_is_described_as_unknown() {
+        let mut stage = stage();
+        let vial = stage.thing("murky vial", '!', 1, 0);
+        stage.thing("coin", '$', 2, 0);
+        stage.app.world_mut().entity_mut(vial).insert(rl_bevy::Unknown);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!((view.subject.as_ref().map(|s| s.label.as_str()), view.unknown), (Some("murky vial"), true));
+        stage.press(CursorKeys::default().next);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!((view.subject.as_ref().map(|s| s.label.as_str()), view.unknown), (Some("coin"), false));
     }
 
     #[test]

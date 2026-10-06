@@ -167,6 +167,12 @@ pub struct Landing {
     /// for an ability, an offer, or anything plain. An effect that grows
     /// with it reads it here.
     pub bonus: EffectBonus,
+    /// The thing a use was made on, for a use that asks its user for one of
+    /// their own things: what a polish was worked into. `None` for every
+    /// other landing. A game's own effect for such a use reads it here; the
+    /// engine's effects land on `targets` and never read it, since what a
+    /// thing is made better or known by is the game's.
+    pub on: Option<Entity>,
 }
 
 /// What an effect may do to the world.
@@ -463,7 +469,8 @@ impl Effects {
     /// one cell, so a footprint is not invented for something that never
     /// flew.
     pub fn land_on(&self, source: Source, user: Entity, at: Point, targets: Vec<Entity>, world: &mut EffectWorld<'_, '_>) {
-        let landing = Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, bonus: EffectBonus::default() };
+        let landing =
+            Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, bonus: EffectBonus::default(), on: None };
         self.land(&landing, world);
     }
 }
@@ -498,6 +505,7 @@ impl Plugin for EffectsPlugin {
         app.init_resource::<EffectKinds>()
             .init_resource::<Moments>()
             .add_message::<Fired>()
+            .add_message::<FiredOn>()
             .add_stream::<EffectRng>("EffectsPlugin")
             // `EffectWorld` writes these, so they are this plugin's to
             // register: a writer for a message nobody registered fails the

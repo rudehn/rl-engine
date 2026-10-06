@@ -20,7 +20,7 @@
 //           `t` in the chest the one picked, and a sapient monster throws its own and picks up more
 //   effects: optional; [(kind:, chance:, args:)] written as an ability's effects are in
 //           abilities.ron, landed by any trigger that names no list of its own
-//   triggers: optional; [(on:, area:, fires:, effects:, look:, aim:)], what the item does at a
+//   triggers: optional; [(on:, area:, fires:, effects:, look:, aim:, asks:)], what the item does at a
 //           moment:
 //           on: "use" (used from the chest, landing on whoever used it where they stand, or
 //               where it is aimed) | "land" (where it comes down when thrown) | "fire" |
@@ -33,7 +33,11 @@
 //           as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
 //           Ball(range:, radius:) | Beam(range:) | Cone(length:), at Foe (default) | Ally |
 //           Ground | Anyone, and sight whether the cell must be seen, true when left out; the
-//           chest's use key then opens the cursor
+//           chest's use key then opens the cursor; asks: optional, and only on a thing's one
+//           "use" trigger with no aim, (prompt:, tag:) for a thing used on another of the
+//           user's things, prompt what the choice is asked under and tag one of the tags above
+//           that the thing chosen must carry, any thing but itself when left out; the chest's
+//           use key then chooses, and the use lands on its user with the thing chosen
 //   consumable: optional; (charges: n, when_empty: Destroyed | Kept), what a use spends: one off
 //           a stack, the last taking the bottle with it; absent, a use costs nothing
 //   stack:  optional; whether copies merge into one counted entry

@@ -145,12 +145,17 @@ impl crate::cue::Lands for ThrowLanding {}
 
 /// Resolves [`Throw`] for the actor holding the turn: the flight, the one
 /// that leaves the hand, the blow if it strikes anyone, and where it lands.
+///
+/// A worn thing thrown comes off, so a [`Stuck`](crate::items::Stuck) one
+/// is refused, as any impossible throw is, and said as
+/// [`ItemEvent::WouldNotComeOff`].
 pub fn resolve_throws(
     mut commands: Commands,
     mut intents: MessageReader<Intent<Throw>>,
     mut resolution: Resolution,
     launch: Launch,
     mut reports: ThrowReports,
+    stuck: Query<(), With<crate::items::Stuck>>,
 ) {
     let Launch { map, occupancy, mut rng, mut throwers, mut missiles, alive, mut cues, mut hold, mut airborne, marks } = launch;
     for intent in intents.read() {
@@ -163,6 +168,11 @@ pub fn resolve_throws(
             continue;
         };
         if !bag.contains(item) || at == pos.0 {
+            resolution.failed(actor, BASE_ACTION_COST);
+            continue;
+        }
+        if stuck.contains(item) && worn.as_ref().is_some_and(|w| w.contains(item)) {
+            reports.events.write(ItemEvent::WouldNotComeOff { actor, item });
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         }
@@ -417,6 +427,25 @@ mod tests {
         assert_eq!(rig.hp(target), 20, "a miss deals nothing");
         assert_eq!(rig.lying_at(rig.start.offset(3, 0)), vec![knife], "and lies where a hit would have left it");
         assert!(events.iter().any(|e| matches!(e, ItemEvent::Thrown { struck: None, .. })), "the item event says it struck nobody: {events:?}");
+    }
+
+    /// A worn thing thrown would come off, so a stuck one is not thrown:
+    /// refused for nothing, said, and still in hand.
+    #[test]
+    fn a_stuck_thing_worn_is_not_thrown() {
+        let mut rig = Rig::new();
+        let target = rig.mark(3);
+        let knife = rig.knives(1);
+        let hand = rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0));
+        let mut worn = crate::items::Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(knife, &hand).expect("the slot exists");
+        let player = rig.player;
+        rig.app.world_mut().entity_mut(player).insert(worn);
+        rig.app.world_mut().entity_mut(knife).insert((crate::items::Wearable(hand), crate::items::Stuck));
+        assert_eq!(rig.throw(knife, 3), vec![ItemEvent::WouldNotComeOff { actor: player, item: knife }], "refused, and said");
+        assert_eq!((rig.hp(target), rig.now()), (20, 0), "for nothing");
+        assert!(rig.app.world().get::<crate::items::Equipped>(player).unwrap().contains(knife), "and still in hand");
+        assert!(rig.app.world().get::<Inventory>(player).unwrap().contains(knife));
     }
 
     #[test]

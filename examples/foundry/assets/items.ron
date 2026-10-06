@@ -20,7 +20,7 @@
 //              in steps of open deck, sound "blast" | "hiss" | "alarm" or one of the engine's
 //              ("step" | "strike" | "door" | "landing"); no effect carries a level rule, which
 //              is the enchant block's
-//   triggers:  optional; [(on:, area:, fires:, effects:, look:, every:, aim:)] what it does at
+//   triggers:  optional; [(on:, area:, fires:, effects:, look:, every:, aim:, asks:)] what it does at
 //              its moments: on is "use" (used from the pack, or while worn for a thing that
 //              is worn; lands on the user where they stand, or where it is aimed) | "land" (a
 //              throw comes to rest) | "fire" (an attack is made with it) | "hit" (that attack
@@ -36,7 +36,13 @@
 //              pointed as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
 //              Ball(range:, radius:) | Beam(range:) | Cone(length:), at what it wants under it,
 //              Foe (default) | Ally | Ground | Anyone, and sight whether the cell it is pointed
-//              at must be seen, true when left out; the pack's use key then opens the cursor
+//              at must be seen, true when left out; the pack's use key then opens the cursor;
+//              asks is optional, (prompt:, tag:), and only on a thing's one "use" trigger with
+//              no aim, for a thing used on another of the user's things: prompt is what the
+//              choice is asked under, tag one of the tags above that the thing chosen must
+//              carry, any thing carried but itself when left out; the pack's use key then
+//              chooses, and the use lands on the user with the thing chosen for the game's own
+//              effects
 //   consumable: optional; (charges:, when_empty:, recharge:) what a use, a landing or a shot
 //              costs it: charges a fresh unit holds, Destroyed | Kept at the last, and
 //              recharge, optional, (every:, while_worn:) with every the hundredths of a step

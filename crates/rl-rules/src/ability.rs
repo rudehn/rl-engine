@@ -272,6 +272,27 @@ pub struct Targeting {
     pub sight: bool,
 }
 
+/// What a use asks its user for, for a thing used on another of the
+/// user's own things rather than where they stand or at somewhere: a polish
+/// worked into a coat, a key cut to fit a lock.
+///
+/// The sibling of [`Targeting`], since a use is made at one thing, a cell
+/// or one of its user's things, and never both. Written `(prompt: "Hone
+/// which?", tag: "edge")`: the prompt is what the choice is asked under, in
+/// the game's words, and the tag, when there is one, is what the thing
+/// chosen must count as, resolved at load as every name in a content file
+/// is. Absent, any thing its user carries but the one used will do. A word
+/// nobody reads is an error, as it is in an aim.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Asks {
+    /// What the choice is asked under.
+    pub prompt: String,
+    /// What the thing chosen must count as; absent, anything.
+    #[serde(default)]
+    pub tag: Option<crate::names::NameRef<crate::affix::TagDef>>,
+}
+
 /// A trigger as a content file writes it: `(on: "land", area: Burst(radius: 1))`,
 /// with `look: (glyph: '*', color: (r: 255, g: 128, b: 0))` to be seen.
 ///
@@ -316,6 +337,13 @@ pub struct TriggerSpec {
     /// it spends stay the thing's.
     #[serde(default)]
     pub aim: Option<Targeting>,
+    /// What a `use` asks its user for, for a thing used on another of the
+    /// user's own things: it still lands where its user stands, and what it
+    /// was used on goes with it to its effects. Absent, a use asks for
+    /// nothing. Refused on any other moment, as an aim is, and beside an
+    /// aim, since a use is made at a cell or at a thing and not both.
+    #[serde(default)]
+    pub asks: Option<Asks>,
 }
 
 /// An ability, as the engine reads it.
@@ -702,6 +730,24 @@ mod tests {
         let typo: Result<TriggerSpec, _> =
             Options::default().with_default_extension(Extensions::IMPLICIT_SOME).from_str(r#"(on: "use", aim: (mode: Bolt(range: 7), att: Ally))"#);
         assert!(typo.is_err(), "a misspelt word in an aim is an error, not a foe");
+    }
+
+    /// A use asks for one of its user's things under the words the game
+    /// writes the choice in, and by a tag the thing must carry, resolved at
+    /// load as every name in a content file is: a tag nobody registered and
+    /// a misspelt word each fail the load rather than offer anything at all.
+    #[test]
+    fn a_use_trigger_asks_for_a_thing_under_its_prompt_and_by_a_tag_resolved_at_load() {
+        let tags = Registry::from_defs(vec![TagDef::new("kit"), TagDef::new("edge")]).unwrap();
+        let names = Names::new().tags(&tags);
+        let specs: Vec<TriggerSpec> =
+            names.load_list(r#"[(on: "use", asks: (prompt: "Hone which?", tag: "edge")), (on: "use", asks: (prompt: "Patch which?"))]"#).unwrap();
+        assert_eq!(specs[0].asks, Some(Asks { prompt: "Hone which?".to_string(), tag: Some(crate::NameRef::from(tags.expect("edge"))) }));
+        assert_eq!(specs[1].asks.as_ref().map(|a| a.tag), Some(None), "any thing, when no tag is given");
+        assert!(names.load_list::<TriggerSpec>(r#"[(on: "use", asks: (prompt: "Hone which?", tag: "edgy"))]"#).is_err(), "an unknown tag");
+        assert!(names.load_list::<TriggerSpec>(r#"[(on: "use", asks: (prompt: "Hone which?", tagg: "edge"))]"#).is_err(), "a misspelt word");
+        let bare: TriggerSpec = ron::from_str(r#"(on: "use")"#).unwrap();
+        assert!(bare.asks.is_none(), "a use that asks for nothing lands on its user");
     }
     use crate::damage::DamageKind;
     use crate::equip::SlotDef;

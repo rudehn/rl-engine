@@ -137,7 +137,7 @@ pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use narrate::{NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
 pub use panel::{
-    AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
+    AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ChoosingFor, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
     INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, RECORDS_MODAL, RecordsPanel,
     SETTINGS_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet,
     TitleWords, VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal,
@@ -146,8 +146,8 @@ pub use panel::{
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
-    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Bar, ContainerView, ContainerViewPlugin, EndingSection, EndingView,
-    EndingViewPlugin, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView,
+    AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
+    EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView,
     NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView,
     VitalsViewPlugin, WorkRow, Workings, target_modal,
 };
@@ -283,14 +283,14 @@ pub mod prelude {
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
     pub use crate::panel::{
-        AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
-        INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, RecordsPanel,
+        AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ChoosingFor, ContainerKeys, ContainerPanel, ControlsPanel,
+        GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, RecordsPanel,
         Scrollback, ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords,
         VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up,
     };
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{
-        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Bar, ContainerView, ContainerViewPlugin, EndingSection,
+        AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
         EndingView, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin,
         OfferRow, OffersView, OffersViewPlugin, OpenContainer, Row, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, VitalsView, VitalsViewPlugin,
         WorkRow, Workings, target_modal,

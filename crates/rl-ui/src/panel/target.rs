@@ -162,6 +162,10 @@ pub fn draw_target(
         (None, false, _) => view.what.clone(),
     };
     line(&mut terminal, &name, Tones::TITLE);
+    // A thing not yet known is said to be, where its reach would be.
+    if view.unknown {
+        line(&mut terminal, "unknown", Tones::MUTED);
+    }
     if let Some(span) = view.span {
         line(&mut terminal, &format!("Range: {} / {}", span.distance, span.max), Tones::TEXT);
     }
@@ -308,6 +312,14 @@ mod tests {
         stage.app.world_mut().write_message(crate::view::target::AimUse { user, item: rod });
         stage.tick();
         assert_eq!(boxed(&stage, 10)[..4], ["rod", "Range: 2 / 6", "Target: them", ""]);
+
+        // The same rod not yet known: named, said to be unknown where its
+        // reach was, and still aimed at whoever it would land on.
+        stage.press(KeyCode::Escape);
+        stage.app.world_mut().entity_mut(rod).insert(rl_bevy::Unknown);
+        stage.app.world_mut().write_message(crate::view::target::AimUse { user, item: rod });
+        stage.tick();
+        assert_eq!(boxed(&stage, 10)[..4], ["rod", "unknown", "Target: them", ""]);
     }
 
     /// An aim past where the bolt reaches is refused, and the part of the

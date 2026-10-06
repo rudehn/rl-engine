@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_core::{Interner, Point};
-use rl_rules::{Area, EffectSpec, Names, Targeting, TriggerSpec};
+use rl_rules::{Area, Asks, EffectSpec, Names, Targeting, TriggerSpec};
 
 use super::{EffectKinds, EffectWorld, Effects, Landing, Source};
 use crate::ability::{Aimed, Bystanders};
@@ -128,6 +128,11 @@ pub struct Trigger {
     /// used at somewhere and nowhere else: it lands on the footprint where
     /// it was pointed rather than around where its moment happened.
     pub aim: Option<Targeting>,
+    /// What a `use` asks its user for, `Some` on the one `use` trigger of a
+    /// thing used on another of its user's things and nowhere else: it
+    /// lands where its user stands, with the thing chosen as the landing's
+    /// [`on`](Landing::on).
+    pub asks: Option<Asks>,
 }
 
 /// Written by hand, since the effects themselves are boxed trait objects:
@@ -142,6 +147,7 @@ impl std::fmt::Debug for Trigger {
             .field("look", &self.look)
             .field("every", &self.every)
             .field("aim", &self.aim)
+            .field("asks", &self.asks)
             .finish_non_exhaustive()
     }
 }
@@ -160,17 +166,17 @@ impl Triggers {
     /// says what it contains once and lets each trigger deliver it. Every
     /// problem is reported, not the first: an unknown moment by its name,
     /// an unregistered effect by [`Effects::build`]'s own message, a
-    /// trigger with neither a list nor a shared one as the typo it is, and
-    /// an aim anywhere but on a thing's one `use` trigger, or aimed at
-    /// nobody but its user.
+    /// trigger with neither a list nor a shared one as the typo it is, an
+    /// aim anywhere but on a thing's one `use` trigger, or aimed at nobody
+    /// but its user, and an `asks` anywhere but there or beside an aim.
     pub fn build(specs: &[TriggerSpec], shared: &[EffectSpec], moments: &Moments, kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, Vec<String>> {
         let mut errors = Vec::new();
-        // A use is pointed once, so an aimed one is the thing's only use: a
-        // second would land around where the first was pointed, which
-        // nobody chose.
+        // A use is pointed or made on a thing once, so an aimed or asking
+        // one is the thing's only use: a second would land around where the
+        // first was pointed, or with a thing nobody chose for it.
         let uses: Vec<&TriggerSpec> = specs.iter().filter(|s| moments.get(&s.on) == Some(Moments::USE)).collect();
-        if uses.len() > 1 && uses.iter().any(|s| s.aim.is_some()) {
-            errors.push("a thing whose use is aimed has one `use` trigger, the aimed one; write what it lands in its one list".to_string());
+        if uses.len() > 1 && uses.iter().any(|s| s.aim.is_some() || s.asks.is_some()) {
+            errors.push("a thing whose use is aimed or asks for a thing has one `use` trigger, that one; write what it lands in its one list".to_string());
         }
         let shared = if shared.is_empty() {
             None
@@ -207,6 +213,12 @@ impl Triggers {
                 }
                 _ => {}
             }
+            if spec.asks.is_some() && on != Moments::USE {
+                errors.push(format!("the trigger on {:?} carries an `asks`; only a \"use\" is made by someone choosing what it is made on", spec.on));
+            }
+            if spec.asks.is_some() && spec.aim.is_some() {
+                errors.push("a use is aimed at somewhere or asks for a thing, not both".to_string());
+            }
             let effects = match (&spec.effects, &shared) {
                 (Some(own), _) => match Effects::build(own, kinds, names) {
                     Ok(e) => Arc::new(e),
@@ -221,7 +233,7 @@ impl Triggers {
                     continue;
                 }
             };
-            built.push(Trigger { on, area: spec.area, fires: spec.fires, effects, look: spec.look, every: spec.every, aim: spec.aim });
+            built.push(Trigger { on, area: spec.area, fires: spec.fires, effects, look: spec.look, every: spec.every, aim: spec.aim, asks: spec.asks.clone() });
         }
         if errors.is_empty() { Ok(Self(built)) } else { Err(errors) }
     }
@@ -232,6 +244,14 @@ impl Triggers {
     /// thing whose use lands on its user, or that has none.
     pub fn aim(&self) -> Option<Targeting> {
         self.on(Moments::USE).find_map(|t| t.aim)
+    }
+
+    /// What this carrier's use asks its user for, when it is used on
+    /// another of its user's things: what the bag chooses for in place of
+    /// using it at once, and what the items resolver refuses a choice by.
+    /// `None` for a thing whose use asks for nothing, or that has none.
+    pub fn asks(&self) -> Option<&Asks> {
+        self.on(Moments::USE).find_map(|t| t.asks.as_ref())
     }
 
     /// The triggers on `moment`, in the order they were written.
@@ -264,6 +284,27 @@ pub struct Fired {
     /// pointed at, which its aimed trigger flies to from wherever `by`
     /// stands.
     pub at: Point,
+}
+
+/// What a moment was made on besides its carrier: the thing a use was used
+/// on, for a use that asks its user for one of their own things.
+///
+/// Written beside the carrier's [`Fired`], in the same pass, by whatever
+/// reports such a use, which is the items resolver for a
+/// [`UseOn`](crate::items::UseOn). Its own message rather than a field of
+/// `Fired`, since every other moment of every subsystem, a shot made, a
+/// plate stepped on, would otherwise carry a field it never fills.
+/// [`land_triggers`] pairs it with the `Fired` of the same carrier and
+/// moment and lands the trigger with it as [`Landing::on`].
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FiredOn {
+    /// The carrier, as its `Fired` names it: the thing used.
+    pub carrier: Entity,
+    /// The moment, as its `Fired` names it, so another moment of the same
+    /// carrier in the pass, a worn thing's pulse, is not made on it.
+    pub moment: MomentId,
+    /// What it was used on.
+    pub on: Entity,
 }
 
 /// The cells `area` covers around `at`: the one cell, or the burst of that
@@ -427,15 +468,24 @@ pub fn land_aimed_uses(mut hold: ResMut<TurnHold>, mut airborne: ResMut<Airborne
 /// cell it was pointed at, on whoever its aim wants under its shape. With
 /// a look it is seen to fly there first, and with something watching it
 /// waits in the air for [`land_aimed_uses`] until it has been.
+///
+/// A use made on one of its user's things lands where its user stands,
+/// with the thing its [`FiredOn`] names as the landing's
+/// [`on`](Landing::on), for the game's own effect that reads it.
 pub fn land_triggers(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
+    mut fired_on: MessageReader<FiredOn>,
     mut carriers: Query<Carrier>,
     alive: Query<(), (With<crate::combat::Health>, Without<crate::combat::Dead>)>,
     mut uses: AimedUses,
     mut world: EffectWorld,
 ) {
+    let mut made_on: Vec<FiredOn> = fired_on.read().copied().collect();
     for f in fired.read() {
+        // Taken once, so a second use of the same carrier in the pass is
+        // not made on the first one's thing.
+        let on = made_on.iter().position(|m| m.carrier == f.on && m.moment == f.moment).map(|i| made_on.remove(i).on);
         let Ok((mut triggers, remnant, itself, bonus)) = carriers.get_mut(f.on) else { continue };
         let user = if itself { f.on } else { f.by.unwrap_or(f.on) };
         let bonus = bonus.copied().unwrap_or_default();
@@ -461,7 +511,7 @@ pub fn land_triggers(
                             }
                         }
                     }
-                    let landing = Landing { user, source, origin: f.at, aim: f.at, cells, path: Vec::new(), landed_at: Some(f.at), targets, bonus };
+                    let landing = Landing { user, source, origin: f.at, aim: f.at, cells, path: Vec::new(), landed_at: Some(f.at), targets, bonus, on };
                     // Cued before any effect runs, as an ability's burst is,
                     // so a cue an effect adds plays after it.
                     if let Some(burst) = trigger.look.and_then(|look| landing.burst(&world, LookOf::Given(look))) {
@@ -803,6 +853,71 @@ mod tests {
         let (app, _) = floor();
         let errs = build(&app, r#"[(on: "use", aim: (mode: Bolt(range: 5))), (on: "use")]"#, &harm("1")).expect_err("two uses, one aimed");
         assert!(errs.iter().any(|e| e.contains("one `use` trigger")), "{errs:?}");
+    }
+
+    /// Only a use is made by someone who could choose what it is made on,
+    /// and a use is made at one thing: an `asks` on a landing, one beside
+    /// an aim, and one beside a second `use` trigger each fail the build.
+    #[test]
+    fn an_ask_on_any_trigger_but_a_things_one_use_or_beside_an_aim_fails_the_build_naming_the_reason() {
+        let (app, _) = floor();
+        let landing = build(&app, r#"[(on: "land", asks: (prompt: "Which?"))]"#, &harm("1")).expect_err("a landing asks nobody");
+        assert!(landing.iter().any(|e| e.contains("only a \"use\"")), "{landing:?}");
+        let both = build(&app, r#"[(on: "use", aim: (mode: Bolt(range: 5)), asks: (prompt: "Which?"))]"#, &harm("1")).expect_err("aimed and asking");
+        assert!(both.iter().any(|e| e.contains("not both")), "{both:?}");
+        let two = build(&app, r#"[(on: "use", asks: (prompt: "Which?")), (on: "use")]"#, &harm("1")).expect_err("two uses, one asking");
+        assert!(two.iter().any(|e| e.contains("one `use` trigger")), "{two:?}");
+    }
+
+    /// What the bag asks of a thing: what its use asks for, when it asks.
+    #[test]
+    fn a_carriers_ask_is_its_use_triggers_and_none_for_a_use_that_asks_for_nothing() {
+        let (app, _) = floor();
+        let asking = build(&app, r#"[(on: "use", asks: (prompt: "Which?")), (on: "land")]"#, &harm("1")).unwrap();
+        assert_eq!(asking.asks().map(|a| a.prompt.as_str()), Some("Which?"));
+        assert_eq!(asking.aim(), None, "and it is not aimed");
+        assert!(build(&app, r#"[(on: "use"), (on: "land")]"#, &harm("1")).unwrap().asks().is_none());
+    }
+
+    /// What a landing was made on, as a test effect sees it.
+    #[derive(Resource, Default)]
+    struct LandedOn(Vec<Option<Entity>>);
+
+    /// Notes what each landing it is part of was made on.
+    struct NoteOn;
+
+    impl super::super::Effect for NoteOn {
+        fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+            let on = landing.on;
+            world.commands.queue(move |w: &mut World| w.resource_mut::<LandedOn>().0.push(on));
+        }
+    }
+
+    impl super::super::FromArgs for NoteOn {
+        const KIND: &'static str = "NoteOn";
+        fn from_args(_: &rl_rules::ability::RawValue, _: &Names<'_>) -> Result<Self, String> {
+            Ok(Self)
+        }
+    }
+
+    /// A use reported with what it was made on lands with that thing on
+    /// its landing, for a game's own effect to read; another carrier's use,
+    /// and another moment of the same carrier in the same pass, land on
+    /// nothing in particular.
+    #[test]
+    fn a_use_made_on_a_thing_lands_with_that_thing_and_nothing_else_does() {
+        use crate::effects::AddEffect;
+        let (mut app, at) = floor();
+        app.add_effect::<NoteOn>().init_resource::<LandedOn>();
+        let triggers =
+            build(&app, r#"[(on: "use", asks: (prompt: "Which?"), effects: [(kind: "NoteOn")]), (on: "land", effects: [(kind: "NoteOn")])]"#, &[]).unwrap();
+        let (carrier, other) = (app.world_mut().spawn(triggers.clone()).id(), app.world_mut().spawn(triggers).id());
+        let thing = app.world_mut().spawn_empty().id();
+        app.world_mut().write_message(FiredOn { carrier, moment: Moments::USE, on: thing });
+        app.world_mut().write_message(Fired { on: other, moment: Moments::USE, by: None, at });
+        app.world_mut().write_message(Fired { on: carrier, moment: Moments::LAND, by: None, at });
+        fire(&mut app, carrier, Moments::USE, at);
+        assert_eq!(app.world().resource::<LandedOn>().0, vec![None, None, Some(thing)], "only the use it was made on carries the thing");
     }
 
     /// What the bag and the cursor ask of a thing: how its use is pointed,

@@ -15,7 +15,7 @@
 //   effects:    optional; [(kind:, chance:, args:)] what the thing holds, written as an
 //               ability's effects are in abilities.ron: landed by any trigger with no list of
 //               its own
-//   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, aim:)] what it does at
+//   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, aim:, asks:)] what it does at
 //               its moments: on is "use" (used from the pack; lands on the user, or where it is
 //               aimed) | "land" (a throw comes to rest) | "fire" (an attack is made with it) |
 //               "hit" (that attack strikes) | "pulse" (a worn thing's clock came round); area is
@@ -29,7 +29,13 @@
 //               pointed as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
 //               Ball(range:, radius:) | Beam(range:) | Cone(length:), at what it wants under it,
 //               Foe (default) | Ally | Ground | Anyone, and sight whether the cell it is pointed
-//               at must be seen, true when left out; the pack's use key then opens the cursor
+//               at must be seen, true when left out; the pack's use key then opens the cursor;
+//               asks is optional, (prompt:, tag:), and only on a thing's one "use" trigger with
+//               no aim, for a scroll read onto another of the user's things: prompt is what the
+//               choice is asked under, tag one of the tags above that the thing chosen must
+//               carry, any thing carried but itself when left out; the pack's use key then
+//               chooses, and the use lands on the user with the thing chosen for the game's own
+//               effects
 //   consumable: optional; (charges:, when_empty:) what a use or a landing costs it: charges a
 //               fresh one holds, and Destroyed | Kept at the last
 //   armor:      optional; flat armor while worn
