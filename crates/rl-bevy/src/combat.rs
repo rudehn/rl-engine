@@ -695,7 +695,7 @@ impl Loadout<'_, '_> {
     /// Whether `item` has gone dry: an ammunition-fed weapon
     /// [`ammo::sync_ammo`](crate::ammo::sync_ammo) most recently found
     /// nothing in its wielder's bag to feed it, the same "empty, not gone"
-    /// standing as [`charged`](Self::charged). [`melee_with`](Self::melee_with)
+    /// standing as `charged`, above. [`melee_with`](Self::melee_with)
     /// and [`ranged_with`](Self::ranged_with) already skip it, because its
     /// attack came off with the ammunition and was put by as [`Stowed`];
     /// this is the one place the engine answers "can this worn item act at

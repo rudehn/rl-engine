@@ -1,15 +1,15 @@
 //! What a shot spends, when it spends anything at all.
 //!
 //! [`Ammo`] names the tag a shot draws from; [`spend_ammo`] takes one off
-//! the wielder's bag for every ranged [`Struck`] the item caused. Whether a
-//! weapon is loaded or [`Dry`] is not tracked by reacting to whichever
-//! events happen to touch it (equipping it, picking something up):
-//! [`sync_ammo`] derives it fresh, every pass, from the one fact that
-//! actually decides it, the wielder's bag right now, so no way of changing
-//! that bag can leave a weapon's state stale. Going dry is the same shape
-//! as a worn item running hot or otherwise losing its attack: the attack
-//! comes off the item and is put by as [`Stowed`](crate::combat::Stowed),
-//! so [`Loadout`](crate::combat::Loadout) falls through to the next worn
+//! the wielder's bag for every ranged [`Struck`](crate::combat::Struck) the
+//! item caused. Whether a weapon is loaded or [`Dry`] is not tracked by
+//! reacting to whichever events happen to touch it (equipping it, picking
+//! something up): [`sync_ammo`] derives it fresh, every pass, from the one
+//! fact that actually decides it, the wielder's bag right now, so no way
+//! of changing that bag can leave a weapon's state stale. Going dry is the
+//! same shape as a worn item running hot or otherwise losing its attack:
+//! the attack comes off the item and is put by as [`Stowed`], so
+//! [`Loadout`](crate::combat::Loadout) falls through to the next worn
 //! item exactly as it does for any other benched weapon, with no knowledge
 //! of ammunition at all; [`Loadout::dry`](crate::combat::Loadout::dry) is
 //! the one place it answers by name whether a worn thing is dry.
@@ -42,10 +42,11 @@ use crate::plugin::{Turn, TurnSet};
 /// What one shot of an ammunition-fed weapon spends: the tag its wielder's
 /// bag is searched for, one at a time.
 ///
-/// A weapon carries this instead of [`MeleeAttack`] or [`RangedAttack`]
-/// running on some other economy, such as a game's own heat, never both; a
-/// game's own content loader is the one place that can say so, since it is
-/// the only reader of a game's item file that names either.
+/// A weapon carries this instead of [`MeleeAttack`](crate::combat::MeleeAttack)
+/// or [`RangedAttack`] running on some other economy, such as a game's own
+/// heat, never both; a game's own content loader is the one place that can
+/// say so, since it is the only reader of a game's item file that names
+/// either.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ammo {
     /// The tag one shot spends, e.g. the tag a box of arrows carries.
