@@ -110,6 +110,25 @@ pub const REAPING: &str = "reaping";
 /// in sight: a ring of awareness's.
 pub const AWARENESS: &str = "awareness";
 
+/// A potion of haste's: its holder's speed doubled.
+pub const HASTED: &str = "hasted";
+/// A potion of fire immunity's: fire does nothing to its holder.
+pub const FIREPROOF: &str = "fireproof";
+/// A potion of darkness's: its holder's lantern out, and thirty points of
+/// stealth.
+pub const SHROUDED: &str = "shrouded";
+/// A paralytic cloud's: every turn its holder has is lost.
+pub const PARALYSED: &str = "paralysed";
+/// A confusing cloud's: every step its holder takes goes a random way.
+pub const CONFUSED: &str = "confused";
+/// The cloud a potion of paralysis bursts into.
+pub const PARALYTIC: &str = "paralytic";
+/// The cloud a potion of confusion bursts into.
+pub const CONFUSING: &str = "confusing";
+/// The cloud a potion of darkness gives off: it shrouds whoever breathes
+/// it, and hides what is behind its thickest.
+pub const DARKNESS: &str = "darkness";
+
 /// The slots that go in pairs, by name: a thing that fits `either` of a
 /// pair is worn in whichever is free, a one-handed blade in either hand
 /// and a ring on either hand's finger.
@@ -175,13 +194,18 @@ pub fn registries() -> Registries {
     let stats = stats();
     // `poisoned` is a point of poison a turn. `scorched` is what standing
     // in fire leaves, a point a turn for as long as the run's `FireRules`
-    // says. `mending` is a potion's, two a turn. `regenerating` is what
-    // the trait that names it holds for life, a point a turn, with no
-    // badge, since it is what the monster is rather than something that
-    // happened to it. The last two are boons, so the log tells them as
-    // good news. `chilled` is the drowning grasp's, a quarter off its
-    // holder's speed, which the turn loop reads through the speed stat, and
-    // `slowed`, a staff's, is half off it.
+    // says. `mending` is two a turn, for whatever content puts it on.
+    // `regenerating` is what the trait that names it holds for life, a
+    // point a turn, with no badge, since it is what the monster is rather
+    // than something that happened to it. Both are boons, so the log tells
+    // them as good news. `chilled` is the drowning grasp's, a quarter off
+    // its holder's speed, which the turn loop reads through the speed
+    // stat; `slowed`, a staff's, is half off it, and `hasted`, a potion's,
+    // its own again. `fireproof` is a potion's hundred percent against
+    // fire, which `conditions` keeps on its holder's resistances;
+    // `shrouded` is darkness's thirty points of stealth, with the lantern
+    // put out; `paralysed` holds its holder's turns; and `confused` turns
+    // every step it takes a random way.
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('p'), ..StatusDef::new("poisoned").ticks(poison, 1) },
         StatusDef { badge: Some('*'), ..StatusDef::new("scorched").ticks(fire, 1) },
@@ -189,12 +213,28 @@ pub fn registries() -> Registries {
         StatusDef::new("regenerating").mends(1).boon(),
         StatusDef { badge: Some('c'), ..StatusDef::new("chilled").modifies(stats.expect(SPEED), Op::Add(-25)) },
         StatusDef { badge: Some('s'), ..StatusDef::new("slowed").modifies(stats.expect(SPEED), Op::Add(-50)) },
+        StatusDef { badge: Some('h'), ..StatusDef::new(HASTED).modifies(stats.expect(SPEED), Op::Add(100)).boon() },
+        StatusDef { badge: Some('f'), ..StatusDef::new(FIREPROOF).boon() },
+        StatusDef { badge: Some('d'), ..StatusDef::new(SHROUDED).modifies(stats.expect(STEALTH), Op::Add(30)).boon() },
+        StatusDef { badge: Some('P'), ..StatusDef::new(PARALYSED).holds() },
+        StatusDef { badge: Some('?'), ..StatusDef::new(CONFUSED) },
+    ])
+    .unwrap();
+    // Each potion's cloud: what breathing it does, while it is thick
+    // enough to, for a few turns more than that, so whoever stands in it is
+    // held, turned about or hidden for as long as it hangs. Darkness is
+    // thick enough to see through only at its edges.
+    let gases = Registry::from_defs(vec![
+        GasDef::new(PARALYTIC).spread(40).fade(20).inflicts(25, statuses.expect(PARALYSED), 3),
+        GasDef::new(CONFUSING).spread(50).fade(15).inflicts(25, statuses.expect(CONFUSED), 3),
+        GasDef::new(DARKNESS).spread(30).fade(8).veils_at(120).inflicts(25, statuses.expect(SHROUDED), 5),
     ])
     .unwrap();
     let mut registries = Registries {
         damage_kinds,
         stats,
         statuses,
+        gases,
         factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead"].map(FactionDef::new).to_vec()).unwrap(),
         tags: Registry::from_defs(
             ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(TagDef::new).to_vec(),
@@ -260,13 +300,14 @@ pub fn hit_rules() -> HitRules {
 
 /// The effect kinds an Undermere app has, for reading the content where no
 /// app is running, as a test does: whatever `add_engine_effects` declares,
-/// the `Ignite` that `FirePlugin` declares for the fire breath and the
-/// fire flask, and Undermere's own, by [`add_game_effects`]. The throwaway
-/// `App` is there so the list is the engine's own and never one kept
-/// beside it.
+/// the `Ignite` that `FirePlugin` declares for the fire breath, a staff of
+/// firebolt and a potion of incineration, the `Emit` that `GasPlugin`
+/// declares for the potions that burst into a cloud, and Undermere's own,
+/// by [`add_game_effects`]. The throwaway `App` is there so the list is the
+/// engine's own and never one kept beside it.
 pub fn effect_kinds() -> EffectKinds {
     let mut app = App::new();
-    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>();
+    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
     add_game_effects(&mut app);
     std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
 }
@@ -277,14 +318,15 @@ pub fn effect_kinds() -> EffectKinds {
 /// holds, where someone stands, who they are and whose side they are on.
 /// The one list, for the app and for [`effect_kinds`] alike.
 pub fn add_game_effects(app: &mut App) {
-    use crate::effects::{bodies, minds, moving};
+    use crate::effects::{bodies, minds, moving, senses};
     app.add_effect::<crate::enchant::Enchanting>()
         .add_effect::<crate::enchant::RemoveCurse>()
         .add_effect::<crate::lore::Identify>()
         .add_effect::<crate::strength::Strengthen>();
-    app.add_effect::<moving::Blink>().add_effect::<moving::TeleportOther>().add_effect::<moving::Beckon>();
-    app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>();
+    app.add_effect::<moving::Blink>().add_effect::<moving::TeleportOther>().add_effect::<moving::Beckon>().add_effect::<moving::Descend>();
+    app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>().add_effect::<bodies::Life>();
     app.add_effect::<minds::Dominate>();
+    app.add_effect::<senses::Darkness>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through

@@ -95,7 +95,7 @@ pub struct RangedDef {
 }
 
 /// A throw as `items.ron` writes it: how far, and the blow it strikes, if
-/// it strikes at all. A fire flask strikes nothing; its land trigger
+/// it strikes at all. A potion strikes nothing; its land trigger
 /// bursts.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -304,8 +304,8 @@ impl Armory {
     /// Loads `items.ron` and `item_spawns.ron` against `registries` and
     /// the `traits` an item lends, and builds every item's triggers
     /// against the effect `kinds` and `moments` registered for the run, so
-    /// a flask naming an effect nobody registered is caught while the file
-    /// is read rather than by a flask that quietly does nothing. Panics
+    /// a potion naming an effect nobody registered is caught while the file
+    /// is read rather than by a potion that quietly does nothing. Panics
     /// naming the file and every problem in it.
     pub fn load(registries: &Registries, traits: &Registry<TraitDef>, kinds: &EffectKinds, moments: &Moments) -> Self {
         let defs = load_defs(registries, traits);
@@ -733,7 +733,7 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect()));
     }
-    // What it does at its moments, a potion's use and a flask's landing,
+    // What it does at its moments, a potion drunk and one broken where it lands,
     // built once by the armory and shared by every copy; the engine lands
     // them, and spends what doing it costs.
     let triggers = armory.triggers.get(def.index());
@@ -1010,6 +1010,8 @@ impl ItemMaker for Armory {
 }
 
 #[cfg(test)]
+mod draughts;
+#[cfg(test)]
 mod magic;
 #[cfg(test)]
 mod play;
@@ -1067,9 +1069,16 @@ mod tests {
             "shield",
             "helm",
             "potion of healing",
-            "potion of mending",
+            "potion of extra healing",
             "potion of strength",
-            "fire flask",
+            "potion of life",
+            "potion of haste",
+            "potion of fire immunity",
+            "potion of darkness",
+            "potion of descent",
+            "potion of incineration",
+            "potion of paralysis",
+            "potion of confusion",
             "scroll of enchanting",
             "scroll of identify",
             "scroll of remove curse",
@@ -1430,17 +1439,33 @@ mod tests {
         assert!(world.get::<Throwable>(made[1]).is_some(), "a torch can be thrown into the dark");
     }
 
-    /// A potion is used up by its use, and a fire flask flies and bursts
-    /// where it lands: what each does is its trigger, built once.
+    /// Every potion is used up by its use or by where it lands when it is
+    /// thrown: what each does drunk is its `use` trigger, built once, and
+    /// one that does something where it breaks has a `land` trigger too,
+    /// which a potion wasted thrown has not.
     #[test]
-    fn a_potion_is_spent_by_its_use_and_a_flask_flies_and_bursts_where_it_lands() {
+    fn every_potion_is_spent_drunk_or_thrown_and_only_one_that_does_something_where_it_breaks_lands() {
         let library = library();
-        let (world, made) = spawned(&library, &["potion of healing", "fire flask"]);
-        for e in &made {
-            assert!(world.get::<Triggers>(*e).is_some_and(|t| !t.0.is_empty()), "it does something");
-            assert!(world.get::<Consumable>(*e).is_some(), "and is spent doing it");
+        let potions = [
+            ("potion of healing", true),
+            ("potion of extra healing", true),
+            ("potion of strength", false),
+            ("potion of life", false),
+            ("potion of haste", true),
+            ("potion of fire immunity", true),
+            ("potion of darkness", true),
+            ("potion of descent", false),
+            ("potion of incineration", true),
+            ("potion of paralysis", true),
+            ("potion of confusion", true),
+        ];
+        let (world, made) = spawned(&library, &potions.map(|(name, _)| name));
+        for ((name, lands), e) in potions.iter().zip(&made) {
+            let triggers = world.get::<Triggers>(*e).unwrap_or_else(|| panic!("{name} does something"));
+            assert!(triggers.on(Moments::USE).next().is_some(), "{name} is drunk");
+            assert_eq!(triggers.on(Moments::LAND).next().is_some(), *lands, "{name}: whether it does something where it breaks");
+            assert!(world.get::<Consumable>(*e).is_some() && world.get::<Throwable>(*e).is_some(), "{name} is spent, and can be thrown");
         }
-        assert!(world.get::<Throwable>(made[1]).is_some(), "a flask is thrown");
     }
 
     /// What a thing is worth to a mind that wears things: a sword more than

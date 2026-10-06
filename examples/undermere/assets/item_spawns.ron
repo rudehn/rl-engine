@@ -21,14 +21,22 @@
 // engine sorts the rows by item name before it draws, so the order they are written
 // in here changes nothing; adding or removing one does.
 [
-    // Potions, out of a hundred: healing most of all, as the content sheet
-    // has it. Mending and the fire flask stand where extra healing and
-    // incineration will. Strength is weighted so that about four turn up
-    // over a run, chests and all.
-    (item: "potion of healing",  bands: (1, 10), weight: 25),
-    (item: "potion of mending",  bands: (2, 10), weight: 12),
-    (item: "fire flask",         bands: (2, 10), weight: 11),
-    (item: "potion of strength", bands: (2, 10), weight: 5),
+    // Potions, by the content sheet's weights out of a hundred: healing most
+    // of all, then the three better thrown. Strength is weighted above the
+    // sheet's four, at ten, so that about four turn up over a run, chests
+    // and all, as the sheet also asks: at four, one does. Life only from
+    // floor six, and strength from floor two.
+    (item: "potion of healing",       bands: (1, 10), weight: 25),
+    (item: "potion of extra healing", bands: (1, 10), weight: 12),
+    (item: "potion of strength",      bands: (2, 10), weight: 10),
+    (item: "potion of life",          bands: (6, 10), weight: 2),
+    (item: "potion of haste",         bands: (1, 10), weight: 6),
+    (item: "potion of fire immunity", bands: (1, 10), weight: 6),
+    (item: "potion of darkness",      bands: (1, 10), weight: 7),
+    (item: "potion of descent",       bands: (1, 10), weight: 5),
+    (item: "potion of incineration",  bands: (1, 10), weight: 11),
+    (item: "potion of paralysis",     bands: (1, 10), weight: 11),
+    (item: "potion of confusion",     bands: (1, 10), weight: 11),
     // Scrolls, out of a hundred: enchanting the commonest, besides the one
     // laid on every floor.
     (item: "scroll of enchanting",  bands: (1, 10), weight: 20),

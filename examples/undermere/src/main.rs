@@ -6,7 +6,7 @@
 //! `cargo run -p undermere -- --seed 7`. For a picture of a deeper floor,
 //! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
 //! and for one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
-//! mending*2"` puts those in it as if found.
+//! extra healing*2"` puts those in it as if found.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;

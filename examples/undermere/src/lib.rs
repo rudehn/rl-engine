@@ -39,9 +39,10 @@
 //! and the curse a level below nought holds it on by; [`strength`] is what
 //! heavy gear asks of its wearer; and [`stats`] reads the stats the engine
 //! does not. [`effects`] is what Undermere's staffs, wands, potions and
-//! scrolls do that the engine's effects do not, [`staffs`] how soon a
-//! staff's spent charge comes back, and [`allies`] is who a wand or a
-//! staff of theirs puts on the adventurer's side.
+//! scrolls do that the engine's effects do not, [`conditions`] what the
+//! statuses they put on do that the engine's statuses do not, [`staffs`]
+//! how soon a staff's spent charge comes back, and [`allies`] is who a
+//! wand or a staff of theirs puts on the adventurer's side.
 //!
 //! Before any of it, [`title`] paints the screen the game opens on: the
 //! black lake at night under the engine's title menu. Every glyph of it
@@ -53,6 +54,7 @@
 pub mod allies;
 pub mod armory;
 pub mod bestiary;
+pub mod conditions;
 pub mod content;
 pub mod dungeon;
 pub mod effects;

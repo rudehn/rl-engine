@@ -648,7 +648,7 @@ mod tests {
         assert_eq!(
             errors,
             [
-                "potion: 2 faces for 4 kinds",
+                "potion: 2 faces for 11 kinds",
                 "potion: the face \"murky\" twice",
                 "scroll: titles to be made for 2 of its 3 kinds",
                 "ring: faces and titles both",
@@ -674,23 +674,23 @@ mod tests {
         let mut app = headless(RunSeed(3));
         let me = arrive(&mut app, map_of(1));
         clear_monsters(&mut app);
-        let carried = find(&mut app, "potion of mending", 0);
+        let carried = find(&mut app, "potion of life", 0);
         app.world_mut().get_mut::<Stack>(carried).expect("a stack").count = 2;
         give(&mut app, me, carried);
         let here = at(&app, me);
-        let lying = find(&mut app, "potion of mending", 0);
+        let lying = find(&mut app, "potion of life", 0);
         lay(&mut app, lying, here);
         let goblin = monster(&mut app, "goblin", here.offset(30, 30));
-        let held = find(&mut app, "potion of mending", 0);
+        let held = find(&mut app, "potion of life", 0);
         give(&mut app, goblin, held);
         app.update();
         let face = name_of(&app, carried);
-        assert!(face.ends_with(" potion") && face != "potion of mending", "{face:?}");
-        assert_eq!(every(&mut app, "potion of mending"), vec![(face.clone(), true); 3], "every one wears the face, and reads as unknown");
+        assert!(face.ends_with(" potion") && face != "potion of life", "{face:?}");
+        assert_eq!(every(&mut app, "potion of life"), vec![(face.clone(), true); 3], "every one wears the face, and reads as unknown");
         use_thing(&mut app, me, carried);
-        assert_eq!(every(&mut app, "potion of mending"), vec![("potion of mending".to_string(), false); 3], "every one is known, wherever it is");
+        assert_eq!(every(&mut app, "potion of life"), vec![("potion of life".to_string(), false); 3], "every one is known, wherever it is");
         let lines = said(&app);
-        assert!(lines.iter().any(|l| l == "That was a potion of mending."), "{lines:#?}");
+        assert!(lines.iter().any(|l| l == "That was a potion of life."), "{lines:#?}");
     }
 
     /// The bag's row for `thing`, by its label, its count and whether it
@@ -731,10 +731,10 @@ mod tests {
         crate::testing::clear_floor(&mut app);
         let (here, east) = (at(&app, me), at(&app, me).offset(1, 0));
         crate::testing::lay_floor(&mut app, &[east]);
-        let potion = find(&mut app, "potion of mending", 0);
+        let potion = find(&mut app, "potion of extra healing", 0);
         app.world_mut().get_mut::<Stack>(potion).expect("a stack").count = 2;
         lay(&mut app, potion, here);
-        let lying = find(&mut app, "potion of mending", 0);
+        let lying = find(&mut app, "potion of extra healing", 0);
         lay(&mut app, lying, east);
         app.update();
         let face = name_of(&app, potion);
@@ -742,17 +742,17 @@ mod tests {
         take_up(&mut app, me);
         assert_eq!(row(&app, potion), Some((face.clone(), 2, true)), "the bag calls them by their face");
         use_thing(&mut app, me, potion);
-        assert_eq!(row(&app, potion), Some(("potion of mending".to_string(), 1, false)), "and what they are once one is drunk");
-        assert_eq!(looked_at(&mut app, east), Some(("potion of mending".to_string(), false)), "and so does the look cursor");
+        assert_eq!(row(&app, potion), Some(("potion of extra healing".to_string(), 1, false)), "and what they are once one is drunk");
+        assert_eq!(looked_at(&mut app, east), Some(("potion of extra healing".to_string(), false)), "and so does the look cursor");
         let lines = said(&app);
         let at_line = |line: &str| lines.iter().position(|l| l == line).unwrap_or_else(|| panic!("no {line:?} in {lines:#?}"));
         let (taken, drunk, known) = (
             at_line(&format!("You pick up 2 {}.", plural(&face))),
             at_line(&format!("You use {}.", with_article(&face))),
-            at_line("That was a potion of mending."),
+            at_line("That was a potion of extra healing."),
         );
         assert!(taken < drunk && drunk < known, "{lines:#?}");
-        assert!(lines[..known].iter().all(|l| !l.contains("potion of mending")), "never its true name before the line that makes it known: {lines:#?}");
+        assert!(lines[..known].iter().all(|l| !l.contains("potion of extra healing")), "never its true name before the line that makes it known: {lines:#?}");
 
         let ring = find(&mut app, "ring of light", 2);
         give(&mut app, me, ring);
@@ -777,14 +777,14 @@ mod tests {
         let me = arrive(&mut app, map_of(1));
         clear_monsters(&mut app);
         crate::testing::clear_floor(&mut app);
-        let potion = find(&mut app, "potion of mending", 0);
-        let face = app.world().resource::<Lore>().face("potion of mending").expect("a potion wears a face").called.clone();
+        let potion = find(&mut app, "potion of extra healing", 0);
+        let face = app.world().resource::<Lore>().face("potion of extra healing").expect("a potion wears a face").called.clone();
         let here = at(&app, me);
         lay(&mut app, potion, here);
         take_up(&mut app, me);
         let lines = said(&app);
         assert!(lines.iter().any(|l| *l == format!("You pick up {}.", with_article(&face))), "{lines:#?}");
-        assert!(!lines.iter().any(|l| l.contains("potion of mending")), "{lines:#?}");
+        assert!(!lines.iter().any(|l| l.contains("potion of extra healing")), "{lines:#?}");
     }
 
     /// The kit is known whole, its kinds and its levels: the potions of
@@ -795,15 +795,15 @@ mod tests {
         let mut app = headless(RunSeed(8));
         let me = adventurer(&mut app);
         let healing = find(&mut app, "potion of healing", 0);
-        let mending = find(&mut app, "potion of mending", 0);
+        let stronger = find(&mut app, "potion of extra healing", 0);
         give(&mut app, me, healing);
-        give(&mut app, me, mending);
+        give(&mut app, me, stronger);
         app.update();
         let pack = crate::testing::pack(&app, me);
         assert!(pack.iter().any(|(n, _)| n == "sword") && pack.iter().any(|(n, _)| n == "leather armor"), "{pack:?}");
         assert_eq!(name_of(&app, healing), "potion of healing");
-        assert_ne!(name_of(&app, mending), "potion of mending");
-        assert!(app.world().get::<Unknown>(healing).is_none() && app.world().get::<Unknown>(mending).is_some());
+        assert_ne!(name_of(&app, stronger), "potion of extra healing");
+        assert!(app.world().get::<Unknown>(healing).is_none() && app.world().get::<Unknown>(stronger).is_some());
     }
 
     /// A thing found and worn reads `+?` until the adventurer has worn it

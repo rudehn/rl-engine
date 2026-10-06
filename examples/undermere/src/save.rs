@@ -387,7 +387,7 @@ mod tests {
         use_thing(&mut app, me, scroll);
         let held = find(&mut app, "ring of stealth", -1);
         equip(&mut app, me, held);
-        let draught = find(&mut app, "potion of mending", 0);
+        let draught = find(&mut app, "potion of extra healing", 0);
         give(&mut app, me, draught);
         pass_turns(&mut app, 10);
         let face = app.world().get::<Name>(draught).map(|n| n.as_str().to_string());

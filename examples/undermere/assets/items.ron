@@ -25,10 +25,19 @@
 //               once it is put on. A potion, scroll, staff, wand or ring wears a face from
 //               `lore.ron` until its kind is known
 //   effects:    optional; [(kind:, chance:, args:)] what the thing holds, written as an
-//               ability's effects are in abilities.ron, with Undermere's own besides: Enchant,
+//               ability's effects are in abilities.ron: the engine's Harm(kind:, roll:),
+//               Mend(roll:), Inflict(status:, turns:), Cleanse(status:), Ignite(turns:) and
+//               Emit(gas:, amount:), a cloud of "paralytic" | "confusing" | "darkness" a full
+//               cell being 255, the statuses being "poisoned" | "scorched" | "mending" |
+//               "regenerating" | "chilled" | "slowed" | "hasted" | "fireproof" | "shrouded" |
+//               "paralysed" | "confused"; and Undermere's own besides: Enchant,
 //               one more level on the thing a use is made on; Identify, that thing made known;
 //               RemoveCurse, everything the user wears free to come off; Strengthen(by:), the
-//               user's strength raised by that much for good; Blink(reach:, per_level:), the
+//               user's strength raised by that much for good; Life(by:), the user's greatest
+//               health raised by that much for good and their health made whole; Descend, the
+//               user sunk to a free cell of the floor below, and nothing on the deepest;
+//               Darkness(turns:, amount:), everyone where it lands shrouded that many turns and
+//               that much darkness given off on every cell of it; Blink(reach:, per_level:), the
 //               user along the line aimed, up to reach cells and per_level more for each of
 //               the thing's effect_per_level amount; TeleportOther, whoever it strikes sent far
 //               off; Beckon, whoever it strikes pulled to the user's side; Polymorph, whoever
@@ -165,21 +174,60 @@
     (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), slot: "body", tags: ["armor"], armor: 6, strength: 19, bestows: [("footfall", 3)]),
     (name: "shield", glyph: ']', color: (0.62, 0.52, 0.4), slot: "off hand", tags: ["armor"], armor: 1, strength: 12, bestows: [("evasion", 10)]),
     (name: "helm", glyph: '^', color: (0.7, 0.7, 0.75), slot: "head", tags: ["armor"], armor: 1, strength: 11),
-    // The potions, each spent by its use: healing closes a wound now, and
-    // mending gives about as much back over eight turns, which the
-    // adventurer has to live through to collect.
-    (name: "potion of healing", glyph: '!', color: (0.95, 0.3, 0.35), tags: ["potion"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "3d6+4"))])]),
-    (name: "potion of mending", glyph: '!', color: (0.95, 0.55, 0.65), tags: ["potion"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "use", effects: [(kind: "Inflict", args: (status: "mending", turns: 8))])]),
-    // Strength for good: what heavy gear asks for, and what nothing else
-    // gives back.
-    (name: "potion of strength", glyph: '!', color: (0.85, 0.35, 0.2), tags: ["potion"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
+    // The potions, each spent by its use or where it lands when thrown. The
+    // good ones do to whoever a thrown one breaks on what they do to their
+    // drinker, and a few are wasted thrown; the three that are better
+    // thrown burst round their drinker as round wherever they land.
+    (name: "potion of healing", glyph: '!', color: (0.95, 0.3, 0.35), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     effects: [(kind: "Mend", args: (roll: "3d6+4")), (kind: "Cleanse", args: (status: "poisoned"))],
+     triggers: [(on: "use"), (on: "land")]),
+    (name: "potion of extra healing", glyph: '!', color: (0.95, 0.4, 0.5), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     effects: [(kind: "Mend", args: (roll: "6d6+10")), (kind: "Cleanse", args: (status: "poisoned"))],
+     triggers: [(on: "use"), (on: "land")]),
+    // Strength and life for good: what heavy gear asks for, and more to
+    // lose; and wasted on whatever they are thrown at.
+    (name: "potion of strength", glyph: '!', color: (0.85, 0.35, 0.2), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Strengthen", args: (by: 1))])]),
-    // Thrown, it bursts where it lands and leaves the ground there burning.
-    (name: "fire flask", glyph: '!', color: (1.0, 0.55, 0.15), tags: ["potion"], stack: true, throw: (range: 6), consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
-                 effects: [(kind: "Harm", args: (kind: "fire", roll: "2d4")), (kind: "Ignite", args: (turns: 3))])]),
+    (name: "potion of life", glyph: '!', color: (0.95, 0.85, 0.6), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Life", args: (by: 10))])]),
+    // Haste, and a skin fire cannot touch, on the drinker or on whoever a
+    // thrown one breaks on.
+    (name: "potion of haste", glyph: '!', color: (0.6, 0.85, 0.95), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     effects: [(kind: "Inflict", args: (status: "hasted", turns: 15))], triggers: [(on: "use"), (on: "land")]),
+    (name: "potion of fire immunity", glyph: '!', color: (0.95, 0.6, 0.3), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     effects: [(kind: "Inflict", args: (status: "fireproof", turns: 50))], triggers: [(on: "use"), (on: "land")]),
+    // Darkness: drunk, the drinker shrouded in a dark of their own; thrown,
+    // a cloud of it to hide in where it lands.
+    (name: "potion of darkness", glyph: '!', color: (0.3, 0.3, 0.38), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Darkness", args: (turns: 40, amount: 150))]),
+                (on: "land", area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "darkness", amount: 200))])]),
+    // Descent: down through the floor, and nowhere from the deepest.
+    (name: "potion of descent", glyph: '!', color: (0.55, 0.45, 0.7), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Descend")])]),
+    // The three better thrown, which burst round their drinker just as
+    // round wherever they land: fire, and a cloud that holds whoever
+    // breathes it, and one that turns their every step about.
+    (name: "potion of incineration", glyph: '!', color: (1.0, 0.55, 0.15), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     effects: [(kind: "Harm", args: (kind: "fire", roll: "2d6")), (kind: "Ignite", args: (turns: 3))],
+     triggers: [(on: "use", area: Burst(radius: 2), look: (glyph: '*', color: (r: 255, g: 120, b: 40))),
+                (on: "land", area: Burst(radius: 2), look: (glyph: '*', color: (r: 255, g: 120, b: 40)))]),
+    (name: "potion of paralysis", glyph: '!', color: (0.85, 0.5, 0.85), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     effects: [(kind: "Emit", args: (gas: "paralytic", amount: 200))],
+     triggers: [(on: "use", area: Burst(radius: 1)), (on: "land", area: Burst(radius: 1))]),
+    (name: "potion of confusion", glyph: '!', color: (0.5, 0.85, 0.75), tags: ["potion"], stack: true, throw: (range: 6),
+     consumable: (charges: 1, when_empty: Destroyed),
+     effects: [(kind: "Emit", args: (gas: "confusing", amount: 200))],
+     triggers: [(on: "use", area: Burst(radius: 1)), (on: "land", area: Burst(radius: 1))]),
     // The scrolls, each spent by its reading. One read onto another thing
     // asks which under the one question every such scroll asks, and of any
     // thing at all, so an unknown scroll gives nothing away by asking. They

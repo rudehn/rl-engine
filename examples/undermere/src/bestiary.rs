@@ -432,6 +432,25 @@ fn ally_brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
     brain.then(Keep::allies(ALLY_KEEPS_WITHIN, 1)).then(Hunt)
 }
 
+/// Leaves the mind holding the turn only what strikes to throw: a dart, a
+/// javelin, an arrow, and not a potion, whose worth to a thrower the mind
+/// cannot weigh, so a kobold that threw what it found would heal the
+/// adventurer with one draught and hold them with the next. What a monster
+/// does with the things it carries is part three's; until then it throws
+/// what it hurts with and fetches only that to throw.
+///
+/// In `DecideSet::Perceive`, after the engine has told the mind what it
+/// carries and what lies in sight, in `PerceiveSet::Annotate`, and before
+/// it decides.
+pub fn throw_what_strikes(mut thinking: ResMut<Thinking>, throwables: Query<&Throwable>) {
+    let strikes = |thing: Entity| throwables.get(thing).is_ok_and(|t| t.strike.is_some());
+    let Some(snapshot) = thinking.snapshot_mut() else { return };
+    snapshot.missiles.retain(|missile| strikes(missile.item));
+    for lying in snapshot.items.iter_mut().filter(|lying| !strikes(lying.id)) {
+        lying.throw_range = None;
+    }
+}
+
 /// Whether a mind of `wits` takes things up: puts gear on, or picks up
 /// something to throw. Such a kind has hands, a pack and slots, and its
 /// brain fetches what it sees worth having.

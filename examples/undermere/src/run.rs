@@ -105,7 +105,7 @@ pub fn spawn_adventurer(commands: &mut Commands, registries: &Registries) -> Ent
 
 /// Things put in the adventurer's pack as if they had been found, beside
 /// the kit, for a photograph of the pack: `main.rs` reads them from
-/// `UNDERMERE_PACK`, written `potion of mending*2, ring of light:-2`, each
+/// `UNDERMERE_PACK`, written `potion of extra healing*2, ring of light:-2`, each
 /// a name from `items.ron` with a count after `*` and a level after `:`.
 /// Absent, nothing, which is every real run.
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
@@ -362,11 +362,11 @@ mod tests {
     /// stack of potions counted.
     #[test]
     fn what_a_photograph_asks_for_goes_into_the_pack_as_found() {
-        let asked = ExtraPack::parse(" ring of light:-2, potion of mending*2 ,chain mail*2:1, scroll of identify ");
-        let want = [("ring of light", -2, 1), ("potion of mending", 0, 2), ("chain mail", 1, 2), ("scroll of identify", 0, 1)];
+        let asked = ExtraPack::parse(" ring of light:-2, potion of extra healing*2 ,chain mail*2:1, scroll of identify ");
+        let want = [("ring of light", -2, 1), ("potion of extra healing", 0, 2), ("chain mail", 1, 2), ("scroll of identify", 0, 1)];
         assert_eq!(asked, ExtraPack(want.map(|(n, l, c)| (n.to_string(), l, c)).to_vec()));
         let mut app = headless(RunSeed(1));
-        app.insert_resource(ExtraPack::parse("ring of light:-2, potion of mending*2"));
+        app.insert_resource(ExtraPack::parse("ring of light:-2, potion of extra healing*2"));
         let me = adventurer(&mut app);
         let bag = app.world().get::<Inventory>(me).expect("a pack").items.clone();
         let ring = bag[bag.len() - 2];

@@ -54,15 +54,16 @@ impl Plugin for UndermerePlugin {
         // The engine's subsystems a run plays with: fighting and minds,
         // statuses, things carried, worn, thrown and drunk, light and the
         // dark, being noticed and heard, what monsters breathe and cast,
-        // fire, the props the places stand, the arrows a bow spends, the
-        // slots the pieces fill, loot, the facts the quest counts, and the
-        // record a run ends in.
+        // fire, the clouds potions burst into, the props the places stand,
+        // the arrows a bow spends, the slots the pieces fill, loot, the
+        // facts the quest counts, and the record a run ends in.
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
-            .add_plugins((AbilitiesPlugin, FirePlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
+            .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
-            // `Harm`, `Mend` and `Inflict`, for the potions, the flask and
-            // the breaths, beside the `Ignite` fire declares.
+            // `Harm`, `Mend`, `Inflict` and `Cleanse`, for the potions, the
+            // staffs and the breaths, beside the `Ignite` fire declares and
+            // the `Emit` the clouds do.
             .add_engine_effects();
         // And Undermere's own, for the scrolls, the potions, the staffs and
         // the wands: a thing's level, what is known of it, a curse, a
@@ -172,6 +173,17 @@ impl Plugin for UndermerePlugin {
         // time is up, and a walk into an ally a change of places with it.
         app.add_systems(Turn, crate::allies::fade.in_set(TurnSet::React));
         app.insert_resource(BumpRules::new().swap_allies());
+        // What the potions' statuses do that the engine's do not: a
+        // confused step turned about once everyone has chosen and before
+        // anything resolves it, and fire immunity kept on whoever holds it.
+        // What a monster throws: only what strikes.
+        app.add_systems(Turn, crate::bestiary::throw_what_strikes.in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
+        app.add_stream::<crate::conditions::Stumbles>("UndermerePlugin");
+        app.add_systems(Turn, crate::conditions::stumble.in_set(DecideSet::Game));
+        app.add_systems(Turn, crate::conditions::keep_fireproof.in_set(TurnSet::React));
+        // A drinker of descent set down on the floor below once it stands:
+        // after the arrival has built and filled it.
+        app.add_systems(Turn, crate::effects::moving::land_sinking.in_set(TurnSet::React).after(crate::finds::lay));
         // Every thing called what is known of it: after the narrator has
         // read the pass, so nothing is told of under a name it had not yet
         // earned, and before the spent are taken out; at the start of every

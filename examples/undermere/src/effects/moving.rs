@@ -1,10 +1,13 @@
 //! Where someone stands: a staff of blinking's step of several cells, a
-//! wand of teleport other's, which sends what it strikes far off, and a
-//! wand of beckoning's, which pulls it close.
+//! wand of teleport other's, which sends what it strikes far off, a wand
+//! of beckoning's, which pulls it close, and a potion of descent's, which
+//! sinks its drinker to the floor below.
 //!
-//! Each moves through [`EffectWorld::place`] or [`EffectWorld::slide`], so
-//! nobody lands in a wall or on someone else, and the index of who stands
-//! where and the mover's sight are kept right.
+//! Each on the same floor moves through [`EffectWorld::place`] or
+//! [`EffectWorld::slide`], so nobody lands in a wall or on someone else,
+//! and the index of who stands where and the mover's sight are kept
+//! right; a descent goes by the engine's warp, which builds the floor
+//! below if nobody has been there.
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -135,6 +138,96 @@ impl FromArgs for Beckon {
 
     fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
         no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Sinks the user through the floor to a random cell of the floor below:
+/// a potion of descent's. From Mereholt that is the first floor; on the
+/// deepest there is no floor below, and it shows nothing, so the log says
+/// nothing seemed to happen and the potion is not learned by it. Takes no
+/// arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Descend;
+
+impl Effect for Descend {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let roll = world.rng.random::<u64>();
+        let landing = landing.clone();
+        world.commands.queue(move |world: &mut World| descend(world, &landing, roll));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "sinks you through the floor to the one below".to_string()
+    }
+}
+
+impl FromArgs for Descend {
+    const KIND: &'static str = "Descend";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Someone sinking to the place `to`, who lands on the cell `roll` picks
+/// among its free ones once they are there.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sinking {
+    /// The place they sink to.
+    pub to: MapId,
+    /// What picks the cell they land on, drawn from the effect stream as
+    /// the potion was drunk.
+    pub roll: u64,
+}
+
+/// Sends `landing`'s user to the floor below the one they stand on, as
+/// [`Descend`] says, or marks the use as having shown nothing.
+pub fn descend(world: &mut World, landing: &Landing, roll: u64) {
+    use crate::dungeon::{FLOORS, TOWN, floor_of, map_of};
+    let user = landing.user;
+    let here = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
+    let below = match floor_of(here) {
+        Some(floor) if floor < FLOORS => map_of(floor + 1),
+        None if here == TOWN => map_of(1),
+        _ => {
+            super::showed_nothing(world, landing);
+            return;
+        }
+    };
+    world.entity_mut(user).insert(Sinking { to: below, roll });
+    world.write_message(WarpRequest::into_place(user, below));
+    if world.get::<Player>(user).is_some() {
+        world.write_message(Tell::new("You sink through the floor!", Tones::NOTICE));
+    }
+}
+
+/// Puts whoever a potion of descent sank on a free cell of the floor they
+/// sank to, picked by the roll they sank with, once they have arrived: a
+/// floor first entered is built, and its people placed, by the arrival,
+/// so the cell is picked among what is free once it stands.
+///
+/// In `TurnSet::React`, after the arrival's own reactions, by the engine's
+/// warp, so who stands where and what can be seen are kept right as any
+/// warp keeps them; the warp comes in the next pass.
+pub fn land_sinking(
+    mut commands: Commands,
+    sinking: Query<(Entity, &Sinking, &OnMap)>,
+    map: Res<WorldMap>,
+    occupancy: Res<Occupancy>,
+    mut warps: MessageWriter<WarpRequest>,
+) {
+    for (who, sink, on) in &sinking {
+        if on.0 != sink.to {
+            continue;
+        }
+        commands.entity(who).remove::<Sinking>();
+        let Some(place) = map.place(sink.to) else { continue };
+        let open: Vec<Point> = place.terrain.bounds().cells().filter(|p| map.is_walkable_on(sink.to, *p) && !occupancy.is_occupied(*p)).collect();
+        if open.is_empty() {
+            continue;
+        }
+        let at = open[(sink.roll % open.len() as u64) as usize];
+        warps.write(WarpRequest { actor: who, to: Destination::Place { map: sink.to, arrive: Arrive::At(at) } });
     }
 }
 

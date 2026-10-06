@@ -102,15 +102,16 @@ pub fn ambient_of(map: MapId) -> Light {
     }
 }
 
-/// The adventurer as the lantern reads them: what they carry, where, and
-/// the stats a light reaches by.
-type Carrying = (&'static Inventory, Option<&'static OnMap>, Option<&'static StatBlock>);
+/// The adventurer as the lantern reads them: what they carry, where, the
+/// stats a light reaches by, and whether darkness has put it out.
+type Carrying = (&'static Inventory, Option<&'static OnMap>, Option<&'static StatBlock>, Option<&'static Afflicted>);
 
 /// Keeps every lantern the adventurer carries reaching as far as
 /// [`lantern_radius`] says for where they stand: seven tiles in Mereholt
 /// and on the first floors, and a tile less every third floor down; and
 /// as many tiles further as the adventurer's light stat says, never less
-/// than the one they stand in.
+/// than the one they stand in. While they are `shrouded`, a potion of
+/// darkness's, it is out, and lit again the pass the dark lifts.
 ///
 /// Read off where the adventurer is every pass rather than set on an
 /// arrival, so a lantern picked up on floor seven, or brought back by a
@@ -127,18 +128,22 @@ pub fn dim_the_lantern(
 ) {
     let Some(lantern) = armory.defs.id(crate::run::LANTERN) else { return };
     let light = registries.stats.id(crate::content::LIGHT);
-    for (bag, on, stats) in &adventurer {
+    let shrouded = registries.statuses.id(crate::content::SHROUDED);
+    for (bag, on, stats, held) in &adventurer {
         let brighter = match (light, stats) {
             (Some(light), Some(stats)) => stats.0.value(light, &registries.stats),
             _ => 0,
         };
         let radius = (lantern_radius(floor_of(on.map_or(MapId::SURFACE, |m| m.0))) + brighter).max(1);
+        let out = shrouded.zip(held).is_some_and(|(status, held)| held.0.has(status));
+        let intensity = if out { 0 } else { crate::content::LIGHT_INTENSITY };
         for item in &bag.items {
             if let Ok((kind, mut light)) = lights.get_mut(*item)
                 && kind.0 == lantern
-                && light.radius != radius
+                && (light.radius, light.intensity) != (radius, intensity)
             {
                 light.radius = radius;
+                light.intensity = intensity;
             }
         }
     }

@@ -169,6 +169,46 @@ pub fn plenty(world: &mut World, target: Entity) {
     world.write_message(Tell::new(format!("{} splits in two!", the(&was.name)), Tones::NOTICE));
 }
 
+/// Raises the user's greatest health by `by` for good and heals them whole:
+/// a potion of life's. Written `(kind: "Life", args: (by: 10))`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Life {
+    /// Health added to the most there can be.
+    pub by: i32,
+}
+
+impl Effect for Life {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (user, by) = (landing.user, self.by);
+        world.commands.queue(move |world: &mut World| {
+            let Some(mut health) = world.get_mut::<Health>(user) else { return };
+            health.max += by;
+            health.current = health.max;
+            if world.get::<Player>(user).is_some() {
+                world.write_message(Tell::new("You feel more alive than you ever have.", Tones::GOOD));
+            }
+        });
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("{} more health for good, and healed whole", self.by)
+    }
+}
+
+impl FromArgs for Life {
+    const KIND: &'static str = "Life";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            by: i32,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { by: a.by })
+    }
+}
+
 /// Calls up spectral blades on the free cells nearest its user, on the
 /// user's side, for a few turns: a staff of conjuration's. Written
 /// `(kind: "Conjure", args: (blades: 1, turns: 15))`: one blade more for

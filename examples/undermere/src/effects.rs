@@ -8,11 +8,12 @@
 //! known. They sit beside the engine's, and nothing that lands them can
 //! tell the difference.
 //!
-//! [`moving`] is where someone stands: a blink, a scroll that sends its
-//! reader far off, a bolt that sends its target far off or pulls it close.
-//! [`bodies`] is who someone is: a foe made into another, made into two,
-//! and blades called up out of nothing. [`minds`] is whose side someone is
-//! on.
+//! [`moving`] is where someone stands: a blink, a bolt that sends its
+//! target far off or pulls it close, a draught that sinks its drinker to
+//! the floor below. [`bodies`] is who someone is: a foe made into another,
+//! made into two, blades called up out of nothing, and a drinker given
+//! more life. [`minds`] is whose side someone is on, and [`senses`] what is
+//! seen: a dark to hide in.
 //!
 //! An effect that needs more of the world than [`EffectWorld`] holds, a
 //! monster's kind or its health, queues a closure on its commands and does
@@ -24,6 +25,7 @@
 pub mod bodies;
 pub mod minds;
 pub mod moving;
+pub mod senses;
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
