@@ -1,6 +1,7 @@
-//! Each staff and wand in play, and the effects they carry: what a zap
-//! strikes and does, what it spends and when that comes back, and when it
-//! is plain enough to make its kind known.
+//! Each staff, wand and ring in play, and the effects they carry: what a
+//! zap strikes and does, what it spends and when that comes back, what a
+//! ring's level gives its wearer, and when each is plain enough to make
+//! its kind known.
 //!
 //! As `play` does for the weapons, these play the run that ships: the
 //! adventurer zapping at monsters made as a floor's own are, from things
@@ -325,4 +326,89 @@ fn a_continued_run_keeps_a_bound_goblin_on_the_adventurers_side_and_a_conjured_b
     let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("the arrival wrote the run down");
     let mut carried_on = crate::testing::continued(&text);
     assert_eq!(allies(&mut carried_on), before, "each on the adventurer's side, the blades to fade when they were going to");
+}
+
+/// `name` found at `level` and put on, by `Equip`, as the pack's key does.
+fn worn(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
+    let ring = find(app, name, level);
+    crate::testing::equip(app, me, ring);
+    ring
+}
+
+/// The hundredths a charge of `staff` takes to come back, as the engine
+/// counts it this pass.
+fn pace(app: &App, staff: Entity) -> u32 {
+    app.world().get::<Consumable>(staff).and_then(|c| c.recharge).expect("a staff refills").every
+}
+
+/// A ring of wisdom a level quickens every staff its wearer carries by
+/// three tenths: a staff of firebolt at two refills in a hundred and
+/// ninety-three turns rather than two hundred and fifty, and at its own
+/// pace again once the ring is off. A ring of reaping two better puts
+/// fifty turns towards the next charge for every blow that lands, so ten
+/// blows at a goblin bring back a staff's charge that would have taken
+/// five hundred turns.
+#[test]
+fn a_ring_of_wisdom_quickens_a_staffs_recharge_and_a_ring_of_reapings_blows_shorten_it() {
+    let (mut app, me, here) = arena(11);
+    let staff = carried(&mut app, me, "staff of firebolt", 2);
+    still(&mut app, "goblin", here.offset(3, 0));
+    zap(&mut app, me, staff, here.offset(3, 0));
+    let wisdom = worn(&mut app, me, "ring of wisdom", 1);
+    assert_eq!(pace(&app, staff), 25_000 * 100 / 130, "three tenths faster");
+    pass_turns(&mut app, 195);
+    assert_eq!(charges(&app, staff), (2, 2), "back inside two hundred turns");
+    crate::testing::unequip(&mut app, me, wisdom);
+    pass_turns(&mut app, 1);
+    assert_eq!(pace(&app, staff), 25_000, "and at its own pace with the ring off");
+
+    let (mut app, me, here) = arena(12);
+    let staff = carried(&mut app, me, "staff of firebolt", 1);
+    let goblin = still(&mut app, "goblin", here.offset(1, 0));
+    zap(&mut app, me, staff, here.offset(1, 0));
+    worn(&mut app, me, "ring of reaping", 2);
+    assert_eq!(charges(&app, staff), (0, 1), "spent");
+    for _ in 0..10 {
+        app.world_mut().write_message(Intent::new(me, Attack(goblin)));
+        settle(&mut app);
+    }
+    pass_turns(&mut app, 1);
+    assert_eq!(charges(&app, staff), (1, 1), "ten blows brought back what five hundred turns would have");
+}
+
+/// A ring of regeneration a level gives back ten health a hundred turns,
+/// and three levels thirty, where nothing else heals by itself; one cursed
+/// two below nought gives back none, and takes half off every heal.
+#[test]
+fn a_ring_of_regeneration_gives_ten_health_back_a_hundred_turns_a_level_and_a_cursed_one_halves_every_heal() {
+    for (level, turns, back) in [(1, 100, 10), (3, 50, 15), (-2, 100, 0)] {
+        let (mut app, me, _) = arena(13);
+        worn(&mut app, me, "ring of regeneration", level);
+        app.world_mut().entity_mut(me).insert(Health { current: 10, max: 40 });
+        pass_turns(&mut app, turns);
+        let now = app.world().get::<Health>(me).expect("health").current;
+        assert!((10 + back - 1..=10 + back).contains(&now), "a {level:+} ring, {turns} turns: {now} of 40");
+    }
+    let (mut app, me, _) = arena(14);
+    worn(&mut app, me, "ring of regeneration", -2);
+    app.world_mut().entity_mut(me).insert(Health { current: 10, max: 40 });
+    app.world_mut().write_message(Heal::new(me, 20));
+    settle(&mut app);
+    assert_eq!(app.world().get::<Health>(me).map(|h| h.current), Some(20), "half of a heal of twenty");
+}
+
+/// A ring of awareness two better adds thirty to the chance a turn of
+/// spotting a hidden thing, on top of what its definition gives, and takes
+/// it away again when it comes off.
+#[test]
+fn a_ring_of_awareness_puts_fifteen_a_level_on_the_chance_of_spotting_what_is_hidden() {
+    let (mut app, me, _) = arena(15);
+    let barrel = app.world().resource::<Registries>().props.expect("barrel");
+    let secret = app.world_mut().spawn((PropKind(barrel), Hidden { spot: 0 })).id();
+    let ring = worn(&mut app, me, "ring of awareness", 2);
+    pass_turns(&mut app, 1);
+    assert_eq!(app.world().get::<Hidden>(secret).map(|h| h.spot), Some(30), "thirty a turn");
+    crate::testing::unequip(&mut app, me, ring);
+    pass_turns(&mut app, 1);
+    assert_eq!(app.world().get::<Hidden>(secret).map(|h| h.spot), Some(0), "and the barrel's own nought without it");
 }

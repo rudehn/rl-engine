@@ -144,6 +144,15 @@ impl Plugin for UndermerePlugin {
         // stat makes the adventurer, each reading its own numbers.
         app.add_systems(Turn, (crate::wearing::lend, crate::light::dim_the_lantern).chain().in_set(TurnSet::React));
         app.add_systems(Turn, (crate::strength::keep_strength, crate::stats::keep_stealth).in_set(TurnSet::React));
+        // What the rings give that the engine does not read itself: health
+        // back over time, a staff's pace and what a blow puts towards its
+        // next charge, and how easily what is hidden is spotted. Chained, so
+        // what a blow puts towards a charge is put at the pace this pass's
+        // wisdom keeps.
+        app.add_systems(
+            Turn,
+            (crate::stats::regenerate, crate::staffs::keep_pace, crate::staffs::reap, crate::stats::keep_awareness).chain().in_set(TurnSet::React),
+        );
         // How loud every step is, read off the footfall stat at the start
         // of every pass, before anyone steps in it: what is worn is folded
         // onto the stat in the reactions, unordered against these.

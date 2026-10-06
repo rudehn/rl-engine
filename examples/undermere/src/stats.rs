@@ -3,9 +3,12 @@
 //! [`content`](crate::content) registers the stats and names four of them
 //! to the engine's blows, heals and turns. The rest are Undermere's: the
 //! strength heavy gear asks for is [`strength`](crate::strength)'s, the
-//! light stat reaches the lantern in [`light`](crate::light), the stealth
-//! stat reaches the adventurer's own stealth here, by [`keep_stealth`],
-//! and footfall how loud every actor's steps are, by [`keep_footfall`].
+//! light stat reaches the lantern in [`light`](crate::light), wisdom and
+//! reaping a staff's refill in [`staffs`](crate::staffs), the stealth stat
+//! reaches the adventurer's own stealth here, by [`keep_stealth`],
+//! footfall how loud every actor's steps are, by [`keep_footfall`],
+//! regeneration health back over time, by [`regenerate`], and awareness
+//! how easily what is hidden is spotted, by [`keep_awareness`].
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -59,6 +62,88 @@ pub fn keep_footfall(
         let loudness = stats.0.value(stat, &registries.stats);
         if now.map_or(rules.step, |f| f.0) != loudness {
             commands.entity(actor).insert(Footfall(loudness));
+        }
+    }
+}
+
+/// Hundredths of a step of regeneration counted towards the next point of
+/// health back, for a body whose regeneration stat is above nought.
+///
+/// What is left over between two points, which a continued run starts
+/// again from nothing, a point's worth at most.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Regrowth(pub u32);
+
+/// A body as regeneration reads it: its stats, and what it has counted
+/// towards its next point.
+type Healing = (Entity, &'static StatBlock, Option<&'static mut Regrowth>);
+
+/// What a point of health back costs in regeneration: a hundred turns in
+/// hundredths of a step, so a regeneration of ten is a point every ten
+/// turns.
+pub const POINT: u32 = 100 * BASE_ACTION_COST;
+
+/// Gives every body its regeneration stat in health a hundred turns, a
+/// point at a time, on the turn clock: a ring of regeneration's ten a
+/// level, and nothing for a stat at or below nought, since nothing heals
+/// by itself under the lake.
+///
+/// Read off the clock rather than counted in passes, so a long action
+/// heals for every turn it took. Each point is the engine's [`Heal`], so
+/// its holder's mending scales it as it scales every heal, and as a tick of
+/// `regenerating`, which the narrator says nothing of, as it says nothing
+/// of a troll's: a line every ten turns would bury the log. In
+/// `TurnSet::React`.
+pub fn regenerate(
+    mut commands: Commands,
+    turns: Res<Turns>,
+    mut last: Local<Option<u32>>,
+    registries: Res<Registries>,
+    mut bodies: Query<Healing, (With<Actor>, With<Health>)>,
+    mut heals: MessageWriter<Heal>,
+) {
+    let now = turns.now();
+    let passed = now.saturating_sub(last.unwrap_or(now));
+    *last = Some(now);
+    let (Some(stat), Some(tick)) = (registries.stats.id(crate::content::REGENERATION), registries.statuses.id("regenerating")) else { return };
+    if passed == 0 {
+        return;
+    }
+    for (body, stats, grown) in &mut bodies {
+        let rate = stats.0.value(stat, &registries.stats);
+        if rate <= 0 {
+            continue;
+        }
+        let counted = grown.as_deref().map_or(0, |g| g.0) + passed * rate as u32;
+        let points = counted / POINT;
+        match grown {
+            Some(mut grown) => grown.0 = counted % POINT,
+            None => {
+                commands.entity(body).insert(Regrowth(counted % POINT));
+            }
+        }
+        if points > 0 {
+            heals.write(Heal::new(body, points as i32).of_status(tick));
+        }
+    }
+}
+
+/// Keeps every hidden prop as easy to spot as its definition says, and as
+/// many points easier a turn as the adventurer's awareness stat: a ring of
+/// awareness's fifteen a level, and never below nothing nor above certain.
+///
+/// Derived every pass from the definition rather than added to, so a ring
+/// taken off takes its points with it. In `TurnSet::React`, so the roll
+/// the next pass makes for what is in sight is made at the chance the ring
+/// gives.
+pub fn keep_awareness(registries: Res<Registries>, adventurer: Query<&StatBlock, With<Adventurer>>, mut hidden: Query<(&PropKind, &mut Hidden)>) {
+    let Some(stat) = registries.stats.id(crate::content::AWARENESS) else { return };
+    let awareness = adventurer.single().map_or(0, |stats| stats.0.value(stat, &registries.stats));
+    for (kind, mut secret) in &mut hidden {
+        let own = registries.props.get(kind.0).hidden.map_or(0, |h| i32::from(h.spot));
+        let spot = (own + awareness).clamp(0, 100) as u8;
+        if secret.spot != spot {
+            secret.spot = spot;
         }
     }
 }

@@ -52,6 +52,9 @@
     (item: "ring of regeneration", bands: (1, 10), weight: 1),
     (item: "ring of stealth",      bands: (1, 10), weight: 1),
     (item: "ring of light",        bands: (1, 10), weight: 1),
+    (item: "ring of wisdom",       bands: (1, 10), weight: 1),
+    (item: "ring of reaping",      bands: (1, 10), weight: 1),
+    (item: "ring of awareness",    bands: (1, 10), weight: 1),
     // The weapons grow heavier with the depth: a dagger and a sword are
     // shallow finds, a war hammer a deep one.
     (item: "dagger",     bands: (1, 4),  weight: 3),

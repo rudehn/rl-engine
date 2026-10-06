@@ -273,7 +273,9 @@ mod tests {
     #[test]
     fn a_status_held_for_life_shows_no_count_of_turns() {
         use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
-        let (width, height) = (60, 30);
+        // Tall enough for every stat the run registers, the rings' among
+        // them, with the statuses below.
+        let (width, height) = (60, 40);
         let mut app = headless(RunSeed(2));
         app.add_plugins((KeyScriptPlugin, SheetPanel::new(Rect::new(0, 0, width, height))));
         app.insert_resource(Terminal::new(width, height, Vec2::ONE));

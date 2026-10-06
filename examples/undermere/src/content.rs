@@ -14,10 +14,12 @@
 //! The stats are the run's numbers that things change: [`STRENGTH`],
 //! which heavy gear asks for, [`ACCURACY`] and [`EVASION`], which the hit
 //! model weighs against each other, [`SPEED`], [`STEALTH`], [`MENDING`],
-//! [`LIGHT`] and [`ARMOR`]. Each is read where the engine or the game
-//! already reads the number it changes: [`combat_rules`] names four of
-//! them to the engine's blows and heals, [`turn_rules`] names the speed
-//! to the turn loop, and the rest are Undermere's own to read.
+//! [`LIGHT`] and [`ARMOR`], and the four the rings give besides,
+//! [`REGENERATION`], [`WISDOM`], [`REAPING`] and [`AWARENESS`]. Each is
+//! read where the engine or the game already reads the number it changes:
+//! [`combat_rules`] names four of them to the engine's blows and heals,
+//! [`turn_rules`] names the speed to the turn loop, and the rest are
+//! Undermere's own to read.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -95,6 +97,18 @@ pub const ARMOR: &str = "armor";
 /// How many steps of loudness each of an actor's steps carries over open
 /// ground: what heavy armor adds to.
 pub const FOOTFALL: &str = "footfall";
+/// Health regained a hundred turns, a point at a time: what a ring of
+/// regeneration gives, since nothing else under the lake heals by itself.
+pub const REGENERATION: &str = "regeneration";
+/// Percent faster every staff its holder carries refills: a ring of
+/// wisdom's.
+pub const WISDOM: &str = "wisdom";
+/// Turns taken off every carried staff's next charge by each blow its
+/// holder lands: a ring of reaping's.
+pub const REAPING: &str = "reaping";
+/// Percentage points added to the chance a turn of spotting what is hidden
+/// in sight: a ring of awareness's.
+pub const AWARENESS: &str = "awareness";
 
 /// The slots that go in pairs, by name: a thing that fits `either` of a
 /// pair is worn in whichever is free, a one-handed blade in either hand
@@ -112,7 +126,9 @@ pub const PAIRS: [(&str, &str); 2] = [("main hand", "off hand"), ("left finger",
 /// a tenth of an actor's speed and four times it, so no stack of chills
 /// stops a body dead. Footfall's base is the house's step,
 /// [`NOISE`](crate::plugin::NOISE)'s, so a body with nothing on it steps
-/// exactly as loud as it did before footfall was a stat.
+/// exactly as loud as it did before footfall was a stat. The four the
+/// rings give, regeneration, wisdom, reaping and awareness, start at
+/// nought, since only a ring gives any.
 pub fn stats() -> Registry<StatDef> {
     Registry::from_defs(vec![
         StatDef::new(STRENGTH, 12),
@@ -124,6 +140,10 @@ pub fn stats() -> Registry<StatDef> {
         StatDef::new(LIGHT, 0),
         StatDef::new(ARMOR, 0),
         StatDef::new(FOOTFALL, crate::plugin::NOISE.step),
+        StatDef::new(REGENERATION, 0),
+        StatDef::new(WISDOM, 0),
+        StatDef::new(REAPING, 0),
+        StatDef::new(AWARENESS, 0),
     ])
     .unwrap()
 }
@@ -365,11 +385,26 @@ mod tests {
     fn every_stat_starts_where_the_sheet_says_and_speed_at_nought_so_nobody_moves_faster() {
         let r = registries();
         let base = |name: &str| r.stats.get(r.stats.expect(name)).base;
-        let bases: Vec<(&str, i32)> = [STRENGTH, ACCURACY, EVASION, SPEED, STEALTH, MENDING, LIGHT, ARMOR, FOOTFALL].map(|s| (s, base(s))).to_vec();
-        let sheet = [(STRENGTH, 12), (ACCURACY, 100), (EVASION, 0), (SPEED, 0), (STEALTH, 0), (MENDING, 0), (LIGHT, 0), (ARMOR, 0), (FOOTFALL, 2)];
+        let named = [STRENGTH, ACCURACY, EVASION, SPEED, STEALTH, MENDING, LIGHT, ARMOR, FOOTFALL, REGENERATION, WISDOM, REAPING, AWARENESS];
+        let bases: Vec<(&str, i32)> = named.map(|s| (s, base(s))).to_vec();
+        let sheet = [
+            (STRENGTH, 12),
+            (ACCURACY, 100),
+            (EVASION, 0),
+            (SPEED, 0),
+            (STEALTH, 0),
+            (MENDING, 0),
+            (LIGHT, 0),
+            (ARMOR, 0),
+            (FOOTFALL, 2),
+            (REGENERATION, 0),
+            (WISDOM, 0),
+            (REAPING, 0),
+            (AWARENESS, 0),
+        ];
         assert_eq!(bases, sheet, "the sheet's bases");
         assert_eq!(base(FOOTFALL), crate::plugin::NOISE.step, "a step as loud as the house's");
-        assert_eq!(r.stats.len(), 9, "a stat this test does not name");
+        assert_eq!(r.stats.len(), named.len(), "a stat this test does not name");
         let speed = r.stats.get(r.stats.expect(SPEED));
         assert_eq!((speed.min, speed.max), (Some(-90), Some(300)), "no chill stops a body dead");
     }

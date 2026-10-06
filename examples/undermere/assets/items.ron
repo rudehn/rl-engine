@@ -108,9 +108,13 @@
 //               thing with a slot
 //   bestows:    optional; [(stat, amount)] added to its wearer's stats while it is worn, whatever
 //               its level: "strength" | "accuracy" | "evasion" | "speed" | "stealth" |
-//               "mending" | "light" | "armor" | "footfall"; footfall is how many steps of
-//               loudness each of the wearer's steps carries, two for anyone, and heavy armor
-//               adds to it; only on a thing with a slot
+//               "mending" | "light" | "armor" | "footfall" | "regeneration" | "wisdom" |
+//               "reaping" | "awareness"; footfall is how many steps of loudness each of the
+//               wearer's steps carries, two for anyone, and heavy armor adds to it;
+//               regeneration is health back a hundred turns, wisdom percent faster every
+//               carried staff refills, reaping turns off each carried staff's next charge for
+//               every blow that lands, and awareness points added to the chance a turn of
+//               spotting what is hidden; only on a thing with a slot
 //   per_level:  optional; [(stat, amount)] added to its wearer's stats for each of its levels
 //               while it is worn, and taken away for each below nought; only on a thing with a
 //               slot that takes levels
@@ -238,10 +242,21 @@
      consumable: (charges: 1, per_level: 1, when_empty: Kept),
      triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 160, g: 240, b: 120)), effects: [(kind: "Plenty")])]),
     // The rings, worn on either hand, each worth what its level makes it:
-    // found at one to three, or cursed below nought and stuck on.
-    (name: "ring of regeneration", glyph: '=', color: (0.9, 0.3, 0.35), slot: "left finger", either: true, tags: ["ring"], per_level: [("mending", 1)]),
+    // found at one to three, or cursed below nought and stuck on. A level
+    // of regeneration is ten health back a hundred turns, which nothing
+    // else gives, and a quarter more from every heal; below nought, none
+    // back and a quarter less from every heal a level. A level of wisdom
+    // refills every staff carried three tenths faster; of reaping, takes
+    // twenty-five turns off each one's next charge for every blow that
+    // lands; of awareness, adds fifteen to the chance a turn of spotting
+    // what is hidden.
+    (name: "ring of regeneration", glyph: '=', color: (0.9, 0.3, 0.35), slot: "left finger", either: true, tags: ["ring"],
+     per_level: [("regeneration", 10), ("mending", 25)]),
     (name: "ring of stealth", glyph: '=', color: (0.5, 0.5, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("stealth", 10)]),
     (name: "ring of light", glyph: '=', color: (1.0, 0.9, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("light", 1)]),
+    (name: "ring of wisdom", glyph: '=', color: (0.6, 0.7, 0.95), slot: "left finger", either: true, tags: ["ring"], per_level: [("wisdom", 30)]),
+    (name: "ring of reaping", glyph: '=', color: (0.75, 0.4, 0.4), slot: "left finger", either: true, tags: ["ring"], per_level: [("reaping", 25)]),
+    (name: "ring of awareness", glyph: '=', color: (0.85, 0.85, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("awareness", 15)]),
     // The lights: the lantern the adventurer walks out of Mereholt with,
     // and a torch, worse to carry and better to throw into a dark room, so
     // found among the thrown things.
