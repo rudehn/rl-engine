@@ -68,10 +68,11 @@ pub struct Polymorph;
 
 impl Effect for Polymorph {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let targets = landing.targets.clone();
+        let landing = landing.clone();
         world.commands.queue(move |world: &mut World| {
-            for target in targets {
-                polymorph(world, target);
+            let changed = landing.targets.iter().filter(|target| polymorph(world, **target)).count();
+            if changed == 0 {
+                super::showed_nothing(world, &landing);
             }
         });
     }
@@ -100,12 +101,13 @@ pub fn shapes(bestiary: &Bestiary, from: Id<MonsterDef>) -> Vec<Id<MonsterDef>> 
     kinds
 }
 
-/// Makes `target` a monster of another kind, as [`Polymorph`] says.
-pub fn polymorph(world: &mut World, target: Entity) {
-    let Some(was) = body(world, target) else { return };
+/// Makes `target` a monster of another kind, as [`Polymorph`] says, and
+/// says whether it did: not the king, nor a kind with nothing to become.
+pub fn polymorph(world: &mut World, target: Entity) -> bool {
+    let Some(was) = body(world, target) else { return false };
     let kinds = shapes(world.resource::<Bestiary>(), was.kind);
     if kinds.is_empty() {
-        return;
+        return false;
     }
     let pick = world.resource_mut::<EffectRng>().random_range(0..kinds.len());
     let kind = kinds[pick];
@@ -119,6 +121,7 @@ pub fn polymorph(world: &mut World, target: Entity) {
     let now = world.resource::<Bestiary>().defs.get(kind).name.clone();
     let line = format!("{} turns into {}!", the(&was.name), rl_engine::rl_core::noun::with_article(&now));
     world.write_message(Tell::new(line, Tones::NOTICE));
+    true
 }
 
 /// Makes everyone it struck into two, each with half the health the one
@@ -129,10 +132,11 @@ pub struct Plenty;
 
 impl Effect for Plenty {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let targets = landing.targets.clone();
+        let landing = landing.clone();
         world.commands.queue(move |world: &mut World| {
-            for target in targets {
-                plenty(world, target);
+            let split = landing.targets.iter().filter(|target| plenty(world, **target)).count();
+            if split == 0 {
+                super::showed_nothing(world, &landing);
             }
         });
     }
@@ -150,12 +154,12 @@ impl FromArgs for Plenty {
     }
 }
 
-/// Makes `target` two, as [`Plenty`] says. Nothing with no room beside it
-/// for a second.
-pub fn plenty(world: &mut World, target: Entity) {
-    let Some(was) = body(world, target) else { return };
-    let beside = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), was.at, 1);
-    let Some(at) = beside.first().copied() else { return };
+/// Makes `target` two, as [`Plenty`] says, and says whether it did: not
+/// with no free cell beside it for a second, which shows nothing.
+pub fn plenty(world: &mut World, target: Entity) -> bool {
+    let Some(was) = body(world, target) else { return false };
+    let beside = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), was.at, 1, 1);
+    let Some(at) = beside.first().copied() else { return false };
     let half = Health { current: (was.health.current + 1) / 2, max: was.health.max };
     world.entity_mut(target).insert(half);
     let made = spawn_monster_now(world, was.kind, at, was.map);
@@ -167,6 +171,7 @@ pub fn plenty(world: &mut World, target: Entity) {
         befriend(world, made);
     }
     world.write_message(Tell::new(format!("{} splits in two!", the(&was.name)), Tones::NOTICE));
+    true
 }
 
 /// Monsters of the floor its user stands on called up on the free cells
@@ -222,7 +227,7 @@ pub fn summon(world: &mut World, reader: Entity, count: u32) -> usize {
     let Some(at) = world.get::<Position>(reader).map(|p| p.0) else { return 0 };
     let map = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
     let band = map.0 as i32;
-    let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize);
+    let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize, super::NEAR);
     let mut came = Vec::new();
     for cell in cells {
         let kind = world.resource_scope(|world, mut rng: Mut<EffectRng>| world.resource::<Bestiary>().spawns.pick(band, &mut rng.0).map(|row| row.item));
@@ -339,7 +344,7 @@ pub fn conjure(world: &mut World, user: Entity, count: u32, sharper: i32, turns:
     let Some(at) = world.get::<Position>(user).map(|p| p.0) else { return };
     let map = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
     let fades = Fades { at: world.resource::<Turns>().now() + turns * BASE_ACTION_COST };
-    let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize);
+    let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize, super::NEAR);
     for cell in &cells {
         let made = spawn_monster_now(world, blade, *cell, map);
         befriend(world, made);

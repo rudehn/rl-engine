@@ -32,7 +32,8 @@ use bevy::prelude::*;
 use rand::Rng;
 use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{Aimed, Bystanders};
+use rl_engine::rl_bevy::effects::UseLanding;
+use rl_engine::rl_bevy::{Aimed, Bystanders, area_cells};
 use rl_engine::rl_core::noun::{plural, with_article};
 use rl_engine::rl_rules::ability::RawValue;
 use serde::{Deserialize, Serialize};
@@ -380,46 +381,66 @@ enum Shown {
 /// moment it is on. A thing thrown that does nothing where it lands
 /// showed nothing, and stays as unknown as it was.
 ///
-/// A use that showed nothing, by what its effects or [`weigh_zaps`] put in
-/// [`ShowedNothing`], a potion of descent on the deepest floor or a wand
-/// zapped at nobody, is said to have done nothing, known or not, and
-/// teaches nothing.
+/// A use that showed nothing, by what its effects or [`weigh_landings`]
+/// put in [`ShowedNothing`], a potion of descent on the deepest floor or a
+/// wand zapped at nobody, is said to have done nothing, known or not, and
+/// teaches nothing. A throw that showed nothing, a potion of healing broken
+/// on bare floor, teaches nothing and is not remarked on, as one with
+/// nothing to do where it lands is not, so the log never tells the two
+/// apart.
+///
+/// A zap seen to fly is weighed when it comes down, a pass or more after
+/// it was made: until then it is held in `flying`, with any mark already
+/// made of it, so a wand of beckoning zapped at a foe beside its user, which
+/// pulls nobody, is not learned by the zap before the bolt has landed.
 ///
 /// Only the adventurer's: what a monster does with a thing is not
 /// something they learn from. In `TurnSet::React`, where the pass's item
 /// events are read; the names follow in the same pass's cleanup, once the
 /// narrator has said what was used under the name it was used under.
-pub fn learn_by_use(
-    mut events: MessageReader<ItemEvent>,
-    adventurer: Query<Entity, With<Adventurer>>,
-    things: Query<(&ItemKind, Option<&Triggers>)>,
-    armory: Res<Armory>,
-    mut lore: ResMut<Lore>,
-    mut nothing: ResMut<ShowedNothing>,
-    mut tell: MessageWriter<Tell>,
-) {
-    let showed_nothing = std::mem::take(&mut nothing.0);
-    let Ok(me) = adventurer.single() else { return };
+pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, mut flying: Local<Vec<Entity>>, mut tell: MessageWriter<Tell>) {
+    let Ok(me) = knowing.adventurer.single() else {
+        knowing.nothing.0.clear();
+        return;
+    };
+    let in_the_air = knowing.airborne.as_ref().is_some_and(|zaps| !zaps.is_empty());
+    let mut shown: Vec<(Entity, Shown)> = if in_the_air { Vec::new() } else { flying.drain(..).map(|item| (item, Shown::Used)).collect() };
     for ev in events.read() {
-        let (item, shown) = match *ev {
+        let (item, how) = match *ev {
             ItemEvent::Used { actor, item } if actor == me => (item, Shown::Used),
             ItemEvent::Thrown { actor, item, .. } if actor == me => (item, Shown::Thrown),
             ItemEvent::Equipped { actor, item } if actor == me => (item, Shown::Worn),
             _ => continue,
         };
-        if matches!(shown, Shown::Used) && showed_nothing.contains(&item) {
-            tell.write(Tell::new("Nothing seems to happen.", Tones::MUTED));
+        let aimed = knowing.things.get(item).ok().and_then(|(_, t)| t).and_then(Triggers::aim).is_some();
+        if matches!(how, Shown::Used) && aimed && in_the_air {
+            flying.push(item);
+        } else {
+            shown.push((item, how));
+        }
+    }
+    // Every mark this pass answers for is spent; a zap still in the air
+    // keeps the mark it was weighed with until it lands.
+    let marked = std::mem::take(&mut knowing.nothing.0);
+    knowing.nothing.0 = marked.iter().copied().filter(|item| flying.contains(item)).collect();
+    for (item, how) in shown {
+        match how {
+            Shown::Used if marked.contains(&item) => {
+                tell.write(Tell::new("Nothing seems to happen.", Tones::MUTED));
+                continue;
+            }
+            Shown::Thrown if marked.contains(&item) => continue,
+            _ => {}
+        }
+        let Ok((kind, triggers)) = knowing.things.get(item) else { continue };
+        if matches!(how, Shown::Thrown) && triggers.is_none_or(|t| t.on(Moments::LAND).next().is_none()) {
             continue;
         }
-        let Ok((kind, triggers)) = things.get(item) else { continue };
-        if matches!(shown, Shown::Thrown) && triggers.is_none_or(|t| t.on(Moments::LAND).next().is_none()) {
+        let name = &knowing.armory.defs.get(kind.0).name;
+        if knowing.lore.knows(name) || !knowing.lore.learn(name) {
             continue;
         }
-        let name = &armory.defs.get(kind.0).name;
-        if lore.knows(name) || !lore.learn(name) {
-            continue;
-        }
-        let line = match shown {
+        let line = match how {
             Shown::Used | Shown::Thrown => format!("That was {}.", with_article(name)),
             Shown::Worn => format!("It is {}.", with_article(name)),
         };
@@ -427,22 +448,38 @@ pub fn learn_by_use(
     }
 }
 
-/// Weighs each use aimed at somewhere this pass before it lands, and puts
-/// in [`ShowedNothing`] each one whose footprint holds nobody it would
-/// strike and that shows nothing without someone there: a wand of
-/// polymorph zapped at bare floor. A blink, which moves its user, and a
-/// bolt of fire, which sets the floor alight, show what they are whoever
-/// stands there, as [`Armory::shows_unstruck`] says.
+/// What [`learn_by_use`] reads: the adventurer, what each thing is and
+/// does, what is known, what showed nothing, and whether a zap is still in
+/// the air.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Knowing<'w, 's> {
+    adventurer: Query<'w, 's, Entity, With<Adventurer>>,
+    things: Query<'w, 's, (&'static ItemKind, Option<&'static Triggers>)>,
+    armory: Res<'w, Armory>,
+    lore: ResMut<'w, Lore>,
+    nothing: ResMut<'w, ShowedNothing>,
+    airborne: Option<Res<'w, Airborne<UseLanding>>>,
+}
+
+/// Weighs each use aimed at somewhere and each thrown thing's landing this
+/// pass before it lands, and puts in [`ShowedNothing`] each one whose
+/// footprint holds nobody it would touch and that shows nothing without
+/// someone there: a wand of polymorph zapped at bare floor, a potion of
+/// healing broken on it. A blink, which moves its user, a bolt of fire or a
+/// thrown flask of it, which set the floor alight, and a thrown cloud show
+/// what they are whoever stands there, as [`Armory::shows_unstruck`] and
+/// [`Armory::lands_seen`] say.
 ///
-/// Weighed by [`Bystanders::land`], the call the items resolver let the
-/// zap through by and the call that lands it, so the footprint weighed is
-/// the one it comes down on; and before it lands, between the actions and
-/// the triggers, since what it does to whoever it strikes, sending them
-/// far off or making them something else, would leave nobody there to
-/// count once it has. A zap seen to fly comes down a pass or more after
-/// the one it was made in, and what it struck was settled when it was
-/// made, so this answers for it either way.
-pub fn weigh_zaps(
+/// A zap is weighed by [`Bystanders::land`], the call the items resolver
+/// let it through by and the call that lands it, and a landing by the cells
+/// its land triggers cover, the call that lands those; so the footprint
+/// weighed is the one it comes down on. Before it lands, between the
+/// actions and the triggers, since what it does to whoever it strikes,
+/// sending them far off or making them something else, would leave nobody
+/// there to count once it has. A zap seen to fly comes down a pass or more
+/// after the one it was made in, and what it struck was settled when it was
+/// made; [`learn_by_use`] keeps the mark until it lands.
+pub fn weigh_landings(
     mut fired: MessageReader<Fired>,
     things: Query<(&ItemKind, &Triggers)>,
     origins: Query<&Position>,
@@ -450,15 +487,27 @@ pub fn weigh_zaps(
     armory: Res<Armory>,
     mut nothing: ResMut<ShowedNothing>,
 ) {
-    for f in fired.read().filter(|f| f.moment == Moments::USE) {
+    for f in fired.read().filter(|f| f.moment == Moments::USE || f.moment == Moments::LAND) {
         let (Ok((kind, triggers)), Some(user)) = (things.get(f.on), f.by) else { continue };
-        let (Some(targeting), Ok(origin)) = (triggers.aim(), origins.get(user)) else { continue };
-        if armory.shows_unstruck(kind.0) || nothing.0.contains(&f.on) {
+        if nothing.0.contains(&f.on) {
             continue;
         }
-        let source = rl_engine::rl_bevy::Source::Trigger { on: f.on, moment: Moments::USE };
-        let aimed = Aimed { user, source, targeting, origin: origin.0, aim: f.at, sees_aim: None };
-        if ground.bystanders.land(aimed, &ground.map, &ground.occupancy).landing.targets.is_empty() {
+        let touches = if f.moment == Moments::USE {
+            let (Some(targeting), Ok(origin)) = (triggers.aim(), origins.get(user)) else { continue };
+            if armory.shows_unstruck(kind.0) {
+                continue;
+            }
+            let source = rl_engine::rl_bevy::Source::Trigger { on: f.on, moment: Moments::USE };
+            let aimed = Aimed { user, source, targeting, origin: origin.0, aim: f.at, sees_aim: None };
+            !ground.bystanders.land(aimed, &ground.map, &ground.occupancy).landing.targets.is_empty()
+        } else {
+            let mut lands = triggers.on(Moments::LAND).peekable();
+            if lands.peek().is_none() || armory.lands_seen(kind.0) {
+                continue;
+            }
+            lands.any(|t| ground.anyone_in(&area_cells(t.area, f.at, &ground.map)))
+        };
+        if !touches {
             nothing.0.push(f.on);
         }
     }
@@ -471,6 +520,15 @@ pub struct Footprints<'w, 's> {
     bystanders: Bystanders<'w, 's>,
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
+    alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
+}
+
+impl Footprints<'_, '_> {
+    /// Whether anyone living stands on any of `cells`, as a land trigger
+    /// counts whom it lands on.
+    fn anyone_in(&self, cells: &[Point]) -> bool {
+        cells.iter().any(|cell| self.occupancy.at(*cell).iter().any(|who| self.alive.contains(*who)))
+    }
 }
 
 /// Counts the turns the adventurer wears each [`Unfamiliar`] thing, and

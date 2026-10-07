@@ -298,6 +298,9 @@ pub struct Armory {
     /// Whether each definition's use, aimed at somewhere, shows what it is
     /// with nobody under it, read once off its use trigger.
     shows_unstruck: Vec<bool>,
+    /// Whether each definition, thrown, shows what it is where it lands
+    /// with nobody there, read once off its land triggers.
+    lands_seen: Vec<bool>,
 }
 
 impl Armory {
@@ -338,6 +341,7 @@ impl Armory {
         let (mut triggers, mut lent, mut errors) = (Vec::new(), Vec::new(), Vec::new());
         let levelled = defs.iter().map(|(_, d)| takes_levels(d, registries)).collect();
         let shows_unstruck = defs.iter().map(|(_, d)| shows_unstruck(d)).collect();
+        let lands_seen = defs.iter().map(|(_, d)| lands_seen(d)).collect();
         for (_, d) in defs.iter() {
             triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &names) {
                 Ok(built) => built,
@@ -355,7 +359,15 @@ impl Armory {
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Ok(Self { defs, table, triggers, lent, levelled, shows_unstruck })
+        Ok(Self { defs, table, triggers, lent, levelled, shows_unstruck, lands_seen })
+    }
+
+    /// Whether a thing of `def`, thrown, shows what it is where it lands
+    /// with nobody there: a burst seen where it breaks, or the ground
+    /// changed, a fire lit or a cloud given off. A draught that only does
+    /// something to whoever it breaks on shows nothing on bare floor.
+    pub fn lands_seen(&self, def: Id<ItemDef>) -> bool {
+        self.lands_seen.get(def.index()).copied().unwrap_or(false)
     }
 
     /// Whether `def`'s use, aimed at somewhere and landing on nobody, still
@@ -490,9 +502,9 @@ pub const ARMOR_PER_LEVEL: i32 = 1;
 pub const STAFF_LEVEL: i32 = 2;
 
 /// The effects that change the cells they land on whoever stands there,
-/// by the names content writes them under: a zap landing one on nobody is
-/// still seen to do something.
-pub const GROUND_EFFECTS: [&str; 2] = ["Ignite", "Emit"];
+/// by the names content writes them under: a zap or a throw landing one on
+/// nobody is still seen to do something.
+pub const GROUND_EFFECTS: [&str; 3] = ["Ignite", "Emit", "Darkness"];
 
 /// Whether `d`'s use, when it is aimed, shows what it is with nobody under
 /// it: aimed at the ground, which is a use that moves its user there, or
@@ -502,6 +514,16 @@ fn shows_unstruck(d: &ItemDef) -> bool {
         let at_ground = t.aim.is_some_and(|aim| aim.at == rl_engine::rl_rules::ability::Aim::Ground);
         let effects = t.effects.as_deref().unwrap_or(&d.effects);
         at_ground || effects.iter().any(|e| GROUND_EFFECTS.contains(&e.kind.as_str()))
+    })
+}
+
+/// Whether `d`, thrown, shows what it is where it lands with nobody there:
+/// a land trigger seen to burst, or landing an effect that changes the
+/// ground.
+fn lands_seen(d: &ItemDef) -> bool {
+    d.triggers.iter().filter(|t| t.on == "land").any(|t| {
+        let effects = t.effects.as_deref().unwrap_or(&d.effects);
+        t.look.is_some() || effects.iter().any(|e| GROUND_EFFECTS.contains(&e.kind.as_str()))
     })
 }
 

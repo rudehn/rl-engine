@@ -167,7 +167,7 @@ impl Plugin for UndermerePlugin {
         // nobody is not learned by it; and what any use showed nothing of,
         // which the reactions above read and empty.
         app.init_resource::<crate::effects::ShowedNothing>();
-        app.add_systems(Turn, crate::lore::weigh_zaps.in_set(TurnSet::Resolve).after(ResolveSet::Act).before(ResolveSet::Triggers));
+        app.add_systems(Turn, crate::lore::weigh_landings.in_set(TurnSet::Resolve).after(ResolveSet::Act).before(ResolveSet::Triggers));
         // Who fights beside the adventurer: a conjured blade gone when its
         // time is up, and a walk into an ally a change of places with it.
         app.add_systems(Turn, crate::allies::fade.in_set(TurnSet::React));

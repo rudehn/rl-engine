@@ -60,8 +60,9 @@ impl Effect for Blink {
             }
             to = Some(p);
         }
-        if let Some(to) = to {
-            world.place(landing.user, to);
+        match to {
+            Some(to) if world.place(landing.user, to) => {}
+            _ => super::shows_nothing(world, landing),
         }
     }
 
@@ -92,10 +93,16 @@ pub struct TeleportOther;
 
 impl Effect for TeleportOther {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let mut sent = 0;
         for target in landing.targets.iter().copied().filter(|t| *t != landing.user) {
-            if let Some(to) = far_cell(world, landing.origin) {
-                world.place(target, to);
+            if let Some(to) = far_cell(world, landing.origin)
+                && world.place(target, to)
+            {
+                sent += 1;
             }
+        }
+        if sent == 0 {
+            super::shows_nothing(world, landing);
         }
     }
 
@@ -151,12 +158,18 @@ pub struct Beckon;
 
 impl Effect for Beckon {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let mut pulled = 0;
         for target in landing.targets.iter().copied().filter(|t| *t != landing.user) {
             let Some(at) = world.position(target) else { continue };
             let steps = geometry::chebyshev(at, landing.origin) - 1;
-            if steps > 0 {
-                world.slide(target, at, landing.origin, steps);
+            if steps > 0 && world.slide(target, at, landing.origin, steps) != at {
+                pulled += 1;
             }
+        }
+        // A foe already beside its user, or with nowhere to come, is not
+        // seen to be pulled at all.
+        if pulled == 0 {
+            super::shows_nothing(world, landing);
         }
     }
 

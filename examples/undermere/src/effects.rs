@@ -82,12 +82,13 @@ pub fn capital(words: &str) -> String {
     letters.next().map(|first| first.to_uppercase().chain(letters).collect()).unwrap_or_default()
 }
 
-/// Up to `count` cells nearest `at` that someone could step onto now, in a
-/// fixed order: by distance, then row, then column, so where a conjured
-/// blade appears never depends on how a query happened to run.
-pub fn free_cells_near(map: &WorldMap, occupancy: &Occupancy, at: Point, count: usize) -> Vec<Point> {
+/// Up to `count` cells nearest `at`, no further than `within` steps, that
+/// someone could step onto now, in a fixed order: by distance, then row,
+/// then column, so where a conjured blade appears never depends on how a
+/// query happened to run.
+pub fn free_cells_near(map: &WorldMap, occupancy: &Occupancy, at: Point, count: usize, within: i32) -> Vec<Point> {
     let mut found = Vec::new();
-    for ring in 1..=FAR {
+    for ring in 1..=within {
         let mut cells: Vec<Point> = geometry::square(at, ring).filter(|p| geometry::chebyshev(*p, at) == ring).collect();
         cells.sort_by_key(|p| (p.y, p.x));
         found.extend(cells.into_iter().filter(|p| map.is_walkable(*p) && !occupancy.is_occupied(*p)));
@@ -100,6 +101,10 @@ pub fn free_cells_near(map: &WorldMap, occupancy: &Occupancy, at: Point, count: 
 }
 
 /// How far, in steps, a place counts as far off: what a scroll of
-/// teleportation sends its reader at least, and the furthest a cell is
-/// looked for beside someone.
+/// teleportation sends its reader at least.
 pub const FAR: i32 = 20;
+
+/// How far from whoever calls them conjured blades and summoned monsters
+/// are put: beside them, and one step further when every cell beside is
+/// taken.
+pub const NEAR: i32 = 2;

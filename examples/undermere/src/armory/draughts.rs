@@ -12,7 +12,7 @@ use rl_engine::prelude::*;
 use crate::content::{CONFUSED, DARKNESS, FIREPROOF, HASTED, PARALYSED, SHROUDED, SPEED, STEALTH};
 use crate::dungeon::map_of;
 use crate::lore::Lore;
-use crate::testing::{adventurer, arena, arrive, at, find, give, headless, here, monster, pass_turns, said, settle, sturdy, use_thing};
+use crate::testing::{adventurer, arena, arrive, at, find, give, headless, here, monster, pass_turns, said, settle, sturdy, use_thing, wall_off};
 
 /// `name` found and put in `me`'s pack.
 fn carried(app: &mut App, me: Entity, name: &str) -> Entity {
@@ -103,21 +103,6 @@ fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alik
             }
         }
         assert!(astray > 0, "seed {seed}: the goblin took a step that did not close on the adventurer");
-    }
-}
-
-/// Walls `cells` of the place being read in with the first tile that
-/// nobody can walk on.
-fn wall_off(app: &mut App, cells: &[Point]) {
-    let mut map = app.world_mut().resource_mut::<WorldMap>();
-    let count = map.tables().names.len() as u16;
-    for cell in cells {
-        for id in 0..count {
-            map.set_tile(*cell, TileId(id));
-            if !map.is_walkable(*cell) {
-                break;
-            }
-        }
     }
 }
 
@@ -254,6 +239,33 @@ fn a_monster_throws_darts_it_carries_and_never_a_potion() {
         let still_held = app.world().get::<Inventory>(kobold).is_some_and(|bag| bag.items.contains(&thing));
         assert_eq!(!still_held, thrown, "{name}: thrown, or kept");
         assert!(!holds(&app, me, PARALYSED), "{name}: and the adventurer is never held by it");
+    }
+}
+
+/// A potion that only does something to whoever it breaks on, thrown at
+/// bare floor, shows nothing: it is as unknown as it was and the log does
+/// not name it. The same thrown at a goblin is seen to land on it, and is
+/// known by it.
+#[test]
+fn a_thrown_potion_that_breaks_on_nobody_teaches_nothing_and_one_that_breaks_on_a_goblin_does() {
+    for name in ["potion of healing", "potion of extra healing", "potion of haste", "potion of fire immunity"] {
+        let (mut app, me, here) = arena(26);
+        // Faces dealt afresh with nothing known, the kit's healing among
+        // them, as if the adventurer had set out with none.
+        let world = app.world();
+        let lore = Lore::draw(world.resource::<crate::lore::Faces>(), &world.resource::<crate::armory::Armory>().defs, world.resource::<Seed>());
+        app.world_mut().insert_resource(lore);
+        let potion = carried(&mut app, me, name);
+        throw(&mut app, me, potion, here.offset(3, 0));
+        let line = format!("That was {}.", rl_engine::rl_core::noun::with_article(name));
+        assert!(!app.world().resource::<Lore>().knows(name), "{name} broken on bare floor is not learned");
+        assert!(!said(&app).contains(&line), "{name}: {:#?}", said(&app));
+        let goblin = monster(&mut app, "goblin", here.offset(-3, 0));
+        app.world_mut().entity_mut(goblin).remove::<Mind>();
+        let potion = carried(&mut app, me, name);
+        throw(&mut app, me, potion, here.offset(-3, 0));
+        assert!(app.world().resource::<Lore>().knows(name), "{name} broken on a goblin is learned: {:#?}", said(&app));
+        assert!(said(&app).contains(&line), "{name}: {:#?}", said(&app));
     }
 }
 

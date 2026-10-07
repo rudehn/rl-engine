@@ -163,6 +163,21 @@ pub fn lay_floor(app: &mut App, cells: &[Point]) {
     }
 }
 
+/// Walls `cells` of the place being read in with the first tile that
+/// nobody can walk on, so a test has a wall where it wants one.
+pub fn wall_off(app: &mut App, cells: &[Point]) {
+    let mut map = app.world_mut().resource_mut::<WorldMap>();
+    let count = map.tables().names.len() as u16;
+    for cell in cells {
+        for id in 0..count {
+            map.set_tile(*cell, TileId(id));
+            if !map.is_walkable(*cell) {
+                break;
+            }
+        }
+    }
+}
+
 /// Makes `name` by the game's armory, placed nowhere.
 pub fn make(app: &mut App, name: &str) -> Entity {
     let mut queue = CommandQueue::default();

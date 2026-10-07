@@ -279,6 +279,67 @@ fn a_zap_that_strikes_nobody_shows_nothing_and_teaches_nothing_unless_it_burns_t
     assert!(app.world().resource::<Lore>().knows("staff of firebolt"), "fire on bare floor is plain");
 }
 
+/// Whether `name` is known, and whether the log said nothing seemed to
+/// happen.
+fn learned(app: &App, name: &str) -> (bool, bool) {
+    (app.world().resource::<Lore>().knows(name), said(app).iter().any(|l| l == "Nothing seems to happen."))
+}
+
+/// A wand of plenty zapped at a goblin walled in on every side but the
+/// adventurer's has nowhere to put a second, and a wand of beckoning zapped
+/// at a goblin already beside the adventurer pulls it nowhere: each shows
+/// nothing, says so, and is as unknown as it was.
+#[test]
+fn plenty_with_no_room_and_beckoning_at_a_foe_beside_you_show_nothing_and_teach_nothing() {
+    for name in ["wand of plenty", "wand of beckoning"] {
+        let (mut app, me, here) = arena(17);
+        let cell = here.offset(1, 0);
+        let walls: Vec<Point> = geometry::square(cell, 1).filter(|p| *p != cell && *p != here).collect();
+        crate::testing::wall_off(&mut app, &walls);
+        let goblin = held(&mut app, "goblin", cell, 10);
+        let wand = carried(&mut app, me, name, 0);
+        zap(&mut app, me, wand, cell);
+        assert_eq!(learned(&app, name), (false, true), "{name}: {:#?}", said(&app));
+        assert_eq!(at(&app, goblin), cell, "{name}: the goblin is where it was");
+        let world = app.world_mut();
+        assert_eq!(world.query_filtered::<(), With<Kind>>().iter(world).count(), 1, "{name}: and alone");
+    }
+}
+
+/// With something watching, a zap is seen to fly and comes down the pass
+/// after it was made, and what it showed is weighed then: a staff of
+/// firebolt at a goblin is not known until the bolt lands, and is then;
+/// a wand of beckoning at a goblin beside the adventurer, which the bolt
+/// shows to pull nowhere as it lands, and a staff of poison at bare floor,
+/// weighed as striking nobody when it was made, are not known even once
+/// they have landed, and the log says nothing seemed to happen.
+#[test]
+fn a_zap_seen_to_fly_is_known_by_what_it_showed_when_it_lands() {
+    let zaps = [
+        ("staff of firebolt", Point::new(3, 0), true, true),
+        ("wand of beckoning", Point::new(1, 0), true, false),
+        ("staff of poison", Point::new(3, 0), false, false),
+    ];
+    for (name, cell, goblin, plain) in zaps {
+        let (mut app, me, here) = arena(18);
+        let cell = here.offset(cell.x, cell.y);
+        if goblin {
+            held(&mut app, "goblin", cell, 10);
+        }
+        let thing = carried(&mut app, me, name, 2);
+        app.world_mut().resource_mut::<TurnHold>().watch();
+        zap(&mut app, me, thing, cell);
+        assert!(app.world().resource::<TurnHold>().in_flight(), "{name}: in the air");
+        assert!(!app.world().resource::<Lore>().knows(name), "{name}: not known while it flies");
+        for _ in 0..4 {
+            app.world_mut().resource_mut::<TurnHold>().release();
+            app.update();
+        }
+        assert!(!app.world().resource::<TurnHold>().in_flight(), "{name}: landed");
+        assert_eq!(learned(&app, name), (plain, !plain), "{name}: {:#?}", said(&app));
+    }
+}
+
 /// Each of Undermere's own effects refuses an argument it does not name,
 /// and one that takes arguments refuses being written without them, so a
 /// typo in `items.ron` stops the game at load rather than doing nothing.
