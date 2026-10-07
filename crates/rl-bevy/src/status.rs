@@ -184,11 +184,13 @@ pub fn tick_statuses(
 ///
 /// In [`DecideSet::Sense`](crate::plugin::DecideSet::Sense), where work
 /// claims a worker's turns, and for the player as for anyone. The decision
-/// is claimed, so no mind perceives or chooses, and the turn is spent here
-/// rather than by an intent resolved later, so a key the player pressed
-/// finds it spent and comes to nothing whichever stage would have resolved
-/// it. Taken whatever claimed the decision first, so a worker caught at
-/// its work loses the turn rather than working it.
+/// is claimed, so its mind is not asked what to do, though what it senses
+/// still runs as on any turn it holds, its sight recast and its noticing
+/// rolled. The turn is spent here rather than by an intent resolved later,
+/// so a key the player pressed finds it spent and comes to nothing
+/// whichever stage would have resolved it. Taken whatever claimed the
+/// decision first, so a worker caught at its work loses the turn rather
+/// than working it.
 pub fn pass_held_turns(
     mut acting: ResMut<Acting>,
     mut spent: MessageWriter<ActionDone>,
