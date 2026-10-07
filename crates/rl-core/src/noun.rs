@@ -11,9 +11,12 @@
 //! plural, the endings that change (`knife`, `berry`, `box`), and a short
 //! list of the irregular. A mass noun has no plural of its own, so a game
 //! names it by its measure: `bottle of water` becomes `3 bottles of water`,
-//! since the word before `of` is the one that counts. A name that already
-//! carries an article, `a crust of bread`, or starts with a capital, a
-//! proper name, is said as written.
+//! since the word before `of` is the one that counts. So is the word before
+//! a short list like it, `titled`, `called`, `named`, `from`, `with` and a
+//! few more, written in lower case, and what follows is kept as written:
+//! `2 scrolls titled XOMBA RENTOR`. A name that already carries an article,
+//! `a crust of bread`, or starts with a capital, a proper name, is said as
+//! written.
 
 /// Words whose plural is not made by a rule.
 const IRREGULAR: [(&str, &str); 12] = [
@@ -40,6 +43,18 @@ const TAKES_ES: [&str; 5] = ["potato", "tomato", "hero", "echo", "torpedo"];
 /// Articles a name may already carry.
 const ARTICLES: [&str; 4] = ["a ", "an ", "the ", "some "];
 
+/// Words that join a name's head to what tells one of it from another:
+/// `bottle of water`, `scroll titled XOMBA RENTOR`, `letter from Ada`. The
+/// head is the last word before the first of them, which is the word that
+/// counts, and everything from it on is kept as written.
+///
+/// Only as written here, in lower case, since a title or a proper name
+/// written in capitals has words of its own that are not the name's
+/// grammar. A short list rather than every preposition, because a word on
+/// it that turns up inside a head moves the count to the wrong word, and
+/// these are the ones a thing's name is joined by.
+const CONNECTIVES: [&str; 13] = ["of", "from", "with", "for", "to", "in", "on", "titled", "called", "named", "labelled", "labeled", "marked"];
+
 /// `name` in the plural: `pebble` to `pebbles`, `throwing knife` to
 /// `throwing knives`, `bottle of water` to `bottles of water`.
 ///
@@ -47,19 +62,33 @@ const ARTICLES: [&str; 4] = ["a ", "an ", "the ", "some "];
 /// use rl_core::noun::plural;
 /// assert_eq!(plural("berry"), "berries");
 /// assert_eq!(plural("cup of tea"), "cups of tea");
+/// assert_eq!(plural("scroll titled ZUM KA"), "scrolls titled ZUM KA");
 /// ```
 pub fn plural(name: &str) -> String {
     let name = bare(name);
-    // The word that counts is the last one before "of", or the last one.
-    let (head, tail) = match name.find(" of ") {
-        Some(at) => name.split_at(at),
-        None => (name, ""),
-    };
+    // The word that counts is the last one before a connective, or the
+    // last one.
+    let (head, tail) = split_head(name);
     let (before, word) = match head.rfind(' ') {
         Some(at) => head.split_at(at + 1),
         None => ("", head),
     };
     format!("{before}{}{tail}", plural_word(word))
+}
+
+/// `name` split before its first connective, the space with what follows:
+/// `scroll` and ` titled ZUM KA`. A connective is never the first word,
+/// which would leave no head, nor the last, which would join nothing.
+fn split_head(name: &str) -> (&str, &str) {
+    for (at, _) in name.match_indices(' ').filter(|(at, _)| *at > 0) {
+        // The word after this space, and only when another follows it.
+        if let Some((word, _)) = name[at + 1..].split_once(' ')
+            && CONNECTIVES.contains(&word)
+        {
+            return name.split_at(at);
+        }
+    }
+    (name, "")
 }
 
 /// One word in the plural.
@@ -190,6 +219,34 @@ mod tests {
         assert_eq!(plural("bottle of water"), "bottles of water");
         assert_eq!(plural("sheet of plate glass"), "sheets of plate glass");
         assert_eq!(plural("a crust of bread"), "crusts of bread", "an article is dropped, not pluralised");
+    }
+
+    #[test]
+    fn the_head_before_a_lower_case_connective_counts_and_what_follows_is_kept_as_written() {
+        for (one, many) in [
+            ("scroll titled XOMBA RENTOR", "scrolls titled XOMBA RENTOR"),
+            ("throwing knife called Biter", "throwing knives called Biter"),
+            ("dog named Rex", "dogs named Rex"),
+            ("jar labelled SALT", "jars labelled SALT"),
+            ("crate marked FRAGILE", "crates marked FRAGILE"),
+            ("letter from Ada", "letters from Ada"),
+            ("box with a false bottom", "boxes with a false bottom"),
+            ("key to the lower gate", "keys to the lower gate"),
+            ("ship in a bottle", "ships in a bottle"),
+            ("scroll titled ZUM of KA", "scrolls titled ZUM of KA"),
+        ] {
+            assert_eq!(plural(one), many, "{one}");
+        }
+        assert_eq!(listed("scroll titled XOMBA RENTOR", 2), "2 scrolls titled XOMBA RENTOR");
+        assert_eq!(counted("scroll titled XOMBA RENTOR", 1), "a scroll titled XOMBA RENTOR");
+    }
+
+    #[test]
+    fn a_connective_in_capitals_or_with_nothing_after_it_joins_nothing_and_a_proper_name_is_said_as_written() {
+        assert!(plural("XOMBA OF RENTOR").starts_with("XOMBA OF "), "a title's own words are not the name's grammar");
+        assert_eq!(plural("lean to"), "lean tos", "a connective needs something to join");
+        assert_eq!(counted("Grubnak", 1), "Grubnak");
+        assert_eq!(with_article("Grubnak from the Hills"), "Grubnak from the Hills");
     }
 
     #[test]

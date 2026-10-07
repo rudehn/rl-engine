@@ -21,7 +21,7 @@ Content is never named in the engine: tiles, damage kinds, stats, statuses, fact
 - `DisjointSet`.
 - Seeds: `RunSeed`, `SeedDomain`, derived streams, position and pair hashes for seams.
 - `DiceRoll`, parsed from `NdS+B` at content load.
-- `noun`: a thing's one name said of one or of several, `a pebble` or `5 pebbles`, `throwing knife` to `throwing knives` and `bottle of rum` to `bottles of rum`, with the common English endings and a short list of the irregular; a name that carries an article or a capital is said as written.
+- `noun`: a thing's one name said of one or of several, `a pebble` or `5 pebbles`, `throwing knife` to `throwing knives` and `bottle of rum` to `bottles of rum`, `scroll titled ZUM KA` to `scrolls titled ZUM KA` by the word before a lower-case connective, with the common English endings and a short list of the irregular; a name that carries an article or a capital is said as written.
 - `Id<T>` typed dense ids with an interner.
 - Quantile and rank helpers.
 - `TurnQueue<Id>`: an integer clock scheduler with peek, pop, batch dequeue, entries for saving, and speed-scaled costs.
