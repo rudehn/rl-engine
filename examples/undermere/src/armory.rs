@@ -385,6 +385,17 @@ impl Armory {
         self.defs.get(def).consumable.and_then(|c| c.recharge_at(level))
     }
 
+    /// The armor a thing of `def` gives at `level`: its own, a level's
+    /// worth more for each level when it has any of its own, and whatever
+    /// it lends, which no level touches. The one rule [`Armor`] is written
+    /// by when a thing is made or its level changes, and what a thing whose
+    /// level is not known yet seems to give, at nought.
+    pub fn armor_at(&self, def: Id<ItemDef>, level: i32) -> i32 {
+        let d = self.defs.get(def);
+        let own = if d.armor != 0 { d.armor + ARMOR_PER_LEVEL * level } else { 0 };
+        own + self.lent[def.index()].armor.unwrap_or(0)
+    }
+
     /// Whether `def` takes levels: a weapon, armor, a ring, a staff or a
     /// wand, and nothing that stacks.
     pub fn takes_levels(&self, def: Id<ItemDef>) -> bool {
@@ -825,7 +836,6 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
 /// raising a dry bow does not load it.
 fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, stowed: Option<Stowed>, accuracy: Option<StatId>) {
     let d = armory.defs.get(def);
-    let lent = &armory.lent[def.index()];
     let plus = |dice: DiceRoll| DiceRoll { bonus: dice.bonus + DAMAGE_PER_LEVEL * level, ..dice };
     let melee = d.melee.map(|m| MeleeAttack { cost: d.cost, look: m.look, shape: m.shape, unaware: m.unaware, ..MeleeAttack::new(m.kind.id(), plus(m.roll)) });
     let ranged = d.ranged.map(|r| RangedAttack { cost: d.cost, look: r.look, effective: r.effective, ..RangedAttack::new(r.kind.id(), plus(r.roll), r.range) });
@@ -854,8 +864,7 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
     if let Some(throw) = d.throw {
         e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), plus(dice)))) });
     }
-    let own = if d.armor != 0 { d.armor + ARMOR_PER_LEVEL * level } else { 0 };
-    let armor = own + lent.armor.unwrap_or(0);
+    let armor = armory.armor_at(def, level);
     if armor != 0 {
         e.insert(Armor(armor));
     } else {

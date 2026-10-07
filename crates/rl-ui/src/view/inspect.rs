@@ -47,6 +47,13 @@ pub struct InspectView {
     pub subject: Option<Row>,
     /// How a fight with the subject is likely to go, when both sides can
     /// be read as combatants.
+    ///
+    /// Reckoned from what each side truly wears, as the fight would be, an
+    /// unknown thing's true numbers among them, as the vitals' armor is: a
+    /// game whose things are written from a level, so that the forecast
+    /// would tell it, forecasts the fight again in
+    /// [`ViewSet::Annotate`](crate::ViewSet) with each unknown thing counted
+    /// as it seems, through the same [`duel`], and `odds` with it.
     pub duel: Option<Duel>,
     /// The chance the player's own attack on the subject lands, from where
     /// it stands: a blow when adjacent, a shot while it reaches. `None`

@@ -20,7 +20,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_rules::ability::RawValue;
 use rl_engine::rl_rules::stats::Source;
 
-use crate::armory::{Armory, ItemKind};
+use crate::armory::{Armory, ItemDef, ItemKind};
 use crate::content::{ACCURACY, ARMOR, STRENGTH};
 use crate::run::Adventurer;
 
@@ -49,15 +49,27 @@ pub fn shortfall(worn: &[Entity], strength: i32, things: &Query<(&ItemKind, Opti
     let (mut accuracy, mut armor) = (0, 0);
     for (kind, gives) in worn.iter().filter_map(|item| things.get(*item).ok()) {
         let d = armory.defs.get(kind.0);
-        let short = d.strength.map_or(0, |needs| (needs - strength).max(0));
+        let short = short_of(d, strength);
         if d.melee.is_some() || d.ranged.is_some() {
             accuracy += SHORT_ACCURACY * short;
         }
-        if d.armor != 0 {
-            armor += (SHORT_ARMOR * short).min(gives.map_or(0, |a| a.0).max(0));
-        }
+        armor += armor_cost(d, short, gives.map_or(0, |a| a.0));
     }
     (accuracy, armor)
+}
+
+/// How many points `strength` falls short of what a thing of `d` asks:
+/// nought for a thing that asks none, or asks no more than that.
+pub fn short_of(d: &ItemDef, strength: i32) -> i32 {
+    d.strength.map_or(0, |needs| (needs - strength).max(0))
+}
+
+/// What a thing of `d` giving `gives` armor costs a wearer `short` points
+/// short: [`SHORT_ARMOR`] a point for a piece of armor, never more than it
+/// gives, and nothing for anything else. A function of the armor given, so
+/// a thing whose level is not known yet costs what it seems to give.
+pub fn armor_cost(d: &ItemDef, short: i32, gives: i32) -> i32 {
+    if d.armor != 0 { (SHORT_ARMOR * short).min(gives.max(0)) } else { 0 }
 }
 
 /// Keeps what the adventurer's too-heavy gear costs them on their stats:

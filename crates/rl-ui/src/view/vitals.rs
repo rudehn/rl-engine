@@ -26,13 +26,21 @@ pub struct VitalsView {
     /// Armor, its own and its gear's together, if the player has any at
     /// all: `None` for one with no [`Armor`] and nothing worn that adds
     /// any, so a game without the idea draws no number for it.
+    ///
+    /// The collector counts the true total, what a blow meets, an unknown
+    /// worn thing's armor included, since only a game knows what a thing
+    /// not yet known seems to be. A game whose things are written from a
+    /// level, so that the true total would tell it, writes the figure again
+    /// in [`ViewSet::Annotate`](crate::ViewSet) with each unknown thing
+    /// counted as it seems, as Undermere counts one at its kind's plain
+    /// numbers; the mark below stays either way.
     pub armor: Option<i32>,
-    /// Whether anything the player wears is not yet known, [`Unknown`].
-    /// Its armor is in the total all the same, since the total is what a
-    /// blow meets, and a game writes a thing's armor from its level, so a
-    /// presenter marks the number as not settled. Any unknown worn thing
-    /// counts, not only one with armor: what it lends the wearer's stats
-    /// is as hidden.
+    /// Whether anything the player wears is not yet known, [`Unknown`]: the
+    /// figure above is not settled, whether it counts the thing's true
+    /// armor, as the collector does, or what the game says it seems to
+    /// give, and a presenter marks it so. Any unknown worn thing counts,
+    /// not only one with armor: what it lends the wearer's stats is as
+    /// hidden.
     pub armor_uncertain: bool,
     /// One per active status that has a badge glyph, in the order they
     /// were applied.
@@ -184,8 +192,9 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
         }
     };
     view.turn = turn;
-    // What a blow meets, gear included; shown whenever the player has the
-    // idea of armor at all, even at zero.
+    // What a blow meets, gear included, an unknown thing's true armor too,
+    // which a game corrects in `Annotate`; shown whenever the player has
+    // the idea of armor at all, even at zero.
     let total = me.loadout.armor(entity);
     view.armor = (armor.is_some() || total != 0).then_some(total);
     view.armor_uncertain = worn.is_some_and(|w| w.0.worn().any(|(_, item)| me.unknown.contains(item)));

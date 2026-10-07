@@ -35,7 +35,8 @@
 //! What the adventurer finds is what makes them: [`lore`] is what they
 //! know of it, the faces a run's potions, scrolls, staffs, wands and rings
 //! wear until they are known and the levels of what they wear until they
-//! are familiar with it; [`enchant`] is a thing made better by a level,
+//! are familiar with it, and [`seeming`] what a fight looks like to them
+//! meanwhile; [`enchant`] is a thing made better by a level,
 //! and the curse a level below nought holds it on by; [`strength`] is what
 //! heavy gear asks of its wearer; and [`stats`] reads the stats the engine
 //! does not. [`effects`] is what Undermere's staffs, wands, potions and
@@ -69,6 +70,7 @@ pub mod prefabs;
 pub mod quest;
 pub mod run;
 pub mod save;
+pub mod seeming;
 pub mod staffs;
 pub mod stairs;
 pub mod stats;

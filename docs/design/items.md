@@ -156,8 +156,11 @@ So the engine owns how each is honoured, as `Unknown` and `Stuck`, and a game ow
 
 `Unknown` withholds a thing's worth on every panel the engine draws and changes nothing the thing does: an unknown draught drunk heals, and an unknown blade strikes for what it strikes for.
 Hiding what it does as well was rejected, since a game whose unknown thing did nothing until it was named would have to keep a second, real form of every effect; what is hidden is what the player is told, never what happens.
-The armor total is the one reading that still counts an unknown worn thing, because the total is what a blow meets, and the vitals mark it uncertain while one is worn, `armor 5?`, the way a `+?` on a name marks a level; a total that left the thing out would be wrong every turn it was worn.
-The character sheet and the duel forecast count it as well, since those are facts about the wearer rather than readouts of the thing.
+The armor total, the look cursor's duel forecast and the character sheet count an unknown worn thing at its true numbers, because those are what a blow meets, and the vitals mark the total uncertain while one is worn, `armor 5?`, the way a `+?` on a name marks a level.
+What a thing not yet known seems to be is the game's, as its level is, so a game whose things are written from a level, where a true total tells the level the moment the thing goes on, writes the total and the forecast again in `ViewSet::Annotate` with each unknown thing counted as it seems, keeping the mark.
+Undermere counts each one at its kind's plain numbers, the level of nought any thing of its kind is, so `+2 leather armor` not yet known reads `armor 1?`, and says under the forecast that it counted unknown gear plain.
+Leaving the thing out of the total was rejected, since a total missing a coat is wrong every turn it is worn, and so was the engine counting it plain, since what plain is, and that a level is what is hidden, are the game's to say.
+The character sheet is the one reading no game corrects yet, since it names every modifier by the thing it came from; a game that draws it with unknown gear worn corrects it the same way, and Undermere draws none.
 
 `Stuck` refuses every way a worn thing comes off as any impossible item action is refused, the player keeping the turn, and says so with `ItemEvent::WouldNotComeOff`, which the narrator turns into `A ring will not come off.`
 Which slot a thing that may go in several takes is `Equipment::equip_keeping`'s, beside the slot algebra, because a caller that only refused what `equip` displaced would refuse a ring for the finger it picked while the other finger's ring could have come off; a mind weighing gear asks the same rule, so it never walks to a better ring it would be refused.

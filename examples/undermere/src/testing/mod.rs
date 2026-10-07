@@ -312,6 +312,17 @@ pub fn arena(seed: u64) -> (App, Entity, Point) {
     (app, me, here)
 }
 
+/// An [`arena`] with `views` added before anything runs, for a test that
+/// reads what a panel would show: a view's plugin is added before the
+/// first update or not at all.
+pub fn arena_with<M>(seed: u64, views: impl bevy::app::Plugins<M>) -> (App, Entity, Point) {
+    let mut app = headless(RunSeed(seed));
+    app.add_plugins(views);
+    let me = adventurer(&mut app);
+    let here = stage(&mut app, me);
+    (app, me, here)
+}
+
 /// An [`arena`] on floor `floor` rather than in Mereholt, where the floor's
 /// own monsters are found, for what is about the floor: a summoning, a
 /// shriek heard over it, its map.
