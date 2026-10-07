@@ -5,7 +5,7 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/props.rs
             crates/rl-save/src/run.rs
-     fingerprint: 3f74cecd -->
+     fingerprint: f0a14bdb -->
 
 # Loot
 

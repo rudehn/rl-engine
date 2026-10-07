@@ -4,11 +4,12 @@
             crates/rl-rules/src/work.rs
             crates/rl-rules/src/ai/brain.rs
             crates/rl-bevy/src/minds.rs
+            crates/rl-bevy/src/status.rs
             crates/rl-ui/src/view/mod.rs
             crates/rl-ui/src/panel/nearby.rs
             crates/rl-ui/src/panel/inspect.rs
             crates/rl-save/src/run.rs
-     fingerprint: 810d1fc8 -->
+     fingerprint: 841adb71 -->
 
 # Work
 
@@ -32,6 +33,7 @@ Harm and death are read from combat, and a game without combat has empty queues 
 A mind begins work by deciding `Decision::Work(work)`, which becomes a `BeginWork` intent; anything else begins it through `Works::begin`.
 Either way the turn it is begun on is its first, `WorkBegan` is sent, and the actor carries `Working` until it is done; work of one turn is done at once and leaves nothing working.
 On every turn after, `continue_work` claims the actor's decision before any mind is asked, which keeps its perceive stage shut, and writes a `Toil`, which `resolve_toil` spends as a wait costs.
+A status that holds its holder's turns takes a worker's as well, spending each before its `Toil` is resolved, so the work waits out the hold with nothing done and nothing broken.
 On the last turn `Working` comes off and `WorkDone { actor, kind, target }` is sent.
 `break_work` breaks work off with `WorkBroken { actor, kind, target, done, reason }`, the gravest `BreakReason` first: `Died` on a `DeathEvent`, `Hurt` on any `DamageDealt` for the worker that dealt anything, even a hit healed in the same pass, `DoneByAnother` when another worker's `WorkDone` names the same target, and `OutOfReach` when the target is gone or out of reach.
 `Works::stop` breaks it as `Stopped`, for a rule of the game's own.

@@ -11,7 +11,8 @@
             crates/rl-bevy/src/state.rs
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
-     fingerprint: 9290f524 -->
+            crates/rl-bevy/src/cue.rs
+     fingerprint: 78cd9deb -->
 
 # Saving and the ending screen
 
@@ -47,6 +48,7 @@ Remains are saved as whatever they were, and a prop kind a game laid on a body a
 `EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and which sites it has found, every chart a mind filled, each saved entity's pools and cooldowns, its charges and what refills them, the progress towards a worn thing's next pulse, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
 `EngineSave::restore` puts every one of those back except the `seed`, which it only carries: a game reads `save.engine.seed` itself and inserts the `Seed` before it builds the world the continued run stands in.
 Whoever held the turn is out of the queue when a save is taken, so it is put back at the front of the present and dealt first on the run that continues.
+What is in the air when a save is taken, a shot, an ability or a thing's aimed use waiting to be seen to land, is not saved: what it cost is spent in the save and what it would have landed is lost, since every `Airborne` is emptied when its run ends.
 An `Entity` means nothing in another process, so a save numbers entities as `SaveId`, handed out densely by `EntityRemap` while capturing and bound to fresh entities while restoring; a queue entry or a bag slot naming an id nobody bound is dropped rather than guessed at.
 `Saves` is the backend as a resource, wrapping an `Arc<dyn SaveBackend>` of four synchronous methods over named slots, where a missing save is never an error and only real storage trouble is.
 `FileBackend` writes one file per slot under a directory, `MemoryBackend` keeps them in a map for tests, `WebBackend` keys them into `localStorage`, and `Saves::platform_default(name)` picks the last on wasm and the first everywhere else.
