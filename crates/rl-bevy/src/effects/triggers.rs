@@ -525,6 +525,9 @@ pub fn land_aimed_uses(mut hold: ResMut<TurnHold>, mut airborne: ResMut<Airborne
 /// gas, statuses and damage, so whatever a trigger starts is resolved in
 /// the pass that set it off. Every actor under the footprint is a target,
 /// the one who set it off included: a grenade does not ask whose it was.
+/// An actor's own triggers are the one exception, and spare the actor
+/// they belong to, since a bite, an aura or a cloud it gives off is aimed
+/// at whoever is round it: a monster's fire aura does not burn the monster.
 /// The user is whoever set it off, or the carrier when it is
 /// [`LandsAsItself`], an actor, or nobody set it off. A carrier with an
 /// [`EffectBonus`](super::EffectBonus) lands its effects with it added,
@@ -581,7 +584,9 @@ pub fn land_triggers(
                     let mut targets: Vec<Entity> = Vec::new();
                     for cell in &cells {
                         for who in world.occupancy().at(*cell) {
-                            if alive.contains(*who) && !targets.contains(who) {
+                            // An actor's own answer spares it: an aura
+                            // burns whoever stands round its bearer.
+                            if alive.contains(*who) && !targets.contains(who) && !(actor && *who == f.on) {
                                 targets.push(*who);
                             }
                         }

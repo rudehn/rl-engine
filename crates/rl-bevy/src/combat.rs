@@ -2676,13 +2676,14 @@ mod tests {
         let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
         wield(&mut app, player, MeleeAttack::new(kind, DiceRoll::flat(1)), &harming("hit", "Here", 2));
         answers(&mut app, player, &harming("hit", "Here", 5));
-        answers(&mut app, others[0], &harming("struck", "Here", 7));
+        answers(&mut app, others[0], &harming("struck", "Burst(radius: 1)", 7));
         attack(&mut app, player, others[0]);
-        let dealt: Vec<(i32, Option<Entity>)> = app.world().resource::<Seen>().dealt.iter().map(|d| (d.dealt, d.hit.credit)).collect();
+        let dealt: Vec<(Entity, i32, Option<Entity>)> = app.world().resource::<Seen>().dealt.iter().map(|d| (d.target, d.dealt, d.hit.credit)).collect();
+        let (them, me) = (others[0], player);
         assert_eq!(
             dealt,
-            vec![(1, Some(player)), (2, Some(player)), (5, Some(player)), (7, Some(others[0]))],
-            "the blow, the blade's edge, the wielder's venom, then what the one struck answered, as its own"
+            vec![(them, 1, Some(me)), (them, 2, Some(me)), (them, 5, Some(me)), (me, 7, Some(them))],
+            "the blow, the blade's edge, the wielder's venom, then what the one struck answered, as its own, round it"
         );
     }
 
@@ -2713,6 +2714,20 @@ mod tests {
         assert_eq!(hp(&app, player), 26, "the aura burned the one who struck it");
         let burn: Vec<Option<Entity>> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.target == player).map(|d| d.hit.credit).collect();
         assert_eq!(burn, vec![Some(others[0])], "as its own doing");
+    }
+
+    /// An actor's own trigger lands on everyone its area reaches but the
+    /// actor it belongs to: an aura round the one struck spares it and
+    /// burns the striker and its neighbour, and a bite that bursts round
+    /// whom it struck spares the biter standing in the burst.
+    #[test]
+    fn an_actors_own_trigger_spares_its_bearer_and_lands_on_everyone_round_it() {
+        let (mut app, _, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(0)), &[((1, 0), THEIRS), ((1, 1), THEIRS)]);
+        answers(&mut app, others[0], &harming("struck", "Burst(radius: 1)", 4));
+        answers(&mut app, player, &harming("hit", "Burst(radius: 1)", 2));
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [2, 6], "the bearer of the aura takes only the bite, its neighbour both");
+        assert_eq!(hp(&app, player), 26, "and the biter only the aura");
     }
 
     /// A blow that kills sets off `struck` as it lands, since its damage is

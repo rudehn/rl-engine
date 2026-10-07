@@ -7,7 +7,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 ## Unreleased
 
 - An actor answers its own moments: an actor carrying `Triggers` answers `hit` when its own blow or shot lands (a bite that poisons), the new `struck` when one lands on it (an aura that burns whoever struck it), and the new `died` when it dies (a burst of spores where it fell).
-  Whatever an actor answers lands as its own doing, credited to it, without `LandsAsItself`.
+  Whatever an actor answers lands as its own doing, credited to it, without `LandsAsItself`, and its area spares the actor it belongs to: a `struck` aura written `Burst(radius: 1)` lands on everyone round its bearer and not on the bearer.
+  A prop's and a thing's triggers still land on everyone in their area.
   One blow that lands reports, in this order and each once, the worn weapon's `hit`, the attacker's own `hit`, and the struck one's `struck`, all at the struck one's cell; a shaped attack reports them once for each foe it strikes, and a miss reports none.
   `struck` is reported as the blow lands, before its damage, so a blow that kills sets off `struck` and then, a pass later, `died`.
   Only an attack, a blow in reach or a shot, strikes: a thrown thing, an ability, a trap or a fire sets off no `struck`.
