@@ -545,8 +545,10 @@ pub enum DecideSet {
     /// The sight of the mind about to decide, recast if it moved or the
     /// map changed, so everything after reads what it sees now.
     Sense,
-    /// Who has noticed whom, for the actor about to decide. Empty unless
-    /// the game added [`StealthPlugin`](crate::stealth::StealthPlugin).
+    /// Who has noticed whom, for the actor about to decide, from
+    /// [`StealthPlugin`](crate::stealth::StealthPlugin), and whether a
+    /// sleeper wakes to it, from
+    /// [`StatusPlugin`](crate::status::StatusPlugin).
     Notice,
     /// What the actor about to decide may choose from, worked out before
     /// anything chooses: the abilities it can use, when the game added

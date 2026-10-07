@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A status can sleep: `StatusDef::sleeps`, written `sleeps: true` in a status file, holds its holder's turns as `holds` does and ends the moment the holder is woken, by harm landing on it, by a noise that reaches it with its `Hearing` threshold left, or by a foe it notices within `SLEEPER_REACH`, two cells.
+  A blow on a sleeper is a blow on the unaware: `Watchers::unaware` answers yes for a sleeper whoever strikes it, with or without stealth, so the blow lands at `CombatRules::unaware` or its own percent, and only then wakes it.
+  A sleeper notices only within that reach and there by its chance alone, never by its certain radius, so a hider can stand over it; a foe that does not hide, or any foe of a sleeper that sees on sight, wakes it by being in its sight there, and a sleeper watches nobody.
+  `StatusPlugin` wakes a sleeper on harm with `wake_on_harm` in `TurnSet::React` and on sight with `wake_on_sight` in `DecideSet::Notice`, and `NoisePlugin` on noise with `wake_on_noise` in `TurnSet::Listen`; each cures the sleep at once and writes `StatusEvent::Cured`.
+  `Sleepers` answers who is asleep, and `Statuses::sleeping` and `Statuses::wake` are the rules' half.
+  To change: a `StatusDef` written out field by field gains `sleeps: false`; a status with no `sleeps` behaves as it did.
 - A mind uses what it carries, when its kind has the wits to: `Wits::USES`, written `"uses"` in content and in the sapient preset, lets the new `UseCarried` tactic use on itself a carried thing whose `use` trigger mends once the mind is down to `mend_at_pct` of its health, and otherwise point one whose use is aimed at foes (`Aim::Foe`) at a foe, or one that mends and is aimed at allies (`Aim::Ally`) at a hurt ally, as an ability of that aim would be pointed, by `Aim::worth_aiming_at` and the thing's own `Targeting`, on `chance_pct` of the turns there is somewhere worth pointing it.
   A thing aimed at anyone or at the ground is never pointed by a mind: the engine cannot tell whether one aimed at anyone helps whoever it lands on, as a wand that copies what it strikes is, and one aimed at the ground may carry its user there, as a blink does, which no tactic has weighed.
   A game puts `UseCarried` in a brain to have it, and a kind that should leave its bag alone leaves `"uses"` out of its wits.

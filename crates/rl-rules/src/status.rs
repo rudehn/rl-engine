@@ -4,7 +4,8 @@
 //!
 //! What a status *does* is expressed as stat modifiers the engine can
 //! apply and remove, plus an optional damage-over-time the game's damage
-//! pipeline resolves, and whether it holds its holder's turns. Anything
+//! pipeline resolves, whether it holds its holder's turns, and whether it
+//! sleeps, a hold a noise, a blow or a foe close by ends early. Anything
 //! richer is the game's, keyed by the id.
 //!
 //! [`load`] reads definitions from RON by name, resolving every stat and
@@ -74,12 +75,19 @@ pub struct StatusDef {
     pub boon: bool,
     /// Whether whoever carries it loses its turns while it lasts: each is
     /// spent as a wait before its mind or its player is asked, so
-    /// paralysis, a snare and sleep are each one of these. It ends as any
-    /// status does, when its time runs out or it is cured; a sleep a blow
-    /// breaks is the game's cure on the blow. Not
+    /// paralysis and a snare are each one of these. It ends as any status
+    /// does, when its time runs out or it is cured; one that something
+    /// should break early is [`sleeps`](Self::sleeps). Not
     /// [`ActiveStatus::held_by`], the worn thing an instance lasts only
     /// while.
     pub holds: bool,
+    /// Whether it is sleep: it holds its holder's turns as
+    /// [`holds`](Self::holds) does, whether or not that is set, and it ends
+    /// the moment the holder is woken, by a noise it hears, by harm landing
+    /// on it, or by a foe it notices within [`SLEEPER_REACH`]. What wakes
+    /// a sleeper is the engine's, so every game's sleepers wake alike;
+    /// who is put to sleep, and for how long, is the game's.
+    pub sleeps: bool,
 }
 
 fn refresh() -> Stacking {
@@ -99,6 +107,7 @@ impl StatusDef {
             unseen: false,
             boon: false,
             holds: false,
+            sleeps: false,
         }
     }
 
@@ -144,6 +153,13 @@ impl StatusDef {
         self.holds = true;
         self
     }
+
+    /// Makes it sleep: it holds its holder until it runs out or the holder
+    /// is woken.
+    pub fn sleeps(mut self) -> Self {
+        self.sleeps = true;
+        self
+    }
 }
 
 impl Named for StatusDef {
@@ -175,6 +191,8 @@ struct Authored {
     boon: bool,
     #[serde(default)]
     holds: bool,
+    #[serde(default)]
+    sleeps: bool,
 }
 
 impl Named for Authored {
@@ -204,6 +222,9 @@ impl Named for Authored {
 ///   narrator tells as good news; `false`, the default, otherwise.
 /// - `holds`: `true` for a status whose holder loses its turns while it
 ///   lasts, each spent as a wait; `false`, the default, otherwise.
+/// - `sleeps`: `true` for sleep, a status that holds its holder until a
+///   noise, harm or a foe close by wakes it and ends it; `false`, the
+///   default, otherwise. It holds whether or not `holds` is written.
 ///
 /// Reports every unknown name in the file at once.
 pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, ContentError> {
@@ -245,6 +266,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             unseen: a.unseen,
             boon: a.boon,
             holds: a.holds,
+            sleeps: a.sleeps,
         });
     }
     if !errors.is_empty() {
@@ -265,6 +287,13 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
 /// and an extension saturates. A panel that counts a status's turns shows
 /// none for it.
 pub const UNTIL_CURED: u32 = u32::MAX;
+
+/// How far a sleeper notices anything, in cells in any direction: a foe
+/// this close that it notices wakes it, and one further off it does not
+/// notice at all, so a sleeper does not wake already knowing of something
+/// across the room. "A cell or two", for every game alike; a sleeper that
+/// should be harder to creep past is one whose notice is keener.
+pub const SLEEPER_REACH: i32 = 2;
 
 /// One status on one actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -398,10 +427,36 @@ impl Statuses {
         self.active.iter()
     }
 
-    /// The first active status that [`holds`](StatusDef::holds) its
-    /// holder, if any: what takes the actor's turns while it is on.
+    /// The first active status that [`holds`](StatusDef::holds) or
+    /// [`sleeps`](StatusDef::sleeps), if any: what takes the actor's turns
+    /// while it is on.
     pub fn holding(&self, defs: &Registry<StatusDef>) -> Option<StatusId> {
-        self.active.iter().map(|s| s.id).find(|id| defs.get(*id).holds)
+        self.active.iter().map(|s| s.id).find(|id| {
+            let def = defs.get(*id);
+            def.holds || def.sleeps
+        })
+    }
+
+    /// The first active status that [`sleeps`](StatusDef::sleeps), if any:
+    /// whether the actor is asleep.
+    pub fn sleeping(&self, defs: &Registry<StatusDef>) -> Option<StatusId> {
+        self.active.iter().map(|s| s.id).find(|id| defs.get(*id).sleeps)
+    }
+
+    /// Wakes the actor: cures every status that sleeps, modifiers and all,
+    /// and returns which, in the order they were on. A status that only
+    /// holds stays, since a snare is not slept off.
+    pub fn wake(&mut self, defs: &Registry<StatusDef>, stats: &mut Stats) -> Vec<StatusId> {
+        let mut sleeping: Vec<StatusId> = Vec::new();
+        for s in &self.active {
+            if defs.get(s.id).sleeps && !sleeping.contains(&s.id) {
+                sleeping.push(s.id);
+            }
+        }
+        for id in &sleeping {
+            self.cure(*id, stats);
+        }
+        sleeping
     }
 
     /// Advances one turn: collects the damage each status deals, then
@@ -693,6 +748,53 @@ mod tests {
         assert_eq!(statuses.holding(&defs), Some(snared), "put on until cured");
         assert!(statuses.cure(snared, &mut stats));
         assert_eq!(statuses.holding(&defs), None, "and cured");
+    }
+
+    #[test]
+    fn a_status_can_be_written_to_sleep_and_sleeps_nobody_unless_it_says_so() {
+        let names = Names::new();
+        let loaded = load(r#"[(name: "asleep", sleeps: true), (name: "snared", holds: true)]"#, &names).expect("it loads");
+        assert!(loaded.get(loaded.expect("asleep")).sleeps);
+        assert!(!loaded.get(loaded.expect("snared")).sleeps);
+        assert!(StatusDef::new("asleep").sleeps().sleeps);
+    }
+
+    /// Sleeping is holding that something can end early, so a status that
+    /// sleeps takes its holder's turns whether or not it also says it holds.
+    #[test]
+    fn a_status_that_sleeps_holds_its_holder_without_saying_it_holds() {
+        let names = Names::new();
+        let loaded = load(r#"[(name: "asleep", sleeps: true)]"#, &names).expect("it loads");
+        let asleep = loaded.expect("asleep");
+        let (mut statuses, mut stats) = (Statuses::new(), Stats::new());
+        statuses.apply(asleep, UNTIL_CURED, None, &loaded, &mut stats);
+        assert_eq!(statuses.holding(&loaded), Some(asleep));
+        assert_eq!(statuses.sleeping(&loaded), Some(asleep));
+    }
+
+    /// Waking takes off every status that sleeps, modifiers and all, and
+    /// leaves one that only holds: a snare is not slept off by a shout.
+    #[test]
+    fn waking_cures_every_status_that_sleeps_and_none_that_only_holds() {
+        let stat_defs = Registry::from_defs(vec![StatDef::new("speed", 100)]).unwrap();
+        let speed = stat_defs.expect("speed");
+        let defs = Registry::from_defs(vec![
+            StatusDef::new("asleep").sleeps().modifies(speed, Op::Add(-50)),
+            StatusDef::new("dozing").sleeps(),
+            StatusDef::new("snared").holds(),
+        ])
+        .unwrap();
+        let (asleep, dozing, snared) = (defs.expect("asleep"), defs.expect("dozing"), defs.expect("snared"));
+        let (mut statuses, mut stats) = (Statuses::new(), Stats::new());
+        assert!(statuses.wake(&defs, &mut stats).is_empty(), "nothing to wake from");
+        statuses.apply(asleep, 5, None, &defs, &mut stats);
+        statuses.apply(dozing, UNTIL_CURED, None, &defs, &mut stats);
+        statuses.apply(snared, 5, None, &defs, &mut stats);
+        assert_eq!(stats.value(speed, &stat_defs), 50);
+        assert_eq!(statuses.wake(&defs, &mut stats), vec![asleep, dozing]);
+        assert_eq!(statuses.sleeping(&defs), None, "awake");
+        assert_eq!(statuses.holding(&defs), Some(snared), "and still snared");
+        assert_eq!(stats.value(speed, &stat_defs), 100, "the sleep's modifier left with it");
     }
 
     #[test]

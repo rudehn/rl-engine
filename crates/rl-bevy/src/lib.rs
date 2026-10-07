@@ -112,7 +112,7 @@ pub use rl_grid::LightBand;
 pub use seed::{AddStream, Seed, Stream};
 pub use settings::{AddSettings, Setting, SettingId, Settings};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
-pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
+pub use status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent, StatusPlugin};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
@@ -178,7 +178,7 @@ pub mod prelude {
     pub use crate::seed::{AddStream, Seed};
     pub use crate::settings::{AddSettings, Setting, SettingId, Settings};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
-    pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
+    pub use crate::status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent, StatusPlugin};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};

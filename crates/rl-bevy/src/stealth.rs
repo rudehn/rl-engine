@@ -145,10 +145,12 @@ type Watcher<'a> = (Entity, &'a Position, Option<&'a Faction>, Option<&'a Percep
 /// observer that keeps an `Aware` watches what it knows about, alert or
 /// searching; one that does not watches whatever its own sight reaches,
 /// read off the same [`Viewshed`] its turns are decided from. Nobody
-/// watches the [`Unseen`], since no mind perceives them.
+/// watches the [`Unseen`], since no mind perceives them, and a sleeper
+/// watches nobody.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Watchers<'w, 's> {
     running: StealthRunning<'w>,
+    sleepers: crate::status::Sleepers<'w, 's>,
     watchers: Query<'w, 's, WatcherData, CanWatch>,
     subjects: Query<'w, 's, (&'static Position, Option<&'static Faction>, Option<&'static OnMap>)>,
     map: Option<Res<'w, WorldMap>>,
@@ -205,14 +207,22 @@ impl Watchers<'_, '_> {
     /// is kept, so an empty one would otherwise read as everyone unaware.
     /// One that lost the trail and is searching still remembers, and is not
     /// caught unaware.
+    ///
+    /// Except a sleeper, which is unaware of everyone, the player asleep
+    /// included, with or without stealth and whether or not `subject` hides:
+    /// it noticed nothing, and the blow that wakes it is still a blow on a
+    /// sleeper.
     pub fn unaware(&self, watcher: Entity, subject: Entity) -> bool {
+        if watcher != subject && self.sleepers.asleep(watcher) {
+            return true;
+        }
         let Ok((_, _, faction, _, _, Some(aware), _)) = self.watchers.get(watcher) else { return false };
         let theirs = self.subjects.get(subject).ok().and_then(|(_, f, _)| f);
         self.running() && watcher != subject && self.hiders.contains(subject) && at_odds(self.rules.as_deref(), faction, theirs) && !aware.knows(subject)
     }
 
     fn judge(&self, (watcher, pos, faction, perception, sight, aware, on): Watcher<'_>, subject: Entity) -> bool {
-        if watcher == subject || self.unseen.contains(subject) {
+        if watcher == subject || self.unseen.contains(subject) || self.sleepers.asleep(watcher) {
             return false;
         }
         let (Some(map), Ok((at, theirs, subject_on))) = (self.map.as_deref(), self.subjects.get(subject)) else {
@@ -405,6 +415,7 @@ pub struct Watch<'w, 's> {
     /// Who is at odds with whom; absent, everyone is.
     rules: Option<Res<'w, CombatRules>>,
     rng: ResMut<'w, StealthRng>,
+    sleepers: crate::status::Sleepers<'w, 's>,
 }
 
 /// Rolls to notice, for the observer holding the turn, and ages what it
@@ -415,12 +426,20 @@ pub struct Watch<'w, 's> {
 /// a monster in plain view of you does not lose you to a bad roll; losing
 /// takes `memory` turns out of sight and noticing takes one, and that
 /// asymmetry is the whole of the hysteresis.
+///
+/// A sleeper notices only within
+/// [`SLEEPER_REACH`](rl_rules::SLEEPER_REACH), and there by its chance
+/// alone: its certain radius is what it picks out with its eyes open, and
+/// were it to apply, nobody could stand over a sleeper to strike it. What
+/// it notices wakes it, in [`wake_on_sight`](crate::status::wake_on_sight).
 pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     let here = watch.map.current();
     let lighting = watch.lighting.as_deref();
     let rules = watch.rules.as_deref();
     let Ok((observer, pos, notice, mut aware, perception, sight, faction)) = watch.observers.single_mut() else { return };
+    let asleep = watch.sleepers.asleep(observer);
     let reach = perception.map(|p| p.0).unwrap_or(DEFAULT_PERCEPTION);
+    let reach = if asleep { reach.min(rl_rules::SLEEPER_REACH) } else { reach };
     let mut seen = Vec::new();
     // In spawn order rather than the order the query walks the archetypes
     // in, since each subject in view costs a roll and which subject gets
@@ -447,7 +466,9 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
             let lit = crate::lighting::band_at(lighting, at.0) == rl_grid::LightBand::Lit;
             let roll = watch.rng.0.random_range(0..100);
             let distance = rl_core::geometry::chebyshev(pos.0, at.0);
-            if awareness::notices(distance, &notice.0, &stealth.0, lit, roll) && state.saw(at.0) {
+            let spots =
+                if asleep { roll < awareness::notice_chance(&notice.0, &stealth.0) } else { awareness::notices(distance, &notice.0, &stealth.0, lit, roll) };
+            if spots && state.saw(at.0) {
                 noticed.write(Noticed { observer, subject, at: at.0 });
             }
         } else {

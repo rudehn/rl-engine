@@ -3,7 +3,8 @@
 //! Opt-in. Without [`NoisePlugin`] nothing is heard, and every mind acts on
 //! what it can see exactly as it always has. With it, every noise made in a
 //! pass floods once from where it was made, walls stop it and a closed door
-//! muffles it, and every listener it reaches with enough left goes to look.
+//! muffles it, and every listener it reaches with enough left goes to look,
+//! waking first if it was asleep ([`wake_on_noise`](crate::status::wake_on_noise)).
 //!
 //! A listener hears a place, never a who. Who made a sound decides nothing
 //! but that its maker does not hear it, because a monster behind a wall
@@ -310,10 +311,13 @@ impl Plugin for NoisePlugin {
             .add_message::<NoiseHeard>()
             .add_message::<DamageEvent>()
             .add_message::<ItemEvent>()
+            // What waking a sleeper reports, for a game with noise and no
+            // statuses, where nobody sleeps and nothing is written.
+            .add_message::<crate::status::StatusEvent>()
             .add_effect::<crate::effects::Noise>()
             .add_systems(Turn, age_heard.in_set(DecideSet::Notice))
             .add_systems(Turn, follow_heard.in_set(PerceiveSet::Annotate))
-            .add_systems(Turn, (make_engine_noise, resolve_noise).chain().in_set(TurnSet::Listen));
+            .add_systems(Turn, (make_engine_noise, resolve_noise, crate::status::wake_on_noise).chain().in_set(TurnSet::Listen));
     }
 
     fn finish(&self, app: &mut App) {
