@@ -498,7 +498,7 @@ pub struct Struck {
 ///
 /// Closed, like the narrator's own `Phrase` and for the same reason: it
 /// enumerates the ways the engine itself delivers damage, and a game that
-/// invents a fifth is writing its own words for it anyway. What reads it is
+/// invents another is writing its own words for it anyway. What reads it is
 /// narration; nothing in the damage pipeline branches on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Reach {
@@ -508,9 +508,17 @@ pub enum Reach {
     Shot,
     /// Something thrown.
     Thrown,
-    /// Anything that did not travel as a weapon: an ability, a status
-    /// ticking, a fire. The default, because most damage is not a weapon
-    /// and a subsystem that says nothing means this.
+    /// An ability's effect: a bolt, a burst. Which one, so a narrator says
+    /// what did it rather than call it a blow, since it was none.
+    Ability(rl_rules::AbilityId),
+    /// A thing's trigger, the thing being other than whoever set it off: a
+    /// rod zapped, a flask broken where it was thrown, an edge's bite. The
+    /// thing, for the same reason. A prop's own trap is its own user, and
+    /// is [`Effect`](Self::Effect).
+    Thing(Entity),
+    /// Anything else that did not travel as a weapon: a status ticking, a
+    /// fire, a trap. The default, because most damage is not a weapon and a
+    /// subsystem that says nothing means this.
     #[default]
     Effect,
 }

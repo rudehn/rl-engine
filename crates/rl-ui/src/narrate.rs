@@ -79,6 +79,20 @@ pub enum Phrase {
     OthersShoot,
     /// Someone shot someone else for nothing.
     OthersShootNothing,
+    /// Something you used or an ability of yours hurt someone for
+    /// something: a rod's bolt, a burst. Named, since it was no blow.
+    YourUseHits,
+    /// The same, for nothing.
+    YourUseHitsNothing,
+    /// Something someone used, or their ability, hurt you for something.
+    UseHitsYou,
+    /// The same, for nothing.
+    UseHitsYouForNothing,
+    /// Something someone used, or their ability, hurt someone else for
+    /// something.
+    OthersUseHits,
+    /// The same, for nothing.
+    OthersUseHitsNothing,
     /// You attacked someone and missed.
     YouMiss,
     /// Someone attacked you and missed.
@@ -534,6 +548,18 @@ impl Witness<'_, '_> {
     fn ability_name(&self, id: rl_rules::AbilityId) -> String {
         self.abilities.as_deref().map(|a| a.get(id).name.clone()).unwrap_or_default()
     }
+
+    /// What landed harm that arrived by `reach`, as a line names it: the
+    /// ability, or the thing by its own name, `ash rod`, since the line
+    /// says whose it was. `None` for a blow, a shot, a throw or a plain
+    /// effect, and for a thing with no name to say.
+    fn landed_by(&self, reach: Reach) -> Option<String> {
+        match reach {
+            Reach::Ability(id) => Some(self.ability_name(id)).filter(|n| !n.is_empty()),
+            Reach::Thing(thing) => self.names.get(thing).ok()?.0.map(|n| n.as_str().to_string()),
+            _ => None,
+        }
+    }
 }
 
 /// Fills [`NarrationView`] with what this pass did.
@@ -703,11 +729,29 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         }
         let you_attacker = d.hit.attacker.is_some_and(|a| witness.is_you(a));
         let landed = d.dealt > 0;
+        // Harm an ability or a thing landed names what landed it: a rod's
+        // bolt is not a blow struck by whoever zapped it, and "You hit the
+        // rat" after "You use an ash rod" reads as a second action.
+        if let Some(named) = witness.landed_by(d.reach) {
+            let phrase = match (you_attacker, you_target, landed) {
+                (true, _, true) => Phrase::YourUseHits,
+                (true, _, false) => Phrase::YourUseHitsNothing,
+                (false, true, true) => Phrase::UseHitsYou,
+                (false, true, false) => Phrase::UseHitsYouForNothing,
+                (false, false, true) => Phrase::OthersUseHits,
+                (false, false, false) => Phrase::OthersUseHitsNothing,
+            };
+            let mut said = say(phrase, d.hit.attacker, Some(target));
+            said.named = named;
+            said.amount = d.dealt;
+            rows.push(said);
+            continue;
+        }
         // A shot is not a blow: it came from somewhere the player may not
         // even be able to see, and "hits you" reads as something standing
-        // over you. Anything that did not travel as a weapon keeps the blow
-        // wording, since a bolt and a poison are already narrated by
-        // whatever cast or inflicted them.
+        // over you. Anything else that did not travel as a weapon keeps
+        // the blow wording, since a poison is already narrated by whatever
+        // inflicted it.
         let shot = d.reach == Reach::Shot;
         let phrase = match (shot, you_attacker, you_target, landed) {
             (false, true, _, true) => Phrase::YouHit,
@@ -843,7 +887,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 67] = [
+        let table: [(Phrase, &str, ToneId); 73] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -854,6 +898,12 @@ impl Default for Phrasebook {
             (ShootsYouForNothing, "{Who} shoots you, to no effect.", Tones::MUTED),
             (OthersShoot, "{Who} shoots {whom} for {n}.", Tones::TEXT),
             (OthersShootNothing, "{Who} shoots {whom}, to no effect.", Tones::MUTED),
+            (YourUseHits, "Your {named} hits {whom} for {n}.", Tones::HIT),
+            (YourUseHitsNothing, "Your {named} hits {whom}, to no effect.", Tones::MUTED),
+            (UseHitsYou, "{Who}'s {named} hits you for {n}.", Tones::BAD),
+            (UseHitsYouForNothing, "{Who}'s {named} hits you, to no effect.", Tones::MUTED),
+            (OthersUseHits, "{Who}'s {named} hits {whom} for {n}.", Tones::TEXT),
+            (OthersUseHitsNothing, "{Who}'s {named} hits {whom}, to no effect.", Tones::MUTED),
             (YouMiss, "You miss {whom}.", Tones::MUTED),
             (MissesYou, "{Who} misses you.", Tones::MUTED),
             (OthersMiss, "{Who} misses {whom}.", Tones::MUTED),
@@ -1540,9 +1590,9 @@ mod tests {
         assert_eq!(spoken(&stage, &["The line droid"]), vec!["The line droid misses you."]);
     }
 
-    /// Something that did not travel as a weapon keeps the blow wording: a
-    /// poison ticking is not a shot, and whatever cast it has already said
-    /// its own line.
+    /// Something that did not travel as a weapon, and names nothing that
+    /// landed it, keeps the blow wording: a poison ticking is not a shot,
+    /// and whatever inflicted it has already said its own line.
     #[test]
     fn damage_that_was_never_a_weapon_is_still_narrated_as_a_blow() {
         let mut stage = Stage::new(NarratorPlugin::default());
@@ -1552,6 +1602,51 @@ mod tests {
         stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(droid, kind, 3)));
         stage.tick();
         assert_eq!(spoken(&stage, &["The line droid"])[0], "The line droid hits you for 3.");
+    }
+
+    /// A bolt from a thing used, or from an ability, is not a blow: the
+    /// line names what landed it, as "You hit the rat" for a sword does
+    /// not, so a log of a zapped rod reads as one.
+    #[test]
+    fn harm_a_use_or_an_ability_landed_names_what_landed_it_rather_than_reading_as_a_blow() {
+        use crate::view::target::harness::{abilities, arm};
+        use rl_bevy::{AbilitiesPlugin, AddEngineEffects, EffectKinds, Use};
+        let mut stage = Stage::new_with((AbilitiesPlugin, rl_bevy::EffectsPlugin, NarratorPlugin::default()), |app| {
+            app.add_engine_effects();
+            abilities(app);
+        });
+        let (bolt, _, _) = arm(&mut stage);
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new()
+            .load_list(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
+            .expect("the trigger parses");
+        let triggers = {
+            let world = stage.app.world();
+            let names = world.resource::<Registries>().names();
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<EffectKinds>(), &names).expect("it builds")
+        };
+        let (player, kind) = (stage.player, stage.kind);
+        let rod = stage.app.world_mut().spawn((Item, Name::new("ash rod"), triggers)).id();
+        stage.app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(rod);
+        let rat = stage.actor("rat", 'r', 3, 0);
+        stage.tick();
+        let at = stage.at.offset(3, 0);
+        stage.app.world_mut().write_message(Intent::new(player, UseItemAt { item: rod, at }));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Use { ability: bolt, aim: at }));
+        stage.tick();
+        assert_eq!(stage.app.world().get::<Health>(rat).map(|h| h.current), Some(10 - 4 - 3), "both landed");
+        let mine = spoken(&stage, &["You", "Your"]);
+        assert!(mine.contains(&"Your ash rod hits the rat for 4.".to_string()), "the rod, named: {mine:#?}");
+        assert!(mine.contains(&"Your bolt hits the rat for 3.".to_string()), "the ability, named: {mine:#?}");
+        assert!(!mine.iter().any(|l| l.starts_with("You hit")), "neither reads as a blow: {mine:#?}");
+
+        // The other perspectives, as the pipeline reports them.
+        let world = stage.app.world_mut();
+        world.write_message(DamageEvent::arriving(player, rl_rules::Hit::by(rat, kind, 2), Reach::Ability(bolt)));
+        world.write_message(DamageEvent::arriving(player, rl_rules::Hit::by(rat, kind, 0), Reach::Thing(rod)));
+        stage.tick();
+        let theirs = spoken(&stage, &["The rat"]);
+        assert_eq!(theirs, ["The rat's bolt hits you for 2.", "The rat's ash rod hits you, to no effect."], "{theirs:#?}");
     }
 
     /// A heal is told as a mend when it restored something and not at all

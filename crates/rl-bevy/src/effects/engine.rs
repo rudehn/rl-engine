@@ -49,9 +49,12 @@ impl Harm {
 impl Effect for Harm {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         let roll = self.roll_with(landing.bonus);
+        // Arriving by what landed it, so a bolt from a rod is not told as
+        // a blow struck by its user.
+        let reach = landing.reach();
         for target in &landing.targets {
             let amount = roll.roll_at_least(&mut **world.rng, 0);
-            world.damage.write(DamageEvent::new(*target, Hit::by(landing.user, self.kind, amount)));
+            world.damage.write(DamageEvent::arriving(*target, Hit::by(landing.user, self.kind, amount), reach));
         }
     }
 

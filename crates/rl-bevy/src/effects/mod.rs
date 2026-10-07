@@ -91,6 +91,17 @@ impl Landing {
         }
     }
 
+    /// How harm this lands reaches its targets, for the narrator to name
+    /// what did it: by the ability, or by the thing whose trigger it was
+    /// when that thing is not its own user, as a prop's trap is.
+    pub fn reach(&self) -> crate::combat::Reach {
+        match self.source {
+            Source::Ability(id) => crate::combat::Reach::Ability(id),
+            Source::Trigger { on, .. } if on != self.user => crate::combat::Reach::Thing(on),
+            _ => crate::combat::Reach::Effect,
+        }
+    }
+
     /// Where a cue plays on `cell`: on the target standing there, so a
     /// burst on someone knocked back goes with them and a bolt at someone
     /// walking away still lands on them, or on the cell when nobody does.
@@ -555,5 +566,32 @@ mod tests {
         use rand::RngCore;
         let mut rng = EffectRng::for_run(rl_core::RunSeed(7));
         assert_eq!(rng.next_u64(), FIRST_DRAW_FOR_SEED_SEVEN);
+    }
+
+    /// Harm arrives by what landed it, for the narrator to name: the
+    /// ability, or the thing whose trigger it was; a prop springing its own
+    /// trap is its own user, and its line names it as the doer already.
+    #[test]
+    fn a_landing_reaches_by_its_ability_or_by_a_thing_that_is_not_its_own_user() {
+        use crate::combat::Reach;
+        let mut world = World::new();
+        let (user, rod) = (world.spawn_empty().id(), world.spawn_empty().id());
+        let landing = |user: Entity, source: Source| Landing {
+            user,
+            source,
+            origin: Point::new(0, 0),
+            aim: Point::new(0, 0),
+            cells: Vec::new(),
+            path: Vec::new(),
+            landed_at: None,
+            targets: Vec::new(),
+            bonus: EffectBonus::default(),
+            on: None,
+        };
+        let bolt = AbilityId::from_raw(0);
+        assert_eq!(landing(user, Source::Ability(bolt)).reach(), Reach::Ability(bolt));
+        assert_eq!(landing(user, Source::Trigger { on: rod, moment: Moments::USE }).reach(), Reach::Thing(rod));
+        assert_eq!(landing(rod, Source::Trigger { on: rod, moment: Moments::USE }).reach(), Reach::Effect, "a trap is its own user");
+        assert_eq!(landing(user, Source::Offer(rod)).reach(), Reach::Effect);
     }
 }
