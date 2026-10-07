@@ -250,6 +250,47 @@ fn lead_in(moment: MomentId, moments: Option<&Moments>, pulse: Option<&rl_bevy::
     }
 }
 
+/// What a carrier's triggers do, in the effects' own words, one line per
+/// effect that has something to say, led by the moment that sets it off.
+///
+/// A `use` trigger and a `land` trigger that would say the same lines, a
+/// potion drunk or thrown to the same end, say them once under `use or
+/// thrown` rather than twice under their own names; any other trigger, or
+/// a `use` and a `land` whose lines differ, keeps its own lead-in.
+fn describe_uses(triggers: &Triggers, registries: &Registries, moments: Option<&Moments>, pulse: Option<&rl_bevy::Pulse>, bonus: EffectBonus) -> Vec<String> {
+    let lines_of = |trigger: &rl_bevy::Trigger| -> Vec<String> {
+        let area = match trigger.area {
+            rl_rules::Area::Here => String::new(),
+            rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
+        };
+        trigger.effects.describe(registries, bonus).into_iter().map(|line| format!("{line}{area}")).collect()
+    };
+    // The shared lines, when a `use` and a `land` trigger both carry
+    // something and say the same thing; `None` leaves every trigger under
+    // its own name, including a `use` or a `land` alone.
+    let shared = match (triggers.on(Moments::USE).next(), triggers.on(Moments::LAND).next()) {
+        (Some(use_trigger), Some(land_trigger)) => {
+            let (use_lines, land_lines) = (lines_of(use_trigger), lines_of(land_trigger));
+            (!use_lines.is_empty() && use_lines == land_lines).then_some(use_lines)
+        }
+        _ => None,
+    };
+    let mut used = Vec::new();
+    for trigger in &triggers.0 {
+        if shared.is_some() && trigger.on == Moments::LAND {
+            continue; // said once already, under the `use` trigger below.
+        }
+        match (&shared, trigger.on == Moments::USE) {
+            (Some(lines), true) => used.extend(lines.iter().map(|line| format!("use or thrown: {line}"))),
+            _ => {
+                let lead = lead_in(trigger.on, moments, pulse);
+                used.extend(lines_of(trigger).into_iter().map(|line| format!("{lead}: {line}")));
+            }
+        }
+    }
+    used
+}
+
 /// Fills [`InventoryView`] from the player's bag.
 pub fn collect_inventory(
     mut view: ResMut<InventoryView>,
@@ -288,18 +329,10 @@ pub fn collect_inventory(
         // What it does, in the effects' own words: the same lines the
         // ability list shows under an ability, since they are the same
         // effects described by the same code.
-        let mut used = Vec::new();
-        if let (Some(triggers), Some(registries)) = (triggers, registries) {
-            for trigger in &triggers.0 {
-                let lead = lead_in(trigger.on, moments, pulse);
-                let area = match trigger.area {
-                    rl_rules::Area::Here => String::new(),
-                    rl_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
-                };
-                let bonus = bonus.copied().unwrap_or_default();
-                used.extend(trigger.effects.describe(registries, bonus).into_iter().map(|line| format!("{lead}: {line}{area}")));
-            }
-        }
+        let used = match (triggers, registries) {
+            (Some(triggers), Some(registries)) => describe_uses(triggers, registries, moments, pulse, bonus.copied().unwrap_or_default()),
+            _ => Vec::new(),
+        };
         let clock_runs = !attuned || slot.is_some();
         let ready_in = consumable
             .filter(|c| c.left < c.max && clock_runs)
@@ -485,6 +518,52 @@ mod tests {
         stage.tick();
         let view = stage.app.world().resource::<InventoryView>();
         assert!(view.rows[0].used.iter().any(|line| line == "use: cloaked for 14 turns"), "{:?}", view.rows[0].used);
+    }
+
+    /// A trigger on `on` that lands `effects` with nothing else about it.
+    fn plain_trigger(on: MomentId, effects: &std::sync::Arc<Effects>) -> rl_bevy::Trigger {
+        rl_bevy::Trigger { on, area: rl_rules::Area::Here, fires: None, effects: effects.clone(), look: None, every: None, aim: None, asks: None }
+    }
+
+    /// A `Mend` effect list of one roll, built the way an item's would be.
+    fn mend(registries: &Registries, kinds: &EffectKinds, roll: &str) -> std::sync::Arc<Effects> {
+        let args = rl_rules::ability::parse_args(&format!(r#"(roll: "{roll}")"#)).unwrap();
+        let specs = vec![rl_rules::EffectSpec { kind: "Mend".to_string(), chance: 100, args }];
+        std::sync::Arc::new(Effects::build(&specs, kinds, &registries.names()).unwrap())
+    }
+
+    /// A potion drunk or thrown to the same end says so once, under `use
+    /// or thrown`, where it used to list the same mend under `use` and
+    /// again under `on landing`; a potion whose throw heals for a
+    /// different amount than its drink keeps the two lines apart.
+    #[test]
+    fn a_use_and_a_land_trigger_that_say_the_same_thing_are_said_once() {
+        let mut stage = Stage::new(InventoryViewPlugin);
+        let player = stage.player;
+        let registries = stage.app.world().resource::<Registries>().clone();
+        let mut kinds = EffectKinds::default();
+        kinds.declare::<rl_bevy::Mend>();
+        let (shared, different) = (mend(&registries, &kinds, "3d6+4"), mend(&registries, &kinds, "1d4"));
+        let healing = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("potion of healing"), Triggers(vec![plain_trigger(Moments::USE, &shared), plain_trigger(Moments::LAND, &shared)])))
+            .id();
+        let odd = stage
+            .app
+            .world_mut()
+            .spawn((Item, Name::new("potion of confusion"), Triggers(vec![plain_trigger(Moments::USE, &different), plain_trigger(Moments::LAND, &shared)])))
+            .id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![healing, odd] });
+        stage.tick();
+        let view = stage.app.world().resource::<InventoryView>();
+        assert_eq!(view.rows[0].used, vec!["use or thrown: mends 3d6+4".to_string()], "said once, not twice over: {:?}", view.rows[0].used);
+        assert_eq!(
+            view.rows[1].used,
+            vec!["use: mends 1d4".to_string(), "on landing: mends 3d6+4".to_string()],
+            "a use and a land that differ keep their own lead-in: {:?}",
+            view.rows[1].used
+        );
     }
 
     /// A `use` trigger with nothing in it, aimed or asking as given.
