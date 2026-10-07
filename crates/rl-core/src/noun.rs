@@ -176,15 +176,15 @@ pub fn with_article(name: &str) -> String {
 /// `name` with `the` before it, unless it already carries an article or
 /// is a proper name, in which case it is said as written.
 ///
-/// An actor named with its own article keeps it: a boss called `the
-/// Drowned King` is said `the Drowned King`, not `the the Drowned King`,
-/// and a bare proper name like `Grubnak` takes no article at all.
+/// A name already written with its own article keeps it: `the stairs` is
+/// said `the stairs`, not `the the stairs`, and a bare proper name like
+/// `Grubnak` takes no article at all.
 ///
 /// ```
 /// use rl_core::noun::with_the;
-/// assert_eq!(with_the("goblin"), "the goblin");
-/// assert_eq!(with_the("the Drowned King"), "the Drowned King");
-/// assert_eq!(with_the("a masked stranger"), "a masked stranger");
+/// assert_eq!(with_the("pebble"), "the pebble");
+/// assert_eq!(with_the("the stairs"), "the stairs");
+/// assert_eq!(with_the("a crust of bread"), "a crust of bread");
 /// assert_eq!(with_the("Grubnak"), "Grubnak");
 /// ```
 pub fn with_the(name: &str) -> String {
@@ -280,9 +280,9 @@ mod tests {
 
     #[test]
     fn the_is_not_doubled_before_a_name_that_already_carries_an_article_or_is_proper() {
-        assert_eq!(with_the("goblin"), "the goblin");
-        assert_eq!(with_the("the Drowned King"), "the Drowned King");
-        assert_eq!(with_the("a masked stranger"), "a masked stranger");
+        assert_eq!(with_the("pebble"), "the pebble");
+        assert_eq!(with_the("the stairs"), "the stairs");
+        assert_eq!(with_the("a crust of bread"), "a crust of bread");
         assert_eq!(with_the("Grubnak"), "Grubnak");
         assert_eq!(with_the(""), "");
     }
