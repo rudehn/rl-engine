@@ -17,7 +17,7 @@
             crates/rl-bevy/src/ability.rs
             crates/rl-bevy/src/cue.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 4b65c386 -->
+     fingerprint: afa62204 -->
 
 # Effects
 
