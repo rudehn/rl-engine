@@ -492,7 +492,9 @@ pub struct BagScreen<'w> {
 /// Paints the bag while its modal is open: the rows, a rule, and the row
 /// picked out described under it. Choosing what a use is made on, it is
 /// titled with the use's prompt and lists only what it may be made on.
-pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<InventoryMenu>, screen: BagScreen) {
+/// Rows past the list's room are counted on the frame above it and the
+/// rule below, since a bag cut short without a word reads as a short bag.
+pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<InventoryMenu>, screen: BagScreen, mut top: Local<usize>) {
     let BagScreen { layout, view, binds, keys, modals, palette } = &screen;
     if !modals.is_open(inventory_modal(modals)) {
         return;
@@ -531,7 +533,10 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
     // Half the height to the rows, the rest to the words about the one
     // picked out, and never fewer than three rows.
     let list_rows = ((inner.height / 2) as usize).max(3).min(rows.len());
-    let first = at.saturating_sub(list_rows - 1).min(rows.len().saturating_sub(list_rows));
+    // The list moves only as far as keeps the row picked out in it, so it
+    // holds still under a cursor moving inside it.
+    *top = (*top).min(at).max((at + 1).saturating_sub(list_rows)).min(rows.len() - list_rows);
+    let first = *top;
     for (i, row) in rows.iter().enumerate().skip(first).take(list_rows) {
         let y = inner.y + (i - first) as i32;
         let selected = i == at;
@@ -557,10 +562,30 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
     for x in inner.x..inner.right() {
         terminal.put(x, rule_y, '\u{2500}', palette.get(Tones::FRAME));
     }
+    // How many rows are out of view, on the line over the list and the
+    // rule under it, so a long bag does not read as a short one. Both end
+    // a cell short of the rule's end, so they line up and the rule keeps
+    // its end, and the one above stays clear of the title.
+    let titled = if title.is_empty() { rect.x + 1 } else { rect.x + 2 + format!(" {title} ").chars().count() as i32 };
+    more(&mut terminal, rect.y, titled, inner.right() - 1, '\u{25b2}', first, palette);
+    more(&mut terminal, rule_y, inner.x, inner.right() - 1, '\u{25bc}', rows.len() - first - list_rows, palette);
     let Some(row) = rows.get(at) else { return };
     for (y, (line, tone)) in (rule_y + 1..inner.bottom()).zip(describe(row, width)) {
         terminal.print_on(inner.x, y, &clip(&line, width), palette.get(tone), surface);
     }
+}
+
+/// Says on row `y` that `count` rows are out of view, `arrow` pointing to
+/// them, in the muted tone, ending just short of `end` and starting past
+/// `after`: with the count where there is room, the arrow alone where
+/// there is not, and nothing where there is no room even for that.
+fn more(terminal: &mut Terminal, y: i32, after: i32, end: i32, arrow: char, count: usize, palette: &Palette) {
+    if count == 0 {
+        return;
+    }
+    let said = [format!(" {arrow} {count} more "), format!(" {arrow} ")];
+    let Some(text) = said.iter().find(|t| end - t.chars().count() as i32 > after) else { return };
+    terminal.print_on(end - text.chars().count() as i32, y, text, palette.get(Tones::MUTED), palette.get(Tones::SURFACE));
 }
 
 #[cfg(test)]
@@ -637,6 +662,45 @@ mod tests {
     /// The text inside the frame on row `y`, border and padding cut off.
     fn inside(stage: &Stage, y: i32) -> String {
         stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()
+    }
+
+    /// A bag with more rows than its list has room for says how many are
+    /// out of view above, on the line over the list, and below, on the rule
+    /// under it, in the muted tone; and the list moves only as far as keeps
+    /// the row picked out in view, so it holds still under a cursor moving
+    /// inside it.
+    #[test]
+    fn a_bag_taller_than_its_rectangle_marks_the_rows_out_of_view_and_keeps_the_picked_row_in_it() {
+        // Eight rows inside the frame: four to the list, the rule on the
+        // fifth row from the top.
+        let mut stage = Stage::new(InventoryPanel::new(Rect::new(0, 0, 40, 10)).title("Bag")).screen(40, 10);
+        let player = stage.player;
+        let pebbles: Vec<Entity> = (0..10).map(|i| stage.app.world_mut().spawn((Item, Name::new(format!("pebble {i}")))).id()).collect();
+        stage.app.world_mut().get_mut::<Inventory>(player).unwrap().items = pebbles;
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        let listed = |stage: &Stage| (1..5).map(|y| inside(stage, y)).collect::<Vec<_>>();
+        assert_eq!(listed(&stage), ["pebble 0", "pebble 1", "pebble 2", "pebble 3"]);
+        assert!(!stage.row(0).contains('\u{25b2}'), "nothing above the first row: {:?}", stage.row(0));
+        assert!(stage.row(5).contains(" \u{25bc} 6 more "), "six below, on the rule: {:?}", stage.row(5));
+
+        for _ in 0..4 {
+            stage.press(KeyCode::ArrowDown);
+        }
+        assert_eq!(listed(&stage), ["pebble 1", "pebble 2", "pebble 3", "pebble 4"], "down past the foot moves the list by one");
+        assert!(stage.row(0).contains(" \u{25b2} 1 more ") && stage.row(0).contains(" Bag "), "one above, beside the title: {:?}", stage.row(0));
+        assert!(stage.row(5).contains(" \u{25bc} 5 more "), "{:?}", stage.row(5));
+        stage.press(KeyCode::ArrowUp);
+        assert_eq!(listed(&stage), ["pebble 1", "pebble 2", "pebble 3", "pebble 4"], "back up inside the list, it holds still");
+
+        // A game that picks a row itself has it brought into view.
+        stage.app.world_mut().resource_mut::<InventoryMenu>().selected = 9;
+        stage.tick();
+        assert_eq!(listed(&stage), ["pebble 6", "pebble 7", "pebble 8", "pebble 9"]);
+        assert!(stage.row(0).contains(" \u{25b2} 6 more ") && !stage.row(5).contains('\u{25bc}'), "{:?} {:?}", stage.row(0), stage.row(5));
+        let terminal = stage.app.world().resource::<Terminal>();
+        let x = stage.row(0).chars().position(|c| c == '\u{25b2}').unwrap() as i32;
+        assert_eq!(terminal.get(x, 0).map(|c| c.fg), Some(stage.app.world().resource::<Palette>().get(Tones::MUTED)), "in the muted tone");
     }
 
     #[test]
