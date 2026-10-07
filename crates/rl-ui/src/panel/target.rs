@@ -9,7 +9,8 @@
 //!
 //! The box is where the words go: what is aimed, the range against how far
 //! it reaches, the target, and the chance to hit with every line the game's
-//! hit model gave for it, or the reason the aim is refused in its place. It
+//! hit model gave for it, or the reason the aim is refused in its place,
+//! then whatever the game added about the aim in its own tone. It
 //! is drawn only while the cursor is up, so a game sets it over the bottom
 //! of its rail, where the eye already is when choosing what to aim at, and
 //! the rows above it stay readable.
@@ -210,6 +211,10 @@ pub fn draw_target(
         }
         (None, None) => {}
     }
+    // What the game added about the aim, under all of it, in its own tone.
+    for facet in &view.facets {
+        line(&mut terminal, &facet.text, facet.tone);
+    }
 }
 
 /// Repaints one cell's background, leaving whatever glyph is on it.
@@ -366,6 +371,25 @@ mod tests {
         let palette = stage.app.world().resource::<Palette>().clone();
         assert_eq!(stage.app.world().resource::<Terminal>().get(1, 4).map(|c| c.fg), Some(palette.get(Tones::GOOD)), "ninety is a good bet");
         assert_eq!(stage.app.world().resource::<Terminal>().get(9, 3).map(|c| c.fg), Some(palette.get(Tones::BAD)), "a foe's name in the hostile tone");
+    }
+
+    /// What a game adds about an aim in `Annotate` is printed under the
+    /// chance and its lines, in its own tone, and is gone with the aim.
+    #[test]
+    fn what_a_game_adds_about_an_aim_is_printed_under_the_chance() {
+        let mut stage = shooter(10);
+        let annotate = |mut view: ResMut<TargetView>, mut facets: ResMut<crate::Facets>| {
+            if view.aiming() {
+                view.facets.push(facets.facet("aim", "a word of the game's").toned(Tones::NOTICE));
+            }
+        };
+        stage.app.add_systems(Update, annotate.in_set(crate::ViewSet::Annotate));
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        assert_eq!(boxed(&stage, 10)[..6], ["fire", "Range: 5 / 12", "Target: droid", "Chance to hit: 90%", "  -10 for range", "a word of the game's"]);
+        let palette = stage.app.world().resource::<Palette>().clone();
+        assert_eq!(stage.app.world().resource::<Terminal>().get(1, 6).map(|c| c.fg), Some(palette.get(Tones::NOTICE)), "in its own tone");
     }
 
     #[test]

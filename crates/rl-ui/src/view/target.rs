@@ -198,6 +198,12 @@ pub struct TargetView {
     /// nobody would be struck, the game's model does not roll, or the aim
     /// is an ability, which is never rolled.
     pub odds: Option<rl_rules::Odds>,
+    /// What the game added about the aim, in
+    /// [`ViewSet::Annotate`](crate::ViewSet), which the box prints under
+    /// the chance to hit: a game that writes `odds` again with an unknown
+    /// thing counted as it seems says so here, as it does under the look
+    /// cursor's forecast.
+    pub facets: Vec<crate::facet::Facet>,
 }
 
 impl TargetView {
@@ -580,6 +586,7 @@ fn forget(view: &mut TargetView) {
     view.why.clear();
     view.span = None;
     view.odds = None;
+    view.facets.clear();
 }
 
 /// Anything the cursor might land on, as a row is built from it.
@@ -659,6 +666,7 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     view.legal = false;
     view.span = None;
     view.odds = None;
+    view.facets.clear();
     view.unknown = false;
     let Some(user) = view.user else { return };
     let Ok((from, sight, bag)) = reach.users.get(user) else { return };
