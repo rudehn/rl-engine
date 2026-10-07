@@ -784,6 +784,16 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         (leg.turns, leg.health.1) = (turn - arrived, health.0);
     }
     eprintln!("seed {seed} {plan:?}: {end:?} on floor {floor} at turn {turn}");
+    // A death before the middle floors is the one worth reading how it
+    // came about, and the log's last forty lines go back far enough to say:
+    // a rat a wand of polymorph made a salamander is thirty lines before
+    // the salamander's last blow.
+    if matches!(end, End::Died(_)) && floor <= 4 {
+        let lines: Vec<&str> = world.resource::<MessageLog>().iter().map(|line| line.text.as_str()).collect();
+        for line in &lines[lines.len().saturating_sub(40)..] {
+            eprintln!("    {line}");
+        }
+    }
     let tally = world.resource::<Tally>().clone();
     Delve { plan, legs, end, at: (floor, turn), tally, enchanted: memory.enchanted, armor, most: health.1, staff, spare }
 }
