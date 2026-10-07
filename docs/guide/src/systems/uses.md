@@ -28,7 +28,7 @@ The engine owns the use, the aiming, the choosing and the spending; what any of 
 
 A use is an item action, resolved by `ItemsPlugin`'s `resolve_items` from `UseItem`, `UseItemAt` or `UseOn`, and what it lands is landed by `EffectsPlugin`, the subsystem that lands a prop's trap and an ability, so `ItemsPlugin` only reports the moment.
 `ConsumablesPlugin` is what makes doing it cost the thing, opt-in on its own and needing no `AbilitiesPlugin`: it depends on `ItemsPlugin`, adds `EffectsPlugin` if the game has not, runs `spend_charges` in `ResolveSet::Triggers` after `land_triggers`, and runs `recharge_charges` in `TurnSet::React`.
-The bag's use key, and a game's own, writes `AimUse`, which the targeting cursor answers for a use that is aimed and the bag answers by choosing for one that asks; a game with neither screen writes the three actions itself.
+A game's own use key writes `AimUse` for any thing, which the targeting cursor answers by aiming a use that is aimed and using at once one that is not, and the bag answers by choosing for one that asks; the bag's own use key does the same, and a game with neither screen writes the three actions itself.
 
 ## The model
 
@@ -36,7 +36,7 @@ The bag's use key, and a game's own, writes `AimUse`, which the targeting cursor
 A `use` trigger may carry an `aim`, a `Targeting` written in an ability's words, `aim: (mode: Bolt(range: 7), at: Ground, sight: false)`, and then the thing is used at a cell with `UseItemAt { item, at }`, refused as an ability's aim is, by `Bystanders::land`, the call the targeting cursor previews it by, so a use the cursor shows as legal is one the resolver takes.
 Or it may carry an `asks`, `asks: (prompt: "Hone which?", tag: "edge")`, and then the thing is used on another with `UseOn { item, on }`, which takes a thing carried, not the one used, and carrying the tag when one is named, worn or not, by `may_use_on`, the rule the bag offers its choices by.
 A thing with neither is used where its user stands with `UseItem`, and each of the three refuses the others' kind for nothing, so a bolt is never spent on its user's feet.
-`may_use` is the rule every use is refused by before where it is pointed: the thing carried, with a charge to spend when it counts them, and worn when it can be worn, since a worn thing is used by wearing it; a refused use costs the player nothing, as any impossible item action does.
+`may_use` is the rule every use is refused by before where it is pointed: the thing must be carried, have a charge to spend when it counts them, and be worn when it can be worn, since a worn thing is used by wearing it; a refused use costs the player nothing, as any impossible item action does.
 An accepted use writes `Fired` for the `use` moment where its user stands, or at the cell an aimed one was pointed at, and for a use made on a thing a `FiredOn` beside it, which the landing hands its effects as `Landing::on` for a game's own effect to read.
 A use aimed somewhere lands as an ability does, on its footprint from where its user stands to the cell it was pointed at, and with a look it is seen to fly there while the turns wait.
 `AimUse { user, item }` opens the targeting cursor on a thing whose use is aimed, as on an ability aimed the same way, and confirming writes the `UseItemAt` while putting it away spends nothing and passes no turn; a thing whose use lands on its user is used at once and opens nothing, one that asks opens the bag choosing for it, and one that cannot be used now opens nothing at all.
