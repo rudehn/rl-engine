@@ -72,8 +72,7 @@ pub fn shows_nothing(world: &mut EffectWorld<'_, '_>, landing: &Landing) {
 /// `name` as the subject of a line: `The goblin`, and a name that is said
 /// as written, `the Drowned King`, with its first letter raised.
 pub fn the(name: &str) -> String {
-    let said = if name.starts_with(char::is_uppercase) || name.starts_with("the ") { name.to_string() } else { format!("the {name}") };
-    capital(&said)
+    capital(&rl_engine::rl_core::noun::with_the(name))
 }
 
 /// `words` with the first letter raised, to begin a line.
@@ -108,3 +107,21 @@ pub const FAR: i32 = 20;
 /// are put: beside them, and one step further when every cell beside is
 /// taken.
 pub const NEAR: i32 = 2;
+
+#[cfg(test)]
+mod tests {
+    use super::the;
+
+    /// A name takes `the` as the subject of a line unless it already
+    /// carries an article or is a proper name, and its first letter is
+    /// always raised: the fault this guards against read `the a masked
+    /// stranger`, since the old check only caught a name that already
+    /// began with `the `.
+    #[test]
+    fn the_names_a_subject_without_doubling_whatever_article_it_already_carries() {
+        assert_eq!(the("goblin"), "The goblin");
+        assert_eq!(the("the Drowned King"), "The Drowned King");
+        assert_eq!(the("a masked stranger"), "A masked stranger");
+        assert_eq!(the("Grubnak"), "Grubnak");
+    }
+}

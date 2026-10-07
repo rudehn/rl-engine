@@ -56,12 +56,12 @@ mod tests {
         for (_, monster) in world.resource::<Bestiary>().defs.iter() {
             glyphs.push((monster.glyph, format!("the monster {}", monster.name)));
             let blows = [monster.attack.look, monster.ranged.and_then(|r| r.look)];
-            glyphs.extend(blows.into_iter().flatten().map(|l| (l.glyph, format!("the {}'s blow", monster.name))));
+            glyphs.extend(blows.into_iter().flatten().map(|l| (l.glyph, format!("{}'s blow", rl_engine::rl_core::noun::with_the(&monster.name)))));
         }
         for (_, item) in world.resource::<Armory>().defs.iter() {
             glyphs.push((item.glyph, format!("the item {}", item.name)));
             let blows = [item.melee.as_ref().and_then(|m| m.look), item.ranged.as_ref().and_then(|r| r.look)];
-            glyphs.extend(blows.into_iter().flatten().map(|l| (l.glyph, format!("the {}'s blow", item.name))));
+            glyphs.extend(blows.into_iter().flatten().map(|l| (l.glyph, format!("{}'s blow", rl_engine::rl_core::noun::with_the(&item.name)))));
             glyphs.extend(item.triggers.iter().filter_map(|t| t.look).map(|l| (l.glyph, format!("what the {} sets off", item.name))));
         }
         for (_, ability) in world.resource::<Abilities>().defs().iter() {
