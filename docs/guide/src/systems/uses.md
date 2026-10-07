@@ -33,7 +33,7 @@ A game's own use key writes `AimUse` for any thing, which the targeting cursor a
 ## The model
 
 `Triggers` is what a thing does at its moments, the component a prop carries too: `use` when it is used, `land` where a throw comes down, `fire` and `hit` when a worn weapon shoots and strikes, and `pulse` while it is worn, each over its `Area`, which [Effects](effects.md) describes.
-A `use` trigger may carry an `aim`, a `Targeting` written in an ability's words, `aim: (mode: Bolt(range: 7), at: Ground, sight: false)`, and then the thing is used at a cell with `UseItemAt { item, at }`, refused as an ability's aim is, by `Bystanders::land`, the call the targeting cursor previews it by, so a use the cursor shows as legal is one the resolver takes.
+A `use` trigger may carry a `targeting`, a `Targeting` written in an ability's words, `targeting: (mode: Bolt(range: 7), aim: Ground, sight: false)`, and then the thing is used at a cell with `UseItemAt { item, at }`, refused as an ability's aim is, by `Bystanders::land`, the call the targeting cursor previews it by, so a use the cursor shows as legal is one the resolver takes.
 Or it may carry an `asks`, `asks: (prompt: "Hone which?", tag: "edge")`, and then the thing is used on another with `UseOn { item, on }`, which takes a thing carried, not the one used, and carrying the tag when one is named, worn or not, by `may_use_on`, the rule the bag offers its choices by.
 A thing with neither is used where its user stands with `UseItem`, and each of the three refuses the others' kind for nothing, so a bolt is never spent on its user's feet.
 `may_use` is the rule every use is refused by before where it is pointed: the thing must be carried, have a charge to spend when it counts them, and be worn when it can be worn, since a worn thing is used by wearing it; a refused use costs the player nothing, as any impossible item action does.
@@ -42,7 +42,7 @@ A use aimed somewhere lands as an ability does, on its footprint from where its 
 `AimUse { user, item }` opens the targeting cursor on a thing whose use is aimed, as on an ability aimed the same way, and confirming writes the `UseItemAt` while putting it away spends nothing and passes no turn; a thing whose use lands on its user is used at once and opens nothing, one that asks opens the bag choosing for it, and one that cannot be used now opens nothing at all.
 The bag's use key writes `AimUse` for an aimed thing, turns the bag to choosing for one that asks, `InventoryMenu::choosing` holding a `ChoosingFor`, titled with the use's prompt and listing only what it may be made on, and otherwise uses the thing where the player stands.
 Choosing, confirm writes `UseOn` for the thing picked out and puts every screen away, and putting the bag away spends nothing.
-`ItemRow::usable` says whether the use key does anything to a row, read off the `use` trigger, the charges, the wearing and, for one that asks, whether there is anything to choose, rather than off the description, so a terse effect does not lose the key that uses it; `aim` and `asks` say how a row's use is pointed and what it may be made on, an `Asking` of the prompt and the choices.
+`ItemRow::usable` says whether the use key does anything to a row, read off the `use` trigger, the charges, the wearing and, for one that asks, whether there is anything to choose, rather than off the description, so a terse effect does not lose the key that uses it; `targeting` and `asks` say how a row's use is pointed and what it may be made on, an `Asking` of the prompt and the choices.
 A status a worn thing's trigger put on with `while_worn` is held by the thing, and `end_unworn_holds` cures it in the pass its holder is no longer wearing that thing, taken off, dropped, displaced from its slot, spent or despawned alike, since it asks only whether the thing is worn.
 `Pulse` is a worn thing's own clock, which a game builds from its `pulse` trigger's `every`, read back with `Triggers::pulse_every`: `pulse_worn` reports the `pulse` moment every `every` hundredths it is worn, on the wearer's cell and only on the current map, and `restart_pulses` starts it from nothing each time it is put on.
 `Consumable` is what those moments cost the thing: `left` of `max` charges, `WhenEmpty::Destroyed` or `Kept` at zero, and an optional `Recharge` on the clock.
@@ -67,7 +67,7 @@ A use is a trigger and what it costs is its charges, and Undermere's staffs are 
     // conjuring. Every bolt is seen to fly.
     (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), tags: ["staff"], effect_per_level: (amount: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
                  effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4+1")), (kind: "Ignite", args: (turns: 3))])]),
 ```
 

@@ -20,8 +20,8 @@
 //              in steps of open deck, sound "blast" | "hiss" | "alarm" or one of the engine's
 //              ("step" | "strike" | "door" | "landing"); no effect carries a level rule, which
 //              is the enchant block's
-//   triggers:  optional; [(on:, area:, fires:, effects:, look:, every:, aim:, asks:)] what it does at
-//              its moments: on is "use" (used from the pack, or while worn for a thing that
+//   triggers:  optional; [(on:, area:, fires:, effects:, look:, every:, targeting:, asks:)] what it
+//              does at its moments: on is "use" (used from the pack, or while worn for a thing that
 //              is worn; lands on the user where they stand, or where it is aimed) | "land" (a
 //              throw comes to rest) | "fire" (an attack is made with it) | "hit" (that attack
 //              strikes, lands where the target stands) | "pulse" (a worn thing's clock came
@@ -31,14 +31,14 @@
 //              color: (r:, g:, b:)) shown over every cell it lands on, and flying there for
 //              an aimed use; every is hundredths of a step between pulses at +0, required on
 //              a "pulse" trigger and refused on any other, and a "pulse" trigger is only for a
-//              thing that is worn; aim is optional, (mode:, at:, sight:), and only on a thing's
+//              thing that is worn; targeting is optional, (mode:, aim:, sight:), and only on a thing's
 //              one "use" trigger, for a thing used at somewhere rather than on its user and
 //              pointed as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
-//              Ball(range:, radius:) | Beam(range:) | Cone(length:), at what it wants under it,
+//              Ball(range:, radius:) | Beam(range:) | Cone(length:), aim what it wants under it,
 //              Foe (default) | Ally | Ground | Anyone, and sight whether the cell it is pointed
 //              at must be seen, true when left out; the pack's use key then opens the cursor;
 //              asks is optional, (prompt:, tag:), and only on a thing's one "use" trigger with
-//              no aim, for a thing used on another of the user's things: prompt is what the
+//              no targeting, for a thing used on another of the user's things: prompt is what the
 //              choice is asked under, tag one of the tags above that the thing chosen must
 //              carry, any thing carried but itself when left out; the pack's use key then
 //              chooses, and the use lands on the user with the thing chosen for the game's own

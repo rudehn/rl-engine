@@ -84,8 +84,8 @@ Two consequences worth stating:
 
 Where a use lands is written on its trigger rather than chosen by the key, in one of three ways:
 
-- **On its user, where they stand**, for a trigger with neither an `aim` nor an `asks`: the user is the only target and their own cell the only cell.
-- **At a cell**, for a trigger with an `aim`, used with `UseItemAt { item, at }` and pointed by the ability's rule, which section 1 has. With a look it is seen to fly, and while something watches it waits in the air and the turns wait with it, as an ability's bolt does.
+- **On its user, where they stand**, for a trigger with neither a `targeting` nor an `asks`: the user is the only target and their own cell the only cell.
+- **At a cell**, for a trigger with a `targeting`, used with `UseItemAt { item, at }` and pointed by the ability's rule, which section 1 has. With a look it is seen to fly, and while something watches it waits in the air and the turns wait with it, as an ability's bolt does.
 - **On another of its user's things**, for a trigger that `asks`, used with `UseOn { item, on }`: it lands where its user stands, and the thing chosen goes to its effects as `Landing::on`. The engine's own effects never read it, so the engine carries the choice without learning what enchanting or identifying a thing is; a game's own effect reads it and does that.
 
 Each of the three actions refuses the other two kinds for nothing, so a key that wrote the wrong one costs nothing and a bolt is never spent on its user's feet; `AimUse` is the one request a key writes for any thing, and the targeting cursor, the bag choosing or a use at once answers it.

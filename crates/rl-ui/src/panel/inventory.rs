@@ -330,7 +330,7 @@ pub fn inventory_keys(
         // the footer never offers it. A use pointed somewhere closes the
         // bag and opens the targeting cursor in its place, as a throw does,
         // and one made on a thing keeps the bag up, choosing for it.
-        match (row.usable(), row.aim, row.asks.is_some()) {
+        match (row.usable(), row.targeting, row.asks.is_some()) {
             (true, _, true) => {
                 menu.choosing = Some(ChoosingFor { item, selected: 0 });
                 false
@@ -459,8 +459,8 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     }
     // How far a use reaches and what it wants there, in the ability
     // list's own words.
-    if let Some(aim) = row.aim {
-        say(format!("aimed {}", reach(aim.at, aim.mode)), Tones::MUTED);
+    if let Some(targeting) = row.targeting {
+        say(format!("aimed {}", reach(targeting.aim, targeting.mode)), Tones::MUTED);
     }
     if let Some((left, max)) = row.charges {
         say(format!("{left}/{max} charges"), Tones::MUTED);
@@ -968,7 +968,7 @@ mod tests {
     #[test]
     fn a_thing_used_at_somewhere_says_how_it_is_aimed_and_its_use_key_asks_for_the_cursor() {
         let (mut stage, triggers) =
-            with_triggers(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#);
+            with_triggers(r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#);
         let player = stage.player;
         let rod = stage.app.world_mut().spawn((Item, Name::new("rod"), triggers, Consumable::new(3, WhenEmpty::Kept))).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![rod] });
@@ -994,7 +994,7 @@ mod tests {
             })
             .screen(52, 14);
         let specs: Vec<rl_rules::TriggerSpec> = Names::new()
-            .load_list(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
+            .load_list(r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
             .expect("the trigger parses");
         let triggers = {
             let world = stage.app.world();

@@ -511,7 +511,7 @@ pub const GROUND_EFFECTS: [&str; 3] = ["Ignite", "Emit", "Darkness"];
 /// landing an effect that changes the ground.
 fn shows_unstruck(d: &ItemDef) -> bool {
     d.triggers.iter().filter(|t| t.on == "use").any(|t| {
-        let at_ground = t.aim.is_some_and(|aim| aim.at == rl_engine::rl_rules::ability::Aim::Ground);
+        let at_ground = t.targeting.is_some_and(|targeting| targeting.aim == rl_engine::rl_rules::ability::Aim::Ground);
         let effects = t.effects.as_deref().unwrap_or(&d.effects);
         at_ground || effects.iter().any(|e| GROUND_EFFECTS.contains(&e.kind.as_str()))
     })
@@ -586,7 +586,7 @@ fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>, registries: &Registrie
     }
     // A zap is seen by its flight: one that flies as nothing is a turn spent
     // and a foe hurt by nothing the player saw leave their hands.
-    if d.triggers.iter().any(|t| t.aim.is_some() && t.look.is_none()) {
+    if d.triggers.iter().any(|t| t.targeting.is_some() && t.look.is_none()) {
         return Err("a use aimed at somewhere, with no look for what flies there".into());
     }
     if d.throw.is_none() && d.triggers.iter().any(|t| t.on == "land") {
@@ -1355,7 +1355,7 @@ mod tests {
         let library = library();
         let bad = r#"[
             (name: "dark rod", glyph: '~', color: (0.5, 0.5, 0.5), tags: ["wand"], consumable: (charges: 1, when_empty: Kept),
-             triggers: [(on: "use", aim: (mode: Bolt(range: 8)), effects: [(kind: "Beckon")])]),
+             triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), effects: [(kind: "Beckon")])]),
             (name: "strong draught", glyph: '!', color: (0.5, 0.5, 0.5), tags: ["potion"], effect_per_level: (amount: 1)),
             (name: "odd wand", glyph: '~', color: (0.5, 0.5, 0.5), tags: ["wand"], found_at: (2, 1)),
             (name: "quick staff", glyph: '/', color: (0.5, 0.5, 0.5), tags: ["staff"], consumable: (charges: 1, when_empty: Kept, recharge: 0)),

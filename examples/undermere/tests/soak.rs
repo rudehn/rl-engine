@@ -482,7 +482,7 @@ fn from_afar(view: &Sight, things: &[&Thing], armory: &Armory) -> Option<Choice>
         if !wanted {
             continue;
         }
-        let aimed = armory.defs.get(t.def).triggers.iter().any(|trigger| trigger.aim.is_some());
+        let aimed = armory.defs.get(t.def).triggers.iter().any(|trigger| trigger.targeting.is_some());
         return Some(if aimed { Choice::Zap(t.it, foe.at) } else { Choice::Use(t.it) });
     }
     let thrown = first(things, &["javelin", "dart"]).filter(|_| foe.far <= 5)?;

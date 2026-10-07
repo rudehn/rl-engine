@@ -381,19 +381,19 @@ impl Bystanders<'_, '_> {
         // A projectile that stopped short of where it was pointed, at its
         // range or on whatever stood in the way, is refused rather than
         // landed where it stopped: nobody chose that spot.
-        if targeting.at.needs_cursor() && landing.is_some_and(|landed| landed != aim) {
+        if targeting.aim.needs_cursor() && landing.is_some_and(|landed| landed != aim) {
             // First among the reasons: an aim that stops short has no
             // target under it either, and out of reach is the one to act on.
             refused.insert(0, Blocked::OutOfReach);
         }
         let mut targets = Vec::new();
-        if targeting.at == Aim::SelfOnly {
+        if targeting.aim == Aim::SelfOnly {
             // Whatever the shape, the only one it wants is the one using it.
             targets.push(user);
         } else {
             for cell in &cells {
                 for who in occupancy.at(*cell) {
-                    if !targets.contains(who) && self.alive.contains(*who) && targeting.at.hits(self.relation(user, *who), *who == user) {
+                    if !targets.contains(who) && self.alive.contains(*who) && targeting.aim.hits(self.relation(user, *who), *who == user) {
                         targets.push(*who);
                     }
                 }

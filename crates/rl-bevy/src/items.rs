@@ -10,7 +10,7 @@
 //! [`Consumable`](crate::consumable::Consumable); a use is reported both as
 //! [`ItemEvent::Used`], for the game, and as the `use` moment, for the
 //! triggers. A use lands on its user where they stand, or, for a thing
-//! whose `use` trigger carries an aim, at a cell it is pointed at with
+//! whose `use` trigger carries a targeting, at a cell it is pointed at with
 //! [`UseItemAt`], refused by the rule an ability's aim is, or, for one whose
 //! `use` trigger asks for another of its user's things, on the thing chosen
 //! with [`UseOn`], refused by [`may_use_on`]. An item never lends an
@@ -343,7 +343,8 @@ impl Action for Unequip {}
 /// player keeps the turn. A thing that can be worn is used only while it
 /// is worn, and a use of one in the bag is refused the same way. A thing
 /// whose use is aimed is used with [`UseItemAt`], and refused here: used
-/// where its user stands it would land somewhere its aim says it does not.
+/// where its user stands it would land somewhere its targeting says it does
+/// not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseItem(pub Entity);
 impl Action for UseItem {}
@@ -495,7 +496,7 @@ pub fn resolve_items(
     let usable = |item: Entity, bag: &Inventory, worn: Option<&Equipped>| may_use(item, bag, worn, consumables.get(item).ok(), wearables.contains(item));
     // How `item`'s use is pointed, when it is pointed somewhere, and what
     // it asks for, when it is made on a thing.
-    let aim_of = |item: Entity| triggers.get(item).ok().and_then(Triggers::aim);
+    let targeting_of = |item: Entity| triggers.get(item).ok().and_then(Triggers::targeting);
     let asks_of = |item: Entity| triggers.get(item).ok().and_then(Triggers::asks);
     // Whether a worn thing stays on.
     let stays = |item: Entity| stuck.contains(item);
@@ -616,9 +617,9 @@ pub fn resolve_items(
                     let Ok((pos, bag, worn, _)) = carriers.get(actor) else { break 'attempt false };
                     // A thing whose use is pointed somewhere is used at a
                     // cell: used here it would land around its user, which
-                    // its aim says it does not. One that asks for a thing is
+                    // its targeting says it does not. One that asks for a thing is
                     // used on one, which this does not name.
-                    if usable(item, bag, worn) && aim_of(item).is_none() && asks_of(item).is_none() {
+                    if usable(item, bag, worn) && targeting_of(item).is_none() && asks_of(item).is_none() {
                         events.write(ItemEvent::Used { actor, item });
                         fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at: pos.0 });
                         true
@@ -628,7 +629,7 @@ pub fn resolve_items(
                 }
                 Which::UseAt(item, at) => {
                     let Ok((pos, bag, worn, sight)) = carriers.get(actor) else { break 'attempt false };
-                    let Some(targeting) = aim_of(item) else { break 'attempt false };
+                    let Some(targeting) = targeting_of(item) else { break 'attempt false };
                     // Refused as an ability's aim is, before anything is
                     // spent, and by the one call the cursor previews it by:
                     // nowhere to go, out of reach, or out of sight.
@@ -1268,7 +1269,7 @@ mod aimed {
     use crate::testing::Sides;
 
     /// A rod that throws a bolt of four reaching six, at a foe.
-    const BOLT: &str = r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#;
+    const BOLT: &str = r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#;
 
     /// A player holding the first turn, with combat, the engine's effects
     /// and charges, and two sides at war.
@@ -1372,8 +1373,9 @@ mod aimed {
     #[test]
     fn the_aim_of_a_use_decides_who_its_footprint_catches_as_an_abilitys_does() {
         let mut rig = Rig::new();
-        let burst =
-            rig.carry(r#"[(on: "use", aim: (mode: Ball(range: 6, radius: 1), at: Ground), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#);
+        let burst = rig.carry(
+            r#"[(on: "use", targeting: (mode: Ball(range: 6, radius: 1), aim: Ground), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#,
+        );
         let bolt = rig.carry(BOLT);
         let foe = rig.foe(4, 0);
         let ours = rig.sides.ours;
@@ -1439,7 +1441,7 @@ mod aimed {
     fn watched_an_aimed_use_flies_in_its_triggers_look_and_lands_once_the_flight_is_seen() {
         let mut rig = Rig::new();
         let rod = rig.carry(
-            r#"[(on: "use", aim: (mode: Bolt(range: 6)), look: (glyph: '*', color: (r: 255, g: 80, b: 0)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#,
+            r#"[(on: "use", targeting: (mode: Bolt(range: 6)), look: (glyph: '*', color: (r: 255, g: 80, b: 0)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#,
         );
         let look = rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 0) };
         let foe = rig.foe(3, 0);

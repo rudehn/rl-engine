@@ -319,8 +319,8 @@ pub struct Aiming<'w, 's> {
 
 impl Aiming<'_, '_> {
     /// How `item`'s use is pointed, when it is pointed somewhere.
-    fn use_aim(&self, item: Entity) -> Option<Targeting> {
-        self.triggers.get(item).ok().and_then(Triggers::aim)
+    fn use_targeting(&self, item: Entity) -> Option<Targeting> {
+        self.triggers.get(item).ok().and_then(Triggers::targeting)
     }
 
     /// Whether `user` may use `item` now, wherever it is pointed, by the
@@ -335,7 +335,7 @@ impl Aiming<'_, '_> {
     fn aim(&self, pointing: Pointing) -> Aim {
         match pointing {
             Pointing::Ability(ability) => self.abilities.as_deref().map_or(Aim::Foe, |a| a.get(ability).aim),
-            Pointing::Use(item) => self.use_aim(item).map_or(Aim::Foe, |t| t.at),
+            Pointing::Use(item) => self.use_targeting(item).map_or(Aim::Foe, |t| t.aim),
             Pointing::Throw(_) | Pointing::Fire => Aim::Foe,
         }
     }
@@ -436,7 +436,7 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
         // A thing whose use lands on its user is used where it stands, as
         // an ability that wants no cursor is, and refused there when it
         // cannot be.
-        if aiming.use_aim(request.item).is_none() {
+        if aiming.use_targeting(request.item).is_none() {
             intents.item_uses.write(Intent::new(request.user, UseItem(request.item)));
             continue;
         }
@@ -722,7 +722,7 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     let cursor = view.cursor;
     let sees_aim = sight.map(|s| s.can_see(cursor));
     if let Some(item) = view.using {
-        let Some(targeting) = reach.triggers.get(item).ok().and_then(Triggers::aim) else { return };
+        let Some(targeting) = reach.triggers.get(item).ok().and_then(Triggers::targeting) else { return };
         view.what = reach.names.get(item).map(|n| n.as_str().to_string()).unwrap_or_default();
         let source = Source::Trigger { on: item, moment: Moments::USE };
         preview(&mut view, &reach, Aimed { user, source, targeting, origin: from, aim: cursor, sees_aim }, &[]);
@@ -772,7 +772,7 @@ fn preview(view: &mut TargetView, reach: &Reach, aimed: Aimed, gate: &[Blocked])
     // footprint is then drawn where it was pointed rather than where it
     // stopped, since nothing lands at the stop: a refused aim shows the
     // shape the player asked for, in the tone that says no.
-    let out_of_reach = view.why.contains(&Blocked::OutOfReach) || (landing.cells.is_empty() && landing.path.is_empty() && targeting.at.needs_cursor());
+    let out_of_reach = view.why.contains(&Blocked::OutOfReach) || (landing.cells.is_empty() && landing.path.is_empty() && targeting.aim.needs_cursor());
     if out_of_reach {
         view.beyond = beyond(landing.landed_at.unwrap_or(from), view.cursor);
         view.cells = shape_at(targeting.mode, view.cursor);
@@ -1487,7 +1487,7 @@ mod uses {
     use rl_rules::ability::RawValue;
 
     /// A rod whose use bursts on the ground around where it is pointed.
-    const BURST: &str = r#"[(on: "use", aim: (mode: Ball(range: 6, radius: 1), at: Ground), effects: [(kind: "Struck")])]"#;
+    const BURST: &str = r#"[(on: "use", targeting: (mode: Ball(range: 6, radius: 1), aim: Ground), effects: [(kind: "Struck")])]"#;
 
     /// Whoever a use landed on, marked by the effect itself, so what is
     /// read is the landing rather than something it went on to cause.
@@ -1657,9 +1657,9 @@ mod uses {
             };
             let mut stage = staged();
             let rods = [
-                carry(&mut stage, "bolt", r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Struck")])]"#),
+                carry(&mut stage, "bolt", r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Struck")])]"#),
                 carry(&mut stage, "burst", BURST),
-                carry(&mut stage, "salve", r#"[(on: "use", aim: (mode: Ball(range: 6, radius: 1), at: Ally), effects: [(kind: "Struck")])]"#),
+                carry(&mut stage, "salve", r#"[(on: "use", targeting: (mode: Ball(range: 6, radius: 1), aim: Ally), effects: [(kind: "Struck")])]"#),
             ];
             let player = stage.player;
             if roll(2) == 0 {

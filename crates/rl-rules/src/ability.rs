@@ -252,13 +252,13 @@ pub enum Area {
 /// in sight.
 ///
 /// The three answers an ability's own `mode`, `aim` and `sight` give,
-/// gathered so a thing's `use` trigger can give them too: a thing used at
-/// somewhere is pointed, previewed and landed by the rules a bolt an actor
-/// knows is, and not by a second set that could drift from them. Written
-/// `(mode: Bolt(range: 7), at: Ground, sight: false)`, a foe and in sight
-/// unless it says otherwise, as an ability is. A word nobody reads is an
-/// error rather than a default, since a misspelt `at` would otherwise aim
-/// at foes without a word said.
+/// gathered under the same three words so a thing's `use` trigger can give
+/// them too: a thing used at somewhere is pointed, previewed and landed by
+/// the rules a bolt an actor knows is, and not by a second set that could
+/// drift from them. Written `(mode: Bolt(range: 7), aim: Ground, sight:
+/// false)`, a foe and in sight unless it says otherwise, as an ability is.
+/// A word nobody reads is an error rather than a default, since a misspelt
+/// `aim` would otherwise aim at foes without a word said.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Targeting {
@@ -266,7 +266,7 @@ pub struct Targeting {
     pub mode: TargetMode,
     /// What it wants under the shape.
     #[serde(default)]
-    pub at: Aim,
+    pub aim: Aim,
     /// Whether the cell it is pointed at must be one its user can see.
     #[serde(default = "yes")]
     pub sight: bool,
@@ -301,8 +301,12 @@ pub struct Asks {
 /// the Bevy layer resolves it against the moments registered for the run,
 /// the way an offer's verb does. `effects` is optional because a thing may
 /// say what it contains once and let each trigger deliver it: a trigger
-/// with no list of its own lands its carrier's shared list.
+/// with no list of its own lands its carrier's shared list. A word nobody
+/// reads is an error, as it is in a targeting, since every field here is
+/// optional and a misspelt one would otherwise leave a staff landing on
+/// whoever zapped it.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TriggerSpec {
     /// The moment that sets it off: `use`, `land`, `fire`, `hit`,
     /// `entered`, `destroyed`, or one a game registered.
@@ -336,12 +340,12 @@ pub struct TriggerSpec {
     /// own trigger and not an ability it lends, so what it lands and what
     /// it spends stay the thing's.
     #[serde(default)]
-    pub aim: Option<Targeting>,
+    pub targeting: Option<Targeting>,
     /// What a `use` asks its user for, for a thing used on another of the
     /// user's own things: it still lands where its user stands, and what it
     /// was used on goes with it to its effects. Absent, a use asks for
-    /// nothing. Refused on any other moment, as an aim is, and beside an
-    /// aim, since a use is made at a cell or at a thing and not both.
+    /// nothing. Refused on any other moment, as a targeting is, and beside
+    /// one, since a use is made at a cell or at a thing and not both.
     #[serde(default)]
     pub asks: Option<Asks>,
 }
@@ -384,7 +388,7 @@ impl AbilityDef {
     /// its cell must be seen, in the form a thing's aimed use is written
     /// in, so the two are landed and refused by the one rule.
     pub fn targeting(&self) -> Targeting {
-        Targeting { mode: self.mode, at: self.aim, sight: self.sight }
+        Targeting { mode: self.mode, aim: self.aim, sight: self.sight }
     }
 }
 
@@ -509,7 +513,7 @@ pub fn blocked(def: &AbilityDef, gates: &Gates<'_>, purse: &Purse<'_>, now: u32,
 /// a preview can say so before it is spent. A use aimed at its user needs
 /// no footprint and no sight.
 pub fn aim_blocked(targeting: Targeting, cells: &[Point], sees_aim: Option<bool>) -> Vec<Blocked> {
-    let pointed = targeting.at.needs_cursor();
+    let pointed = targeting.aim.needs_cursor();
     let nowhere = pointed && cells.is_empty();
     let unseen = pointed && targeting.sight && sees_aim == Some(false);
     if nowhere || unseen { vec![Blocked::NoTarget] } else { Vec::new() }
@@ -714,7 +718,7 @@ mod tests {
             .unwrap();
         assert_eq!((full.area, full.fires, full.every), (Area::Burst { radius: 2 }, Some(3), Some(1000)));
         assert_eq!(full.effects.as_ref().map(|e| e[0].kind.as_str()), Some("Harm"));
-        assert!(bare.aim.is_none() && full.aim.is_none(), "a trigger with no aim lands where its moment happened");
+        assert!(bare.targeting.is_none() && full.targeting.is_none(), "a trigger with no targeting lands where its moment happened");
     }
 
     /// A use is pointed in the words an ability is: a shape with its range,
@@ -722,14 +726,14 @@ mod tests {
     /// two a foe and yes unless the trigger says otherwise.
     #[test]
     fn a_use_trigger_is_aimed_in_the_abilities_own_words() {
-        let read = |text: &str| -> TriggerSpec { Options::default().with_default_extension(Extensions::IMPLICIT_SOME).from_str(text).unwrap() };
-        let bolt = read(r#"(on: "use", aim: (mode: Bolt(range: 7)))"#);
-        assert_eq!(bolt.aim, Some(Targeting { mode: TargetMode::Bolt { range: 7 }, at: Aim::Foe, sight: true }));
-        let lob = read(r#"(on: "use", aim: (mode: Ball(range: 5, radius: 1), at: Ground, sight: false))"#);
-        assert_eq!(lob.aim, Some(Targeting { mode: TargetMode::Ball { range: 5, radius: 1 }, at: Aim::Ground, sight: false }));
-        let typo: Result<TriggerSpec, _> =
-            Options::default().with_default_extension(Extensions::IMPLICIT_SOME).from_str(r#"(on: "use", aim: (mode: Bolt(range: 7), att: Ally))"#);
-        assert!(typo.is_err(), "a misspelt word in an aim is an error, not a foe");
+        let parse = |text: &str| -> Result<TriggerSpec, _> { Options::default().with_default_extension(Extensions::IMPLICIT_SOME).from_str(text) };
+        let read = |text: &str| -> TriggerSpec { parse(text).unwrap() };
+        let bolt = read(r#"(on: "use", targeting: (mode: Bolt(range: 7)))"#);
+        assert_eq!(bolt.targeting, Some(Targeting { mode: TargetMode::Bolt { range: 7 }, aim: Aim::Foe, sight: true }));
+        let lob = read(r#"(on: "use", targeting: (mode: Ball(range: 5, radius: 1), aim: Ground, sight: false))"#);
+        assert_eq!(lob.targeting, Some(Targeting { mode: TargetMode::Ball { range: 5, radius: 1 }, aim: Aim::Ground, sight: false }));
+        assert!(parse(r#"(on: "use", targeting: (mode: Bolt(range: 7), aimm: Ally))"#).is_err(), "a misspelt word in a targeting is an error, not a foe");
+        assert!(parse(r#"(on: "use", aim: (mode: Bolt(range: 7)))"#).is_err(), "and a misspelt word on the trigger, not a use that lands on its user");
     }
 
     /// A use asks for one of its user's things under the words the game
@@ -825,7 +829,7 @@ mod tests {
         assert_eq!(fireball.effects[0].chance, 100, "the default");
         assert_eq!(
             fireball.targeting(),
-            Targeting { mode: TargetMode::Ball { range: 8, radius: 2 }, at: Aim::Foe, sight: true },
+            Targeting { mode: TargetMode::Ball { range: 8, radius: 2 }, aim: Aim::Foe, sight: true },
             "how it is pointed, gathered as a thing's aimed use writes it"
         );
         let bash = r.get(r.expect("shield bash"));

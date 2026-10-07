@@ -296,7 +296,7 @@ mod tests {
     fn the_box_names_a_thing_used_at_somewhere_how_far_it_reaches_and_who_it_lands_on() {
         let mut stage = staged();
         let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new()
-            .load_list(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#)
+            .load_list(r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#)
             .expect("the trigger parses");
         let triggers = {
             let world = stage.app.world();

@@ -384,7 +384,7 @@ mod tests {
             effects: nothing.clone(),
             look: None,
             every: None,
-            aim: None,
+            targeting: None,
             asks: None,
         };
         Triggers(vec![one(Some(3)), one(None)])

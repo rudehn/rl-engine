@@ -458,7 +458,7 @@ pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, 
             ItemEvent::Equipped { actor, item } if actor == me => (item, Shown::Worn),
             _ => continue,
         };
-        let aimed = knowing.things.get(item).ok().and_then(|(_, t)| t).and_then(Triggers::aim).is_some();
+        let aimed = knowing.things.get(item).ok().and_then(|(_, t)| t).and_then(Triggers::targeting).is_some();
         if matches!(how, Shown::Used) && aimed && in_the_air {
             flying.push(item);
         } else {
@@ -539,7 +539,7 @@ pub fn weigh_landings(
             continue;
         }
         let touches = if f.moment == Moments::USE {
-            let (Some(targeting), Ok(origin)) = (triggers.aim(), origins.get(user)) else { continue };
+            let (Some(targeting), Ok(origin)) = (triggers.targeting(), origins.get(user)) else { continue };
             if armory.shows_unstruck(kind.0) {
                 continue;
             }

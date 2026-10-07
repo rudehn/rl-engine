@@ -127,7 +127,7 @@ pub struct Trigger {
     /// How a `use` is pointed, `Some` on the one `use` trigger of a thing
     /// used at somewhere and nowhere else: it lands on the footprint where
     /// it was pointed rather than around where its moment happened.
-    pub aim: Option<Targeting>,
+    pub targeting: Option<Targeting>,
     /// What a `use` asks its user for, `Some` on the one `use` trigger of a
     /// thing used on another of its user's things and nowhere else: it
     /// lands where its user stands, with the thing chosen as the landing's
@@ -146,7 +146,7 @@ impl std::fmt::Debug for Trigger {
             .field("fires", &self.fires)
             .field("look", &self.look)
             .field("every", &self.every)
-            .field("aim", &self.aim)
+            .field("targeting", &self.targeting)
             .field("asks", &self.asks)
             .finish_non_exhaustive()
     }
@@ -166,16 +166,17 @@ impl Triggers {
     /// says what it contains once and lets each trigger deliver it. Every
     /// problem is reported, not the first: an unknown moment by its name,
     /// an unregistered effect by [`Effects::build`]'s own message, a
-    /// trigger with neither a list nor a shared one as the typo it is, an
-    /// aim anywhere but on a thing's one `use` trigger, or aimed at nobody
-    /// but its user, and an `asks` anywhere but there or beside an aim.
+    /// trigger with neither a list nor a shared one as the typo it is, a
+    /// targeting anywhere but on a thing's one `use` trigger, or aimed at
+    /// nobody but its user, and an `asks` anywhere but there or beside a
+    /// targeting.
     pub fn build(specs: &[TriggerSpec], shared: &[EffectSpec], moments: &Moments, kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, Vec<String>> {
         let mut errors = Vec::new();
         // A use is pointed or made on a thing once, so an aimed or asking
         // one is the thing's only use: a second would land around where the
         // first was pointed, or with a thing nobody chose for it.
         let uses: Vec<&TriggerSpec> = specs.iter().filter(|s| moments.get(&s.on) == Some(Moments::USE)).collect();
-        if uses.len() > 1 && uses.iter().any(|s| s.aim.is_some() || s.asks.is_some()) {
+        if uses.len() > 1 && uses.iter().any(|s| s.targeting.is_some() || s.asks.is_some()) {
             errors.push("a thing whose use is aimed or asks for a thing has one `use` trigger, that one; write what it lands in its one list".to_string());
         }
         let shared = if shared.is_empty() {
@@ -204,19 +205,19 @@ impl Triggers {
             } else if spec.every.is_some() {
                 errors.push(format!("the trigger on {:?} carries an `every`; `every` is only for a pulse trigger", spec.on));
             }
-            match spec.aim {
+            match spec.targeting {
                 Some(_) if on != Moments::USE => {
-                    errors.push(format!("the trigger on {:?} carries an `aim`; only a \"use\" is pointed by whoever makes it", spec.on));
+                    errors.push(format!("the trigger on {:?} carries a `targeting`; only a \"use\" is pointed by whoever makes it", spec.on));
                 }
-                Some(aim) if !aim.at.needs_cursor() => {
-                    errors.push("a use aimed at its own user is a use with no aim; leave `aim` out".to_string());
+                Some(targeting) if !targeting.aim.needs_cursor() => {
+                    errors.push("a use aimed at its own user is a use with no targeting; leave `targeting` out".to_string());
                 }
                 _ => {}
             }
             if spec.asks.is_some() && on != Moments::USE {
                 errors.push(format!("the trigger on {:?} carries an `asks`; only a \"use\" is made by someone choosing what it is made on", spec.on));
             }
-            if spec.asks.is_some() && spec.aim.is_some() {
+            if spec.asks.is_some() && spec.targeting.is_some() {
                 errors.push("a use is aimed at somewhere or asks for a thing, not both".to_string());
             }
             let effects = match (&spec.effects, &shared) {
@@ -233,7 +234,16 @@ impl Triggers {
                     continue;
                 }
             };
-            built.push(Trigger { on, area: spec.area, fires: spec.fires, effects, look: spec.look, every: spec.every, aim: spec.aim, asks: spec.asks.clone() });
+            built.push(Trigger {
+                on,
+                area: spec.area,
+                fires: spec.fires,
+                effects,
+                look: spec.look,
+                every: spec.every,
+                targeting: spec.targeting,
+                asks: spec.asks.clone(),
+            });
         }
         if errors.is_empty() { Ok(Self(built)) } else { Err(errors) }
     }
@@ -242,8 +252,8 @@ impl Triggers {
     /// what the bag asks the targeting cursor for in place of using it at
     /// once, and what the items resolver refuses an aim by. `None` for a
     /// thing whose use lands on its user, or that has none.
-    pub fn aim(&self) -> Option<Targeting> {
-        self.on(Moments::USE).find_map(|t| t.aim)
+    pub fn targeting(&self) -> Option<Targeting> {
+        self.on(Moments::USE).find_map(|t| t.targeting)
     }
 
     /// What this carrier's use asks its user for, when it is used on
@@ -494,7 +504,7 @@ pub fn land_triggers(
                 continue;
             }
             let source = Source::Trigger { on: f.on, moment: f.moment };
-            match trigger.aim {
+            match trigger.targeting {
                 // From wherever its user stands to the cell it was pointed
                 // at, which is where the use is reported to have happened.
                 Some(targeting) => {
@@ -827,22 +837,22 @@ mod tests {
         assert_eq!(triggers.pulse_every(), None);
     }
 
-    /// Only a use is pointed by whoever makes it: an aim on a landing or a
-    /// hit has nobody choosing where it goes.
+    /// Only a use is pointed by whoever makes it: a targeting on a landing
+    /// or a hit has nobody choosing where it goes.
     #[test]
-    fn an_aim_on_any_trigger_but_a_use_fails_the_build_naming_the_reason() {
+    fn a_targeting_on_any_trigger_but_a_use_fails_the_build_naming_the_reason() {
         let (app, _) = floor();
-        let errs = build(&app, r#"[(on: "land", aim: (mode: Bolt(range: 5)))]"#, &harm("1")).expect_err("a landing is not pointed");
+        let errs = build(&app, r#"[(on: "land", targeting: (mode: Bolt(range: 5)))]"#, &harm("1")).expect_err("a landing is not pointed");
         assert!(errs.iter().any(|e| e.contains("only a \"use\"")), "{errs:?}");
     }
 
-    /// A use aimed at its user is a use with no aim, and saying both is a
-    /// mistake rather than a choice.
+    /// A use aimed at its user is a use with no targeting, and saying both
+    /// is a mistake rather than a choice.
     #[test]
     fn a_use_aimed_at_its_own_user_fails_the_build() {
         let (app, _) = floor();
-        let errs = build(&app, r#"[(on: "use", aim: (mode: Own, at: SelfOnly))]"#, &harm("1")).expect_err("aimed at nobody but its user");
-        assert!(errs.iter().any(|e| e.contains("leave `aim` out")), "{errs:?}");
+        let errs = build(&app, r#"[(on: "use", targeting: (mode: Own, aim: SelfOnly))]"#, &harm("1")).expect_err("aimed at nobody but its user");
+        assert!(errs.iter().any(|e| e.contains("leave `targeting` out")), "{errs:?}");
     }
 
     /// A use is pointed once, so a thing whose use is aimed has that one
@@ -851,19 +861,20 @@ mod tests {
     #[test]
     fn a_thing_whose_use_is_aimed_has_no_other_use_trigger() {
         let (app, _) = floor();
-        let errs = build(&app, r#"[(on: "use", aim: (mode: Bolt(range: 5))), (on: "use")]"#, &harm("1")).expect_err("two uses, one aimed");
+        let errs = build(&app, r#"[(on: "use", targeting: (mode: Bolt(range: 5))), (on: "use")]"#, &harm("1")).expect_err("two uses, one aimed");
         assert!(errs.iter().any(|e| e.contains("one `use` trigger")), "{errs:?}");
     }
 
     /// Only a use is made by someone who could choose what it is made on,
     /// and a use is made at one thing: an `asks` on a landing, one beside
-    /// an aim, and one beside a second `use` trigger each fail the build.
+    /// a targeting, and one beside a second `use` trigger each fail the
+    /// build.
     #[test]
-    fn an_ask_on_any_trigger_but_a_things_one_use_or_beside_an_aim_fails_the_build_naming_the_reason() {
+    fn an_ask_on_any_trigger_but_a_things_one_use_or_beside_a_targeting_fails_the_build_naming_the_reason() {
         let (app, _) = floor();
         let landing = build(&app, r#"[(on: "land", asks: (prompt: "Which?"))]"#, &harm("1")).expect_err("a landing asks nobody");
         assert!(landing.iter().any(|e| e.contains("only a \"use\"")), "{landing:?}");
-        let both = build(&app, r#"[(on: "use", aim: (mode: Bolt(range: 5)), asks: (prompt: "Which?"))]"#, &harm("1")).expect_err("aimed and asking");
+        let both = build(&app, r#"[(on: "use", targeting: (mode: Bolt(range: 5)), asks: (prompt: "Which?"))]"#, &harm("1")).expect_err("aimed and asking");
         assert!(both.iter().any(|e| e.contains("not both")), "{both:?}");
         let two = build(&app, r#"[(on: "use", asks: (prompt: "Which?")), (on: "use")]"#, &harm("1")).expect_err("two uses, one asking");
         assert!(two.iter().any(|e| e.contains("one `use` trigger")), "{two:?}");
@@ -875,7 +886,7 @@ mod tests {
         let (app, _) = floor();
         let asking = build(&app, r#"[(on: "use", asks: (prompt: "Which?")), (on: "land")]"#, &harm("1")).unwrap();
         assert_eq!(asking.asks().map(|a| a.prompt.as_str()), Some("Which?"));
-        assert_eq!(asking.aim(), None, "and it is not aimed");
+        assert_eq!(asking.targeting(), None, "and it is not aimed");
         assert!(build(&app, r#"[(on: "use"), (on: "land")]"#, &harm("1")).unwrap().asks().is_none());
     }
 
@@ -923,11 +934,11 @@ mod tests {
     /// What the bag and the cursor ask of a thing: how its use is pointed,
     /// when it is.
     #[test]
-    fn a_carriers_aim_is_its_use_triggers_and_none_for_a_use_that_lands_on_its_user() {
+    fn a_carriers_targeting_is_its_use_triggers_and_none_for_a_use_that_lands_on_its_user() {
         let (app, _) = floor();
-        let aimed = build(&app, r#"[(on: "use", aim: (mode: Bolt(range: 5), at: Ground)), (on: "land")]"#, &harm("1")).unwrap();
-        let bolt = rl_rules::Targeting { mode: rl_grid::TargetMode::Bolt { range: 5 }, at: rl_rules::Aim::Ground, sight: true };
-        assert_eq!(aimed.aim(), Some(bolt));
-        assert_eq!(build(&app, r#"[(on: "use"), (on: "land")]"#, &harm("1")).unwrap().aim(), None);
+        let aimed = build(&app, r#"[(on: "use", targeting: (mode: Bolt(range: 5), aim: Ground)), (on: "land")]"#, &harm("1")).unwrap();
+        let bolt = rl_rules::Targeting { mode: rl_grid::TargetMode::Bolt { range: 5 }, aim: rl_rules::Aim::Ground, sight: true };
+        assert_eq!(aimed.targeting(), Some(bolt));
+        assert_eq!(build(&app, r#"[(on: "use"), (on: "land")]"#, &harm("1")).unwrap().targeting(), None);
     }
 }

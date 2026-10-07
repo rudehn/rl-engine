@@ -55,24 +55,24 @@
 //               of them. Each of Undermere's own takes
 //               only the arguments it names, and none where it names none. Landed by any trigger
 //               with no list of its own
-//   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, aim:, asks:)] what it does at
-//               its moments: on is "use" (used from the pack; lands on the user, or where it is
-//               aimed) | "land" (a throw comes to rest) | "fire" (an attack is made with it) |
+//   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, targeting:, asks:)] what it
+//               does at its moments: on is "use" (used from the pack; lands on the user, or where
+//               it is aimed) | "land" (a throw comes to rest) | "fire" (an attack is made with it) |
 //               "hit" (that attack strikes) | "pulse" (a worn thing's clock came round); area is
 //               Here (default) | Burst(radius:); fires is how many times it may go off, every
 //               time when left out; effects is its own list, the thing's shared effects when
 //               left out; look is optional, (glyph:, color: (r:, g:, b:)) in bytes, shown over
 //               every cell it lands on and flying there for an aimed use, which must have one,
-//               or its zap is never seen; every is hundredths of
-//               a step between pulses, required on a "pulse" trigger, refused on any other, and
-//               a "pulse" trigger is for a worn thing; aim is optional, (mode:, at:, sight:), and
-//               only on a thing's one "use" trigger, for a staff or a wand used at somewhere and
+//               or its zap is never seen; every is hundredths of a step between pulses, required
+//               on a "pulse" trigger, refused on any other, and a "pulse" trigger is for a worn
+//               thing; targeting is optional, (mode:, aim:, sight:), and only on a thing's one
+//               "use" trigger, for a staff or a wand used at somewhere and
 //               pointed as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
-//               Ball(range:, radius:) | Beam(range:) | Cone(length:), at what it wants under it,
+//               Ball(range:, radius:) | Beam(range:) | Cone(length:), aim what it wants under it,
 //               Foe (default) | Ally | Ground | Anyone, and sight whether the cell it is pointed
 //               at must be seen, true when left out; the pack's use key then opens the cursor;
 //               asks is optional, (prompt:, tag:), and only on a thing's one "use" trigger with
-//               no aim, for a scroll read onto another of the user's things: prompt is what the
+//               no targeting, for a scroll read onto another of the user's things: prompt is what the
 //               choice is asked under, tag one of the tags above that the thing chosen must
 //               carry, any thing carried but itself when left out; the pack's use key then
 //               chooses, and the use lands on the user with the thing chosen for the game's own
@@ -273,24 +273,24 @@
     // conjuring. Every bolt is seen to fly.
     (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), tags: ["staff"], effect_per_level: (amount: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
                  effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4+1")), (kind: "Ignite", args: (turns: 3))])]),
     // ANCHOR_END: staff
     (name: "staff of lightning", glyph: '/', color: (0.7, 0.75, 1.0), tags: ["staff"], effect_per_level: (amount: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
-     triggers: [(on: "use", aim: (mode: Beam(range: 8)), look: (glyph: '~', color: (r: 190, g: 210, b: 255)),
+     triggers: [(on: "use", targeting: (mode: Beam(range: 8)), look: (glyph: '~', color: (r: 190, g: 210, b: 255)),
                  effects: [(kind: "Harm", args: (kind: "lightning", roll: "1d4+1"))])]),
     (name: "staff of poison", glyph: '/', color: (0.45, 0.8, 0.3), tags: ["staff"], effect_per_level: (turns: 5),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 120, g: 220, b: 80)),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 120, g: 220, b: 80)),
                  effects: [(kind: "Inflict", args: (status: "poisoned", turns: 5))])]),
     (name: "staff of slowness", glyph: '/', color: (0.55, 0.6, 0.75), tags: ["staff"], effect_per_level: (turns: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 150, g: 160, b: 200)),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 150, g: 160, b: 200)),
                  effects: [(kind: "Inflict", args: (status: "slowed", turns: 5))])]),
     (name: "staff of blinking", glyph: '/', color: (0.8, 0.85, 1.0), tags: ["staff"], effect_per_level: (amount: 1),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 12), at: Ground), look: (glyph: '*', color: (r: 220, g: 230, b: 255)),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 12), aim: Ground), look: (glyph: '*', color: (r: 220, g: 230, b: 255)),
                  effects: [(kind: "Blink", args: (reach: 2, per_level: 2))])]),
     (name: "staff of conjuration", glyph: '/', color: (0.75, 0.85, 1.0), tags: ["staff"], effect_per_level: (amount: 1),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
@@ -302,19 +302,19 @@
     // friend as well as a foe.
     (name: "wand of domination", glyph: '~', color: (0.7, 0.5, 0.9), tags: ["wand"], found_at: (0, 1),
      consumable: (charges: 1, per_level: 1, when_empty: Kept),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 200, g: 120, b: 255)), effects: [(kind: "Dominate")])]),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 200, g: 120, b: 255)), effects: [(kind: "Dominate")])]),
     (name: "wand of teleport other", glyph: '~', color: (0.5, 0.6, 1.0), tags: ["wand"], found_at: (0, 2),
      consumable: (charges: 3, per_level: 1, when_empty: Kept),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 120, g: 150, b: 255)), effects: [(kind: "TeleportOther")])]),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8), aim: Anyone), look: (glyph: '*', color: (r: 120, g: 150, b: 255)), effects: [(kind: "TeleportOther")])]),
     (name: "wand of polymorph", glyph: '~', color: (0.9, 0.6, 0.8), tags: ["wand"], found_at: (0, 2),
      consumable: (charges: 3, per_level: 1, when_empty: Kept),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 255, g: 140, b: 220)), effects: [(kind: "Polymorph")])]),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8), aim: Anyone), look: (glyph: '*', color: (r: 255, g: 140, b: 220)), effects: [(kind: "Polymorph")])]),
     (name: "wand of beckoning", glyph: '~', color: (0.9, 0.85, 0.5), tags: ["wand"], found_at: (0, 2),
      consumable: (charges: 2, per_level: 1, when_empty: Kept),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 255, g: 230, b: 130)), effects: [(kind: "Beckon")])]),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8), aim: Anyone), look: (glyph: '*', color: (r: 255, g: 230, b: 130)), effects: [(kind: "Beckon")])]),
     (name: "wand of plenty", glyph: '~', color: (0.6, 0.85, 0.5), tags: ["wand"], found_at: (0, 1),
      consumable: (charges: 1, per_level: 1, when_empty: Kept),
-     triggers: [(on: "use", aim: (mode: Bolt(range: 8), at: Anyone), look: (glyph: '*', color: (r: 160, g: 240, b: 120)), effects: [(kind: "Plenty")])]),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 8), aim: Anyone), look: (glyph: '*', color: (r: 160, g: 240, b: 120)), effects: [(kind: "Plenty")])]),
     // The rings, worn on either hand, each worth what its level makes it:
     // found at one to three, or cursed below nought and stuck on. A level
     // of regeneration is ten health back a hundred turns, which nothing

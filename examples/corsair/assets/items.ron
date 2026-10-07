@@ -20,21 +20,21 @@
 //           `t` in the chest the one picked, and a sapient monster throws its own and picks up more
 //   effects: optional; [(kind:, chance:, args:)] written as an ability's effects are in
 //           abilities.ron, landed by any trigger that names no list of its own
-//   triggers: optional; [(on:, area:, fires:, effects:, look:, aim:, asks:)], what the item does at a
-//           moment:
+//   triggers: optional; [(on:, area:, fires:, effects:, look:, targeting:, asks:)], what the item
+//           does at a moment:
 //           on: "use" (used from the chest, landing on whoever used it where they stand, or
 //               where it is aimed) | "land" (where it comes down when thrown) | "fire" |
 //               "hit" (for a gun);
 //           area: Here (default) | Burst(radius: n); fires: optional, how many times before it
 //           stops; effects: optional, in place of the item's `effects`; look: optional,
 //           (glyph:, color: (r:, g:, b:)) shown over every cell it lands on, and flying there
-//           for an aimed use; aim: optional, and only on a thing's one "use" trigger,
-//           (mode:, at:, sight:) for a thing used at somewhere rather than on its user, pointed
+//           for an aimed use; targeting: optional, and only on a thing's one "use" trigger,
+//           (mode:, aim:, sight:) for a thing used at somewhere rather than on its user, pointed
 //           as an ability in abilities.ron is: mode Own | Adjacent | Bolt(range:) |
-//           Ball(range:, radius:) | Beam(range:) | Cone(length:), at Foe (default) | Ally |
+//           Ball(range:, radius:) | Beam(range:) | Cone(length:), aim Foe (default) | Ally |
 //           Ground | Anyone, and sight whether the cell must be seen, true when left out; the
 //           chest's use key then opens the cursor; asks: optional, and only on a thing's one
-//           "use" trigger with no aim, (prompt:, tag:) for a thing used on another of the
+//           "use" trigger with no targeting, (prompt:, tag:) for a thing used on another of the
 //           user's things, prompt what the choice is asked under and tag one of the tags above
 //           that the thing chosen must carry, any thing but itself when left out; the chest's
 //           use key then chooses, and the use lands on its user with the thing chosen

@@ -82,7 +82,7 @@ pub struct ItemRow {
     /// How its use is pointed, for a thing used at somewhere rather than on
     /// whoever uses it: the bag asks for the targeting cursor for it rather
     /// than using it at once, and says how far it reaches.
-    pub aim: Option<rl_rules::Targeting>,
+    pub targeting: Option<rl_rules::Targeting>,
     /// What its use asks for, for a thing used on another of its user's
     /// things: the bag chooses for it, under its prompt, rather than using
     /// it at once.
@@ -356,7 +356,7 @@ pub fn collect_inventory(
             entity: item,
             used,
             uses_something: triggers.is_some_and(|t| t.on(Moments::USE).next().is_some()),
-            aim: triggers.and_then(Triggers::aim),
+            targeting: triggers.and_then(Triggers::targeting),
             asks,
             charges: consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max)),
             empty: consumable.is_some_and(|c| c.is_empty()),
@@ -479,7 +479,7 @@ mod tests {
             effects: std::sync::Arc::new(rl_bevy::Effects::default()),
             look: None,
             every: None,
-            aim: None,
+            targeting: None,
             asks: None,
         };
         let plate = stage.app.world_mut().spawn((Item, Name::new("plate"), Wearable(EquipShape::in_slot(torso)), rl_bevy::Triggers(vec![on_use]))).id();
@@ -524,7 +524,7 @@ mod tests {
             effects: std::sync::Arc::new(effects),
             look: None,
             every: None,
-            aim: None,
+            targeting: None,
             asks: None,
         };
         let plate = stage.app.world_mut().spawn((Item, Name::new("cloak plate"), Triggers(vec![trigger]), EffectBonus { turns: 4, amount: 0 })).id();
@@ -536,7 +536,7 @@ mod tests {
 
     /// A trigger on `on` that lands `effects` with nothing else about it.
     fn plain_trigger(on: MomentId, effects: &std::sync::Arc<Effects>) -> rl_bevy::Trigger {
-        rl_bevy::Trigger { on, area: rl_rules::Area::Here, fires: None, effects: effects.clone(), look: None, every: None, aim: None, asks: None }
+        rl_bevy::Trigger { on, area: rl_rules::Area::Here, fires: None, effects: effects.clone(), look: None, every: None, targeting: None, asks: None }
     }
 
     /// A `Mend` effect list of one roll, built the way an item's would be.
@@ -647,7 +647,7 @@ mod tests {
     /// A `use` trigger with nothing in it, aimed or asking as given.
     fn on_use(asks: Option<rl_rules::Asks>) -> rl_bevy::Trigger {
         let effects = std::sync::Arc::new(rl_bevy::Effects::default());
-        rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires: None, effects, look: None, every: None, aim: None, asks }
+        rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires: None, effects, look: None, every: None, targeting: None, asks }
     }
 
     /// A thing not yet known reaches the row by its name and where it goes,

@@ -1647,7 +1647,7 @@ mod tests {
         });
         let (bolt, _, _) = arm(&mut stage);
         let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new()
-            .load_list(r#"[(on: "use", aim: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
+            .load_list(r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
             .expect("the trigger parses");
         let triggers = {
             let world = stage.app.world();

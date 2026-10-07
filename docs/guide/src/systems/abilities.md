@@ -39,7 +39,7 @@ The engine's own effects are registered separately, by `add_engine_effects()` fo
 ## The model
 
 `AbilityDef` is what an ability file says: a `name`, a `description` for a menu, an optional `Look` of glyph and colour, an `Aim`, a `TargetMode` with its range inside it, `sight`, `requires`, `costs`, `time`, `cooldown` and `effects`.
-`AbilityDef::targeting` gathers the mode, the aim and `sight` into a `Targeting`, the form a thing's aimed use is written in, `(mode: Bolt(range: 7), at: Ground, sight: false)`, so a bolt an actor knows and a bolt sent from the pack are pointed by one rule.
+`AbilityDef::targeting` gathers the mode, the aim and `sight` into a `Targeting`, the form a thing's aimed use is written in, `(mode: Bolt(range: 7), aim: Ground, sight: false)`, under the same three words, so a bolt an actor knows and a bolt sent from the pack are pointed by one rule.
 Every id in it is a name resolved through `Names` at load, so an ability calls a stat, a status, a tag, a slot or a damage kind by the name the rest of the content does, and a typo is a startup failure listing every one it found.
 `Aim` is `SelfOnly`, `Foe`, `Ally`, `Ground` or `Anyone`, closed because it enumerates the questions the faction matrix can answer about a cell rather than a taxonomy of content.
 It is what lets a mind fire an ability it cannot understand, through five predicates: `Aim::wants` says whether a cell holds the kind of thing it is after and the rest are built on it, `hits` says who a footprint catches, `worth_aiming_at` who is worth pointing it at, `cycles_to` who a player's cursor stops on, and `needs_cursor` whether there is anywhere to point at all.
