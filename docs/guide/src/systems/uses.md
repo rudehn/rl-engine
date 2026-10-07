@@ -15,7 +15,7 @@
             crates/rl-ui/src/view/target.rs
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: a909c390 -->
+     fingerprint: ebaabdd5 -->
 
 # Uses and charges
 
