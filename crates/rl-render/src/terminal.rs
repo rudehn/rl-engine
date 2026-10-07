@@ -1,5 +1,7 @@
 //! A virtual glyph terminal drawn with Bevy.
 
+use std::borrow::Cow;
+
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::text::{FontSize, FontSmoothing, FontSource};
@@ -84,7 +86,7 @@ pub struct TerminalPlugin {
     height: i32,
     cell_size: Vec2,
     font_size: f32,
-    typeface: Option<&'static [u8]>,
+    typeface: Option<Cow<'static, [u8]>>,
 }
 
 impl TerminalPlugin {
@@ -96,16 +98,17 @@ impl TerminalPlugin {
     }
 
     /// Draws every glyph in `face`, the bytes of a TrueType or OpenType
-    /// file the game ships, compiled in with `include_bytes!`, in place of
-    /// the system's family.
+    /// file the game ships, in place of the system's family: a `&'static`
+    /// slice compiled in with `include_bytes!`, or a `Vec<u8>` read at run
+    /// time, a font the player picked, without leaking it to make it last.
     ///
     /// Bytes rather than a path for Bevy's asset server: an asset arrives
     /// after the first frames are drawn, and on the web only from a page
     /// that serves the game's assets beside it, so a path would draw the
     /// opening frames with no glyphs at all, and a page without the folder
     /// would never draw any. The bytes are there before the grid is.
-    pub fn typeface(mut self, face: &'static [u8]) -> Self {
-        self.typeface = Some(face);
+    pub fn typeface(mut self, face: impl Into<Cow<'static, [u8]>>) -> Self {
+        self.typeface = Some(face.into());
         self
     }
 }
@@ -113,7 +116,7 @@ impl TerminalPlugin {
 impl Plugin for TerminalPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Terminal::new(self.width, self.height, self.cell_size))
-            .insert_resource(TerminalFont { size: self.font_size, typeface: self.typeface })
+            .insert_resource(TerminalFont { size: self.font_size, typeface: self.typeface.clone() })
             .init_resource::<CellEntities>()
             .init_resource::<crate::pointer::Pointer>()
             .add_systems(Startup, spawn_grid)
@@ -328,7 +331,7 @@ struct TerminalFont {
     size: f32,
     /// The game's typeface, a font file's bytes, or `None` for the
     /// system's family.
-    typeface: Option<&'static [u8]>,
+    typeface: Option<Cow<'static, [u8]>>,
 }
 
 /// What every glyph is drawn in: the game's typeface, added to the fonts
@@ -338,7 +341,7 @@ struct TerminalFont {
 ///
 /// Without `Assets<Font>`, as in an app with no text plugin, nothing draws
 /// text, so a typeface is not added either.
-fn face(typeface: Option<&'static [u8]>, fonts: Option<ResMut<Assets<Font>>>) -> FontSource {
+fn face(typeface: Option<&[u8]>, fonts: Option<ResMut<Assets<Font>>>) -> FontSource {
     match (typeface, fonts) {
         (Some(bytes), Some(mut fonts)) => FontSource::Handle(fonts.add(Font::from_bytes(bytes.to_vec()))),
         #[cfg(target_arch = "wasm32")]
@@ -394,7 +397,8 @@ fn spawn_grid(
     // `relayout` sizes the grid for the window. A camera that scaled the
     // grid to fit would stretch glyphs drawn for another size.
     commands.spawn((Camera2d, Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() }));
-    let text_font = TextFont { font: face(font.typeface, fonts), font_size: FontSize::Px(font.size), font_smoothing: FontSmoothing::AntiAliased, ..default() };
+    let text_font =
+        TextFont { font: face(font.typeface.as_deref(), fonts), font_size: FontSize::Px(font.size), font_smoothing: FontSmoothing::AntiAliased, ..default() };
     let count = (terminal.width() * terminal.height()) as usize;
     entities.background = Vec::with_capacity(count);
     entities.glyph = Vec::with_capacity(count);
@@ -965,6 +969,18 @@ mod tests {
         assert!(faces.iter().all(|f| *f == faces[0]), "and every glyph for the same one");
         let font = app.world().resource::<Assets<Font>>().get(handle).expect("the font is kept");
         assert_eq!(font.data.data(), FACE, "the typeface the game gave");
+    }
+
+    /// A typeface read at run time is taken as owned bytes, so a game that
+    /// lets the player pick a font need not leak it to hand it over, and is
+    /// drawn the same as one compiled in.
+    #[test]
+    fn a_terminal_given_a_typeface_read_at_run_time_draws_every_glyph_in_it() {
+        let read: Vec<u8> = b"the bytes of a font read from a file".to_vec();
+        let (app, faces) = faces(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0).typeface(read.clone()));
+        let FontSource::Handle(handle) = &faces[0] else { panic!("the glyphs ask for a font by its handle, not {:?}", faces[0]) };
+        let font = app.world().resource::<Assets<Font>>().get(handle).expect("the font is kept");
+        assert_eq!(font.data.data(), read.as_slice(), "the typeface the game read");
     }
 
     /// Without a typeface nothing changes: every glyph asks for the

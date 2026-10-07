@@ -26,7 +26,7 @@ What a tile looks like is the game's to say; what light, memory, fire and gas do
 
 `RoguelikePlugins` adds all four, and `FullscreenPlugin` beside them, which the settings page covers, because a game with no terminal has nothing to draw into and a map with no viewport is a map nobody sees.
 `TerminalPlugin::new` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`.
-`TerminalPlugin::typeface`, and `RoguelikePlugins::typeface` for a game on the group, takes the bytes of a TrueType or OpenType file the game ships, and every glyph is drawn in it.
+`TerminalPlugin::typeface`, and `RoguelikePlugins::typeface` for a game on the group, takes the bytes of a TrueType or OpenType file the game ships, a `&'static` slice or a `Vec<u8>` read at run time, and every glyph is drawn in it.
 Bytes rather than an asset path, because an asset arrives after the first frames are drawn, and on the web only from a page that serves the game's assets beside it.
 Without one, glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature and is another face on every platform, a glyph it lacks drawn as an empty box; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
 `MapViewPlugin` takes the `Rect` it draws in, the way every panel does, so a game has no `MapView` of its own to insert and cannot forget one.

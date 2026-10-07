@@ -81,8 +81,8 @@ pub struct RoguelikePlugins {
 
 /// A typeface's bytes, which a derived `Debug` would print every one of:
 /// shown by how many there are instead.
-#[derive(Clone, Copy)]
-struct Typeface(&'static [u8]);
+#[derive(Clone)]
+struct Typeface(std::borrow::Cow<'static, [u8]>);
 
 impl std::fmt::Debug for Typeface {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -100,9 +100,11 @@ impl RoguelikePlugins {
     /// Draws every glyph in `face`, the bytes of a TrueType or OpenType
     /// file the game ships, rather than in the system's monospace family,
     /// which is another face on every platform and only ASCII in a
-    /// browser: see [`TerminalPlugin::typeface`](rl_render::TerminalPlugin::typeface).
-    pub fn typeface(mut self, face: &'static [u8]) -> Self {
-        self.typeface = Some(Typeface(face));
+    /// browser: a `&'static` slice compiled in, or bytes read at run time,
+    /// as [`TerminalPlugin::typeface`](rl_render::TerminalPlugin::typeface)
+    /// takes them.
+    pub fn typeface(mut self, face: impl Into<std::borrow::Cow<'static, [u8]>>) -> Self {
+        self.typeface = Some(Typeface(face.into()));
         self
     }
 
