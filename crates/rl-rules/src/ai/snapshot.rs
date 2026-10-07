@@ -4,7 +4,7 @@ use std::any::Any;
 use std::fmt::Debug;
 
 use crate::FactionId;
-use crate::ability::Usable;
+use crate::ability::{Targeting, Usable};
 use crate::ai::Wits;
 use rl_core::{Point, geometry};
 
@@ -66,6 +66,26 @@ pub struct Missile<A: Copy> {
     pub item: A,
     /// How far it reaches.
     pub range: i32,
+}
+
+/// Something the actor carries that it could use this turn, as a mind
+/// reads it: how its use is pointed and whether it mends.
+///
+/// The sibling of [`Usable`] for a thing's own `use` trigger, and like it
+/// says nothing of what the use does beyond the one thing a mind must
+/// know to use it on itself: a use pointed somewhere is scored by who its
+/// footprint would land on, but one that lands on its user is worth making
+/// only when its user is hurt and it mends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Carried<A: Copy> {
+    /// The thing.
+    pub item: A,
+    /// How its use is pointed, read off its own `use` trigger: its shape,
+    /// its reach and what it wants under it. `None` for a use that lands
+    /// on its user where they stand.
+    pub targeting: Option<Targeting>,
+    /// Whether its use mends whoever it lands on.
+    pub mends: bool,
 }
 
 /// Something lying where the actor can see it, as far as a mind can tell
@@ -157,6 +177,13 @@ pub struct Snapshot<A: Copy> {
     /// What it carries that it could throw. Empty for an actor with no bag,
     /// which is most of them.
     pub missiles: Vec<Missile<A>>,
+    /// What it carries that it could use this turn, in the order it was
+    /// picked up, already narrowed to what the items resolver would let it
+    /// use: carried, worn when it must be, and with a charge to spend.
+    /// Never one whose use is made on another of its things, since nothing
+    /// chooses which for a mind. Empty for a mind without [`Wits::USES`]
+    /// and for one with no bag, which is most of them.
+    pub carried: Vec<Carried<A>>,
     /// How far the actor's own shot carries, if it has one. Read from
     /// whatever it wields, or failing that its own, so a mind that picks up
     /// a rifle can shoot without its brain changing.
@@ -200,6 +227,7 @@ impl<A: Copy> Snapshot<A> {
             last_known: None,
             wits: Wits::default(),
             missiles: Vec::new(),
+            carried: Vec::new(),
             reach: None,
             items: Vec::new(),
             props: Vec::new(),

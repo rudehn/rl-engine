@@ -4,7 +4,8 @@
 //! [`rl_rules::ai`]. On its turn the engine builds the [`Snapshot`] its
 //! tactics read and turns the [`Decision`] that comes back into the intent
 //! of the action that answers it: a step, an attack, a wait, an ability, a
-//! pickup, a throw, or a choice of the game's own.
+//! pickup, a throw, a use of something carried, or a choice of the game's
+//! own.
 //!
 //! The snapshot is not built here. [`Thinking`] holds it while it is
 //! being filled, and every plugin that knows something a mind should adds
@@ -37,7 +38,7 @@ use crate::ability::Use;
 use crate::combat::{Attack, CombatRules, Dead, Faction, Health};
 use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
-use crate::items::{EquipFromGround, PickUp};
+use crate::items::{EquipFromGround, PickUp, UseItem, UseItemAt};
 use crate::lighting::{DarkSight, Lighting};
 use crate::places::{GoThrough, MapId, OnMap, Transition};
 use crate::throwing::Throw;
@@ -676,6 +677,8 @@ pub struct MindIntents<'w> {
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     equips: MessageWriter<'w, Intent<EquipFromGround>>,
     throws: MessageWriter<'w, Intent<Throw>>,
+    uses: MessageWriter<'w, Intent<UseItem>>,
+    uses_at: MessageWriter<'w, Intent<UseItemAt>>,
     begins: MessageWriter<'w, Intent<crate::work::BeginWork>>,
     chose: MessageWriter<'w, MindChose>,
 }
@@ -777,6 +780,12 @@ pub fn decide_minds(
         Decision::Throw { item, at } => {
             intents.throws.write(Intent::new(thinker, Throw { item, at }));
         }
+        Decision::UseItem(item) => {
+            intents.uses.write(Intent::new(thinker, UseItem(item)));
+        }
+        Decision::UseItemAt { item, at } => {
+            intents.uses_at.write(Intent::new(thinker, UseItemAt { item, at }));
+        }
         Decision::Work(work) => {
             intents.begins.write(Intent::new(thinker, crate::work::BeginWork(work)));
         }
@@ -805,16 +814,18 @@ pub struct MindsPlugin;
 impl Plugin for MindsPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, PerceiveSet, ResetsOnNewRun, Turn};
-        // The minds may choose an ability, a pickup or a throw, so the
-        // messages they would write them into exist whether or not the game
-        // added abilities, items or throwing. Registering one twice is what
-        // `add_message` is built for.
+        // The minds may choose an ability, a pickup, a throw or a use of
+        // something carried, so the messages they would write them into
+        // exist whether or not the game added abilities, items or throwing.
+        // Registering one twice is what `add_message` is built for.
         use crate::seed::AddStream;
         app.init_resource::<MindsRunning>()
             .add_message::<Intent<Use>>()
             .add_message::<Intent<PickUp>>()
             .add_message::<Intent<EquipFromGround>>()
             .add_message::<Intent<Throw>>()
+            .add_message::<Intent<UseItem>>()
+            .add_message::<Intent<UseItemAt>>()
             .add_message::<MindChose>()
             // A blow a mind decides in a game without combat is refused,
             // not left to hang; combat's own registration is the same one.
@@ -861,14 +872,15 @@ mod tests {
     use super::*;
     use crate::combat::{Armor, CombatPlugin, MeleeAttack};
     use crate::components::{Actor, Blocks};
-    use crate::items::{Equipped, GearScore, Inventory, Item, Wearable};
+    use crate::consumable::{Consumable, ConsumablesPlugin, WhenEmpty};
+    use crate::items::{Equipped, GearScore, Inventory, Item, ItemEvent, Wearable};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::throwing::Throwable;
     use crate::turn::Resolution;
     use crate::turn::Turns;
     use rl_core::DiceRoll;
-    use rl_rules::ai::tactics::{Hunt, MeleeAdjacent};
+    use rl_rules::ai::tactics::{Hunt, MeleeAdjacent, UseCarried};
     use rl_rules::damage::DamageKindId;
 
     fn arena() -> (App, Point, DamageKindId) {
@@ -1389,6 +1401,192 @@ mod tests {
         let w = app.world();
         assert_eq!(w.get::<Equipped>(wearer).unwrap().in_slot(SlotId::from_raw(0)), Some(heavier), "it put on the heavier blow");
         assert_eq!(w.get::<Position>(lighter).map(|p| p.0), Some(start.offset(2, 0)), "and left the lighter one, worse than its own, lying");
+    }
+
+    /// Mends six on its user where it stands.
+    const MENDS: &str = r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "6"))])]"#;
+
+    /// A bolt reaching six that strikes four, at a foe.
+    const ROD: &str = r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#;
+
+    /// An arena with items, their charges and the engine's effects, the two
+    /// sides, and a player of thirty at `start`.
+    fn stocked() -> (App, Entity, Point, crate::testing::Sides) {
+        use crate::effects::AddEngineEffects;
+        let (mut app, start, _) = arena();
+        app.add_plugins((crate::items::ItemsPlugin, ConsumablesPlugin));
+        app.add_engine_effects();
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        (app, player, start, sides)
+    }
+
+    /// A thing doing `triggers`, with three charges kept when spent.
+    fn thing(app: &mut App, triggers: &str) -> Entity {
+        use crate::effects::{EffectKinds, Moments, Triggers};
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new().load_list(triggers).expect("the triggers parse");
+        let built = {
+            let world = app.world();
+            let names = world.resource::<crate::registries::Registries>().names();
+            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+        };
+        app.world_mut().spawn((Item, built, Consumable::new(3, WhenEmpty::Kept))).id()
+    }
+
+    /// Plays `frames` frames of the player waiting, and returns every item
+    /// event they wrote.
+    fn wait_out(app: &mut App, player: Entity, frames: usize) -> Vec<ItemEvent> {
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        let mut events = Vec::new();
+        for _ in 0..frames {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+            events.extend(app.world_mut().resource_mut::<Messages<ItemEvent>>().drain());
+        }
+        events
+    }
+
+    /// A mind at `at` on `side`, at `hp` of twenty with `wits`, carrying
+    /// `things`, whose brain is nothing but `tactic`.
+    fn carrier(
+        app: &mut App,
+        at: Point,
+        side: rl_rules::FactionId,
+        hp: i32,
+        wits: Wits,
+        things: Vec<Entity>,
+        tactic: impl rl_rules::ai::Tactic<Entity> + 'static,
+    ) -> Entity {
+        app.world_mut()
+            .spawn((
+                (Actor, Blocks, Position(at), Health { current: hp, max: 20 }, Faction(side), Perception(10)),
+                (Inventory { items: things }, Mind(Arc::new(Brain::new().then(tactic))), Intelligence(wits)),
+            ))
+            .id()
+    }
+
+    /// A mind hurt past its share mends with what it carries, through the
+    /// resolver the player's use goes through: reported as a use, for a
+    /// charge, and once whole enough it keeps the rest. Above its share, or
+    /// without the wits to use things, it keeps all of it.
+    #[test]
+    fn a_hurt_mind_mends_with_what_it_carries_once_hurt_past_its_share() {
+        let mended = |hp: i32, wits: Wits| {
+            let (mut app, player, start, sides) = stocked();
+            let draught = thing(&mut app, MENDS);
+            let mind = carrier(&mut app, start.offset(4, 0), sides.theirs, hp, wits, vec![draught], UseCarried::default());
+            let used = wait_out(&mut app, player, 6).into_iter().filter(|e| *e == ItemEvent::Used { actor: mind, item: draught }).count();
+            (used, app.world().get::<Health>(mind).unwrap().current, app.world().get::<Consumable>(draught).unwrap().left)
+        };
+        assert_eq!(mended(10, Wits::SAPIENT), (1, 16, 2), "at half it mends, once, and at sixteen of twenty it keeps the rest");
+        assert_eq!(mended(11, Wits::SAPIENT), (0, 11, 3), "above half it keeps all of it");
+        assert_eq!(mended(10, Wits::SAPIENT.without(Wits::USES)), (0, 10, 3), "as it does without the wits to use things, however hurt");
+    }
+
+    /// A mind points what it carries at a foe in its reach, through the
+    /// resolver the player's use goes through: each bolt lands on the
+    /// player for a charge, until the rod is empty and it stops, as the
+    /// player's own empty rod would be refused. Past its reach it is never
+    /// pointed, nor by a mind without the wits to use things.
+    #[test]
+    fn a_mind_points_what_it_carries_at_a_foe_in_its_reach_until_it_is_empty() {
+        let zapped_with = |triggers: &str, dx: i32, wits: Wits| {
+            let (mut app, player, start, sides) = stocked();
+            let rod = thing(&mut app, triggers);
+            let mind = carrier(&mut app, start.offset(dx, 0), sides.theirs, 20, wits, vec![rod], UseCarried::default());
+            let used = wait_out(&mut app, player, 8).into_iter().filter(|e| *e == ItemEvent::Used { actor: mind, item: rod }).count();
+            (used, app.world().get::<Health>(player).unwrap().current, app.world().get::<Consumable>(rod).unwrap().left)
+        };
+        let zapped = |dx: i32, wits: Wits| zapped_with(ROD, dx, wits);
+        assert_eq!(zapped(3, Wits::SAPIENT), (3, 18, 0), "three bolts of four, and none from the empty rod");
+        assert_eq!(zapped(8, Wits::SAPIENT), (0, 30, 3), "eight off, past a reach of six");
+        assert_eq!(zapped(3, Wits::SAPIENT.without(Wits::USES)), (0, 30, 3), "without the wits to use things");
+        // A beam runs on past where it was pointed but for whoever stands
+        // there, which the mind's reckoning stops it at as the resolver's does.
+        let beam = r#"[(on: "use", targeting: (mode: Beam(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#;
+        assert_eq!(zapped_with(beam, 3, Wits::SAPIENT), (3, 18, 0), "a beam is pointed at a foe nearer than its reach");
+    }
+
+    /// A tactic that only listens, keeping what its mind was told it
+    /// carries.
+    struct Listens(Arc<std::sync::Mutex<Vec<rl_rules::Carried<Entity>>>>);
+
+    impl rl_rules::ai::Tactic<Entity> for Listens {
+        fn name(&self) -> &'static str {
+            "listens"
+        }
+        fn evaluate(&self, ctx: &mut rl_rules::ai::TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+            *self.0.lock().expect("one listener") = ctx.snapshot.carried.clone();
+            None
+        }
+    }
+
+    /// A mind is told of what it carries that the resolver would let it
+    /// use, as one that knows what it carries: what mends and what is
+    /// pointed, each as what it is, and not a thing empty though the player
+    /// has not learnt so, one worn to be used and not worn, one used on
+    /// another thing, or one with no use at all. A mind without the wits to
+    /// use things is told of none.
+    #[test]
+    fn a_mind_is_told_of_what_it_may_use_as_one_that_knows_what_it_carries() {
+        let told = |wits: Wits| {
+            let (mut app, player, start, sides) = stocked();
+            let (draught, rod, empty, ring) = (thing(&mut app, MENDS), thing(&mut app, ROD), thing(&mut app, ROD), thing(&mut app, MENDS));
+            app.world_mut().entity_mut(empty).insert((Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) }, crate::items::Unknown));
+            app.world_mut().entity_mut(ring).insert(Wearable(rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))));
+            let polish = thing(&mut app, r#"[(on: "use", asks: (prompt: "On which?"), effects: [(kind: "Mend", args: (roll: "1"))])]"#);
+            let crust = app.world_mut().spawn(Item).id();
+            let heard = Arc::new(std::sync::Mutex::new(Vec::new()));
+            carrier(&mut app, start.offset(4, 0), sides.theirs, 20, wits, vec![draught, rod, empty, ring, polish, crust], Listens(heard.clone()));
+            wait_out(&mut app, player, 3);
+            let told = heard.lock().expect("one listener").clone();
+            (told, draught, rod)
+        };
+        let (carried, draught, rod) = told(Wits::SAPIENT);
+        let bolt = rl_rules::Targeting { mode: rl_grid::TargetMode::Bolt { range: 6 }, aim: rl_rules::Aim::Foe, sight: true };
+        let expected =
+            vec![rl_rules::Carried { item: draught, targeting: None, mends: true }, rl_rules::Carried { item: rod, targeting: Some(bolt), mends: false }];
+        assert_eq!(carried, expected, "the draught and the rod, and nothing else");
+        assert!(told(Wits::SAPIENT.without(Wits::USES)).0.is_empty(), "and nothing without the wits to use things");
+    }
+
+    /// A tactic that points what it is handed where it is told, one use a
+    /// turn, whatever its footprint would land on: a mind that aims badly,
+    /// to see what the resolver makes of it.
+    struct PointsAsTold(std::sync::Mutex<std::collections::VecDeque<(Entity, Point)>>);
+
+    impl rl_rules::ai::Tactic<Entity> for PointsAsTold {
+        fn name(&self) -> &'static str {
+            "points_as_told"
+        }
+        fn evaluate(&self, _: &mut rl_rules::ai::TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+            let (item, at) = self.0.lock().expect("one pointer").pop_front()?;
+            Some(Decision::UseItemAt { item, at })
+        }
+    }
+
+    /// `Unknown` is the player's ignorance and not the carrier's: a mind is
+    /// refused a thing not yet known for all its true targeting and its
+    /// charges say, as for a thing known, where the player's own use of it
+    /// would be made. Pointed past its reach, or empty, the mind's rod is
+    /// refused for nothing spent; pointed in reach, it lands on the player
+    /// as the player's own would land.
+    #[test]
+    fn a_mind_is_refused_a_thing_not_yet_known_for_what_it_truly_is() {
+        let (mut app, player, start, sides) = stocked();
+        let (rod, empty) = (thing(&mut app, ROD), thing(&mut app, ROD));
+        app.world_mut().entity_mut(empty).insert(Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) });
+        for rod in [rod, empty] {
+            app.world_mut().entity_mut(rod).insert(crate::items::Unknown);
+        }
+        let told = [(rod, start.offset(3, 9)), (empty, start), (rod, start)];
+        let mind = carrier(&mut app, start.offset(3, 0), sides.theirs, 20, Wits::SAPIENT, vec![rod, empty], PointsAsTold(std::sync::Mutex::new(told.into())));
+        let used: Vec<ItemEvent> = wait_out(&mut app, player, 6).into_iter().filter(|e| matches!(e, ItemEvent::Used { .. })).collect();
+        assert_eq!(used, vec![ItemEvent::Used { actor: mind, item: rod }], "nine off, past a reach of six, and empty, both refused; in reach, used");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 26, "the one bolt landed on the player");
+        assert_eq!(app.world().get::<Consumable>(rod).unwrap().left, 2, "for the one charge");
     }
 
     #[test]

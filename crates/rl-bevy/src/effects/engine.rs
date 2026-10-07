@@ -109,6 +109,10 @@ impl Effect for Mend {
     fn describe(&self, _: &Registries, bonus: EffectBonus) -> String {
         format!("mends {}", self.roll_with(bonus))
     }
+
+    fn mends(&self) -> bool {
+        true
+    }
 }
 
 impl FromArgs for Mend {

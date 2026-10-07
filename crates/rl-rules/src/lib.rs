@@ -83,7 +83,7 @@ pub use ability::{AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectS
 pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot, range_penalty};
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
 pub use ai::{
-    ActorView, Awareness, Brain, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense, Snapshot,
+    ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense, Snapshot,
     StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
 };
 pub use balance::{BandRow, Report, ThreatSubject, threat};
@@ -112,8 +112,8 @@ pub mod prelude {
     pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
     pub use crate::ai::tactics;
     pub use crate::ai::{
-        ActorView, Awareness, Brain, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense, Snapshot,
-        StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
+        ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense,
+        Snapshot, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
     };
     pub use crate::balance::{BandRow, Report, ThreatSubject, threat};
     pub use crate::content::{BandedEntry, BandedTable, ContentError, Named, Registry};

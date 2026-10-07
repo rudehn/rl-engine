@@ -317,6 +317,16 @@ pub trait Effect: Send + Sync + 'static {
         let _ = (registries, bonus);
         String::new()
     }
+
+    /// Whether this restores health to whoever it lands on: what a mind
+    /// carrying a thing whose use lands it reaches for once it is hurt,
+    /// since the one thing it cannot weigh by a footprint is what a use on
+    /// itself is worth. False unless the effect says so, as the engine's
+    /// [`Mend`] does, so a game's own effect that heals says so too, and
+    /// one that merely sounds like healing is never used for it.
+    fn mends(&self) -> bool {
+        false
+    }
 }
 
 /// An effect that knows how to build itself out of an ability's RON.
@@ -435,6 +445,12 @@ impl Effects {
     /// effects builds to.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Whether any of these mends whoever it lands on, by [`Effect::mends`],
+    /// whatever its chance: what a mind is told of a thing it carries.
+    pub fn mends(&self) -> bool {
+        self.0.iter().any(|b| b.effect.mends())
     }
 
     /// Lands every effect on `landing`, rolling each that may miss.

@@ -142,10 +142,6 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Corsair's tests play a different game from its binary.**
   Corsair's binary runs `honour_portals`, `populate_places`, `drop_loot` and `inflict_on_hit`, and its test harness adds none of the four, so no Corsair test exercises them.
   One plugin that both the binary and the harness add, as Foundry's `FoundryPlugin` is, would close the gap for good.
-- **A mind cannot use a thing from its bag.**
-  A monster could once drink a potion only by using the ability the potion lent, and items stopped lending abilities on 2026-09-23 (`docs/design/effects.md`).
-  Throwing a grenade is `ThrowAtRange` and firing a wand is `ShootAtRange` through `Loadout`, as before, but nothing writes `UseItem` for a mind.
-  A tactic that uses a thing with a `use` trigger when hurt, read from `Snapshot` the way `ThrowAtRange` reads `missiles`, is the missing piece; no game does it today.
 - **`on_equip`.**
   Effects land once and wearing is a standing state, which is why `docs/design/items.md` section 6 defers it; a cursed plate that bites when put on is a real case and would be one more moment, reported by the items resolver on `Equip`.
   It waits for a game that wants it.

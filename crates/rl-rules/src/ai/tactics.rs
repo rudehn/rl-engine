@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use rand::Rng;
 use rl_core::{Direction, Point, geometry};
-use rl_grid::{clear_shot, footprint};
+use rl_grid::{TargetMode, clear_shot, footprint};
 
 use crate::ability::{Aim, Usable};
 use crate::ai::brain::{Decision, Tactic, TacticCtx};
@@ -548,6 +548,9 @@ impl<A: Copy> Tactic<A> for GiveWay {
 /// It sits wherever a game puts it in the priority list. Above
 /// [`MeleeAdjacent`] a caster leads with its ability and falls back to
 /// teeth; below it, teeth first and the ability when nothing is in reach.
+/// Nor is an ability pointed where its flight would stop short, which the
+/// resolver refuses and would leave the caster with a turn spent on
+/// nothing.
 #[derive(Debug, Clone, Copy)]
 pub struct UseAbility {
     /// Percentage chance of reaching for an ability on a turn one is
@@ -562,53 +565,71 @@ impl Default for UseAbility {
     }
 }
 
-impl UseAbility {
-    /// What `usable` aimed at `at` would be worth, or `None` when it is
-    /// not worth using.
-    ///
-    /// Two points for something worth hitting, three off for something hit
-    /// by mistake, so one ally caught in a ground burst outweighs one enemy
-    /// in it. Who is hit is [`Aim::hits`], the rule the resolver lands the
-    /// use with, and what is worth it is [`Aim::worth_aiming_at`].
-    fn score<A: Copy>(usable: &Usable, cells: &[Point], snapshot: &Snapshot<A>) -> i32 {
-        if usable.aim == Aim::SelfOnly {
-            // Nothing to weigh: a self ability is worth using when there
-            // is anything to use it against at all.
-            return if snapshot.enemies.is_empty() { 0 } else { 1 };
+/// What a use wanting `aim` is worth landing on `cells`, by who stands
+/// on them; above nothing is worth making.
+///
+/// Two points for something worth hitting, three off for something hit
+/// by mistake, so one ally caught in a ground burst outweighs one enemy
+/// in it. Who is hit is [`Aim::hits`], the rule the resolver lands the
+/// use with, and what is worth it is [`Aim::worth_aiming_at`].
+fn footprint_worth<A: Copy>(aim: Aim, cells: &[Point], snapshot: &Snapshot<A>) -> i32 {
+    if aim == Aim::SelfOnly {
+        // Nothing to weigh: a self ability is worth using when there
+        // is anything to use it against at all.
+        return if snapshot.enemies.is_empty() { 0 } else { 1 };
+    }
+    // Who the footprint hits and whether each was worth hitting, by the
+    // rule the resolver lands it with: the user stands in its own blast,
+    // and a foe-aimed shape passes an ally by rather than harming it.
+    // Healing an ally that was not hurt wastes nothing, so only the
+    // other aims count what they catch by mistake.
+    let (mut worth, mut harm) = (0, 0);
+    for (actor, relation, is_user) in everyone(snapshot) {
+        if !cells.contains(&actor.pos) || !aim.hits(Some(relation), is_user) {
+            continue;
         }
-        // Who the footprint hits and whether each was worth hitting, by the
-        // rule the resolver lands it with: the user stands in its own blast,
-        // and a foe-aimed shape passes an ally by rather than harming it.
-        // Healing an ally that was not hurt wastes nothing, so only the
-        // other aims count what they catch by mistake.
-        let (mut worth, mut harm) = (0, 0);
-        for (actor, relation, is_user) in Self::everyone(snapshot) {
-            if !cells.contains(&actor.pos) || !usable.aim.hits(Some(relation), is_user) {
-                continue;
-            }
-            if usable.aim.worth_aiming_at(Some(relation), is_user, actor.is_hurt()) {
-                worth += 1;
-            } else if usable.aim != Aim::Ally {
-                harm += 1;
-            }
+        if aim.worth_aiming_at(Some(relation), is_user, actor.is_hurt()) {
+            worth += 1;
+        } else if aim != Aim::Ally {
+            harm += 1;
         }
-        worth * 2 - harm * 3
     }
+    worth * 2 - harm * 3
+}
 
-    /// The cells worth pointing an ability at, the user's own first.
-    fn aims<A: Copy>(usable: &Usable, snapshot: &Snapshot<A>) -> Vec<Point> {
-        Self::everyone(snapshot)
-            .filter(|(actor, relation, is_user)| usable.aim.worth_aiming_at(Some(*relation), *is_user, actor.is_hurt()))
-            .map(|(actor, _, _)| actor.pos)
-            .collect()
-    }
+/// The user, then what it sees, each with how it stands to the user.
+fn everyone<A: Copy>(snapshot: &Snapshot<A>) -> impl Iterator<Item = (&ActorView<A>, Relation, bool)> {
+    std::iter::once((&snapshot.me, Relation::Allied, true))
+        .chain(snapshot.enemies.iter().map(|e| (e, Relation::Hostile, false)))
+        .chain(snapshot.allies.iter().map(|a| (a, Relation::Allied, false)))
+}
 
-    /// The user, then what it sees, each with how it stands to the user.
-    fn everyone<A: Copy>(snapshot: &Snapshot<A>) -> impl Iterator<Item = (&ActorView<A>, Relation, bool)> {
-        std::iter::once((&snapshot.me, Relation::Allied, true))
-            .chain(snapshot.enemies.iter().map(|e| (e, Relation::Hostile, false)))
-            .chain(snapshot.allies.iter().map(|a| (a, Relation::Allied, false)))
+/// The best cell to point a use wanting `aim` in the shape `mode` at, and
+/// what it is worth there; `None` when nowhere is worth it.
+///
+/// What an ability and a carried thing's pointed use are both aimed by, so
+/// a mind weighs a rod as it weighs an ability. Only the cells
+/// [`Aim::worth_aiming_at`] picks are tried, the user's own first and then
+/// the nearest, and a tie goes to the first tried, so two runs agree. A
+/// cell its flight would stop short of, past its reach or on whoever
+/// stands in the way, is never picked, even when the burst where it
+/// stopped would be worth something: the resolver refuses a use that lands
+/// anywhere but where it was pointed.
+fn best_aim<A: Copy>(aim: Aim, mode: TargetMode, ctx: &TacticCtx<'_, A>) -> Option<(i32, Point)> {
+    let me = ctx.snapshot.me.pos;
+    let worth_pointing_at = everyone(ctx.snapshot).filter(|(actor, relation, is_user)| aim.worth_aiming_at(Some(*relation), *is_user, actor.is_hurt()));
+    let mut best: Option<(i32, Point)> = None;
+    for at in worth_pointing_at.map(|(actor, _, _)| actor.pos) {
+        let shape = footprint(mode, me, at, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p), ctx.blocks_burst);
+        if aim.needs_cursor() && shape.landing.is_some_and(|landed| landed != at) {
+            continue;
+        }
+        let score = footprint_worth(aim, &shape.cells, ctx.snapshot);
+        if score > 0 && best.is_none_or(|(b, _)| score > b) {
+            best = Some((score, at));
+        }
     }
+    best
 }
 
 impl<A: Copy> Tactic<A> for UseAbility {
@@ -626,23 +647,93 @@ impl<A: Copy> Tactic<A> for UseAbility {
         if self.chance_pct < 100 && !ctx.rng.random_ratio(self.chance_pct.min(100), 100) {
             return None;
         }
-        let me = ctx.snapshot.me.pos;
+        // Ties go to the ability declared first, and to the nearest aim,
+        // so two runs of one seed agree.
+        let snapshot = ctx.snapshot;
         let mut best: Option<(i32, Usable, Point)> = None;
-        for usable in &ctx.snapshot.usable {
-            for aim in Self::aims(usable, ctx.snapshot) {
-                let shape = footprint(usable.mode, me, aim, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p), ctx.blocks_burst);
-                let score = Self::score(usable, &shape.cells, ctx.snapshot);
-                if score <= 0 {
-                    continue;
-                }
-                // Ties go to the ability declared first, and to the
-                // nearest aim, so two runs of one seed agree.
-                if best.is_none_or(|(b, _, _)| score > b) {
-                    best = Some((score, *usable, aim));
-                }
+        for usable in &snapshot.usable {
+            if let Some((score, aim)) = best_aim(usable.aim, usable.mode, ctx)
+                && best.is_none_or(|(b, _, _)| score > b)
+            {
+                best = Some((score, *usable, aim));
             }
         }
         best.map(|(_, usable, aim)| Decision::Ability { ability: usable.ability, aim })
+    }
+}
+
+/// Use something it carries: on itself what mends, once hurt past a share,
+/// and otherwise what is pointed, where an ability of the same aim would be
+/// pointed.
+///
+/// [`UseAbility`] for what a mind carries rather than what it knows. The
+/// engine cannot know what a thing does, so a pointed use is scored by who
+/// its footprint would land on, and the one thing a mind is told of a use
+/// that lands on itself is whether it mends. What it chooses is answered by
+/// the resolver that answers the player's use of the same thing, so it is
+/// refused whatever the player's would be; and it chooses nothing that
+/// resolver would refuse, since it is told only of what it may use and
+/// never points a thing where its flight would stop short.
+///
+/// Only for a mind with [`Wits::USES`]. Mending comes first, since a mind
+/// hurt past its share has better to do than point things at its enemies;
+/// where it sits in a brain says what comes before either, so below
+/// [`FleeWhenHurt`] a hurt mind runs before it mends.
+#[derive(Debug, Clone, Copy)]
+pub struct UseCarried {
+    /// Mend at or below this percentage of health.
+    pub mend_at_pct: i32,
+    /// Percentage chance of pointing something on a turn there is somewhere
+    /// worth pointing it. Set below a hundred, a mind does not empty what
+    /// it carries in as many turns as it holds charges; mending is never left
+    /// to chance, since a mind hurt past its share that waits may not get
+    /// another turn to mend in.
+    pub chance_pct: u32,
+}
+
+/// Mends at half its health, and points what it carries whenever there is
+/// somewhere worth pointing it.
+impl Default for UseCarried {
+    fn default() -> Self {
+        Self { mend_at_pct: 50, chance_pct: 100 }
+    }
+}
+
+impl<A: Copy> Tactic<A> for UseCarried {
+    fn name(&self) -> &'static str {
+        "use_carried"
+    }
+    fn keeps_with(&self) -> Option<Station> {
+        Some(Station::Enemies)
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let s = ctx.snapshot;
+        if !s.wits.has(Wits::USES) || s.carried.is_empty() {
+            return None;
+        }
+        let hurt = s.me.is_hurt() && s.me.hp_pct().is_some_and(|p| p <= self.mend_at_pct);
+        if hurt && let Some(mending) = s.carried.iter().find(|c| c.mends && c.targeting.is_none()) {
+            return Some(Decision::UseItem(mending.item));
+        }
+        // Ties go to the thing picked up first, and to the nearest aim, so
+        // two runs of one seed agree.
+        let mut best: Option<(i32, A, Point)> = None;
+        for thing in &s.carried {
+            let Some(targeting) = thing.targeting else { continue };
+            if let Some((score, at)) = best_aim(targeting.aim, targeting.mode, ctx)
+                && best.is_none_or(|(b, _, _)| score > b)
+            {
+                best = Some((score, thing.item, at));
+            }
+        }
+        let (_, item, at) = best?;
+        // Rolled only once there is somewhere worth pointing it, so a mind
+        // with nothing to point draws nothing from its stream.
+        if self.chance_pct < 100 && !ctx.rng.random_ratio(self.chance_pct.min(100), 100) {
+            return None;
+        }
+        Some(Decision::UseItemAt { item, at })
     }
 }
 
@@ -860,8 +951,7 @@ fn first_step(from: Point, to: Point, limit: i32, can_step: &dyn Fn(Point) -> bo
 mod tests {
     use super::*;
     use crate::ai::brain::{Brain, Fields, NoFields};
-    use crate::ai::snapshot::Missile;
-    use crate::ai::snapshot::{ActorView, Snapshot, Vitals};
+    use crate::ai::snapshot::{ActorView, Carried, Missile, Snapshot, Vitals};
     use rand::{SeedableRng, rngs::StdRng};
     use rl_core::Id;
     use rl_grid::{DijkstraMap, PathRules, Terrain, TileRegistry};
@@ -1931,5 +2021,120 @@ mod tests {
         remembering.wits = Wits::MINDLESS;
         assert_eq!(decide(&remembering), None, "a mindless thing does not remember where");
         assert_eq!(decide(&Snapshot::alone(view(1, 5, 5, 10))), None, "nothing to watch");
+    }
+
+    fn carried(item: u32, targeting: Option<crate::ability::Targeting>, mends: bool) -> Carried<u32> {
+        Carried { item, targeting, mends }
+    }
+
+    /// A use pointed as `mode` at what `aim` wants, at a cell in sight.
+    fn pointed(mode: rl_grid::TargetMode, aim: Aim) -> Option<crate::ability::Targeting> {
+        Some(crate::ability::Targeting { mode, aim, sight: true })
+    }
+
+    /// What `tactic` decides over `s` in an open arena, where nothing stops
+    /// a flight but what `blocks_shot` says.
+    fn use_carried(tactic: UseCarried, s: &Snapshot<u32>, blocks_shot: &dyn Fn(Point) -> bool) -> Option<Decision<u32>> {
+        let can_step = |_: Point| true;
+        let mut rng = StdRng::seed_from_u64(3);
+        tactic.evaluate(&mut TacticCtx {
+            snapshot: s,
+            fields: &mut NoFields,
+            can_step: &can_step,
+            blocks_shot,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        })
+    }
+
+    /// A mind hurt past its share uses what mends on itself, and not a
+    /// moment before; what does not mend it keeps, however hurt it is.
+    #[test]
+    fn a_hurt_mind_uses_what_mends_once_hurt_past_its_share_and_not_before() {
+        let tactic = UseCarried { mend_at_pct: 50, chance_pct: 100 };
+        let mut s = Snapshot::alone(view(1, 0, 5, 6));
+        s.carried = vec![carried(30, None, false), carried(31, None, true)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "at six in ten it is not hurt enough");
+        s.me = view(1, 0, 5, 5);
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), Some(Decision::UseItem(31)), "at half it mends, with what mends");
+        assert_eq!(use_carried(UseCarried { chance_pct: 0, ..tactic }, &s, &nothing_blocks), Some(Decision::UseItem(31)), "whatever its chance of pointing");
+        s.carried = vec![carried(30, None, false)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "and nothing else will do");
+        s.me = ActorView::at(1, Point::new(0, 5));
+        s.carried = vec![carried(31, None, true)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "nor is anything mended that has no health to see the wounds of");
+    }
+
+    /// A mind points a thing it carries as it points an ability: at a foe
+    /// its footprint reaches down a clear line, at a hurt ally for what is
+    /// aimed at allies, and never at its own side for what is aimed at foes.
+    #[test]
+    fn a_mind_points_what_it_carries_where_an_ability_of_the_same_aim_would_be_pointed() {
+        let tactic = UseCarried::default();
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.carried = vec![carried(40, pointed(rl_grid::TargetMode::Bolt { range: 6 }, Aim::Foe), false)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "nobody to point it at");
+        s.enemies = vec![view(2, 4, 5, 10)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), Some(Decision::UseItemAt { item: 40, at: Point::new(4, 5) }));
+        assert_eq!(use_carried(UseCarried { chance_pct: 0, ..tactic }, &s, &nothing_blocks), None, "not on a turn its chance says no");
+        let wall = |p: Point| p == Point::new(2, 5);
+        assert_eq!(use_carried(tactic, &s, &wall), None, "not through a wall");
+        s.enemies = vec![view(2, 8, 5, 10)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "not past its reach");
+        s.enemies.clear();
+        s.allies = vec![view(3, 4, 5, 4)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "never at its own side");
+        s.carried = vec![carried(41, pointed(rl_grid::TargetMode::Bolt { range: 6 }, Aim::Ally), true)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), Some(Decision::UseItemAt { item: 41, at: Point::new(4, 5) }), "but at a hurt ally");
+        s.allies = vec![view(3, 4, 5, 10)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "and not at a whole one");
+    }
+
+    /// The resolver refuses a use whose flight stopped short of where it was
+    /// pointed, so neither an ability nor a carried thing is pointed at a
+    /// foe it would stop short of, even when the burst where it stopped
+    /// would catch that foe.
+    #[test]
+    fn neither_an_ability_nor_a_carried_thing_is_pointed_where_its_flight_would_stop_short() {
+        let ball = rl_grid::TargetMode::Ball { range: 3, radius: 2 };
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.usable = vec![usable(0, Aim::Foe, ball)];
+        s.carried = vec![carried(40, pointed(ball, Aim::Foe), false)];
+        let ability = |s: &Snapshot<u32>| {
+            let can_step = |_: Point| true;
+            let mut rng = StdRng::seed_from_u64(4);
+            UseAbility::default().evaluate(&mut TacticCtx {
+                snapshot: s,
+                fields: &mut NoFields,
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
+                bounds: arena(),
+                rng: &mut rng,
+            })
+        };
+        s.enemies = vec![view(2, 4, 5, 10)];
+        assert_eq!(ability(&s), None, "four off, a ball reaching three bursts short of the foe it was pointed at");
+        assert_eq!(use_carried(UseCarried::default(), &s, &nothing_blocks), None, "and a thing pointed the same way is refused the same way");
+        s.enemies = vec![view(2, 3, 5, 10)];
+        assert_eq!(ability(&s), Some(Decision::Ability { ability: Id::from_raw(0), aim: Point::new(3, 5) }));
+        assert_eq!(use_carried(UseCarried::default(), &s, &nothing_blocks), Some(Decision::UseItemAt { item: 40, at: Point::new(3, 5) }));
+    }
+
+    /// Using what it carries takes the wits to: without them a mind
+    /// neither mends nor points anything, however hurt it is and whatever
+    /// is in reach, and with them it mends before it points.
+    #[test]
+    fn a_mind_without_the_wits_to_use_things_uses_nothing_it_carries() {
+        let tactic = UseCarried { mend_at_pct: 50, chance_pct: 100 };
+        let mut s = Snapshot::alone(view(1, 0, 5, 2));
+        s.enemies = vec![view(2, 4, 5, 10)];
+        s.carried = vec![carried(40, pointed(rl_grid::TargetMode::Bolt { range: 6 }, Aim::Foe), false), carried(31, None, true)];
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), Some(Decision::UseItem(31)), "with them it mends first");
+        s.wits = Wits::SAPIENT.without(Wits::USES);
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "without them, nothing");
+        s.wits = Wits::ANIMAL;
+        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "and an animal has none");
     }
 }

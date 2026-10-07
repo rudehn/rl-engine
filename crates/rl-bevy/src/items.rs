@@ -42,7 +42,7 @@ use rl_rules::{EquipShape, Equipment, StatId};
 
 use crate::ability::{Aimed, Bystanders};
 use crate::combat::DeathEvent;
-use crate::components::{Actor, MyTurn, Position, Viewshed};
+use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
 use crate::effects::Triggers;
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
@@ -171,6 +171,11 @@ pub struct Stack {
 /// line to the cell pointed at and cycles to anyone. What is refused still
 /// is what does not depend on the thing: one not carried, or worn to be
 /// used and not worn.
+///
+/// It is the player's not knowing and nobody else's. Anyone else using a
+/// thing, a mind using what it carries, knows what it carries, and is
+/// aimed and refused by everything the thing truly is, as for a thing
+/// known.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Unknown;
 
@@ -309,9 +314,12 @@ pub struct ItemWorld<'w, 's> {
     stuck: Query<'w, 's, (), With<Stuck>>,
     /// What a thing counts as, for whether a use may be made on it.
     tagged: Query<'w, 's, &'static Tagged>,
-    /// What its user does not know yet, which is refused for nothing only
-    /// what it is would explain.
+    /// What the player does not know yet, which the player's use is
+    /// refused for nothing only what it is would explain.
     unknown: Query<'w, 's, (), With<Unknown>>,
+    /// The one user a thing is ever unknown to: anyone else knows what it
+    /// carries.
+    players: Query<'w, 's, (), With<Player>>,
     /// What a use made on a thing was made on, for its landing.
     fired_on: MessageWriter<'w, crate::effects::FiredOn>,
 }
@@ -375,12 +383,13 @@ impl Action for UseItem {}
 /// so a use the cursor shows as legal is one this takes. Reported as the
 /// `use` moment at the cell it was pointed at, where its trigger lands.
 ///
-/// A thing not yet known, [`Unknown`], is refused for none of what its
-/// targeting says, which a refusal would tell: pointed at a cell it wants
-/// seen and is not, it is made at the farthest seen cell on the line there,
-/// by [`made_at`](rl_rules::ability::made_at), and anywhere else where it
-/// was pointed; its trigger then lands by its true targeting, stopping at
-/// its reach along the line and catching nobody its aim does not want.
+/// A thing the player does not know yet, [`Unknown`], is refused the
+/// player for none of what its targeting says, which a refusal would tell:
+/// pointed at a cell it wants seen and is not, it is made at the farthest
+/// seen cell on the line there, by [`made_at`](rl_rules::ability::made_at),
+/// and anywhere else where it was pointed; its trigger then lands by its
+/// true targeting, stopping at its reach along the line and catching nobody
+/// its aim does not want. Anyone else is refused it as a thing known.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseItemAt {
     /// What is used.
@@ -462,18 +471,21 @@ impl ItemIntents<'_, '_> {
 
 /// Whether `item` may be used out of `bag` by whoever wears `worn`, how its
 /// use is pointed aside: carried, worn when it is `wearable`, and with a
-/// charge to spend when it is `consumable`, unless it is `unknown`.
+/// charge to spend when it is `consumable`, unless it is `unknown` to its
+/// user.
 ///
 /// The one rule the items resolver refuses a use by, public so the
 /// targeting cursor opens no aim the resolver would refuse before looking
-/// at where it was pointed. An empty thing is still a thing, and using one
-/// is a mistake the player keeps the turn for, as for any impossible item
-/// action, but only one whose emptiness its user knows: a thing not yet
-/// known, [`Unknown`], is used empty, spends the turn and lands nothing,
+/// at where it was pointed, and the minds are told of nothing it would
+/// refuse. An empty thing is still a thing, and using one is a mistake the
+/// player keeps the turn for, as for any impossible item action, but only
+/// one whose emptiness its user knows: a thing the player does not know
+/// yet, [`Unknown`], is used empty, spends the turn and lands nothing,
 /// since a use refused for nothing would tell the player it was empty. A
-/// thing that can be worn is used by wearing it, known or not, since where
-/// it goes is shown: one used from the bottom of the bag would let a
-/// wearer keep one plate on and spend another's charge.
+/// mind knows what it carries, so for its use `unknown` is false. A thing
+/// that can be worn is used by wearing it, known or not, since where it
+/// goes is shown: one used from the bottom of the bag would let a wearer
+/// keep one plate on and spend another's charge.
 pub fn may_use(
     item: Entity,
     bag: &Inventory,
@@ -520,11 +532,16 @@ pub fn resolve_items(
     mut events: MessageWriter<ItemEvent>,
     mut fired: MessageWriter<crate::effects::Fired>,
 ) {
-    let ItemWorld { mut carriers, ground, stacks, wearables, consumables, map, triggers, occupancy, bystanders, stuck, tagged, unknown, mut fired_on } = world;
+    let ItemWorld { mut carriers, ground, stacks, wearables, consumables, map, triggers, occupancy, bystanders, stuck, tagged, unknown, players, mut fired_on } =
+        world;
     let this_map = map.current();
     let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map);
-    let usable = |item: Entity, bag: &Inventory, worn: Option<&Equipped>| {
-        may_use(item, bag, worn, consumables.get(item).ok(), wearables.contains(item), unknown.contains(item))
+    // Whether `actor` does not know `item`, which only the player ever
+    // does: `Unknown` is the player's ignorance, so a mind using what it
+    // carries is refused for everything the thing truly is.
+    let unknown_to = |actor: Entity, item: Entity| unknown.contains(item) && players.contains(actor);
+    let usable = |actor: Entity, item: Entity, bag: &Inventory, worn: Option<&Equipped>| {
+        may_use(item, bag, worn, consumables.get(item).ok(), wearables.contains(item), unknown_to(actor, item))
     };
     // How `item`'s use is pointed, when it is pointed somewhere, and what
     // it asks for, when it is made on a thing.
@@ -651,7 +668,7 @@ pub fn resolve_items(
                     // cell: used here it would land around its user, which
                     // its targeting says it does not. One that asks for a thing is
                     // used on one, which this does not name.
-                    if usable(item, bag, worn) && targeting_of(item).is_none() && asks_of(item).is_none() {
+                    if usable(actor, item, bag, worn) && targeting_of(item).is_none() && asks_of(item).is_none() {
                         events.write(ItemEvent::Used { actor, item });
                         fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at: pos.0 });
                         true
@@ -665,18 +682,19 @@ pub fn resolve_items(
                     // Refused as an ability's aim is, before anything is
                     // spent, and by the one call the cursor previews it by:
                     // nowhere to go, out of reach, or out of sight. A thing
-                    // not yet known is refused for none of them, since each
-                    // would tell what it is: made where it may still be
-                    // pointed, it lands by its true targeting, stopping at
-                    // its reach, and on nobody its aim does not want.
+                    // the player does not know is refused the player for
+                    // none of them, since each would tell what it is: made
+                    // where it may still be pointed, it lands by its true
+                    // targeting, stopping at its reach, and on nobody its
+                    // aim does not want.
                     let source = crate::effects::Source::Trigger { on: item, moment: crate::effects::Moments::USE };
-                    let (at, refused) = if unknown.contains(item) {
+                    let (at, refused) = if unknown_to(actor, item) {
                         (rl_rules::ability::made_at(targeting, pos.0, at, |p| sight.is_none_or(|v| v.can_see(p))), false)
                     } else {
                         let aimed = Aimed { user: actor, source, targeting, origin: pos.0, aim: at, sees_aim: sight.map(|v| v.can_see(at)) };
                         (at, !bystanders.land(aimed, &map, &occupancy).refused.is_empty())
                     };
-                    if usable(item, bag, worn) && !refused {
+                    if usable(actor, item, bag, worn) && !refused {
                         events.write(ItemEvent::Used { actor, item });
                         // At the cell it was pointed at, which is where an
                         // aimed trigger lands; it flies from its user.
@@ -689,7 +707,7 @@ pub fn resolve_items(
                 Which::UseOn(item, on) => {
                     let Ok((pos, bag, worn, _)) = carriers.get(actor) else { break 'attempt false };
                     let Some(asks) = asks_of(item) else { break 'attempt false };
-                    if usable(item, bag, worn) && may_use_on(asks, item, on, bag, tagged.get(on).ok()) {
+                    if usable(actor, item, bag, worn) && may_use_on(asks, item, on, bag, tagged.get(on).ok()) {
                         events.write(ItemEvent::Used { actor, item });
                         // Where its user stands, as any use that is not
                         // aimed, and made on the thing chosen.
@@ -886,6 +904,11 @@ pub struct Belongings<'w, 's> {
     own: Query<'w, 's, &'static OwnBlowScore>,
     /// What will not come off, which no gain pushes off.
     stuck: Query<'w, 's, (), With<Stuck>>,
+    /// What a carried thing does when used, how it is pointed and whether
+    /// it asks for another thing, and what its use spends.
+    uses: Query<'w, 's, &'static Triggers>,
+    charges: Query<'w, 's, &'static crate::consumable::Consumable>,
+    wearables: Query<'w, 's, (), With<Wearable>>,
 }
 
 impl Belongings<'_, '_> {
@@ -893,6 +916,27 @@ impl Belongings<'_, '_> {
     fn missiles(&self, thinker: Entity) -> Vec<rl_rules::Missile<Entity>> {
         let Ok((Some(bag), _)) = self.bags.get(thinker) else { return Vec::new() };
         bag.items.iter().filter_map(|item| self.missiles.get(*item).ok().map(|t| rl_rules::Missile { item: *item, range: t.range })).collect()
+    }
+
+    /// What `thinker` carries that it could use, by [`may_use`], the rule
+    /// the resolver refuses a use by, asked as one that knows what it
+    /// carries: a thing the player has not learnt is empty is empty to the
+    /// mind that carries it. A thing with no `use` trigger is the game's to
+    /// answer and one whose use asks for another thing has nothing to
+    /// choose that thing for a mind, so neither is told of.
+    fn carried(&self, thinker: Entity) -> Vec<rl_rules::Carried<Entity>> {
+        let Ok((Some(bag), worn)) = self.bags.get(thinker) else { return Vec::new() };
+        let usable = |item: Entity| may_use(item, bag, worn, self.charges.get(item).ok(), self.wearables.contains(item), false);
+        let told = |item: Entity| {
+            let does = self.uses.get(item).ok()?;
+            let uses = || does.on(crate::effects::Moments::USE);
+            (uses().next().is_some() && does.asks().is_none() && usable(item)).then(|| rl_rules::Carried {
+                item,
+                targeting: does.targeting(),
+                mends: uses().any(|t| t.effects.mends()),
+            })
+        };
+        bag.items.iter().filter_map(|item| told(*item)).collect()
     }
 
     /// How much better `thinker` would be for wearing `item` in `shape`,
@@ -919,13 +963,14 @@ impl Belongings<'_, '_> {
     }
 }
 
-/// Tells the mind holding the turn what it carries to throw and what lies
-/// in sight worth having.
+/// Tells the mind holding the turn what it carries to throw and to use,
+/// and what lies in sight worth having.
 ///
 /// Items' contribution to a mind's knowledge, in
 /// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate). Only a
 /// mind with the wits to pick up or put on is told what lies about; what
-/// it stands on it can feel, and anything else it has to see. How far its
+/// it stands on it can feel, and anything else it has to see. Only one
+/// with the wits to use things is told what it could use. How far its
 /// shot reaches is combat's to tell, in
 /// [`perceive_reach`](crate::combat::perceive_reach), since a gun a mind
 /// was built with needs no items at all.
@@ -933,6 +978,7 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
     let Some(thinker) = thinking.actor() else { return };
     let missiles = belongings.missiles(thinker);
     let wits = thinking.snapshot().map(|s| s.wits).unwrap_or_default();
+    let carried = if wits.has(rl_rules::Wits::USES) { belongings.carried(thinker) } else { Vec::new() };
     let mut items = Vec::new();
     if wits.has(rl_rules::Wits::PICKS_UP) || wits.has(rl_rules::Wits::EQUIPS) {
         for (item, pos, on, throwable, wearable, score) in belongings.lying.iter() {
@@ -946,6 +992,7 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
     }
     if let Some(snapshot) = thinking.snapshot_mut() {
         snapshot.missiles = missiles;
+        snapshot.carried = carried;
         snapshot.items.extend(items);
     }
 }

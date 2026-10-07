@@ -1585,6 +1585,36 @@ mod tests {
         assert!(said.iter().any(|l| l == "The slime hits you for 2."), "{said:#?}");
     }
 
+    /// A mind seen using what it carries is told of by the line the
+    /// player's own use is told by, with the mind named as the one using it
+    /// and never as "you".
+    #[test]
+    fn a_mind_seen_using_what_it_carries_is_named_as_the_one_using_it() {
+        let mut stage = Stage::new_with((NarratorPlugin::default(), rl_bevy::ConsumablesPlugin, MindsPlugin), |app| {
+            app.add_engine_effects();
+        });
+        let specs: Vec<rl_rules::TriggerSpec> =
+            rl_rules::Names::new().load_list(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "1"))])]"#).expect("the triggers parse");
+        let triggers = {
+            let world = stage.app.world();
+            let registries = world.resource::<Registries>().clone();
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<rl_bevy::EffectKinds>(), &registries.names())
+                .expect("the triggers build")
+        };
+        let (player, theirs) = (stage.player, stage.theirs);
+        let stim = stage.app.world_mut().spawn((Item, Name::new("stim"), triggers, Consumable::new(1, WhenEmpty::Destroyed))).id();
+        let brain = std::sync::Arc::new(rl_rules::Brain::new().then(rl_rules::ai::tactics::UseCarried::default()));
+        stage.app.world_mut().spawn((
+            (Actor, Blocks, Position(stage.at.offset(2, 0)), Health { current: 2, max: 10 }, Faction(theirs), Perception(6)),
+            (Mind(brain), Name::new("goblin"), Inventory { items: vec![stim] }),
+        ));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Wait));
+        stage.tick();
+        stage.tick();
+        assert_eq!(spoken(&stage, &["The goblin uses", "You use"]), ["The goblin uses a stim."]);
+    }
+
     /// A shot is not a blow. The droid fires from four tiles off, in plain
     /// sight, and the log says so rather than saying it hit you.
     #[test]

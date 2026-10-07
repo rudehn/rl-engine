@@ -10,7 +10,8 @@
 //   profile:    how it takes a hit: "chassis" | "organic"
 //   faction:    "droids" | "vermin"
 //   wits:       "mindless" | "animal" | "sapient", or a list as in the engine's Wits
-//               ("flees", "searches", "opens_doors", "picks_up", "equips", "throws" on top,
+//               ("flees", "searches", "opens_doors", "picks_up", "equips", "throws", "uses" on
+//               top, "uses" being for a brain that uses what it carries, which none here is,
 //               and "travels", which no preset has: it follows you through a lift it stood
 //               beside and leaves by one when it runs);
 //               a droid names "opens_doors", so a shut door never stops one on a trail

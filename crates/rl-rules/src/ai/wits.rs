@@ -49,6 +49,10 @@ impl Wits {
     /// a monster that leaves the map it was put on is something a game
     /// says of a kind on purpose: content writes `["sapient", "travels"]`.
     pub const TRAVELS: Wits = Wits(1 << 6);
+    /// Uses what it carries, by [`UseCarried`](crate::ai::tactics::UseCarried):
+    /// on itself what mends once it is hurt, and what is pointed at what
+    /// its aim wants.
+    pub const USES: Wits = Wits(1 << 7);
 
     /// Nothing but what its brain does unconditionally: it strikes, hunts
     /// what it can perceive and wanders, and forgets you the moment it
@@ -58,9 +62,9 @@ impl Wits {
     /// and a knife on the floor is nothing to it.
     pub const ANIMAL: Wits = Wits(Self::FLEES.0 | Self::SEARCHES.0);
     /// Everything the engine knows how to ask about on the map it stands
-    /// on: doors, and picking up, wearing and throwing things besides.
-    /// Leaving that map is [`Wits::TRAVELS`], which no preset has.
-    pub const SAPIENT: Wits = Wits(Self::ANIMAL.0 | Self::OPENS_DOORS.0 | Self::PICKS_UP.0 | Self::EQUIPS.0 | Self::THROWS.0);
+    /// on: doors, and picking up, wearing, throwing and using things
+    /// besides. Leaving that map is [`Wits::TRAVELS`], which no preset has.
+    pub const SAPIENT: Wits = Wits(Self::ANIMAL.0 | Self::OPENS_DOORS.0 | Self::PICKS_UP.0 | Self::EQUIPS.0 | Self::THROWS.0 | Self::USES.0);
 
     /// Whether every capability in `wit` is here.
     pub const fn has(self, wit: Wits) -> bool {
@@ -100,7 +104,7 @@ impl Default for Wits {
 const PRESETS: [(&str, Wits); 3] = [("mindless", Wits::MINDLESS), ("animal", Wits::ANIMAL), ("sapient", Wits::SAPIENT)];
 
 /// Each capability by the name content writes it with.
-const CAPABILITIES: [(&str, Wits); 7] = [
+const CAPABILITIES: [(&str, Wits); 8] = [
     ("flees", Wits::FLEES),
     ("searches", Wits::SEARCHES),
     ("opens_doors", Wits::OPENS_DOORS),
@@ -108,6 +112,7 @@ const CAPABILITIES: [(&str, Wits); 7] = [
     ("equips", Wits::EQUIPS),
     ("throws", Wits::THROWS),
     ("travels", Wits::TRAVELS),
+    ("uses", Wits::USES),
 ];
 
 /// Every name content may use, for a message that lists them.
@@ -171,6 +176,9 @@ mod tests {
         assert!(Wits::SAPIENT.has(Wits::ANIMAL));
         assert!(!Wits::ANIMAL.has(Wits::OPENS_DOORS));
         assert!(!Wits::MINDLESS.has(Wits::FLEES));
+        assert!(Wits::SAPIENT.has(Wits::USES) && !Wits::ANIMAL.has(Wits::USES), "only a sapient mind uses what it carries");
+        assert!(!Wits::SAPIENT.has(Wits::TRAVELS), "and no preset leaves its map");
+        assert_eq!(Wits::named("uses"), Some(Wits::USES));
         assert_eq!(Wits::SAPIENT.without(Wits::FLEES).with(Wits::FLEES), Wits::SAPIENT);
         assert_eq!(Wits::default(), Wits::SAPIENT, "a mind nobody flagged does what its brain asks");
     }
