@@ -177,7 +177,10 @@ pub fn draw_target(
         [_] => ("one of them".to_string(), Tones::TEXT),
         many => (format!("{} of them", many.len()), Tones::TEXT),
     };
-    if y < inner.bottom() {
+    // A thing not yet known used at somewhere names no target, not even
+    // nothing, since who it catches is its own to tell.
+    let names_target = !(view.unknown && view.using.is_some());
+    if names_target && y < inner.bottom() {
         // Both halves clipped to the box, so a narrow one keeps its border.
         let prefix = clip("Target: ", width);
         terminal.print_on(inner.x, y, &prefix, palette.get(Tones::TEXT), bg);
@@ -291,7 +294,8 @@ mod tests {
 
     /// A thing used at somewhere is boxed as an ability is: by its own name,
     /// how far the cursor is against how far its aim reaches, and who it
-    /// would land on, with no chance, since a use is never rolled.
+    /// would land on, with no chance, since a use is never rolled; one not
+    /// yet known by its name and that it is unknown, and nothing more.
     #[test]
     fn the_box_names_a_thing_used_at_somewhere_how_far_it_reaches_and_who_it_lands_on() {
         let mut stage = staged();
@@ -314,12 +318,13 @@ mod tests {
         assert_eq!(boxed(&stage, 10)[..4], ["rod", "Range: 2 / 6", "Target: them", ""]);
 
         // The same rod not yet known: named, said to be unknown where its
-        // reach was, and still aimed at whoever it would land on.
+        // reach was, and naming nobody it would land on, since who it
+        // catches tells what it is.
         stage.press(KeyCode::Escape);
         stage.app.world_mut().entity_mut(rod).insert(rl_bevy::Unknown);
         stage.app.world_mut().write_message(crate::view::target::AimUse { user, item: rod });
         stage.tick();
-        assert_eq!(boxed(&stage, 10)[..4], ["rod", "unknown", "Target: them", ""]);
+        assert_eq!(boxed(&stage, 10)[..3], ["rod", "unknown", ""]);
     }
 
     /// An aim past where the bolt reaches is refused, and the part of the

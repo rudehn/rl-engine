@@ -376,9 +376,9 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
 }
 
 /// What a carrier is, for [`land_triggers`]: its triggers, whether it is a
-/// remnant or lands as itself, and its [`EffectBonus`](super::EffectBonus)
-/// if it has one.
-type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<&'static super::EffectBonus>);
+/// remnant or lands as itself, its [`EffectBonus`](super::EffectBonus) if
+/// it has one, and what it has left to spend if it counts charges.
+type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<&'static super::EffectBonus>, Option<&'static crate::consumable::Consumable>);
 
 /// A use aimed somewhere that has left its user and not yet come down:
 /// the landing its trigger worked out as the use was made, what it lands,
@@ -482,6 +482,11 @@ pub fn land_aimed_uses(mut hold: ResMut<TurnHold>, mut airborne: ResMut<Airborne
 /// A use made on one of its user's things lands where its user stands,
 /// with the thing its [`FiredOn`] names as the landing's
 /// [`on`](Landing::on), for the game's own effect that reads it.
+///
+/// A use of a thing with nothing left to spend lands nothing, and nothing
+/// is seen to fly. Only a thing not yet known is used empty, since a known
+/// one is refused before its turn is spent; one not yet known is used,
+/// because refusing it would say it was empty, and comes to nothing.
 pub fn land_triggers(
     mut commands: Commands,
     mut fired: MessageReader<Fired>,
@@ -496,10 +501,13 @@ pub fn land_triggers(
         // Taken once, so a second use of the same carrier in the pass is
         // not made on the first one's thing.
         let on = made_on.iter().position(|m| m.carrier == f.on && m.moment == f.moment).map(|i| made_on.remove(i).on);
-        let Ok((mut triggers, remnant, itself, bonus)) = carriers.get_mut(f.on) else { continue };
+        let Ok((mut triggers, remnant, itself, bonus, held)) = carriers.get_mut(f.on) else { continue };
         let user = if itself { f.on } else { f.by.unwrap_or(f.on) };
         let bonus = bonus.copied().unwrap_or_default();
-        for trigger in triggers.0.iter_mut().filter(|t| t.on == f.moment) {
+        // Read before the charge this use spends is taken off, which comes
+        // after the landing: empty now is empty when it was used.
+        let used_empty = f.moment == Moments::USE && held.is_some_and(|c| c.is_empty());
+        for trigger in triggers.0.iter_mut().filter(|t| t.on == f.moment && !used_empty) {
             if trigger.fires == Some(0) {
                 continue;
             }

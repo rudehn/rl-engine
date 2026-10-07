@@ -161,6 +161,16 @@ pub struct Stack {
 /// does, and an unknown blade strikes for what it strikes for. The game's
 /// to put on, take off and keep in its own save, since what makes a thing
 /// known, a use, a reading, a long wear, is the game's.
+///
+/// Nor is its use refused, or its aim previewed, by anything only its
+/// kind, its reach or its charges would explain, since a refusal for
+/// nothing tells as much as a panel: [`may_use`] lets it be used empty,
+/// to spend the turn and land nothing; [`UseItemAt`] is refused for no
+/// reach, sight or shape of its targeting, and lands by that targeting
+/// where its flight stops; and the targeting cursor draws it as a plain
+/// line to the cell pointed at and cycles to anyone. What is refused still
+/// is what does not depend on the thing: one not carried, or worn to be
+/// used and not worn.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Unknown;
 
@@ -299,6 +309,9 @@ pub struct ItemWorld<'w, 's> {
     stuck: Query<'w, 's, (), With<Stuck>>,
     /// What a thing counts as, for whether a use may be made on it.
     tagged: Query<'w, 's, &'static Tagged>,
+    /// What its user does not know yet, which is refused for nothing only
+    /// what it is would explain.
+    unknown: Query<'w, 's, (), With<Unknown>>,
     /// What a use made on a thing was made on, for its landing.
     fired_on: MessageWriter<'w, crate::effects::FiredOn>,
 }
@@ -361,6 +374,13 @@ impl Action for UseItem {}
 /// [`Bystanders::land`], the call the targeting cursor previews the use by,
 /// so a use the cursor shows as legal is one this takes. Reported as the
 /// `use` moment at the cell it was pointed at, where its trigger lands.
+///
+/// A thing not yet known, [`Unknown`], is refused for none of what its
+/// targeting says, which a refusal would tell: pointed at a cell it wants
+/// seen and is not, it is made at the farthest seen cell on the line there,
+/// by [`made_at`](rl_rules::ability::made_at), and anywhere else where it
+/// was pointed; its trigger then lands by its true targeting, stopping at
+/// its reach along the line and catching nobody its aim does not want.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseItemAt {
     /// What is used.
@@ -441,18 +461,28 @@ impl ItemIntents<'_, '_> {
 }
 
 /// Whether `item` may be used out of `bag` by whoever wears `worn`, how its
-/// use is pointed aside: carried, with a charge to spend when it is
-/// `consumable`, and worn when it is `wearable`.
+/// use is pointed aside: carried, worn when it is `wearable`, and with a
+/// charge to spend when it is `consumable`, unless it is `unknown`.
 ///
 /// The one rule the items resolver refuses a use by, public so the
 /// targeting cursor opens no aim the resolver would refuse before looking
 /// at where it was pointed. An empty thing is still a thing, and using one
 /// is a mistake the player keeps the turn for, as for any impossible item
-/// action. A thing that can be worn is used by wearing it: one used from
-/// the bottom of the bag would let a wearer keep one plate on and spend
-/// another's charge.
-pub fn may_use(item: Entity, bag: &Inventory, worn: Option<&Equipped>, consumable: Option<&crate::consumable::Consumable>, wearable: bool) -> bool {
-    let empty = consumable.is_some_and(|c| c.is_empty());
+/// action, but only one whose emptiness its user knows: a thing not yet
+/// known, [`Unknown`], is used empty, spends the turn and lands nothing,
+/// since a use refused for nothing would tell the player it was empty. A
+/// thing that can be worn is used by wearing it, known or not, since where
+/// it goes is shown: one used from the bottom of the bag would let a
+/// wearer keep one plate on and spend another's charge.
+pub fn may_use(
+    item: Entity,
+    bag: &Inventory,
+    worn: Option<&Equipped>,
+    consumable: Option<&crate::consumable::Consumable>,
+    wearable: bool,
+    unknown: bool,
+) -> bool {
+    let empty = !unknown && consumable.is_some_and(|c| c.is_empty());
     let off_the_body = wearable && !worn.is_some_and(|w| w.slot_of(item).is_some());
     bag.contains(item) && !empty && !off_the_body
 }
@@ -490,10 +520,12 @@ pub fn resolve_items(
     mut events: MessageWriter<ItemEvent>,
     mut fired: MessageWriter<crate::effects::Fired>,
 ) {
-    let ItemWorld { mut carriers, ground, stacks, wearables, consumables, map, triggers, occupancy, bystanders, stuck, tagged, mut fired_on } = world;
+    let ItemWorld { mut carriers, ground, stacks, wearables, consumables, map, triggers, occupancy, bystanders, stuck, tagged, unknown, mut fired_on } = world;
     let this_map = map.current();
     let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map);
-    let usable = |item: Entity, bag: &Inventory, worn: Option<&Equipped>| may_use(item, bag, worn, consumables.get(item).ok(), wearables.contains(item));
+    let usable = |item: Entity, bag: &Inventory, worn: Option<&Equipped>| {
+        may_use(item, bag, worn, consumables.get(item).ok(), wearables.contains(item), unknown.contains(item))
+    };
     // How `item`'s use is pointed, when it is pointed somewhere, and what
     // it asks for, when it is made on a thing.
     let targeting_of = |item: Entity| triggers.get(item).ok().and_then(Triggers::targeting);
@@ -632,10 +664,19 @@ pub fn resolve_items(
                     let Some(targeting) = targeting_of(item) else { break 'attempt false };
                     // Refused as an ability's aim is, before anything is
                     // spent, and by the one call the cursor previews it by:
-                    // nowhere to go, out of reach, or out of sight.
+                    // nowhere to go, out of reach, or out of sight. A thing
+                    // not yet known is refused for none of them, since each
+                    // would tell what it is: made where it may still be
+                    // pointed, it lands by its true targeting, stopping at
+                    // its reach, and on nobody its aim does not want.
                     let source = crate::effects::Source::Trigger { on: item, moment: crate::effects::Moments::USE };
-                    let aimed = Aimed { user: actor, source, targeting, origin: pos.0, aim: at, sees_aim: sight.map(|v| v.can_see(at)) };
-                    if usable(item, bag, worn) && bystanders.land(aimed, &map, &occupancy).refused.is_empty() {
+                    let (at, refused) = if unknown.contains(item) {
+                        (rl_rules::ability::made_at(targeting, pos.0, at, |p| sight.is_none_or(|v| v.can_see(p))), false)
+                    } else {
+                        let aimed = Aimed { user: actor, source, targeting, origin: pos.0, aim: at, sees_aim: sight.map(|v| v.can_see(at)) };
+                        (at, !bystanders.land(aimed, &map, &occupancy).refused.is_empty())
+                    };
+                    if usable(item, bag, worn) && !refused {
                         events.write(ItemEvent::Used { actor, item });
                         // At the cell it was pointed at, which is where an
                         // aimed trigger lands; it flies from its user.
@@ -1485,6 +1526,82 @@ mod aimed {
         rig.act(UseItemAt { item: rod, at: rig.start.offset(3, 0) });
         assert_eq!(rig.hp(foe), 16, "landed as it was made");
         assert!(!rig.app.world().resource::<TurnHold>().in_flight(), "with nothing in the air");
+    }
+
+    /// A burst on the ground reaching six, landing three on all round it.
+    const LOB: &str =
+        r#"[(on: "use", targeting: (mode: Ball(range: 6, radius: 1), aim: Ground), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#;
+
+    /// A thing not yet known pointed past its reach is not refused, which
+    /// would tell its reach: it is used and spent, and lands where its own
+    /// flight stops, at its reach along the line it was pointed down.
+    #[test]
+    fn an_unknown_thing_pointed_past_its_reach_is_used_and_lands_at_its_reach() {
+        let mut rig = Rig::new();
+        let lob = rig.carry(LOB);
+        rig.app.world_mut().entity_mut(lob).insert(Unknown);
+        let (near, pointed) = (rig.foe(7, 0), rig.foe(9, 0));
+        let events = rig.act(UseItemAt { item: lob, at: rig.start.offset(9, 0) });
+        assert_eq!(events, vec![ItemEvent::Used { actor: rig.player, item: lob }], "used, not refused");
+        assert_eq!((rig.hp(near), rig.hp(pointed)), (17, 20), "burst at its reach of six, beside the near one, short of the one pointed at");
+        assert_eq!((rig.charges(lob), rig.now()), (2, 100), "for a charge and the turn");
+    }
+
+    /// A thing not yet known whose use wants a foe, pointed at a friend or
+    /// at bare ground, is used and spent and lands on nobody, as its aim
+    /// says, rather than being refused for what its aim would tell.
+    #[test]
+    fn an_unknown_foe_only_thing_pointed_at_a_friend_or_bare_ground_lands_on_nobody_spent() {
+        let mut rig = Rig::new();
+        let rod = rig.carry(BOLT);
+        rig.app.world_mut().entity_mut(rod).insert(Unknown);
+        let ours = rig.sides.ours;
+        let friend = rig.stand(3, 0, ours);
+        assert_eq!(rig.act(UseItemAt { item: rod, at: rig.start.offset(3, 0) }), vec![ItemEvent::Used { actor: rig.player, item: rod }]);
+        assert_eq!((rig.hp(friend), rig.charges(rod)), (20, 2), "at a friend: nobody hurt, a charge spent");
+        let before = rig.now();
+        assert_eq!(rig.act(UseItemAt { item: rod, at: rig.start.offset(0, 4) }), vec![ItemEvent::Used { actor: rig.player, item: rod }]);
+        assert_eq!((rig.charges(rod), rig.now() - before), (1, 100), "at bare ground: a charge and the turn");
+    }
+
+    /// An empty thing its user knows is refused for nothing, but one not
+    /// yet known is used, since a refusal would say it was empty: the use
+    /// spends the turn, lands nothing, and is reported as any use is.
+    #[test]
+    fn an_empty_unknown_thing_is_used_for_a_turn_and_lands_nothing() {
+        let mut rig = Rig::new();
+        let (known, unknown) = (rig.carry(BOLT), rig.carry(BOLT));
+        for rod in [known, unknown] {
+            rig.app.world_mut().entity_mut(rod).insert(Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) });
+        }
+        rig.app.world_mut().entity_mut(unknown).insert(Unknown);
+        let foe = rig.foe(3, 0);
+        let at = rig.start.offset(3, 0);
+        assert!(rig.act(UseItemAt { item: known, at }).is_empty(), "a known empty rod is refused");
+        assert_eq!(rig.now(), 0, "for nothing");
+        assert_eq!(rig.act(UseItemAt { item: unknown, at }), vec![ItemEvent::Used { actor: rig.player, item: unknown }], "an unknown one is used");
+        assert_eq!((rig.hp(foe), rig.charges(unknown), rig.now()), (20, 0, 100), "landing nothing, still empty, for the turn");
+    }
+
+    /// A bolt reaching twelve, which wants its cell seen.
+    const LONG: &str = r#"[(on: "use", targeting: (mode: Bolt(range: 12)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#;
+
+    /// Pointed at a cell out of its user's sight, which its targeting wants
+    /// seen, a known thing is refused for nothing and one not yet known is
+    /// used, stopping at the farthest cell on the line it could have been
+    /// pointed at: its user sees eight cells, so a bolt reaching twelve
+    /// pointed eleven off comes down at eight, short of a foe at ten.
+    #[test]
+    fn an_unknown_thing_pointed_out_of_sight_stops_at_the_farthest_cell_it_may_go() {
+        let mut rig = Rig::new();
+        let (known, unknown) = (rig.carry(LONG), rig.carry(LONG));
+        rig.app.world_mut().entity_mut(unknown).insert(Unknown);
+        let beyond = rig.foe(10, 0);
+        let at = rig.start.offset(11, 0);
+        assert!(rig.act(UseItemAt { item: known, at }).is_empty(), "out of sight, a known bolt is refused");
+        assert_eq!(rig.now(), 0, "for nothing");
+        assert_eq!(rig.act(UseItemAt { item: unknown, at }), vec![ItemEvent::Used { actor: rig.player, item: unknown }], "an unknown one is used");
+        assert_eq!((rig.hp(beyond), rig.charges(unknown)), (20, 2), "and comes down short of what its user cannot see");
     }
 }
 

@@ -19,9 +19,10 @@
 //! row.
 //!
 //! A thing [`Unknown`] reaches its row by its name and where it goes and
-//! nothing else, so a game's identification is a name and a marker rather
-//! than a redaction of every row in `Annotate`; a worn thing that is
-//! [`Stuck`] says so, for the keys that would take it off.
+//! nothing else, not even whether it is empty, so a game's identification
+//! is a name and a marker rather than a redaction of every row in
+//! `Annotate`; a worn thing that is [`Stuck`] says so, for the keys that
+//! would take it off.
 
 use bevy::prelude::*;
 use rl_bevy::MomentId;
@@ -90,7 +91,9 @@ pub struct ItemRow {
     /// Charges left and the most it holds, for a thing that holds more than
     /// one; a stack of single-charge things is counted by `count` instead.
     pub charges: Option<(u16, u16)>,
-    /// Whether it is a consumable with nothing left in the unit in hand.
+    /// Whether it is a consumable with nothing left in the unit in hand,
+    /// as the player knows it: never for a thing not yet known, whose
+    /// charges are as hidden as what it does.
     pub empty: bool,
     /// Whole turns until the next charge comes back, for a thing that
     /// refills, is not full, and whose clock is running.
@@ -106,7 +109,8 @@ pub struct ItemRow {
     /// Whether it is a thing not yet known, [`Unknown`]: the row carries
     /// its name and where it goes and nothing it does or is worth, and a
     /// panel says it is unknown in their place. What the keys act on stays,
-    /// since its real triggers still work.
+    /// since its real triggers still work, and its use key stays while it
+    /// is empty, since a key gone would say it was.
     pub unknown: bool,
     /// Whether it is worn and will not come off, [`Stuck`]: the bag offers
     /// no key that would take it off, and says so. In the bag a stuck thing
@@ -151,9 +155,12 @@ impl ItemRow {
     }
 
     /// The row with what an unknown thing does and is worth taken out, and
-    /// what the bag's keys act on left in.
+    /// what the bag's keys act on left in. Whether it is empty is out with
+    /// its charges, so its use key stays while it is empty: a key that went
+    /// away would say so, and the use is made and comes to nothing.
     fn withheld(self) -> Self {
         Self {
+            empty: false,
             thrown: None,
             armor: 0,
             resists: Vec::new(),
@@ -693,6 +700,23 @@ mod tests {
         assert!(unknown.used.is_empty() && unknown.blow.is_none() && unknown.armor == 0, "nothing it does or strikes for");
         assert!(unknown.bestows.is_empty() && unknown.tags.is_empty() && unknown.charges.is_none(), "nor what it lends, counts as or holds");
         assert!(unknown.uses_something && !unknown.empty, "and its use is still offered");
+    }
+
+    /// An empty thing its user knows is not used from the bag, but an empty
+    /// one not yet known keeps its use key, since a key gone would say it
+    /// was empty.
+    #[test]
+    fn an_empty_thing_not_yet_known_keeps_its_use_key() {
+        let mut stage = Stage::new(InventoryViewPlugin);
+        let player = stage.player;
+        let empty = || (Item, Triggers(vec![on_use(None)]), Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) });
+        let known = stage.app.world_mut().spawn((empty(), Name::new("ash wand"))).id();
+        let unknown = stage.app.world_mut().spawn((empty(), Name::new("teak wand"), rl_bevy::Unknown)).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![known, unknown] });
+        stage.tick();
+        let view = stage.app.world().resource::<InventoryView>();
+        assert!(view.rows[0].empty && !view.rows[0].usable(), "known, it is empty and not used");
+        assert!(!view.rows[1].empty && view.rows[1].usable(), "not yet known, nothing says it is empty, and it is used");
     }
 
     /// A worn stuck thing's row says it will not come off, which is what

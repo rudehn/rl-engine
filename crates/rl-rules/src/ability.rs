@@ -519,6 +519,24 @@ pub fn aim_blocked(targeting: Targeting, cells: &[Point], sees_aim: Option<bool>
     if nowhere || unseen { vec![Blocked::NoTarget] } else { Vec::new() }
 }
 
+/// Where a use that nothing in its targeting may refuse is made, pointed at
+/// `aim` from `origin`: `aim` itself, unless its targeting wants the cell
+/// seen and `sees` says it is not, and then the farthest cell along the
+/// line there that is seen, `origin` when none is, as far as it may still
+/// be pointed that way.
+///
+/// For a use whose user cannot know its targeting, a thing not yet known:
+/// refusing it for a cell out of sight would tell the player it wants its
+/// cell seen, as refusing it out of reach would tell its range. How far it
+/// reaches needs no stop here, since the footprint already stops a flight
+/// at its range along the line it was pointed down, and lands it there.
+pub fn made_at(targeting: Targeting, origin: Point, aim: Point, sees: impl Fn(Point) -> bool) -> Point {
+    if !targeting.sight || sees(aim) {
+        return aim;
+    }
+    rl_core::geometry::line(origin, aim).skip(1).filter(|p| sees(*p)).last().unwrap_or(origin)
+}
+
 /// An ability an actor could use this turn, as a mind reads it.
 ///
 /// Everything a tactic needs to pick a target and score it, and nothing
@@ -1010,5 +1028,33 @@ mod tests {
         assert!(aim_blocked(bolt, &some, None).is_empty(), "a user with no sight to ask is trusted");
         assert!(aim_blocked(lob, &some, Some(false)).is_empty(), "an ability that needs no sight");
         assert!(aim_blocked(steel, &[], Some(false)).is_empty(), "and one aimed at its user needs neither");
+    }
+
+    /// A use nothing in its targeting may refuse is made where it was
+    /// pointed whenever it could have been pointed there, and pointed at a
+    /// cell it wants seen and is not, at the farthest seen cell on the line
+    /// there, over every aim and every patch of dark round its user.
+    #[test]
+    fn a_use_made_blind_stops_at_the_farthest_cell_it_may_still_be_pointed_at() {
+        let bolt = Targeting { mode: TargetMode::Bolt { range: 6 }, aim: Aim::Foe, sight: true };
+        let lob = Targeting { sight: false, ..bolt };
+        let origin = Point::new(0, 0);
+        for dark in 0..64u64 {
+            // Cells past the user are seen or not by a pattern of the span.
+            let sees = |p: Point| p == origin || !((p.x * 7 + p.y * 3).rem_euclid(64) as u64).is_multiple_of(dark % 7 + 2);
+            for (x, y) in [(5, 0), (9, 2), (-3, 4), (0, -8), (1, 1)] {
+                let aim = Point::new(x, y);
+                assert_eq!(made_at(lob, origin, aim, sees), aim, "a use that needs no sight is made where it was pointed");
+                let made = made_at(bolt, origin, aim, sees);
+                if sees(aim) {
+                    assert_eq!(made, aim, "a cell it may be pointed at is where it is made");
+                    continue;
+                }
+                let line: Vec<Point> = rl_core::geometry::line(origin, aim).collect();
+                assert!(sees(made) && line.contains(&made), "made at a seen cell on the line, {made:?} for {aim:?}");
+                let past = line.iter().position(|p| *p == made).expect("on the line");
+                assert!(line[past + 1..].iter().all(|p| !sees(*p)), "and at the farthest of them, {made:?} for {aim:?}");
+            }
+        }
     }
 }

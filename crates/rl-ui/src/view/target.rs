@@ -10,9 +10,17 @@
 //! would hit, resolved by [`Bystanders::land`] for an ability and for a
 //! thing's aimed use alike, [`flight`] for a throw and [`shot`] for a shot,
 //! the calls the resolvers act on, so what is shown is what will happen.
-//! For a thing not yet known only its reach is left out, since how far it
-//! goes is part of what it is; where it lands is still shown, since it
-//! still has to be aimed.
+//!
+//! A thing not yet known, [`Unknown`], is the exception, since its shape,
+//! its reach, what it wants and whether it wants its cell seen are each
+//! part of what it is, and a preview that showed any of them, or refused an
+//! aim for one, would tell the player its kind in a few keys and for
+//! nothing. Its preview is a plain line from its user to the cursor and the
+//! cursor's cell: no footprint, no reach, nothing painted out of reach, no
+//! reason it would be refused but its not being carried, and nobody named
+//! as caught, since who it catches tells its shape. It cycles to anyone.
+//! Confirmed, it is used and spent, and lands by its true targeting where
+//! its true flight stops, which the items resolver works out.
 //!
 //! Cycling steps through what is in sight in the nearby list's order, held
 //! to what the aim can take by [`Aim::cycles_to`]: foes for an ability or a
@@ -84,8 +92,9 @@ pub struct AimAt {
 /// user is used at once and no screen opens, and one whose use asks for
 /// another of its user's things opens the bag choosing for it, when the
 /// game has the bag, so a game binds every use the same way and never asks
-/// which kind it is; one that cannot be used now, an empty one or one worn
-/// to be used and not worn, opens nothing. Put away, it spends nothing and
+/// which kind it is; one that cannot be used now, by
+/// [`may_use`](rl_bevy::may_use), an empty one its user knows or one worn to
+/// be used and not worn, opens nothing. Put away, it spends nothing and
 /// passes no turn.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AimUse {
@@ -152,8 +161,11 @@ pub struct TargetView {
     pub what: String,
     /// Whether what is named is a thing not yet known, [`Unknown`]: the box
     /// says so, and `span` is left out, since how far a thing reaches is
-    /// part of what it is. Where it would land is still previewed, since
-    /// the player still has to aim it.
+    /// part of what it is. A thing used at somewhere withholds the rest of
+    /// what its targeting would tell as well: `path` is a plain line to the
+    /// cursor, `cells` the cursor's cell alone, and `beyond`, `why` and
+    /// `targets` are empty, with `legal` only while it is carried. A thrown
+    /// one is previewed as it flies, since a throw is the thrower's.
     pub unknown: bool,
     /// Who is aiming it.
     pub user: Option<Entity>,
@@ -314,7 +326,7 @@ pub struct Aiming<'w, 's> {
     /// What a user carries and wears, and what a thing used out of it
     /// spends and is worn in, for whether it may be used at all.
     bags: Query<'w, 's, (&'static Inventory, Option<&'static Equipped>)>,
-    things: Query<'w, 's, (Option<&'static Consumable>, Has<Wearable>)>,
+    things: Query<'w, 's, (Option<&'static Consumable>, Has<Wearable>, Has<Unknown>)>,
 }
 
 impl Aiming<'_, '_> {
@@ -326,15 +338,17 @@ impl Aiming<'_, '_> {
     /// Whether `user` may use `item` now, wherever it is pointed, by the
     /// rule the items resolver refuses a use by.
     fn may_use(&self, user: Entity, item: Entity) -> bool {
-        let (Ok((bag, worn)), Ok((consumable, wearable))) = (self.bags.get(user), self.things.get(item)) else { return false };
-        rl_bevy::may_use(item, bag, worn, consumable, wearable)
+        let (Ok((bag, worn)), Ok((consumable, wearable, unknown))) = (self.bags.get(user), self.things.get(item)) else { return false };
+        rl_bevy::may_use(item, bag, worn, consumable, wearable, unknown)
     }
 
     /// The aim a pointing is judged by. A throw and a shot are for foes,
-    /// which is where they open.
+    /// which is where they open. A thing not yet known is aimed at anyone,
+    /// since cycling only to what its own aim wants would tell it.
     fn aim(&self, pointing: Pointing) -> Aim {
         match pointing {
             Pointing::Ability(ability) => self.abilities.as_deref().map_or(Aim::Foe, |a| a.get(ability).aim),
+            Pointing::Use(item) if self.things.get(item).is_ok_and(|(_, _, unknown)| unknown) => Aim::Anyone,
             Pointing::Use(item) => self.use_targeting(item).map_or(Aim::Foe, |t| t.aim),
             Pointing::Throw(_) | Pointing::Fire => Aim::Foe,
         }
@@ -724,14 +738,22 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     if let Some(item) = view.using {
         let Some(targeting) = reach.triggers.get(item).ok().and_then(Triggers::targeting) else { return };
         view.what = reach.names.get(item).map(|n| n.as_str().to_string()).unwrap_or_default();
-        let source = Source::Trigger { on: item, moment: Moments::USE };
-        preview(&mut view, &reach, Aimed { user, source, targeting, origin: from, aim: cursor, sees_aim }, &[]);
         // A thing no longer carried is refused, as the resolver refuses it.
-        view.legal = view.legal && bag.is_some_and(|b| b.contains(item));
+        let carried = bag.is_some_and(|b| b.contains(item));
         view.unknown = reach.unknown.contains(item);
         if view.unknown {
-            view.span = None;
+            // Nothing its targeting would tell: a plain line to the cursor
+            // and its cell, with no footprint, reach, refusal or target,
+            // since who it would catch tells its shape. Taken anywhere it
+            // is carried, as the resolver takes it.
+            view.path = rl_core::geometry::line(from, cursor).skip(1).collect();
+            view.cells = vec![cursor];
+            view.legal = carried;
+            return;
         }
+        let source = Source::Trigger { on: item, moment: Moments::USE };
+        preview(&mut view, &reach, Aimed { user, source, targeting, origin: from, aim: cursor, sees_aim }, &[]);
+        view.legal = view.legal && carried;
         return;
     }
 
@@ -1606,6 +1628,20 @@ mod uses {
         }
     }
 
+    /// An empty thing not yet known is aimed as any other, since a cursor
+    /// that would not open would say it was empty.
+    #[test]
+    fn asked_to_aim_an_empty_thing_not_yet_known_the_cursor_opens() {
+        let mut stage = staged();
+        let rod = carry(&mut stage, "teak rod", BURST);
+        stage.app.world_mut().entity_mut(rod).insert((Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) }, rl_bevy::Unknown));
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimUse { user, item: rod });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert!(view.aiming() && view.using == Some(rod) && view.legal, "aimed, and taken");
+    }
+
     /// A thing whose use asks for another of its user's things is chosen
     /// for in the bag rather than aimed: the cursor opens no aim for it and
     /// does not use it on nothing.
@@ -1620,22 +1656,64 @@ mod uses {
         assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and no use on nothing");
     }
 
-    /// A thing not yet known is aimed as what it is, and the box names it
-    /// and leaves out how far it reaches, which is its use's to say.
+    /// A thing not yet known is aimed with nothing its targeting would
+    /// tell: named, with a plain line to the cursor and the cursor's cell,
+    /// and no footprint, reach, reason to refuse or anyone named as caught,
+    /// even pointed far past where a burst of its reach could go.
     #[test]
-    fn an_unknown_thing_aimed_is_named_and_its_reach_left_out() {
+    fn an_unknown_things_aim_shows_a_plain_line_and_nothing_its_targeting_would_tell() {
         let mut stage = staged();
         let rod = carry(&mut stage, "teak rod", BURST);
         stage.app.world_mut().entity_mut(rod).insert(rl_bevy::Unknown);
         stage.actor("near", 'n', 2, 0);
         stage.tick();
-        let user = stage.player;
+        let (user, at) = (stage.player, stage.at);
         stage.app.world_mut().write_message(AimUse { user, item: rod });
         stage.tick();
-        let view = stage.app.world().resource::<TargetView>();
-        assert!(view.aiming() && view.unknown, "aimed, and said to be unknown");
-        assert_eq!((view.what.as_str(), view.span), ("teak rod", None), "by its name, and no reach");
-        assert!(view.legal && !view.cells.is_empty(), "still previewed where it will land");
+        for cursor in [at.offset(2, 0), at.offset(9, 3)] {
+            stage.app.world_mut().resource_mut::<TargetView>().cursor = cursor;
+            stage.tick();
+            let view = stage.app.world().resource::<TargetView>();
+            assert!(view.aiming() && view.unknown, "aimed, and said to be unknown");
+            assert_eq!((view.what.as_str(), view.span), ("teak rod", None), "by its name, and no reach");
+            let line: Vec<Point> = rl_core::geometry::line(at, cursor).skip(1).collect();
+            assert_eq!((&view.path, &view.cells), (&line, &vec![cursor]), "a plain line and the cursor's cell, at {cursor:?}");
+            assert!(view.beyond.is_empty() && view.why.is_empty() && view.targets.is_empty(), "nothing out of reach, refused or caught");
+            assert!(view.legal, "and taken, as the resolver takes it");
+        }
+    }
+
+    /// A thing not yet known cycles as one aimed at anyone would, so a
+    /// use that wants foes still stops on a friend, rather than telling
+    /// what it wants by passing friends by; known, it passes them by.
+    #[test]
+    fn an_unknown_foe_only_things_cursor_cycles_to_a_friend() {
+        let mut stage = staged();
+        let (known, unknown) = (
+            carry(&mut stage, "rod", r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Struck")])]"#),
+            carry(&mut stage, "teak rod", r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Struck")])]"#),
+        );
+        stage.app.world_mut().entity_mut(unknown).insert(rl_bevy::Unknown);
+        let friend = stage.actor("friend", 'f', 2, 0);
+        let player = stage.player;
+        let ours = stage.app.world().get::<Faction>(player).copied().expect("the player's side");
+        stage.app.world_mut().entity_mut(friend).insert(ours);
+        stage.tick();
+        let beside = stage.at.offset(2, 0);
+        // Every cell a few presses of the cycle key visit.
+        let mut stops = |item: Entity| {
+            stage.app.world_mut().write_message(AimUse { user: player, item });
+            stage.tick();
+            let mut visited = Vec::new();
+            for _ in 0..3 {
+                stage.press(KeyCode::Tab);
+                visited.push(stage.app.world().resource::<TargetView>().cursor);
+            }
+            stage.press(KeyCode::Escape);
+            visited
+        };
+        assert!(!stops(known).contains(&beside), "known, a foe-only rod passes a friend by");
+        assert!(stops(unknown).contains(&beside), "not yet known, it stops on one");
     }
 
     /// The property the preview exists for, held for a thing's aimed use as
