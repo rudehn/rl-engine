@@ -1,7 +1,8 @@
 //! What a status does that the engine's statuses do not: a confused body's
 //! every step turned a random way, a discordant one's side changed for as
 //! long as it lasts, and fire immunity's hundred percent kept on whoever
-//! holds it.
+//! holds it; and, by [`note_statuses`], what holds a monster said beside
+//! its name on the rail.
 //!
 //! The engine's statuses change stats, tick, hide and hold; the rest is a
 //! game's, keyed by the status. Each here reads the status off its holder
@@ -142,5 +143,61 @@ pub fn keep_fireproof(mut commands: Commands, registries: Res<Registries>, mut b
         } else {
             commands.entity(body).remove::<Fireproofed>();
         }
+    }
+}
+
+/// Says beside each monster on the rail's list of what is in sight what
+/// has been done to it: every status on it that has a badge, by name, so
+/// a rat in a cloud reads `rat · paralysed (hunting)` and what a thrown
+/// potion or a zapped staff did is read off the screen, not only off the
+/// log.
+///
+/// A game's word on a row, in `ViewSet::Annotate`, since the engine's list
+/// says what a monster knows of the adventurer and nothing of what holds
+/// it. A status with no badge, the king's regenerating, is what a monster
+/// is rather than what happened to it, and stays unsaid, as the vitals
+/// leave it off the adventurer's own badges.
+pub fn note_statuses(mut nearby: ResMut<NearbyView>, mut facets: ResMut<Facets>, registries: Res<Registries>, held: Query<&Afflicted>) {
+    for row in &mut nearby.actors {
+        let Ok(held) = held.get(row.entity) else { continue };
+        for active in held.iter().filter(|active| registries.statuses.get(active.id).badge.is_some()) {
+            row.facets.push(facets.facet("status", registries.statuses.name(active.id)));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::PARALYSED;
+    use crate::testing::{arena, settle, still};
+
+    /// Puts `status` on `who` for a while, as a cloud or a bolt would.
+    fn afflict(app: &mut App, who: Entity, status: &str) {
+        let status = app.world().resource::<Registries>().statuses.expect(status);
+        app.world_mut().write_message(Afflict { target: who, status, turns: 10, by: None, held_by: None });
+        settle(app);
+    }
+
+    /// What the rail's list says of `who` beside its name, or `None` while
+    /// it is not on the list.
+    fn said_of(app: &App, who: Entity) -> Option<Vec<String>> {
+        let nearby = app.world().resource::<NearbyView>();
+        nearby.actors.iter().find(|row| row.entity == who).map(|row| row.facets.iter().map(|f| f.text.clone()).collect())
+    }
+
+    /// A goblin in sight that a cloud holds reads as paralysed on the rail,
+    /// one nothing holds reads by its name alone, and a status with no
+    /// badge, what a monster is rather than what was done to it, stays
+    /// unsaid.
+    #[test]
+    fn a_monster_in_sight_is_said_with_what_holds_it_and_nothing_else() {
+        let (mut app, _, here) = arena(1);
+        app.add_plugins(NearbyViewPlugin).add_systems(Update, note_statuses.in_set(ViewSet::Annotate));
+        let (held, free) = (still(&mut app, "goblin", here + Point::new(2, 0)), still(&mut app, "goblin", here + Point::new(-2, 0)));
+        afflict(&mut app, held, PARALYSED);
+        afflict(&mut app, free, "regenerating");
+        assert_eq!(said_of(&app, held), Some(vec![PARALYSED.to_string()]), "the held goblin says what holds it");
+        assert_eq!(said_of(&app, free), Some(vec![]), "and the other, regenerating, says nothing beside its name");
     }
 }

@@ -180,6 +180,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
         ControlsPanel::new(screen.controls).hint(screen.hint),
         GameMenuPanel::new(screen.menu).title("Undermere").died("The Undermere keeps you.").won("The Drowned King is dead, and the lake is still."),
     ));
+    // What holds each monster in sight, said after its name on the rail.
+    app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
     // What the player may set, opened from the menu and from the title:
     // fullscreen is the engine's, declared by `RoguelikePlugins`. And
     // every run that has ended, best first, which the title opens.
