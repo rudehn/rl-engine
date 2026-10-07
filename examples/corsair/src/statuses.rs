@@ -63,6 +63,8 @@ pub fn narrate_statuses(
                 let tone = if registries.statuses.get(status).boon { Tones::GOOD } else { Tones::BAD };
                 (target, format!("You are {}.", describe(registries.statuses.name(status))), tone)
             }
+            // Kept up rather than begun: said when it began.
+            StatusEvent::Renewed { .. } => continue,
             StatusEvent::Expired { target, status } => (target, format!("You are no longer {}.", describe(registries.statuses.name(status))), Tones::MUTED),
             StatusEvent::Cured { target, status } => {
                 let tone = if registries.statuses.get(status).boon { Tones::MUTED } else { Tones::GOOD };

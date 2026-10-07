@@ -73,8 +73,22 @@ pub struct Cure {
 /// What happened to a status.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusEvent {
-    /// It was put on, or refreshed or extended.
+    /// It was put on, and was not on before: it began.
     Applied {
+        /// Who.
+        target: Entity,
+        /// Which.
+        status: StatusId,
+    },
+    /// It was put on again while it was still on: its time refreshed or
+    /// extended, or another of it stacked beside the first.
+    ///
+    /// Apart from [`Applied`](Self::Applied) because a cloud keeps its
+    /// status on whoever breathes it by putting it on every turn, and a
+    /// reader that tells a status as news tells it when it begins, not
+    /// every turn it is kept up. A put-on that changed nothing, a shorter
+    /// refresh or an ignored second, is neither.
+    Renewed {
         /// Who.
         target: Entity,
         /// Which.
@@ -107,12 +121,14 @@ pub fn resolve_afflictions(
     for a in afflicts.read() {
         let Ok((mut statuses, mut stats)) = actors.get_mut(a.target) else { continue };
         let by = a.by.map(|e| e.to_bits());
+        let began = !statuses.0.has(a.status);
         let changed = match a.held_by {
             Some(item) => statuses.0.apply_held(a.status, a.turns, by, item.to_bits(), &registries.statuses, &mut stats.0),
             None => statuses.0.apply(a.status, a.turns, by, &registries.statuses, &mut stats.0),
         };
         if changed {
-            events.write(StatusEvent::Applied { target: a.target, status: a.status });
+            let (target, status) = (a.target, a.status);
+            events.write(if began { StatusEvent::Applied { target, status } } else { StatusEvent::Renewed { target, status } });
         }
     }
     for c in cures.read() {
@@ -318,6 +334,41 @@ mod tests {
         assert_eq!(w.get::<StatBlock>(player).unwrap().value(armor_stat, &stats), 0, "hearty's modifier left with it");
         let expired = &w.resource::<Heard>().0;
         assert!(expired.contains(&StatusEvent::Expired { target: player, status: venom }), "{expired:?}");
+    }
+
+    /// A status put on is `Applied` when it begins and `Renewed` when it is
+    /// put on again while still on, refreshed longer or extended; a refresh
+    /// no longer than what is left changes nothing and says nothing. So a
+    /// reader tells a status beginning from one a cloud keeps up.
+    #[test]
+    fn a_status_begun_is_applied_one_kept_up_is_renewed_and_one_that_changed_nothing_is_neither() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, StatusPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        crate::testing::two_sides(&mut app);
+        let defs = Registry::from_defs(vec![StatusDef::new("dazed"), StatusDef::new("bleeding").stacking(Stacking::Extend)]).unwrap();
+        let (dazed, bleeding) = (defs.expect("dazed"), defs.expect("bleeding"));
+        app.world_mut().resource_mut::<Registries>().statuses = defs;
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Health::full(30))).id();
+        app.init_resource::<Heard>().add_systems(PostUpdate, hear);
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        for (status, turns) in [(dazed, 3), (dazed, 5), (dazed, 2), (bleeding, 2), (bleeding, 2)] {
+            app.world_mut().write_message(Afflict { target: player, status, turns, by: None, held_by: None });
+            app.update();
+        }
+        let target = player;
+        assert_eq!(
+            app.world().resource::<Heard>().0,
+            [
+                StatusEvent::Applied { target, status: dazed },
+                StatusEvent::Renewed { target, status: dazed },
+                StatusEvent::Applied { target, status: bleeding },
+                StatusEvent::Renewed { target, status: bleeding },
+            ],
+            "begun, refreshed longer, refreshed shorter for nothing, begun, extended"
+        );
     }
 
     /// A status that mends restores its amount every whole turn, to no

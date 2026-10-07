@@ -354,8 +354,8 @@ impl Statuses {
     /// An instance it refreshes or extends is taken over by `holder`,
     /// whether or not its time changed, so what holds a status is always
     /// the thing that last put it on. The return value still says only
-    /// whether the time or the instances changed, which is what a narrator
-    /// tells.
+    /// whether the time or the instances changed, which is what is
+    /// reported.
     pub fn apply_held(&mut self, id: StatusId, turns: u32, source: Option<u64>, holder: u64, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
         self.put(id, turns, source, Some(holder), defs, stats)
     }

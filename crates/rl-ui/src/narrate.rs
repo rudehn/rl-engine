@@ -784,6 +784,9 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         let (target, status, phrase) = match *ev {
             StatusEvent::Applied { target, status } if !witness.is_you(target) => (target, status, Phrase::IsAfflicted),
             StatusEvent::Applied { target, status } => (target, status, if witness.is_boon(status) { Phrase::YouGainABoon } else { Phrase::YouAreAfflicted }),
+            // Kept up rather than begun, as a cloud breathed again keeps its
+            // status every turn: it was said when it began.
+            StatusEvent::Renewed { .. } => continue,
             StatusEvent::Expired { target, status } if witness.is_you(target) => (target, status, Phrase::YouAreNoLonger),
             // A boon broken off, by a blow or by the worn thing that held it
             // coming off, is lost rather than cured: the player is not glad
@@ -1705,6 +1708,35 @@ mod tests {
             ("You are no longer warded.", Tones::MUTED),
         ];
         assert_eq!(said, expected.map(|(t, tone)| (t.to_string(), tone)).to_vec());
+    }
+
+    /// A cloud keeps its status on whoever breathes it by putting it on
+    /// again every turn, and the status is told when it begins, not every
+    /// turn it is kept up: three turns in the cloud say it once, where the
+    /// log used to read "The rat is paralysed. (x3)".
+    #[test]
+    fn three_turns_in_a_cloud_say_its_status_once() {
+        let mut stage = Stage::new_with((rl_bevy::GasPlugin, NarratorPlugin::default()), |app| {
+            let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("paralysed")]).unwrap();
+            let spores = rl_rules::gas::GasDef::new("spores").spread(0).fade(0).inflicts(1, statuses.expect("paralysed"), 3);
+            let mut registries = app.world_mut().resource_mut::<Registries>();
+            registries.statuses = statuses;
+            registries.gases = rl_rules::Registry::from_defs(vec![spores]).unwrap();
+        });
+        let rat = stage.actor("rat", 'r', 2, 0);
+        let spores = stage.app.world().resource::<Registries>().gases.expect("spores");
+        let at = stage.at.offset(2, 0);
+        stage.app.world_mut().write_message(rl_bevy::Release { gas: spores, at, amount: 255 });
+        let player = stage.player;
+        for _ in 0..3 {
+            stage.app.world_mut().write_message(Intent::new(player, Wait));
+            stage.tick();
+        }
+        assert!(stage.app.world().resource::<rl_bevy::Gases>().at(spores, at) > 0, "the cloud stayed");
+        let paralysed = stage.app.world().resource::<Registries>().statuses.expect("paralysed");
+        assert!(stage.app.world().get::<Afflicted>(rat).is_some_and(|a| a.has(paralysed)), "and kept the rat paralysed");
+        let told: Vec<String> = stage.app.world().resource::<MessageLog>().iter().map(|e| e.display()).filter(|t| t.contains("paralysed")).collect();
+        assert_eq!(told, ["The rat is paralysed."], "said once, when it began");
     }
 
     /// A shooter the player cannot see is not named, even though the line
