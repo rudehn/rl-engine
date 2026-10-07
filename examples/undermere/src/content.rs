@@ -132,6 +132,12 @@ pub const CONFUSING: &str = "confusing";
 /// it, and hides what is behind its thickest.
 pub const DARKNESS: &str = "darkness";
 
+/// What each cloud tints the ground under it, `(r, g, b)` in `0..=1`, so a
+/// paralytic cloud is told from a confusing one at a glance rather than
+/// both drawn in the engine's grey: a sickly violet, a churning teal, and
+/// a dark the colour of the lake at night.
+pub const CLOUD_TINTS: [(&str, (f32, f32, f32)); 3] = [(PARALYTIC, (0.78, 0.45, 0.9)), (CONFUSING, (0.35, 0.85, 0.7)), (DARKNESS, (0.06, 0.06, 0.12))];
+
 /// The slots that go in pairs, by name: a thing that fits `either` of a
 /// pair is worn in whichever is free, a one-handed blade in either hand
 /// and a ring on either hand's finger.

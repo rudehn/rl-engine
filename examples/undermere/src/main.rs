@@ -212,6 +212,21 @@ fn saves_for(scripted: bool) -> rl_engine::rl_save::Saves {
     }
 }
 
+/// Draws each cloud a potion bursts into in its own colour, as
+/// [`CLOUD_TINTS`](undermere::content::CLOUD_TINTS) says, where the
+/// engine's map draws every gas nobody coloured in grey.
+fn tint_clouds(app: &mut App) {
+    use rl_engine::rl_render::map_view::FieldAppearance;
+    let tints: Vec<_> = {
+        let gases = &app.world().resource::<Registries>().gases;
+        undermere::content::CLOUD_TINTS.iter().filter_map(|(name, (r, g, b))| gases.id(name).map(|gas| (gas, Color::srgb(*r, *g, *b)))).collect()
+    };
+    let mut fields = app.world_mut().resource_mut::<FieldAppearance>();
+    for (gas, tint) in tints {
+        fields.set_gas(gas, tint);
+    }
+}
+
 fn main() -> AppExit {
     let mut seed = rl_engine::rl_bevy::replay::seed().unwrap_or_else(RunSeed::fresh);
     let args = rl_engine::rl_bevy::replay::args();
@@ -238,6 +253,7 @@ fn main() -> AppExit {
         .add_plugins(SettingsSavePlugin)
         .add_plugins(UndermerePlugin);
     add_panels(&mut app, &screen);
+    tint_clouds(&mut app);
     if let Some(floor) = std::env::var("UNDERMERE_START").ok().and_then(|f| f.parse().ok()) {
         app.insert_resource(StartFloor(floor));
     }

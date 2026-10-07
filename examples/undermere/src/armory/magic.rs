@@ -328,6 +328,27 @@ fn a_continued_run_keeps_a_bound_goblin_on_the_adventurers_side_and_a_conjured_b
     assert_eq!(allies(&mut carried_on), before, "each on the adventurer's side, the blades to fade when they were going to");
 }
 
+/// Every ring is found unknown, called by its stone, and known the moment
+/// it is put on, its work plain on its wearer, with a line in the log in
+/// its true name.
+#[test]
+fn every_ring_is_found_unknown_under_its_stone_and_known_once_put_on() {
+    let rings = ["ring of regeneration", "ring of stealth", "ring of light", "ring of wisdom", "ring of reaping", "ring of awareness"];
+    for name in rings {
+        let (mut app, me, _) = arena(16);
+        let ring = find(&mut app, name, 1);
+        give(&mut app, me, ring);
+        settle(&mut app);
+        let face = app.world().resource::<Lore>().face(name).unwrap_or_else(|| panic!("{name} wears a stone")).called.clone();
+        assert_eq!(name_of(&app, ring), face, "{name} is called by its stone");
+        assert!(app.world().get::<Unknown>(ring).is_some(), "{name} reads as unknown");
+        crate::testing::equip(&mut app, me, ring);
+        assert!(app.world().resource::<Lore>().knows(name), "{name} is known once on: {:#?}", said(&app));
+        let line = format!("It is {}.", rl_engine::rl_core::noun::with_article(name));
+        assert!(said(&app).contains(&line), "{name}: {:#?}", said(&app));
+    }
+}
+
 /// `name` found at `level` and put on, by `Equip`, as the pack's key does.
 fn worn(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
     let ring = find(app, name, level);
