@@ -27,6 +27,13 @@ pub struct VitalsView {
     /// all: `None` for one with no [`Armor`] and nothing worn that adds
     /// any, so a game without the idea draws no number for it.
     pub armor: Option<i32>,
+    /// Whether anything the player wears is not yet known, [`Unknown`].
+    /// Its armor is in the total all the same, since the total is what a
+    /// blow meets, and a game writes a thing's armor from its level, so a
+    /// presenter marks the number as not settled. Any unknown worn thing
+    /// counts, not only one with armor: what it lends the wearer's stats
+    /// is as hidden.
+    pub armor_uncertain: bool,
     /// One per active status that has a badge glyph, in the order they
     /// were applied.
     pub badges: Vec<Facet>,
@@ -112,7 +119,16 @@ impl Plugin for VitalsViewPlugin {
 }
 
 /// What the collector reads off the player.
-type Vitals = (Entity, &'static Position, Option<&'static Name>, Option<&'static Health>, Option<&'static Armor>, Option<&'static Afflicted>, Has<Stealth>);
+type Vitals = (
+    Entity,
+    &'static Position,
+    Option<&'static Name>,
+    Option<&'static Health>,
+    Option<&'static Armor>,
+    Option<&'static Equipped>,
+    Option<&'static Afflicted>,
+    Has<Stealth>,
+);
 
 /// What the player is made of.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -127,6 +143,8 @@ pub struct Me<'w, 's> {
     facets: ResMut<'w, crate::facet::Facets>,
     watchers: Watchers<'w, 's>,
     loadout: Loadout<'w, 's>,
+    /// Worn things not yet known, whose armor the total counts unseen.
+    unknown: Query<'w, 's, (), With<Unknown>>,
     /// The light, when the game has any, for the band the player stands in.
     lighting: Option<Res<'w, Lighting>>,
     player: Query<'w, 's, Vitals, With<Player>>,
@@ -137,7 +155,7 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.bars.clear();
     view.badges.clear();
     view.facets.clear();
-    let Ok((entity, pos, name, health, armor, afflicted, hides)) = me.player.single() else {
+    let Ok((entity, pos, name, health, armor, worn, afflicted, hides)) = me.player.single() else {
         view.entity = None;
         return;
     };
@@ -170,6 +188,7 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     // idea of armor at all, even at zero.
     let total = me.loadout.armor(entity);
     view.armor = (armor.is_some() || total != 0).then_some(total);
+    view.armor_uncertain = worn.is_some_and(|w| w.0.worn().any(|(_, item)| me.unknown.contains(item)));
     view.seen = (hides && me.watchers.running()).then(|| me.watchers.watched(entity));
     view.exposure = me.lighting.as_deref().map(|l| l.band(pos.0));
     if let Some(health) = health {
@@ -358,5 +377,33 @@ mod tests {
 
         let badges: Vec<&str> = stage.app.world().resource::<VitalsView>().badges.iter().map(|b| b.text.as_str()).collect();
         assert_eq!(badges, vec!["v"], "one badge glyph, from the status that has one");
+    }
+
+    /// Putting on a thing not yet known moves the armor by what its level
+    /// lends, so the total is marked uncertain while it is worn unknown,
+    /// and the mark goes when the game says it is known. One carried in
+    /// the bag lends nothing and marks nothing.
+    #[test]
+    fn an_unknown_worn_thing_makes_the_armor_uncertain_and_knowing_it_clears_the_mark() {
+        let mut stage = Stage::new(VitalsViewPlugin);
+        let body = rl_rules::Registry::from_defs(vec![rl_rules::SlotDef::new("body")]).unwrap().expect("body");
+        let player = stage.player;
+        let carried = stage.app.world_mut().spawn((Item, Name::new("grey ring"), Unknown)).id();
+        stage.app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(carried);
+        stage.tick();
+        assert!(!stage.app.world().resource::<VitalsView>().armor_uncertain, "an unknown thing carried, not worn, marks nothing");
+
+        let mail = stage.app.world_mut().spawn((Item, Name::new("+? chain mail"), Armor(5), Unknown)).id();
+        let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(mail, &rl_rules::EquipShape::in_slot(body)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+        let view = stage.app.world().resource::<VitalsView>();
+        assert_eq!((view.armor, view.armor_uncertain), (Some(5), true), "the total a blow meets, marked as counting a thing not yet known");
+
+        stage.app.world_mut().entity_mut(mail).remove::<Unknown>();
+        stage.tick();
+        let view = stage.app.world().resource::<VitalsView>();
+        assert_eq!((view.armor, view.armor_uncertain), (Some(5), false), "known, the same total is settled");
     }
 }

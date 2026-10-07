@@ -28,6 +28,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
   The rule is `Equipment::equip_keeping` in `rl_rules`, where a thing that may go in more than one slot takes the one whose occupant may come off, and `EquipError` gains `Kept(slot)`.
   Neither marker is put on, taken off or saved by the engine: both are the game's, as what makes a thing known or frees it is.
   A `Trigger` written out by hand says `asks: None` and a `Landing` says `on: None`, a match on every `ItemEvent`, `EquipError` or `Phrase` gains an arm, and `ItemRow` gains `asks`, `unknown` and `stuck` and `InventoryMenu` gains `choosing`.
+- The armor the vitals show is marked as not settled while anything the player wears is `Unknown`: `VitalsView::armor_uncertain`, and the vitals panel writes it `armor 5?`, since the total a blow meets still counts what the unknown thing lends, which a game writes from its level.
 - A status can take its holder's turns: `StatusDef::holds`, written `holds: true` in a status file, and while one is on an actor `StatusPlugin` spends each of its turns as a wait before its mind or its player is asked, as work claims a worker's, so paralysis, a snare and sleep are each one line of a game's statuses.
   A held player's keys come to nothing and its turns pass without them, and a worker caught at its work loses those turns rather than working them.
   The hold ends when the status does, by its time or by a cure, and `Statuses::holding` says which status holds an actor, if any.
