@@ -263,6 +263,7 @@
      triggers: [(on: "use", effects: [(kind: "Aggravate")])]),
     (name: "scroll of summon monsters", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Summon", args: (fewest: 2, most: 3))])]),
+    // ANCHOR: staff
     // The staffs, zapped from the pack: a staff's level is its power and its
     // charges both, found at two and better deeper, and a spent charge comes
     // back over the turns its line says, divided by its level. Each level
@@ -274,6 +275,7 @@
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
      triggers: [(on: "use", aim: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
                  effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4+1")), (kind: "Ignite", args: (turns: 3))])]),
+    // ANCHOR_END: staff
     (name: "staff of lightning", glyph: '/', color: (0.7, 0.75, 1.0), tags: ["staff"], effect_per_level: (amount: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
      triggers: [(on: "use", aim: (mode: Beam(range: 8)), look: (glyph: '~', color: (r: 190, g: 210, b: 255)),

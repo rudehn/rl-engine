@@ -31,6 +31,7 @@
   - [Abilities](systems/abilities.md)
   - [Combat and loadout](systems/combat.md)
   - [Items and equipment](systems/items.md)
+  - [Uses and charges](systems/uses.md)
   - [Ammunition](systems/ammunition.md)
   - [Loot](systems/loot.md)
   - [Minds](systems/minds.md)
