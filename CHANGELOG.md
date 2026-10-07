@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The look panel wraps what a game says about a thing: each of `InspectView::facets` is broken onto as many lines as it takes, on spaces, where it was cut to one line with an ellipsis, so a monster's five traits read as sentences.
+  A facet is drawn whole or not at all, and those the rectangle has no room for are counted on its last row in the muted tone, `and 2 more` by default and the game's own words with the new `InspectPanel::more("{n} more")`.
+  A game whose facets were short sees no change; one whose facets ran long may want a taller panel.
+
 - An actor can offer verbs, as a prop does: the new `Offers` component, a list of `Offering { verb, time, needs }` built with `Offering::new(verb, time)` and `.needing(tag)`, is what an actor offers whoever stands beside it, a captive to free or a person to talk to.
   `offer_here` adds those offers to `OfferedHere` for the one holding the turn, read where the actor stands when the gate runs and never offered to its own holder, and they are refused, resolved and answered with `Interacted` exactly as a prop's offer with no effects is; what taking one up does is the game's, read off `Interacted` by verb, and a verb that takes several turns is answered by beginning work on the target with `Works::begin`.
   `Offers` is read on whatever carries it, a prop too, and is not saved by the engine: the game puts it back on with whatever it saves the actor as.

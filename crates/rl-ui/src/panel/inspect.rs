@@ -26,7 +26,7 @@ use rl_rules::forecast::Outlook;
 use crate::cursor::CursorStyle;
 use crate::modal::Modals;
 use crate::panel::nearby::relation_tone;
-use crate::panel::{bar, clear, clip, frame};
+use crate::panel::{bar, clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::inspect::inspect_modal;
 use crate::view::{InspectView, InspectViewPlugin, WorkRow};
@@ -56,6 +56,9 @@ pub struct InspectLayout {
     pub working: String,
     /// The same, for work done to nothing in particular.
     pub working_alone: String,
+    /// The line under the facets that counts those the rectangle has no
+    /// room for, `{n}` standing for how many.
+    pub more: String,
 }
 
 /// Draws [`InspectView`] and the cursor on the map.
@@ -75,6 +78,7 @@ impl InspectPanel {
             cursor: CursorStyle::ticks(),
             working: "{doing} the {target}, {left} left".into(),
             working_alone: "{doing}, {left} left".into(),
+            more: "and {n} more".into(),
         })
     }
 
@@ -107,6 +111,13 @@ impl InspectPanel {
     /// Sets the key hints in the bottom border.
     pub fn hints(mut self, hints: impl Into<String>) -> Self {
         self.0.hints = hints.into();
+        self
+    }
+
+    /// Sets the line counting the facets left out for want of room, with
+    /// `{n}` for how many.
+    pub fn more(mut self, more: impl Into<String>) -> Self {
+        self.0.more = more.into();
         self
     }
 
@@ -295,13 +306,39 @@ pub fn draw_inspect(
             y += 1;
         }
     }
-    for facet in &view.facets {
-        if y >= inner.bottom() {
+    // What a game says about it, each facet wrapped onto as many lines as
+    // it takes: a monster's traits are sentences, and a clipped one reads
+    // as a different trait. A facet is drawn whole or not at all, and what
+    // is left out is counted on the last row rather than cut mid-word.
+    let rows = (inner.bottom() - y).max(0) as usize;
+    let shown = fitting(view.facets.iter().map(|f| wrap(&f.text, width).len()), rows);
+    for facet in &view.facets[..shown] {
+        for line in wrap(&facet.text, width) {
+            terminal.print_on(inner.x, y, &line, palette.get(facet.tone), bg);
+            y += 1;
+        }
+    }
+    let left = view.facets.len() - shown;
+    if left > 0 && y < inner.bottom() {
+        terminal.print_on(inner.x, y, &clip(&layout.more.replace("{n}", &left.to_string()), width), palette.get(Tones::MUTED), bg);
+    }
+}
+
+/// How many of a run of facets, each so many lines tall, are drawn whole
+/// in `rows`: as many as fit, leaving a row for the line that counts the
+/// rest whenever any are left out.
+fn fitting(heights: impl ExactSizeIterator<Item = usize>, rows: usize) -> usize {
+    let count = heights.len();
+    let (mut shown, mut used) = (0, 0);
+    for (i, h) in heights.enumerate() {
+        let room = if i + 1 == count { rows } else { rows.saturating_sub(1) };
+        if used + h > room {
             break;
         }
-        terminal.print_on(inner.x, y, &clip(&facet.text, width), palette.get(facet.tone), bg);
-        y += 1;
+        shown += 1;
+        used += h;
     }
+    shown
 }
 
 /// `rect` turned top for bottom within `map`, so a panel along the
@@ -525,6 +562,66 @@ mod tests {
         stage.press(CursorKeys::default().look);
         let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
         assert_eq!([inner(22), inner(23), inner(24), inner(25)], ["! murky vial", "2 tiles away, on floor", "unknown", ""]);
+    }
+
+    /// A stage looking at a crab the game says `facets` about, in a panel
+    /// `height` rows tall and thirty wide, and the panel's inner rows.
+    fn looked_at_with(facets: &'static [&'static str], height: i32) -> (Stage, Vec<String>) {
+        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(0, 21, 30, height)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(40, 21 + height);
+        let annotate = move |mut view: ResMut<InspectView>, mut keys: ResMut<crate::Facets>| {
+            if view.subject.is_some() {
+                view.facets.extend(facets.iter().map(|text| keys.facet("trait", *text)));
+            }
+        };
+        stage.app.add_systems(Update, annotate.in_set(crate::ViewSet::Annotate));
+        stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        stage.press(CursorKeys::default().next);
+        let inner = (22..20 + height).map(|y| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string()).collect();
+        (stage, inner)
+    }
+
+    /// Six traits, each too long for one line: thirty wide holds a line of
+    /// twenty-six inside the frame and its margins.
+    const TRAITS: &[&str] = &[
+        "hunts in packs and keeps near its kind",
+        "sees in the dark as well as by day",
+        "spits venom that lingers in the blood",
+        "spins webs that hold whoever walks in",
+        "flees when hurt and comes back healed",
+        "never sleeps, and hears a pin drop",
+    ];
+
+    /// A monster with five traits needs them all: each wraps onto as many
+    /// lines as it takes, on spaces, and what the rectangle has no room for
+    /// is counted on a muted line of its own rather than cut off mid-word.
+    #[test]
+    fn five_long_facets_wrap_within_the_rectangle_and_a_sixth_says_more() {
+        let (_, tall) = looked_at_with(TRAITS, 30);
+        let first = tall.iter().position(|r| r.starts_with("hunts")).expect("the first trait is drawn");
+        // Exactly the rows the header, five traits of two lines each and
+        // the line saying more take.
+        let height = first as i32 + 10 + 1 + 2;
+        let (stage, rows) = looked_at_with(TRAITS, height);
+        let traits = &rows[first..first + 10];
+        for (i, text) in TRAITS[..5].iter().enumerate() {
+            let lines = &traits[2 * i..2 * i + 2];
+            assert!(lines.iter().all(|l| !l.is_empty() && l.chars().count() <= 26), "two lines inside the frame: {lines:?}");
+            assert_eq!(lines.join(" "), *text, "the whole trait, broken on a space");
+        }
+        assert_eq!(rows[first + 10], "and 1 more", "the sixth, counted: {rows:#?}");
+        assert_eq!(rows.len(), first + 11, "on the last row inside the frame");
+        let palette = stage.app.world().resource::<Palette>().clone();
+        let more_y = 22 + first as i32 + 10;
+        assert_eq!(stage.app.world().resource::<Terminal>().get(2, more_y).map(|c| c.fg), Some(palette.get(Tones::MUTED)), "in the panel's muted tone");
+        assert!(stage.row(more_y + 1).starts_with('\u{2514}'), "and the bottom border under it");
+
+        let (_, roomy) = looked_at_with(TRAITS, height + 1);
+        assert_eq!(roomy[first + 10..].join(" "), TRAITS[5], "with room for the sixth, it is drawn and nothing says more");
     }
 
     #[test]
