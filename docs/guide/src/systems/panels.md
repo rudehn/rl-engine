@@ -33,9 +33,10 @@
             crates/rl-ui/src/panel/scrollback.rs
             crates/rl-rules/src/forecast.rs
             crates/rl-bevy/src/plugin.rs
+            crates/rl-bevy/src/turn.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 75aa4da7 -->
+     fingerprint: 25cb18bb -->
 
 # Panels
 
@@ -65,36 +66,33 @@ What is optional is read as optional: `VitalsViewPlugin` reads `NoiseHeard` thro
 `Alert` is `Unaware`, `Searching` or `Hunting`, three readings and no more because three is what the engine can say without guessing; what each is *called* is the presenter's, since one game's monsters sleep where another's stand idle.
 `Bar` is a label, a value, a maximum and a tone, and `fraction` is how full it reads.
 A view holds no `Color`, no `Rect` and no string the game did not supply, so the same data serves the terminal panels, a game's own drawing and a test that never opens a window.
-A `Facet` is what the engine cannot know: a key interned in `Facets`, the words, and a tone.
+A `Facet` is what the engine cannot know: a key interned in `Facets`, the words, and a tone, and as an escape hatch its use is a signal, since two games pushing the same key means the field belongs in the view.
 The engine fills the row in `ViewSet::Collect`, a game's system pushes in `ViewSet::Annotate`, and the presenter prints what it finds in the order it was pushed.
-Facets are an escape hatch and their use is a signal: two games pushing the same key means the field belongs in the view.
-`ToneId` is a semantic role interned in `Tones`, and `Palette` is the colour per role.
-Eleven are interned before anything is authored, `text`, `muted`, `good`, `bad`, `notice`, `title`, `frame`, `surface`, `select`, `hit` and `kill`, and their ids are constants so nothing looks them up.
+`ToneId` is a semantic role interned in `Tones`, `Palette` is the colour per role, and Eleven are interned before anything is authored, `text`, `muted`, `good`, `bad`, `notice`, `title`, `frame`, `surface`, `select`, `hit` and `kill`, and their ids are constants so nothing looks them up.
 A tone with no colour falls back to `text` rather than panicking, and every uncoloured tone is named once at `OnEnter(Playing)`, which is visible in a playtest and cannot spam a frame.
 `readable` is what keeps a dark name legible on a dark surface without losing its hue.
-`Modals` is the stack of open screens, innermost last, and empty means the world has input.
+`Modals` is the stack of open screens, innermost last, and empty means the world has input, a stack rather than a return-to slot because a slot can be pushed twice and lose the first target.
 `modal_is(id)` gates a screen's own systems and `no_modal` gates the engine's, which is how a game stops discovering that its player walks while the bag is open.
-A stack rather than a return-to slot, because a slot can be pushed twice and lose the first target.
 `Sighted` is refilled twice a frame rather than once, at the head of the input phase and again in `ViewSet::Sight`, because those are two different moments: the turns run between them, and a list collected before the player's key was resolved is not the list the panels draw.
 `InSight` reads it as actors nearest first and then things nearest first, which is the order the nearby rail prints, and leaves out a prop nobody has spotted and a prop that is only `Scenery`; the inspect cursor reads what stands under it rather than the list, so it still names a machine the rail passes over.
 `Focus` is the one entity picked out of that list, held by entity rather than by cell so two things on a tile are two stops, and a focus on something that has left sight is treated as none rather than as an error.
 The rail highlights it, the look cursor opens on it and an aim opens on it when the aim can take it, so the row picked out and the thing aimed at are one choice.
 An aim put away, fired or not, leaves nothing picked out, so the rail is not left pointing at what a grenade already landed on; what it was fired at is kept apart as `LastAimed`, and the next aim opens there when nothing is picked out.
-`VitalsView` is the player: a label, a list of `Bar`s, armor, status badges, game facets, the turn, the position, whether the player is seen, the `LightBand` it stands in, and how loud it has been.
+`VitalsView` is the player: a label, a list of `Bar`s, armor, with `armor_uncertain` while anything the player wears is `Unknown`, which the strip writes `armor 5?` since the total still counts what the unknown thing lends, status badges, game facets, the turn, the position, whether the player is seen, the `LightBand` it stands in, and how loud it has been.
 `exposure` is `None` without lighting, and the strip prints it beside seen or hidden, since the same band decides how well a watcher sees the player and how hard it is to hit.
-`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one and `primary` false only on a two-hander's claimed hand, whose row is the same item worn twice.
-`InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it and a `Duel` fought at the distance the cursor stands from the player, each side counted as it would fight once in reach, so a monster across the room still reads in turns.
+`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one and is known, a fed weapon's rounds as the `ammo` facet [Ammunition](ammunition.md) describes, and `primary` false only on a two-hander's claimed hand, whose row is the same item worn twice.
+`InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it, `unknown` when that is a thing not yet known, which the panel says in place of anything more, and a `Duel` fought at the distance the cursor stands from the player, each side counted as it would fight once in reach and at the speed `Speeds` gives it, so a monster across the room still reads in turns and a hasted one in its own.
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
 Each side's chance of landing what it would attack with from there comes from `Marksmanship::at_distance` and scales its `Combatant` through `hitting`, and the player's own is kept as `odds` for the panel to print under the forecast, the same lines the targeting cursor prints.
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.
 `InspectPanel` sits over the map but never over what it describes, which is the engine's rule since a panel hiding its subject is wrong in every game: `place_inspect` moves it into `InspectPlacement` at the mirror of its rectangle in the map, or where the game's `else_at` says, while any cell of the cursor's tile or of a tile a tick stands on would sit under it, and keeps it there until the cursor goes under it again so it does not swap sides at every step; it says how far off its subject stands, `here` for what lies where the player stands.
 `AbilityView` is an `AbilityRow` per ability the turn-holder knows, in registration order so a key bound to the third row stays bound to it, each carrying its costs, requirements and effects as sentences and every reason it is refused.
-`TargetView` is what is being aimed, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, and a `Row` per target.
-`TargetPanel` draws the footprint over the map and describes the aim in a framed box, drawn only while the cursor is up so a game sets it over the bottom of its rail: what is aimed, the range, the target in its relation's tone, then the chance to hit and each of the model's lines, or the reason the aim is refused where the chance would be.
+`TargetView` is what is being aimed, `using` when it is a thing's use, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, a `Row` per target, and `unknown` when what is named is not yet known, whose reach the box leaves out while still showing where it would land.
+`TargetPanel` draws the footprint over the map and describes the aim in a framed box, drawn only while the cursor is up so a game sets it over the bottom of its rail: what is aimed, the range, the target in its relation's tone, then the chance to hit and each of the model's lines, or the reason the aim is refused where the chance would be; a thing's use is boxed as an ability is, with no chance, since a use is never rolled.
 The view also holds the `AimRange`, how far the aim reaches against how far the weapon reaches with no penalty and at all, and the `Odds` against whoever living a shot or a throw would strike, asked of `Marksmanship` as the resolver asks it, so a throw a body intercepts shows the chance against that body and the range to it.
-`AimAt`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm.
+`AimAt`, `AimUse`, `AimThrow` and `AimFire` are how a key asks for a cursor, and the cursor writes the `Intent` itself on confirm; `AimUse` uses at once a thing whose use lands on its user, opens the bag choosing for one whose use asks for a thing, and opens nothing for one that cannot be used now, so a game's use key writes it for anything.
 `OffersView` is an `OfferRow` per verb the player is offered where it stands, with its cost in hundredths and the reason a refused one is refused.
-`SheetView` is the character sheet: stats with every `Change` that made them what they are, resists, strikes, statuses with their turns left and what is worn, and the sheet shows a status put on until it is cured with no count at all.
+`SheetView` is the character sheet: stats with every `Change` that made them what they are, resists, strikes, its speed as `Speeds` reads it for the queue, statuses with their turns left and what is worn, and the sheet shows a status put on until it is cured with no count at all.
 A presenter reads a view, reads the `Palette`, and writes cells to the `Terminal`; it owns no state and makes no decision a game might want made differently.
 `panel::split_right`, `split_bottom` and `split_top` hand back both halves of a cut, which is the whole of the engine's opinion about layout: no resource holds every panel's rectangle.
 `clear`, `frame`, `section` and `bar` are public so a game taking the view and drawing its own does not rewrite a box-drawing routine, and `ListMenu` is the selection a screen keeps.
