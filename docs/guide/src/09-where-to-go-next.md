@@ -43,7 +43,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You get** afflictions ticked by the turn through the damage pipeline, with stacking rules and cures; a stat block with a modifier accumulator; an equipment slot graph with displacement; and an affix model of prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
   `Loadout` sums the gear at the blow and `fold_gear` keeps the stats current, so nothing is ever copied onto the wearer.
 - **Worked example** `corsair` uses all of it.
-- **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, and [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`.
+- **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`, [Uses and charges](systems/uses.md) for what a thing does when it is used and what that costs it, and [Ammunition](systems/ammunition.md) for what a shot spends.
 
 ## Quests
 
