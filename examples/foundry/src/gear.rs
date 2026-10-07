@@ -271,18 +271,24 @@ pub struct WornDarkSight(pub i32);
 /// so the pack says them in its own words, and the reason in a facet
 /// under them.
 ///
+/// Why it is put by is asked of the engine's `Loadout::dry`, the one
+/// place that says whether ammunition benched a weapon, rather than read
+/// off the marker here.
+///
 /// `InventoryView` is `None` until a game adds a pack panel: absence means
 /// no pack to annotate, not that anything is wrong.
 pub fn note_the_pack(
     view: Option<ResMut<InventoryView>>,
     mut facets: ResMut<Facets>,
     registries: Res<Registries>,
-    things: Query<(Option<&WornDarkSight>, Option<&Stowed>, Has<Dry>)>,
+    loadout: Loadout,
+    things: Query<(Option<&WornDarkSight>, Option<&Stowed>)>,
 ) {
     let Some(mut view) = view else { return };
     let kind = |kind| registries.damage_kinds.name(kind).to_string();
     for row in view.rows.iter_mut() {
-        let Ok((sight, stowed, dry)) = things.get(row.entity) else { continue };
+        let Ok((sight, stowed)) = things.get(row.entity) else { continue };
+        let dry = loadout.dry(row.entity);
         if let Some(stowed) = stowed {
             match *stowed {
                 Stowed::Melee(a) => row.blow = Some(Strike { kind: kind(a.kind), dice: a.dice, range: None }),
