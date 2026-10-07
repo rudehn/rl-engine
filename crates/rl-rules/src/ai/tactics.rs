@@ -663,13 +663,18 @@ impl<A: Copy> Tactic<A> for UseAbility {
 }
 
 /// Use something it carries: on itself what mends, once hurt past a share,
-/// and otherwise what is pointed, where an ability of the same aim would be
-/// pointed.
+/// and otherwise what is aimed at foes, at a foe.
 ///
 /// [`UseAbility`] for what a mind carries rather than what it knows. The
 /// engine cannot know what a thing does, so a pointed use is scored by who
 /// its footprint would land on, and the one thing a mind is told of a use
-/// that lands on itself is whether it mends. What it chooses is answered by
+/// that lands on itself is whether it mends. Only a use aimed at foes,
+/// [`Aim::Foe`], is pointed at all: one aimed at anyone, at the ground or
+/// at allies says nothing of whether it helps or harms whoever it lands on,
+/// and a wand that copies or mends what it strikes is aimed at anyone like
+/// one that sends it away. An ability's author chose to give it to the
+/// mind; a thing a mind picked up nobody chose for it, so only what its
+/// aim says is harmful is turned on a foe. What it chooses is answered by
 /// the resolver that answers the player's use of the same thing, so it is
 /// refused whatever the player's would be; and it chooses nothing that
 /// resolver would refuse, since it is told only of what it may use and
@@ -720,7 +725,7 @@ impl<A: Copy> Tactic<A> for UseCarried {
         // two runs of one seed agree.
         let mut best: Option<(i32, A, Point)> = None;
         for thing in &s.carried {
-            let Some(targeting) = thing.targeting else { continue };
+            let Some(targeting) = thing.targeting.filter(|t| t.aim == Aim::Foe) else { continue };
             if let Some((score, at)) = best_aim(targeting.aim, targeting.mode, ctx)
                 && best.is_none_or(|(b, _, _)| score > b)
             {
@@ -2066,11 +2071,11 @@ mod tests {
         assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "nor is anything mended that has no health to see the wounds of");
     }
 
-    /// A mind points a thing it carries as it points an ability: at a foe
-    /// its footprint reaches down a clear line, at a hurt ally for what is
-    /// aimed at allies, and never at its own side for what is aimed at foes.
+    /// A mind points a thing aimed at foes as it points an ability: at a
+    /// foe its footprint reaches down a clear line, and never at its own
+    /// side.
     #[test]
-    fn a_mind_points_what_it_carries_where_an_ability_of_the_same_aim_would_be_pointed() {
+    fn a_mind_points_what_it_carries_at_a_foe_as_it_points_an_ability() {
         let tactic = UseCarried::default();
         let mut s = Snapshot::alone(view(1, 0, 5, 10));
         s.carried = vec![carried(40, pointed(rl_grid::TargetMode::Bolt { range: 6 }, Aim::Foe), false)];
@@ -2085,10 +2090,28 @@ mod tests {
         s.enemies.clear();
         s.allies = vec![view(3, 4, 5, 4)];
         assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "never at its own side");
-        s.carried = vec![carried(41, pointed(rl_grid::TargetMode::Bolt { range: 6 }, Aim::Ally), true)];
-        assert_eq!(use_carried(tactic, &s, &nothing_blocks), Some(Decision::UseItemAt { item: 41, at: Point::new(4, 5) }), "but at a hurt ally");
-        s.allies = vec![view(3, 4, 5, 10)];
-        assert_eq!(use_carried(tactic, &s, &nothing_blocks), None, "and not at a whole one");
+    }
+
+    /// Only a use aimed at foes is pointed: one aimed at anyone, at the
+    /// ground or at allies may help whoever it lands on, a wand that copies
+    /// what it strikes among them, so a mind holding nothing else keeps it
+    /// with a foe in reach and an ally hurt beside it.
+    #[test]
+    fn a_mind_points_nothing_it_carries_unless_its_aim_is_at_foes() {
+        let bolt = rl_grid::TargetMode::Bolt { range: 6 };
+        let mut s = Snapshot::alone(view(1, 0, 5, 10));
+        s.enemies = vec![view(2, 4, 5, 10)];
+        s.allies = vec![view(3, 0, 7, 4)];
+        for aim in [Aim::Anyone, Aim::Ground, Aim::Ally] {
+            s.carried = vec![carried(42, pointed(bolt, aim), false)];
+            assert_eq!(use_carried(UseCarried::default(), &s, &nothing_blocks), None, "{aim:?}");
+        }
+        s.carried.push(carried(40, pointed(bolt, Aim::Foe), false));
+        assert_eq!(
+            use_carried(UseCarried::default(), &s, &nothing_blocks),
+            Some(Decision::UseItemAt { item: 40, at: Point::new(4, 5) }),
+            "but what is aimed at foes, it points"
+        );
     }
 
     /// The resolver refuses a use whose flight stopped short of where it was
