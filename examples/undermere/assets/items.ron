@@ -128,8 +128,9 @@
 //               wearer's steps carries, two for anyone, and heavy armor adds to it;
 //               regeneration is health back a hundred turns, wisdom percent faster every
 //               carried staff refills, reaping turns off each carried staff's next charge for
-//               every blow that lands, and awareness points added to the chance a turn of
-//               spotting what is hidden; only on a thing with a slot
+//               every blow that lands, one a swing however many it strikes, and awareness
+//               points added to the chance a turn of spotting what is hidden; only on a thing
+//               with a slot
 //   per_level:  optional; [(stat, amount)] added to its wearer's stats for each of its levels
 //               while it is worn, and taken away for each below nought; only on a thing with a
 //               slot that takes levels
@@ -322,8 +323,9 @@
     // back and a quarter less from every heal a level. A level of wisdom
     // refills every staff carried three tenths faster; of reaping, takes
     // twenty-five turns off each one's next charge for every blow that
-    // lands; of awareness, adds fifteen to the chance a turn of spotting
-    // what is hidden.
+    // lands, a swing that sweeps through three foes one blow; of
+    // awareness, adds fifteen to the chance a turn of spotting what is
+    // hidden.
     (name: "ring of regeneration", glyph: '=', color: (0.9, 0.3, 0.35), slot: "left finger", either: true, tags: ["ring"],
      per_level: [("regeneration", 10), ("mending", 25)]),
     (name: "ring of stealth", glyph: '=', color: (0.5, 0.5, 0.6), slot: "left finger", either: true, tags: ["ring"], per_level: [("stealth", 10)]),

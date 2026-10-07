@@ -458,6 +458,34 @@ fn a_ring_of_wisdom_quickens_a_staffs_recharge_and_a_ring_of_reapings_blows_shor
     assert_eq!(charges(&app, staff), (1, 1), "ten blows brought back what five hundred turns would have");
 }
 
+/// What a staff has counted towards its next charge, in hundredths.
+fn progress(app: &App, staff: Entity) -> u32 {
+    app.world().get::<Consumable>(staff).and_then(|c| c.recharge).expect("a staff refills").progress
+}
+
+/// A ring of reaping counts a swing, not what the swing catches: an axe
+/// swept through three goblins at once is one blow, fifty turns towards a
+/// staff's next charge for a ring two better, and not a hundred and fifty.
+#[test]
+fn a_ring_of_reaping_counts_a_sweep_through_three_foes_as_one_blow() {
+    let (mut app, me, here) = arena(15);
+    let staff = carried(&mut app, me, "staff of firebolt", 1);
+    let foes = [here.offset(1, 0), here.offset(1, 1), here.offset(0, 1)].map(|at| still(&mut app, "goblin", at));
+    zap(&mut app, me, staff, here.offset(1, 0));
+    assert_eq!(charges(&app, staff), (0, 1), "spent");
+    worn(&mut app, me, "ring of reaping", 2);
+    worn(&mut app, me, "axe", 0);
+    let (before, hurt) = (progress(&app, staff), foes.map(|foe| lost(&app, foe)));
+    app.world_mut().write_message(Intent::new(me, Attack(foes[0])));
+    settle(&mut app);
+    for (foe, was) in foes.iter().zip(hurt) {
+        assert!(lost(&app, *foe) > was, "the sweep struck every goblin beside the adventurer");
+    }
+    let blow = 50 * BASE_ACTION_COST;
+    let gained = progress(&app, staff) - before;
+    assert!((blow..2 * blow).contains(&gained), "one blow's fifty turns and the turn's own time, not three blows: {gained}");
+}
+
 /// A ring of regeneration a level gives back ten health a hundred turns,
 /// and three levels thirty, where nothing else heals by itself; one cursed
 /// two below nought gives back none, and takes half off every heal.

@@ -72,11 +72,15 @@ pub fn keep_pace(
 /// reaping stat in turns a blow, a ring of reaping's twenty-five a level,
 /// and taken away for a cursed one.
 ///
-/// A blow is a blow struck in reach that met its target, as the damage
-/// pipeline reports it, armor or none: a staff's own bolt is not a blow,
-/// so a staff never hurries itself. In `TurnSet::React`, after the pass's
-/// damage; the engine turns what is counted into a charge on the next
-/// pass that time goes by in.
+/// A blow is a swing struck in reach that met at least one target, as the
+/// damage pipeline reports it, armor or none: one however many foes a
+/// sweep or a pierce catches and however many extra strikes it carries,
+/// since the engine makes one swing of it and reports it once as
+/// `Struck`, and a staff's own bolt is no blow, so a staff never hurries
+/// itself. The adventurer acts at most once a pass, so a pass's blows that
+/// landed are one swing. In `TurnSet::React`, after the pass's damage; the
+/// engine turns what is counted into a charge on the next pass that time
+/// goes by in.
 pub fn reap(
     mut dealt: MessageReader<DamageDealt>,
     adventurer: Query<(Entity, &Inventory, &StatBlock), With<Adventurer>>,
@@ -87,7 +91,10 @@ pub fn reap(
         dealt.clear();
         return;
     };
-    let blows = dealt.read().filter(|d| d.hit.attacker == Some(me) && d.reach == Reach::Melee).count() as i64;
+    // Every hit read, so none is left over for the next pass, and one
+    // swing counted however many of them it dealt.
+    let landed = dealt.read().filter(|d| d.hit.attacker == Some(me) && d.reach == Reach::Melee).count() > 0;
+    let blows = i64::from(landed);
     let worth = blows * i64::from(stats.0.value(stat, &registries.stats)) * i64::from(BASE_ACTION_COST);
     if worth == 0 {
         return;
