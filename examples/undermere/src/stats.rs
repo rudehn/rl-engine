@@ -49,8 +49,10 @@ pub fn keep_stealth(registries: Res<Registries>, mut adventurer: Query<(&StatBlo
 /// the stat before anyone steps in the next pass is what makes the first
 /// step after plate goes on as loud as every step after it. Written only
 /// where it differs from what the actor's steps carry already, so a body
-/// with nothing heavy on carries no `Footfall` at all and steps as the
-/// house's [`NoiseRules`] say, as it did before footfall was a stat.
+/// that has never had anything heavy on carries no `Footfall` at all and
+/// steps as the house's [`NoiseRules`] say, as it did before footfall was
+/// a stat; once one has, it keeps its `Footfall`, back at the house's step
+/// when the heavy thing comes off, which sounds the same as none.
 pub fn keep_footfall(
     mut commands: Commands,
     registries: Res<Registries>,
