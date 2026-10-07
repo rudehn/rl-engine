@@ -215,3 +215,22 @@ fn every_scroll_is_found_unknown_under_its_title_and_known_once_read_where_it_is
         assert!(said(&app).contains(&line), "{name}: {:#?}", said(&app));
     }
 }
+
+/// Two scrolls of a kind share a row of the pack, said as several under
+/// their title, as two potions of a colour do: the engine keeps a title as
+/// written and counts the word before it, `2 scrolls titled ...`.
+#[test]
+fn two_scrolls_of_a_kind_share_a_row_of_the_pack_under_their_title() {
+    let (mut app, me, here) = arena(3);
+    for _ in 0..2 {
+        let scroll = find(&mut app, "scroll of identify", 0);
+        crate::testing::lay(&mut app, scroll, here);
+        crate::testing::take_up(&mut app, me);
+    }
+    let face = app.world().resource::<Lore>().face("scroll of identify").expect("a title").called.clone();
+    let title = face.strip_prefix("scroll titled ").expect("titled");
+    let rows = crate::testing::pack(&app, me);
+    let titled: Vec<&(String, u32)> = rows.iter().filter(|(name, _)| *name == face).collect();
+    assert_eq!(titled, [&(face.clone(), 2)], "one row of two: {rows:?}");
+    assert_eq!(rl_engine::rl_core::noun::listed(&face, 2), format!("2 scrolls titled {title}"), "said as several under the title as written");
+}

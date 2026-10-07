@@ -236,30 +236,30 @@
      triggers: [(on: "use", area: Burst(radius: 1)), (on: "land", area: Burst(radius: 1))]),
     // The scrolls, each spent by its reading. One read onto another thing
     // asks which under the one question every such scroll asks, and of any
-    // thing at all, so an unknown scroll gives nothing away by asking. They
-    // do not stack: a stack is said in the plural, and the engine's plural
-    // of "scroll titled ZUMOR KA" pluralises the title.
-    (name: "scroll of enchanting", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    // thing at all, so an unknown scroll gives nothing away by asking. Two
+    // of a kind stack, as potions do, said under their title as written:
+    // "2 scrolls titled ZUMOR KA".
+    (name: "scroll of enchanting", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", asks: (prompt: "Read it on which?"), effects: [(kind: "Enchant")])]),
-    (name: "scroll of identify", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of identify", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", asks: (prompt: "Read it on which?"), effects: [(kind: "Identify")])]),
-    (name: "scroll of remove curse", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of remove curse", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "RemoveCurse")])]),
     // The rest are read where the reader stands: away to somewhere far,
     // every staff refilled, the floor mapped, foes in sight set on each
     // other; and two that hurt, a shriek that wakes the floor and monsters
     // called up beside the reader.
-    (name: "scroll of teleportation", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of teleportation", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Teleport")])]),
-    (name: "scroll of recharging", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of recharging", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Recharge")])]),
-    (name: "scroll of magic mapping", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of magic mapping", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "MagicMapping")])]),
-    (name: "scroll of discord", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of discord", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Discord", args: (turns: 10))])]),
-    (name: "scroll of aggravate monsters", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of aggravate monsters", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Aggravate")])]),
-    (name: "scroll of summon monsters", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], consumable: (charges: 1, when_empty: Destroyed),
+    (name: "scroll of summon monsters", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", effects: [(kind: "Summon", args: (fewest: 2, most: 3))])]),
     // The staffs, zapped from the pack: a staff's level is its power and its
     // charges both, found at two and better deeper, and a spent charge comes
