@@ -10,9 +10,10 @@
 //! Undermere's to say, so in `ViewSet::Annotate` it counts every worn or
 //! wielded thing not yet known at its kind's plain numbers, the level of
 //! nought any thing of its kind is: the vitals' armor, which keeps its
-//! mark, and the look cursor's forecast of a fight and its chance to hit,
-//! worked out again through the calls the engine's collector makes and
-//! said to count unknown gear plain.
+//! mark, the look cursor's forecast of a fight and its chance to hit, and
+//! the targeting box's chance to hit, each worked out again through the
+//! calls the engine's collector makes and said to count unknown gear
+//! plain.
 //!
 //! Only what a level changes is taken back: the armor a level adds to a
 //! piece of armor, and what a short wearer pays for it, the damage a level
@@ -21,8 +22,8 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::band_at;
-use rl_engine::rl_core::{DiceRoll, geometry};
+use rl_engine::rl_bevy::{Attempt, band_at};
+use rl_engine::rl_core::{DiceRoll, Point, geometry};
 use rl_engine::rl_rules::accuracy::{Delivery, Odds, Shot};
 use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::forecast::{Combatant, Duel, duel};
@@ -121,26 +122,55 @@ impl Seeming<'_, '_> {
     }
 
     /// The odds `attacker` lands what it would attack `target` with from
-    /// where both stand, its accuracy `less` lower: the engine's own call
-    /// when nothing is to be taken off, and otherwise the same shot put to
-    /// the run's hit model as that call puts it, with that accuracy.
+    /// where both stand, its accuracy `less` lower, by the rule the engine's
+    /// `Marksmanship::at_distance` picks the attack by: a blow beside, a
+    /// shot while it reaches, and nothing further.
     fn odds(&self, attacker: Entity, target: Entity, less: i32) -> Option<Odds> {
         if less == 0 {
             return self.marks.at_distance(&self.loadout, attacker, target);
         }
-        let (from, to) = (self.bodies.get(attacker).ok()?.0.0, self.bodies.get(target).ok()?.0.0);
-        let distance = geometry::chebyshev(from, to);
-        let (delivery, effective, range) = if distance <= 1 {
+        let distance = geometry::chebyshev(self.bodies.get(attacker).ok()?.0.0, self.bodies.get(target).ok()?.0.0);
+        if distance <= 1 {
             self.loadout.melee(attacker)?;
-            (Delivery::Melee, 0, 1)
-        } else {
-            let gun = self.loadout.ranged(attacker).filter(|g| distance <= g.range)?;
-            (Delivery::Shot, gun.effective_range(), gun.range)
+            return self.odds_of(attacker, target, Attempt::Blow, less);
+        }
+        let gun = self.loadout.ranged(attacker).filter(|g| distance <= g.range)?;
+        self.odds_of(attacker, target, Attempt::Shot(&gun), less)
+    }
+
+    /// The odds of what `user` fires at `target` with the cursor on
+    /// `cursor`, its accuracy `less` lower, as the targeting cursor previews
+    /// a shot: struck as a blow point blank, and as the shot in hand
+    /// further off.
+    pub fn fire_odds(&self, user: Entity, target: Entity, cursor: Point, less: i32) -> Option<Odds> {
+        if geometry::is_adjacent(self.bodies.get(user).ok()?.0.0, cursor) {
+            return self.odds_of(user, target, Attempt::Blow, less);
+        }
+        let gun = self.loadout.ranged(user)?;
+        self.odds_of(user, target, Attempt::Shot(&gun), less)
+    }
+
+    /// The odds `attacker` lands `attempt` on `target` where both stand, its
+    /// accuracy `less` lower: the engine's own `Marksmanship::odds` when
+    /// nothing is to be taken off, and otherwise the same shot put to the
+    /// run's hit model as that call puts it, with that accuracy.
+    pub fn odds_of(&self, attacker: Entity, target: Entity, attempt: Attempt, less: i32) -> Option<Odds> {
+        if less == 0 {
+            return self.marks.odds(attacker, target, attempt);
+        }
+        let (from, to) = (self.bodies.get(attacker).ok()?.0.0, self.bodies.get(target).ok()?.0.0);
+        let (delivery, effective, range) = match attempt {
+            Attempt::Blow => (Delivery::Melee, 0, 1),
+            Attempt::Shot(gun) => (Delivery::Shot, gun.effective_range(), gun.range),
+            Attempt::Throw(thrown) => {
+                thrown.strike?;
+                (Delivery::Thrown, thrown.effective_range(), thrown.range)
+            }
         };
         let stat = |who: Entity, pick: Option<StatId>| pick.map(|stat| self.stats.get(who).map_or(0, |s| s.0.value(stat, &self.registries.stats)));
         let accuracy = stat(attacker, self.rules.accuracy).map(|a| a - less);
-        let shot =
-            Shot { delivery, distance, effective, range, light: band_at(self.lighting.as_deref(), to), accuracy, evasion: stat(target, self.rules.evasion) };
+        let light = band_at(self.lighting.as_deref(), to);
+        let shot = Shot { delivery, distance: geometry::chebyshev(from, to), effective, range, light, accuracy, evasion: stat(target, self.rules.evasion) };
         self.hits.0.odds(&shot)
     }
 
@@ -204,6 +234,30 @@ pub fn seem_forecast(view: Option<ResMut<InspectView>>, seeming: Seeming, player
     view.duel = Some(forecast);
     view.odds = odds;
     view.facets.push(facets.facet("forecast", "unknown gear counted plain").toned(Tones::MUTED));
+}
+
+/// Writes the targeting box's chance to hit again with every worn thing
+/// not yet known lending only its kind's plain accuracy, as
+/// [`Seeming::odds_of`] reckons it, and says under it that unknown gear is
+/// counted plain, the chance's own `?`: a `+2` bow not yet known no longer
+/// reads `+10 accuracy`, the level its wearer has not learned.
+///
+/// A shot or a blow fired, and a throw, whose chance reads the thrower's
+/// accuracy as well. In `ViewSet::Annotate`, over the engine's chance, which
+/// is left as it is when nothing the aimer wears is unknown.
+pub fn seem_aim(view: Option<ResMut<TargetView>>, seeming: Seeming, missiles: Query<&Throwable>, mut facets: ResMut<Facets>) {
+    let Some(mut view) = view else { return };
+    let (Some(user), Some(target), true) = (view.user, view.targets.first().map(|r| r.entity), view.odds.is_some()) else { return };
+    let less = seeming.unseen(user).accuracy;
+    if less == 0 {
+        return;
+    }
+    view.odds = match (view.throwing, view.firing) {
+        (Some(item), _) => missiles.get(item).ok().and_then(|thrown| seeming.odds_of(user, target, Attempt::Throw(thrown), less)),
+        (None, true) => seeming.fire_odds(user, target, view.cursor, less),
+        (None, false) => return,
+    };
+    view.facets.push(facets.facet("odds", "unknown gear counted plain").toned(Tones::MUTED));
 }
 
 #[cfg(test)]
@@ -321,5 +375,36 @@ mod tests {
         assert_eq!(unknown.2, ["unknown gear counted plain"], "and the forecast says it counted it so");
         assert!(plain.2.is_empty() && known.2.is_empty(), "nothing is said of a fight with nothing unknown in it");
         assert_ne!((known.0, &known.1), (plain.0, &plain.1), "known, its level counts");
+    }
+
+    /// The targeting box's chance to hit, and what the game said under it,
+    /// for a shot at a goblin four cells off with a bow at `level`, known
+    /// or not, and arrows in the pack.
+    fn aiming_a_bow(level: i32, known: bool) -> (Option<Odds>, Vec<String>) {
+        let (mut app, me, here) = arena_with(24, TargetViewPlugin);
+        still(&mut app, "goblin", here.offset(4, 0));
+        let arrows = find(&mut app, "arrow", 0);
+        crate::testing::give(&mut app, me, arrows);
+        let bow = thing(&mut app, "bow", level, known);
+        equip(&mut app, me, bow);
+        app.world_mut().write_message(AimFire { user: me });
+        app.update();
+        app.world_mut().resource_mut::<TargetView>().cursor = here.offset(4, 0);
+        app.update();
+        let view = app.world().resource::<TargetView>();
+        (view.odds.clone(), view.facets.iter().map(|f| f.text.clone()).collect())
+    }
+
+    /// The targeting box gives a shot with a bow not yet known the chance a
+    /// plain bow gives, not the `+10 accuracy` a `+2` one lends, and says it
+    /// counted it so; known, its level counts, and nothing is said.
+    #[test]
+    fn the_targeting_box_counts_an_unknown_bows_accuracy_as_a_plain_ones_and_says_so() {
+        let (unknown, plain, known) = (aiming_a_bow(2, false), aiming_a_bow(0, true), aiming_a_bow(2, true));
+        assert!(plain.0.is_some(), "a goblin in reach has a chance to be hit");
+        assert_eq!(unknown.0, plain.0, "a +2 bow not yet known is aimed as a plain one");
+        assert_eq!(unknown.1, ["unknown gear counted plain"], "and the box says it counted it so");
+        assert!(plain.1.is_empty() && known.1.is_empty(), "nothing is said of an aim with nothing unknown in it");
+        assert_ne!(known.0, plain.0, "known, its level counts");
     }
 }

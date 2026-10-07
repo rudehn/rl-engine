@@ -113,11 +113,6 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 3. Make what exists real
 
-- **The targeting box's chance to hit tells an unknown weapon's level.**
-  Firing an unknown bow, or striking point-blank with an unknown blade, the box prints the model's lines, and Undermere's weapons lend five accuracy a level, so `+10 accuracy` reads a `+2` bow its wearer has not learned.
-  The look cursor's chance to hit is counted plain since 2026-10-07, by `seeming::Seeming` in `ViewSet::Annotate`, and `TargetView::odds` wants the same: the shot put to the hit model again with the unknown weapon's level of accuracy taken off.
-  Found by the final fix wave of Undermere's second part and left, since the ruling covered the vitals and the forecast.
-
 - **A prop cannot block sight, or block the way and let a shot past.**
   A prop's `blocks` is `Blocks`, which the occupancy index reads for movement and `combat::shot` reads as stopping a shot, and nothing a prop is can block sight.
   Tiles already split the three, walkable, opaque and whether a shot passes, and Foundry's rooms want the same of a prop: a coolant tank or a full shelf blocks all three, a workbench or a lathe only the way, as `examples/foundry/DESIGN.md` sets out under Rooms.

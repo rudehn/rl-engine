@@ -198,10 +198,11 @@ impl Plugin for UndermerePlugin {
         // after the keys that turn the pack to choosing, before the names.
         app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));
         // What the panels count of a worn thing not yet known: its kind's
-        // plain numbers, over the engine's true ones, for the vitals' armor
-        // and the look cursor's forecast. Each reads its view when the
-        // game draws it and does nothing where it does not.
-        app.add_systems(Update, (crate::seeming::seem_armor, crate::seeming::seem_forecast).in_set(ViewSet::Annotate));
+        // plain numbers, over the engine's true ones, for the vitals' armor,
+        // the look cursor's forecast and the targeting box's chance. Each
+        // reads its view when the game draws it and does nothing where it
+        // does not.
+        app.add_systems(Update, (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim).in_set(ViewSet::Annotate));
         // Each place's ambient, set between the turns and the light, so the
         // frame the stairs land on is drawn in the new place's light.
         app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
