@@ -5,7 +5,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/components.rs
-     fingerprint: c9d9218f -->
+     fingerprint: a6b2d512 -->
 
 # The turn loop
 
@@ -24,7 +24,8 @@ It sets `Turn` to run on one thread, because a pass is dozens of small systems d
 It declares `needs::<WorldMap>`, so a game that never builds a map is told so, by name, the moment play begins rather than by an empty screen.
 A game's own action is registered with `app.add_action::<A>()`, which adds `Intent<A>` as a message and one sweeper that refuses an intent no resolver claimed.
 Cues and the hold are in `CorePlugin` too, and stay inert until a plugin that draws them calls `TurnHold::watch`.
-A landing is not: `add_airborne` is called by `AbilitiesPlugin`, `CombatPlugin` and `ThrowingPlugin`, so an `Airborne<L>` arrives with the subsystem that flies something rather than with the loop.
+A landing is not: `add_airborne` is called by `AbilitiesPlugin`, `CombatPlugin`, `ThrowingPlugin` and `EffectsPlugin`, for a thing's aimed use, so an `Airborne<L>` arrives with the subsystem that flies something rather than with the loop.
+`TurnRules` is optional data: absent, or naming no stat, every actor is as fast as its own `Speed`.
 
 ## The model
 
@@ -36,7 +37,9 @@ An actor holding `MyTurn` is out of the queue until something reports `ActionDon
 `admit_new_actors` holds a freshly spawned actor out of the queue until it first stands where play is, and admits the player ahead of the rest so a first turn does not depend on archetype order.
 A decision is an `Intent<A>` for an `A: Action`, written by the game in `EngineSet::Input` for the player and by minds in `TurnSet::Decide` for everyone else.
 A resolver takes a `Resolution`: `claim` gives it the turn once, `done(actor, cost)` spends it, and `failed(actor, cost)` refuses for the player and charges anyone else, because a monster handed a free retry asks again forever.
-`cleanup_turns` requeues at `scaled_cost` of what was owed against `Speed`, requeues one actor once per pass, and charges a wait to any non-player left holding a turn nobody used.
+`cleanup_turns` requeues at `scaled_cost` of what was owed against the actor's speed, requeues one actor once per pass, and charges a wait to any non-player left holding a turn nobody used.
+That speed is what `Speeds::of` reads, the one reader, so nothing that shows a speed disagrees with the queue about who is hasted: the actor's own `Speed`, a hundred when it has none, with the value of the stat `TurnRules::new().speed_stat(stat)` names added as a percentage of it, so a hundred on the stat is twice as fast and minus fifty half as fast.
+The stat wants a base of nought, so an actor with nothing on it is as fast as it was spawned, and nothing takes a speed below one, since an actor that is not to act at all is held by a status rather than slowed to nothing.
 `Cued` is what a resolver writes when a turn did something worth seeing: a `Cue::Flight` between two `Anchor`s or a `Cue::Burst` on several, all at once or going out `from` one of them, where an anchor that follows an entity goes where the entity goes.
 `Pace` is how fast the turns run while nobody is waited on: `Pace::unpaced()`, the default, `Pace::per_second(hundredths)` of game time for each second of the wall clock, or `Pace::stopped()`.
 `earn_pace` adds a frame's share once a frame, capped at a quarter of a second, and `run_turns` spends it as the clock advances, so a pass that moves no time is free and one that jumps the clock is paid off over the frames after.
