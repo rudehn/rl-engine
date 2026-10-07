@@ -428,9 +428,9 @@ enum Shown {
 /// showed nothing, and stays as unknown as it was.
 ///
 /// A use that showed nothing, by what its effects or [`weigh_landings`]
-/// put in [`ShowedNothing`], a potion of descent on the deepest floor or a
-/// wand zapped at nobody, is said to have done nothing, known or not, and
-/// teaches nothing. A throw that showed nothing, a potion of healing broken
+/// put in [`ShowedNothing`], a potion of descent on the deepest floor, a
+/// wand zapped at nobody or one zapped empty, is said to have done nothing,
+/// known or not, and teaches nothing. A throw that showed nothing, a potion of healing broken
 /// on bare floor, teaches nothing and is not remarked on, as one with
 /// nothing to do where it lands is not, so the log never tells the two
 /// apart.
@@ -519,7 +519,10 @@ pub struct Knowing<'w, 's> {
 /// A zap is weighed by [`Bystanders::land`], the call the items resolver
 /// let it through by and the call that lands it, and a landing by the cells
 /// its land triggers cover, the call that lands those; so the footprint
-/// weighed is the one it comes down on. Before it lands, between the
+/// weighed is the one it comes down on. A use of a thing with nothing left,
+/// which only a thing not yet known is let make, lands nothing and shows
+/// nothing however it was pointed: it is weighed before its charge would
+/// be spent, so empty here is empty when it was used. Before it lands, between the
 /// actions and the triggers, since what it does to whoever it strikes,
 /// sending them far off or making them something else, would leave nobody
 /// there to count once it has. A zap seen to fly comes down a pass or more
@@ -527,18 +530,20 @@ pub struct Knowing<'w, 's> {
 /// made; [`learn_by_use`] keeps the mark until it lands.
 pub fn weigh_landings(
     mut fired: MessageReader<Fired>,
-    things: Query<(&ItemKind, &Triggers)>,
+    things: Query<(&ItemKind, &Triggers, Option<&Consumable>)>,
     origins: Query<&Position>,
     ground: Footprints,
     armory: Res<Armory>,
     mut nothing: ResMut<ShowedNothing>,
 ) {
     for f in fired.read().filter(|f| f.moment == Moments::USE || f.moment == Moments::LAND) {
-        let (Ok((kind, triggers)), Some(user)) = (things.get(f.on), f.by) else { continue };
+        let (Ok((kind, triggers, held)), Some(user)) = (things.get(f.on), f.by) else { continue };
         if nothing.0.contains(&f.on) {
             continue;
         }
-        let touches = if f.moment == Moments::USE {
+        let touches = if f.moment == Moments::USE && held.is_some_and(Consumable::is_empty) {
+            false
+        } else if f.moment == Moments::USE {
             let (Some(targeting), Ok(origin)) = (triggers.targeting(), origins.get(user)) else { continue };
             if armory.shows_unstruck(kind.0) {
                 continue;

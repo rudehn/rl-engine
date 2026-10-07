@@ -279,6 +279,42 @@ fn a_zap_that_strikes_nobody_shows_nothing_and_teaches_nothing_unless_it_burns_t
     assert!(app.world().resource::<Lore>().knows("staff of firebolt"), "fire on bare floor is plain");
 }
 
+/// A wand of domination not yet known, which wants a foe, zapped at a
+/// friend and at bare floor is refused neither time, which would tell what
+/// it wants: each zap is spent on nobody, the log says nothing seemed to
+/// happen, and the wand is as unknown as it was.
+#[test]
+fn an_unknown_foe_only_wand_zapped_at_a_friend_or_bare_floor_is_spent_on_nobody_and_shows_nothing() {
+    let (mut app, me, here) = arena(18);
+    let wand = carried(&mut app, me, "wand of domination", 2);
+    let friend = held(&mut app, "goblin", here.offset(2, 0), 10);
+    let ours = side(&app, "adventurer");
+    app.world_mut().entity_mut(friend).insert(ours);
+    let (left, _) = charges(&app, wand);
+    zap(&mut app, me, wand, here.offset(2, 0));
+    assert_eq!(learned(&app, "wand of domination"), (false, true), "at a friend: still unknown, and nothing seemed to happen");
+    zap(&mut app, me, wand, here.offset(-3, 0));
+    assert_eq!((app.world().resource::<Lore>().knows("wand of domination"), charges(&app, wand).0), (false, left - 2), "at bare floor too, both spent");
+}
+
+/// A wand of polymorph not yet known, zapped with nothing left in it, is
+/// not refused, which would say it was empty: the zap spends the turn and
+/// lands nothing, the goblin it was pointed at stays a goblin, the log
+/// says nothing seemed to happen, and the wand is as unknown as it was.
+#[test]
+fn an_unknown_wand_zapped_empty_spends_the_turn_lands_nothing_and_shows_nothing() {
+    let (mut app, me, here) = arena(19);
+    let goblin = held(&mut app, "goblin", here.offset(2, 0), 10);
+    let wand = carried(&mut app, me, "wand of polymorph", 0);
+    app.world_mut().get_mut::<Consumable>(wand).expect("charges").left = 0;
+    let before = app.world().resource::<Turns>().now();
+    zap(&mut app, me, wand, here.offset(2, 0));
+    assert!(app.world().resource::<Turns>().now() > before, "the turn spent");
+    assert_eq!(name_of(&app, goblin), "goblin", "nothing landed");
+    assert_eq!(learned(&app, "wand of polymorph"), (false, true), "still unknown, and nothing seemed to happen");
+    assert_eq!(charges(&app, wand).0, 0, "and still empty");
+}
+
 /// Whether `name` is known, and whether the log said nothing seemed to
 /// happen.
 fn learned(app: &App, name: &str) -> (bool, bool) {
