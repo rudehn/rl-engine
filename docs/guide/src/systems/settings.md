@@ -7,7 +7,7 @@
             crates/rl-ui/src/panel/title.rs
             crates/rl-save/src/settings.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: a6ca7afe -->
+     fingerprint: 10ec5f34 -->
 
 # Settings
 

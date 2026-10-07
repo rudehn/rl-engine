@@ -14,7 +14,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: 0f67c120 -->
+     fingerprint: 91895d97 -->
 
 # Rendering
 
@@ -25,8 +25,10 @@ What a tile looks like is the game's to say; what light, memory, fire and gas do
 ## Turning it on
 
 `RoguelikePlugins` adds all four, and `FullscreenPlugin` beside them, which the settings page covers, because a game with no terminal has nothing to draw into and a map with no viewport is a map nobody sees.
-`TerminalPlugin` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`.
-Glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
+`TerminalPlugin::new` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`.
+`TerminalPlugin::typeface`, and `RoguelikePlugins::typeface` for a game on the group, takes the bytes of a TrueType or OpenType file the game ships, and every glyph is drawn in it.
+Bytes rather than an asset path, because an asset arrives after the first frames are drawn, and on the web only from a page that serves the game's assets beside it.
+Without one, glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature and is another face on every platform, a glyph it lacks drawn as an empty box; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
 `MapViewPlugin` takes the `Rect` it draws in, the way every panel does, so a game has no `MapView` of its own to insert and cannot forget one.
 Its `finish` declares `depends_on::<CorePlugin>` and `depends_on::<FovPlugin>`: without field of view no tile is ever seen or remembered, and the map would draw as nothing at all.
 It chains `follow_player`, `track_fields` and `draw_map` in `PresentSet::Map`, and puts `dress_props` before `draw_map` in plain `Update` rather than in a play-only set, because a prop is put down while a place is built and `Added` matches for one frame only.
@@ -86,6 +88,16 @@ fn main() -> AppExit {
         .add_systems(Update, player_input.in_set(EngineSet::Input));
     app.run()
 }
+```
+
+A game drawn in its own face hands the group the bytes of its font file, compiled in with `include_bytes!`, and Undermere's is DejaVu Sans Mono, shipped beside its licence.
+
+<!-- include: ../../../../examples/undermere/src/main.rs:typeface -->
+```rust,no_run
+    // The window, the terminal in the game's own face, the map and the
+    // engine's base; the game's subsystems are `UndermerePlugin`'s, added
+    // once there, since a second `CombatPlugin` would panic.
+    app.add_plugins(RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS))
 ```
 
 What the engine cannot supply is the look of a tile, which is a table the game fills or a file it loads.

@@ -83,8 +83,16 @@ pub fn start(
         return;
     }
     prepare(&mut commands, &seed, &content.registries);
+    // The faces this run's things wear, and the kinds of what the
+    // adventurer sets out with, which they know.
+    let mut lore = Lore::draw(&content.faces, &content.armory.defs, &seed);
+    for (name, _) in KIT {
+        lore.learn(name);
+    }
+    commands.insert_resource(lore);
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
-    equip_kit(&mut commands, adventurer, &content.armory, &content.registries);
+    let extra = content.extra.as_deref().cloned().unwrap_or_default();
+    equip_kit(&mut commands, adventurer, &content.armory, &content.registries, &extra);
     begin.log.notice(format!("Seed {}. Ten floors under the lake, the Drowned King waits.", seed.0.0), 0);
     let place = match first.map_or(0, |f| f.0.min(FLOORS)) {
         0 => TOWN,

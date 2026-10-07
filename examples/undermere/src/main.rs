@@ -242,10 +242,12 @@ fn main() -> AppExit {
     }
     let screen = Screen::new();
     let mut app = App::new();
+    // ANCHOR: typeface
     // The window, the terminal in the game's own face, the map and the
     // engine's base; the game's subsystems are `UndermerePlugin`'s, added
     // once there, since a second `CombatPlugin` would panic.
     app.add_plugins(RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS))
+        // ANCHOR_END: typeface
         .add_plugins(undermere::plugin::narrator())
         .insert_resource(Seed(seed))
         .insert_resource(saves_for(scripted()))

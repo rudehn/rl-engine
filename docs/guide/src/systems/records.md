@@ -81,7 +81,7 @@ Keeping the list between launches is one more plugin beside the ones a game alre
 <!-- include: ../../../../examples/undermere/src/save.rs:register -->
 ```rust,no_run
 /// What the save is made of: the engine's plugins, the four kinds, and
-/// the two resources; and the records, in their own slot.
+/// the three resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
@@ -89,6 +89,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
         .save_state::<Tally>()
+        .save_state::<Lore>()
         .save_state::<Quests>();
 }
 ```
