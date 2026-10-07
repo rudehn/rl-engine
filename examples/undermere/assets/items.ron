@@ -76,9 +76,9 @@
 //               choice is asked under, tag one of the tags above that the thing chosen must
 //               carry, any thing carried but itself when left out; the pack's use key then
 //               chooses, and the use lands on the user with the thing chosen for the game's own
-//               effects. A thing not yet known asks under its prompt all the same, so every
-//               thing that asks asks "Read it on which?", and of any thing, and gives nothing
-//               away
+//               effects. Asking tells that a thing is one of the kinds that ask, so a thing
+//               not yet known is named the moment the pack asks for it, and backing out of the
+//               choice spends nothing
 //   consumable: optional; (charges:, when_empty:, per_level:, recharge:) what a use or a
 //               landing costs it: charges a fresh one holds at level nought, Destroyed | Kept at
 //               the last, per_level, optional, the charges each level adds, for a thing that
@@ -239,9 +239,10 @@
      triggers: [(on: "use", area: Burst(radius: 1)), (on: "land", area: Burst(radius: 1))]),
     // The scrolls, each spent by its reading. One read onto another thing
     // asks which under the one question every such scroll asks, and of any
-    // thing at all, so an unknown scroll gives nothing away by asking. Two
-    // of a kind stack, as potions do, said under their title as written:
-    // "2 scrolls titled ZUMOR KA".
+    // thing at all; asking still tells it is one of the two that ask, so an
+    // unknown one is named as the pack asks, and backing out spends
+    // nothing. Two of a kind stack, as potions do, said under their title
+    // as written: "2 scrolls titled ZUMOR KA".
     (name: "scroll of enchanting", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),
      triggers: [(on: "use", asks: (prompt: "Read it on which?"), effects: [(kind: "Enchant")])]),
     (name: "scroll of identify", glyph: '?', color: (0.92, 0.88, 0.72), tags: ["scroll"], stack: true, consumable: (charges: 1, when_empty: Destroyed),

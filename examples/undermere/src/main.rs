@@ -514,6 +514,37 @@ mod tests {
         assert!(row(&app, ROWS - 1).trim_end().ends_with("? controls"), "the rail's last row: {:?}", row(&app, ROWS - 1));
     }
 
+    /// A scroll not yet known that asks which thing to read it on has told
+    /// that it is one of the scrolls that ask, so it is named the moment the
+    /// pack turns to choosing for it, and the log says what it is; backed
+    /// out of, it is still in the pack, known and unspent, and no turn went
+    /// by. Played through the pack's own keys on the screen that ships.
+    #[test]
+    fn an_unknown_scroll_is_named_when_the_pack_asks_what_to_read_it_on_and_backing_out_spends_nothing() {
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let scroll = undermere::testing::find(&mut app, "scroll of enchanting", 0);
+        undermere::testing::give(&mut app, me, scroll);
+        app.update();
+        let knows = |app: &App| app.world().resource::<undermere::lore::Lore>().knows("scroll of enchanting");
+        assert!(!knows(&app) && app.world().get::<Unknown>(scroll).is_some(), "found, it is not yet known");
+        let before = app.world().resource::<Turns>().now();
+        press(&mut app, KeyCode::KeyI);
+        let row = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == scroll).expect("in the pack");
+        app.world_mut().resource_mut::<InventoryMenu>().selected = row;
+        press(&mut app, KeyCode::KeyU);
+        let choosing = app.world().resource::<InventoryMenu>().choosing.map(|c| c.item);
+        assert_eq!(choosing, Some(scroll), "the pack asks what to read it on");
+        assert!(knows(&app), "and it is known");
+        assert_eq!(app.world().get::<Name>(scroll).map(|n| n.as_str().to_string()).as_deref(), Some("scroll of enchanting"), "called what it is");
+        assert!(written(&app).iter().any(|l| l.contains("It is a scroll of enchanting.")), "said in the log: {:#?}", written(&app));
+        press(&mut app, KeyCode::Escape);
+        assert!(!app.world().resource::<Modals>().any_open(), "backed out");
+        let bag = app.world().get::<Inventory>(me).expect("a pack");
+        assert!(bag.contains(scroll) && app.world().get::<Consumable>(scroll).is_some_and(|c| c.left == 1), "still in the pack, unspent");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn went by");
+    }
+
     /// The nearby rail says what a monster is doing in Undermere's words:
     /// asleep while it knows of nothing and no tactic has moved it,
     /// searching once it has heard something, hunting once it has the

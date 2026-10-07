@@ -100,6 +100,7 @@ Part 2 built most of it, after Brogue, and what it left is under the parts below
 - **Enchanting is the currency.** Scrolls of enchanting are the most common scroll, and each adds one level to an item of the player's choosing. A build is where the scrolls went, so it is a commitment made one scroll at a time against what the dungeon has shown so far.
 - **Strength** gates heavy weapons and armor; potions of strength are rare, and wearing something too heavy costs accuracy and armor.
 - **Identification**: potions and scrolls wear a different face each run, a murky potion, a scroll titled XOMBA, and are known by use. Some are bad to drink and good to throw.
+  A scroll read onto another thing is known the moment the pack asks which, since asking already tells it is one of the kinds that ask, and backing out of the choice spends nothing.
 - **Staffs recharge, wands do not, charms do slowly.** Enchanting a staff raises both its power and its charges.
 - **Weapons have shapes**: a dagger strikes anything unaware five times as hard, where any other blow strikes it three times as hard, an axe strikes everything beside you, a spear strikes two in a line, a mace staggers, a rapier lunges.
 - **Armor is weight**: heavy armor is loud, and noise is what wakes a floor.

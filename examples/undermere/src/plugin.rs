@@ -194,6 +194,9 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
         app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Schedule));
         app.add_systems(Update, crate::lore::keep_names.after(EngineSet::Turns).before(EngineSet::Present));
+        // A scroll that asks which thing to read it on is named as it asks:
+        // after the keys that turn the pack to choosing, before the names.
+        app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));
         // What the panels count of a worn thing not yet known: its kind's
         // plain numbers, over the engine's true ones, for the vitals' armor
         // and the look cursor's forecast. Each reads its view when the

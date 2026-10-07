@@ -12,8 +12,10 @@
 //!
 //! A kind becomes known when what it did was plain to see: [`learn_by_use`]
 //! makes it so when the adventurer uses a thing of it, throws one that does
-//! something where it lands, or puts one on, and says what it was. The
-//! scroll of identify's [`Identify`] makes one chosen thing known outright.
+//! something where it lands, or puts one on, and says what it was;
+//! [`learn_by_asking`] when the pack asks which thing to read one on, since
+//! the asking has told it is a kind that asks. The scroll of identify's
+//! [`Identify`] makes one chosen thing known outright.
 //!
 //! A weapon, armor or ring is known by its kind and not by its level: one
 //! that was found is [`Unfamiliar`] and called `+? sword` until the
@@ -492,6 +494,36 @@ pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, 
         };
         tell.write(Tell::new(line, Tones::NOTICE));
     }
+}
+
+/// Makes known the kind of a thing the pack turns to choosing for, and
+/// says what it is: a scroll that asks which thing to read it on has shown
+/// it is one of the kinds that ask, so it is named the moment it asks,
+/// rather than the asking telling it for nothing. Backing out of the choice
+/// spends nothing, so the scroll stays in the pack, known, its charge
+/// unspent.
+///
+/// Every frame the pack is choosing, after the keys that turn it to
+/// choosing and before the names are given, so the scroll is called what
+/// it is in the frame it asks. A kind already known is learned no twice,
+/// and absent a pack, as in a test that draws none, nothing chooses.
+pub fn learn_by_asking(
+    menu: Option<Res<InventoryMenu>>,
+    things: Query<&ItemKind>,
+    armory: Res<Armory>,
+    mut lore: ResMut<Lore>,
+    mut log: ResMut<MessageLog>,
+    turns: Res<Turns>,
+) {
+    let Some(choosing) = menu.and_then(|m| m.choosing) else { return };
+    let Ok(kind) = things.get(choosing.item) else { return };
+    let name = &armory.defs.get(kind.0).name;
+    if lore.knows(name) || !lore.learn(name) {
+        return;
+    }
+    // Said straight into the log: the pack is up, so no turn runs to tell
+    // it, and the line belongs to the frame the choice is asked in.
+    log.notice(format!("It is {}.", with_article(name)), turns.turn_number());
 }
 
 /// What [`learn_by_use`] reads: the adventurer, what each thing is and
