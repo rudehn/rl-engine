@@ -2629,12 +2629,16 @@ mod tests {
         format!(r#"[(on: "{on}", area: {area}, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "{roll}"))])]"#)
     }
 
-    /// Every death, copied out as it is written.
+    /// Every death, copied out as it is written, beside what whoever gets
+    /// the credit was called then.
     #[derive(Resource, Default)]
-    struct Deaths(Vec<DeathEvent>);
+    struct Deaths(Vec<(DeathEvent, Option<String>)>);
 
-    fn mourn(mut deaths: MessageReader<DeathEvent>, mut seen: ResMut<Deaths>) {
-        seen.0.extend(deaths.read().copied());
+    fn mourn(mut deaths: MessageReader<DeathEvent>, names: Query<&Name>, mut seen: ResMut<Deaths>) {
+        for death in deaths.read() {
+            let called = death.credit.and_then(|c| names.get(c).ok()).map(|n| n.as_str().to_string());
+            seen.0.push((*death, called));
+        }
     }
 
     /// Every `struck` and `died` moment, copied out as it is written.
@@ -2748,40 +2752,52 @@ mod tests {
         wait(&mut app, player, 2);
         let answered: Vec<_> = app.world().resource::<Answered>().0.iter().map(|f| (f.moment, f.by)).collect();
         let (struck, died) = (crate::effects::Moments::STRUCK, crate::effects::Moments::DIED);
-        assert_eq!(answered, vec![(struck, Some(player)), (died, Some(doomed))]);
+        assert_eq!(answered, vec![(struck, Some(player)), (died, Some(player))], "each set off by the blow that killed it");
     }
+
+    /// The actor whose `died` a test watches for.
+    #[derive(Resource)]
+    struct Doomed(Entity);
 
     /// Where a `died` moment was reported, by whom, and whether its actor
     /// still stood anywhere as it landed.
     #[derive(Resource, Default)]
     struct Landed(Vec<(Point, Option<Entity>, bool)>);
 
-    fn landed(mut fired: MessageReader<crate::effects::Fired>, standing: Query<(), With<Position>>, mut seen: ResMut<Landed>) {
+    fn landed(mut fired: MessageReader<crate::effects::Fired>, standing: Query<(), With<Position>>, doomed: Res<Doomed>, mut seen: ResMut<Landed>) {
         for f in fired.read().filter(|f| f.moment == crate::effects::Moments::DIED) {
-            seen.0.push((f.at, f.by, f.by.is_some_and(|by| standing.contains(by))));
+            seen.0.push((f.at, f.by, standing.contains(doomed.0)));
         }
     }
 
     /// An actor that bursts when it dies bursts once, a pass after the
     /// blow, where it fell and with its body already out of the world, so
     /// nothing it does falls on itself. What the burst kills is its kill,
-    /// credited to it; its own death stays credited to whoever struck it
-    /// down, and is counted once.
+    /// credited to its stand-in, which is called what it was called; its
+    /// own death stays credited to whoever struck it down, and is counted
+    /// once.
     #[test]
     fn an_actors_died_trigger_lands_once_where_it_died_credited_to_it_after_its_body_is_gone() {
         let around = [((1, 0), THEIRS), ((2, 0), THEIRS), ((3, 0), THEIRS)];
         let (mut app, start, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(5)), &around);
         let (doomed, beside, past) = (others[0], others[1], others[2]);
-        app.world_mut().entity_mut(doomed).insert(Health::full(1));
+        app.world_mut().entity_mut(doomed).insert((Health::full(1), Name::new("puffball")));
         app.world_mut().entity_mut(beside).insert(Health::full(10));
         answers(&mut app, doomed, &harming("died", "Burst(radius: 1)", 20));
         app.init_resource::<Deaths>().add_systems(PostUpdate, mourn);
-        app.init_resource::<Landed>().add_systems(crate::plugin::Turn, landed.in_set(crate::plugin::ResolveSet::Fields));
+        app.insert_resource(Doomed(doomed)).init_resource::<Landed>().add_systems(crate::plugin::Turn, landed.in_set(crate::plugin::ResolveSet::Fields));
         attack(&mut app, player, doomed);
         wait(&mut app, player, 3);
-        assert_eq!(app.world().resource::<Landed>().0, vec![(start.offset(1, 0), Some(doomed), false)], "once, where it fell, from no body");
-        let deaths: Vec<(Entity, Option<Entity>)> = app.world().resource::<Deaths>().0.iter().map(|d| (d.entity, d.credit)).collect();
-        assert_eq!(deaths, vec![(doomed, Some(player)), (beside, Some(doomed))], "its death is the player's, once, and the one its burst killed is its own");
+        assert_eq!(app.world().resource::<Landed>().0, vec![(start.offset(1, 0), Some(player), false)], "once, where it fell, from no body");
+        let deaths: Vec<(Entity, Option<String>)> = app.world().resource::<Deaths>().0.iter().map(|(d, called)| (d.entity, called.clone())).collect();
+        assert_eq!(
+            deaths,
+            vec![(doomed, None), (beside, Some("puffball".to_string()))],
+            "its death is the player's, once, and the one its burst killed is its own, by its name"
+        );
+        let credits: Vec<Option<Entity>> = app.world().resource::<Deaths>().0.iter().map(|(d, _)| d.credit).collect();
+        assert_eq!(credits[0], Some(player), "struck down by the player");
+        assert!(credits[1].is_some_and(|c| c != doomed && c != player), "and its burst's kill is its stand-in's, not its body's or its killer's");
         assert_eq!(hp(&app, player), 10, "the one who struck it down stood in the burst too");
         assert_eq!(taken(&app, &[past]), [0], "and the one two cells off did not");
         let remnants = app.world_mut().query::<&crate::effects::Remnant>().iter(app.world()).count();

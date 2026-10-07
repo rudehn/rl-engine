@@ -100,14 +100,16 @@ A trap is not the doing of whoever stepped on it: credited to them, the log woul
 So a carrier marked `LandsAsItself`, which every armed prop is, lands as itself, and `by` stays on `Fired` for a game that wants to know who stepped on it.
 
 A prop that is destroyed is despawned at the end of the frame it died in, which can be before its `destroyed` trigger lands.
-So `report_destroyed` puts the prop's triggers and its name on a `Remnant`, which carries the moment, who broke it and where as data, and `report_remnants` reports it in the next pass's `Triggers` stage, ahead of `land_triggers`, which despawns it once it has landed.
+So `report_destroyed` puts the prop's triggers and its name on a `Remnant`, which carries the moment, who broke it and where as data, and `report_remnants` reports it in the next pass's `Triggers` stage, ahead of `land_triggers`, which takes its triggers once it has landed; `bury_remnants` despawns it at the end of the frame, so whatever reads who did it later in the pass, the log among them, still finds its name.
 The moment is on the entity rather than in a message because the next pass may be a long time coming: the loop holds while something is shown, and a message nobody reads for two frames is gone, where an entity stays until a new run clears it.
 A watched shot from a thing its last charge spent uses the same carrier: the shot takes the thing's triggers as it is fired, and if the thing is gone when the shot lands, its `hit` lands from a remnant in its place, as the shooter's doing.
 
 An actor answers moments too, added on 2026-10-07 for monsters with tricks of their own: `hit` when its blow lands, `struck` when one lands on it, `died` when it dies.
 Whatever an actor answers lands as its own doing without a marker, since an actor is the someone a thing is used by rather than a thing anyone uses: an aura credited to whoever struck it would read as the striker burning themselves.
 `struck` is reported as the blow lands, before its damage is applied, so a killing blow sets off `struck` and then `died`; deferring `struck` until the damage was known would have made every aura a pass late.
-`died` takes the prop's road through a remnant, with the dead actor as its `by`, so what it lands is credited to the dead actor, gone as it is, and a foe its burst kills is its kill rather than its killer's.
+`died` takes the prop's road through a remnant, which carries the actor's name and lands as itself, so it stands in for the actor: a foe its burst kills is its kill rather than its killer's, and the log and a record of the death name the actor.
+The first build credited the dead actor's own entity instead, and was replaced the same day because nothing could say its name: the body is despawned by the time the burst lands, and a record of a player's death is written a frame after that.
+An actor's own triggers spare the actor they belong to, unlike a prop's or a thing's, since a bite, an aura or a cloud it gives off is aimed at whoever is round it.
 
 Two timings moved against the old prop triggers, which both landed in `TurnSet::React`:
 

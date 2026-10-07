@@ -12,7 +12,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
   One blow that lands reports, in this order and each once, the worn weapon's `hit`, the attacker's own `hit`, and the struck one's `struck`, all at the struck one's cell; a shaped attack reports them once for each foe it strikes, and a miss reports none.
   `struck` is reported as the blow lands, before its damage, so a blow that kills sets off `struck` and then, a pass later, `died`.
   Only an attack, a blow in reach or a shot, strikes: a thrown thing, an ability, a trap or a fire sets off no `struck`.
-  `died` is relayed through a `Remnant` as a prop's `destroyed` is, by `report_died` in `TurnSet::React`, which `EffectsPlugin` adds: it lands once, where the actor died, after its body is out of the world, credited to the dead actor, so a foe its burst kills is its kill.
+  `died` is relayed through a `Remnant` as a prop's `destroyed` is, by `report_died` in `TurnSet::React`, which `EffectsPlugin` adds: it lands once, where the actor died, after its body is out of the world, set off `by` whoever killed it.
+  The remnant carries the actor's `Name` and `LandsAsItself`, so it stands in for the actor: a foe its burst kills is credited to it, the log says `The myconid hits you for 3.`, and a game that names what killed its player reads the actor's name off the credit.
+  A remnant that has landed now keeps its name until the end of the frame, when the new `bury_remnants` despawns it in `EndOfFrame::Bury`, so what reads who did it later in the pass still finds it; a broken prop's burst is named by the prop the same way.
+  The narrator places a remnant where its moment happened, so the one it stands in for is seen and named there.
   A shooter that answers `hit` and is gone before its watched shot lands still lands it, from a remnant.
   To change: nothing for an actor with no `Triggers`; a game that registered moments of its own sees their ids move up by two, since `Moments::STRUCK` and `Moments::DIED` are built in after `pulse`.
 - A status can sleep: `StatusDef::sleeps`, written `sleeps: true` in a status file, holds its holder's turns as `holds` does and ends the moment the holder is woken, by harm landing on it, by a noise that reaches it with its `Hearing` threshold left, or by a foe it notices within `SLEEPER_REACH`, two cells.

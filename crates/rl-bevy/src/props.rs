@@ -696,8 +696,9 @@ pub fn report_entered(mut steps: MessageReader<crate::turn::Stepped>, props: Arm
 /// [`TurnSet::React`](crate::plugin::TurnSet::React) and lands the pass
 /// after. The prop itself is despawned at the end of the frame, which may
 /// be before then, so what it does goes on a [`Remnant`] that carries its
-/// triggers and its name, is reported in its place, and is despawned once
-/// they land. A prop with nothing to do when broken leaves none.
+/// triggers and its name, is reported in its place, and is despawned at
+/// the end of the frame they land in. A prop with nothing to do when
+/// broken leaves none.
 pub fn report_destroyed(mut commands: Commands, mut deaths: MessageReader<crate::combat::DeathEvent>, props: Query<(&Triggers, Option<&Name>), With<Prop>>) {
     for death in deaths.read() {
         let Ok((triggers, name)) = props.get(death.entity) else { continue };

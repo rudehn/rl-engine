@@ -455,6 +455,9 @@ pub struct Witness<'w, 's> {
     abilities: Option<Res<'w, Abilities>>,
     player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed), With<Player>>,
     positions: Query<'w, 's, &'static Position>,
+    /// Where each remnant's moment happened, for a remnant that did
+    /// something in its own name.
+    remnants: Query<'w, 's, &'static rl_bevy::Remnant>,
     weapons: Weapons<'w, 's>,
     holding: Query<'w, 's, (), With<MyTurn>>,
     props: Query<'w, 's, (), With<rl_bevy::Prop>>,
@@ -489,8 +492,11 @@ impl Witness<'_, '_> {
         self.holding.contains(e)
     }
 
+    /// Where `e` stands, or for a remnant, which stands nowhere, where its
+    /// moment happened: a dead actor's last burst is seen, and its doer
+    /// named, where the actor fell.
     fn at(&self, e: Entity) -> Option<Point> {
-        self.positions.get(e).ok().map(|p| p.0)
+        self.positions.get(e).ok().map(|p| p.0).or_else(|| self.remnants.get(e).ok().map(|r| r.at))
     }
 
     /// Whether the player's sight reaches `at`, and nothing else: no
@@ -1512,6 +1518,26 @@ mod tests {
     /// The lines a test cares about, oldest first.
     fn spoken(stage: &Stage, starts: &[&str]) -> Vec<String> {
         lines(stage).into_iter().map(|(t, _)| t).filter(|t| starts.iter().any(|s| t.starts_with(s))).collect()
+    }
+
+    /// What an actor's `died` trigger lands after its body is gone is said
+    /// as that actor's own harm, by its name, as a living one's would be,
+    /// and not as harm from something unseen.
+    #[test]
+    fn harm_a_dead_actors_burst_lands_is_said_in_its_name() {
+        let (mut stage, triggers) = with_things(r#"[(on: "died", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#);
+        let player = stage.player;
+        let puffball = stage.actor("puffball", 'f', 1, 0);
+        stage.app.world_mut().entity_mut(puffball).insert((triggers, Health::full(1)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Attack(puffball)));
+        stage.tick();
+        for _ in 0..2 {
+            stage.app.world_mut().write_message(Intent::new(player, rl_bevy::Wait));
+            stage.tick();
+        }
+        let said = spoken(&stage, &["The puffball", "Something"]);
+        assert_eq!(said, vec!["The puffball hits you for 3.".to_string()], "{:?}", lines(&stage));
     }
 
     /// A worn thing that will not come off says so, in words and as bad

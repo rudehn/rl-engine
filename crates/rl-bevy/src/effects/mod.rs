@@ -550,7 +550,8 @@ impl Plugin for EffectsPlugin {
             .add_airborne::<UseLanding>()
             // What came down this pass, then what was set off in it.
             .add_systems(Turn, (report_remnants, land_aimed_uses, land_triggers).chain().in_set(ResolveSet::Triggers))
-            .add_systems(Turn, report_died.in_set(crate::plugin::TurnSet::React));
+            .add_systems(Turn, report_died.in_set(crate::plugin::TurnSet::React))
+            .add_systems(Last, bury_remnants.in_set(crate::plugin::EndOfFrame::Bury));
     }
 
     /// Not unique, so adding it after a plugin that already added it is

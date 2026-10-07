@@ -367,8 +367,14 @@ pub struct LandsAsItself;
 /// because it lands a pass later and a pass may be a long time coming:
 /// the loop holds while something is shown, and a message nobody reads for
 /// two frames is gone, where an entity stays. [`report_remnants`] reports
-/// it in the pass that lands it, and [`land_triggers`] despawns it once it
-/// has.
+/// it in the pass that lands it, and [`land_triggers`] takes its triggers
+/// once it has.
+///
+/// It then stays, with nothing left to land, until [`bury_remnants`]
+/// despawns it at the end of the frame, as the dead are, rather than at
+/// once: a remnant that lands as itself is credited with what it did, and
+/// whatever reads that later in the pass, the log saying who hurt whom or
+/// a game noting what killed its player, must still find its name.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Remnant {
     /// The moment it answers.
@@ -390,6 +396,14 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
     }
 }
 
+/// Despawns every [`Remnant`] that has landed, once every system has read
+/// this frame's landings: in `Last`, beside the dead.
+pub fn bury_remnants(mut commands: Commands, landed: Query<Entity, (With<Remnant>, Without<Triggers>)>) {
+    for remnant in &landed {
+        commands.entity(remnant).despawn();
+    }
+}
+
 /// Reports the `died` moment for every actor that died answering it.
 ///
 /// A death is only known once damage has been applied, so this is read in
@@ -397,11 +411,11 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
 /// after, as a broken prop's `destroyed` does and by the same road: the
 /// actor is out of the world by the end of the pass and despawned by the
 /// end of the frame, so its triggers and its name go on a [`Remnant`] that
-/// is reported in its place where it died. The remnant's `by` is the dead
-/// actor, so what lands is its own doing and credited to it, gone or not:
-/// a foe its last breath kills is its kill, not the kill of whoever struck
-/// it down, who has the credit for its death and nothing more. Who that
-/// was is the [`DeathEvent`](crate::combat::DeathEvent)'s to say.
+/// is reported in its place where it died, and its `by` is whoever killed
+/// it. The remnant [`LandsAsItself`] and carries the actor's name, so it is
+/// the actor's stand-in: what it lands is credited to it, a foe its last
+/// breath kills is its kill and not its killer's, and the log and a record
+/// of the death name the actor, though its body is gone.
 ///
 /// Once per actor however many deaths are reported for it in a pass, and
 /// never for one that answers nothing on dying.
@@ -417,8 +431,8 @@ pub fn report_died(
             continue;
         }
         reported.push(death.entity);
-        let remnant = Remnant { moment: Moments::DIED, by: Some(death.entity), at: death.at };
-        let mut carrier = commands.spawn((triggers.clone(), remnant));
+        let remnant = Remnant { moment: Moments::DIED, by: death.credit, at: death.at };
+        let mut carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself));
         if let Some(name) = name {
             carrier.insert(name.clone());
         }
@@ -604,8 +618,10 @@ pub fn land_triggers(
                 *left -= 1;
             }
         }
+        // Landed: nothing is left to report, and its name stays until the
+        // frame ends for whatever reads who did it.
         if remnant {
-            commands.entity(f.on).despawn();
+            commands.entity(f.on).remove::<Triggers>();
         }
     }
 }

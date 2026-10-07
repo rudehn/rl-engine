@@ -69,6 +69,10 @@ pub struct Tally {
     /// whoever's hand it fell to: what the record of a run won says it
     /// slew.
     pub boss_slain: Option<String>,
+    /// What killed the adventurer, as the record says it, noted at the
+    /// death: what did may be gone by the time the record is written, a
+    /// monster's last burst or a shooter that died behind its shot.
+    pub slain_by: Option<String>,
 }
 
 impl Tally {
@@ -120,17 +124,18 @@ pub fn remember_depth(mut entered: MessageReader<PlaceEntered>, mut tally: ResMu
 /// burn that landed on them, every one of theirs that landed on anything
 /// else, and every death they get the credit for, at its kind's threat. A
 /// boss's death is noted by name whoever's hand it fell to, since the
-/// record of the run it won names it.
+/// record of the run it won names it, and so is whatever killed the
+/// adventurer, since the record of the run it ended names that.
 pub fn count_the_fighting(
     mut dealt: MessageReader<DamageDealt>,
     mut deaths: MessageReader<DeathEvent>,
-    adventurer: Query<Entity, With<Adventurer>>,
+    credit: Credit,
     kinds: Query<&Kind>,
     healths: Query<&Health>,
     bestiary: Res<Bestiary>,
     mut tally: ResMut<Tally>,
 ) {
-    let me = adventurer.single().ok();
+    let me = credit.adventurer.single().ok();
     // A hit absorbed reports what it mended, below nought, which neither
     // side lost; what is left, grouped by who took it, in the order it
     // landed, since a weapon's extra strikes can carry more than one blow
@@ -161,6 +166,11 @@ pub fn count_the_fighting(
         }
     }
     for death in deaths.read() {
+        // Read now, in the pass it died in, while whatever gets the credit
+        // still answers to its name.
+        if Some(death.entity) == me {
+            tally.slain_by = credit.of(death.credit);
+        }
         let Ok(kind) = kinds.get(death.entity) else { continue };
         let def = bestiary.defs.get(kind.0);
         if def.boss {
@@ -379,7 +389,9 @@ impl Credit<'_, '_> {
 pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<WorldMap>>, credit: Credit, mut records: MessageWriter<RecordRun>) {
     let (Some(ending), Some(map)) = (ending, map) else { return };
     let by = match ending.outcome {
-        Outcome::Died { by } => credit.of(by),
+        // As noted at the death, since what did may be gone by now; asked
+        // again only of an ending no death came through.
+        Outcome::Died { by } => tally.slain_by.clone().or_else(|| credit.of(by)),
         _ => None,
     };
     let lines = score(&tally, ending.outcome == Outcome::Won);
@@ -399,8 +411,8 @@ mod tests {
     use super::*;
     use crate::dungeon::map_of;
     use crate::testing::{
-        adventurer, arrive, at, clear_floor, clear_monsters, continued, headless, kill, lay, lay_floor, make, monster, name_of, put_down, settle, stand_on,
-        sturdy, take_up,
+        adventurer, arrive, at, clear_floor, clear_monsters, continued, headless, kill, lay, lay_floor, make, monster, name_of, pass_turns, put_down, settle,
+        stand_on, sturdy, take_up,
     };
 
     /// The points a ledger line stands for: the number at its end.
@@ -603,6 +615,34 @@ mod tests {
         assert!(run[1].ends_with(" 3"), "floor three: {run:?}");
         let kept = app.world().resource::<Saves>().load(rl_engine::rl_save::RECORDS_SLOT).expect("the slot reads").expect("the records were written down");
         assert!(kept.contains("Slain by a goblin on floor 3"), "kept beyond the run: {kept}");
+    }
+
+    /// A monster that bursts as it dies, and takes the adventurer with it,
+    /// is named on the record by what it was, though its body was gone
+    /// before the burst landed and the record is written a frame later.
+    #[test]
+    fn a_death_by_a_dying_monsters_burst_is_recorded_in_its_name() {
+        use rl_engine::rl_bevy::{EffectKinds, Moments, Triggers};
+        let mut app = headless(RunSeed(8));
+        let me = arrive(&mut app, map_of(3));
+        clear_monsters(&mut app);
+        let beside = at(&app, me).offset(1, 0);
+        lay_floor(&mut app, &[beside]);
+        let goblin = monster(&mut app, "goblin", beside);
+        let burst = r#"[(on: "died", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "crush", roll: "100000"))])]"#;
+        let specs: Vec<rl_engine::rl_rules::TriggerSpec> = rl_engine::rl_rules::Names::new().load_list(burst).expect("the burst parses");
+        let built = {
+            let world = app.world();
+            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
+                .expect("the burst builds")
+        };
+        app.world_mut().entity_mut(goblin).insert(built);
+        kill(&mut app, goblin, Some(me));
+        pass_turns(&mut app, 2);
+        settle(&mut app);
+        assert!(matches!(app.world().resource::<Ending>().outcome, Outcome::Died { .. }), "its burst ended the run");
+        let record = app.world().resource::<RunRecords>().this_run.clone().expect("the run's end filed a record");
+        assert_eq!(record.summary, "Slain by a goblin on floor 3");
     }
 
     /// The end screen says the run's seed under its summary, in the
