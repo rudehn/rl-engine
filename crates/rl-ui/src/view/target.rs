@@ -165,7 +165,9 @@ pub struct TargetView {
     /// what its targeting would tell as well: `path` is a plain line to the
     /// cursor, `cells` the cursor's cell alone, and `beyond`, `why` and
     /// `targets` are empty, with `legal` only while it is carried. A thrown
-    /// one is previewed as it flies, since a throw is the thrower's.
+    /// one is previewed as it flies and where it comes down, which is all
+    /// a throw of anything paints, but gives no `odds`, since whether it is
+    /// rolled at all, only a thing that strikes being rolled, is its own.
     pub unknown: bool,
     /// Who is aiming it.
     pub user: Option<Entity>,
@@ -712,7 +714,10 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         view.unknown = reach.unknown.contains(item);
         let span = AimRange { distance: rl_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range };
         view.span = (!view.unknown).then_some(span);
-        view.odds = struck.and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
+        // Whether a throw is rolled at all, only a thing that strikes being
+        // rolled, and how far it flies without penalty are the thing's, so
+        // one not yet known gives no chance, as its bag row gives no strike.
+        view.odds = struck.filter(|_| !view.unknown).and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
         // It lands on whoever it strikes, or wherever it comes to rest.
         let lands = match (thrown.struck, thrown.path.last()) {
             (Some(_), Some(end)) => *end,
@@ -1346,6 +1351,38 @@ mod tests {
         let view = stage.app.world().resource::<TargetView>();
         assert!(view.aiming());
         assert_eq!(view.odds, None);
+    }
+
+    /// A thrown thing not yet known is previewed as a known one is where it
+    /// shows only what its thrower knows, the flight and the cell it comes
+    /// down on, and never the area its landing covers; but it gives no
+    /// chance to hit, since only a thing that strikes is rolled, and what it
+    /// strikes for is as hidden as on its bag row.
+    #[test]
+    fn an_unknown_thrown_thing_paints_its_flight_and_landing_cell_and_gives_no_chance_to_hit() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        let knife = || (Item, Name::new("knife"), Throwable::new(6, Some((kind, rl_core::DiceRoll::flat(2)))));
+        let (known, unknown) = (stage.app.world_mut().spawn(knife()).id(), stage.app.world_mut().spawn((knife(), rl_bevy::Unknown)).id());
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.extend([known, unknown]);
+        stage.actor("droid", 'd', 3, 0);
+        stage.tick();
+        let at = stage.at;
+        let mut preview = |item: Entity| {
+            stage.app.world_mut().write_message(AimThrow { user, item });
+            stage.tick();
+            stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(3, 0);
+            stage.tick();
+            let view = stage.app.world().resource::<TargetView>();
+            let seen = (view.path.clone(), view.cells.clone(), view.beyond.clone(), view.odds.is_some(), view.unknown);
+            stage.press(KeyCode::Escape);
+            seen
+        };
+        let (shown, hidden) = (preview(known), preview(unknown));
+        assert_eq!((&hidden.0, &hidden.1, &hidden.2), (&shown.0, &shown.1, &shown.2), "the same flight, landing cell and warning");
+        assert_eq!(hidden.1, vec![at.offset(3, 0)], "the cell it comes down on, and no area");
+        assert!(shown.3 && !hidden.3, "a chance to hit for the known knife, none for the unknown one");
+        assert!(hidden.4, "which is said to be unknown");
     }
 
     /// A shot is aimed like a throw, and the preview is the resolver's own
