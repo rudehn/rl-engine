@@ -95,13 +95,13 @@ The skeleton ships the Drowned King alone.
 ## Items and builds
 
 No experience and no levels: the adventurer at the bottom is the adventurer at the top with better things and fewer potions.
-The plan for part 2, after Brogue:
+Part 2 built most of it, after Brogue, and what it left is under the parts below:
 
 - **Enchanting is the currency.** Scrolls of enchanting are the most common scroll, and each adds one level to an item of the player's choosing. A build is where the scrolls went, so it is a commitment made one scroll at a time against what the dungeon has shown so far.
 - **Strength** gates heavy weapons and armor; potions of strength are rare, and wearing something too heavy costs accuracy and armor.
 - **Identification**: potions and scrolls wear a different face each run, a murky potion, a scroll titled XOMBA, and are known by use. Some are bad to drink and good to throw.
 - **Staffs recharge, wands do not, charms do slowly.** Enchanting a staff raises both its power and its charges.
-- **Weapons have shapes**: a dagger triples a blow on anything unaware, an axe strikes everything beside you, a spear strikes two in a line, a mace staggers, a rapier lunges.
+- **Weapons have shapes**: a dagger strikes anything unaware five times as hard, where any other blow strikes it three times as hard, an axe strikes everything beside you, a spear strikes two in a line, a mace staggers, a rapier lunges.
 - **Armor is weight**: heavy armor is loud, and noise is what wakes a floor.
 - **Artifacts**, carried by mini-bosses, are build-defining and have a cost.
 - **Curses**: a cursed thing cannot be taken off, and some are worth wearing anyway.
@@ -152,9 +152,15 @@ The title screen is a painting that breathes: the black lake under stars, mist o
    It built the engine's title and records, with Foundry on the title; Mereholt at dusk and its gate; ten floors in five biomes, each seen dimly by its own ambient beyond a lantern that dims with depth; sixteen monsters and nineteen items in the trait model, an item lending its traits while worn; the Drowned King and his court, whose death wins; the score in five lines on the end screen and in the records; and saving, Continue and Main menu.
    Along the way the engine gained a status that lasts until it is cured, a mind that weighs its own blow against a worn one, a run's facts forgotten when it ends, and wide tiles that keep a screen over the map a letter to a cell.
    It left the examine panel's trait words to part 3, where monsters' identities are designed, since naming a monster's traits wants the look panel to wrap long lines.
-   It left dark sight doing nothing, since every floor is dim rather than dark, until parts 3 and 4 bring true darkness back in places; the adventurer with no abilities of their own and the bow with no ammunition until part 2; and a font of the game's own to part 7.
-   Two engine gaps it worked around are in `docs/TODO.md`: the engine's `FarthestExit` stops at a shut door, so `dungeon.rs` measures the way down with a pass of its own, and the `Doors` pass hangs two doors back to back where rooms sit two cells apart.
+   It left dark sight doing nothing, since every floor is dim rather than dark, until parts 3 and 4 bring true darkness back in places; the adventurer with no abilities of their own and the bow with no ammunition until part 2; and a font of the game's own to part 7, which part 2 brought forward.
+   Two engine gaps it worked around went to `docs/TODO.md`: the engine's `FarthestExit` stopped at a shut door, so `dungeon.rs` measured the way down with a pass of its own until part 2 mended the engine's and took that pass out, and the `Doors` pass hangs two doors back to back where rooms sit two cells apart.
 2. **Items and builds**: enchanting, strength, identification, staffs, wands and charms, weapon shapes, curses, artifacts.
+   Built on the `undermere` branch, finished 2026-10-07, as `docs/superpowers/specs/2026-10-05-undermere-items-design.md` set out.
+   It built the engine's half first: a game's own typeface, a use aimed at somewhere and a use made on another thing, things not yet known and things that will not come off, blows and shots that sweep or pierce and blows that land harder on the unaware, a status that takes its holder's turns and speed from a stat, ammunition lifted out of Foundry, and the farthest exit measured through doors.
+   On that it built identification, a face for each kind each run, learned by using it or by a scroll of identify, and a worn thing's level learned by wearing it long enough; enchanting, with a scroll of enchanting on every floor; strength, which heavy gear wants and a potion of strength raises; and curses, a thing found below nought clinging once put on and showing its sign and not its size.
+   The armory is ten weapons with their shapes, darts and javelins to throw and arrows for the bow, six suits of armor with their weight, a shield and a helm, six staffs, five wands, six rings, eleven potions and nine scrolls, with the effects of the game's own they need; its glyphs are drawn in DejaVu Sans Mono, which it ships, so its water, trees, gate and title read alike everywhere.
+   A soak run by hand plays fifty seeds' floors under three plans for the scrolls of enchanting, and the content was tuned against what it counted.
+   It left artifacts and charms to part 3, with monsters using what they carry; the ring of awareness waiting on hidden things for parts 3 and 4; the potion of darkness putting the drinker's lantern out rather than pooling true darkness, which wants a light that takes light away; the mace's stagger and the rapier's lunge; and to part 3's bestiary the finding that flat armor, enchanted, leaves the first eight floors nearly harmless.
 3. **Monsters**: the bestiary by depth, mini-bosses and their lairs, the boss pool.
 4. **Dungeon generation**: biomes per band, mixed techniques, the three prefab kinds in pools, a lived-in dungeon. Built on the engine's layout work.
 5. **Town**: shops and gold, townsfolk, the temple, and whether the gate goes back.
