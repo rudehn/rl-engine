@@ -126,17 +126,38 @@ pub fn count_the_fighting(
     mut deaths: MessageReader<DeathEvent>,
     adventurer: Query<Entity, With<Adventurer>>,
     kinds: Query<&Kind>,
+    healths: Query<&Health>,
     bestiary: Res<Bestiary>,
     mut tally: ResMut<Tally>,
 ) {
     let me = adventurer.single().ok();
     // A hit absorbed reports what it mended, below nought, which neither
-    // side lost.
+    // side lost; what is left, grouped by who took it, in the order it
+    // landed, since a weapon's extra strikes can carry more than one blow
+    // to the same target in the one pass.
+    let mut landed: BTreeMap<Entity, Vec<i32>> = BTreeMap::new();
     for d in dealt.read().filter(|d| d.dealt > 0) {
-        if Some(d.target) == me {
-            tally.damage_taken += d.dealt as u32;
-        } else if d.hit.credit.is_some() && d.hit.credit == me {
-            tally.damage_dealt += d.dealt as u32;
+        if Some(d.target) == me || (d.hit.credit.is_some() && d.hit.credit == me) {
+            landed.entry(d.target).or_default().push(d.dealt);
+        }
+    }
+    for (target, blows) in landed {
+        // `DamageDealt::dealt` is the blow's raw amount, not clamped to
+        // what its target had left, so a killing blow past their last
+        // health reports more than they lost. Its health now already
+        // reflects every blow below with no floor of its own, so the
+        // health before the first of them comes back by adding the blows
+        // to it, and each is then counted for no more than was left when
+        // its turn came.
+        let mut before = healths.get(target).map_or(0, |h| h.current) + blows.iter().sum::<i32>();
+        for amount in blows {
+            let taken = amount.min(before.max(0)) as u32;
+            if Some(target) == me {
+                tally.damage_taken += taken;
+            } else {
+                tally.damage_dealt += taken;
+            }
+            before -= amount;
         }
     }
     for death in deaths.read() {
@@ -627,5 +648,49 @@ mod tests {
         assert_eq!(score_rows[..5].iter().map(|r| points(r)).sum::<i64>(), record.score, "{score_rows:?}");
         let run = rows(&record, "The run");
         assert!(run[3].starts_with("Deadliest ") && run[3].ends_with(" the Drowned King"), "{run:?}");
+    }
+
+    /// A killing blow is counted for no more than the health it found, on
+    /// either side: `kill` deals a hundred thousand, which the tally used
+    /// to read whole, so the end screen said "Damage taken 44" on a run
+    /// of forty health.
+    #[test]
+    fn a_killing_blow_is_counted_for_no_more_than_the_health_it_found() {
+        let mut app = headless(RunSeed(8));
+        let me = arrive(&mut app, map_of(3));
+        clear_monsters(&mut app);
+        let beside = at(&app, me).offset(1, 0);
+        lay_floor(&mut app, &[beside]);
+        let goblin = monster(&mut app, "goblin", beside);
+        let goblin_health = app.world().get::<Health>(goblin).unwrap().current;
+        kill(&mut app, goblin, Some(me));
+        assert_eq!(app.world().resource::<Tally>().damage_dealt, goblin_health as u32, "the goblin's own health, not the blow's hundred thousand");
+
+        let my_health = app.world().get::<Health>(me).unwrap().current;
+        let archer = monster(&mut app, "goblin", beside);
+        kill(&mut app, me, Some(archer));
+        assert_eq!(app.world().resource::<Tally>().damage_taken, my_health as u32, "the adventurer's own health, not the blow's hundred thousand");
+    }
+
+    /// Two blows that land in the same pass, as a weapon's extra strikes
+    /// would carry, are each counted for no more than was left of the
+    /// target when its own turn came, and not for the full pair where the
+    /// first alone used up everything there was.
+    #[test]
+    fn two_blows_landing_in_the_same_pass_are_each_counted_for_no_more_than_was_left() {
+        let mut app = headless(RunSeed(8));
+        let me = arrive(&mut app, map_of(3));
+        clear_monsters(&mut app);
+        // Bare hands and no armor, so a blow of a crush kind lands for
+        // exactly what it says: the kit's leather would otherwise eat
+        // part of each one, hiding the overshoot this test is about.
+        app.world_mut().entity_mut(me).insert((Health::full(10), Armor(0)));
+        app.world_mut().entity_mut(me).remove::<Equipped>();
+        let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
+        let hit = |amount| DamageEvent::new(me, rl_engine::rl_rules::Hit::from_source(None, crush, amount));
+        app.world_mut().write_message(hit(6));
+        app.world_mut().write_message(hit(6));
+        settle(&mut app);
+        assert_eq!(app.world().resource::<Tally>().damage_taken, 10, "the ten it had, not the twelve the two blows carried");
     }
 }
