@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 8d7946af -->
+     fingerprint: 59364780 -->
 
 # Stealth
 
@@ -56,6 +56,7 @@ Noise offers its own to the same place, the freshest becomes `Snapshot::last_kno
 `StealthRunning` answers whether the plugin was added, asked of its message rather than of the components, because `Notice` brings an `Aware` with it and a game that authored observers without the plugin would otherwise have monsters that notice nothing forever.
 `Watchers` answers who is watching whom by the rule the minds act on: an observer that keeps an `Aware` watches what it knows about, one that does not watches whatever its own sight reaches, and neither watches anything it is not at odds with or anything unseen.
 `Watchers::remembers` answers whether an observer still has a subject in mind, watching it or not, and the two part only for the unseen.
+`Watchers::unaware` answers whether an observer has not noticed a subject at all, which combat asks before a blow by the subject lands harder for it: only while the plugin runs, for an observer keeping an `Aware`, at odds with a subject carrying `Stealth`, that remembers nothing of it, so one searching where it lost the trail is not caught unaware and the player never is.
 `StatusDef::unseen`, `unseen: true` in a status file, is a status whose holder nothing sees while it lasts, and `Unseen` is the marker `mark_unseen` keeps on whoever holds one.
 It is kept from `Changed<Afflicted>` after the statuses are applied, ticked and cured, so it lasts exactly as long as the status, a continued run gets it back from the statuses it saved, and the pass a status goes on is the pass the next mind to decide cannot see its holder.
 An unseen status a worn thing holds ends by the items plugin's `Cure`, written in the same stage before the statuses resolve, so the marker comes off in the pass the thing does and the next mind to decide sees its wearer.
@@ -116,7 +117,7 @@ fn raise_alarm(
 
 The engine decides who has noticed whom; a game decides what that is worth.
 Propagation is deliberately absent: what a shout carries, how far it goes and who it reaches are content, so a game that wants a squad writes a dozen lines over `Noticed` rather than accepting the engine's idea of a squad.
-Sneak damage is absent for the same reason, since a multiplier is balance.
+Sneak damage is the engine's only as far as the question goes, whether a target has noticed its attacker, which `Watchers::unaware` answers for combat so a blow and the minds never disagree; the multiplier is balance, a percent the game names on `CombatRules` or on the blow, and a game that names none lands a blow from hiding as any other.
 Stealth hides a subject from minds and from nothing else: the drawing is untouched, so a monster is never hidden from the player, and two-way stealth would be a render change rather than another component.
 The engine decides that the unseen is seen by nothing and that attacking ends it; the game decides which status is unseen, for how long, what grants it, and whether it lasts only while the thing that granted it is worn.
 The unseen departs on purpose from the floor of one: that floor is about `Stealth`'s quiet, which is for good, and the unseen is a status that lasts turns and ends the moment its holder strikes.
