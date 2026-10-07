@@ -70,8 +70,8 @@ pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold}
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
     AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn,
-    FromArgs, Harm, Ignite, Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers,
-    area_cells, bury_remnants, land_triggers, report_died, report_remnants,
+    FromArgs, Harm, Ignite, Inflict, KeepOnRemnant, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, RemnantKeeps, Shove, Source,
+    Teleport, Trigger, Triggers, area_cells, bury_remnants, land_triggers, report_died, report_remnants,
 };
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::{MapFields, SavedField};

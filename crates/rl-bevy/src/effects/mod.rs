@@ -546,6 +546,7 @@ impl Plugin for EffectsPlugin {
             // Read for an actor's `died`; a game with effects and no combat
             // simply never writes one.
             .add_message::<crate::combat::DeathEvent>()
+            .init_resource::<RemnantKeeps>()
             .reads::<Cued>()
             .add_airborne::<UseLanding>()
             // What came down this pass, then what was set off in it.

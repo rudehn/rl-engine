@@ -422,20 +422,69 @@ pub fn bury_remnants(mut commands: Commands, landed: Query<Entity, (With<Remnant
 pub fn report_died(
     mut commands: Commands,
     mut deaths: MessageReader<crate::combat::DeathEvent>,
-    actors: Query<(&Triggers, Option<&Name>), With<crate::components::Actor>>,
+    actors: Query<&Triggers, With<crate::components::Actor>>,
+    keeps: Res<RemnantKeeps>,
 ) {
     let mut reported: Vec<Entity> = Vec::new();
     for death in deaths.read() {
-        let Ok((triggers, name)) = actors.get(death.entity) else { continue };
+        let Ok(triggers) = actors.get(death.entity) else { continue };
         if triggers.on(Moments::DIED).next().is_none() || reported.contains(&death.entity) {
             continue;
         }
         reported.push(death.entity);
         let remnant = Remnant { moment: Moments::DIED, by: death.credit, at: death.at };
-        let mut carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself));
-        if let Some(name) = name {
-            carrier.insert(name.clone());
+        let carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself)).id();
+        keeps.copy(&mut commands, death.entity, carrier);
+    }
+}
+
+/// What a remnant takes from what it stands in for, besides its triggers:
+/// the [`Name`] it is credited under, and whatever a plugin that reads a
+/// remnant said it reads, such as the look a log colours a name in.
+///
+/// A list a plugin adds to rather than a fixed set, since the components
+/// that say how a thing looks belong to crates this one cannot see; the
+/// narrator adds its glyph with [`KeepOnRemnant::keep_on_remnant`].
+#[derive(Resource, Debug, Clone)]
+pub struct RemnantKeeps(Vec<std::any::TypeId>);
+
+impl Default for RemnantKeeps {
+    fn default() -> Self {
+        Self(vec![std::any::TypeId::of::<Name>()])
+    }
+}
+
+impl RemnantKeeps {
+    /// Adds `C` to what a remnant takes, once however often it is asked.
+    pub fn keep<C: Component + Clone>(&mut self) {
+        let id = std::any::TypeId::of::<C>();
+        if !self.0.contains(&id) {
+            self.0.push(id);
         }
+    }
+
+    /// Queues the copy of whichever of these `from` has onto `to`, at the
+    /// next sync point, while `from` is still there to copy.
+    pub fn copy(&self, commands: &mut Commands, from: Entity, to: Entity) {
+        let ids = self.0.clone();
+        commands.entity(from).clone_with_opt_in(to, move |builder| {
+            builder.allow_by_ids(ids);
+        });
+    }
+}
+
+/// Says, while the app is built, that a remnant takes a component from
+/// what it stands in for.
+pub trait KeepOnRemnant {
+    /// A remnant takes `C` as it takes the [`Name`].
+    fn keep_on_remnant<C: Component + Clone>(&mut self) -> &mut Self;
+}
+
+impl KeepOnRemnant for App {
+    fn keep_on_remnant<C: Component + Clone>(&mut self) -> &mut Self {
+        self.init_resource::<RemnantKeeps>();
+        self.world_mut().resource_mut::<RemnantKeeps>().keep::<C>();
+        self
     }
 }
 

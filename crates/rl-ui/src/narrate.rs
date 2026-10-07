@@ -1179,6 +1179,9 @@ impl Plugin for NarratorPlugin {
         if !app.is_plugin_added::<NarrationViewPlugin>() {
             app.add_plugins(NarrationViewPlugin);
         }
+        // A name is coloured in its glyph's colour, so a remnant that does
+        // something in a dead actor's name takes its glyph with the name.
+        rl_bevy::KeepOnRemnant::keep_on_remnant::<Glyph>(app);
         app.insert_resource(self.book.clone()).add_systems(Update, speak.in_set(crate::ViewSet::Speak));
     }
 
@@ -1521,14 +1524,15 @@ mod tests {
     }
 
     /// What an actor's `died` trigger lands after its body is gone is said
-    /// as that actor's own harm, by its name, as a living one's would be,
-    /// and not as harm from something unseen.
+    /// as that actor's own harm, by its name in its own colour, as a living
+    /// one's would be, and not as harm from something unseen.
     #[test]
-    fn harm_a_dead_actors_burst_lands_is_said_in_its_name() {
+    fn harm_a_dead_actors_burst_lands_is_said_in_its_name_and_its_colour() {
         let (mut stage, triggers) = with_things(r#"[(on: "died", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#);
         let player = stage.player;
+        let tan = Color::srgb(0.8, 0.6, 0.3);
         let puffball = stage.actor("puffball", 'f', 1, 0);
-        stage.app.world_mut().entity_mut(puffball).insert((triggers, Health::full(1)));
+        stage.app.world_mut().entity_mut(puffball).insert((triggers, Health::full(1), rl_render::Glyph::new('f', tan).on_layer(5)));
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, Attack(puffball)));
         stage.tick();
@@ -1538,6 +1542,9 @@ mod tests {
         }
         let said = spoken(&stage, &["The puffball", "Something"]);
         assert_eq!(said, vec!["The puffball hits you for 3.".to_string()], "{:?}", lines(&stage));
+        let entry = stage.app.world().resource::<MessageLog>().iter().find(|e| e.text.starts_with("The puffball hits you")).expect("the line");
+        assert_eq!(entry.spans.len(), 1, "one name coloured: {entry:?}");
+        assert_eq!((entry.spans[0].start, entry.spans[0].len, entry.spans[0].color), (0, 12, tan), "'The puffball' in its own colour: {entry:?}");
     }
 
     /// A worn thing that will not come off says so, in words and as bad

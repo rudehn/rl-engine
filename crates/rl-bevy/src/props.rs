@@ -696,20 +696,24 @@ pub fn report_entered(mut steps: MessageReader<crate::turn::Stepped>, props: Arm
 /// [`TurnSet::React`](crate::plugin::TurnSet::React) and lands the pass
 /// after. The prop itself is despawned at the end of the frame, which may
 /// be before then, so what it does goes on a [`Remnant`] that carries its
-/// triggers and its name, is reported in its place, and is despawned at
+/// triggers, its name and whatever else [`RemnantKeeps`](crate::effects::RemnantKeeps)
+/// names, is reported in its place, and is despawned at
 /// the end of the frame they land in. A prop with nothing to do when
 /// broken leaves none.
-pub fn report_destroyed(mut commands: Commands, mut deaths: MessageReader<crate::combat::DeathEvent>, props: Query<(&Triggers, Option<&Name>), With<Prop>>) {
+pub fn report_destroyed(
+    mut commands: Commands,
+    mut deaths: MessageReader<crate::combat::DeathEvent>,
+    props: Query<&Triggers, With<Prop>>,
+    keeps: Res<crate::effects::RemnantKeeps>,
+) {
     for death in deaths.read() {
-        let Ok((triggers, name)) = props.get(death.entity) else { continue };
+        let Ok(triggers) = props.get(death.entity) else { continue };
         if triggers.on(Moments::DESTROYED).next().is_none() {
             continue;
         }
         let remnant = Remnant { moment: Moments::DESTROYED, by: death.credit, at: death.at };
-        let mut carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself));
-        if let Some(name) = name {
-            carrier.insert(name.clone());
-        }
+        let carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself)).id();
+        keeps.copy(&mut commands, death.entity, carrier);
     }
 }
 
