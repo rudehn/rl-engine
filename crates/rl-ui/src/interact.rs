@@ -76,7 +76,7 @@ pub fn interact_key(
     let mut open = offered.open_to(player);
     let Some(offer) = open.next().copied() else { return };
     if open.next().is_none() {
-        intents.write(Intent::new(player, Interact { prop: offer.prop, verb: offer.verb }));
+        intents.write(Intent::new(player, Interact { target: offer.target, verb: offer.verb }));
         return;
     }
     // Several: a question, asked by the screen that exists to ask it. A
@@ -140,7 +140,7 @@ mod tests {
         stage.tick();
         let seen = &stage.app.world().resource::<Seen>().0;
         assert_eq!(seen.len(), 1, "the one thing underfoot was taken up: {seen:?}");
-        assert_eq!(seen[0].prop, under);
+        assert_eq!(seen[0].target, under);
     }
 
     /// Two offers in reach are a question, and a key is not a question.

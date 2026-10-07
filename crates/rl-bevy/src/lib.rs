@@ -101,8 +101,8 @@ pub use plugin::{
 };
 pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
 pub use props::{
-    AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet,
-    PropsPlugin, Refused, Scenery, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
+    AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Offering, Offers, PendingFires, Prop, PropEffects, PropKind,
+    PropRng, PropSet, PropsPlugin, Refused, Scenery, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
 };
 pub use records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 pub use registries::Registries;
@@ -169,8 +169,8 @@ pub mod prelude {
     };
     pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{
-        AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery,
-        Spotted, Take, VerbId, Verbs, spawn_prop,
+        AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Offering, Offers, Prop, PropKind, PropSet, PropsPlugin,
+        Refused, Scenery, Spotted, Take, VerbId, Verbs, spawn_prop,
     };
     pub use crate::records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
     pub use crate::registries::Registries;

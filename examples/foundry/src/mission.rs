@@ -190,11 +190,11 @@ pub fn answer_charge(
         if ev.verb != charge {
             continue;
         }
-        let Ok((_, on)) = consoles.get(ev.prop) else { continue };
+        let Ok((_, on)) = consoles.get(ev.target) else { continue };
         let deck = crate::decks::deck_of(on.map(|m| m.0).unwrap_or(MapId::SURFACE));
         // The glyph comes off with the kind, so the renderer dresses it
         // again from the definition of a console already used.
-        commands.entity(ev.prop).remove::<Glyph>().insert(PropKind(spent));
+        commands.entity(ev.target).remove::<Glyph>().insert(PropKind(spent));
         report.happened.write(Happened(Fact::new(report.facts.charge_set).about(u64::from(deck))));
         report.tell.write(Tell::new("You set the charge. The reactor stirs.", Tones::GOOD));
     }
@@ -267,7 +267,7 @@ mod tests {
         // player's first turn precedes every monster's, never that nothing
         // moves before this one action does.
         let before = crate::testing::clock(&app);
-        app.world_mut().write_message(Intent::new(player, Interact { prop: offer.prop, verb: offer.verb }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: offer.target, verb: offer.verb }));
         crate::testing::settle(&mut app);
         assert_eq!(crate::testing::clock(&app) - before, 300, "a charge takes three turns to set");
         assert!(crate::testing::quest_done(&app, "first_charge"));
@@ -277,7 +277,7 @@ mod tests {
         // than off the gate: the gate answers per pass, and with the pick
         // up no pass is run.
         let spent = app.world().resource::<Registries>().props.expect("spent reactor console");
-        assert_eq!(app.world().get::<PropKind>(offer.prop).map(|k| k.0), Some(spent), "and a console already charged is a spent one");
+        assert_eq!(app.world().get::<PropKind>(offer.target).map(|k| k.0), Some(spent), "and a console already charged is a spent one");
     }
 
     /// Deck one has no console, so nothing offers a charge: the engine

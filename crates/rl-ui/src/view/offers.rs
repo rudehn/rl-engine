@@ -5,10 +5,12 @@
 //! list as plain rows, for the screen that asks which one the player
 //! meant.
 //!
-//! A row's words are the verb's registered name and the prop's own
-//! `Name`, so the engine still invents nothing: a game that calls its
-//! verb `charge` and its prop `reactor console` gets "charge reactor
-//! console", and a game that wants other words names them other things.
+//! A row's words are the verb's registered name and the `Name` of what
+//! offers it, said the way the look panel lists it, so the engine still
+//! invents nothing: a game that calls its verb `charge` and its prop
+//! `reactor console` gets "charge reactor console", one whose captive is
+//! `Mirela` gets "free Mirela", and a game that wants other words names
+//! them other things.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
@@ -16,8 +18,8 @@ use rl_bevy::prelude::*;
 /// One thing the player could do here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OfferRow {
-    /// What it would be done to.
-    pub prop: Entity,
+    /// What it would be done to: a prop, or someone standing by.
+    pub target: Entity,
     /// Which of the things it offers.
     pub verb: VerbId,
     /// What it reads as: the verb, then what it is done to.
@@ -87,7 +89,7 @@ pub fn collect_offers(
     }
     view.actor = Some(player);
     for offer in offered.for_actor(player) {
-        let what = named.get(offer.prop).map(|n| rl_core::noun::listed(n.as_str(), 1)).unwrap_or_default();
+        let what = named.get(offer.target).map(|n| rl_core::noun::listed(n.as_str(), 1)).unwrap_or_default();
         let label = if what.is_empty() { verbs.name(offer.verb).to_string() } else { format!("{} {what}", verbs.name(offer.verb)) };
         let refused = offer.refused.map(|why| match why {
             Refused::Needs(tag) => match registries.as_deref() {
@@ -95,7 +97,7 @@ pub fn collect_offers(
                 None => "needs something you do not carry".to_string(),
             },
         });
-        view.rows.push(OfferRow { prop: offer.prop, verb: offer.verb, label, time: offer.time, refused });
+        view.rows.push(OfferRow { target: offer.target, verb: offer.verb, label, time: offer.time, refused });
     }
 }
 
@@ -154,5 +156,26 @@ mod tests {
         let cache = view.rows.iter().find(|r| r.label == "open locked cache").expect("listed");
         assert_eq!(cache.refused.as_deref(), Some("needs a cutter"), "and a refusal names what is wanted");
         assert_eq!(view.open_rows(), 1, "one of the two can be taken up");
+    }
+
+    /// Someone standing by who offers something is listed by their own
+    /// name as the look panel lists it, with no word for a prop in it.
+    #[test]
+    fn someone_who_offers_is_listed_by_the_name_the_look_panel_gives_them() {
+        let mut stage = Stage::new_with(OffersViewPlugin, |app| {
+            app.add_plugins(PropsPlugin).add_verb("free");
+            app.insert_resource(Seed(TEST_SEED));
+        });
+        let free = stage.app.world().resource::<Verbs>().get("free").expect("declared");
+        let at = stage.at.offset(1, 0);
+        let captive =
+            stage.app.world_mut().spawn((Actor, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), Offers(vec![Offering::new(free, 300)]))).id();
+        stage.tick();
+        stage.tick();
+
+        let view = stage.app.world().resource::<OffersView>();
+        let row = view.rows.iter().find(|r| r.target == captive).expect("she is listed");
+        assert_eq!(row.label, "free Mirela");
+        assert_eq!(row.time, 300);
     }
 }

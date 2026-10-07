@@ -141,10 +141,10 @@ pub fn open_on_interact(
 ) {
     let modal = container_modal(&modals);
     for event in opened.read() {
-        if event.verb != Verbs::OPEN || !containers.contains(event.prop) || !player.contains(event.actor) {
+        if event.verb != Verbs::OPEN || !containers.contains(event.target) || !player.contains(event.actor) {
             continue;
         }
-        open.0 = Some(event.prop);
+        open.0 = Some(event.target);
         menu.selected = 0;
         if !modals.is_open(modal) {
             modals.open(modal);
@@ -298,7 +298,7 @@ mod tests {
         let player = stage.player;
         assert!(!stage.app.world().resource::<Modals>().any_open(), "nothing is up before anything is opened");
 
-        stage.app.world_mut().write_message(Interacted { actor: player, prop: chest, verb: Verbs::OPEN });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN });
         stage.tick();
         let modals = stage.app.world().resource::<Modals>();
         assert!(modals.is_open(container_modal(modals)), "the screen is up");
@@ -313,7 +313,7 @@ mod tests {
     fn taking_all_empties_it_and_the_screen_stays_up_until_it_is_closed() {
         let (mut stage, chest) = stage();
         let player = stage.player;
-        stage.app.world_mut().write_message(Interacted { actor: player, prop: chest, verb: Verbs::OPEN });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN });
         stage.tick();
 
         stage.press(KeyCode::KeyA);
@@ -331,7 +331,7 @@ mod tests {
     fn walking_away_closes_the_screen() {
         let (mut stage, chest) = stage();
         let player = stage.player;
-        stage.app.world_mut().write_message(Interacted { actor: player, prop: chest, verb: Verbs::OPEN });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN });
         stage.tick();
 
         let far = stage.at.offset(-6, 0);

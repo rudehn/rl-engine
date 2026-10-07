@@ -237,7 +237,7 @@ pub fn spend_the_keycard(
             continue;
         }
         // Only a locker: a crate wants nothing and takes nothing.
-        let Ok(kind) = props.get(ev.prop) else { continue };
+        let Ok(kind) = props.get(ev.target) else { continue };
         if registries.props.get(kind.0).container.as_ref().and_then(|c| c.locked) != Some(keycard) {
             continue;
         }
@@ -420,7 +420,7 @@ mod tests {
         };
         let offer = offer.expect("standing beside it, the locker offers to open");
         assert!(offer.refused.is_none(), "with a card in the bag, nothing refuses it");
-        app.world_mut().write_message(Intent::new(player, Interact { prop: locker, verb: Verbs::OPEN }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: locker, verb: Verbs::OPEN }));
         crate::testing::settle(&mut app);
 
         let left = app.world().get::<Stack>(card).map(|s| s.count);

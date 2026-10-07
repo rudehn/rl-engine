@@ -1,15 +1,16 @@
 //! The screen that asks which of several things you meant.
 //!
 //! One offer in reach needs no screen: the interact key takes it, and
-//! walking into a prop that offers one thing takes that. Two is a
+//! walking into a prop or a person that offers one thing takes that. Two is a
 //! question, and this is where it is asked. The direction keys walk the
 //! rows, the cursors' confirm key takes the one picked out, and the
 //! cursors' close key puts it away.
 //!
 //! It opens itself two ways, both of them a player asking "what can I do
 //! here": the interact key with more than one offer in reach, and a bump
-//! into a prop that offers more than one thing, which the engine refuses
-//! rather than guessing at and reports as [`Bumped`].
+//! into something that offers more than one thing, a prop or someone who
+//! is neither foe nor ally, which the engine refuses rather than guessing
+//! at and reports as a [`Bumped`] with `offers` set.
 //!
 //! Rows that cannot be taken up are still listed, greyed, with the reason
 //! in words, the way the ability menu lists what it cannot use: a player
@@ -109,27 +110,23 @@ pub fn offers_modal(modals: &Modals) -> ModalId {
     modals.get(OFFERS_MODAL).expect("OffersPanel declares the offers modal")
 }
 
-/// Opens the screen when a bump came to nothing against a prop.
+/// Opens the screen when a bump came to nothing against something that
+/// offers, a prop or a person.
 ///
-/// Two cases, and the screen answers both: the prop offers more than one
-/// thing, which is a question the walk key could not ask, or it offers
-/// one it refuses, which is an explanation the walk key could not give.
-/// A prop that offered one thing and did it is not here at all, because
-/// the bump became the interaction.
-pub fn open_on_crowded_bump(
-    mut bumped: MessageReader<Bumped>,
-    view: Res<OffersView>,
-    mut menu: ResMut<OffersMenu>,
-    mut modals: ResMut<Modals>,
-    props: Query<(), With<Prop>>,
-) {
+/// Two cases, and the screen answers both: it offers more than one thing,
+/// which is a question the walk key could not ask, or it offers one it
+/// refuses, which is an explanation the walk key could not give. One that
+/// offered one thing and did it is not here at all, because the bump
+/// became the interaction, and nor is an ally offering something, which
+/// the engine bumps as an ally and reports without `offers`.
+pub fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<OffersView>, mut menu: ResMut<OffersMenu>, mut modals: ResMut<Modals>) {
     let modal = offers_modal(&modals);
     for ev in bumped.read() {
-        if !props.contains(ev.into) {
+        if !ev.offers {
             continue;
         }
-        let rows = view.rows.iter().filter(|r| r.prop == ev.into).count();
-        let open = view.rows.iter().filter(|r| r.prop == ev.into && r.open()).count();
+        let rows = view.rows.iter().filter(|r| r.target == ev.into).count();
+        let open = view.rows.iter().filter(|r| r.target == ev.into && r.open()).count();
         // Nothing to say, or the bump already did the one thing on offer.
         if rows == 0 || (rows == 1 && open == 1) {
             continue;
@@ -174,7 +171,7 @@ pub fn offers_keys(
     // A refused row stays on screen and says why: taking it up would
     // spend nothing and teach nothing.
     if row.open() {
-        intents.write(Intent::new(player, Interact { prop: row.prop, verb: row.verb }));
+        intents.write(Intent::new(player, Interact { target: row.target, verb: row.verb }));
         modals.close_one(modal);
     }
 }
@@ -290,6 +287,27 @@ mod tests {
         assert_eq!(view.rows.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(), vec!["strip workbench", "tip workbench"]);
     }
 
+    /// Someone who is neither foe nor ally and offers two things is asked
+    /// about as a bench is, by name.
+    #[test]
+    fn walking_into_someone_who_offers_two_things_asks_which() {
+        let (mut stage, bench) = stage();
+        stage.app.world_mut().despawn(bench);
+        let verbs = stage.app.world().resource::<Verbs>();
+        let offers = Offers(vec![Offering::new(verbs.get("strip").expect("declared"), 100), Offering::new(verbs.get("tip").expect("declared"), 200)]);
+        let at = stage.at.offset(1, 0);
+        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers));
+        stage.tick();
+
+        let player = stage.player;
+        stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
+        stage.tick();
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "the question is asked");
+        let view = stage.app.world().resource::<OffersView>();
+        assert_eq!(view.rows.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(), vec!["strip Mirela", "tip Mirela"]);
+    }
+
     /// Walking into something locked used to do nothing at all: the one
     /// offer was refused, so the bump came to nothing and said nothing,
     /// and the player was left pressing a direction at a crate. Now the
@@ -331,7 +349,7 @@ mod tests {
         let modals = stage.app.world().resource::<Modals>();
         assert!(modals.is_open(offers_modal(modals)), "walking into it says something rather than nothing");
         let view = stage.app.world().resource::<OffersView>();
-        let row = view.rows.iter().find(|r| r.prop == locker).expect("the locker is listed");
+        let row = view.rows.iter().find(|r| r.target == locker).expect("the locker is listed");
         assert_eq!(row.refused.as_deref(), Some("needs a cutter"), "and says what it wants");
     }
 
@@ -354,7 +372,7 @@ mod tests {
         stage.tick();
 
         let tip = stage.app.world().resource::<Verbs>().get("tip").expect("the game's verb");
-        assert_eq!(stage.app.world().resource::<Seen>().0, vec![Interacted { actor: player, prop: bench, verb: tip }], "the second row, not the first");
+        assert_eq!(stage.app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: bench, verb: tip }], "the second row, not the first");
         let modals = stage.app.world().resource::<Modals>();
         assert!(!modals.is_open(offers_modal(modals)), "and the question is answered, so the screen is gone");
     }

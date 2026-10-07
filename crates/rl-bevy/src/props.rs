@@ -19,6 +19,11 @@
 //! A prop whose definition does nothing but stand there is [`Scenery`],
 //! which a list of what is in sight passes over.
 //!
+//! An actor offers too, through its own [`Offers`]: a captive to free, a
+//! person to talk to. The gate, the refusal and the [`Interacted`] answer
+//! are the ones a prop's offer has, because what can be done here is one
+//! question whoever stands here.
+//!
 //! Offers and the interactions that answer them, containers that stock and
 //! empty, triggers that land an effect list, and hiding that a turn in
 //! sight rolls away are all here. `docs/design/props.md` is the whole
@@ -163,12 +168,12 @@ impl AddVerb for App {
     }
 }
 
-/// One thing the actor holding the turn could do with a prop it can
-/// reach, as the gate works it out.
+/// One thing the actor holding the turn could do with what it can reach,
+/// as the gate works it out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Offer {
-    /// The prop offering it.
-    pub prop: Entity,
+    /// What offers it: a prop, or an actor carrying [`Offers`].
+    pub target: Entity,
     /// What it is called.
     pub verb: VerbId,
     /// What the turn would cost.
@@ -184,6 +189,45 @@ pub struct Offer {
 pub enum Refused {
     /// It wants something the actor is not carrying.
     Needs(TagId),
+}
+
+/// What an actor offers whoever stands beside it: a captive to be freed,
+/// a person to be talked to.
+///
+/// A prop's offers are its definition's, shared by every prop of its
+/// kind; an actor is spawned one at a time by the game, so what it offers
+/// is its own and the game puts it on, and takes it off when the offer is
+/// spent. Answered as a prop's offer with no effects is: the same gate,
+/// the same reach, the same refusal, and an [`Interacted`] the game reads
+/// for its verb; what taking it up does is the game's, effects included.
+/// Read on anything that carries it, a prop too, but never offered to its
+/// own holder. Not saved by the engine: the game puts it back on with
+/// whatever it saves the actor as, since the game is what put it there.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct Offers(pub Vec<Offering>);
+
+/// One thing an [`Offers`] names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Offering {
+    /// What it is called.
+    pub verb: VerbId,
+    /// What the turn costs, in hundredths of a step.
+    pub time: u32,
+    /// A tag the one taking it up must carry, or it is refused and says so.
+    pub needs: Option<TagId>,
+}
+
+impl Offering {
+    /// `verb`, taking `time`, open to anyone.
+    pub fn new(verb: VerbId, time: u32) -> Self {
+        Self { verb, time, needs: None }
+    }
+
+    /// Refused to anyone not carrying something tagged `tag`.
+    pub fn needing(mut self, tag: TagId) -> Self {
+        self.needs = Some(tag);
+        self
+    }
 }
 
 /// What the actor holding the turn could do with what it can reach.
@@ -216,46 +260,54 @@ impl OfferedHere {
         self.for_actor(actor).iter().filter(|o| o.refused.is_none())
     }
 
-    /// Whether `actor` is offered `verb` by `prop`, and at what cost.
-    pub fn find(&self, actor: Entity, prop: Entity, verb: VerbId) -> Option<&Offer> {
-        self.for_actor(actor).iter().find(|o| o.prop == prop && o.verb == verb)
+    /// Whether `actor` is offered `verb` by `target`, and at what cost.
+    pub fn find(&self, actor: Entity, target: Entity, verb: VerbId) -> Option<&Offer> {
+        self.for_actor(actor).iter().find(|o| o.target == target && o.verb == verb)
     }
 }
 
 /// Whoever holds the turn, and what it carries.
 type Reacher<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Inventory>), With<MyTurn>>;
 
-/// A prop as the gate reads it.
-type Offering<'w, 's> = Query<'w, 's, (Entity, &'static PropKind, &'static Position, Option<&'static OnMap>), With<Prop>>;
+/// Everything that could offer something, as the gate reads it: a prop by
+/// its definition, and anything carrying [`Offers`] by its own.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Offerers<'w, 's> {
+    props: Query<'w, 's, (Entity, &'static PropKind, &'static Position, Option<&'static OnMap>), With<Prop>>,
+    others: Query<'w, 's, (Entity, &'static Offers, &'static Position, Option<&'static OnMap>)>,
+    emptied: Query<'w, 's, (), With<Emptied>>,
+}
 
 /// Works out what the actor holding the turn is offered by what it can
-/// reach: what it stands on, and what stands beside it.
+/// reach: what it stands on, and what stands beside it, a prop by its
+/// definition and anything carrying [`Offers`] by its own.
 ///
 /// In [`DecideSet::Offer`](crate::plugin::DecideSet::Offer), beside the
 /// ability gate and for the same reason: the player's screen and a mind's
 /// tactic both read one answer, worked out once, rather than each walking
-/// the world themselves.
+/// the world themselves. Asked of where everything stands at that moment,
+/// so an offer walks off with whoever makes it.
 pub fn offer_here(
     mut offered: ResMut<OfferedHere>,
     registries: Res<Registries>,
     verbs: Res<Verbs>,
     reacher: Reacher,
-    props: Offering,
+    offerers: Offerers,
     tagged: Query<&Tagged>,
-    emptied: Query<(), With<Emptied>>,
 ) {
+    let Offerers { props, others, emptied } = &offerers;
     offered.actor = None;
     offered.offers.clear();
     let Ok((actor, pos, on, bag)) = reacher.single() else { return };
     offered.actor = Some(actor);
     let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
-    for (prop, kind, at, prop_on) in &props {
-        if prop_on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here {
-            continue;
-        }
-        // What it stands on and what stands beside it: a body underfoot is
-        // as reachable as a crate in the next cell.
-        if at.0 != pos.0 && !geometry::is_adjacent(pos.0, at.0) {
+    // What it stands on and what stands beside it: a body underfoot is as
+    // reachable as a crate in the next cell.
+    let in_reach =
+        |at: &Position, there: Option<&OnMap>| there.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && (at.0 == pos.0 || geometry::is_adjacent(pos.0, at.0));
+    let refused = |wants: Option<TagId>| wants.filter(|tag| !carries(bag, &tagged, *tag)).map(Refused::Needs);
+    for (prop, kind, at, prop_on) in props {
+        if !in_reach(at, prop_on) {
             continue;
         }
         let def = registries.props.get(kind.0);
@@ -269,9 +321,18 @@ pub fn offer_here(
             if done && verb == Verbs::OPEN {
                 continue;
             }
-            let wants = offer.needs.or(lock.filter(|_| verb == Verbs::OPEN));
-            let refused = wants.filter(|tag| !carries(bag, &tagged, *tag)).map(Refused::Needs);
-            offered.offers.push(Offer { prop, verb, time: offer.time, refused });
+            let refused = refused(offer.needs.or(lock.filter(|_| verb == Verbs::OPEN)));
+            offered.offers.push(Offer { target: prop, verb, time: offer.time, refused });
+        }
+    }
+    // Never the turn holder's own: what a person offers is offered to
+    // whoever stands by them, not to themselves.
+    for (other, offers, at, other_on) in others {
+        if other == actor || !in_reach(at, other_on) {
+            continue;
+        }
+        for offer in &offers.0 {
+            offered.offers.push(Offer { target: other, verb: offer.verb, time: offer.time, refused: refused(offer.needs) });
         }
     }
 }
@@ -281,23 +342,24 @@ fn carries(bag: Option<&Inventory>, tagged: &Query<&Tagged>, tag: TagId) -> bool
     bag.is_some_and(|bag| bag.items.iter().any(|item| tagged.get(*item).is_ok_and(|t| t.0.contains(&tag))))
 }
 
-/// Do what a prop offers: the one action, whatever the verb.
+/// Do what a prop or an actor offers: the one action, whatever the verb
+/// and whoever offers it.
 ///
 /// Refused for free when the offer is not there to take: the gate worked
 /// out what was possible before the key was pressed, so nothing is
 /// learned by spending a turn finding out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Interact {
-    /// What to interact with.
-    pub prop: Entity,
+    /// What to interact with: a prop, or an actor that offers.
+    pub target: Entity,
     /// Which of the things it offers.
     pub verb: VerbId,
 }
 impl Action for Interact {}
 
-/// Somebody interacted with a prop.
+/// Somebody interacted with a prop, or with an actor that offers.
 ///
-/// The whole of how a game answers a prop of its own: a system in
+/// The whole of how a game answers a prop or a person of its own: a system in
 /// [`TurnSet::React`](crate::plugin::TurnSet::React) reads these, keeps
 /// the ones whose verb is its own, and does whatever that verb means.
 /// The engine needs no registry of behaviours because a game already
@@ -306,14 +368,14 @@ impl Action for Interact {}
 pub struct Interacted {
     /// Who did it.
     pub actor: Entity,
-    /// What they did it to.
-    pub prop: Entity,
+    /// What they did it to: a prop, or an actor that offers.
+    pub target: Entity,
     /// What they did.
     pub verb: VerbId,
 }
 
 /// What answering an interaction reads: what was offered, what each offer
-/// lands, and which prop is which.
+/// lands, and which of what offers is a prop.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Answering<'w, 's> {
     offered: Res<'w, OfferedHere>,
@@ -333,7 +395,7 @@ pub fn resolve_interactions(
 ) {
     let Answering { offered, effects, registries, verbs, props } = &what;
     for intent in intents.read() {
-        let Some(offer) = offered.find(intent.actor, intent.action.prop, intent.action.verb) else {
+        let Some(offer) = offered.find(intent.actor, intent.action.target, intent.action.verb) else {
             continue;
         };
         if offer.refused.is_some() || !resolution.claim(intent.actor) {
@@ -341,17 +403,18 @@ pub fn resolve_interactions(
         }
         resolution.done(intent.actor, offer.time);
         // What the offer carried, when it carried anything: an offer with
-        // no effects is answered by the game, from the message below.
-        if let (Some(effects), Ok(kind)) = (effects.as_deref(), props.get(intent.action.prop)) {
+        // no effects, which an actor's always is, is answered by the game,
+        // from the message below.
+        if let (Some(effects), Ok(kind)) = (effects.as_deref(), props.get(intent.action.target)) {
             let which = registries.props.get(kind.0).offers.iter().position(|o| verbs.get(&o.verb) == Some(intent.action.verb));
-            let at = world.position(intent.action.prop).unwrap_or_default();
+            let at = world.position(intent.action.target).unwrap_or_default();
             if let Some(which) = which
                 && let Some(effects) = effects.offer(kind.0, which)
             {
-                effects.land_on(crate::effects::Source::Offer(intent.action.prop), intent.action.prop, at, vec![intent.actor], &mut world);
+                effects.land_on(crate::effects::Source::Offer(intent.action.target), intent.action.target, at, vec![intent.actor], &mut world);
             }
         }
-        done.write(Interacted { actor: intent.actor, prop: intent.action.prop, verb: intent.action.verb });
+        done.write(Interacted { actor: intent.actor, target: intent.action.target, verb: intent.action.verb });
     }
 }
 
@@ -1098,7 +1161,7 @@ mod offers {
         let player = player_at(&mut app, start);
 
         let offered = app.world().resource::<OfferedHere>();
-        let props: Vec<Entity> = offered.for_actor(player).iter().map(|o| o.prop).collect();
+        let props: Vec<Entity> = offered.for_actor(player).iter().map(|o| o.target).collect();
         assert!(props.contains(&beside), "what stands beside it");
         assert!(props.contains(&underfoot), "and what it stands on");
         assert!(!props.contains(&far), "but not what is four cells away");
@@ -1143,11 +1206,11 @@ mod offers {
         });
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { prop: console, verb: charge }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: console, verb: charge }));
         app.update();
 
         assert_eq!(app.world().resource::<Turns>().now(), before + 300, "the turn cost what the offer said");
-        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, prop: console, verb: charge }], "and the game is told what was done");
+        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: console, verb: charge }], "and the game is told what was done");
     }
 
     /// Nothing is spent finding out what the gate already worked out.
@@ -1158,7 +1221,7 @@ mod offers {
         let player = player_at(&mut app, start);
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { prop: far, verb: Verbs::OPEN }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: far, verb: Verbs::OPEN }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before, "a turn is not spent learning it was out of reach");
     }
@@ -1179,7 +1242,7 @@ mod offers {
 
         app.world_mut().write_message(Intent::new(player, crate::bump::Bump(rl_core::Direction::East)));
         app.update();
-        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, prop: supply, verb: Verbs::OPEN }], "the walk key opened the crate");
+        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: supply, verb: Verbs::OPEN }], "the walk key opened the crate");
         assert_eq!(app.world().get::<Position>(player).map(|p| p.0), Some(start), "and the player did not move");
 
         // A bench offering two things is left for a screen to ask about.
@@ -1239,6 +1302,189 @@ mod offers {
         assert!(app.world().resource::<Asked>().0.is_empty(), "no question asked of the bench");
         assert_eq!(app.world().resource::<Turns>().now(), rl_core::turn::BASE_ACTION_COST, "the turn was spent once, as a wait");
         assert_eq!(app.world().get::<Position>(player).map(|p| p.0), Some(start), "and the player stayed where it was");
+    }
+}
+
+#[cfg(test)]
+mod actor_offers {
+    use super::*;
+    use crate::components::{Actor, Blocks, Player, Viewshed};
+    use crate::items::{Inventory, Item, Tagged};
+    use crate::plugin::headless_app;
+    use crate::state::EngineState;
+    use crate::turn::{Intent, Turns};
+    use rl_rules::{Registry, TagDef};
+
+    /// A world with props on, a verb of the game's own, `free`, and a tag
+    /// for what a lock might want.
+    fn arena() -> (App, Point, VerbId, TagId) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.add_verb("free");
+        let start = crate::testing::surface(&mut app);
+        let tags = Registry::from_defs(vec![TagDef::new("key")]).expect("one tag");
+        let key = tags.expect("key");
+        app.insert_resource(Registries { tags, ..Default::default() });
+        app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        let free = app.world().resource::<Verbs>().get("free").expect("declared");
+        (app, start, free, key)
+    }
+
+    fn someone(app: &mut App, at: Point, offers: Offers) -> Entity {
+        app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("captive"), offers)).id()
+    }
+
+    fn player_at(app: &mut App, at: Point, offers: Offers) -> Entity {
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::SURFACE), offers)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        player
+    }
+
+    fn offered(app: &App, actor: Entity) -> Vec<Offer> {
+        app.world().resource::<OfferedHere>().for_actor(actor).to_vec()
+    }
+
+    #[derive(Resource, Default)]
+    struct Seen(Vec<Interacted>);
+
+    fn watch(app: &mut App) {
+        app.init_resource::<Seen>().add_systems(crate::plugin::Turn, |mut seen: ResMut<Seen>, mut done: MessageReader<Interacted>| {
+            seen.0.extend(done.read().copied());
+        });
+    }
+
+    /// Someone beside the turn holder offers what its own `Offers` names,
+    /// someone two cells off offers nothing, and the turn holder is not
+    /// offered what it offers others.
+    #[test]
+    fn an_actor_beside_the_turn_holder_offers_what_it_names_and_one_further_off_does_not() {
+        let (mut app, start, free, _) = arena();
+        let beside = someone(&mut app, start.offset(1, 1), Offers(vec![Offering::new(free, 200)]));
+        someone(&mut app, start.offset(2, 0), Offers(vec![Offering::new(free, 200)]));
+        let player = player_at(&mut app, start, Offers(vec![Offering::new(free, 100)]));
+        assert_eq!(offered(&app, player), vec![Offer { target: beside, verb: free, time: 200, refused: None }]);
+    }
+
+    /// The offer is asked of where the actor stands when the gate runs,
+    /// never remembered from where it stood: walked off, it offers
+    /// nothing and taking it up costs nothing; back beside, it offers
+    /// again.
+    #[test]
+    fn what_an_actor_offers_moves_with_it() {
+        let (mut app, start, free, _) = arena();
+        let captive = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200)]));
+        let player = player_at(&mut app, start, Offers::default());
+        watch(&mut app);
+        assert_eq!(offered(&app, player).len(), 1, "beside, it offers");
+
+        app.world_mut().entity_mut(captive).insert(Position(start.offset(4, 0)));
+        app.update();
+        assert!(offered(&app, player).is_empty(), "walked off, it offers nothing");
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), before, "and reaching for it costs nothing");
+        assert!(app.world().resource::<Seen>().0.is_empty(), "nor does anything happen");
+
+        app.world_mut().entity_mut(captive).insert(Position(start.offset(-1, 0)));
+        app.update();
+        assert_eq!(offered(&app, player).iter().map(|o| o.target).collect::<Vec<_>>(), vec![captive], "beside again, it offers again");
+    }
+
+    /// An actor's offer that wants something is listed and refused for
+    /// free until it is carried, then costs its time and is answered with
+    /// the same message a prop's is.
+    #[test]
+    fn an_actors_offer_is_refused_until_its_need_is_carried_and_then_answered_as_a_props_is() {
+        let (mut app, start, free, key) = arena();
+        let captive = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).needing(key)]));
+        let player = player_at(&mut app, start, Offers::default());
+        watch(&mut app);
+        let refused = app.world().resource::<OfferedHere>().find(player, captive, free).expect("listed").refused;
+        assert_eq!(refused, Some(Refused::Needs(key)), "listed, and refused for a reason it can name");
+
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), before, "a refused offer costs nothing");
+
+        let tool = app.world_mut().spawn((Item, Tagged(vec![key]))).id();
+        app.world_mut().entity_mut(player).insert(Inventory { items: vec![tool] });
+        app.update();
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), before + 200, "carried, it costs what the offer said");
+        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: captive, verb: free }], "and the game is told");
+    }
+
+    /// Who reaches for the captive, once, when it holds the turn.
+    #[derive(Resource)]
+    struct Reach(Entity, Entity, VerbId);
+
+    fn reach_once(mut commands: Commands, reach: Res<Reach>, holding: Query<(), With<MyTurn>>, mut intents: MessageWriter<Intent<Interact>>) {
+        if holding.contains(reach.0) {
+            intents.write(Intent::new(reach.0, Interact { target: reach.1, verb: reach.2 }));
+            commands.remove_resource::<Reach>();
+        }
+    }
+
+    /// What a game whose verb takes several turns does with its message:
+    /// it begins work on what was interacted with.
+    #[derive(Resource)]
+    struct Freeing(rl_rules::work::WorkKindId);
+
+    fn begin_freeing(mut done: MessageReader<Interacted>, freeing: Res<Freeing>, mut works: crate::work::Works) {
+        for ev in done.read() {
+            works.begin(ev.actor, rl_rules::work::Work::new(freeing.0, 50).on(ev.target));
+        }
+    }
+
+    #[derive(Resource, Default)]
+    struct Broken(Vec<crate::work::WorkBroken>);
+
+    /// An actor's verb that takes several turns takes them by the path a
+    /// prop's would: the game answers the interaction by beginning work on
+    /// the one interacted with, and a blow on the worker breaks it off.
+    #[test]
+    fn work_begun_from_an_actors_offer_is_broken_off_by_a_blow_on_the_worker() {
+        use crate::work::{AddWork, BreakReason, WorkKinds, WorkPlugin, Working};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, WorkPlugin));
+        app.add_verb("free").add_work("freeing");
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        let free = app.world().resource::<Verbs>().get("free").expect("declared");
+        let kind = app.world().resource::<WorkKinds>().get("freeing").expect("declared");
+        let worker = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 0)), crate::combat::Health::full(10))).id();
+        let captive = someone(&mut app, start.offset(5, 0), Offers(vec![Offering::new(free, 100)]));
+        app.insert_resource(Reach(worker, captive, free)).insert_resource(Freeing(kind)).init_resource::<Broken>().add_systems(
+            crate::plugin::Turn,
+            (
+                reach_once.run_if(resource_exists::<Reach>).in_set(crate::plugin::DecideSet::Game),
+                begin_freeing.in_set(crate::plugin::TurnSet::React),
+                (|mut seen: ResMut<Broken>, mut broken: MessageReader<crate::work::WorkBroken>| seen.0.extend(broken.read().copied()))
+                    .in_set(crate::plugin::TurnSet::Cleanup),
+            ),
+        );
+        let player = player_at(&mut app, start, Offers::default());
+        for _ in 0..6 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
+            }
+            app.update();
+        }
+        let work = app.world().get::<Working>(worker).map(|w| w.0);
+        assert_eq!(work.and_then(|w| w.target), Some(captive), "the worker is at work on the captive");
+        assert!(work.is_some_and(|w| w.done >= 2), "and has carried it on past the turn it began");
+
+        app.world_mut().write_message(crate::combat::DamageEvent::new(worker, rl_rules::Hit::from_source(None, sides.kind, 2)));
+        app.update();
+        let reasons: Vec<BreakReason> = app.world().resource::<Broken>().0.iter().map(|b| b.reason).collect();
+        assert_eq!(reasons, vec![BreakReason::Hurt], "a blow broke it off");
+        assert!(app.world().get::<Working>(worker).is_none());
     }
 }
 

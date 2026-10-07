@@ -6,6 +6,14 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- An actor can offer verbs, as a prop does: the new `Offers` component, a list of `Offering { verb, time, needs }` built with `Offering::new(verb, time)` and `.needing(tag)`, is what an actor offers whoever stands beside it, a captive to free or a person to talk to.
+  `offer_here` adds those offers to `OfferedHere` for the one holding the turn, read where the actor stands when the gate runs and never offered to its own holder, and they are refused, resolved and answered with `Interacted` exactly as a prop's offer with no effects is; what taking one up does is the game's, read off `Interacted` by verb, and a verb that takes several turns is answered by beginning work on the target with `Works::begin`.
+  `Offers` is read on whatever carries it, a prop too, and is not saved by the engine: the game puts it back on with whatever it saves the actor as.
+  A bump into someone who is neither foe nor ally and offers one thing takes it up; one offering more, or one it refuses, comes to nothing as a prop's does and is reported as a `Bumped` with the new `offers` field set, which is what `OffersPanel` now opens on instead of asking whether the thing bumped was a prop.
+  A foe is struck and an ally bumped as an ally whatever either offers.
+  The offers screen names a person by their `Name` as the look panel lists it: `free Mirela`.
+  To change: `Offer::prop`, `Interact::prop`, `Interacted::prop` and `OfferRow::prop` are now `target`, since what offers is no longer always a prop; a `Bumped` built field by field gains `offers`.
+
 - An actor answers its own moments: an actor carrying `Triggers` answers `hit` when its own blow or shot lands (a bite that poisons), the new `struck` when one lands on it (an aura that burns whoever struck it), and the new `died` when it dies (a burst of spores where it fell).
   Whatever an actor answers lands as its own doing, credited to it, without `LandsAsItself`, and its area spares the actor it belongs to: a `struck` aura written `Burst(radius: 1)` lands on everyone round its bearer and not on the bearer.
   A prop's and a thing's triggers still land on everyone in their area.
