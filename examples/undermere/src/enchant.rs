@@ -67,14 +67,21 @@ pub fn enchant(world: &mut World, thing: Entity) {
     let (armory, lore) = (world.resource::<Armory>(), world.resource::<Lore>());
     let (d, level) = (armory.defs.get(kind), raised.unwrap_or(0));
     let your = kind_called(lore, d);
+    let told = level_known && armory.learned_by_wear(kind) && lore.knows(&d.name);
     let line = match raised {
         None if count > 1 => format!("Your {} glow for a moment, and are as they were.", plural(&called(armory, lore, kind, level, level_known))),
         None => format!("Your {} glows for a moment, and is as it was.", called(armory, lore, kind, level, level_known)),
-        Some(level) if level_known && armory.learned_by_wear(kind) && lore.knows(&d.name) => format!("Your {your} glows, and is {level:+} now."),
+        Some(level) if told => format!("Your {your} glows, and is {level:+} now."),
         Some(_) => format!("Your {your} glows."),
     };
+    // A line that has just said what it is now says it will come off
+    // without a second "now".
     let freed = stuck && world.get::<Stuck>(thing).is_none();
-    let line = if freed { format!("{line} It will come off now.") } else { line };
+    let line = match (freed, told) {
+        (true, true) => format!("{line} It will come off."),
+        (true, false) => format!("{line} It will come off now."),
+        (false, _) => line,
+    };
     let tone = if raised.is_some() { Tones::GOOD } else { Tones::MUTED };
     world.write_message(Tell::new(line, tone));
 }
@@ -135,11 +142,16 @@ pub fn remove_curse(world: &mut World, wearer: Entity) {
 }
 
 /// Says so when the adventurer puts on a cursed thing: it clings to
-/// them, and will not come off.
+/// them, and will not come off. And how deep the curse runs is plain from
+/// then on, so the thing is no longer unfamiliar and reads `-2 ring of
+/// light`, rather than a `+?` beside the line that has just said it is
+/// cursed; it is also what they need to know to plan how to get it off,
+/// how many scrolls of enchanting bring it up to nought.
 ///
 /// In `TurnSet::React`, after [`learn_by_use`](crate::lore::learn_by_use),
 /// so a ring whose kind putting it on made known is called by its kind.
 pub fn bind_on_wear(
+    mut commands: Commands,
     mut events: MessageReader<ItemEvent>,
     adventurer: Query<Entity, With<Adventurer>>,
     stuck: Query<&ItemKind, With<Stuck>>,
@@ -154,6 +166,7 @@ pub fn bind_on_wear(
         if actor == me {
             let the = kind_called(&lore, armory.defs.get(kind.0));
             tell.write(Tell::new(format!("The {the} clings to you, and will not come off."), Tones::BAD));
+            commands.entity(item).try_remove::<Unfamiliar>();
         }
     }
 }
@@ -267,6 +280,21 @@ mod tests {
         assert_eq!(accuracy(&app, me), aim + 10);
     }
 
+    /// A cursed ring put on is known by how deep its curse runs the moment
+    /// it clings, and reads `-2 ring of light` beside the line that says it
+    /// will not come off, where a ring that is not cursed still reads `+?`
+    /// until it has been worn a while.
+    #[test]
+    fn a_cursed_ring_put_on_is_known_by_its_level_the_moment_it_clings() {
+        let mut app = headless(RunSeed(6));
+        let me = adventurer(&mut app);
+        let (cursed, plain) = (find(&mut app, "ring of light", -2), find(&mut app, "ring of stealth", 2));
+        equip(&mut app, me, cursed);
+        equip(&mut app, me, plain);
+        assert_eq!(name_of(&app, cursed), "-2 ring of light", "{:#?}", said(&app));
+        assert_eq!(name_of(&app, plain), "+? ring of stealth");
+    }
+
     /// A cursed ring will not come off, by the key or by anything put on
     /// over it, until it is enchanted up to nought; and another, freed by
     /// a scroll of remove curse, comes off at the level it was.
@@ -284,7 +312,7 @@ mod tests {
         give(&mut app, me, scroll);
         read_on(&mut app, me, scroll, ring);
         assert_eq!(app.world().get::<Enchant>(ring).map(|e| e.level), Some(0));
-        assert!(said(&app).iter().any(|l| l == "Your ring of stealth glows. It will come off now."), "{:#?}", said(&app));
+        assert!(said(&app).iter().any(|l| l == "Your ring of stealth glows, and is +0 now. It will come off."), "{:#?}", said(&app));
         unequip(&mut app, me, ring);
         assert!(app.world().get::<Equipped>(me).is_some_and(|w| !w.contains(ring)), "enchanted to nought, it came off");
 

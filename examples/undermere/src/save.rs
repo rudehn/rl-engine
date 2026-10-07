@@ -371,7 +371,8 @@ mod tests {
     /// A continued run keeps what is known and what holds on: the faces
     /// the run's things wear and which kinds are known, the strength a
     /// potion gave for good, a curse still on, one lifted at the level it
-    /// was, and the turns a thing has been worn towards knowing its level.
+    /// was, both known by their levels since they clung, and the turns a
+    /// thing has been worn towards knowing its level.
     #[test]
     fn a_continued_run_keeps_the_faces_the_strength_the_curses_and_the_turns_worn() {
         use crate::testing::{equip, find, give, use_thing};
@@ -387,18 +388,20 @@ mod tests {
         use_thing(&mut app, me, scroll);
         let held = find(&mut app, "ring of stealth", -1);
         equip(&mut app, me, held);
+        let helm = find(&mut app, "helm", 1);
+        equip(&mut app, me, helm);
         let draught = find(&mut app, "potion of extra healing", 0);
         give(&mut app, me, draught);
         pass_turns(&mut app, 10);
         let face = app.world().get::<Name>(draught).map(|n| n.as_str().to_string());
-        let worn_for = |app: &App, ring: Entity| app.world().get::<Unfamiliar>(ring).map(|u| u.worn);
-        let before = (worn_for(&app, freed), worn_for(&app, held));
-        assert!(before.0.is_some_and(|w| w >= 10) && before.1.is_some_and(|w| w >= 10), "{before:?}");
+        let worn_for = |app: &App, thing: Entity| app.world().get::<Unfamiliar>(thing).map(|u| u.worn);
+        assert_eq!((worn_for(&app, freed), worn_for(&app, held)), (None, None), "each ring known by its level once it clung");
+        assert!(worn_for(&app, helm).is_some_and(|w| w >= 10), "{:?}", worn_for(&app, helm));
         app.world().resource::<Saves>().delete(SLOT).expect("the slot can be emptied");
         arrive(&mut app, map_of(1));
         let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("the arrival wrote the run down");
         let lore = app.world().resource::<Lore>().clone();
-        let before = (worn_for(&app, freed), worn_for(&app, held));
+        let before = worn_for(&app, helm);
 
         let mut carried = continued(&text);
         let me = adventurer(&mut carried);
@@ -410,7 +413,8 @@ mod tests {
         let level = |ring: Entity| carried.world().get::<Enchant>(ring).map(|e| e.level);
         assert_eq!((level(freed), carried.world().get::<Stuck>(freed).is_some()), (Some(-2), false), "lifted, at the level it was");
         assert_eq!((level(held), carried.world().get::<Stuck>(held).is_some()), (Some(-1), true), "still held on");
-        assert_eq!((worn_for(&carried, freed), worn_for(&carried, held)), before, "and the turns each has been worn");
+        assert_eq!((worn_for(&carried, freed), worn_for(&carried, held)), (None, None), "both still known by their levels");
+        assert_eq!(worn_for(&carried, on(&carried, me, "head")), before, "and the turns the helm has been worn");
         let bag = &carried.world().get::<Inventory>(me).expect("a pack").items;
         let names: Vec<Option<String>> = bag.iter().map(|i| carried.world().get::<Name>(*i).map(|n| n.as_str().to_string())).collect();
         assert!(names.contains(&face), "the draught under its face: {names:?}");
