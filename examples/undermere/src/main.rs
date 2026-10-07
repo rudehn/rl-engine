@@ -112,8 +112,8 @@ impl Screen {
             // The pack's rows, a rule, and what the row picked out is: the
             // engine gives the rows half of it, so fifteen of them, enough
             // for a pack of potions, scrolls and rings to be seen whole. A
-            // longer one scrolls, and nothing on the screen says there is
-            // more of it.
+            // longer one scrolls, and the rules above and below the rows
+            // count what is out of view.
             pack: centred(64, 4, 32),
             // What is in a chest, and the keys that take it.
             chest: centred(48, 6, 14),
