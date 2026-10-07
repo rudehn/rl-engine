@@ -278,14 +278,14 @@ impl<V: CostSource> CostSource for Ground<'_, V> {
 
 /// The first step from `from` on the shortest way to the nearest of
 /// `goals`, round whatever props stand in it, every fire and every one of
-/// `around`, and through its doors; `None` when none of them can be
-/// reached.
+/// `around` that is not itself standing on a goal, and through its doors;
+/// `None` when none of them can be reached.
 fn toward(world: &mut World, from: Point, goals: &[Point], around: &BTreeSet<Entity>) -> Option<Direction> {
     let here = world.resource::<WorldMap>().current();
     let mut closed: BTreeSet<Point> =
         world.query_filtered::<(&Position, &OnMap), (With<Prop>, With<Blocks>)>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
     closed.extend(world.resource::<Fire>().burning().filter(|p| *p != from));
-    closed.extend(around.iter().filter_map(|who| world.get::<Position>(*who)).map(|p| p.0));
+    closed.extend(around.iter().filter_map(|who| world.get::<Position>(*who)).map(|p| p.0).filter(|p| !goals.contains(p)));
     let map = world.resource::<WorldMap>();
     let from = map.to_local(from)?;
     let goals: Vec<Point> = goals.iter().filter_map(|g| map.to_local(*g)).collect();
@@ -375,10 +375,16 @@ struct Memory {
     /// found that their weapon cannot get through, left alone thereafter
     /// as a player would leave it.
     untouchable: BTreeSet<Entity>,
-    /// A foe that shoots, gone after until it dies or has been out of
-    /// sight for [`CHASE_TURNS`] turns, so a shooter seen and unseen by
-    /// turns is not walked towards and away from by turns.
-    chasing: Option<(Entity, u32)>,
+    /// A foe that shoots, gone after, with the turns it has been out of
+    /// sight and the turns it has been gone after: one at a time, so two
+    /// archers seen by turns are not walked towards by turns, and given up
+    /// once it has been out of sight [`CHASE_TURNS`] turns, gone after
+    /// [`CHASE_LIMIT`], or cannot be reached.
+    chasing: Option<(Entity, u32, u32)>,
+    /// Shooters given up on, never gone after again: a coward that keeps
+    /// running and shooting would otherwise lead the adventurer round the
+    /// floor for good.
+    let_go: BTreeSet<Entity>,
 }
 
 /// How many blows in a row that take nothing from a foe make it one to
@@ -387,6 +393,9 @@ const FUTILE_BLOWS: u32 = 25;
 
 /// How many turns a shooter out of sight is still gone after.
 const CHASE_TURNS: u32 = 15;
+
+/// How many turns a shooter is gone after at most.
+const CHASE_LIMIT: u32 = 40;
 
 /// How many of their turns a delve spends on a floor before it leaves
 /// what is still lying about and makes for the way down.
@@ -501,20 +510,25 @@ fn walk(world: &mut World, view: &Sight, memory: &mut Memory) -> Choice {
         memory.done.extend(lying.iter().filter(|(_, p)| *p == view.at).map(|(e, _)| *e));
         return Choice::TakeUp;
     }
-    if let Some(shooter) = view.foes.iter().find(|f| f.shoots && f.far > 1) {
-        memory.chasing = Some((shooter.who, 0));
+    if memory.chasing.is_none()
+        && let Some(shooter) = view.foes.iter().find(|f| f.shoots && f.far > 1 && !memory.let_go.contains(&f.who))
+    {
+        memory.chasing = Some((shooter.who, 0, 0));
     }
-    if let Some((who, unseen)) = memory.chasing {
+    if let Some((who, unseen, chased)) = memory.chasing {
         let here = world.get::<OnMap>(who).is_some_and(|on| on.0 == view.here) && world.get::<Dead>(who).is_none();
-        match world.get::<Position>(who).map(|p| p.0).filter(|_| here && unseen < CHASE_TURNS) {
-            Some(at) => {
+        let at = world.get::<Position>(who).map(|p| p.0).filter(|_| here && unseen < CHASE_TURNS && chased < CHASE_LIMIT);
+        let step = at.and_then(|at| toward(world, view.at, &[at], &memory.untouchable));
+        match step {
+            Some(dir) => {
                 let seen = view.foes.iter().any(|f| f.who == who);
-                memory.chasing = Some((who, if seen { 0 } else { unseen + 1 }));
-                if let Some(dir) = toward(world, view.at, &[at], &memory.untouchable) {
-                    return Choice::Bump(dir);
-                }
+                memory.chasing = Some((who, if seen { 0 } else { unseen + 1 }, chased + 1));
+                return Choice::Bump(dir);
             }
-            None => memory.chasing = None,
+            None => {
+                memory.chasing = None;
+                memory.let_go.insert(who);
+            }
         }
     }
     if memory.on_floor < FLOOR_TURNS {
