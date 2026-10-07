@@ -1,6 +1,6 @@
 # Items: what a thing does
 
-Status: built 2026-09-22, against `main` at `0797370`; carriers redrawn 2026-09-23, against `60c430d`, when effects became a subsystem of their own.
+Status: built 2026-09-22, against `main` at `0797370`; carriers redrawn 2026-09-23, against `60c430d`, when effects became a subsystem of their own; a use aimed at somewhere and a use made on another thing, things not yet known and things that will not come off, and ammunition added 2026-10-05 for Undermere's second part, against `d61cd5b`.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/effects.md` says how an effect lands.
 
 ## 0. Summary
@@ -8,6 +8,7 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/ef
 The engine owns no item definition and never will: what an item *is* belongs to a game's own registry, and the engine reads components off whatever the game spawned.
 Where and when items turn up is the engine's, through a trait a game implements on that registry; `docs/design/loot.md` has why.
 This page is about the other half, which the engine does own: what a thing *does*, and which carrier of an effect list it should use.
+It also says why two markers are the engine's, a thing not yet known and a thing that will not come off, and why ammunition is, in sections 8 and 9.
 
 Three carriers exist, and the reason there are three rather than one is that they differ in who chooses them and when, not in what they can do:
 
@@ -15,7 +16,7 @@ Three carriers exist, and the reason there are three rather than one is that the
 | --- | --- | --- | --- | --- |
 | An ability, known through `Grants` | the ability file | when the ability resolves | yes: any mode the ability names | a pool, health, a tagged item from the bag |
 | A prop's offer | the prop file | when the offer is taken up | no: on the prop's own cell | nothing, or the game's own answer |
-| `Triggers`, on a prop or an item | the prop file, or the game's item file | at a moment: used, landed, fired, hit, entered, destroyed | only by being thrown or fired | a charge, when the thing is `Consumable` |
+| `Triggers`, on a prop or an item | the prop file, or the game's item file | at a moment: used, landed, fired, hit, entered, destroyed | by being thrown or fired, or a `use` aimed by an ability's own rule | a charge, when the thing is `Consumable` |
 
 All three build the same `(kind, chance, args)` out of content, into the same `Effects`, landed by `EffectsPlugin`.
 
@@ -37,13 +38,16 @@ It worked, and it was wrong in three ways that each read fine in a diff:
 The first repair split them by what the use needed: a thing that just happens to its user became `OnUse`, and a thing that needed aiming stayed an ability the item lent.
 Foundry's four grenades were the second kind, so a grenade was still an ability whose cost destroyed the item that lent it, and the mixing was only moved.
 
-The second repair is the line as it stands.
-An item is aimed in exactly two ways, and each is owned by a subsystem that already existed:
+The second repair drew the line at two ways of aiming a thing, each owned by a subsystem that already existed:
 
 - **It is thrown**, through throwing and its cursor, and its `land` trigger fires where it comes to rest.
 - **It is fired**, as a weapon through combat, and its `hit` trigger fires on whoever the shot struck; a wand is a weapon whose shot carries effects and spends a charge.
 
-There is no third, "aimed use" with a cursor of its own; that would be an ability by another name.
+A third, an aimed use with a cursor of its own, was refused then as an ability by another name, and Undermere's staffs are why a third exists now.
+A staff is zapped from the pack at a foe, which is neither a throw nor a worn weapon's shot, and a game made to write it as either bends the thing to fit the engine: a staff in a hand is a blow's weapon, rolled to hit, and a staff thrown is gone.
+So a `use` trigger may carry an aim, and the aim is an ability's own rather than a copy of one: `Targeting` gathers an ability's mode, what it wants under it and whether its cell must be seen, `AbilityDef::targeting` hands one out, and an aimed use is previewed through `Bystanders::land`, refused by `aim_blocked` and landed on the footprint those work out, so a bolt from the pack and a bolt an actor knows cannot disagree about where they land or whom they catch.
+What made the refused version an ability by another name was a second cursor and a second rule, and neither exists; what keeps the line is that the aim belongs to the thing's own trigger, so nothing reaches `Known`, nothing takes a row on the abilities screen, and what it lands and what it spends stay the thing's.
+Two other ways were weighed and rejected: the staff lending an ability, which is the mixing this section exists to undo, and an aim written in words of its own, a second rule for one shape to drift from.
 
 ## 2. One list, many deliveries
 
@@ -75,17 +79,28 @@ Two consequences worth stating:
 
 ## 4. What a use is, and is not
 
-`UseItem` is an action like any other: the items resolver charges a turn for it, checks the thing is in the bag and has a charge to spend, reports `ItemEvent::Used`, and reports the `use` moment.
+`UseItem` is an action like any other: the items resolver charges a turn for it, checks by `may_use` that the thing is in the bag, has a charge to spend and is worn if it can be worn, reports `ItemEvent::Used`, and reports the `use` moment.
 `land_triggers` lands it in `ResolveSet::Triggers`, after every action and before damage, so a stim at one hit point is applied in the pass that spent the turn and beats the blow already queued behind it.
 
-The user is the only target and their own cell the only cell.
+Where a use lands is written on its trigger rather than chosen by the key, in one of three ways:
+
+- **On its user, where they stand**, for a trigger with neither an `aim` nor an `asks`: the user is the only target and their own cell the only cell.
+- **At a cell**, for a trigger with an `aim`, used with `UseItemAt { item, at }` and pointed by the ability's rule, which section 1 has. With a look it is seen to fly, and while something watches it waits in the air and the turns wait with it, as an ability's bolt does.
+- **On another of its user's things**, for a trigger that `asks`, used with `UseOn { item, on }`: it lands where its user stands, and the thing chosen goes to its effects as `Landing::on`. The engine's own effects never read it, so the engine carries the choice without learning what enchanting or identifying a thing is; a game's own effect reads it and does that.
+
+Each of the three actions refuses the other two kinds for nothing, so a key that wrote the wrong one costs nothing and a bolt is never spent on its user's feet; `AimUse` is the one request a key writes for any thing, and the targeting cursor, the bag choosing or a use at once answers it.
+What a use is made on is a choice in the bag rather than a cursor, because it is one of the player's own things and not a cell, and the bag offers its choices by the rule the resolver takes them by, `may_use_on`, as the cursor opens no aim `may_use` would refuse.
+Both rules are public for that reason alone: a screen that worked out for itself what may be used would offer, one day, what the turn refuses.
 A thing that can be worn is used only while it is worn: a plate carried in the bag and used would let a wearer keep one plate on and spend another's charge, which is the swap the attunement in section 5 exists to prevent.
-A thing that should land somewhere else is thrown or fired.
 
 The narrator says a use of a thing with a `use` trigger, `You use a stim.`, and says nothing of a use of anything else.
 The engine landed the first and knows it did something; the second is the game's escape hatch, and only the game knows whether eating a crust of bread is worth a line.
 
 An empty thing is refused before the turn is spent, so pressing use on a dry wand costs nothing; the bag says it is empty and does not offer the key.
+
+A save taken while an aimed use is in the air keeps the charge it spent and loses the effect still waiting to land.
+`EffectsPlugin` registers its in-air landings with `add_airborne`, which empties them when the run ends, as every landing in the air is emptied, an ability's among them, so the run that continues is short the bolt it paid for.
+The loss is accepted rather than saved: a landing in the air holds entities and a built list of effects, which no save writes, and the window is the few frames a flight is watched for.
 
 ## 5. `Consumable`, and the ladder it walks
 
@@ -132,11 +147,44 @@ What only a worn thing has is written where it belongs rather than at the item's
 The approaches weighed, on 2026-09-27, are in `docs/superpowers/specs/2026-09-27-enchant-model-design.md`.
 Scaling written on the number where it is used, `turns: (base: 10, per_level: 2)`, keeps level rules on the triggers, which is the scatter this removed; inferring every numeric key hides from a reader what grows; and the first build's `per_level` in an effect's arguments, with the level on the `Landing`, put the rule where no reader of an item looked.
 
-## 8. Where the pieces are
+## 8. Things not yet known, and things that will not come off
 
-- `crates/rl-bevy/src/effects/`: `Effects`, the engine's effects, `EffectBonus`, `Moments`, `Triggers`, `Fired` and `land_triggers`.
+Identification and curses are two rules every game with items writes, and a game writing either alone threads it through code it does not own.
+A game that hides what a thing is redacts every panel that shows one, the bag's rows, the look cursor's panel, the targeting box and the gear rail's charges, in `ViewSet::Annotate`, and the first panel it forgets tells the player what the scroll is.
+A game that makes a thing stay on checks every path that takes one off, taking it off, dropping it, throwing it and putting on what would push it off, in the bag's keys and in a mind's choice of gear, and the first path it forgets lets the curse off.
+So the engine owns how each is honoured, as `Unknown` and `Stuck`, and a game owns when each is true.
+
+`Unknown` withholds a thing's worth on every panel the engine draws and changes nothing the thing does: an unknown draught drunk heals, and an unknown blade strikes for what it strikes for.
+Hiding what it does as well was rejected, since a game whose unknown thing did nothing until it was named would have to keep a second, real form of every effect; what is hidden is what the player is told, never what happens.
+The armor total is the one reading that still counts an unknown worn thing, because the total is what a blow meets, and the vitals mark it uncertain while one is worn, `armor 5?`, the way a `+?` on a name marks a level; a total that left the thing out would be wrong every turn it was worn.
+The character sheet and the duel forecast count it as well, since those are facts about the wearer rather than readouts of the thing.
+
+`Stuck` refuses every way a worn thing comes off as any impossible item action is refused, the player keeping the turn, and says so with `ItemEvent::WouldNotComeOff`, which the narrator turns into `A ring will not come off.`
+Which slot a thing that may go in several takes is `Equipment::equip_keeping`'s, beside the slot algebra, because a caller that only refused what `equip` displaced would refuse a ring for the finger it picked while the other finger's ring could have come off; a mind weighing gear asks the same rule, so it never walks to a better ring it would be refused.
+Only being worn holds a thing, because a curse that held a thing in the bag would be a rule about carrying, which is a game's.
+
+Neither marker is put on, taken off or saved by the engine.
+What makes a thing known, a use, a reading or a long wear, and what frees it are the game's rules, so a game's own effect or system adds and removes the component and its own save keeps it, as Undermere's keeps its faces, its curses and the turns a thing has been worn.
+
+## 9. Ammunition
+
+Foundry's slugs were the first ammunition and were Foundry's own: a system of the game's spent one from the bag on every shot and benched the gun when the bag ran out.
+A second game with a bow would have written the same loop again, so it moved into the engine as `AmmoPlugin`, opt-in since most weapons never run on it, and Foundry kept its content and its words.
+A weapon carries `Ammo { tag }`, a shot spends one thing of that tag from its wielder's bag, and with none left the weapon is dry.
+Dry is derived rather than tracked: `sync_ammo` reads every fed weapon's bag every pass and sets it dry or loaded from that alone.
+The version that reacted to the events touching a bag, an equip, a pickup, a shot, needed a listener for every way a bag changes, and it missed two: two weapons on one bag fired the same last unit, and a dropped stack left a loaded gun behind.
+A dry weapon's shot is put by in the same `Stowed` a game's own reason for benching a weapon uses, heat among them, so `Loadout` falls through to the next worn thing knowing nothing of ammunition, and `Dry` marks which of them ammunition put by, so each reason restores only its own.
+What the gear rail says of a fed weapon is a facet the engine pushes in `ViewSet::Collect`, `N left` or `dry`, rather than a field of `Row`, since a magazine's count is a fact about a fed weapon and not about every row a panel draws; what a game says when one dries or loads is its own, over `AmmoChanged`.
+There is no magazine and no reload action: a game that wants either writes it as the stack a reload makes.
+
+## 10. Where the pieces are
+
+- `crates/rl-bevy/src/effects/`: `Effects`, the engine's effects, `EffectBonus`, `Moments`, `Triggers`, `Fired`, `FiredOn`, `land_triggers` and `land_aimed_uses`.
 - `crates/rl-bevy/src/consumable.rs`: `Consumable`, which moments spend, `spend_charges` and `recharge_charges`.
-- `crates/rl-bevy/src/items.rs`: the actions, `ItemEvent`, `Bestows` and the gear fold.
-- `crates/rl-bevy/src/ability.rs`: `Grants` and `Known`, an actor's own.
-- `crates/rl-rules/src/ability.rs`: `EffectSpec` and `TriggerSpec`, the authored forms any content file can read.
+- `crates/rl-bevy/src/items.rs`: the actions, `UseItemAt` and `UseOn` among them, `may_use` and `may_use_on`, `ItemEvent`, `Bestows`, the gear fold, `Unknown` and `Stuck`.
+- `crates/rl-bevy/src/ammo.rs`: `Ammo`, `Dry`, `AmmoChanged`, `spend_ammo` and `sync_ammo`; `Stowed` and `Loadout::dry` are in `combat.rs`.
+- `crates/rl-bevy/src/ability.rs`: `Grants` and `Known`, an actor's own, and `Aimed` and `Bystanders::land`, which an aimed use shares.
+- `crates/rl-rules/src/ability.rs`: `EffectSpec` and `TriggerSpec`, the authored forms any content file can read, and `Targeting` and `Asks`, a use's aim and its question.
+- `crates/rl-rules/src/equip.rs`: `Equipment::equip_keeping`, the slot rule a stuck thing needs.
+- `crates/rl-ui/src/view/target.rs` and `crates/rl-ui/src/panel/inventory.rs`: `AimUse`, answered by the targeting cursor and by the bag choosing.
 - `examples/foundry/src/gear.rs` and `examples/foundry/assets/items.ron`: a game's own item file mapped onto the components above.

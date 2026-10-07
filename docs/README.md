@@ -28,7 +28,7 @@ These are the reasoning; the overview is the list.
 - [charts.md](design/charts.md), what someone other than the player has seen: a chart per party, and a mind that walks to what its chart lacks.
 - [effects.md](design/effects.md), what lands and what sets it off: the effects subsystem, its moments and triggers, and what a use costs a thing.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
-- [items.md](design/items.md), what a thing does: the three carriers of an effect list, and why an item never lends an ability.
+- [items.md](design/items.md), what a thing does: the three carriers of an effect list, why an item never lends an ability even when its use is aimed, and why the unknown, the stuck and ammunition are the engine's.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
 - [loot.md](design/loot.md), where items turn up and how many, with what an item is left to the game.
 - [minds.md](design/minds.md), how a non-player decides.
