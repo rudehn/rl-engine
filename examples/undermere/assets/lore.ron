@@ -38,13 +38,17 @@
             (name: "emerald", color: (0.2, 0.8, 0.42)),
         ],
     ),
+    // Words of one or two syllables, so a title is short enough that the
+    // rail's lists say "scroll titled XOMBA RENTOR" whole nearly every
+    // time: at three syllables a word one title in four ran past the rail's
+    // edge and was cut short, and three words of two still can, now and then.
     (
         tag: "scroll",
         called: "scroll titled {}",
         titles: (
             syllables: ["ab", "ra", "ka", "zu", "mor", "eth", "vin", "lo", "quas", "tor", "ix", "nep", "sul", "gar", "dov", "yim", "pha", "ren", "oth", "ul"],
             words: (2, 3),
-            length: (1, 3),
+            length: (1, 2),
             color: (0.92, 0.88, 0.72),
         ),
     ),
