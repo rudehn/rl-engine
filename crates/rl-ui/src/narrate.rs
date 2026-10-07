@@ -518,7 +518,7 @@ impl Witness<'_, '_> {
             return None;
         }
         let (name, _) = self.names.get(e).ok()?;
-        Some(format!("the {}", name?.as_str()))
+        Some(rl_core::noun::with_the(name?.as_str()))
     }
 
     /// The same for a thing, in the words [`Names::thing`] would use,
@@ -1033,7 +1033,7 @@ impl Names<'_, '_> {
             return Named { text: "you".into(), color: None };
         }
         match self.names.get(e) {
-            Ok((Some(name), glyph)) => Named { text: format!("the {}", name.as_str()), color: glyph.map(|g| g.fg) },
+            Ok((Some(name), glyph)) => Named { text: rl_core::noun::with_the(name.as_str()), color: glyph.map(|g| g.fg) },
             _ => self.unseen(),
         }
     }
@@ -1228,6 +1228,33 @@ mod tests {
         let entry = stage.app.world().resource::<MessageLog>().iter().find(|e| e.text.starts_with("You hit the slime")).unwrap();
         assert_eq!(entry.spans.len(), 1, "one name coloured");
         assert_eq!((entry.spans[0].start, entry.spans[0].len, entry.spans[0].color), (8, 9, green), "'the slime' in its green: {entry:?}");
+    }
+
+    /// A foe named with its own article keeps it rather than being given
+    /// a second one, one named with `a` likewise, a proper name takes
+    /// none, and a plain name still takes `the`: the engine fault read
+    /// "The the Drowned King hits you", doubling the article a name like
+    /// `the Drowned King` already carries.
+    #[test]
+    fn a_blow_from_a_foe_is_said_with_its_own_article_never_doubled() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (player, kind, theirs, at) = (stage.player, stage.kind, stage.theirs, stage.at);
+        let mut spawn =
+            |name: &'static str, p: Point| stage.app.world_mut().spawn((Actor, Blocks, Position(p), Health::full(20), Faction(theirs), Name::new(name))).id();
+        let king = spawn("the Drowned King", at.offset(1, 0));
+        let stranger = spawn("a masked stranger", at.offset(-1, 0));
+        let grubnak = spawn("Grubnak", at.offset(0, 1));
+        let goblin = spawn("goblin", at.offset(0, -1));
+        stage.tick();
+        for who in [king, stranger, grubnak, goblin] {
+            stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(who, kind, 3)));
+        }
+        stage.tick();
+        let said: Vec<String> = lines(&stage).into_iter().map(|(text, _)| text).collect();
+        assert!(said.contains(&"The Drowned King hits you for 3.".to_string()), "no doubled article: {said:?}");
+        assert!(said.contains(&"A masked stranger hits you for 3.".to_string()), "{said:?}");
+        assert!(said.contains(&"Grubnak hits you for 3.".to_string()), "a proper name takes no article: {said:?}");
+        assert!(said.contains(&"The goblin hits you for 3.".to_string()), "a plain name still takes one: {said:?}");
     }
 
     /// Someone the player watched leave for another map is said to have

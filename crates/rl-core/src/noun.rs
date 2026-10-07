@@ -173,6 +173,24 @@ pub fn with_article(name: &str) -> String {
     format!("{} {name}", if sounds_like_a_vowel { "an" } else { "a" })
 }
 
+/// `name` with `the` before it, unless it already carries an article or
+/// is a proper name, in which case it is said as written.
+///
+/// An actor named with its own article keeps it: a boss called `the
+/// Drowned King` is said `the Drowned King`, not `the the Drowned King`,
+/// and a bare proper name like `Grubnak` takes no article at all.
+///
+/// ```
+/// use rl_core::noun::with_the;
+/// assert_eq!(with_the("goblin"), "the goblin");
+/// assert_eq!(with_the("the Drowned King"), "the Drowned King");
+/// assert_eq!(with_the("a masked stranger"), "a masked stranger");
+/// assert_eq!(with_the("Grubnak"), "Grubnak");
+/// ```
+pub fn with_the(name: &str) -> String {
+    if name.is_empty() || as_written(name) { name.to_string() } else { format!("the {name}") }
+}
+
 /// `count` of `name` as a sentence says it: `a pebble`, or `5 pebbles`.
 pub fn counted(name: &str, count: u32) -> String {
     if count == 1 { with_article(name) } else { format!("{count} {}", plural(name)) }
@@ -258,6 +276,15 @@ mod tests {
         assert_eq!(with_article("the stairs"), "the stairs");
         assert_eq!(with_article("Ada"), "Ada", "a proper name takes none");
         assert_eq!(with_article(""), "");
+    }
+
+    #[test]
+    fn the_is_not_doubled_before_a_name_that_already_carries_an_article_or_is_proper() {
+        assert_eq!(with_the("goblin"), "the goblin");
+        assert_eq!(with_the("the Drowned King"), "the Drowned King");
+        assert_eq!(with_the("a masked stranger"), "a masked stranger");
+        assert_eq!(with_the("Grubnak"), "Grubnak");
+        assert_eq!(with_the(""), "");
     }
 
     #[test]
