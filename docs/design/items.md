@@ -97,6 +97,7 @@ The narrator says a use of a thing with a `use` trigger, `You use a stim.`, and 
 The engine landed the first and knows it did something; the second is the game's escape hatch, and only the game knows whether eating a crust of bread is worth a line.
 
 An empty thing is refused before the turn is spent, so pressing use on a dry wand costs nothing; the bag says it is empty and does not offer the key.
+A thing not yet known is the exception, since the refusal would say it was empty: it keeps its key, and its use spends the turn and lands nothing, `land_triggers` landing no `use` of a thing with nothing left, which only an unknown thing can make.
 
 A save taken while an aimed use is in the air keeps the charge it spent and loses the effect still waiting to land.
 `EffectsPlugin` registers its in-air landings with `add_airborne`, which empties them when the run ends, as every landing in the air is emptied, an ability's among them, so the run that continues is short the bolt it paid for.
@@ -156,6 +157,14 @@ So the engine owns how each is honoured, as `Unknown` and `Stuck`, and a game ow
 
 `Unknown` withholds a thing's worth on every panel the engine draws and changes nothing the thing does: an unknown draught drunk heals, and an unknown blade strikes for what it strikes for.
 Hiding what it does as well was rejected, since a game whose unknown thing did nothing until it was named would have to keep a second, real form of every effect; what is hidden is what the player is told, never what happens.
+
+A refusal tells as much as a panel, and an aim's preview tells more, so `Unknown` withholds them too.
+A cursor that showed an unknown staff's footprint, painted where its reach ended, refused an aim past it or out of its sight, named who it would catch or cycled only to what its aim wants told its kind in a few keys and for nothing: a beam from a bolt, a reach of twelve from one of eight, a wand that wants foes from one that takes anyone.
+So an unknown thing's aim is a plain line from its user to the cursor and the cursor's cell, cycling to anyone, and the only refusals are what do not depend on the thing, not carried and worn to be used and not worn, since where it goes is shown.
+Confirmed, it is used and spent, and lands by its true targeting where its flight stops: past its reach at its reach along the line, at a cell its sight forbids at the farthest cell on the line its user sees, by `made_at`, and on nobody its aim does not want, which a game hears as any use that changed nothing.
+An empty one keeps its use key and comes to nothing for the turn, since a key that went away would say it was empty.
+Refusing with a reason that did not name it, "you cannot aim there", was rejected: the refusal itself is what tells, whatever it says.
+Previewing the true flight without its footprint was rejected as well, since where a line stops is its reach.
 The armor total, the look cursor's duel forecast and the character sheet count an unknown worn thing at its true numbers, because those are what a blow meets, and the vitals mark the total uncertain while one is worn, `armor 5?`, the way a `+?` on a name marks a level.
 What a thing not yet known seems to be is the game's, as its level is, so a game whose things are written from a level, where a true total tells the level the moment the thing goes on, writes the total and the forecast again in `ViewSet::Annotate` with each unknown thing counted as it seems, keeping the mark.
 Undermere counts each one at its kind's plain numbers, the level of nought any thing of its kind is, so `+2 leather armor` not yet known reads `armor 1?`, and says under the forecast that it counted unknown gear plain.
