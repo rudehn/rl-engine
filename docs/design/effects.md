@@ -42,6 +42,7 @@ It is resolved when the triggers are built, and a name nobody registered fails t
 
 `pulse` is the seventh built-in moment, a worn thing's clock coming round, appended so the six before it keep their ids.
 Its period is written on the trigger it sets off, `(on: "pulse", every: 1000, ...)`, required there and refused on any other moment, since nothing else comes round on its own; the clock is the trigger's, so an item has nothing worn-only at its top level.
+`struck` and `died`, an actor's, are the eighth and ninth, appended the same way.
 
 ## 3. `Triggers`, and the potion model
 
@@ -78,10 +79,12 @@ It does not find the triggers, build the footprint or land anything, so the rule
 | `use` | the items resolver, on an accepted `UseItem` | `ResolveSet::Act` | the same pass |
 | `land` | throwing, where a throw comes to rest | `LandSet::Throw` | the same pass |
 | `fire` | combat, for each attack made with a worn item | `ResolveSet::Act` | the same pass |
-| `hit` | combat, at the struck actor's cell | `ResolveSet::Act`, `LandSet::Shot` | the same pass |
+| `hit` | combat, on the worn thing and on the attacker that answers it, at the struck actor's cell | `ResolveSet::Act`, `LandSet::Shot` | the same pass |
+| `struck` | combat, on the actor an attack landed on, after the `hit`s | `ResolveSet::Act`, `LandSet::Shot` | the same pass |
 | `entered` | props, on a step onto an armed prop's cell | `ResolveSet::Travel`, after every step, swap and warp | the same pass |
 | `destroyed` | props, on the prop's death | `TurnSet::React` | the next pass |
 | `pulse` | items, for each worn `Pulse` whose period came round, on the current map | `ResolveSet::Triggers`, before `land_triggers` | the same pass |
+| `died` | effects, on an actor's death, from a remnant | `TurnSet::React` | the next pass |
 
 `land_triggers` runs in `ResolveSet::Triggers`, a stage of its own between `Act` and `Fields`.
 It reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any whose `fires` is spent, lands the effects on the area with every actor in the area as a target, the one who set it off included, and counts `fires` down.
@@ -100,6 +103,11 @@ A prop that is destroyed is despawned at the end of the frame it died in, which 
 So `report_destroyed` puts the prop's triggers and its name on a `Remnant`, which carries the moment, who broke it and where as data, and `report_remnants` reports it in the next pass's `Triggers` stage, ahead of `land_triggers`, which despawns it once it has landed.
 The moment is on the entity rather than in a message because the next pass may be a long time coming: the loop holds while something is shown, and a message nobody reads for two frames is gone, where an entity stays until a new run clears it.
 A watched shot from a thing its last charge spent uses the same carrier: the shot takes the thing's triggers as it is fired, and if the thing is gone when the shot lands, its `hit` lands from a remnant in its place, as the shooter's doing.
+
+An actor answers moments too, added on 2026-10-07 for monsters with tricks of their own: `hit` when its blow lands, `struck` when one lands on it, `died` when it dies.
+Whatever an actor answers lands as its own doing without a marker, since an actor is the someone a thing is used by rather than a thing anyone uses: an aura credited to whoever struck it would read as the striker burning themselves.
+`struck` is reported as the blow lands, before its damage is applied, so a killing blow sets off `struck` and then `died`; deferring `struck` until the damage was known would have made every aura a pass late.
+`died` takes the prop's road through a remnant, with the dead actor as its `by`, so what it lands is credited to the dead actor, gone as it is, and a foe its burst kills is its kill rather than its killer's.
 
 Two timings moved against the old prop triggers, which both landed in `TurnSet::React`:
 

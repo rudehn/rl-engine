@@ -6,6 +6,14 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- An actor answers its own moments: an actor carrying `Triggers` answers `hit` when its own blow or shot lands (a bite that poisons), the new `struck` when one lands on it (an aura that burns whoever struck it), and the new `died` when it dies (a burst of spores where it fell).
+  Whatever an actor answers lands as its own doing, credited to it, without `LandsAsItself`.
+  One blow that lands reports, in this order and each once, the worn weapon's `hit`, the attacker's own `hit`, and the struck one's `struck`, all at the struck one's cell; a shaped attack reports them once for each foe it strikes, and a miss reports none.
+  `struck` is reported as the blow lands, before its damage, so a blow that kills sets off `struck` and then, a pass later, `died`.
+  Only an attack, a blow in reach or a shot, strikes: a thrown thing, an ability, a trap or a fire sets off no `struck`.
+  `died` is relayed through a `Remnant` as a prop's `destroyed` is, by `report_died` in `TurnSet::React`, which `EffectsPlugin` adds: it lands once, where the actor died, after its body is out of the world, credited to the dead actor, so a foe its burst kills is its kill.
+  A shooter that answers `hit` and is gone before its watched shot lands still lands it, from a remnant.
+  To change: nothing for an actor with no `Triggers`; a game that registered moments of its own sees their ids move up by two, since `Moments::STRUCK` and `Moments::DIED` are built in after `pulse`.
 - A status can sleep: `StatusDef::sleeps`, written `sleeps: true` in a status file, holds its holder's turns as `holds` does and ends the moment the holder is woken, by harm landing on it, by a noise that reaches it with its `Hearing` threshold left, or by a foe it notices within `SLEEPER_REACH`, two cells.
   A blow on a sleeper is a blow on the unaware: `Watchers::unaware` answers yes for a sleeper whoever strikes it, with or without stealth, so the blow lands at `CombatRules::unaware` or its own percent, and only then wakes it.
   A sleeper notices only within that reach and there by its chance alone, never by its certain radius, so a hider can stand over it; a foe that does not hide, or any foe of a sleeper that sees on sight, wakes it by being in its sight there, and a sleeper watches nobody.

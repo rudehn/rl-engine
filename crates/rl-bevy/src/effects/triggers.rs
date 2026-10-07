@@ -1,8 +1,10 @@
-//! Triggers: what a prop or a thing does at the moments it answers.
+//! Triggers: what a prop, a thing or an actor does at the moments it
+//! answers.
 //!
 //! A subsystem that owns a moment, the items resolver for a use, throwing
-//! for a landing, combat for a shot made and a shot that struck, props for
-//! a cell stepped on and a prop broken, writes [`Fired`] and nothing else.
+//! for a landing, combat for a shot made, a shot that struck and the one it
+//! struck, props for a cell stepped on and a prop broken, and this module
+//! for an actor's death, writes [`Fired`] and nothing else.
 //! [`land_triggers`] is the one system that answers: it finds the carrier's
 //! [`Triggers`] for that moment, works out the cells its [`Area`] covers
 //! around where the moment happened, and lands the effects on everyone
@@ -29,7 +31,7 @@ use crate::world::WorldMap;
 
 /// What sets a trigger off: a thing used, a throw come to rest, an attack
 /// made or landed, a cell stepped on, a prop broken, a worn thing's clock,
-/// or one a game names.
+/// an actor struck or dead, or one a game names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Moment;
 
@@ -51,7 +53,8 @@ impl Moments {
     pub const LAND: MomentId = MomentId::from_raw(1);
     /// An attack was made with a worn thing.
     pub const FIRE: MomentId = MomentId::from_raw(2);
-    /// An attack made with a worn thing struck someone.
+    /// An attack struck someone: reported on the worn thing it was made
+    /// with, and on the actor who made it.
     pub const HIT: MomentId = MomentId::from_raw(3);
     /// Somebody stepped onto a prop's cell.
     pub const ENTERED: MomentId = MomentId::from_raw(4);
@@ -60,9 +63,15 @@ impl Moments {
     /// A worn thing's own clock came round: see
     /// [`Pulse`](crate::items::Pulse).
     pub const PULSE: MomentId = MomentId::from_raw(6);
+    /// An attack landed on an actor: reported on the one it landed on, as
+    /// [`HIT`](Self::HIT) is on what struck it.
+    pub const STRUCK: MomentId = MomentId::from_raw(7);
+    /// An actor died: reported a pass later, from a [`Remnant`], since the
+    /// actor itself is out of the world by then.
+    pub const DIED: MomentId = MomentId::from_raw(8);
 
     /// The engine's moments, in the order their ids are handed out.
-    pub const BUILT_IN: [&'static str; 7] = ["use", "land", "fire", "hit", "entered", "destroyed", "pulse"];
+    pub const BUILT_IN: [&'static str; 9] = ["use", "land", "fire", "hit", "entered", "destroyed", "pulse", "struck", "died"];
 
     /// The id for `name`, assigning a new one if it is unseen.
     pub fn declare(&mut self, name: &str) -> MomentId {
@@ -152,10 +161,11 @@ impl std::fmt::Debug for Trigger {
     }
 }
 
-/// Everything a prop or a thing does at its moments.
+/// Everything a prop, a thing or an actor does at its moments.
 ///
-/// One component for both, since a trap and a grenade differ in which
-/// moments they answer and never in how the answer lands.
+/// One component for all three, since a trap, a grenade and a venomous
+/// bite differ in which moments they answer and never in how the answer
+/// lands.
 #[derive(Component, Clone, Debug, Default)]
 pub struct Triggers(pub Vec<Trigger>);
 
@@ -340,13 +350,18 @@ pub fn area_cells(area: Area, at: Point, map: &WorldMap) -> Vec<Point> {
 /// whoever stepped on it: credited to them, the log would say they hurt
 /// themselves, and a droid a plate killed would have killed itself.
 /// [`Fired::by`] still names who set it off, for a game that asks.
+///
+/// An [`Actor`](crate::components::Actor) needs no marker: whatever it
+/// answers is always its own doing, a bite that poisons and an aura that
+/// burns whoever struck it alike, since an actor is the someone a thing is
+/// used by rather than a thing anyone uses.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct LandsAsItself;
 
 /// A carrier that exists only to land its triggers once, for something that
 /// is gone by the time they land: what a broken prop leaves for its
-/// `destroyed` moment, since the prop itself is despawned at the end of the
-/// frame it died in.
+/// `destroyed` moment and a dead actor for its `died`, since either is
+/// despawned at the end of the frame it died in.
 ///
 /// The moment is written on the carrier rather than sent as a message,
 /// because it lands a pass later and a pass may be a long time coming:
@@ -375,10 +390,52 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
     }
 }
 
+/// Reports the `died` moment for every actor that died answering it.
+///
+/// A death is only known once damage has been applied, so this is read in
+/// [`TurnSet::React`](crate::plugin::TurnSet::React) and lands the pass
+/// after, as a broken prop's `destroyed` does and by the same road: the
+/// actor is out of the world by the end of the pass and despawned by the
+/// end of the frame, so its triggers and its name go on a [`Remnant`] that
+/// is reported in its place where it died. The remnant's `by` is the dead
+/// actor, so what lands is its own doing and credited to it, gone or not:
+/// a foe its last breath kills is its kill, not the kill of whoever struck
+/// it down, who has the credit for its death and nothing more. Who that
+/// was is the [`DeathEvent`](crate::combat::DeathEvent)'s to say.
+///
+/// Once per actor however many deaths are reported for it in a pass, and
+/// never for one that answers nothing on dying.
+pub fn report_died(
+    mut commands: Commands,
+    mut deaths: MessageReader<crate::combat::DeathEvent>,
+    actors: Query<(&Triggers, Option<&Name>), With<crate::components::Actor>>,
+) {
+    let mut reported: Vec<Entity> = Vec::new();
+    for death in deaths.read() {
+        let Ok((triggers, name)) = actors.get(death.entity) else { continue };
+        if triggers.on(Moments::DIED).next().is_none() || reported.contains(&death.entity) {
+            continue;
+        }
+        reported.push(death.entity);
+        let remnant = Remnant { moment: Moments::DIED, by: Some(death.entity), at: death.at };
+        let mut carrier = commands.spawn((triggers.clone(), remnant));
+        if let Some(name) = name {
+            carrier.insert(name.clone());
+        }
+    }
+}
+
 /// What a carrier is, for [`land_triggers`]: its triggers, whether it is a
-/// remnant or lands as itself, its [`EffectBonus`](super::EffectBonus) if
-/// it has one, and what it has left to spend if it counts charges.
-type Carrier = (&'static mut Triggers, Has<Remnant>, Has<LandsAsItself>, Option<&'static super::EffectBonus>, Option<&'static crate::consumable::Consumable>);
+/// remnant, lands as itself or is an actor, its
+/// [`EffectBonus`](super::EffectBonus) if it has one, and what it has left
+/// to spend if it counts charges.
+type Carrier = (
+    &'static mut Triggers,
+    Has<Remnant>,
+    (Has<LandsAsItself>, Has<crate::components::Actor>),
+    Option<&'static super::EffectBonus>,
+    Option<&'static crate::consumable::Consumable>,
+);
 
 /// A use aimed somewhere that has left its user and not yet come down:
 /// the landing its trigger worked out as the use was made, what it lands,
@@ -469,7 +526,7 @@ pub fn land_aimed_uses(mut hold: ResMut<TurnHold>, mut airborne: ResMut<Airborne
 /// the pass that set it off. Every actor under the footprint is a target,
 /// the one who set it off included: a grenade does not ask whose it was.
 /// The user is whoever set it off, or the carrier when it is
-/// [`LandsAsItself`] or nobody did. A carrier with an
+/// [`LandsAsItself`], an actor, or nobody set it off. A carrier with an
 /// [`EffectBonus`](super::EffectBonus) lands its effects with it added,
 /// and a plain one adds nothing.
 ///
@@ -501,8 +558,8 @@ pub fn land_triggers(
         // Taken once, so a second use of the same carrier in the pass is
         // not made on the first one's thing.
         let on = made_on.iter().position(|m| m.carrier == f.on && m.moment == f.moment).map(|i| made_on.remove(i).on);
-        let Ok((mut triggers, remnant, itself, bonus, held)) = carriers.get_mut(f.on) else { continue };
-        let user = if itself { f.on } else { f.by.unwrap_or(f.on) };
+        let Ok((mut triggers, remnant, (itself, actor), bonus, held)) = carriers.get_mut(f.on) else { continue };
+        let user = if itself || actor { f.on } else { f.by.unwrap_or(f.on) };
         let bonus = bonus.copied().unwrap_or_default();
         // Read before the charge this use spends is taken off, which comes
         // after the landing: empty now is empty when it was used.
@@ -794,6 +851,17 @@ mod tests {
         assert_eq!(moments.get("pulse"), Some(Moments::PULSE));
         assert_eq!(Moments::PULSE, MomentId::from_raw(6));
         assert_eq!(moments.get("destroyed"), Some(Moments::DESTROYED), "the old ids did not move");
+    }
+
+    /// An actor's two moments come after the pulse, for the same reason the
+    /// pulse came after the six, and a game's own come after them.
+    #[test]
+    fn struck_and_died_are_built_in_moments_after_the_seven_that_came_first() {
+        let mut moments = Moments::default();
+        assert_eq!((moments.get("struck"), moments.get("died")), (Some(Moments::STRUCK), Some(Moments::DIED)));
+        assert_eq!((Moments::STRUCK, Moments::DIED), (MomentId::from_raw(7), MomentId::from_raw(8)));
+        assert_eq!(moments.get("pulse"), Some(Moments::PULSE), "the old ids did not move");
+        assert_eq!(moments.declare("overheat"), MomentId::from_raw(9));
     }
 
     #[test]

@@ -71,7 +71,7 @@ pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
     AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn,
     FromArgs, Harm, Ignite, Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers,
-    area_cells, land_triggers, report_remnants,
+    area_cells, land_triggers, report_died, report_remnants,
 };
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::{MapFields, SavedField};

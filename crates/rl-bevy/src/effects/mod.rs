@@ -2,7 +2,7 @@
 //!
 //! Three things in the engine land a list of effects and none of them is
 //! the others: an ability an actor knows, a prop's offer, and a trigger,
-//! which is what a prop or a thing does at a moment it answers. What they
+//! which is what a prop, a thing or an actor does at a moment it answers. What they
 //! share is here: [`Effects`], the list itself, built once from content and
 //! landed with its chances rolled; [`Landing`], where a list lands and on
 //! whom, with its [`Source`]; [`EffectWorld`], what an effect may change;
@@ -543,10 +543,14 @@ impl Plugin for EffectsPlugin {
             .add_message::<Cure>()
             .add_message::<DamageEvent>()
             .add_message::<crate::combat::Heal>()
+            // Read for an actor's `died`; a game with effects and no combat
+            // simply never writes one.
+            .add_message::<crate::combat::DeathEvent>()
             .reads::<Cued>()
             .add_airborne::<UseLanding>()
             // What came down this pass, then what was set off in it.
-            .add_systems(Turn, (report_remnants, land_aimed_uses, land_triggers).chain().in_set(ResolveSet::Triggers));
+            .add_systems(Turn, (report_remnants, land_aimed_uses, land_triggers).chain().in_set(ResolveSet::Triggers))
+            .add_systems(Turn, report_died.in_set(crate::plugin::TurnSet::React));
     }
 
     /// Not unique, so adding it after a plugin that already added it is

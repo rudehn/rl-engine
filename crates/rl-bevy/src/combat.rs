@@ -481,6 +481,10 @@ impl DamageEvent {
 /// wear. It names the worn item rather than leaving the game to work out
 /// which one the loadout would have chosen, which is the engine's decision
 /// and would be copied, and drift, in every game that needed it.
+///
+/// Not the `struck` [moment](crate::effects::Moments::STRUCK), which is
+/// what the one struck answers, once for each blow that lands on it and
+/// never for a miss.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Struck {
     /// Who attacked.
@@ -892,6 +896,10 @@ pub struct ShotLanding {
     /// spent is gone before a watched shot lands, and what its hits carry
     /// lands all the same.
     carried: Option<crate::effects::Triggers>,
+    /// The attacker's own triggers when it answers `hit`, taken as it
+    /// struck for the same reason: a shooter killed while its shot flies is
+    /// gone before it lands, and its venom lands all the same.
+    own: Option<crate::effects::Triggers>,
     /// Whether it flew or was struck in reach, kept so the landing a pass
     /// later narrates as what it was.
     reach: Reach,
@@ -937,9 +945,11 @@ struct Weapon {
 /// shape reaches, the target rolled for first and the rest in the shape's
 /// order, so an attack with none draws from the combat stream exactly what
 /// it always did. It is still one swing: one [`Struck`], one `fire`
-/// moment, one flight. A blow on a target that has not noticed its
-/// attacker lands at the percent [`CombatRules::unaware`] or the blow
-/// names, decided as it is rolled, before the blow wakes it.
+/// moment, one flight; but it lands on each, so the weapon's `hit`, the
+/// attacker's own `hit` and the `struck` of the one it lands on are
+/// reported once for every foe it strikes. A blow on a target that has not
+/// noticed its attacker lands at the percent [`CombatRules::unaware`] or
+/// the blow names, decided as it is rolled, before the blow wakes it.
 ///
 /// One turn, one strike: an attack by an actor that already acted this
 /// pass finds the turn spent, whatever spent it.
@@ -1009,7 +1019,9 @@ pub fn resolve_attacks(
             struck_at.extend(reached(shape, pos.0, (target, target_pos.0), gun.map(|(_, r)| r.range), map, occupancy, foe));
         }
         let strikes = loadout.strikes(actor);
-        let carried = from.and_then(|item| carried.get(item).ok()).filter(|t| t.on(crate::effects::Moments::HIT).next().is_some()).cloned();
+        let answers = |t: &&crate::effects::Triggers| t.on(crate::effects::Moments::HIT).next().is_some();
+        let own = carried.get(actor).ok().filter(answers).cloned();
+        let carried = from.and_then(|item| carried.get(item).ok()).filter(answers).cloned();
         let reach = if ranged { Reach::Shot } else { Reach::Melee };
         let mut landings = Vec::with_capacity(struck_at.len());
         for &(foe, at) in &struck_at {
@@ -1030,7 +1042,8 @@ pub fn resolve_attacks(
                     hit.amount = (i64::from(hit.amount) * i64::from(worth) / 100).try_into().unwrap_or(i32::MAX);
                 }
             }
-            landings.push((ShotLanding { target: foe, attacker: actor, with: from, carried: carried.clone(), reach, hits, missed: wide }, at));
+            let shot = ShotLanding { target: foe, attacker: actor, with: from, carried: carried.clone(), own: own.clone(), reach, hits, missed: wide };
+            landings.push((shot, at));
         }
         match (look, ranged) {
             (Some(look), true) => {
@@ -1137,15 +1150,34 @@ pub fn land_shots(
             }
             shot.with = None;
         }
+        // And a shooter dead and gone: what its own hit carries lands from
+        // a remnant too, still its doing.
+        if !arriving.present.contains(shot.attacker)
+            && !shot.missed
+            && let Some(triggers) = shot.own.take()
+        {
+            let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
+            arriving.commands.spawn((triggers, remnant));
+        }
         land(shot, at.0, &mut arriving.damage, &mut arriving.fired, &mut arriving.missed);
     }
 }
 
-/// Every hit an attack carries, down the damage pipeline, and the `hit`
-/// moment on the worn item it came from, at the cell the target stands on
-/// as it lands, so a trigger that bursts bursts where the shot arrived. A
-/// miss lands none of that and is reported as [`Missed`](crate::accuracy::Missed)
-/// instead, at the moment a hit would have landed.
+/// Every hit an attack carries, down the damage pipeline, and its moments
+/// at the cell the target stands on as it lands, so a trigger that bursts
+/// bursts where the shot arrived: `hit` on the worn item it came from,
+/// then `hit` on the attacker when it answers one, then `struck` on the
+/// target. In that order, which is the order they land in, so a blade's
+/// edge lands before the wielder's own venom and both before whatever the
+/// one struck answers with. A miss lands none of that and is reported as
+/// [`Missed`](crate::accuracy::Missed) instead, at the moment a hit would
+/// have landed.
+///
+/// `struck` is reported as the blow lands, before its damage is applied
+/// later in the pass, so a blow that kills still sets it off, and `died`
+/// follows a pass later: an aura that burns whoever struck it burns the
+/// one who killed it too. It is an attack's, a blow in reach or a shot;
+/// a thrown thing, an ability, a trap or a fire strikes nobody.
 fn land(
     shot: ShotLanding,
     at: Point,
@@ -1159,9 +1191,14 @@ fn land(
         return;
     }
     damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent::arriving(target, hit, reach)));
+    let by = Some(shot.attacker);
     if let Some(item) = shot.with {
-        fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at });
+        fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::HIT, by, at });
     }
+    if shot.own.is_some() {
+        fired.write(crate::effects::Fired { on: shot.attacker, moment: crate::effects::Moments::HIT, by, at });
+    }
+    fired.write(crate::effects::Fired { on: target, moment: crate::effects::Moments::STRUCK, by, at });
 }
 
 /// Where a shot from `from` at `to` flies within `range`: the cells it
@@ -2573,5 +2610,197 @@ mod tests {
     fn without_the_stealth_plugin_no_one_is_unaware() {
         let (mut app, player, beside, _) = ambush(|_| {});
         assert_eq!(strike(&mut app, player, beside, false), 2);
+    }
+
+    /// Gives `who` the triggers `triggers` writes, as a game gives an actor
+    /// what it answers.
+    fn answers(app: &mut App, who: Entity, triggers: &str) {
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new().load_list(triggers).expect("the triggers parse");
+        let world = app.world();
+        let names = world.resource::<Registries>().names();
+        let built =
+            crate::effects::Triggers::build(&specs, &[], world.resource::<crate::effects::Moments>(), world.resource::<crate::effects::EffectKinds>(), &names)
+                .expect("the triggers build");
+        app.world_mut().entity_mut(who).insert(built);
+    }
+
+    /// A harm of `roll` on `on`, landing over `area`.
+    fn harming(on: &str, area: &str, roll: i32) -> String {
+        format!(r#"[(on: "{on}", area: {area}, effects: [(kind: "Harm", args: (kind: "kinetic", roll: "{roll}"))])]"#)
+    }
+
+    /// Every death, copied out as it is written.
+    #[derive(Resource, Default)]
+    struct Deaths(Vec<DeathEvent>);
+
+    fn mourn(mut deaths: MessageReader<DeathEvent>, mut seen: ResMut<Deaths>) {
+        seen.0.extend(deaths.read().copied());
+    }
+
+    /// Every `struck` and `died` moment, copied out as it is written.
+    #[derive(Resource, Default)]
+    struct Answered(Vec<crate::effects::Fired>);
+
+    fn answered(mut fired: MessageReader<crate::effects::Fired>, mut seen: ResMut<Answered>) {
+        let theirs = [crate::effects::Moments::STRUCK, crate::effects::Moments::DIED];
+        seen.0.extend(fired.read().filter(|f| theirs.contains(&f.moment)).copied());
+    }
+
+    /// Runs the turns on until the player has waited `passes` times.
+    fn wait(app: &mut App, player: Entity, passes: usize) {
+        for _ in 0..passes {
+            app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
+            app.update();
+        }
+    }
+
+    /// An actor's own `hit` lands on whom its blow struck, where they
+    /// stand, as its doing, and not on itself or on anyone beside.
+    #[test]
+    fn an_actors_hit_trigger_lands_on_whom_its_own_blow_struck_and_on_nobody_else() {
+        let (mut app, _, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)), &[((1, 0), THEIRS), ((1, 1), THEIRS)]);
+        answers(&mut app, player, &harming("hit", "Here", 3));
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [4, 0], "the blow and the bite on the one struck, nothing on the one beside");
+        assert_eq!(hp(&app, player), 30, "and nothing on the biter");
+        let bite: Vec<_> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.reach == Reach::Effect).map(|d| (d.target, d.hit.credit)).collect();
+        assert_eq!(bite, vec![(others[0], Some(player))], "credited to the biter");
+    }
+
+    /// A blow from a worn weapon by an actor that answers `hit` itself
+    /// lands the weapon's `hit`, the wielder's own, and the `struck` of the
+    /// one it landed on, each once and in that order, after the blow.
+    #[test]
+    fn a_weapons_hit_its_wielders_own_hit_and_the_struck_ones_struck_each_land_once_in_that_order() {
+        let (mut app, _, player, others) = crowd(0, |_| (), &[((1, 0), THEIRS)]);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        wield(&mut app, player, MeleeAttack::new(kind, DiceRoll::flat(1)), &harming("hit", "Here", 2));
+        answers(&mut app, player, &harming("hit", "Here", 5));
+        answers(&mut app, others[0], &harming("struck", "Here", 7));
+        attack(&mut app, player, others[0]);
+        let dealt: Vec<(i32, Option<Entity>)> = app.world().resource::<Seen>().dealt.iter().map(|d| (d.dealt, d.hit.credit)).collect();
+        assert_eq!(
+            dealt,
+            vec![(1, Some(player)), (2, Some(player)), (5, Some(player)), (7, Some(others[0]))],
+            "the blow, the blade's edge, the wielder's venom, then what the one struck answered, as its own"
+        );
+    }
+
+    /// A shaped blow lands on each foe it strikes, so its attacker's own
+    /// `hit` lands once on each, as a weapon's does.
+    #[test]
+    fn an_actors_hit_trigger_lands_once_on_each_foe_a_shaped_blow_strikes() {
+        let ring = [((1, 0), THEIRS), ((0, 1), THEIRS), ((-1, -1), THEIRS), ((1, 1), OURS)];
+        let (mut app, _, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(0)).shaped(AttackShape::Sweep), &ring);
+        answers(&mut app, player, &harming("hit", "Here", 3));
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [3, 3, 3, 0], "once on each foe swept, and not on the ally it passed over");
+    }
+
+    /// A blow that lands on an actor sets off its `struck` where it stands,
+    /// as its own doing: an aura that burns whoever stands beside it burns
+    /// the one who struck it, credited to it. A miss sets off nothing.
+    #[test]
+    fn an_actors_struck_trigger_lands_where_it_stands_as_its_own_doing_and_a_miss_sets_off_nothing() {
+        let (mut app, _, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(0)), &[((1, 0), THEIRS)]);
+        answers(&mut app, others[0], &harming("struck", "Burst(radius: 1)", 4));
+        app.insert_resource(crate::accuracy::HitRules(Box::new(Never)));
+        attack(&mut app, player, others[0]);
+        assert_eq!((hp(&app, player), taken(&app, &others)), (30, vec![0]), "a miss lands on nobody, so nothing answers it");
+        app.insert_resource(crate::accuracy::HitRules::default());
+        wait(&mut app, player, 1);
+        attack(&mut app, player, others[0]);
+        assert_eq!(hp(&app, player), 26, "the aura burned the one who struck it");
+        let burn: Vec<Option<Entity>> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.target == player).map(|d| d.hit.credit).collect();
+        assert_eq!(burn, vec![Some(others[0])], "as its own doing");
+    }
+
+    /// A blow that kills sets off `struck` as it lands, since its damage is
+    /// applied only later in the pass, and `died` once it has: each once,
+    /// in that order.
+    #[test]
+    fn a_blow_that_kills_sets_off_struck_and_then_died_each_once() {
+        let (mut app, _, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(5)), &[((1, 0), THEIRS)]);
+        let doomed = others[0];
+        app.world_mut().entity_mut(doomed).insert(Health::full(1));
+        answers(
+            &mut app,
+            doomed,
+            r#"[(on: "struck", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "0"))]), (on: "died", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "0"))])]"#,
+        );
+        app.init_resource::<Answered>().add_systems(PostUpdate, answered);
+        attack(&mut app, player, doomed);
+        wait(&mut app, player, 2);
+        let answered: Vec<_> = app.world().resource::<Answered>().0.iter().map(|f| (f.moment, f.by)).collect();
+        let (struck, died) = (crate::effects::Moments::STRUCK, crate::effects::Moments::DIED);
+        assert_eq!(answered, vec![(struck, Some(player)), (died, Some(doomed))]);
+    }
+
+    /// Where a `died` moment was reported, by whom, and whether its actor
+    /// still stood anywhere as it landed.
+    #[derive(Resource, Default)]
+    struct Landed(Vec<(Point, Option<Entity>, bool)>);
+
+    fn landed(mut fired: MessageReader<crate::effects::Fired>, standing: Query<(), With<Position>>, mut seen: ResMut<Landed>) {
+        for f in fired.read().filter(|f| f.moment == crate::effects::Moments::DIED) {
+            seen.0.push((f.at, f.by, f.by.is_some_and(|by| standing.contains(by))));
+        }
+    }
+
+    /// An actor that bursts when it dies bursts once, a pass after the
+    /// blow, where it fell and with its body already out of the world, so
+    /// nothing it does falls on itself. What the burst kills is its kill,
+    /// credited to it; its own death stays credited to whoever struck it
+    /// down, and is counted once.
+    #[test]
+    fn an_actors_died_trigger_lands_once_where_it_died_credited_to_it_after_its_body_is_gone() {
+        let around = [((1, 0), THEIRS), ((2, 0), THEIRS), ((3, 0), THEIRS)];
+        let (mut app, start, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(5)), &around);
+        let (doomed, beside, past) = (others[0], others[1], others[2]);
+        app.world_mut().entity_mut(doomed).insert(Health::full(1));
+        app.world_mut().entity_mut(beside).insert(Health::full(10));
+        answers(&mut app, doomed, &harming("died", "Burst(radius: 1)", 20));
+        app.init_resource::<Deaths>().add_systems(PostUpdate, mourn);
+        app.init_resource::<Landed>().add_systems(crate::plugin::Turn, landed.in_set(crate::plugin::ResolveSet::Fields));
+        attack(&mut app, player, doomed);
+        wait(&mut app, player, 3);
+        assert_eq!(app.world().resource::<Landed>().0, vec![(start.offset(1, 0), Some(doomed), false)], "once, where it fell, from no body");
+        let deaths: Vec<(Entity, Option<Entity>)> = app.world().resource::<Deaths>().0.iter().map(|d| (d.entity, d.credit)).collect();
+        assert_eq!(deaths, vec![(doomed, Some(player)), (beside, Some(doomed))], "its death is the player's, once, and the one its burst killed is its own");
+        assert_eq!(hp(&app, player), 10, "the one who struck it down stood in the burst too");
+        assert_eq!(taken(&app, &[past]), [0], "and the one two cells off did not");
+        let remnants = app.world_mut().query::<&crate::effects::Remnant>().iter(app.world()).count();
+        assert_eq!(remnants, 0, "and what carried it is gone");
+    }
+
+    /// A shooter that answers `hit` and is dead and gone before its watched
+    /// shot lands still lands it, from a remnant, as its doing.
+    #[test]
+    fn a_shooter_gone_before_its_shot_lands_still_lands_its_own_hit_trigger() {
+        use rl_rules::ai::{Brain, tactics::ShootAtRange};
+        let (mut app, start, player, _) = crowd_with(|app| _ = app.add_plugins(crate::minds::MindsPlugin), 0, |_| (), &[]);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        let shooter = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(start.offset(4, 0)), Health::full(10), Faction(THEIRS), crate::minds::Perception(8)),
+                RangedAttack::new(kind, DiceRoll::flat(0), 6).looking(LOOK),
+                crate::minds::Mind(std::sync::Arc::new(Brain::new().then(ShootAtRange::default()))),
+            ))
+            .id();
+        answers(&mut app, shooter, &harming("hit", "Here", 3));
+        app.world_mut().resource_mut::<TurnHold>().watch();
+        wait(&mut app, player, 1);
+        assert!(app.world().resource::<TurnHold>().in_flight(), "it fired");
+        assert_eq!(hp(&app, player), 30);
+        app.world_mut().resource_mut::<Turns>().remove(shooter);
+        app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), shooter);
+        app.world_mut().despawn(shooter);
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        app.update();
+        assert_eq!(hp(&app, player), 27, "its bite arrived with the shot");
+        let credit: Vec<Option<Entity>> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.target == player).map(|d| d.hit.credit).collect();
+        assert_eq!(credit, vec![Some(shooter), Some(shooter)], "the shot and the bite, both its doing");
     }
 }
