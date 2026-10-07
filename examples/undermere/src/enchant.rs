@@ -22,7 +22,7 @@ use rl_engine::rl_core::noun::plural;
 use rl_engine::rl_rules::ability::RawValue;
 
 use crate::armory::{Armory, ItemKind};
-use crate::lore::{Lore, Unfamiliar, called, kind_called};
+use crate::lore::{CurseShown, Known, Lore, Unfamiliar, called, kind_called};
 use crate::run::Adventurer;
 
 /// Raise the thing a use was made on by one level: the scroll of
@@ -68,9 +68,10 @@ pub fn enchant(world: &mut World, thing: Entity) {
     let (d, level) = (armory.defs.get(kind), raised.unwrap_or(0));
     let your = kind_called(lore, d);
     let told = level_known && armory.learned_by_wear(kind) && lore.knows(&d.name);
+    let known = Known::of(!level_known, false);
     let line = match raised {
-        None if count > 1 => format!("Your {} glow for a moment, and are as they were.", plural(&called(armory, lore, kind, level, level_known))),
-        None => format!("Your {} glows for a moment, and is as it was.", called(armory, lore, kind, level, level_known)),
+        None if count > 1 => format!("Your {} glow for a moment, and are as they were.", plural(&called(armory, lore, kind, level, known))),
+        None => format!("Your {} glows for a moment, and is as it was.", called(armory, lore, kind, level, known)),
         Some(level) if told => format!("Your {your} glows, and is {level:+} now."),
         Some(_) => format!("Your {your} glows."),
     };
@@ -142,11 +143,11 @@ pub fn remove_curse(world: &mut World, wearer: Entity) {
 }
 
 /// Says so when the adventurer puts on a cursed thing: it clings to
-/// them, and will not come off. And how deep the curse runs is plain from
-/// then on, so the thing is no longer unfamiliar and reads `-2 ring of
-/// light`, rather than a `+?` beside the line that has just said it is
-/// cursed; it is also what they need to know to plan how to get it off,
-/// how many scrolls of enchanting bring it up to nought.
+/// them, and will not come off. And that it is below nought is plain from
+/// then on, so it is marked [`CurseShown`] and reads `-? ring of light`,
+/// rather than a `+?` beside the line that has just said it is cursed. How
+/// far below nought stays unknown, as any level does, until they have worn
+/// it long enough or identified it: a curse shows its sign, not its size.
 ///
 /// In `TurnSet::React`, after [`learn_by_use`](crate::lore::learn_by_use),
 /// so a ring whose kind putting it on made known is called by its kind.
@@ -166,7 +167,7 @@ pub fn bind_on_wear(
         if actor == me {
             let the = kind_called(&lore, armory.defs.get(kind.0));
             tell.write(Tell::new(format!("The {the} clings to you, and will not come off."), Tones::BAD));
-            commands.entity(item).try_remove::<Unfamiliar>();
+            commands.entity(item).try_insert(CurseShown);
         }
     }
 }
@@ -280,19 +281,34 @@ mod tests {
         assert_eq!(accuracy(&app, me), aim + 10);
     }
 
-    /// A cursed ring put on is known by how deep its curse runs the moment
-    /// it clings, and reads `-2 ring of light` beside the line that says it
-    /// will not come off, where a ring that is not cursed still reads `+?`
-    /// until it has been worn a while.
+    /// A cursed ring put on shows its curse and not its size: it reads
+    /// `-? ring of light` beside the line that says it will not come off,
+    /// where a ring that is not cursed reads `+?`, and `-2 ring of light`
+    /// once it has been worn as long as any level takes to learn; another,
+    /// less deeply cursed, reads `-1 ring of stealth` once a scroll of
+    /// identify is read on it.
     #[test]
-    fn a_cursed_ring_put_on_is_known_by_its_level_the_moment_it_clings() {
+    fn a_clinging_curse_reads_below_nought_until_worn_long_enough_or_identified() {
         let mut app = headless(RunSeed(6));
         let me = adventurer(&mut app);
         let (cursed, plain) = (find(&mut app, "ring of light", -2), find(&mut app, "ring of stealth", 2));
         equip(&mut app, me, cursed);
         equip(&mut app, me, plain);
-        assert_eq!(name_of(&app, cursed), "-2 ring of light", "{:#?}", said(&app));
+        assert_eq!(name_of(&app, cursed), "-? ring of light", "{:#?}", said(&app));
         assert_eq!(name_of(&app, plain), "+? ring of stealth");
+        crate::testing::pass_turns(&mut app, crate::lore::FAMILIAR_AFTER);
+        assert_eq!(name_of(&app, cursed), "-2 ring of light", "worn long enough, how deep is known too");
+        assert_eq!(name_of(&app, plain), "+2 ring of stealth");
+
+        let mut app = headless(RunSeed(6));
+        let me = adventurer(&mut app);
+        let cursed = find(&mut app, "ring of stealth", -1);
+        equip(&mut app, me, cursed);
+        assert_eq!(name_of(&app, cursed), "-? ring of stealth");
+        let scroll = find(&mut app, "scroll of identify", 0);
+        give(&mut app, me, scroll);
+        read_on(&mut app, me, scroll, cursed);
+        assert_eq!(name_of(&app, cursed), "-1 ring of stealth", "{:#?}", said(&app));
     }
 
     /// A cursed ring will not come off, by the key or by anything put on
@@ -312,7 +328,7 @@ mod tests {
         give(&mut app, me, scroll);
         read_on(&mut app, me, scroll, ring);
         assert_eq!(app.world().get::<Enchant>(ring).map(|e| e.level), Some(0));
-        assert!(said(&app).iter().any(|l| l == "Your ring of stealth glows, and is +0 now. It will come off."), "{:#?}", said(&app));
+        assert!(said(&app).iter().any(|l| l == "Your ring of stealth glows. It will come off now."), "{:#?}", said(&app));
         unequip(&mut app, me, ring);
         assert!(app.world().get::<Equipped>(me).is_some_and(|w| !w.contains(ring)), "enchanted to nought, it came off");
 

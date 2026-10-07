@@ -18,8 +18,10 @@
 //! A weapon, armor or ring is known by its kind and not by its level: one
 //! that was found is [`Unfamiliar`] and called `+? sword` until the
 //! adventurer has worn it for [`FAMILIAR_AFTER`] turns, which
-//! [`grow_familiar`] counts, or it is identified. The kit they set out with
-//! is known whole.
+//! [`grow_familiar`] counts, or it is identified. One whose curse clung to
+//! them when they put it on is [`CurseShown`] too, and called `-? ring of
+//! light` meanwhile: a curse shows its sign and not its size. The kit they
+//! set out with is known whole.
 //!
 //! Every name is [`keep_names`]'s to give, from what is known, and it gives
 //! them after the pass's narration has read the old ones: so the log says
@@ -273,6 +275,17 @@ impl Unfamiliar {
     }
 }
 
+/// A thing whose curse has shown itself: it clung to the adventurer when
+/// they put it on, so they know its level is below nought, though not by
+/// how much until they are familiar with it or it is identified, and it is
+/// called `-? ring of light` meanwhile.
+///
+/// A mark of what they know rather than of the thing, so it stays when a
+/// scroll of remove curse lets the thing go at the level it was, and is
+/// kept in the save as [`Unfamiliar`] is.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CurseShown;
+
 /// What a thing of `def` is called by its kind alone, as the adventurer
 /// knows it: its face while the kind is unknown, its kind's name once it
 /// is. What a line in the log says it is when its level is beside the
@@ -284,19 +297,51 @@ pub fn kind_called(lore: &Lore, def: &ItemDef) -> String {
     }
 }
 
+/// How much of a thing's level the adventurer knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Known {
+    /// All of it: the kit they set out with, and anything worn long enough
+    /// or identified.
+    Level,
+    /// Only that it is below nought, which a curse that clung to them when
+    /// they put it on showed, and not by how much.
+    BelowNought,
+    /// Nothing of it yet.
+    Nothing,
+}
+
+impl Known {
+    /// What is known of a thing that is `unfamiliar` or not, whose curse
+    /// has `shown` itself or not: its level once it is familiar, and else
+    /// only that it is below nought once its curse has shown.
+    pub fn of(unfamiliar: bool, shown: bool) -> Self {
+        match (unfamiliar, shown) {
+            (false, _) => Known::Level,
+            (true, true) => Known::BelowNought,
+            (true, false) => Known::Nothing,
+        }
+    }
+}
+
 /// What a thing of `def` at `level` is called, as the adventurer knows
 /// it: by [`kind_called`], and with its level before it for a thing whose
 /// level is learned by wearing it: `+2 sword`, `-1 ring of stealth`, the
-/// kind's name alone at nought, and `+?` for a level not yet known. A kind
-/// not yet known says nothing of a level, since a garnet ring could be
-/// anything.
-pub fn called(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level: i32, level_known: bool) -> String {
+/// kind's name alone at nought, `-?` for a level known only to be below
+/// nought, and `+?` for a level not yet known. A kind not yet known says
+/// nothing of a level, since a garnet ring could be anything.
+///
+/// `-?` only while the level is below nought: a curse shown and then
+/// enchanted up to nought came unstuck saying so, which tells the level,
+/// so it reads `+?` like anything unfamiliar rather than claiming a curse
+/// it no longer has.
+pub fn called(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level: i32, known: Known) -> String {
     let d = armory.defs.get(def);
     let kind = kind_called(lore, d);
-    match (armory.learned_by_wear(def) && lore.knows(&d.name), level_known, level) {
-        (false, _, _) | (true, true, 0) => kind,
-        (true, true, level) => format!("{level:+} {kind}"),
-        (true, false, _) => format!("+? {kind}"),
+    match (armory.learned_by_wear(def) && lore.knows(&d.name), known, level) {
+        (false, _, _) | (true, Known::Level, 0) => kind,
+        (true, Known::Level, level) => format!("{level:+} {kind}"),
+        (true, Known::BelowNought, level) if level < 0 => format!("-? {kind}"),
+        (true, _, _) => format!("+? {kind}"),
     }
 }
 
@@ -308,11 +353,12 @@ pub fn reads_unknown(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level_known
 }
 
 /// A thing whose name may have changed: one just made, one whose level
-/// changed, and one just found to be unfamiliar.
-type Renamed = (With<ItemKind>, Or<(Added<ItemKind>, Changed<Enchant>, Added<Unfamiliar>)>);
+/// changed, one just found to be unfamiliar, and one whose curse just
+/// showed.
+type Renamed = (With<ItemKind>, Or<(Added<ItemKind>, Changed<Enchant>, Added<Unfamiliar>, Added<CurseShown>)>);
 
 /// What every thing's name, colour and [`Unknown`] answer to.
-type Named<'a> = (Entity, &'a ItemKind, Option<&'a Enchant>, Has<Unfamiliar>, Has<Unknown>, &'a mut Name, Option<&'a mut Glyph>);
+type Named<'a> = (Entity, &'a ItemKind, Option<&'a Enchant>, Has<Unfamiliar>, Has<CurseShown>, Has<Unknown>, &'a mut Name, Option<&'a mut Glyph>);
 
 /// Gives every thing the name, the colour and the [`Unknown`] that what is
 /// known of it says: by [`called`] and [`reads_unknown`], drawn in its
@@ -339,9 +385,9 @@ pub fn keep_names(
     if !(lore.is_changed() || learned || !changed.is_empty()) {
         return;
     }
-    for (thing, kind, level, unfamiliar, unknown, mut name, glyph) in &mut things {
+    for (thing, kind, level, unfamiliar, shown, unknown, mut name, glyph) in &mut things {
         let level = level.map_or(0, |l| l.level);
-        let now = called(&armory, &lore, kind.0, level, !unfamiliar);
+        let now = called(&armory, &lore, kind.0, level, Known::of(unfamiliar, shown));
         if name.as_str() != now {
             *name = Name::new(now);
         }
@@ -614,13 +660,13 @@ pub fn identify(world: &mut World, thing: Entity) {
         let d = armory.defs.get(kind);
         let before = kind_called(&lore, d);
         let new_kind = lore.learn(&d.name);
-        let after = called(armory, &lore, kind, level, true);
+        let after = called(armory, &lore, kind, level, Known::Level);
         let (one, many) = (count == 1, |name: &str| if count == 1 { name.to_string() } else { plural(name) });
         match (new_kind, unfamiliar && armory.learned_by_wear(kind)) {
             (true, _) if one => (format!("The {before} is {}.", with_article(&after)), Tones::GOOD),
             (true, _) => (format!("The {} are {}.", plural(&before), plural(&after)), Tones::GOOD),
             (false, true) => (format!("Your {before} is {level:+}."), Tones::GOOD),
-            (false, false) => (format!("You know your {} already.", many(&called(armory, &lore, kind, level, !unfamiliar))), Tones::MUTED),
+            (false, false) => (format!("You know your {} already.", many(&called(armory, &lore, kind, level, Known::of(unfamiliar, false)))), Tones::MUTED),
         }
     });
     world.entity_mut(thing).remove::<Unfamiliar>();
