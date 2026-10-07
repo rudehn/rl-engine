@@ -21,12 +21,12 @@
 //! plugin rather than writing this loop again.
 //!
 //! What a row says about a dry weapon is not here: `rl-ui`, which depends
-//! on this crate rather than the other way round, reads [`Ammo`] and
-//! [`Dry`] straight off the gear view's own entities and pushes the count
-//! or the word as a facet under its row, since a magazine's count is a
-//! fact about an ammunition-fed weapon and not about every row a panel
-//! might show (`rl-ui/src/lib.rs`'s rules on a view versus a facet say
-//! why). What a game says in its own log when a weapon dries or reloads is
+//! on this crate rather than the other way round, reads [`Ammo`] straight
+//! off the gear view's own entities, counts its tag in the wearer's bag,
+//! and pushes the count, or the word when there is none, as a facet under
+//! its row, since a magazine's count is a fact about an ammunition-fed
+//! weapon and not about every row a panel might show (`rl-ui/src/lib.rs`'s
+//! rules on a view versus a facet say why). What a game says in its own log when a weapon dries or reloads is
 //! the game's own words too: [`sync_ammo`] writes [`AmmoChanged`] for every
 //! item whose [`Dry`] it just set or cleared, so a game that wants to tell
 //! its player reacts to that message rather than detecting the transition

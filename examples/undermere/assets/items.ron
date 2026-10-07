@@ -160,12 +160,14 @@
      melee: (roll: "1d8+1", kind: "pierce", shape: Pierce(1), look: (glyph: '*', color: (r: 205, g: 220, b: 240)))),
     (name: "war pike", glyph: ')', color: (0.64, 0.56, 0.42), slot: "main hand", also: ["off hand"], tags: ["weapon"], strength: 18,
      melee: (roll: "2d6+2", kind: "pierce", shape: Pierce(1), look: (glyph: '*', color: (r: 205, g: 220, b: 240)))),
+    // ANCHOR: bow
     (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), slot: "main hand", also: ["off hand"], tags: ["weapon"], ammo: "arrow", strength: 12,
      ranged: (range: 8, effective: 5, roll: "1d6+1", kind: "pierce", look: (glyph: '|', color: (r: 191, g: 173, b: 128)))),
     // What is thrown, found by the handful: arrows, which the bow spends
     // a shot at a time and which fly badly from the hand, and darts and
     // javelins, made to be thrown and picked up again where they land.
     (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), tags: ["arrow", "thrown"], stack: true, throw: (range: 4, strike: ("1d2", "pierce"))),
+    // ANCHOR_END: bow
     (name: "dart", glyph: '|', color: (0.7, 0.72, 0.78), tags: ["thrown"], stack: true, throw: (range: 6, effective: 4, strike: ("1d3", "pierce"))),
     (name: "javelin", glyph: '/', color: (0.7, 0.6, 0.42), tags: ["thrown"], stack: true, throw: (range: 6, effective: 4, strike: ("2d4", "pierce"))),
     // The armor: the heavier, the more it turns, the more strength it
