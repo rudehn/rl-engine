@@ -93,6 +93,12 @@ pub struct TraitDef {
     /// lets one get before it backs away: a will-o'-wisp's.
     #[serde(default)]
     pub keeps_away: Option<(i32, i32)>,
+    /// Whether this is a trick: unknown of a kind until the adventurer has
+    /// seen it land, a bite that poisons or a jelly that splits, rather
+    /// than known of it on sight, its look, its speed or whether it
+    /// flies. Absent, false: most of what a trait sets is plain.
+    #[serde(default)]
+    pub trick: bool,
 }
 
 impl Named for TraitDef {
@@ -174,8 +180,11 @@ pub struct Folded {
     /// How far it keeps from an enemy, and how close it lets one get: what
     /// a trait set, or `None` for a kind that closes in as far as it can.
     pub keeps_away: Option<(i32, i32)>,
-    /// Each trait's name and the examine panel's words for it.
-    pub says: Vec<(String, String)>,
+    /// Each trait with words for the examine panel, by its name, its
+    /// words, and whether it is a trick: [`crate::bestiary_lore`]'s look
+    /// panel says a plain one's words outright and a trick's only once
+    /// `MonsterLore` has shown it, a "?" until then.
+    pub says: Vec<(String, String, bool)>,
 }
 
 /// Nothing folded: no wits, no values, no lists. By hand rather than
@@ -260,7 +269,7 @@ pub fn fold(traits: &[TraitId], all: &Registry<TraitDef>) -> Result<Folded, Clas
         }
         folded.triggers.extend(t.triggers.iter().cloned());
         if let Some(says) = &t.says {
-            folded.says.push((t.name.clone(), says.clone()));
+            folded.says.push((t.name.clone(), says.clone(), t.trick));
         }
     }
     Ok(folded)
@@ -400,8 +409,12 @@ mod tests {
         let ability = |trait_name: &str| traits.get(traits.expect(trait_name)).abilities[0].id();
         assert_eq!(breath.abilities, vec![ability("fire breath"), ability("drowning grasp")]);
         assert_eq!(breath.statuses, vec![registries.statuses.expect("regenerating")]);
-        let said: Vec<&str> = breath.says.iter().map(|(name, _)| name.as_str()).collect();
-        assert_eq!(said, ["fire breath", "drowning grasp", "regenerates"], "in the order they were listed");
+        let said: Vec<(&str, bool)> = breath.says.iter().map(|(name, _, trick)| (name.as_str(), *trick)).collect();
+        assert_eq!(
+            said,
+            [("fire breath", true), ("drowning grasp", true), ("regenerates", false)],
+            "in the order they were listed, and a trait granting an ability is a trick, unlike a passive status held for life"
+        );
     }
 
     /// Review Focus 5: the second setting of one value is refused, naming
