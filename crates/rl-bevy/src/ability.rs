@@ -335,8 +335,8 @@ pub struct Landed {
 }
 
 /// Turns an aimed use or an ability back on whoever aimed it, one time in
-/// two: a body too dense or too strange for either to bite, a golem's
-/// trick and any game's.
+/// two: a body too dense or too strange for either to bite, and a trick
+/// any game can give a body of its own.
 ///
 /// Read by [`Bystanders::land`] rather than by a game reacting afterwards,
 /// because nothing fires between a use being pointed and its effects
@@ -374,10 +374,10 @@ pub struct Bystanders<'w, 's> {
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     rules: Option<Res<'w, CombatRules>>,
     reflects: Query<'w, 's, (), With<Reflects>>,
-    // `Option`: nothing here needs `AbilitiesPlugin`, which is the one
-    // that derives this stream, until a body actually carries `Reflects`,
-    // so a game with no abilities and nobody marked `Reflects` never
-    // misses it.
+    // `Option`: nothing here needs the stream derived until a body
+    // actually carries `Reflects`, so a game that has added neither
+    // `AbilitiesPlugin` nor `EffectsPlugin`'s own `add_stream` for it, and
+    // marked nobody `Reflects`, never misses it.
     rng: Option<ResMut<'w, ReflectRng>>,
 }
 

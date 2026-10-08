@@ -534,6 +534,12 @@ impl Plugin for EffectsPlugin {
             .add_message::<Fired>()
             .add_message::<FiredOn>()
             .add_stream::<EffectRng>("EffectsPlugin")
+            // `Bystanders::reflect` is called from `land_aimed_uses` below,
+            // not only from `AbilitiesPlugin`'s resolver, so a game with
+            // items and no abilities must still get a stream for a
+            // `Reflects` body to roll against; `add_stream` is a no-op once
+            // either plugin has already derived it.
+            .add_stream::<crate::ability::ReflectRng>("EffectsPlugin")
             // `EffectWorld` writes these, so they are this plugin's to
             // register: a writer for a message nobody registered fails the
             // system at startup, and a game with effects should not have to

@@ -1650,6 +1650,32 @@ mod aimed {
         assert_eq!(rig.act(UseItemAt { item: unknown, at }), vec![ItemEvent::Used { actor: rig.player, item: unknown }], "an unknown one is used");
         assert_eq!((rig.hp(beyond), rig.charges(unknown)), (20, 2), "and comes down short of what its user cannot see");
     }
+
+    /// `ReflectRng` is derived by whichever of `AbilitiesPlugin` or
+    /// `EffectsPlugin` adds the stream first; this rig carries neither
+    /// `AbilitiesPlugin` nor a game that adds it, only items and
+    /// `ConsumablesPlugin`'s own `effects::ensure`, so a `Reflects` body
+    /// must still turn an aimed use back on its user about half the time,
+    /// rather than never, which is what an unset stream would silently do.
+    #[test]
+    fn an_aimed_use_reflects_off_a_reflecting_body_with_no_abilities_plugin_in_the_app() {
+        let (mut users_hurt, mut bodies_hurt) = (0, 0);
+        for seed in 0..40u64 {
+            let mut rig = Rig::new();
+            rig.app.world_mut().resource_mut::<crate::seed::Seed>().0 = rl_core::RunSeed(seed);
+            rig.app.update();
+            let rod = rig.carry(BOLT);
+            let foe = rig.foe(3, 0);
+            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects);
+            let at = rig.start.offset(3, 0);
+            rig.act(UseItemAt { item: rod, at });
+            let (user_hurt, body_hurt) = (rig.hp(rig.player) < 30, rig.hp(foe) < 20);
+            assert_ne!(user_hurt, body_hurt, "seed {seed}: exactly one of the user and the reflecting body is hurt");
+            users_hurt += user_hurt as u32;
+            bodies_hurt += body_hurt as u32;
+        }
+        assert!(users_hurt > 0 && bodies_hurt > 0, "both outcomes over forty seeds: {users_hurt} reflected, {bodies_hurt} landed");
+    }
 }
 
 /// A thing used on another of its user's things: the resolver's refusals
