@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::DEFAULT_PERCEPTION;
+use rl_engine::rl_bevy::{DEFAULT_PERCEPTION, MomentId};
 use rl_engine::rl_rules::ai::tactics::{
     FleeWhenHurt, Hunt, Keep, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander,
 };
@@ -88,6 +88,20 @@ pub struct MonsterDef {
     /// is a value the trait model's own folding already knows how to add
     /// up.
     pub tricks: Tricks,
+    /// Every trick trait that grants an ability, by the ability's id and
+    /// the trait's name: what [`crate::bestiary_lore::learn_from_abilities`]
+    /// marks shown in [`crate::bestiary_lore::MonsterLore`] the moment the
+    /// ability lands where the adventurer can see it. At most one trait
+    /// per ability, since every ability-granting trait in this bestiary
+    /// grants its own.
+    pub trick_abilities: Vec<(AbilityId, String)>,
+    /// Every trick trait landed through the engine's own actor triggers,
+    /// by the moment it answers and the trait's name: a bite's poison, a
+    /// touch's chill or its sapped strength, a hand that steals, a burst
+    /// of spores where something died. What
+    /// [`crate::bestiary_lore::learn_from_triggers`] marks shown the
+    /// moment [`Fired::at`] is where the adventurer can see it.
+    pub trick_moments: Vec<(MomentId, String)>,
     /// Its own id in the bestiary, so a spawn handed only the definition
     /// can mark what it made.
     id: Id<MonsterDef>,
@@ -316,6 +330,18 @@ fn resolve(
     }
     let triggers = Triggers::build(&folded.triggers, &[], moments, kinds, names)?;
     let tricks = Tricks::from_listed(&listed, traits);
+    // Every trick trait's ability or moment, read off the traits it was
+    // listed with rather than off `folded`, which has already merged
+    // every trait's abilities and triggers into one list with no trait
+    // of its own left to name.
+    let trick_abilities: Vec<(AbilityId, String)> =
+        listed.iter().map(|&t| traits.get(t)).filter(|t| t.trick).flat_map(|t| t.abilities.iter().map(move |a| (a.id(), t.name.clone()))).collect();
+    let trick_moments: Vec<(MomentId, String)> = listed
+        .iter()
+        .map(|&t| traits.get(t))
+        .filter(|t| t.trick)
+        .flat_map(|t| t.triggers.iter().filter_map(move |spec| moments.get(&spec.on).map(|on| (on, t.name.clone()))))
+        .collect();
     let brain = Arc::new(brain(&folded, ranged.is_some(), tricks));
     let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
     Ok(MonsterDef {
@@ -334,6 +360,8 @@ fn resolve(
         folded,
         triggers,
         tricks,
+        trick_abilities,
+        trick_moments,
         id,
         brain,
         allied,
