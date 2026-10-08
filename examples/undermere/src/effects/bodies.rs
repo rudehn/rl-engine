@@ -438,7 +438,7 @@ pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
         .map(|(e, pos, _)| (e, pos.0))
         .collect();
     bodies.sort_by_key(|(e, pos)| (geometry::chebyshev(*pos, at), pos.y, pos.x, e.index()));
-    let Some((body, _)) = bodies.into_iter().next() else { return false };
+    let Some((body, body_at)) = bodies.into_iter().next() else { return false };
     let twin = world.get::<EngineLife>(body).map(|life| life.0);
     let max = twin.and_then(|twin| world.get::<Health>(twin)).map_or(1, |h| h.max);
     if !revive(world, body, max) {
@@ -447,7 +447,13 @@ pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
     if let Some(side) = world.get::<Faction>(raiser).copied() {
         fight_for(world, body, side.0);
     }
-    let name = world.get::<Name>(body).map_or_else(String::new, |n| n.as_str().to_string());
-    world.write_message(Tell::new(format!("{} rises to fight for its raiser!", the(&name)), Tones::BAD));
+    // Told only where the adventurer themselves can see it rise: `raiser`'s
+    // own sight found the body, which is not the same thing, and a body
+    // raised in a room the adventurer cannot see is not something they
+    // learn `raising` from by reading the log.
+    if world.query_filtered::<&Viewshed, With<Player>>().iter(world).any(|v| v.can_see(body_at)) {
+        let name = world.get::<Name>(body).map_or_else(String::new, |n| n.as_str().to_string());
+        world.write_message(Tell::new(format!("{} rises to fight for its raiser!", the(&name)), Tones::BAD));
+    }
     true
 }

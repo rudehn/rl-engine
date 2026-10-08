@@ -135,9 +135,21 @@ fn try_split(world: &mut World, target: Entity) -> bool {
     world.entity_mut(target).insert(Health { current: half, max: health.max });
     let made = spawn_monster_now(world, kind, second_at, map);
     world.entity_mut(made).insert(Health { current: half, max: health.max });
-    let name = world.get::<Name>(target).map_or_else(String::new, |n| n.as_str().to_string());
-    world.write_message(Tell::new(format!("{} splits into two!", crate::effects::the(&name)), Tones::NOTICE));
+    // Told only where it is seen, as `withering`'s own touch is by the
+    // engine's own narrator: a split in a room nobody is watching is not
+    // something the adventurer learns of from the log either.
+    if seen_by_player(world, at) {
+        let name = world.get::<Name>(target).map_or_else(String::new, |n| n.as_str().to_string());
+        world.write_message(Tell::new(format!("{} splits into two!", crate::effects::the(&name)), Tones::NOTICE));
+    }
     true
+}
+
+/// Whether the adventurer can see `at` right now: the one check every
+/// trick's own narration below makes before naming what it did, so the
+/// log never says what a trick is before the look panel would.
+fn seen_by_player(world: &mut World, at: Point) -> bool {
+    world.query_filtered::<&Viewshed, With<Player>>().iter(world).any(|v| v.can_see(at))
 }
 
 /// Marks a kind that mends itself what a landed blow of its own dealt: a
@@ -277,10 +289,14 @@ pub fn steal(world: &mut World, thief: Entity, victim: Entity) -> bool {
         }
     }
     world.entity_mut(thief).insert(Stole);
-    let name = |e: Entity, world: &World| world.get::<Name>(e).map_or_else(String::new, |n| n.as_str().to_string());
-    let (thief_name, victim_name, item_name) = (name(thief, world), name(victim, world), name(item, world));
-    let line = format!("{} snatches {}'s {} and bolts!", crate::effects::capital(&thief_name), victim_name, item_name);
-    world.write_message(Tell::new(line, Tones::BAD));
+    if let Some(at) = world.get::<Position>(victim).map(|p| p.0)
+        && seen_by_player(world, at)
+    {
+        let name = |e: Entity, world: &World| world.get::<Name>(e).map_or_else(String::new, |n| n.as_str().to_string());
+        let (thief_name, victim_name, item_name) = (name(thief, world), name(victim, world), name(item, world));
+        let line = format!("{} snatches {}'s {} and bolts!", crate::effects::capital(&thief_name), victim_name, item_name);
+        world.write_message(Tell::new(line, Tones::BAD));
+    }
     true
 }
 
