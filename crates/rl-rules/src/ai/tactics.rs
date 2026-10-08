@@ -184,6 +184,35 @@ pub enum Station {
     /// Its enemies: a spotter that calls out where you are, a skirmisher
     /// that stays out of reach, a hound that bays and never bites.
     Enemies,
+    /// The one actor it follows, wherever the [`Led`] sense says it is: a
+    /// band that keeps by its chief rather than by whichever of its fellows
+    /// is nearest, a hireling that follows its employer. Its allies while
+    /// that one is gone, so a band whose chief falls keeps together rather
+    /// than freezing.
+    ///
+    /// Who it follows is not here. A kind's brain is shared, and the leader
+    /// is one particular actor, so it is the actor's own to carry and the
+    /// sense's to report; one brain then serves the kind led or not.
+    Leader,
+}
+
+/// Where the one an actor follows stands, as a [`Sense`](crate::ai::Sense):
+/// what [`Station::Leader`] keeps station on.
+///
+/// The engine's `sense_leaders` pushes it from an actor's `Leader`
+/// component, for a leader alive and on the same map, seen or not: a band
+/// knows where its chief is without having it in sight, and a follower
+/// that lost its leader at the first corner would follow nobody. A
+/// leader dead, on another map or nowhere is not pushed at all, which is
+/// what sends the follower back to its allies. A game running minds
+/// without `rl-bevy` pushes it itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Led {
+    /// Where the leader stands.
+    pub at: Point,
+    /// Whether the follower can see it, so backing off prefers a step that
+    /// keeps it in sight only when it is.
+    pub in_sight: bool,
 }
 
 /// Keep station on somebody: close the gap when it is wider than
@@ -209,6 +238,11 @@ pub enum Station {
 /// `keep_within` of the spot, so it looks round the corner rather than
 /// stepping up to it. An ally is never lost this way, since a roster of
 /// allies is what is in sight and nothing remembers an ally that left.
+///
+/// Kept on a [`Station::Leader`], the distances are to the leader alone,
+/// wherever [`Led`] says it stands, and a nearer fellow is stepped round
+/// like anyone else; with no `Led` it keeps station on its allies exactly
+/// as [`Keep::allies`] would, until the leader is back.
 ///
 /// A step never lengthens the gap while closing it, nor shortens it while
 /// backing out: a field that leads round a pillar by way of the one it is
@@ -244,15 +278,26 @@ impl Keep {
         Self { on: Station::Enemies, keep_within, no_closer_than }
     }
 
+    /// Station on one leader, and on the allies while it is gone: what a
+    /// band's follower is.
+    pub fn leader(keep_within: i32, no_closer_than: i32) -> Self {
+        Self { on: Station::Leader, keep_within, no_closer_than }
+    }
+
     /// Who it is keeping station on: the nearest of them, every one of them
     /// for the field to flood from, and whether the nearest is somebody it
     /// can see rather than somewhere it remembers.
     fn watching<A: Copy>(&self, ctx: &TacticCtx<'_, A>) -> Option<(Point, Vec<Point>, bool)> {
+        let allies = || {
+            let nearest = ctx.snapshot.allies.first()?;
+            Some((nearest.pos, ctx.snapshot.allies.iter().map(|a| a.pos).collect(), true))
+        };
         match self.on {
-            Station::Allies => {
-                let nearest = ctx.snapshot.allies.first()?;
-                Some((nearest.pos, ctx.snapshot.allies.iter().map(|a| a.pos).collect(), true))
-            }
+            Station::Allies => allies(),
+            Station::Leader => match ctx.snapshot.sense::<Led>() {
+                Some(led) => Some((led.at, vec![led.at], led.in_sight)),
+                None => allies(),
+            },
             Station::Enemies => match ctx.snapshot.nearest_enemy() {
                 Some(enemy) => Some((enemy.pos, ctx.snapshot.enemies.iter().map(|e| e.pos).collect(), true)),
                 None if ctx.snapshot.wits.has(Wits::SEARCHES) => {
@@ -270,7 +315,7 @@ impl<A: Copy> Tactic<A> for Keep {
     /// `shadow` says more about what happened than one that says `keep`.
     fn name(&self) -> &'static str {
         match self.on {
-            Station::Allies => "follow",
+            Station::Allies | Station::Leader => "follow",
             Station::Enemies => "shadow",
         }
     }
@@ -1129,6 +1174,8 @@ mod tests {
         assert_eq!(with(&MeleeAdjacent), Some(Station::Enemies));
         assert_eq!(with(&Keep::enemies(5, 3)), Some(Station::Enemies));
         assert_eq!(with(&Keep::allies(3, 1)), Some(Station::Allies));
+        assert_eq!(with(&Keep::leader(3, 1)), Some(Station::Leader));
+        assert!(Brain::<u32>::new().then(Keep::leader(3, 1)).keeps_with_allies(), "a follower keeps beside its allies too");
         assert_eq!(with(&FleeWhenHurt { at_pct: 50 }), None);
         assert_eq!(with(&Wander { chance_pct: 50 }), None);
         assert!(Brain::<u32>::new().then(Keep::allies(3, 1)).then(Wander { chance_pct: 50 }).keeps_with_allies());
@@ -1915,6 +1962,96 @@ mod tests {
             rng: &mut rng,
         };
         assert_eq!(keep.evaluate(&mut ctx), None, "an enemy is not company: with no ally in sight there is nobody to follow");
+    }
+
+    /// What a follower at `me` decides with its leader where `led` says,
+    /// or gone when it is `None`, and `allies` in sight, on open floor.
+    fn follow(keep: Keep, me: Point, led: Option<Led>, allies: &[Point]) -> Option<Decision<u32>> {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let taken: Vec<Point> = allies.iter().copied().chain(led.map(|l| l.at)).collect();
+        let can_step = |p: Point| !taken.contains(&p) && view_t.is_walkable(p);
+        let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
+        s.allies = allies.iter().enumerate().map(|(i, p)| view(10 + i as u32, p.x, p.y, 10)).collect();
+        s.sort();
+        if let Some(led) = led {
+            s.add_sense(led);
+        }
+        let mut fields = Given::over(&view_t);
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
+        keep.evaluate(&mut ctx)
+    }
+
+    /// A follower keeps within its distances of its leader and of nobody
+    /// else: from every cell of the floor, with a fellow standing beside
+    /// it, it closes on a leader too far off, backs from one too near and
+    /// leaves the band between alone, measured to the leader, and never
+    /// with a step that undoes what it is doing, seen or not.
+    #[test]
+    fn a_follower_keeps_within_its_distances_of_its_leader_and_not_its_nearest_ally() {
+        let keep = Keep::leader(3, 2);
+        let chief = Point::new(6, 6);
+        for in_sight in [true, false] {
+            let led = Led { at: chief, in_sight };
+            for y in 0..12 {
+                for x in 0..12 {
+                    let me = Point::new(x, y);
+                    let fellow = if x < 11 { me.offset(1, 0) } else { me.offset(-1, 0) };
+                    if me == chief || fellow == chief {
+                        continue;
+                    }
+                    let gap = geometry::chebyshev(me, chief);
+                    let decided = follow(keep, me, Some(led), &[fellow]);
+                    match decided {
+                        Some(Decision::Step(to)) if gap > 3 => assert!(geometry::chebyshev(to, chief) <= gap, "{me:?} closes on the leader: {to:?}"),
+                        Some(Decision::Step(to)) if gap < 2 => assert!(geometry::chebyshev(to, chief) >= gap, "{me:?} gives way: {to:?}"),
+                        None if gap < 2 => {}
+                        None => assert!((2..=3).contains(&gap), "{me:?} at {gap} from its leader is inside its distances and waits on the next tactic"),
+                        other => panic!("{me:?} at {gap} from its leader, the fellow beside it, decided {other:?}"),
+                    }
+                    if gap > 3 {
+                        assert!(decided.is_some(), "{me:?} on open floor always has a way closer");
+                    }
+                }
+            }
+        }
+        // The fellow beside it is nearest, and a station on allies would
+        // be content; the leader is five off, so it goes.
+        let (me, fellow) = (Point::new(1, 6), Point::new(2, 6));
+        let led = Some(Led { at: chief, in_sight: true });
+        assert_eq!(follow(Keep::allies(3, 1), me, led, &[fellow]), None, "kept on its allies, it stays by the fellow");
+        let Some(Decision::Step(to)) = follow(Keep::leader(3, 1), me, led, &[fellow]) else { panic!("kept on its leader, it goes") };
+        assert_eq!(geometry::chebyshev(to, chief), 4, "a step nearer the leader");
+    }
+
+    /// A band whose chief falls does not freeze: with no leader to follow,
+    /// a follower keeps station on its allies as a pack does, and with
+    /// neither leaves the turn to the next tactic.
+    #[test]
+    fn a_follower_whose_leader_is_gone_keeps_its_allies() {
+        let keep = Keep::leader(3, 1);
+        let mate = Point::new(10, 5);
+        let gap = |d: Option<Decision<u32>>| match d {
+            Some(Decision::Step(p)) => geometry::chebyshev(p, mate),
+            other => panic!("expected a step, got {other:?}"),
+        };
+        assert_eq!(gap(follow(keep, Point::new(5, 5), None, &[mate])), 4, "five off its fellow, it closes a step");
+        assert_eq!(
+            follow(keep, Point::new(5, 5), None, &[mate]),
+            follow(Keep::allies(3, 1), Point::new(5, 5), None, &[mate]),
+            "as one kept on its allies would"
+        );
+        assert_eq!(follow(keep, Point::new(8, 5), None, &[mate]), None, "two off is inside its distances");
+        assert_eq!(follow(keep, Point::new(5, 5), None, &[]), None, "alone, it leaves the turn to the next tactic");
     }
 
     /// A spotter closes on an enemy too far off, backs away from one too

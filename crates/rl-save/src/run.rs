@@ -40,9 +40,9 @@
 
 use bevy::prelude::*;
 use rl_bevy::{
-    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, LeaveRun,
-    MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition, Turns, Wearable,
-    WorkKinds, Working,
+    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Leader,
+    LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition, Turns,
+    Wearable, WorkKinds, Working,
 };
 use rl_core::Point;
 use rl_rules::{Equipment, Work};
@@ -399,6 +399,11 @@ pub struct EntityState {
     /// after what it had left.
     #[serde(default)]
     pub burning: Option<SavedBurning>,
+    /// The one it follows, for an actor with a [`Leader`], when that one
+    /// was saved too. A kind's brain is content made again from its
+    /// definition, so the leader is kept here, by save id, and not in it.
+    #[serde(default)]
+    pub leader: Option<SaveId>,
 }
 
 /// How long something alight has left, as a save keeps it. An enum of its
@@ -477,6 +482,10 @@ impl EntityState {
             remains,
             remains_as,
             post: e.get::<Post>().map(|p| p.0),
+            // By id only when the leader has one already: one that was not
+            // saved, a body gone at the end of its frame, is not given an id
+            // that would come back bound to nothing.
+            leader: e.get::<Leader>().and_then(|l| remap.saved(l.0)),
             working,
             // One with no turns left has burnt out and is only waiting for
             // the removal that was queued with it.
@@ -550,6 +559,9 @@ impl EntityState {
         }
         if let Some(at) = self.post {
             target.insert(Post(at));
+        }
+        if let Some(leader) = self.leader.and_then(|id| remap.entity(id)) {
+            target.insert(Leader(leader));
         }
         if let Some(working) = working {
             target.insert(working);
@@ -1305,6 +1317,34 @@ mod tests {
         let w = back.world_mut();
         let posted = w.query_filtered::<&Post, With<Person>>().single(w).copied().expect("Ada came back");
         assert_eq!(posted, Post(post), "posted on the same cell");
+    }
+
+    /// A follower follows the same leader after a load, by the engine: its
+    /// brain is the game's content made again from a definition and holds
+    /// no one, and a game's record cannot name an entity. One whose leader
+    /// was not saved comes back following nobody rather than a stranger.
+    #[test]
+    fn a_follower_keeps_its_leader_when_the_run_is_continued_and_one_whose_leader_was_not_saved_follows_nobody() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        let chief = app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20))).id();
+        app.world_mut().spawn((Actor, Blocks, Person("Bo".into()), Position(start.offset(1, 3)), Health::full(20), Leader(chief)));
+        let stranger = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 3)), Health::full(20))).id();
+        app.world_mut().spawn((Actor, Blocks, Person("Cy".into()), Position(start.offset(3, 3)), Health::full(20), Leader(stranger)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let people: Vec<(Entity, String)> = w.query::<(Entity, &Person)>().iter(w).map(|(e, p)| (e, p.0.clone())).collect();
+        let who = |name: &str| people.iter().find(|(_, n)| n == name).unwrap().0;
+        let w = back.world();
+        assert_eq!(w.get::<Leader>(who("Bo")), Some(&Leader(who("Ada"))), "Bo follows Ada again, as she came back");
+        assert_eq!(w.get::<Leader>(who("Cy")), None, "Cy's leader was not saved, so Cy follows nobody");
+        assert_eq!(w.get::<Leader>(who("Ada")), None, "and the leader follows nobody");
     }
 
     /// Something alight comes back alight with the turns it had left, and a

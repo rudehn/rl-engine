@@ -242,9 +242,11 @@ impl<A: Copy> Brain<A> {
 
     /// Whether any tactic here keeps the mind beside its allies, whichever
     /// tactic decides a given turn: a companion idling inside the distance
-    /// it keeps is still a companion.
+    /// it keeps is still a companion. A follower of one leader counts, since
+    /// its leader is one of its allies and its allies are whom it keeps
+    /// beside once the leader is gone.
     pub fn keeps_with_allies(&self) -> bool {
-        self.tactics.iter().any(|t| t.keeps_with() == Some(Station::Allies))
+        self.tactics.iter().any(|t| matches!(t.keeps_with(), Some(Station::Allies | Station::Leader)))
     }
 
     /// The tactic names in priority order.

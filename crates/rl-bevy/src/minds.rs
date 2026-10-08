@@ -127,6 +127,20 @@ pub struct CameFrom(pub Option<Point>);
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Post(pub Point);
 
+/// The one actor a mind follows: a band's chief, a hireling's employer.
+/// Read by [`Keep::leader`](rl_rules::ai::tactics::Keep::leader) through
+/// the [`Led`](rl_rules::ai::tactics::Led) sense [`sense_leaders`]
+/// pushes, so a kind's shared brain follows whoever each one was given.
+///
+/// On the follower rather than in its brain because a brain is a kind's
+/// content, rebuilt from the definition when a run is continued, and the
+/// leader is one particular entity that only the save's entity map can
+/// carry across. Saved by `rl-save` with the actor, and dropped on the way
+/// back when the leader was not saved with it. Kept when either of them
+/// leaves the map: a leader elsewhere counts as gone until it is back.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Leader(pub Entity);
+
 /// What one field is for: the cells it leads to, in world coordinates and
 /// sorted so two minds wanting the same cells share one flood; the movement
 /// class it is walked by; whether that class opens doors, which changes
@@ -570,6 +584,27 @@ pub fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
     }
 }
 
+/// Tells the mind holding the turn where its [`Leader`] stands, if it has
+/// one that is alive and on this map, and whether it can see it.
+///
+/// Seen or not: a band knows where its chief is, and a follower told only
+/// of a leader in sight would lose it at the first corner, since nothing
+/// remembers an ally that left. A leader dead, on another map or
+/// despawned is not told at all, which is what turns the follower back to
+/// its allies until the leader is back.
+pub fn sense_leaders(mut thinking: ResMut<Thinking>, sight: Sight, led: Query<&Leader>, actors: Query<Seen, (With<Actor>, Without<Dead>)>) {
+    let Some(thinker) = thinking.actor() else { return };
+    let Ok(Leader(leader)) = led.get(thinker).copied() else { return };
+    let Ok((_, at, _, _, on)) = actors.get(leader) else { return };
+    if leader == thinker || on.map(|m| m.0).unwrap_or(MapId::SURFACE) != sight.current_map() {
+        return;
+    }
+    let in_sight = sight.perceives(&thinking, at.0, on);
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(rl_rules::ai::tactics::Led { at: at.0, in_sight });
+    }
+}
+
 /// Tells the mind holding the turn which ways to another map it can see,
 /// if it is one that travels: a mind that does not is never told, so no
 /// tactic of its brain can send it through one.
@@ -839,7 +874,7 @@ impl Plugin for MindsPlugin {
             .add_systems(Turn, (sense, crate::charts::chart_sight).chain().in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, (sense_posts, sense_ways, crate::charts::sense_uncharted).chain().in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_posts, sense_leaders, sense_ways, crate::charts::sense_uncharted).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
@@ -1917,6 +1952,54 @@ mod tests {
         let (me, it) = (app.world().get::<Position>(player).unwrap().0, app.world().get::<Position>(dog).unwrap().0);
         assert!(geometry::chebyshev(me, it) <= 2, "the dog kept up: player {me:?}, dog {it:?}");
         assert!(geometry::chebyshev(me, it) >= 1, "and is not on the player's cell");
+    }
+
+    /// A follower walks to the leader it was given, past the fellow it
+    /// stood beside and out of its sight, and keeps within its distances of
+    /// it; once the leader is gone it keeps by its fellow instead of
+    /// freezing where it stood.
+    #[test]
+    fn a_follower_keeps_by_its_leader_seen_or_not_and_by_its_allies_once_the_leader_is_gone() {
+        use rl_rules::ai::tactics::Keep;
+        let (mut app, start, _) = arena();
+        let us = rl_rules::FactionId::from_raw(0);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(us))).id();
+        let waits = || Mind(Arc::new(Brain::new()));
+        let chief = app.world_mut().spawn((Actor, Blocks, Position(start.offset(12, 0)), Health::full(10), Faction(us), waits())).id();
+        let fellow = app.world_mut().spawn((Actor, Blocks, Position(start.offset(0, 3)), Health::full(10), Faction(us), waits())).id();
+        let follower = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(1, 3)),
+                Health::full(10),
+                Faction(us),
+                Perception(4),
+                Mind(Arc::new(Brain::new().then(Keep::leader(2, 1)))),
+                Leader(chief),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let at = |app: &App, e: Entity| app.world().get::<Position>(e).unwrap().0;
+        let wait = |app: &mut App, turns: usize| {
+            for _ in 0..turns {
+                app.world_mut().write_message(Intent::new(player, Wait));
+                app.update();
+            }
+        };
+        wait(&mut app, 14);
+        let gap = geometry::chebyshev(at(&app, follower), at(&app, chief));
+        assert!((1..=2).contains(&gap), "it walked to its chief, eleven off and out of its sight: {gap} off");
+
+        app.world_mut().despawn(chief);
+        let mine = at(&app, follower);
+        app.world_mut().get_mut::<Position>(fellow).unwrap().0 = mine.offset(4, 0);
+        wait(&mut app, 4);
+        let gap = geometry::chebyshev(at(&app, follower), at(&app, fellow));
+        assert!(gap <= 2, "with its chief gone it closed on its fellow, four off: {gap} off");
     }
 
     /// A game with no combat can field a mind: without `CombatPlugin`,

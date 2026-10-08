@@ -6,6 +6,11 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A mind can follow one leader: `Keep::leader(keep_within, no_closer_than)`, the new `Station::Leader`, keeps within its distances of the actor named by the follower's new `Leader(Entity)` component rather than of its nearest ally, with the same steps that never undo what they are doing, and keeps station on its allies as `Keep::allies` does while the leader is dead, on another map or gone, so a band whose chief falls keeps together.
+  `MindsPlugin`'s new `sense_leaders` tells it where its leader stands through the new `Led { at, in_sight }` sense, seen or not, since a follower told only of a leader in sight would lose it at the first corner.
+  The leader lives on the follower and not in its brain, so one shared brain serves a kind led or not; `rl-save` keeps it across a continued run, by the entity map, when the leader was saved too.
+  A game that matches on `Station` exhaustively gains an arm; a brain with `Keep::leader` counts as keeping with its allies for who follows whom through a way.
+
 - The look panel wraps what a game says about a thing: each of `InspectView::facets` is broken onto as many lines as it takes, on spaces, where it was cut to one line with an ellipsis, so a monster's five traits read as sentences.
   A facet is drawn whole or not at all, and those the rectangle has no room for are counted on its last row in the muted tone, `and 2 more` by default and the game's own words with the new `InspectPanel::more("{n} more")`.
   A game whose facets were short sees no change; one whose facets ran long may want a taller panel.
