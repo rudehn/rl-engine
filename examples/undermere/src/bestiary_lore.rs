@@ -25,11 +25,11 @@
 //! those systems already do, rather than threading a new message through
 //! them.
 //!
-//! `reflecting` moves a landing's targets silently inside
-//! [`rl_engine::rl_bevy::Bystanders::reflect`], before anything is fired,
-//! so nothing here tells a reflected landing apart from an ordinary one;
-//! left unseen until the engine grows a seam for it, and said so in task
-//! 7's report.
+//! `reflecting` is learned off the engine's own `Reflected`, written by
+//! [`rl_engine::rl_bevy::Bystanders::reflect`] each time it turns a
+//! landing back: task 7's report found no seam for it yet, and
+//! [`learn_reflecting`] is that seam, read at the reflecting body's own
+//! cell exactly as [`learn_splitting`] and [`learn_draining`] read theirs.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -200,6 +200,26 @@ pub fn learn_draining(
     }
 }
 
+/// Learns `reflecting` the moment a landing turned back is seen: the
+/// engine's own `Reflected`, at the reflecting body's own cell, the seam
+/// task 7's report found missing.
+///
+/// In `TurnSet::React`.
+pub fn learn_reflecting(
+    mut reflected: MessageReader<Reflected>,
+    reflecting: Query<(&Kind, &Position), With<Reflects>>,
+    players: Query<&Viewshed, With<Player>>,
+    bestiary: Res<Bestiary>,
+    mut lore: ResMut<MonsterLore>,
+) {
+    for r in reflected.read() {
+        let Ok((kind, pos)) = reflecting.get(r.by) else { continue };
+        if seen(&players, pos.0) {
+            lore.show(&bestiary.defs.get(kind.0).name, "reflecting");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rl_engine::rl_core::RunSeed;
@@ -256,6 +276,25 @@ mod tests {
         let after = facets_at(&mut app, here.offset(1, 0));
         assert!(after.contains(&"splits when struck".to_string()) && !after.iter().any(|s| s == "?"), "shown now: {after:?}");
         assert!(app.world().resource::<MonsterLore>().has_shown("pink jelly", "splitting"));
+    }
+
+    /// A golem's `reflecting` reads "?" on the look panel until the
+    /// adventurer has seen a landing turned back off it, and its own
+    /// words once it has: the seam task 7's report found missing.
+    #[test]
+    fn a_reflected_landing_teaches_reflecting_once_seen() {
+        let (mut app, _, here) = arena_with(4, InspectViewPlugin);
+        app.add_systems(Update, annotate_inspect.in_set(ViewSet::Annotate));
+        let golem = monster(&mut app, "golem", here.offset(1, 0));
+        let before = facets_at(&mut app, here.offset(1, 0));
+        assert!(before.contains(&"?".to_string()) && !before.iter().any(|s| s == "turns magic back"), "unshown yet: {before:?}");
+
+        app.world_mut().write_message(Reflected { by: golem, onto: golem, source: rl_engine::rl_bevy::Source::Offer(golem) });
+        settle(&mut app);
+
+        let after = facets_at(&mut app, here.offset(1, 0));
+        assert!(after.contains(&"turns magic back".to_string()) && !after.iter().any(|s| s == "?"), "shown now: {after:?}");
+        assert!(app.world().resource::<MonsterLore>().has_shown("golem", "reflecting"));
     }
 
     /// Review Focus 4: a jelly struck behind a wall, out of the
