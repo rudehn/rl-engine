@@ -91,6 +91,10 @@ impl Plugin for UndermerePlugin {
         // by every run's start and given back by a continued run's save;
         // nothing between two runs, so the next one's faces are its own.
         app.init_resource::<crate::lore::Lore>().reset_on_new_run::<crate::lore::Lore>();
+        // What the adventurer knows of the run's monsters: which kind's
+        // tricks they have seen land, the same kind of thing and the same
+        // run-to-run life as `Lore`.
+        app.init_resource::<crate::bestiary_lore::MonsterLore>().reset_on_new_run::<crate::bestiary_lore::MonsterLore>();
 
         // The run's start, and a continued run after the fresh start has
         // stood aside.
@@ -198,6 +202,21 @@ impl Plugin for UndermerePlugin {
                 crate::tricks::trail_fire,
                 crate::tricks::keep_shrouded,
                 crate::tricks::keep_regen_halted,
+            )
+                .in_set(TurnSet::React),
+        );
+        // What is known of a kind's tricks, learned off the same messages
+        // the tricks above, an ability's own landing and the engine's own
+        // actor triggers already answer with: each only once its effect
+        // lands where the adventurer can see it.
+        app.add_systems(
+            Turn,
+            (
+                crate::bestiary_lore::learn_from_abilities,
+                crate::bestiary_lore::learn_from_triggers,
+                crate::bestiary_lore::learn_splitting,
+                crate::bestiary_lore::learn_fire_trail,
+                crate::bestiary_lore::learn_draining,
             )
                 .in_set(TurnSet::React),
         );

@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemKind};
 use crate::bestiary::{Bestiary, Kind};
+use crate::bestiary_lore::MonsterLore;
 use crate::lore::{CurseShown, Lore, Unfamiliar};
 use crate::run::Adventurer;
 use crate::stairs::Way;
@@ -45,14 +46,15 @@ use crate::tally::{Counted, Tally};
 // tally has counted.
 // v3: an item's level, curse and familiarity, the adventurer's strength,
 // what is known of the run's things, and a finger slot on either hand.
-pub const VERSION: u32 = 3;
+// v4: what is known of the run's monsters' tricks.
+pub const VERSION: u32 = 4;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
 /// What the save is made of: the engine's plugins, the four kinds, and
-/// the three resources; and the records, in their own slot.
+/// the four resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
@@ -61,6 +63,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Way>()
         .save_state::<Tally>()
         .save_state::<Lore>()
+        .save_state::<MonsterLore>()
         .save_state::<Quests>();
 }
 // ANCHOR_END: register
@@ -249,6 +252,20 @@ impl SaveableState for Lore {
     }
 
     fn restore(&mut self, saved: Lore) {
+        *self = saved;
+    }
+}
+
+/// What is known of the run's monsters, as the save writes it: the whole
+/// of [`MonsterLore`], by the kind's name and the trick's, as `Lore` is.
+impl SaveableState for MonsterLore {
+    type Saved = MonsterLore;
+
+    fn capture(&self) -> MonsterLore {
+        self.clone()
+    }
+
+    fn restore(&mut self, saved: MonsterLore) {
         *self = saved;
     }
 }

@@ -182,6 +182,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
     ));
     // What holds each monster in sight, said after its name on the rail.
     app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
+    // What is known of a monster's traits on the look panel: every plain
+    // one in its own words, and a "?" for every trick not yet seen.
+    app.add_systems(Update, undermere::bestiary_lore::annotate_inspect.in_set(ViewSet::Annotate));
     // What the player may set, opened from the menu and from the title:
     // fullscreen is the engine's, declared by `RoguelikePlugins`. And
     // every run that has ended, best first, which the title opens.
