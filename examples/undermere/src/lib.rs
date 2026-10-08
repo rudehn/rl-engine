@@ -12,6 +12,9 @@
 //! written as, [`armory`] the items, and [`bestiary`] the monsters, each
 //! one its core and its traits folded together at load, so a spawn reads
 //! plain values. [`content::Library`] is that order, written once.
+//! [`tricks`] is the bestiary's own tricks the trait model's folding
+//! cannot carry alone: a game system of their own, each a `TurnSet::React`
+//! reader or a brain shape read off [`tricks::Tricks`].
 //!
 //! The places are [`dungeon`]'s: Mereholt, one hand-drawn piece, and the
 //! ten floors under it, each a chain of the engine's passes varied by its
@@ -80,5 +83,6 @@ pub mod tally;
 pub mod testing;
 pub mod title;
 pub mod traits;
+pub mod tricks;
 pub mod typeface;
 pub mod wearing;
