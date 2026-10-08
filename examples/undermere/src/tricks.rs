@@ -512,6 +512,10 @@ pub struct Choir;
 /// How far a [`Choir`]'s own song reaches: the content sheet's own four.
 const SING_RANGE: i32 = 4;
 
+/// A body a choir might sing to: where it stands, its side, what it
+/// suffers, and whether the song already gave it its regeneration.
+type SingingTo = (Entity, &'static Position, &'static Faction, &'static Afflicted, Has<Sung>);
+
 /// Keeps `regenerating` on every actor of a [`Choir`]'s own side within
 /// [`SING_RANGE`] of it, and takes it off the turn it falls out of range:
 /// a Choirmaster's song is heard exactly as far as it carries. Plain
@@ -520,27 +524,36 @@ const SING_RANGE: i32 = 4;
 /// everywhere else in this bestiary.
 ///
 /// Edge-triggered, as `keep_shrouded` is: `Afflict` only the turn a body
-/// comes into range, `Cure` only the turn it leaves it.
+/// comes into range, `Cure` only the turn it leaves it. Only what the song
+/// gave is taken back, marked [`Sung`]: a body already regenerating by its
+/// own trait or a worn ring keeps it, in range or out.
 ///
 /// In `TurnSet::React`.
 pub fn sing_choir(
+    mut commands: Commands,
     registries: Res<Registries>,
     choir: Query<(&Position, &Faction), With<Choir>>,
-    bodies: Query<(Entity, &Position, &Faction, &Afflicted), With<Actor>>,
+    bodies: Query<SingingTo, With<Actor>>,
     mut afflict: MessageWriter<Afflict>,
     mut cure: MessageWriter<Cure>,
 ) {
     let Some(status) = registries.statuses.id("regenerating") else { return };
-    for (e, pos, side, held) in &bodies {
+    for (e, pos, side, held, sung) in &bodies {
         let sung_to = choir.iter().any(|(at, theirs)| theirs.0 == side.0 && geometry::chebyshev(at.0, pos.0) <= SING_RANGE);
-        let has = held.0.has(status);
-        if sung_to && !has {
+        if sung_to && !sung && !held.0.has(status) {
             afflict.write(Afflict { target: e, status, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
-        } else if !sung_to && has {
+            commands.entity(e).insert(Sung);
+        } else if !sung_to && sung {
             cure.write(Cure { target: e, status });
+            commands.entity(e).remove::<Sung>();
         }
     }
 }
+
+/// Marks a body whose `regenerating` a [`Choir`] gave, so leaving the song
+/// takes back only that and never a regeneration of its own.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Sung;
 
 /// The prop the Widow's cave scatters: `assets/props.ron`'s own name.
 const EGG_SAC: &str = "egg sac";
