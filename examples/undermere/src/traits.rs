@@ -344,6 +344,17 @@ mod tests {
             "luring",
             "wakeful",
             "sleepy",
+            "splitting",
+            "stealing",
+            "shrouded",
+            "flitting",
+            "fire-trail",
+            "reflecting",
+            "packing",
+            "led",
+            "conjuring",
+            "raising",
+            "draining",
         ];
         for name in skeleton {
             let id = traits.id(name).unwrap_or_else(|| panic!("no trait called {name:?}"));

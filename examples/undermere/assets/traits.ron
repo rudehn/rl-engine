@@ -28,13 +28,16 @@
 //               "cold" | "poison"; 100 immune, negative a weakness
 //   armor:      flat armor, added to the monster's own
 //   abilities:  names from `abilities.ron`: "fire breath" | "drowning grasp" | "spit web" |
-//               "blink" | "ward ally" | "mend ally" | "firebolt" | "slowness"
+//               "blink" | "ward ally" | "mend ally" | "firebolt" | "slowness" | "conjure blades" |
+//               "raise dead"
 //   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //               "webbed" | "warded" | "weakened" | "asleep"
 //   triggers:   what it does at its own moments: [(on: "hit" | "struck" | "died", area: Here |
 //               Burst(radius: n), effects: [(kind:, chance:, args:)])], the engine's
 //               Harm(kind:, roll:), Mend(roll:), Inflict(status:, turns:), Cleanse(status:),
-//               Emit(gas:, amount:); landed through the engine's actor triggers
+//               Emit(gas:, amount:); or part 3's own, Wither(turns:), `weakened` capped at three
+//               stacks, and Steal, a landed blow's own trick; landed through the engine's actor
+//               triggers
 //   keeps_away: (how far it lets an enemy get before it closes, how close it lets one get
 //               before it backs away), both in tiles
 //
@@ -82,8 +85,11 @@
      resists: [("slash", 50), ("pierce", 50), ("crush", -50)]),
     (name: "paralysing", says: "a touch that freezes",
      triggers: [(on: "hit", effects: [(kind: "Inflict", chance: 25, args: (status: "paralysed", turns: 2))])]),
+    // `Wither` rather than the plain `Inflict` every other hit trigger
+    // uses: `Stacking::Stack` has no maximum of its own, and the sheet
+    // caps this one at three.
     (name: "withering", says: "saps strength",
-     triggers: [(on: "hit", effects: [(kind: "Inflict", args: (status: "weakened", turns: 20))])]),
+     triggers: [(on: "hit", effects: [(kind: "Wither", args: (turns: 20))])]),
     (name: "blinking", says: "blinks from place to place", abilities: ["blink"]),
     (name: "warding", says: "shields its allies", abilities: ["ward ally"]),
     (name: "mends allies", says: "mends its allies", abilities: ["mend ally"]),
@@ -97,4 +103,29 @@
     (name: "luring", says: "keeps away, and glows", keeps_away: (5, 3)),
     (name: "wakeful", says: "never sleeps", notice: (certain: 2, chance_pct: 35, lit_bonus: 4, memory: 8)),
     (name: "sleepy", says: "sleeps deeply"),
+    // Part 3's own game systems (6b): a trait no field here can carry,
+    // read by name once at load into `Tricks` and carried out in
+    // `tricks.rs`, over `DamageDealt`, `Stepped` or a lit cell rather than
+    // the trait model's own fold. `says` is still every one of their
+    // words for the examine panel.
+    (name: "splitting", says: "splits when struck"),
+    // `travels` so `stealing`'s own flight always finds the floor's way
+    // out to run for, through the engine's `Ways` sense, the moment
+    // something is actually taken; `Steal` is the hit trigger that takes
+    // it and marks the taker to run.
+    (name: "stealing", says: "steals, then runs", wits: ["travels"],
+     triggers: [(on: "hit", effects: [(kind: "Steal")])]),
+    (name: "shrouded", says: "hard to see in the dark"),
+    (name: "flitting", says: "flits erratically"),
+    (name: "fire-trail", says: "leaves fire behind it"),
+    (name: "reflecting", says: "turns magic back"),
+    (name: "packing", says: "hunts in packs"),
+    (name: "led", says: "follows its chief"),
+    (name: "conjuring", says: "conjures blades from the air", abilities: ["conjure blades"]),
+    (name: "raising", says: "raises the dead to fight for it", abilities: ["raise dead"]),
+    // 6a's report moved this here too: nothing yet knew what a bite
+    // "dealt" at the moment the engine's own `hit` fires, which is before
+    // a blow's damage is resolved, so `judge_draining` reads `DamageDealt`
+    // in `TurnSet::React` instead of a trigger.
+    (name: "draining", says: "drinks what it wounds"),
 ]

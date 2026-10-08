@@ -24,23 +24,16 @@
 //   drops:   optional; [(item name, percent chance)], each rolled on its own death; a pile
 //            of gold dropped is a floor's pile
 //
-// A kind whose sheet trick needs a game system of its own (splitting, stealing, shrouded,
-// flitting, fire-trail, reflecting, packing, raising, draining, conjuring) carries the rest of
-// its row here and gains that trait once the system behind it lands.
 #![enable(implicit_some)]
 [
-    // The upper floors: vermin, and the smallest of the goblins. Packing
-    // waits on a game system (6b), so rat and jackal carry only what they
-    // have today.
-    (name: "rat", glyph: 'r', color: (0.62, 0.52, 0.42), hp: 4, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "cowardly"]),
-    (name: "jackal", glyph: 'j', color: (0.8, 0.62, 0.36), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swift"]),
+    // The upper floors: vermin, and the smallest of the goblins.
+    (name: "rat", glyph: 'r', color: (0.62, 0.52, 0.42), hp: 4, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "cowardly", "packing"]),
+    (name: "jackal", glyph: 'j', color: (0.8, 0.62, 0.36), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swift", "packing"]),
     (name: "kobold", glyph: 'k', color: (0.62, 0.72, 0.32), hp: 6, attack: "1d4 slash", faction: "goblins", traits: ["sapient", "cowardly"],
      drops: [("gold coin", 40), ("dagger", 8)]),
     (name: "goblin", glyph: 'g', color: (0.42, 0.75, 0.3), hp: 10, attack: "1d5 slash", faction: "goblins", traits: ["sapient"],
      drops: [("gold coin", 40), ("sword", 8)]),
-    // Stealing waits on a game system (6b): a monkey is animal and swift
-    // today, and takes what it steals once that lands.
-    (name: "monkey", glyph: 'm', color: (0.7, 0.55, 0.35), hp: 8, attack: "1d3 crush", faction: "beasts", traits: ["animal", "swift"]),
+    (name: "monkey", glyph: 'm', color: (0.7, 0.55, 0.35), hp: 8, attack: "1d3 crush", faction: "beasts", traits: ["animal", "swift", "stealing"]),
     // The caves and the crypts under them. From the ogre down, a blow that
     // armor turns is two dice: armor turns a point of every blow, and
     // enchanted armor turned every blow of one die down here to nothing,
@@ -49,52 +42,34 @@
     // blow, however armored, dealing at least half its roll.
     (name: "cave spider", glyph: 's', color: (0.68, 0.58, 0.75), hp: 9, attack: "1d4 pierce", faction: "beasts",
      traits: ["animal", "sees in the dark", "venomous", "webbing"]),
-    (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: "1d3 slash", ranged: "1d6 pierce @6", faction: "goblins", traits: ["sapient", "cowardly"],
+    (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: "1d3 slash", ranged: "1d6 pierce @6", faction: "goblins", traits: ["sapient", "cowardly", "led"],
      drops: [("gold coin", 40), ("bow", 8)]),
-    // Conjuring waits on a game system of its own (6b): the engine's
-    // `Conjure` always puts what it calls up on the adventurer's side,
-    // which is right for a staff and wrong for a goblin's own blades.
-    (name: "goblin conjurer", glyph: 'c', color: (0.6, 0.4, 0.85), hp: 10, attack: "1d3 slash", faction: "goblins", traits: ["sapient", "cowardly", "blinking"]),
-    (name: "goblin mystic", glyph: 'y', color: (0.4, 0.7, 0.9), hp: 10, attack: "1d3 crush", faction: "goblins", traits: ["sapient", "cowardly", "warding"]),
+    (name: "goblin conjurer", glyph: 'c', color: (0.6, 0.4, 0.85), hp: 10, attack: "1d3 slash", faction: "goblins", traits: ["sapient", "cowardly", "blinking", "conjuring", "led"]),
+    (name: "goblin mystic", glyph: 'y', color: (0.4, 0.7, 0.9), hp: 10, attack: "1d3 crush", faction: "goblins", traits: ["sapient", "cowardly", "warding", "led"]),
     (name: "myconid", glyph: 'f', color: (0.45, 0.9, 0.78), hp: 12, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "slow", "fungal glow", "spore-burst"]),
-    // Splitting waits on a game system of its own (6b): a blow's
-    // `struck` trigger lands before its damage, so the game judges a
-    // split from `DamageDealt` in `TurnSet::React` rather than here.
-    (name: "pink jelly", glyph: 'J', color: (0.95, 0.5, 0.7), hp: 30, attack: "1d4 crush", faction: "beasts", traits: ["mindless"]),
-    // Flitting and draining wait on a game system and an effect that does
-    // not exist yet (`hit` fires before a blow's damage is known, so
-    // nothing can yet mend a drainer by what it dealt).
-    (name: "vampire bat", glyph: 'b', color: (0.45, 0.35, 0.5), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark"]),
+    (name: "pink jelly", glyph: 'J', color: (0.95, 0.5, 0.7), hp: 30, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "splitting"]),
+    (name: "vampire bat", glyph: 'b', color: (0.45, 0.35, 0.5), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark", "flitting", "draining"]),
     (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: "2d8 crush", faction: "goblins", traits: ["sapient", "slow", "thick-hided"],
      drops: [("gold coin", 80), ("war hammer", 15)]),
     (name: "skeleton", glyph: 'z', color: (0.88, 0.86, 0.76), hp: 14, attack: "1d6 slash", faction: "undead", traits: ["mindless", "deathless", "brittle"]),
     (name: "ghoul", glyph: 'G', color: (0.58, 0.68, 0.52), hp: 18, attack: "1d8 slash", faction: "undead", traits: ["sapient", "deathless", "keen-nosed", "paralysing"]),
-    // Raising waits on a game system of its own (6b): a necromancer blinks
-    // today, and raises a body once that system lands.
-    (name: "necromancer", glyph: 'n', color: (0.6, 0.55, 0.8), hp: 16, attack: "1d4 slash", faction: "undead", traits: ["sapient", "cowardly", "blinking"]),
-    // Shrouded waits on a game system of its own (6b): a wraith withers
-    // today, and goes unseen in the dark once that system lands.
-    (name: "wraith", glyph: 'w', color: (0.75, 0.8, 0.9), hp: 22, attack: "1d8 cold", faction: "undead", traits: ["sapient", "deathless", "withering"]),
+    (name: "necromancer", glyph: 'n', color: (0.6, 0.55, 0.8), hp: 16, attack: "1d4 slash", faction: "undead", traits: ["sapient", "cowardly", "blinking", "raising"]),
+    (name: "wraith", glyph: 'w', color: (0.75, 0.8, 0.9), hp: 22, attack: "1d8 cold", faction: "undead", traits: ["sapient", "deathless", "withering", "shrouded"]),
     (name: "will-o'-wisp", glyph: 'o', color: (0.6, 0.9, 1.0), hp: 10, attack: "1d6 fire", faction: "beasts", traits: ["mindless", "blinking", "luring", "grave light"]),
     // Floors seven to nine: the drowned dead, the forge's fire, and the
     // first of the deep culture at the bottom. A wight's touch is the cold
     // of the deep water, which armor does not turn, as it does not turn
-    // the forge's fire. Draining waits on a game system (6b).
+    // the forge's fire.
     (name: "drowned thrall", glyph: 'Z', color: (0.45, 0.65, 0.72), hp: 22, attack: "2d6 crush", faction: "undead", traits: ["mindless", "deathless", "slow"]),
-    (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: "1d8 cold", armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light"]),
+    (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: "1d8 cold", armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light", "draining"]),
     (name: "troll", glyph: 'T', color: (0.45, 0.6, 0.35), hp: 40, attack: "2d8 slash", faction: "beasts", traits: ["sapient", "regenerates", "burns-badly"]),
-    // Reflecting waits on a game system of its own (6b): a golem is
-    // armored and wakeful today, and turns magic back once that lands.
-    (name: "golem", glyph: 'X', color: (0.65, 0.6, 0.55), hp: 60, attack: "2d10 crush", faction: "goblins", traits: ["mindless", "slow", "armored", "wakeful"]),
+    (name: "golem", glyph: 'X', color: (0.65, 0.6, 0.55), hp: 60, attack: "2d10 crush", faction: "goblins", traits: ["mindless", "slow", "armored", "wakeful", "reflecting"]),
     (name: "dar blademaster", glyph: 'd', color: (0.75, 0.55, 0.9), hp: 24, attack: "2d6 slash", faction: "dar", traits: ["sapient", "swift", "blinking"]),
-    (name: "dar priestess", glyph: 'd', color: (0.9, 0.65, 0.85), hp: 20, attack: "1d6 crush", faction: "dar", traits: ["sapient", "cowardly", "warding", "mends allies"]),
-    (name: "dar battlemage", glyph: 'd', color: (0.6, 0.5, 1.0), hp: 20, attack: "1d6 crush", faction: "dar", traits: ["sapient", "cowardly", "firebolt", "slowness"]),
+    (name: "dar priestess", glyph: 'd', color: (0.9, 0.65, 0.85), hp: 20, attack: "1d6 crush", faction: "dar", traits: ["sapient", "cowardly", "warding", "mends allies", "led"]),
+    (name: "dar battlemage", glyph: 'd', color: (0.6, 0.5, 1.0), hp: 20, attack: "1d6 crush", faction: "dar", traits: ["sapient", "cowardly", "firebolt", "slowness", "led"]),
     (name: "fire imp", glyph: 'i', color: (1.0, 0.5, 0.25), hp: 10, attack: "1d4 fire", ranged: "1d6 fire @5", faction: "beasts", traits: ["sapient", "swift", "fire-blooded", "blinking"]),
-    // Fire-trail waits on a game system of its own (6b): a salamander
-    // breathes fire today, and leaves it behind as it walks once that
-    // system lands.
     (name: "salamander", glyph: 'S', color: (1.0, 0.42, 0.18), hp: 26, attack: "1d8 fire", armor: 1, faction: "beasts",
-     traits: ["animal", "fire-blooded", "ember glow", "fire breath"]),
+     traits: ["animal", "fire-blooded", "ember glow", "fire breath", "fire-trail"]),
     // Floor ten: the throne, its court, and the thing that drowned the
     // kingdom. The throne's piece stands each of them at its own slot, and
     // neither the knights nor the king stand anywhere else. The knight's

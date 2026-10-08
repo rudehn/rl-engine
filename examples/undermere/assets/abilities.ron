@@ -24,12 +24,15 @@
 //                Harm(kind:, roll:), Mend(roll:), Inflict(status:, turns:), Cleanse(status:),
 //                Shove(cells:), Pull(cells:); Ignite(turns:), which sets what it lands on alight;
 //                Emit(gas:, amount:); or one of Undermere's own, as `items.ron` lists them,
-//                Teleport among them, which sends its user far off. The damage kinds are
+//                Teleport among them, which sends its user far off; or, part 3's own, Blink(reach:,
+//                per_level:), the user along the line aimed, up to reach cells, Conjure(blades:,
+//                turns:), spectral blades on the user's own side, RaiseDead, the nearest body in
+//                sight and reach stood up as the user's own ally, Wither(turns:), `weakened` capped
+//                at three stacks, and Steal, a landed blow's own trick. The damage kinds are
 //                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison" | "lightning", and the
 //                statuses "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //                "slowed" | "hasted" | "fireproof" | "shrouded" | "paralysed" | "confused" |
-//                "discordant" | "webbed" | "warded" | "weakened" | "asleep"; or Blink(reach:,
-//                per_level:), the user along the line aimed, up to reach cells
+//                "discordant" | "webbed" | "warded" | "weakened" | "asleep"
 #![enable(implicit_some)]
 [
     // The salamander's: a cone of flame that sets the ground it reaches
@@ -111,5 +114,32 @@
         mode: Bolt(range: 8),
         cooldown: 800,
         effects: [(kind: "Inflict", args: (status: "slowed", turns: 5))],
+    ),
+    // A goblin conjurer's and, through the same staff, the adventurer's
+    // own: blades on the caster's own side, never always the
+    // adventurer's. `aim: SelfOnly` and `mode: Own` since nothing is
+    // pointed; a caster reaches for it only with an enemy in sight, which
+    // is when conjuring anything is worth the turn.
+    (
+        name: "conjure blades",
+        description: "Calls up spectral blades to fight on your own side.",
+        look: (glyph: '*', color: (r: 185, g: 220, b: 255)),
+        aim: SelfOnly,
+        mode: Own,
+        cooldown: 1200,
+        effects: [(kind: "Conjure", args: (blades: 2, turns: 12))],
+    ),
+    // A necromancer's: the nearest body in sight and within reach stands
+    // up on the caster's own side. `aim: SelfOnly` and `mode: Own` for the
+    // same reason `conjure blades` is: what it raises is found by
+    // `RaiseDead` itself, not pointed by whoever casts it.
+    (
+        name: "raise dead",
+        description: "Stands the nearest body in sight back up as your ally.",
+        look: (glyph: '*', color: (r: 150, g: 200, b: 150)),
+        aim: SelfOnly,
+        mode: Own,
+        cooldown: 1000,
+        effects: [(kind: "RaiseDead")],
     ),
 ]

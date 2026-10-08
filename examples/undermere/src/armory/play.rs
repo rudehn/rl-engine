@@ -89,8 +89,13 @@ fn killed_unaware(weapon: &str, victim: &str, seeds: std::ops::Range<u64>, each:
             assert!(unaware, "seed {seed}: the {victim} has not noticed the adventurer yet");
             strike(&mut app, me, foe);
             struck += 1;
+            // Dead, not only despawned: every monster now leaves remains
+            // for `raising` to find, so a killed one still answers
+            // `get_entity` as its own body, with its `Health` gone rather
+            // than its whole entity, and `Dead` itself lasts only the one
+            // pass between dying and being laid down as one.
             match app.world().get_entity(foe) {
-                Ok(standing) if standing.get::<Dead>().is_none() => {
+                Ok(standing) if standing.get::<Health>().is_some() => {
                     app.world_mut().despawn(foe);
                     settle(&mut app);
                 }
