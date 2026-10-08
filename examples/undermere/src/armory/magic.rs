@@ -14,7 +14,7 @@ use rl_engine::prelude::*;
 use crate::allies::{Ally, Fades};
 use crate::bestiary::Kind;
 use crate::lore::Lore;
-use crate::testing::{arena, at, find, give, lost, monster, name_of, pass_turns, said, settle, still, use_thing};
+use crate::testing::{arena, at, equip, find, give, kill, lost, make, monster, name_of, pass_turns, said, settle, still, use_thing};
 
 /// `me` zaps `thing`, out of their pack, at `cell`, as the cursor's
 /// confirm does, and the turns run until they may act again.
@@ -557,4 +557,52 @@ fn a_ring_of_awareness_puts_fifteen_a_level_on_the_chance_of_spotting_what_is_hi
     crate::testing::unequip(&mut app, me, ring);
     pass_turns(&mut app, 1);
     assert_eq!(app.world().get::<Hidden>(secret).map(|h| h.spot), Some(0), "and the barrel's own nought without it");
+}
+
+/// The Choirmaster's Staff raises the body aimed at on its user's own
+/// side for thirty turns, then lets it fade; spends one of its two
+/// charges, which comes back over its own three hundred turns; and costs
+/// its wearer ten mending while it is held.
+#[test]
+fn the_choirmasters_staff_raises_a_body_for_thirty_turns_then_fades_and_costs_mending_while_held() {
+    let (mut app, me, here) = arena(1);
+    let rat = still(&mut app, "rat", here.offset(2, 0));
+    kill(&mut app, rat, Some(me));
+    let staff = make(&mut app, "the Choirmaster's Staff");
+    equip(&mut app, me, staff);
+    let registries = app.world().resource::<Registries>().clone();
+    let mending = registries.stats.expect(crate::content::MENDING);
+    assert_eq!(app.world().get::<StatBlock>(me).unwrap().0.value(mending, &registries.stats), -10, "mending lost while held");
+    zap(&mut app, me, staff, here.offset(2, 0));
+    assert!(app.world().get::<Actor>(rat).is_some(), "the rat rises again");
+    assert_eq!(app.world().get::<Faction>(rat).map(|f| f.0), app.world().get::<Faction>(me).map(|f| f.0), "fighting for its raiser");
+    assert_eq!(charges(&app, staff), (1, 2), "one of its two charges spent");
+    pass_turns(&mut app, 31);
+    assert!(app.world().get::<Position>(rat).is_none(), "it fades once its thirty turns are up");
+    pass_turns(&mut app, 270);
+    assert_eq!(charges(&app, staff), (2, 2), "the charge back after its own three hundred turns");
+}
+
+/// The Abbess's Chalice heals fifteen and makes every drowned thing on
+/// the floor aware of the drinker, through a wall between them, which an
+/// ordinary noise never would; a goblin behind the same wall, none of the
+/// drowned, senses nothing from it. Spends its one charge, which its own
+/// `consumable` never refills, left to `crate::artifacts::refill_chalice`
+/// on a new floor.
+#[test]
+fn the_abbesss_chalice_heals_fifteen_and_every_drowned_thing_on_the_floor_senses_the_drink_through_a_wall() {
+    let (mut app, me, here) = arena(1);
+    app.world_mut().get_mut::<Health>(me).expect("health").max = 10_000;
+    app.world_mut().get_mut::<Health>(me).expect("health").current = 1;
+    let before = app.world().get::<Health>(me).expect("health").current;
+    crate::testing::wall_off(&mut app, &[here.offset(1, 0)]);
+    let thrall = still(&mut app, "drowned thrall", here.offset(2, 0));
+    let goblin = still(&mut app, "goblin", here.offset(-1, 0));
+    let chalice = make(&mut app, "the Abbess's Chalice");
+    give(&mut app, me, chalice);
+    use_thing(&mut app, me, chalice);
+    assert_eq!(app.world().get::<Health>(me).map(|h| h.current), Some(before + 15), "Mend 15");
+    assert_eq!(charges(&app, chalice), (0, 1), "its one charge spent");
+    assert_eq!(app.world().get::<Aware>(thrall).map(|a| a.knows(me)), Some(true), "the drowned thrall senses the drink through the wall");
+    assert_eq!(app.world().get::<Aware>(goblin).map(|a| a.knows(me)), Some(false), "a goblin, none of the drowned, senses nothing from it");
 }

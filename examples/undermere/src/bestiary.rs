@@ -968,6 +968,28 @@ mod tests {
         assert_eq!(errors, ["magpie: unknown item \"goblet\""]);
     }
 
+    /// Each of the five mini-bosses drops its own artifact, and only its
+    /// own, certainly: every row of its `drops` names its artifact at a
+    /// hundred in a hundred.
+    #[test]
+    fn each_mini_boss_drops_its_own_artifact_and_only_its_own() {
+        let library = library();
+        let bestiary = &library.bestiary;
+        let bosses = [
+            ("Grubnak the goblin king", "the Crown of Grubnak"),
+            ("the Widow", "the Widow's Fang"),
+            ("the Choirmaster", "the Choirmaster's Staff"),
+            ("the Drowned Abbess", "the Abbess's Chalice"),
+            ("the Forgemaster", "the Forgemaster's Hammer"),
+        ];
+        for (boss, artifact) in bosses {
+            let def = bestiary.defs.get(bestiary.defs.expect(boss));
+            let item = library.armory.defs.expect(artifact);
+            assert_eq!(def.drops.0.iter().map(|row| row.item).collect::<Vec<_>>(), vec![item], "{boss} drops only {artifact}");
+            assert_eq!(def.drops.0[0].pct, 100, "{boss} always drops {artifact}");
+        }
+    }
+
     /// The traits reach the engine's own components: a glow is a light
     /// the monster carries, and a coward's threshold is where its mind
     /// turns from fighting to running, with an enemy beside it.

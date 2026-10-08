@@ -13,7 +13,7 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-use crate::content::{FOOTFALL, STEALTH};
+use crate::content::{FOOTFALL, QUIET, STEALTH};
 use crate::run::Adventurer;
 
 /// What the adventurer's own stealth is with nothing on it: noticeable,
@@ -21,18 +21,24 @@ use crate::run::Adventurer;
 /// the moment it comes into view.
 pub const OWN_STEALTH: StealthStats = StealthStats { quiet: 0, subtlety: 0 };
 
-/// Keeps the adventurer's stealth what their stealth stat makes it: the
-/// stat's value is percentage points taken off every watcher's chance of
-/// noticing them, added to [`OWN_STEALTH`]'s, and never taken below
-/// nothing, since there is no chance to give a watcher past its own.
+/// Keeps the adventurer's stealth what their stealth and quiet stats make
+/// it: the stealth stat's value is percentage points taken off every
+/// watcher's chance of noticing them, added to [`OWN_STEALTH`]'s and never
+/// taken below nothing, since there is no chance to give a watcher past
+/// its own; the quiet stat is added to [`OWN_STEALTH`]'s own `quiet`
+/// straight, which a watcher's own certain notice is taken off, so a value
+/// below nought, the Crown of Grubnak's own gleam, widens it rather than
+/// narrowing it.
 ///
 /// Every pass in `TurnSet::React`, from the stat as it stands, so a ring
 /// put on, a draught drunk or a continued run all read right at once.
 pub fn keep_stealth(registries: Res<Registries>, mut adventurer: Query<(&StatBlock, &mut Stealth), With<Adventurer>>) {
     let Some(stat) = registries.stats.id(STEALTH) else { return };
+    let quiet_stat = registries.stats.id(QUIET);
     for (stats, mut stealth) in &mut adventurer {
         let subtlety = (OWN_STEALTH.subtlety as i32 + stats.0.value(stat, &registries.stats)).max(0) as u32;
-        let now = StealthStats { subtlety, ..OWN_STEALTH };
+        let quiet = OWN_STEALTH.quiet + quiet_stat.map_or(0, |q| stats.0.value(q, &registries.stats));
+        let now = StealthStats { subtlety, quiet };
         if stealth.0 != now {
             stealth.0 = now;
         }
@@ -180,6 +186,19 @@ mod tests {
         change(&mut app, me, STEALTH, Op::Add(-50));
         pass_turns(&mut app, 1);
         assert_eq!(app.world().get::<Stealth>(me).map(|s| s.0.subtlety), Some(0));
+    }
+
+    /// The quiet stat is added to the watcher's own certain notice
+    /// straight, so a value below nought, the Crown of Grubnak's own
+    /// gleam, widens it rather than narrowing it as a positive one would.
+    #[test]
+    fn the_quiet_stat_widens_a_watchers_certain_notice_when_it_is_below_nought() {
+        let mut app = headless(RunSeed(1));
+        let me = adventurer(&mut app);
+        assert_eq!(app.world().get::<Stealth>(me).map(|s| s.0.quiet), Some(OWN_STEALTH.quiet));
+        change(&mut app, me, crate::content::QUIET, Op::Add(-2));
+        pass_turns(&mut app, 1);
+        assert_eq!(app.world().get::<Stealth>(me).map(|s| s.0.quiet), Some(-2));
     }
 
     /// The light stat reaches the lantern further, and never puts it out.

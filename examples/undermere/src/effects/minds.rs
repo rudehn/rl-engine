@@ -198,3 +198,65 @@ pub fn aggravate(world: &mut World, reader: Entity) {
 
 /// What the shriek sounds like, declared by the game with its noise.
 pub const SHRIEK_SOUND: &str = "shriek";
+
+/// Makes every one of the drowned on `user`'s own floor aware of where
+/// `user` stands, however far off: the Abbess's chalice, each drink heard
+/// by the drowned wherever they are, unlike [`Aggravate`]'s shriek, which
+/// carries no further than a noise does and wakes everything under the
+/// lake rather than one kind of it. Takes no arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AlertDrowned;
+
+impl Effect for AlertDrowned {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let user = landing.user;
+        world.commands.queue(move |world: &mut World| alert_drowned(world, user));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "every drowned thing on the floor senses where you are".to_string()
+    }
+}
+
+impl FromArgs for AlertDrowned {
+    const KIND: &'static str = "AlertDrowned";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Whether a kind's own name says it is one of the drowned: `drowned
+/// thrall`, `the Drowned Abbess`, `the Drowned King`, read loosely by the
+/// word rather than by a trait or a faction, since none of the three
+/// share either and the word is the one thing the content sheet gives
+/// them in common.
+fn is_drowned(name: &str) -> bool {
+    name.to_lowercase().contains("drowned")
+}
+
+/// Makes every one of the drowned on `reader`'s own floor aware of them
+/// where they stand, as [`AlertDrowned`] says: no noise at all, since the
+/// chalice's own cost is heard by the drowned wherever they are and not
+/// by how far a sound carries.
+pub fn alert_drowned(world: &mut World, reader: Entity) {
+    let Some(at) = world.get::<Position>(reader).map(|p| p.0) else { return };
+    let here = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
+    let drowned: std::collections::BTreeSet<_> = world.resource::<Bestiary>().defs.iter().filter(|(_, def)| is_drowned(&def.name)).map(|(id, _)| id).collect();
+    if drowned.is_empty() {
+        return;
+    }
+    let targets: Vec<Entity> = world
+        .query_filtered::<(Entity, &OnMap, &Kind), With<Actor>>()
+        .iter(world)
+        .filter(|(_, on, kind)| on.0 == here && drowned.contains(&kind.0))
+        .map(|(e, ..)| e)
+        .collect();
+    for e in targets {
+        if let Some(mut aware) = world.get_mut::<Aware>(e) {
+            let mut knows = aware.of(reader);
+            knows.alerted_to(at);
+            aware.0.insert(reader, knows);
+        }
+    }
+}

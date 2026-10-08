@@ -57,6 +57,7 @@
 
 pub mod allies;
 pub mod armory;
+pub mod artifacts;
 pub mod bestiary;
 pub mod bestiary_lore;
 pub mod conditions;

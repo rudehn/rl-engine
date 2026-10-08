@@ -109,6 +109,15 @@ pub const REAPING: &str = "reaping";
 /// Percentage points added to the chance a turn of spotting what is hidden
 /// in sight: a ring of awareness's.
 pub const AWARENESS: &str = "awareness";
+/// Taken off the stealth engine's own `quiet`, so a value below nought
+/// widens every watcher's certain notice of its holder: the Crown of
+/// Grubnak's own gleam, which nothing else under the lake bestows.
+pub const QUIET: &str = "quiet";
+/// Added to the roll of every blow and shot its holder makes, read by
+/// `CombatRules::attack`: nothing bestows it, since a weapon's own roll is
+/// still its own, but the Crown of Grubnak's aura puts it on an ally in
+/// sight for as long as they stay there.
+pub const ATTACK: &str = "attack";
 
 /// A potion of haste's: its holder's speed doubled.
 pub const HASTED: &str = "hasted";
@@ -169,7 +178,8 @@ pub const PAIRS: [(&str, &str); 2] = [("main hand", "off hand"), ("left finger",
 /// [`NOISE`](crate::plugin::NOISE)'s, so a body with nothing on it steps
 /// exactly as loud as it did before footfall was a stat. The four the
 /// rings give, regeneration, wisdom, reaping and awareness, start at
-/// nought, since only a ring gives any.
+/// nought, since only a ring gives any; so do quiet and attack, which
+/// nothing but the Crown of Grubnak ever touches.
 pub fn stats() -> Registry<StatDef> {
     Registry::from_defs(vec![
         StatDef::new(STRENGTH, 12),
@@ -185,6 +195,8 @@ pub fn stats() -> Registry<StatDef> {
         StatDef::new(WISDOM, 0),
         StatDef::new(REAPING, 0),
         StatDef::new(AWARENESS, 0),
+        StatDef::new(QUIET, 0),
+        StatDef::new(ATTACK, 0),
     ])
     .unwrap()
 }
@@ -289,9 +301,16 @@ pub fn registries() -> Registries {
 /// into for a while.
 ///
 /// And which stats a blow and a heal read: accuracy against evasion for
-/// whether it lands, the armor stat beside whatever armor is worn, and
-/// mending on every heal. A blow on a foe that has not noticed its
-/// attacker lands at [`UNAWARE`] percent, unless the weapon names its own.
+/// whether it lands, the armor stat beside whatever armor is worn, mending
+/// on every heal, and the attack stat added to every blow and shot's
+/// roll. A blow on a foe that has not noticed its attacker lands at
+/// [`UNAWARE`] percent, unless the weapon names its own.
+///
+/// The attack stat starts at nought for everyone and nothing in
+/// `items.ron` bestows it: a blow's roll is still the weapon's own. It
+/// exists for [`crate::artifacts::crown_aura`] to put on an ally in the
+/// Crown of Grubnak's wearer's sight, the one bonus the content sheet
+/// gives to somebody other than whoever wears the thing.
 pub fn combat_rules(registries: &Registries) -> CombatRules {
     let [adventurer, beasts, goblins, undead, dar] = ["adventurer", "beasts", "goblins", "undead", "dar"].map(|name| registries.factions.expect(name));
     let discord = registries.factions.expect(DISCORDANT);
@@ -307,7 +326,13 @@ pub fn combat_rules(registries: &Registries) -> CombatRules {
     for (side, _) in registries.factions.iter() {
         rules = rules.hostile(discord, side);
     }
-    rules.accuracy_stat(stat(ACCURACY)).evasion_stat(stat(EVASION)).armor_stat(stat(ARMOR)).mending_stat(stat(MENDING)).unaware(UNAWARE)
+    rules
+        .accuracy_stat(stat(ACCURACY))
+        .evasion_stat(stat(EVASION))
+        .armor_stat(stat(ARMOR))
+        .mending_stat(stat(MENDING))
+        .attack_stat(stat(ATTACK))
+        .unaware(UNAWARE)
 }
 
 /// What a blow on a foe that has not noticed its attacker is worth, in
@@ -381,6 +406,7 @@ pub fn add_game_effects(app: &mut App) {
     app.add_effect::<charges::Recharge>();
     app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
     app.add_effect::<bodies::Rally>().add_effect::<bodies::CallDrowned>().add_effect::<bodies::Hatch>();
+    app.add_effect::<bodies::RaiseAlly>().add_effect::<bodies::Whisper>().add_effect::<minds::AlertDrowned>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through
@@ -481,7 +507,7 @@ mod tests {
     fn every_stat_starts_where_the_sheet_says_and_speed_at_nought_so_nobody_moves_faster() {
         let r = registries();
         let base = |name: &str| r.stats.get(r.stats.expect(name)).base;
-        let named = [STRENGTH, ACCURACY, EVASION, SPEED, STEALTH, MENDING, LIGHT, ARMOR, FOOTFALL, REGENERATION, WISDOM, REAPING, AWARENESS];
+        let named = [STRENGTH, ACCURACY, EVASION, SPEED, STEALTH, MENDING, LIGHT, ARMOR, FOOTFALL, REGENERATION, WISDOM, REAPING, AWARENESS, QUIET, ATTACK];
         let bases: Vec<(&str, i32)> = named.map(|s| (s, base(s))).to_vec();
         let sheet = [
             (STRENGTH, 12),
@@ -497,6 +523,8 @@ mod tests {
             (WISDOM, 0),
             (REAPING, 0),
             (AWARENESS, 0),
+            (QUIET, 0),
+            (ATTACK, 0),
         ];
         assert_eq!(bases, sheet, "the sheet's bases");
         assert_eq!(base(FOOTFALL), crate::plugin::NOISE.step, "a step as loud as the house's");
@@ -507,15 +535,16 @@ mod tests {
 
     /// The run's rules name the stats they read: accuracy against evasion
     /// for a blow, the armor stat beside what is worn, mending on a heal,
-    /// and speed in the turn loop. A blow on the unaware lands at three
-    /// times, the house's, which a dagger's own outranks.
+    /// the attack stat on every blow and shot's roll, and speed in the
+    /// turn loop. A blow on the unaware lands at three times, the house's,
+    /// which a dagger's own outranks.
     #[test]
     fn a_blow_a_heal_and_the_turn_loop_read_the_stats_that_change_them() {
         let r = registries();
         let stat = |name: &str| Some(r.stats.expect(name));
         let rules = combat_rules(&r);
         assert_eq!((rules.accuracy, rules.evasion, rules.armor, rules.mending), (stat(ACCURACY), stat(EVASION), stat(ARMOR), stat(MENDING)));
-        assert_eq!(rules.attack, None, "a blow's roll is the weapon's own");
+        assert_eq!(rules.attack, stat(ATTACK), "nothing bestows it, but the crown's aura reads it");
         assert_eq!(rules.unaware, Some(300), "three times on the unaware");
         assert_eq!(turn_rules(&r).speed, stat(SPEED));
     }

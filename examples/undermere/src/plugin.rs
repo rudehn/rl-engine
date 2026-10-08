@@ -263,6 +263,14 @@ impl Plugin for UndermerePlugin {
         // since nothing in that chain's own order depends on this nor
         // this on it.
         app.add_systems(Turn, crate::population::lead_lair_bands.in_set(TurnSet::React).after(PrefabSet::Fill));
+        // The two artifacts' own clocks: the Crown of Grubnak's aura on
+        // whoever stands beside its wearer, recomputed whole every pass,
+        // and the Abbess's Chalice refilled the moment a new floor is
+        // reached. Neither is a worn thing's own `bestows` or a trigger
+        // can reach: one lands on somebody other than the wearer, the
+        // other refills on a clock no `recharge` ticks.
+        app.add_systems(Turn, crate::artifacts::crown_aura.in_set(TurnSet::React));
+        app.add_systems(Turn, crate::artifacts::refill_chalice.in_set(TurnSet::React).after(PrefabSet::Fill));
     }
 
     /// Every line Undermere says from inside a turn is a `Tell`, which

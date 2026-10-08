@@ -1141,6 +1141,11 @@ mod tests {
             "gold coin",
             "lantern",
             "torch",
+            "the Crown of Grubnak",
+            "the Widow's Fang",
+            "the Choirmaster's Staff",
+            "the Abbess's Chalice",
+            "the Forgemaster's Hammer",
         ];
         for name in armory {
             assert!(library.armory.defs.id(name).is_some(), "no item called {name:?}");

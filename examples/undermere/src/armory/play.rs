@@ -11,7 +11,8 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
 
-use crate::testing::{arena, equip, give, lost, make, monster, settle, still};
+use crate::armory::Armory;
+use crate::testing::{arena, equip, give, lost, make, monster, pass_turns, settle, still};
 
 /// `me` attacks `foe`, a blow beside them or a shot at one further off,
 /// and the turns run until they may act again.
@@ -198,4 +199,49 @@ fn the_bow_spends_an_arrow_a_shot_and_is_dry_without() {
     assert!(app.world().get::<Dry>(bow).is_some(), "so the bow is dry");
     strike(&mut app, me, target);
     assert_eq!(lost(&app, target), second, "and a third finds nothing to shoot");
+}
+
+/// The Forgemaster's Hammer sweeps every foe beside the adventurer,
+/// ignites the ground under what it strikes, asks the content sheet's own
+/// nineteen strength, and steps louder than plate armor's own plus three,
+/// the loudest step there is.
+#[test]
+fn the_forgemasters_hammer_sweeps_ignites_asks_nineteen_strength_and_steps_loudest() {
+    let (mut app, me, here) = arena(1);
+    let beside = still(&mut app, "goblin", here.offset(1, 0));
+    let far = still(&mut app, "goblin", here.offset(2, 0));
+    let hammer = make(&mut app, "the Forgemaster's Hammer");
+    let armory = app.world().resource::<Armory>().clone();
+    assert_eq!(armory.defs.get(armory.defs.expect("the Forgemaster's Hammer")).strength, Some(19), "the sheet's own nineteen");
+    equip(&mut app, me, hammer);
+    strike(&mut app, me, beside);
+    assert!(lost(&app, beside) > 0, "the foe beside the adventurer is struck");
+    assert_eq!(lost(&app, far), 0, "and the one a step further is not");
+    assert!(app.world().resource::<Fire>().is_burning(here.offset(1, 0)), "the ground under what it struck");
+    assert!(!app.world().resource::<Fire>().is_burning(here.offset(2, 0)), "and nowhere it did not reach");
+    let registries = app.world().resource::<Registries>().clone();
+    let footfall = registries.stats.expect(crate::content::FOOTFALL);
+    let loudness = app.world().get::<StatBlock>(me).unwrap().0.value(footfall, &registries.stats);
+    assert!(loudness > crate::plugin::NOISE.step + 3, "louder than plate armor's own plus three: {loudness}");
+}
+
+/// The Widow's Fang whispers a noise as loud as a blow, at its wielder's
+/// own cell, every sixty turns, and not before.
+#[test]
+fn the_widows_fang_whispers_a_noise_as_loud_as_a_blow_every_sixty_turns() {
+    let (mut app, me, here) = arena(1);
+    app.init_resource::<Noises>().add_systems(PostUpdate, listen);
+    let fang = make(&mut app, "the Widow's Fang");
+    equip(&mut app, me, fang);
+    // The equip action's own turn already counts towards the Fang's first
+    // period, `pulse_worn`'s own "a wearer cannot wear it most of a
+    // period, swap, and swap back for a pulse on the next turn"; cleared
+    // to nothing so the sixty turns counted below are the Fang's alone.
+    app.world_mut().get_mut::<Pulse>(fang).expect("a pulse").progress = 0;
+    *app.world_mut().resource_mut::<Noises>() = Noises::default();
+    pass_turns(&mut app, 59);
+    assert!(app.world().resource::<Noises>().made.iter().all(|n| n.maker != Some(me)), "not before sixty turns");
+    pass_turns(&mut app, 1);
+    let noise = app.world().resource::<Noises>().made.iter().find(|n| n.maker == Some(me)).copied();
+    assert_eq!(noise.map(|n| (n.at, n.loudness, n.sound)), Some((here, crate::plugin::NOISE.strike, Sounds::STRIKE)), "as loud as a blow, at its own cell");
 }

@@ -718,7 +718,7 @@ mod tests {
     use crate::content::Library;
     use crate::dungeon::map_of;
     use crate::testing::{
-        adventurer, arrive, at, clear_monsters, equip, find, give, headless, lay, monster, name_of, pass_turns, read_on, said, take_up, use_thing,
+        adventurer, arrive, at, clear_monsters, equip, find, give, headless, lay, make, monster, name_of, pass_turns, read_on, said, take_up, use_thing,
     };
 
     fn library() -> Library {
@@ -832,6 +832,29 @@ mod tests {
         assert_eq!(every(&mut app, "potion of life"), vec![("potion of life".to_string(), false); 3], "every one is known, wherever it is");
         let lines = said(&app);
         assert!(lines.iter().any(|l| l == "That was a potion of life."), "{lines:#?}");
+    }
+
+    /// None of the five artifacts a mini-boss drops ever reads as
+    /// `Unknown`, made, carried or worn: none carries a tag any family in
+    /// `lore.ron` deals a face to, which [`Lore::knows`] already reads as
+    /// known, and none takes a level, which keeps it off
+    /// [`Unfamiliar`](Unfamiliar) too.
+    #[test]
+    fn none_of_the_five_artifacts_ever_reads_as_unknown_or_unfamiliar() {
+        let mut app = headless(RunSeed(1));
+        let me = adventurer(&mut app);
+        for name in ["the Crown of Grubnak", "the Widow's Fang", "the Choirmaster's Staff", "the Abbess's Chalice", "the Forgemaster's Hammer"] {
+            let thing = make(&mut app, name);
+            assert!(app.world().get::<Unknown>(thing).is_none(), "{name} reads unknown fresh-made");
+            if app.world().get::<Wearable>(thing).is_some() {
+                equip(&mut app, me, thing);
+            } else {
+                give(&mut app, me, thing);
+            }
+            app.update();
+            assert!(app.world().get::<Unknown>(thing).is_none(), "{name} reads unknown carried or worn");
+            assert!(app.world().get::<Unfamiliar>(thing).is_none(), "{name} reads unfamiliar");
+        }
     }
 
     /// The bag's row for `thing`, by its label, its count and whether it

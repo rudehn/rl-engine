@@ -458,6 +458,109 @@ pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
     true
 }
 
+/// Stands the body at the cell a use was pointed at back up on its own
+/// user's side for `turns` whole turns, then lets it [`Fades`] away as a
+/// conjured thing does: the Choirmaster's staff's own "aimed at a body
+/// within 6", which chooses which body rather than [`raise_dead`]'s own
+/// nearest. Written `(kind: "RaiseAlly", args: (turns: 30))`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RaiseAlly {
+    /// How many whole turns it fights before it fades.
+    pub turns: u32,
+}
+
+impl Effect for RaiseAlly {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (user, at, turns) = (landing.user, landing.landed_at.unwrap_or(landing.aim), self.turns);
+        let told = landing.clone();
+        world.commands.queue(move |world: &mut World| {
+            if !raise_ally(world, user, at, turns) {
+                super::showed_nothing(world, &told);
+            }
+        });
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("the body at the cell aimed at rises on your side for {} turns", self.turns)
+    }
+}
+
+impl FromArgs for RaiseAlly {
+    const KIND: &'static str = "RaiseAlly";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            turns: u32,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { turns: a.turns })
+    }
+}
+
+/// Stands the body standing at `at`, on `raiser`'s own map, back up on
+/// `raiser`'s own side for `turns` whole turns before it [`Fades`], as
+/// [`RaiseAlly`] says: the engine's own `revive` gives it back its health,
+/// [`fight_for`] turns it, and the same clock a conjured blade fades by
+/// takes it back out of play once its time runs out, since nothing kills
+/// it a second time. Returns whether a body stood at `at` to raise.
+pub fn raise_ally(world: &mut World, raiser: Entity, at: Point, turns: u32) -> bool {
+    let map = world.get::<OnMap>(raiser).map_or(MapId::SURFACE, |m| m.0);
+    let body = world
+        .query_filtered::<(Entity, &Position, Option<&OnMap>), With<Remains>>()
+        .iter(world)
+        .find(|(_, pos, on)| pos.0 == at && on.map_or(MapId::SURFACE, |m| m.0) == map)
+        .map(|(e, ..)| e);
+    let Some(body) = body else { return false };
+    let twin = world.get::<EngineLife>(body).map(|life| life.0);
+    let max = twin.and_then(|twin| world.get::<Health>(twin)).map_or(1, |h| h.max);
+    if !revive(world, body, max) {
+        return false;
+    }
+    if let Some(side) = world.get::<Faction>(raiser).copied() {
+        fight_for(world, body, side.0);
+    }
+    let fades = Fades { at: world.resource::<Turns>().now() + turns * BASE_ACTION_COST };
+    world.entity_mut(body).insert(fades);
+    if world.query_filtered::<&Viewshed, With<Player>>().iter(world).any(|v| v.can_see(at)) {
+        let name = world.get::<Name>(body).map_or_else(String::new, |n| n.as_str().to_string());
+        world.write_message(Tell::new(format!("{} rises to fight for its raiser!", the(&name)), Tones::GOOD));
+    }
+    true
+}
+
+/// A noise at its wielder's own cell, as loud as a blow: the Widow's
+/// Fang's own "it whispers", landed by its `pulse` trigger every sixty
+/// turns rather than by anything the wielder does. Lets whatever has ears
+/// hear exactly what a blow sounds like, with nobody having struck one, so
+/// standing still and quiet is no longer quiet with it on the hip. Takes
+/// no arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Whisper;
+
+impl Effect for Whisper {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let user = landing.user;
+        world.commands.queue(move |world: &mut World| {
+            let Some(at) = world.get::<Position>(user).map(|p| p.0) else { return };
+            world.write_message(MakeNoise { at, loudness: crate::plugin::NOISE.strike, sound: Sounds::STRIKE, maker: Some(user) });
+        });
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "a noise at its wielder's own cell, as loud as a blow".to_string()
+    }
+}
+
+impl FromArgs for Whisper {
+    const KIND: &'static str = "Whisper";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
 /// Hastens every ally the user can see, itself included, for `turns`:
 /// Grubnak's `war cry`. `aim: SelfOnly` and `mode: Own`, the same reason
 /// `conjure blades` takes neither: its own sight decides who it hits,
