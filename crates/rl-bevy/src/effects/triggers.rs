@@ -555,6 +555,11 @@ impl AimedUses<'_, '_> {
     /// is a moment that happened.
     fn land(&mut self, aimed: Aimed, trigger: &Trigger, bonus: super::EffectBonus, world: &mut EffectWorld) {
         let mut landing = self.bystanders.land(aimed, world.map(), world.occupancy()).landing;
+        // An aimed use is never refused by the time it gets here, unlike
+        // an ability: the items resolver already asked the same question
+        // before spending the use, so this is the one and only landing of
+        // it, and the right moment for a reflecting body to turn it back.
+        self.bystanders.reflect(&mut landing);
         landing.bonus = bonus;
         let shot = UseLanding { landing, effects: trigger.effects.clone(), look: trigger.look };
         let Some(flight) = shot.look.and_then(|look| shot.landing.flight(world, LookOf::Given(look))) else {

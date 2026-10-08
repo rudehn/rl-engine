@@ -22,7 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
-use rl_core::Point;
+use rand::Rng;
+use rl_core::{Point, RunSeed, SeedDomain};
 use rl_grid::{Footprint, footprint};
 use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, Targeting, Usable, aim_blocked, blocked};
 use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
@@ -333,6 +334,33 @@ pub struct Landed {
     pub refused: Vec<Blocked>,
 }
 
+/// Turns an aimed use or an ability back on whoever aimed it, one time in
+/// two: a body too dense or too strange for either to bite, a golem's
+/// trick and any game's.
+///
+/// Read by [`Bystanders::land`] rather than by a game reacting afterwards,
+/// because nothing fires between a use being pointed and its effects
+/// landing for a game to turn the aim back in: [`Bystanders::land`] is the
+/// one place, shared by an ability and a thing's aimed use alike, that
+/// turns a footprint into the targets its effects will run on. The
+/// alternative, letting every effect ask whether its own target reflects,
+/// would be answered differently by every effect a game or the engine
+/// ever writes.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Reflects;
+
+/// The roll [`Reflects`] spends, its own stream so adding or rolling for a
+/// reflecting body never shifts a single roll combat or an effect already
+/// drew: the same reasoning [`crate::minds::MindRng`] is kept apart for.
+#[derive(Resource, Debug)]
+pub struct ReflectRng(pub rand::rngs::StdRng);
+
+impl crate::seed::Stream for ReflectRng {
+    fn for_run(seed: RunSeed) -> Self {
+        Self(seed.rng(SeedDomain::new(b"ability.reflect"), 0))
+    }
+}
+
 /// Who is standing in a footprint and how they stand to the user.
 ///
 /// Public because the resolver is not the only one asking. The targeting
@@ -345,6 +373,12 @@ pub struct Bystanders<'w, 's> {
     factions: Query<'w, 's, &'static Faction>,
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     rules: Option<Res<'w, CombatRules>>,
+    reflects: Query<'w, 's, (), With<Reflects>>,
+    // `Option`: nothing here needs `AbilitiesPlugin`, which is the one
+    // that derives this stream, until a body actually carries `Reflects`,
+    // so a game with no abilities and nobody marked `Reflects` never
+    // misses it.
+    rng: Option<ResMut<'w, ReflectRng>>,
 }
 
 impl Bystanders<'_, '_> {
@@ -373,6 +407,11 @@ impl Bystanders<'_, '_> {
     /// the user included; what refuses an aim is [`aim_blocked`]. The
     /// landing adds nothing to what it lands, and a thing that lands its
     /// effects stronger sets its own bonus on it.
+    ///
+    /// Never reflects: [`Self::reflect`] is a second, explicit step, since
+    /// this same call also answers the targeting cursor's preview and a
+    /// refused aim, where nothing should be spent or decided yet, and a
+    /// landing only one of the resolvers actually carries out.
     pub fn land(&self, aimed: Aimed, map: &WorldMap, occupancy: &Occupancy) -> Landed {
         let Aimed { user, source, targeting, origin, aim, sees_aim } = aimed;
         let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
@@ -401,6 +440,29 @@ impl Bystanders<'_, '_> {
         }
         Landed { landing: Landing { user, source, origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default(), on: None }, refused }
     }
+
+    /// Turns every target of `landing` but its own user that carries
+    /// [`Reflects`] back onto that user, one time in two, and never lists
+    /// the user twice: a burst that already caught the user and also
+    /// reflects off somebody in it lands on the user once, not twice.
+    ///
+    /// The second, explicit step [`Self::land`] itself never takes: called
+    /// only once an aim is no longer refused and a resolver is about to
+    /// carry it out, never by the targeting cursor's preview of the same
+    /// aim, so looking at a reflecting body costs nothing and decides
+    /// nothing before the use is actually made.
+    pub fn reflect(&mut self, landing: &mut Landing) {
+        let user = landing.user;
+        let mut landed: Vec<Entity> = Vec::with_capacity(landing.targets.len());
+        for target in landing.targets.drain(..) {
+            let reflected = target != user && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
+            let onto = if reflected { user } else { target };
+            if !landed.contains(&onto) {
+                landed.push(onto);
+            }
+        }
+        landing.targets = landed;
+    }
 }
 
 /// The abilities a game registered, the clock their cooldowns run on, and
@@ -427,7 +489,7 @@ pub fn resolve_abilities(
     mut resolution: Resolution,
     catalog: Catalog,
     mut state: UserState,
-    bystanders: Bystanders,
+    mut bystanders: Bystanders,
     mut world: EffectWorld,
 ) {
     let Catalog { abilities, turns, mut hold, mut airborne } = catalog;
@@ -449,7 +511,7 @@ pub fn resolve_abilities(
         };
         let aim = if def.aim.needs_cursor() { intent.action.aim } else { origin };
         let aimed = Aimed::ability(user, id, def, origin, aim, world.sight_of(user, aim));
-        let Landed { landing, refused } = bystanders.land(aimed, world.map(), world.occupancy());
+        let Landed { mut landing, refused } = bystanders.land(aimed, world.map(), world.occupancy());
 
         let mut why = gate(user, id, def, &state, now);
         why.extend(refused);
@@ -458,6 +520,10 @@ pub fn resolve_abilities(
             resolution.failed(user, def.time);
             continue;
         }
+        // Not refused, and about to be cast: the one moment a reflecting
+        // body's turn is actually spent, never the gate above or the
+        // cursor's own look at the same aim.
+        bystanders.reflect(&mut landing);
 
         pay(user, def, &mut state);
         if def.cooldown > 0
@@ -745,10 +811,12 @@ impl Plugin for AbilitiesPlugin {
     fn build(&self, app: &mut App) {
         use crate::components::Actor;
         use crate::plugin::{Needs, ResetsOnNewRun};
+        use crate::seed::AddStream;
         crate::effects::ensure(app);
         app.register_required_components::<Actor, Known>();
         app.register_required_components::<Actor, Pools>();
         app.register_required_components::<Actor, Cooldowns>();
+        app.add_stream::<ReflectRng>("AbilitiesPlugin");
         app.init_resource::<Offered>()
             .reset_on_new_run::<Offered>()
             .add_airborne::<Landing>()
@@ -1050,6 +1118,34 @@ mod tests {
         app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(4, 1) }));
         app.update();
         assert_eq!(hp(&app, ours), 17, "a bolt aimed at a foe passes an ally by");
+    }
+
+    /// A body marked [`Reflects`] turns a bolt aimed at it back on whoever
+    /// cast it, one time in two: over a span of seeds, both the caster and
+    /// the body it aimed at are seen hurt, and on every single cast
+    /// exactly one of them is, never both and never neither.
+    #[test]
+    fn a_reflecting_body_turns_a_bolt_back_on_its_caster_about_half_the_time() {
+        let bolt_name = "bolt";
+        let (mut casters_hurt, mut targets_hurt) = (0, 0);
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let bolt = ability(&app, bolt_name);
+            let me = caster(&mut app, start, 20, &[bolt]);
+            let them = foe(&mut app, start.offset(3, 0));
+            app.world_mut().entity_mut(them).insert(Reflects);
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
+            app.update();
+
+            let (me_hurt, them_hurt) = (hp(&app, me) < 30, hp(&app, them) < 20);
+            assert_ne!(me_hurt, them_hurt, "seed {seed}: exactly one of the caster and the reflecting body is hurt");
+            casters_hurt += me_hurt as u32;
+            targets_hurt += them_hurt as u32;
+        }
+        assert!(casters_hurt > 0 && targets_hurt > 0, "both outcomes over forty seeds: {casters_hurt} reflected, {targets_hurt} landed");
     }
 
     /// An unaffordable ability is refused, costs the player no time, keeps
