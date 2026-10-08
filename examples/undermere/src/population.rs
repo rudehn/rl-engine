@@ -22,6 +22,7 @@ use rl_engine::rl_core::Rect;
 
 use crate::bestiary::{Bestiary, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
+use crate::stairs::Way;
 
 /// Groups every floor draws before its depth adds any, a first cut: four,
 /// and one more for each floor down, so floor one holds five groups and
@@ -107,27 +108,35 @@ pub fn plan(
 
 /// What populating a floor reads.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Stock<'w> {
+pub struct Stock<'w, 's> {
     bestiary: Res<'w, Bestiary>,
     map: Res<'w, WorldMap>,
     seed: Res<'w, Seed>,
     registries: Res<'w, Registries>,
+    /// Every way on every map, read once a floor so a group never stands
+    /// on the stairs it leads to or from: the entry is already kept clear
+    /// by its own distance, but nothing else kept a monster off the down
+    /// stairs the adventurer has yet to reach.
+    ways: Query<'w, 's, (&'static Position, &'static OnMap), With<Way>>,
 }
 
 /// Populates every floor on the arrival that built it: [`groups_on`] its
 /// number, drawn at its own band, planned against the floor as built and
 /// off every cell a piece marked, where a chest, a brazier or the king's
-/// court stands or will stand even where the engine's slot drew nothing.
+/// court stands or will stand even where the engine's slot drew nothing,
+/// and off every way the floor has, so a group never stands on the stairs
+/// themselves.
 ///
 /// Draws from `Seed::stream(b"undermere.population", floor)`, a stream for
 /// each floor alone, so what stands on floor two never depends on how many
 /// draws floor one happened to make, or on whether it was entered first.
 pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
-    let Stock { bestiary, map, seed, registries } = &stock;
+    let Stock { bestiary, map, seed, registries, ways } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
         let mut rng = seed.stream(b"undermere.population", u64::from(floor));
-        let marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
+        let mut marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
+        marked.extend(ways.iter().filter(|(_, on)| on.0 == ev.map).map(|(p, _)| p.0));
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
         let groups = plan(&bestiary.spawns, floor as i32, place.terrain.bounds(), ev.entry, groups_on(floor), &mut free, &mut rng);
         for (id, at) in groups.into_iter().flatten() {

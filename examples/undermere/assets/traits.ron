@@ -27,10 +27,18 @@
 //   resists:    [(damage kind, percent removed)]: "slash" | "pierce" | "crush" | "fire" |
 //               "cold" | "poison"; 100 immune, negative a weakness
 //   armor:      flat armor, added to the monster's own
-//   abilities:  names from `abilities.ron`: "fire breath" | "drowning grasp"
-//   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating" | "chilled"
+//   abilities:  names from `abilities.ron`: "fire breath" | "drowning grasp" | "spit web" |
+//               "blink" | "ward ally" | "mend ally" | "firebolt" | "slowness"
+//   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
+//               "webbed" | "warded" | "weakened" | "asleep"
+//   triggers:   what it does at its own moments: [(on: "hit" | "struck" | "died", area: Here |
+//               Burst(radius: n), effects: [(kind:, chance:, args:)])], the engine's
+//               Harm(kind:, roll:), Mend(roll:), Inflict(status:, turns:), Cleanse(status:),
+//               Emit(gas:, amount:); landed through the engine's actor triggers
+//   keeps_away: (how far it lets an enemy get before it closes, how close it lets one get
+//               before it backs away), both in tiles
 //
-// Lists add up across a monster's traits: wits, resists, abilities and statuses.
+// Lists add up across a monster's traits: wits, resists, abilities, statuses and triggers.
 // Every other field may be set by one of a monster's traits only, and a monster
 // with two traits setting the same one is refused at load, naming both.
 #![enable(implicit_some)]
@@ -59,4 +67,34 @@
     (name: "fire breath", says: "breathes fire", abilities: ["fire breath"]),
     (name: "drowning grasp", says: "drags the living down with a grip of cold water", abilities: ["drowning grasp"]),
     (name: "keen-eared", says: "hears every step", hearing: (threshold: 0, memory: 8)),
+    // Part 3's bestiary: a bite that poisons, a spit that holds, a burst
+    // where it dies, bones blades glance off, a touch that freezes, a
+    // touch that saps strength, a step through the air, a ward for an
+    // ally, a hand that mends one, two words a dar battlemage knows,
+    // a thing that keeps its distance and glows, and the two that never
+    // share a floor's sleep the same way as the rest.
+    (name: "venomous", says: "its bite is venomous",
+     triggers: [(on: "hit", effects: [(kind: "Inflict", args: (status: "poisoned", turns: 4))])]),
+    (name: "webbing", says: "spits webs that hold", abilities: ["spit web"]),
+    (name: "spore-burst", says: "bursts into spores when it dies",
+     triggers: [(on: "died", area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "confusing", amount: 200))])]),
+    (name: "brittle", says: "bones that blades glance off and hammers break",
+     resists: [("slash", 50), ("pierce", 50), ("crush", -50)]),
+    (name: "paralysing", says: "a touch that freezes",
+     triggers: [(on: "hit", effects: [(kind: "Inflict", chance: 25, args: (status: "paralysed", turns: 2))])]),
+    (name: "withering", says: "saps strength",
+     triggers: [(on: "hit", effects: [(kind: "Inflict", args: (status: "weakened", turns: 20))])]),
+    (name: "blinking", says: "blinks from place to place", abilities: ["blink"]),
+    (name: "warding", says: "shields its allies", abilities: ["ward ally"]),
+    (name: "mends allies", says: "mends its allies", abilities: ["mend ally"]),
+    (name: "firebolt", says: "hurls fire from a word", abilities: ["firebolt"]),
+    (name: "slowness", says: "saps your speed with a word", abilities: ["slowness"]),
+    (name: "burns-badly", says: "burns, and stops healing while it does", resists: [("fire", -100)]),
+    // Its glow is the light a kind that lures already carries for another
+    // reason, a will-o'-wisp's grave light: `light` is a single value, so
+    // a second trait setting it on the same kind would clash, and every
+    // kind that lures in this bestiary already glows some other way.
+    (name: "luring", says: "keeps away, and glows", keeps_away: (5, 3)),
+    (name: "wakeful", says: "never sleeps", notice: (certain: 2, chance_pct: 35, lit_bonus: 4, memory: 8)),
+    (name: "sleepy", says: "sleeps deeply"),
 ]

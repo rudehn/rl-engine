@@ -131,6 +131,19 @@ pub const CONFUSING: &str = "confusing";
 /// The cloud a potion of darkness gives off: it shrouds whoever breathes
 /// it, and hides what is behind its thickest.
 pub const DARKNESS: &str = "darkness";
+/// A spider's web, a necromancer's bolt: holds its holder as `paralysed`
+/// does, for a trait to inflict rather than a potion.
+pub const WEBBED: &str = "webbed";
+/// A goblin mystic's ward: three more armor while it lasts.
+pub const WARDED: &str = "warded";
+/// A wraith's touch: a point off strength, stacked by every touch that
+/// lands, so the heaviest gear grows heavier to carry the longer a fight
+/// runs.
+pub const WEAKENED: &str = "weakened";
+/// Part 2's engine `sleeps`, named for Undermere's own placement and its
+/// `sleepy` and `wakeful` traits: holds its holder until a noise, a blow
+/// or a notice wakes them, as every sleeper does.
+pub const ASLEEP: &str = "asleep";
 
 /// What each cloud tints the ground under it, `(r, g, b)` in `0..=1`, so a
 /// paralytic cloud is told from a confusing one at a glance rather than
@@ -215,7 +228,12 @@ pub fn registries() -> Registries {
     // `shrouded` is darkness's thirty points of stealth, with the lantern
     // put out; `paralysed` holds its holder's turns; `confused` turns
     // every step it takes a random way; and `discordant`, a scroll's,
-    // fights for the side of the same name while it lasts.
+    // fights for the side of the same name while it lasts. `webbed` holds
+    // as `paralysed` does, for a web rather than a cloud; `warded` is
+    // three armor, a ward's gift, so a boon; `weakened` is a point off
+    // strength, and stacks, a wraith's touch making the next heavier than
+    // the last; `asleep` is the engine's own `sleeps`, named for
+    // Undermere's placement and its `sleepy` and `wakeful` traits.
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('p'), ..StatusDef::new("poisoned").ticks(poison, 1) },
         StatusDef { badge: Some('*'), ..StatusDef::new("scorched").ticks(fire, 1) },
@@ -229,6 +247,10 @@ pub fn registries() -> Registries {
         StatusDef { badge: Some('P'), ..StatusDef::new(PARALYSED).holds() },
         StatusDef { badge: Some('?'), ..StatusDef::new(CONFUSED) },
         StatusDef { badge: Some('!'), ..StatusDef::new(DISCORDANT) },
+        StatusDef { badge: Some('b'), ..StatusDef::new(WEBBED).holds() },
+        StatusDef { badge: Some('w'), ..StatusDef::new(WARDED).modifies(stats.expect(ARMOR), Op::Add(3)).boon() },
+        StatusDef { badge: Some('-'), ..StatusDef::new(WEAKENED).modifies(stats.expect(STRENGTH), Op::Add(-1)).stacking(Stacking::Stack) },
+        StatusDef { badge: Some('Z'), ..StatusDef::new(ASLEEP).sleeps() },
     ])
     .unwrap();
     // Each potion's cloud: what breathing it does, while it is thick
@@ -246,7 +268,7 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
+        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
         tags: Registry::from_defs(
             ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(TagDef::new).to_vec(),
         )
@@ -260,22 +282,25 @@ pub fn registries() -> Registries {
 
 /// Who fights whom: the adventurer against every side, beasts and goblins
 /// against each other, and the dead against everything living, so a
-/// crypt's dead and a goblin band fight and the dungeon fights itself.
-/// The discordant fight everyone, each other among them, which is what a
-/// scroll of discord turns a foe into for a while.
+/// crypt's dead and a goblin band fight and the dungeon fights itself. The
+/// dar fight only the adventurer, a deep culture of their own that neither
+/// raids the goblins nor hunts the beasts. The discordant fight everyone,
+/// each other among them, which is what a scroll of discord turns a foe
+/// into for a while.
 ///
 /// And which stats a blow and a heal read: accuracy against evasion for
 /// whether it lands, the armor stat beside whatever armor is worn, and
 /// mending on every heal. A blow on a foe that has not noticed its
 /// attacker lands at [`UNAWARE`] percent, unless the weapon names its own.
 pub fn combat_rules(registries: &Registries) -> CombatRules {
-    let [adventurer, beasts, goblins, undead] = ["adventurer", "beasts", "goblins", "undead"].map(|name| registries.factions.expect(name));
+    let [adventurer, beasts, goblins, undead, dar] = ["adventurer", "beasts", "goblins", "undead", "dar"].map(|name| registries.factions.expect(name));
     let discord = registries.factions.expect(DISCORDANT);
     let stat = |name: &str| registries.stats.expect(name);
     let mut rules = CombatRules::new(&registries.factions)
         .hostile(adventurer, beasts)
         .hostile(adventurer, goblins)
         .hostile(adventurer, undead)
+        .hostile(adventurer, dar)
         .hostile(beasts, goblins)
         .hostile(undead, beasts)
         .hostile(undead, goblins);
@@ -392,7 +417,7 @@ impl Library {
         let abilities = abilities(&registries, kinds);
         let traits = crate::traits::load_defs(&registries, abilities.defs());
         let armory = Armory::load(&registries, &traits, kinds, moments);
-        let bestiary = Bestiary::load(&registries, &traits, &armory.defs);
+        let bestiary = Bestiary::load(&registries, &traits, &armory.defs, kinds, moments);
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
         Self { registries, abilities, traits, armory, bestiary, faces }
     }
@@ -410,10 +435,10 @@ mod tests {
     #[test]
     fn every_content_file_loads_and_every_name_in_it_resolves() {
         let library = Library::load(&effect_kinds(), &Moments::default());
-        assert_eq!(library.abilities.defs().len(), 2, "fire breath and drowning grasp");
-        assert_eq!(library.traits.len(), 19, "the skeleton's nineteen traits");
+        assert!(library.abilities.defs().len() >= 2, "fire breath and drowning grasp, and part 3's own");
+        assert!(library.traits.len() >= 19, "the skeleton's nineteen traits, and part 3's own");
         assert!(library.armory.defs.len() >= 18, "about twenty items: {}", library.armory.defs.len());
-        assert!(library.bestiary.defs.len() >= 12, "a dozen monsters or so: {}", library.bestiary.defs.len());
+        assert!(library.bestiary.defs.len() >= 28, "about thirty monsters: {}", library.bestiary.defs.len());
         assert!(!library.armory.table.rows().is_empty(), "item_spawns.ron has rows");
         assert!(!library.bestiary.spawns.entries().is_empty(), "monster_spawns.ron has rows");
     }
@@ -423,13 +448,13 @@ mod tests {
     #[test]
     fn the_registries_hold_every_side_kind_status_slot_and_tag_the_content_names() {
         let r = registries();
-        for side in ["adventurer", "beasts", "goblins", "undead"] {
+        for side in ["adventurer", "beasts", "goblins", "undead", "dar"] {
             assert!(r.factions.id(side).is_some(), "{side}");
         }
         for kind in ["slash", "pierce", "crush", "fire", "cold", "poison"] {
             assert!(r.damage_kinds.id(kind).is_some(), "{kind}");
         }
-        for status in ["poisoned", "scorched", "mending", "regenerating", "chilled"] {
+        for status in ["poisoned", "scorched", "mending", "regenerating", "chilled", WEBBED, WARDED, WEAKENED, ASLEEP] {
             assert!(r.statuses.id(status).is_some(), "{status}");
         }
         for slot in ["main hand", "off hand", "head", "body", "left finger", "right finger", "light"] {
@@ -506,6 +531,24 @@ mod tests {
         assert!(said.iter().any(|s| s == "chilled for 4 turns"), "{said:?}");
     }
 
+    /// Part 3's six new abilities, each landing what its trait's words
+    /// promise: a goblin mystic's ward is three armor's status for eight
+    /// turns, a dar priestess mends what a staff of healing would, a dar
+    /// battlemage's firebolt and word of slowness are a bolt of harm and a
+    /// chill by another name, a cave spider's web holds for two turns, and
+    /// a blink moves whoever blinks four cells.
+    #[test]
+    fn part_3s_new_abilities_land_what_their_trait_says() {
+        let library = Library::load(&effect_kinds(), &Moments::default());
+        let said = |name: &str| library.abilities.describe(library.abilities.expect(name), &library.registries);
+        assert_eq!(said("spit web"), vec!["webbed for 2 turns"]);
+        assert_eq!(said("blink"), vec!["blinks you up to 4 cells"]);
+        assert_eq!(said("ward ally"), vec!["warded for 8 turns"]);
+        assert_eq!(said("mend ally"), vec!["mends 3d6"]);
+        assert_eq!(said("firebolt"), vec!["2d6 fire"]);
+        assert_eq!(said("slowness"), vec!["slowed for 5 turns"]);
+    }
+
     /// A tripwire over what stands in the places, by name, so a prop is
     /// added or dropped on purpose. Everything but the chest is scenery,
     /// which the nearby rail leaves out; the chest holds something and is
@@ -558,22 +601,26 @@ mod tests {
     }
 
     /// The design's war: the adventurer against every side, beasts and
-    /// goblins against each other, and the dead against everything
-    /// living, so the dungeon fights itself.
+    /// goblins against each other, the dead against everything living, and
+    /// the dar fighting nobody but the adventurer, so the dungeon fights
+    /// itself and the dar's own quarrel stays their own.
     #[test]
     fn the_adventurer_fights_every_side_and_the_sides_fight_each_other_as_the_design_says() {
         let r = registries();
         let rules = combat_rules(&r);
         let at = |a: &str, b: &str| rules.factions.relation(r.factions.expect(a), r.factions.expect(b));
-        for other in ["beasts", "goblins", "undead"] {
+        for other in ["beasts", "goblins", "undead", "dar"] {
             assert_eq!(at("adventurer", other), Relation::Hostile, "the adventurer and the {other}");
             assert_eq!(at(other, "adventurer"), Relation::Hostile, "the {other} and the adventurer");
         }
         assert_eq!(at("beasts", "goblins"), Relation::Hostile);
         assert_eq!(at("undead", "beasts"), Relation::Hostile);
         assert_eq!(at("undead", "goblins"), Relation::Hostile);
-        for own in ["beasts", "goblins", "undead"] {
+        for own in ["beasts", "goblins", "undead", "dar"] {
             assert_eq!(at(own, own), Relation::Allied, "{own} stand together");
+        }
+        for other in ["beasts", "goblins", "undead"] {
+            assert_eq!(at("dar", other), Relation::Neutral, "the dar keep to themselves: {other} is no quarrel of theirs");
         }
     }
 

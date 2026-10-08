@@ -4,15 +4,17 @@
 //! has, and a list of trait names. A trait is written once, in
 //! `traits.ron`, and bundles what the engine already knows how to do:
 //! wits, speed, sight, a flee threshold, how it notices and hears,
-//! light, resistances, armor, abilities, statuses held for life, and the
-//! words the examine panel says about it. [`fold`] turns a list of traits
-//! into one [`Folded`] set of values at load, so every name is checked
-//! once and a spawn reads plain values.
+//! light, resistances, armor, abilities, statuses held for life, how far
+//! it keeps from an enemy, its own triggers, and the words the examine
+//! panel says about it. [`fold`] turns a list of traits into one
+//! [`Folded`] set of values at load, so every name is checked once and a
+//! spawn reads plain values.
 //!
 //! Lists add up across the traits folded together: resistances,
-//! abilities, statuses, and wits, which are a set of capabilities rather
-//! than a level. Every other value may be set by one trait of the list
-//! only, and a second setting is a [`Clash`] naming both. Not last-wins,
+//! abilities, statuses, triggers, and wits, which are a set of
+//! capabilities rather than a level. Every other value may be set by one
+//! trait of the list only, and a second setting is a [`Clash`] naming
+//! both. Not last-wins,
 //! which would make a monster's speed hang on the order its traits were
 //! written in, and not first-wins, which would hide the second trait's
 //! number from whoever reads the file: a monster is always its core plus
@@ -81,6 +83,16 @@ pub struct TraitDef {
     /// The statuses it holds for life, beside the other traits'.
     #[serde(default)]
     pub statuses: Vec<NameRef<StatusDef>>,
+    /// What it does at its own moments, beside the other traits': a bite
+    /// that poisons on `hit`, a burst where it dies on `died`. Landed
+    /// through the engine's actor triggers, built once per monster by
+    /// [`Bestiary`](crate::bestiary::Bestiary).
+    #[serde(default)]
+    pub triggers: Vec<TriggerSpec>,
+    /// How far it lets an enemy get before it closes, and how close it
+    /// lets one get before it backs away: a will-o'-wisp's.
+    #[serde(default)]
+    pub keeps_away: Option<(i32, i32)>,
 }
 
 impl Named for TraitDef {
@@ -129,7 +141,7 @@ pub fn load_defs(registries: &Registries, abilities: &Registry<AbilityDef>) -> R
 /// pace. `says` is every trait's name beside its words, in the order the
 /// traits were listed, for the examine panel; a trait with nothing to say
 /// is left out of it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Folded {
     /// Every capability any of the traits gives; mindless when none gives
     /// any.
@@ -156,6 +168,12 @@ pub struct Folded {
     pub abilities: Vec<AbilityId>,
     /// Every status any of the traits holds, each once, in order.
     pub statuses: Vec<StatusId>,
+    /// Every trait's triggers, in the order the traits were listed: a
+    /// monster's own answers to `hit`, `struck` and `died`.
+    pub triggers: Vec<TriggerSpec>,
+    /// How far it keeps from an enemy, and how close it lets one get: what
+    /// a trait set, or `None` for a kind that closes in as far as it can.
+    pub keeps_away: Option<(i32, i32)>,
     /// Each trait's name and the examine panel's words for it.
     pub says: Vec<(String, String)>,
 }
@@ -179,6 +197,8 @@ impl Default for Folded {
             armor: None,
             abilities: Vec::new(),
             statuses: Vec::new(),
+            triggers: Vec::new(),
+            keeps_away: None,
             says: Vec::new(),
         }
     }
@@ -221,6 +241,7 @@ pub fn fold(traits: &[TraitId], all: &Registry<TraitDef>) -> Result<Folded, Clas
         setters.set("hearing", t.hearing, &mut folded.hearing, by)?;
         setters.set("light", t.light.map(|l| l.source()), &mut folded.light, by)?;
         setters.set("armor", t.armor, &mut folded.armor, by)?;
+        setters.set("keeps_away", t.keeps_away, &mut folded.keeps_away, by)?;
         if let Some(wits) = t.wits {
             folded.wits = folded.wits.with(wits);
         }
@@ -237,6 +258,7 @@ pub fn fold(traits: &[TraitId], all: &Registry<TraitDef>) -> Result<Folded, Clas
                 folded.statuses.push(status);
             }
         }
+        folded.triggers.extend(t.triggers.iter().cloned());
         if let Some(says) = &t.says {
             folded.says.push((t.name.clone(), says.clone()));
         }
@@ -307,12 +329,47 @@ mod tests {
             "fire breath",
             "drowning grasp",
             "keen-eared",
+            "venomous",
+            "webbing",
+            "spore-burst",
+            "brittle",
+            "paralysing",
+            "withering",
+            "blinking",
+            "warding",
+            "mends allies",
+            "firebolt",
+            "slowness",
+            "burns-badly",
+            "luring",
+            "wakeful",
+            "sleepy",
         ];
         for name in skeleton {
             let id = traits.id(name).unwrap_or_else(|| panic!("no trait called {name:?}"));
             assert!(traits.get(id).says.as_deref().is_some_and(|s| !s.is_empty()), "{name} says nothing");
         }
         assert_eq!(traits.len(), skeleton.len(), "a trait this list does not name");
+    }
+
+    /// Part 3's single-value traits set what their words say: bones
+    /// blades and arrows glance off but hammers break (and poison does
+    /// nothing, deathless's own), fire undoes a troll's regeneration by
+    /// hurting it worse than any blow, a golem's notice is keener than the
+    /// house's, and a will-o'-wisp keeps enemies no closer than three
+    /// cells and no further than five before it closes.
+    #[test]
+    fn part_3s_single_value_traits_set_what_their_words_say() {
+        let (registries, traits) = shipped();
+        let kind = |name: &str| registries.damage_kinds.expect(name);
+        let brittle = fold(&ids(&traits, &["brittle"]), &traits).expect("brittle alone sets nothing twice");
+        assert_eq!((brittle.resists.get(kind("slash")), brittle.resists.get(kind("pierce")), brittle.resists.get(kind("crush"))), (50, 50, -50));
+        let burns_badly = fold(&ids(&traits, &["burns-badly"]), &traits).expect("burns-badly alone");
+        assert_eq!(burns_badly.resists.get(kind("fire")), -100, "fire hurts a burns-badly kind half again as hard");
+        let wakeful = fold(&ids(&traits, &["wakeful"]), &traits).expect("wakeful alone").notice.expect("wakeful sets notice");
+        assert!(wakeful.chance_pct > crate::bestiary::NOTICE.chance_pct, "keener than the house's default: {wakeful:?}");
+        let luring = fold(&ids(&traits, &["luring"]), &traits).expect("luring alone").keeps_away.expect("luring keeps its distance");
+        assert_eq!(luring, (5, 3), "lets an enemy to five cells before closing, and backs off within three");
     }
 
     #[test]
@@ -364,6 +421,7 @@ mod tests {
             ("hearing", "hearing: (threshold: 1)"),
             ("light", "light: (radius: 3, color: (1.0, 1.0, 1.0))"),
             ("armor", "armor: 1"),
+            ("keeps_away", "keeps_away: (3, 5)"),
         ];
         for (field, value) in values {
             let text = format!(r#"[(name: "one", {value}), (name: "two", {value})]"#);

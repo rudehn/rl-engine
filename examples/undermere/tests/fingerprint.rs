@@ -221,7 +221,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [18_030_526_820_442_947_600, 5_526_172_337_288_157_614, 15_334_090_229_216_332_160],
-        "fingerprint tripwire: a change moved a roll, a spawn or an order; re-baseline on purpose and say why in the commit"
+        [2_073_382_087_050_215_813, 17_357_407_024_065_977_876, 16_626_036_120_815_691_551],
+        "fingerprint tripwire: re-baselined for part 3 task 6a (the armor floor, part 3's new traits, abilities and statuses, \
+         and the thirteen kinds added to the bestiary move every roll, spawn and order after them)"
     );
 }

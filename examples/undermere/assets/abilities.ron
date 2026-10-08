@@ -28,7 +28,8 @@
 //                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison" | "lightning", and the
 //                statuses "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //                "slowed" | "hasted" | "fireproof" | "shrouded" | "paralysed" | "confused" |
-//                "discordant"
+//                "discordant" | "webbed" | "warded" | "weakened" | "asleep"; or Blink(reach:,
+//                per_level:), the user along the line aimed, up to reach cells
 #![enable(implicit_some)]
 [
     // The salamander's: a cone of flame that sets the ground it reaches
@@ -56,5 +57,59 @@
             (kind: "Harm", args: (kind: "cold", roll: "2d4")),
             (kind: "Inflict", args: (status: "chilled", turns: 4)),
         ],
+    ),
+    // Part 3's bestiary: a cave spider's and the Widow's web, a short
+    // blink many kinds share, a goblin mystic's ward, a dar priestess's
+    // mending hand, and a dar battlemage's fire and chill.
+    (
+        name: "spit web",
+        description: "A gout of web that holds whatever it catches.",
+        look: (glyph: '*', color: (r: 230, g: 230, b: 235)),
+        mode: Bolt(range: 5),
+        cooldown: 600,
+        effects: [(kind: "Inflict", args: (status: "webbed", turns: 2))],
+    ),
+    (
+        name: "blink",
+        description: "A short step through the air, there and gone.",
+        look: (glyph: '*', color: (r: 200, g: 210, b: 255)),
+        aim: Ground,
+        mode: Bolt(range: 6),
+        cooldown: 500,
+        effects: [(kind: "Blink", args: (reach: 4, per_level: 0))],
+    ),
+    (
+        name: "ward ally",
+        description: "A ward that turns three more of every blow for a while.",
+        look: (glyph: '*', color: (r: 220, g: 220, b: 160)),
+        aim: Ally,
+        mode: Bolt(range: 6),
+        cooldown: 800,
+        effects: [(kind: "Inflict", args: (status: "warded", turns: 8))],
+    ),
+    (
+        name: "mend ally",
+        description: "A hand laid on an ally's wound.",
+        look: (glyph: '*', color: (r: 180, g: 255, b: 190)),
+        aim: Ally,
+        mode: Bolt(range: 6),
+        cooldown: 600,
+        effects: [(kind: "Mend", args: (roll: "3d6"))],
+    ),
+    (
+        name: "firebolt",
+        description: "A bolt of fire hurled from a dar battlemage's hand.",
+        look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
+        mode: Bolt(range: 7),
+        cooldown: 400,
+        effects: [(kind: "Harm", args: (kind: "fire", roll: "2d6"))],
+    ),
+    (
+        name: "slowness",
+        description: "A word that saps whoever it is spoken at.",
+        look: (glyph: '*', color: (r: 150, g: 160, b: 200)),
+        mode: Bolt(range: 8),
+        cooldown: 800,
+        effects: [(kind: "Inflict", args: (status: "slowed", turns: 5))],
     ),
 ]

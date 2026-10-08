@@ -77,6 +77,10 @@ pub struct MonsterDef {
     pub traits: Vec<String>,
     /// Its traits, folded.
     pub folded: Folded,
+    /// What it does at its own moments, folded from its traits and built
+    /// once: a bite that poisons what it struck, a burst where it died.
+    /// Empty for a kind with nothing of its own to answer with.
+    pub triggers: Triggers,
     /// Its own id in the bestiary, so a spawn handed only the definition
     /// can mark what it made.
     id: Id<MonsterDef>,
@@ -180,11 +184,14 @@ pub struct Bestiary {
 
 impl Bestiary {
     /// Loads `monsters.ron` and `monster_spawns.ron` against `registries`,
-    /// the `traits` a monster is written as and the `items` it drops.
-    /// Panics naming the file and every problem in it, since a broken
-    /// bestiary is a game that cannot start.
-    pub fn load(registries: &Registries, traits: &Registry<TraitDef>, items: &Registry<ItemDef>) -> Self {
-        let defs = read(MONSTERS_RON, registries, traits, items).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
+    /// the `traits` a monster is written as, the `items` it drops, and the
+    /// effect `kinds` and `moments` its own triggers are built against, so
+    /// a trait naming an unregistered effect is caught here rather than by
+    /// a bite that quietly poisons nothing. Panics naming the file and
+    /// every problem in it, since a broken bestiary is a game that cannot
+    /// start.
+    pub fn load(registries: &Registries, traits: &Registry<TraitDef>, items: &Registry<ItemDef>, kinds: &EffectKinds, moments: &Moments) -> Self {
+        let defs = read(MONSTERS_RON, registries, traits, items, kinds, moments).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
         let rows: Vec<MonsterSpawn> =
             registries.names().with("monster", &defs).load_list(MONSTER_SPAWNS_RON).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
         let mut spawns = BandedTable::default();
@@ -230,20 +237,29 @@ impl Named for Authored {
 }
 
 /// Reads a monsters file against `registries`, the `traits` a monster is
-/// written as and the `items` it drops, resolving each monster's core and
-/// folding its traits.
+/// written as, the `items` it drops, and the effect `kinds` and `moments`
+/// a trait's own triggers are built against, resolving each monster's core,
+/// folding its traits and building what it does at its own moments.
 ///
 /// Every problem in the file at once, each under the monster it is in:
 /// an unknown name, an attack that does not read, a trait listed twice,
-/// and two traits setting one value. An unknown name is reported before
-/// anything else is checked, since nothing else can be read without it.
-pub fn read(text: &str, registries: &Registries, traits: &Registry<TraitDef>, items: &Registry<ItemDef>) -> Result<Registry<MonsterDef>, ContentError> {
+/// two traits setting one value, and a trigger naming an effect nobody
+/// registered. An unknown name is reported before anything else is
+/// checked, since nothing else can be read without it.
+pub fn read(
+    text: &str,
+    registries: &Registries,
+    traits: &Registry<TraitDef>,
+    items: &Registry<ItemDef>,
+    kinds: &EffectKinds,
+    moments: &Moments,
+) -> Result<Registry<MonsterDef>, ContentError> {
     let authored: Registry<Authored> = registries.names().with("trait", traits).with("item", items).load(text)?;
     let names = registries.names();
     let mut defs = Vec::new();
     let mut errors = Vec::new();
     for (id, a) in authored.iter() {
-        match resolve(a, Id::from_raw(id.raw()), &names, traits) {
+        match resolve(a, Id::from_raw(id.raw()), &names, traits, kinds, moments) {
             Ok(def) => defs.push(def),
             Err(mine) => errors.extend(mine.into_iter().map(|e| format!("{}: {e}", a.name))),
         }
@@ -254,9 +270,17 @@ pub fn read(text: &str, registries: &Registries, traits: &Registry<TraitDef>, it
     Registry::from_defs(defs)
 }
 
-/// `a`, the monster that will be `id`, with its attack read and its
-/// traits folded, or every reason it cannot be.
-fn resolve(a: &Authored, id: Id<MonsterDef>, names: &Names<'_>, traits: &Registry<TraitDef>) -> Result<MonsterDef, Vec<String>> {
+/// `a`, the monster that will be `id`, with its attack read, its traits
+/// folded and its own triggers built against `kinds` and `moments`, or
+/// every reason it cannot be.
+fn resolve(
+    a: &Authored,
+    id: Id<MonsterDef>,
+    names: &Names<'_>,
+    traits: &Registry<TraitDef>,
+    kinds: &EffectKinds,
+    moments: &Moments,
+) -> Result<MonsterDef, Vec<String>> {
     let mut errors = Vec::new();
     let attack = blow(&a.attack, names).map_err(|e| errors.push(format!("attack {:?}: {e}", a.attack))).ok();
     let ranged = match &a.ranged {
@@ -283,6 +307,7 @@ fn resolve(a: &Authored, id: Id<MonsterDef>, names: &Names<'_>, traits: &Registr
     if !errors.is_empty() {
         return Err(errors);
     }
+    let triggers = Triggers::build(&folded.triggers, &[], moments, kinds, names)?;
     let brain = Arc::new(brain(&folded, ranged.is_some()));
     let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
     Ok(MonsterDef {
@@ -299,6 +324,7 @@ fn resolve(a: &Authored, id: Id<MonsterDef>, names: &Names<'_>, traits: &Registr
         drops: DropTable(a.drops.iter().map(|(item, pct)| DropRow::new(item.id(), *pct)).collect()),
         traits: listed.iter().map(|t| traits.get(*t).name.clone()).collect(),
         folded,
+        triggers,
         id,
         brain,
         allied,
@@ -379,6 +405,12 @@ const SCAVENGE_REACH: i32 = 4;
 /// when there is something to throw or to fetch, so a goblin with empty
 /// hands and nothing in sight hunts as any other kind does.
 ///
+/// A kind that keeps its distance, a will-o'-wisp's, comes right after
+/// running: backing away or closing to stay within its trait's span
+/// outranks a blow, so a thing that lures keeps what it lures at arm's
+/// length rather than trading blows with it, and only fights when
+/// `Keep::enemies` finds no step to back away by.
+///
 /// Every kind ends the same way, as Foundry's do: hunt what it sees, search
 /// where it last saw it, walk back to the post a piece stood it at, and
 /// drift. A monster with no post passes straight over `KeepPost`, so one
@@ -387,6 +419,9 @@ fn brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
     let mut brain = Brain::new();
     if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
         brain = brain.then(FleeWhenHurt { at_pct });
+    }
+    if let Some((keep_within, no_closer_than)) = folded.keeps_away {
+        brain = brain.then(Keep::enemies(keep_within, no_closer_than));
     }
     if !folded.abilities.is_empty() {
         brain = brain.then(UseAbility { chance_pct: ABILITY_CHANCE_PCT });
@@ -507,10 +542,11 @@ pub fn spawn_monster_now(world: &mut World, def: Id<MonsterDef>, at: Point, map:
 /// gain.
 ///
 /// Its shot, its dark sight, its hearing, its light, what it knows, the
-/// statuses it holds and what it drops are added only for a kind that has
-/// them. Statuses a trait holds are put on here, [`FOR_LIFE`], rather than
-/// asked for, so they are there from the monster's first turn and never
-/// announced: a monster that regenerates did not just start to.
+/// statuses it holds, its own triggers and what it drops are added only
+/// for a kind that has them. Statuses a trait holds are put on here,
+/// [`FOR_LIFE`], rather than asked for, so they are there from the
+/// monster's first turn and never announced: a monster that regenerates
+/// did not just start to.
 pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: MapId, registries: &Registries) -> Entity {
     let f = &def.folded;
     let (r, g, b) = def.color;
@@ -552,11 +588,17 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     if !def.drops.is_empty() {
         e.insert(Drops::<ItemDef>(def.drops.clone()));
     }
+    // What it does at its own moments, a bite that poisons or a burst
+    // where it dies, built once by the bestiary and shared by every copy.
+    if !def.triggers.0.is_empty() {
+        e.insert(def.triggers.clone());
+    }
     e.id()
 }
 
 #[cfg(test)]
 mod tests {
+    use bevy::ecs::system::RunSystemOnce;
     use bevy::ecs::world::CommandQueue;
     use rand::SeedableRng;
     use rl_engine::rl_core::Rect;
@@ -574,7 +616,7 @@ mod tests {
     /// `text`, a monsters file of a test's own, read against the shipped
     /// registries, traits and items.
     fn fixture(library: &Library, text: &str) -> Result<Registry<MonsterDef>, ContentError> {
-        read(text, &library.registries, &library.traits, &library.armory.defs)
+        read(text, &library.registries, &library.traits, &library.armory.defs, &crate::content::effect_kinds(), &Moments::default())
     }
 
     /// Every reason a fixture that should not read was refused.
@@ -623,25 +665,38 @@ mod tests {
         brain.decide(ctx).1
     }
 
-    /// A tripwire over the skeleton's bestiary, by name, so a kind is
-    /// added or dropped on purpose, and the spectral blade a staff
-    /// conjures; and the king is the one death that wins the run.
+    /// A tripwire over the bestiary, by name, so a kind is added or
+    /// dropped on purpose, and the spectral blade a staff conjures; and
+    /// the king is the one death that wins the run.
     #[test]
-    fn every_monster_of_the_skeleton_is_in_the_file_and_the_drowned_king_is_its_one_boss() {
+    fn every_monster_of_the_bestiary_is_in_the_file_and_the_drowned_king_is_its_one_boss() {
         let library = library();
-        let skeleton = [
+        let bestiary_kinds = [
             "rat",
             "jackal",
             "kobold",
             "goblin",
+            "monkey",
             "cave spider",
             "goblin archer",
+            "goblin conjurer",
+            "goblin mystic",
             "myconid",
+            "pink jelly",
+            "vampire bat",
             "ogre",
             "skeleton",
             "ghoul",
+            "necromancer",
+            "wraith",
+            "will-o'-wisp",
             "drowned thrall",
             "wight",
+            "troll",
+            "golem",
+            "dar blademaster",
+            "dar priestess",
+            "dar battlemage",
             "fire imp",
             "salamander",
             "skeleton knight",
@@ -649,10 +704,10 @@ mod tests {
             "spectral blade",
         ];
         let defs = &library.bestiary.defs;
-        for name in skeleton {
+        for name in bestiary_kinds {
             assert!(defs.id(name).is_some(), "no monster called {name:?}");
         }
-        assert_eq!(defs.len(), skeleton.len(), "a monster this list does not name");
+        assert_eq!(defs.len(), bestiary_kinds.len(), "a monster this list does not name");
         let bosses: Vec<&str> = defs.iter().filter(|(_, d)| d.boss).map(|(_, d)| d.name.as_str()).collect();
         assert_eq!(bosses, ["the Drowned King"]);
         assert!(defs.iter().all(|(id, d)| d.id() == id), "each knows its own id");
@@ -958,5 +1013,118 @@ mod tests {
             assert!(world.get::<Inventory>(goblin).is_some_and(|bag| bag.contains(dagger)), "seed {s}: and keeps its dagger in its pack");
             assert_eq!(world.get::<Position>(nearer).map(|p| p.0), Some(lane[7]), "seed {s}: the dagger no better than its own lies where it lay");
         }
+    }
+
+    /// A cave spider's `venomous` trait: its bite lands `hit`, which
+    /// poisons whoever it struck, as its row in the content sheet says.
+    /// The spider sometimes spits its web instead of biting, so this
+    /// gives it turns enough for a bite to land at least once.
+    #[test]
+    fn a_cave_spiders_bite_poisons_the_adventurer() {
+        use crate::testing::{arena, monster, pass_turns};
+        let (mut app, me, here) = arena(3);
+        monster(&mut app, "cave spider", here.offset(1, 0));
+        let poisoned = app.world().resource::<Registries>().statuses.expect("poisoned");
+        let mut bitten = false;
+        for _ in 0..40 {
+            pass_turns(&mut app, 1);
+            if app.world().get::<Afflicted>(me).is_some_and(|a| a.0.has(poisoned)) {
+                bitten = true;
+                break;
+            }
+        }
+        assert!(bitten, "the spider's bite never poisoned the adventurer in forty turns");
+    }
+
+    /// A myconid's `spore-burst`: a cloud of confusion where it died,
+    /// reaching the adventurer who stood beside it when it fell, read
+    /// straight off the gas field rather than off a chance-based status,
+    /// so the test does not itself depend on the chance a breath holds.
+    #[test]
+    fn a_myconid_bursts_into_a_confusing_cloud_exactly_where_it_dies() {
+        use crate::testing::{arena, kill, monster};
+        let (mut app, _, here) = arena(4);
+        let at = here.offset(1, 0);
+        let myconid = monster(&mut app, "myconid", at);
+        kill(&mut app, myconid, None);
+        let confusing = app.world().resource::<Registries>().gases.expect("confusing");
+        assert!(app.world().resource::<Gases>().at(confusing, at) > 0, "a confusing cloud stands where the myconid died");
+    }
+
+    /// Review Focus 1's game half: a monster the test puts to sleep with
+    /// Undermere's own `asleep` is unaware of the adventurer standing
+    /// over it, takes their blow at the unaware bonus, and the harm wakes
+    /// it, as every sleeper wakes of a blow landed on it.
+    #[test]
+    fn a_sleeping_goblin_takes_the_unaware_blow_and_then_wakes() {
+        use crate::testing::{arena, equip, make, monster, settle};
+        let (mut app, me, here) = arena(5);
+        let goblin = monster(&mut app, "goblin", here.offset(1, 0));
+        let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
+        app.world_mut().write_message(Afflict { target: goblin, status: asleep, turns: 20, by: None, held_by: None });
+        settle(&mut app);
+        assert!(app.world().get::<Afflicted>(goblin).is_some_and(|a| a.0.has(asleep)), "asleep before the blow lands");
+        let unaware = app.world_mut().run_system_once(move |watchers: Watchers| watchers.unaware(goblin, me)).expect("the watchers");
+        assert!(unaware, "a sleeper has not noticed the adventurer standing over it");
+        let dagger = make(&mut app, "dagger");
+        equip(&mut app, me, dagger);
+        app.world_mut().write_message(Intent::new(me, Attack(goblin)));
+        settle(&mut app);
+        assert!(app.world().get::<Afflicted>(goblin).is_none_or(|a| !a.0.has(asleep)), "the blow woke it");
+    }
+
+    /// Withering: a wraith's touch saps strength, a stack a hit, and
+    /// repeated touches stack rather than only refresh one instance's
+    /// clock, so a fight that runs on leaves whoever it catches weaker
+    /// than the first touch did.
+    #[test]
+    fn a_wraiths_touch_weakens_the_adventurer_more_the_more_it_lands() {
+        use crate::testing::{arena, monster, pass_turns};
+        let (mut app, me, here) = arena(6);
+        monster(&mut app, "wraith", here.offset(1, 0));
+        let weakened = app.world().resource::<Registries>().statuses.expect(crate::content::WEAKENED);
+        let stacks_of = |app: &App| app.world().get::<Afflicted>(me).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
+        let mut saw_two = false;
+        for _ in 0..60 {
+            pass_turns(&mut app, 1);
+            if stacks_of(&app) >= 2 {
+                saw_two = true;
+                break;
+            }
+        }
+        assert!(saw_two, "the wraith never touched the adventurer twice in sixty turns");
+    }
+
+    /// Luring: a will-o'-wisp keeps its distance from a foe closer than
+    /// its trait says, backing away rather than closing to melee the
+    /// moment the adventurer stands beside it.
+    #[test]
+    fn a_will_o_wisp_keeps_its_distance_rather_than_closing_to_melee() {
+        let library = library();
+        let wisp = library.bestiary.defs.get(library.bestiary.defs.expect("will-o'-wisp"));
+        assert_eq!(wisp.folded.keeps_away, Some((5, 3)), "its trait's span");
+        let (world, e) = spawn(&library, wisp);
+        let brain = world.get::<Mind>(e).expect("a mind").0.clone();
+        let me = ActorView { id: e, pos: Point::ZERO, health: Some(Vitals { current: wisp.hp, max: wisp.hp }), faction: world.get::<Faction>(e).map(|f| f.0) };
+        let foe = ActorView {
+            id: Entity::PLACEHOLDER,
+            pos: Point::new(1, 0),
+            health: Some(Vitals { current: 10, max: 10 }),
+            faction: Some(library.registries.factions.expect("adventurer")),
+        };
+        let mut snapshot = Snapshot::alone(me);
+        snapshot.enemies.push(foe);
+        snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let ctx = &mut TacticCtx {
+            snapshot: &snapshot,
+            fields: &mut NoFields,
+            can_step: &|_| true,
+            blocks_shot: &|_| false,
+            blocks_burst: &|_| false,
+            bounds: Rect::new(-20, -20, 40, 40),
+            rng: &mut rng,
+        };
+        assert_eq!(brain.decide(ctx).1, Some("shadow"), "a foe one cell off, inside its no-closer-than, is backed away from rather than struck");
     }
 }
