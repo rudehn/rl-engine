@@ -57,6 +57,7 @@ pub mod armory;
 pub mod bestiary;
 pub mod conditions;
 pub mod content;
+pub mod damage;
 pub mod dungeon;
 pub mod effects;
 pub mod enchant;
