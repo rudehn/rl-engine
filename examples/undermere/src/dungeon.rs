@@ -151,12 +151,36 @@ impl Biome {
     /// second, so a band is told apart at a glance and none borrows
     /// another's. The doors the halls and the crypts hang are the one
     /// thing two bands share.
+    ///
+    /// Task 8a's own lairs carry their own tiles wherever their boss's
+    /// range takes them, never the host band's, so a band whose floors a
+    /// boss's own range reaches past its first lists that boss's lair
+    /// tiles too, beside its own: Grubnak's hall over the Fungal Deeps
+    /// and the Catacombs, the Widow's web over the same two, the
+    /// Choirmaster's nave over the Catacombs and the Drowned Cathedral,
+    /// the Abbess's chapel over the same two, and the Forgemaster's forge
+    /// over the Drowned Cathedral and the Forge of Embers.
     pub fn tiles(self) -> &'static [&'static str] {
         match self {
             Biome::UpperHalls => &["hall wall", "hall floor", "rubble", "door", "open door"],
-            Biome::FungalDeeps => &["cave wall", "moss", "glowcaps"],
-            Biome::Catacombs => &["crypt wall", "crypt floor", "bones", "door", "open door"],
-            Biome::DrownedCathedral => &["cathedral wall", "marble", "flooded floor", "deep water", "moonlit marble"],
+            Biome::FungalDeeps => &["cave wall", "moss", "glowcaps", "goblin hall wall", "goblin hall floor", "web"],
+            Biome::Catacombs => &[
+                "crypt wall",
+                "crypt floor",
+                "bones",
+                "door",
+                "open door",
+                "goblin hall wall",
+                "goblin hall floor",
+                "cave wall",
+                "moss",
+                "web",
+                "cathedral wall",
+                "flooded floor",
+            ],
+            Biome::DrownedCathedral => {
+                &["cathedral wall", "marble", "flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"]
+            }
             Biome::ForgeOfEmbers => &["forge wall", "ash", "lava"],
             Biome::Throne => &["throne wall", "throne floor", "dais", "black pool"],
         }
@@ -221,6 +245,13 @@ fn registry() -> TileRegistry {
             TileProps::floor("throne floor"),
             TileProps::floor("dais"),
             wading("black pool"),
+            // Task 8a's lairs: Grubnak's hall, since no band his own
+            // floors fall in is one, and the Widow's web, slow to cross
+            // and gone three turns after it catches, burnt back to the
+            // moss of the den it is strung across.
+            TileProps::wall("goblin hall wall"),
+            TileProps::floor("goblin hall floor"),
+            TileProps::floor("web").move_cost(300).burns(100, 3, "moss"),
         ])
         .expect("every tile has a name of its own");
     tiles
@@ -333,8 +364,14 @@ impl Undermere {
             }
             Biome::FungalDeeps => {
                 let (wall, moss) = (t("cave wall"), t("moss"));
-                Chain::new()
-                    .then(CellularCave { wall, floor: moss, fill_pct: CAVE_FILL_PCT, ..Default::default() })
+                let chain = Chain::new().then(CellularCave { wall, floor: moss, fill_pct: CAVE_FILL_PCT, ..Default::default() });
+                // Before `JoinCaves`, so the lair's own hall is just one
+                // more pocket for it to join to the rest of the cave.
+                let chain = match self.lair_pass(floor)? {
+                    Some(lair) => chain.then(lair),
+                    None => chain,
+                };
+                chain
                     .then(JoinCaves { floor: moss, wall })
                     .then(start)
                     .then(FarthestExit)
@@ -343,10 +380,18 @@ impl Undermere {
                     .then(Underfoot)
             }
             Biome::Catacombs => {
-                let crypt = t("crypt floor");
-                Chain::new()
-                    .then(Bsp { floor: crypt, min_leaf: 9, padding: 1 })
-                    .then(Doors { door: t("door") })
+                let (wall, crypt) = (t("crypt wall"), t("crypt floor"));
+                let chain = Chain::new().then(Bsp { floor: crypt, min_leaf: 9, padding: 1 }).then(Doors { door: t("door") });
+                // After the rooms and their doors, so a lair's own hall
+                // overwrites a door along with whatever corridor it ate,
+                // and `JoinCaves` joins back whatever that cut off, the
+                // same pass a cave band already trusts to keep itself
+                // whole.
+                let chain = match self.lair_pass(floor)? {
+                    Some(lair) => chain.then(lair).then(JoinCaves { floor: crypt, wall }),
+                    None => chain,
+                };
+                chain
                     .then(start)
                     .then(FarthestExit)
                     .then(Patches { name: "bones", tile: t("bones"), on: crypt, count: (6, 10), size: (1, 4), phase: Phase::Finish })
@@ -355,10 +400,15 @@ impl Undermere {
                     .then(Underfoot)
             }
             Biome::DrownedCathedral => {
-                let (marble, deep, flooded) = (t("marble"), t("deep water"), t("flooded floor"));
-                Chain::new()
+                let (wall, marble, deep, flooded) = (t("cathedral wall"), t("marble"), t("deep water"), t("flooded floor"));
+                let chain = Chain::new()
                     .then(Rooms { floor: marble, attempts: 40, min_size: 6, max_size: 12, min_rooms: 4 })
-                    .then(Patches { name: "pools", tile: deep, on: marble, count: (4, 7), size: (6, 24), phase: Phase::Structures })
+                    .then(Patches { name: "pools", tile: deep, on: marble, count: (4, 7), size: (6, 24), phase: Phase::Structures });
+                let chain = match self.lair_pass(floor)? {
+                    Some(lair) => chain.then(lair).then(JoinCaves { floor: marble, wall }),
+                    None => chain,
+                };
+                chain
                     .then(start)
                     .then(FarthestExit)
                     .then(Rim { name: "shallows", tile: flooded, on: marble, around: deep, chance_pct: 70 })
@@ -369,8 +419,12 @@ impl Undermere {
             }
             Biome::ForgeOfEmbers => {
                 let (wall, ash) = (t("forge wall"), t("ash"));
-                Chain::new()
-                    .then(CellularCave { wall, floor: ash, fill_pct: CAVE_FILL_PCT, ..Default::default() })
+                let chain = Chain::new().then(CellularCave { wall, floor: ash, fill_pct: CAVE_FILL_PCT, ..Default::default() });
+                let chain = match self.lair_pass(floor)? {
+                    Some(lair) => chain.then(lair),
+                    None => chain,
+                };
+                chain
                     .then(JoinCaves { floor: ash, wall })
                     .then(Patches { name: "lava", tile: t("lava"), on: ash, count: (5, 8), size: (8, 30), phase: Phase::Connect })
                     .then(start)
@@ -965,6 +1019,121 @@ impl Pass<BaseContext> for FarthestFromTheThrone {
             .ok_or_else(|| BuildError::new("farthest_from_the_throne", "nowhere to walk to from the throne"))?;
         ctx.emit(StartPoint(far));
         Ok(())
+    }
+}
+
+/// One of the five mini-bosses a run may draw a lair for: task 8a's own.
+/// Its name is `monsters.ron`'s and its lair's own `assets/prefabs/`
+/// file's, its floors the span it may stand on, and its margin the tile
+/// its lair's hall is floored with outside the piece's own footprint,
+/// chosen to match the band most of its own floors fall in; only
+/// Grubnak's is new, since no band his own floors fall in is a hall.
+struct MiniBoss {
+    /// The name both `monsters.ron` and the prefab's `name:` field use.
+    name: &'static str,
+    /// The shallowest and the deepest floor it may stand on, both
+    /// included: `content-sheet-monsters.md`'s own "Mini-bosses" row.
+    floors: (u32, u32),
+    /// What floors the margin round its lair's own piece.
+    margin: &'static str,
+}
+
+/// The five, in the content sheet's own order.
+const MINI_BOSSES: [MiniBoss; 5] = [
+    MiniBoss { name: "Grubnak the goblin king", floors: (3, 5), margin: "goblin hall floor" },
+    MiniBoss { name: "the Widow", floors: (4, 6), margin: "moss" },
+    MiniBoss { name: "the Choirmaster", floors: (5, 7), margin: "crypt floor" },
+    MiniBoss { name: "the Drowned Abbess", floors: (6, 8), margin: "flooded floor" },
+    MiniBoss { name: "the Forgemaster", floors: (7, 9), margin: "ash" },
+];
+
+impl Undermere {
+    /// The two mini-bosses this run draws, and which floor each stands
+    /// on, by index into [`MINI_BOSSES`]: never the same boss twice, each
+    /// on a floor of its own within its own range. Pure over `self.seed`,
+    /// so every call during one run agrees without keeping the draw
+    /// anywhere, the same reasoning `generate`'s own per-place stream
+    /// follows.
+    fn lairs(&self) -> [(usize, u32); 2] {
+        let mut rng = self.seed.rng(SeedDomain::new(b"undermere.lairs"), 0);
+        let mut order: Vec<usize> = (0..MINI_BOSSES.len()).collect();
+        for i in (1..order.len()).rev() {
+            order.swap(i, rng.random_range(0..=i));
+        }
+        let mut chosen: Vec<(usize, u32)> = Vec::new();
+        for &boss in order.iter().take(2) {
+            let (lo, hi) = MINI_BOSSES[boss].floors;
+            let mut floor = rng.random_range(lo..=hi);
+            // Its range is always at least three floors wide and only one
+            // other boss was drawn before it, so there is always a floor
+            // in its own range the other did not take.
+            if chosen.iter().any(|(_, f)| *f == floor) {
+                floor = (lo..=hi).find(|f| chosen.iter().all(|(_, g)| g != f)).unwrap_or(floor);
+            }
+            chosen.push((boss, floor));
+        }
+        [chosen[0], chosen[1]]
+    }
+
+    /// The mini-boss and its lair's own margin tile this run stands on
+    /// `floor`, if any does.
+    fn lair_on(&self, floor: u32) -> Option<(&'static MiniBoss, TileId)> {
+        self.lairs().iter().find(|(_, f)| *f == floor).map(|(boss, _)| (&MINI_BOSSES[*boss], self.tile(MINI_BOSSES[*boss].margin)))
+    }
+
+    /// The [`Lair`] pass `floor`'s own chain stamps, if this run draws one
+    /// there: the piece named exactly as its boss is in `monsters.ron`,
+    /// so the one name serves both.
+    fn lair_pass(&self, floor: u32) -> Result<Option<Lair>, BuildError> {
+        match self.lair_on(floor) {
+            Some((boss, margin)) => Ok(Some(Lair { name: boss.name, piece: self.prefabs.piece(boss.name)?, margin })),
+            None => Ok(None),
+        }
+    }
+}
+
+/// Lays a mini-boss's lair somewhere midway through the floor's own
+/// generation: a hall a cell larger than the piece all round, carved
+/// over whatever stood there, the piece stamped fixed in its centre, as
+/// [`ThroneHall`] lays the throne. Carving it can as readily cut an
+/// existing room off from another as it can wall in a stray cave pocket,
+/// so this never tries to join it itself: every chain that may draw one
+/// runs a [`JoinCaves`] right after it, the same pass a cave band already
+/// keeps whole with, over the band's own floor, so whatever the hall cut
+/// off, on any band's generation, is joined back the one way the engine
+/// already trusts.
+struct Lair {
+    /// A stable name, so two lairs, or the throne, draw different streams.
+    name: &'static str,
+    /// The piece.
+    piece: Prefab,
+    /// What the hall is floored with outside the piece's own footprint.
+    margin: TileId,
+}
+
+impl Pass<BaseContext> for Lair {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn phase(&self) -> Phase {
+        Phase::Structures
+    }
+
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
+        let (w, h) = (self.piece.width(), self.piece.height());
+        let bounds = ctx.terrain().bounds();
+        // The hall, and a row of wall all round it at the map's edge.
+        if w + 4 > bounds.width || h + 4 > bounds.height {
+            return Err(BuildError::new(self.name, format!("a {w}x{h} lair does not fit a {}x{} floor", bounds.width, bounds.height)));
+        }
+        let x = ctx.rng().random_range(1..=bounds.width - w - 3);
+        let y = ctx.rng().random_range(1..=bounds.height - h - 3);
+        let hall = Rect::new(x, y, w + 2, h + 2);
+        for p in hall.cells() {
+            ctx.terrain_mut().set(p, self.margin);
+        }
+        StampPrefab { name: self.name, prefab: self.piece.clone(), at: Placement::At(Point::new(hall.x + 1, hall.y + 1)), orient: Orient::Fixed }.apply(ctx)
     }
 }
 

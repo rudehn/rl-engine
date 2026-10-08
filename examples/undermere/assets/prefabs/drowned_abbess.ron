@@ -1,0 +1,30 @@
+// Task 8a's own: the Drowned Abbess's flooded chapel, drawn on one floor
+// of her own 6-8. Its own ground is water to the knee, the font at its
+// head, and her two drowned thralls, `led` over her as her band comes
+// together; two more rise at her own call, from any standing water
+// within reach (`effects/bodies.rs`'s `CallDrowned`), this chapel's own
+// included.
+(
+    name: "the Drowned Abbess",
+    ground: "flooded floor",
+    rows: [
+        "###############",
+        "#.............#",
+        "#.............#",
+        "#......u......#",
+        "#......A......#",
+        "#.............#",
+        "#..Z.......Z..#",
+        "#.............#",
+        "#.............#",
+        "#.............#",
+        "###############",
+    ],
+    legend: {
+        '#': Tile("cathedral wall"),
+        '.': Tile("flooded floor"),
+        'u': Prop("font"),
+        'A': Monster(monster: "the Drowned Abbess"),
+        'Z': Monster(monster: "drowned thrall"),
+    },
+)

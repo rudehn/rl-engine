@@ -20,7 +20,7 @@ use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 
-use crate::bestiary::{Bestiary, MonsterDef, spawn_monster};
+use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
 use crate::stairs::Way;
 
@@ -247,6 +247,38 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
     }
 }
 
+/// Wires every entourage member a lair's own prefab just stood up to the
+/// one mini-boss among them with the engine's own `Leader`, the moment a
+/// floor's arrival fills its slots: task 8a's own band, brought together
+/// the same way [`place_band`]'s already are, but by the engine's prefab
+/// slots rather than by this module's own placement. Read by
+/// [`MonsterDef::miniboss`] rather than a name, since nothing else `Post`
+/// marks is ever a monster but a slot's own, and the throne's court
+/// stands no miniboss among it to lead them.
+///
+/// After [`PrefabSet::Fill`], in the same pass, so a lair's band is whole
+/// before anything decides a turn.
+pub fn lead_lair_bands(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, bestiary: Res<Bestiary>, posted: Query<(Entity, &Kind, &OnMap), With<Post>>) {
+    for ev in entered.read().filter(|ev| ev.first) {
+        let (mut boss, mut followers) = (None, Vec::new());
+        for (e, kind, on) in &posted {
+            if on.0 != ev.map {
+                continue;
+            }
+            if bestiary.defs.get(kind.0).miniboss {
+                boss = Some(e);
+            } else {
+                followers.push(e);
+            }
+        }
+        if let Some(boss) = boss {
+            for follower in followers {
+                commands.entity(follower).insert(Leader(boss));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
@@ -254,7 +286,6 @@ mod tests {
     use rl_engine::rl_rules::prefab::Slot;
 
     use super::*;
-    use crate::bestiary::Kind;
     use crate::dungeon::{TOWN, map_of};
     use crate::testing::{adventurer, arrive, headless, sturdy};
 
@@ -402,8 +433,17 @@ mod tests {
                 let people: Vec<Point> = spawned.iter().copied().filter(|p| !posts.contains(p)).collect();
                 assert!(people.iter().all(|p| !marked.contains(p)), "seed {s}, floor {floor}: one of the people on a piece's mark");
                 assert!(people.len() as u32 >= groups_on(floor), "seed {s}, floor {floor}: {} people for {} groups", people.len(), groups_on(floor));
+                // The throne's own six, the king and his court, on floor
+                // ten alone; elsewhere nothing, unless this seed draws one
+                // of task 8a's own lairs on this floor, whose boss and
+                // entourage are posted the same way and never more than
+                // five strong.
                 let court = spawned.len() - people.len();
-                assert_eq!(court, if floor == FLOORS { 6 } else { 0 }, "seed {s}, floor {floor}: the king and his knights, and only on the throne's floor");
+                if floor == FLOORS {
+                    assert_eq!(court, 6, "seed {s}, floor {floor}: the king and his court");
+                } else {
+                    assert!(court == 0 || (1..=5).contains(&court), "seed {s}, floor {floor}: an unexpected court of {court}");
+                }
                 let knights = people.iter().filter(|p| made_at(&app, map_of(floor), **p) == "skeleton knight").count();
                 assert_eq!(knights, 0, "seed {s}, floor {floor}: a knight of the court out among the floor's own people");
             }

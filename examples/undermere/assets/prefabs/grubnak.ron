@@ -1,0 +1,33 @@
+// Task 8a's own: Grubnak the goblin king's hall, drawn on one floor of his
+// own 3-5 between floors three and nine when this run's draw names him. A
+// crude throne at its back, banners either side of the door, a fire before
+// it, and his honor guard of four, drawn from `assets/roles.ron`'s
+// `grubnak-honor-guard`, `led` over him as his band comes together.
+(
+    name: "Grubnak the goblin king",
+    ground: "goblin hall floor",
+    rows: [
+        "#################",
+        "#...b.......b...#",
+        "#...............#",
+        "#.......T.......#",
+        "#.......K.......#",
+        "#...............#",
+        "#..h.........h..#",
+        "#...............#",
+        "#.......F.......#",
+        "#...............#",
+        "#..h.........h..#",
+        "#...b.......b...#",
+        "#################",
+    ],
+    legend: {
+        '#': Tile("goblin hall wall"),
+        '.': Tile("goblin hall floor"),
+        'b': Prop("banner"),
+        'F': Prop("brazier"),
+        'T': Prop("throne"),
+        'K': Monster(monster: "Grubnak the goblin king"),
+        'h': Monster(role: "grubnak-honor-guard", band: 0),
+    },
+)

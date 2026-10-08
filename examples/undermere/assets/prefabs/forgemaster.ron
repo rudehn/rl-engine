@@ -1,0 +1,29 @@
+// Task 8a's own: the Forgemaster's forge, drawn on one floor of his own
+// 7-9. An anvil at its heart, racks either side, lava channels crossing
+// it, and his three fire imps, `led` over him as his band comes together.
+(
+    name: "the Forgemaster",
+    ground: "ash",
+    rows: [
+        "#################",
+        "#.......i.......#",
+        "#..k.........k..#",
+        "#LLLLL.....LLLLL#",
+        "#...............#",
+        "#.......a.......#",
+        "#.......F.......#",
+        "#...............#",
+        "#..i.........i..#",
+        "#...............#",
+        "#################",
+    ],
+    legend: {
+        '#': Tile("forge wall"),
+        '.': Tile("ash"),
+        'L': Tile("lava"),
+        'k': Prop("rack"),
+        'a': Prop("anvil"),
+        'F': Monster(monster: "the Forgemaster"),
+        'i': Monster(monster: "fire imp"),
+    },
+)
