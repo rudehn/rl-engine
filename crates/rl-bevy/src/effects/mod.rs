@@ -540,6 +540,10 @@ impl Plugin for EffectsPlugin {
             // `Reflects` body to roll against; `add_stream` is a no-op once
             // either plugin has already derived it.
             .add_stream::<crate::ability::ReflectRng>("EffectsPlugin")
+            // `Bystanders::reflect` writes this from the same two call
+            // sites, so it is registered alongside the stream it rolls
+            // rather than only where `AbilitiesPlugin` happens to add it.
+            .add_message::<crate::ability::Reflected>()
             // `EffectWorld` writes these, so they are this plugin's to
             // register: a writer for a message nobody registered fails the
             // system at startup, and a game with effects should not have to

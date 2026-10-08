@@ -349,6 +349,26 @@ pub struct Landed {
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Reflects;
 
+/// Written each time [`Bystanders::reflect`] turns a landing back: the
+/// body [`Reflects`] marked, and whoever aimed the use, now the one it
+/// lands on instead.
+///
+/// Nothing else says a reflection happened: the harm it causes is reported
+/// the way any other harm is, by [`crate::combat::DamageDealt`], with
+/// nothing to say why the caster is the one hurt. This is that reason, for
+/// a narrator to word and for a game to learn a reflecting body by, read
+/// beside the landing rather than folded into it, since a preview or a
+/// refused aim must not write one.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct Reflected {
+    /// The body [`Reflects`] marked, which turned the landing back.
+    pub by: Entity,
+    /// Whoever aimed it, now the one the landing lands on.
+    pub onto: Entity,
+    /// What was turned back: an ability, a trigger, or a prop's offer.
+    pub source: Source,
+}
+
 /// The roll [`Reflects`] spends, its own stream so adding or rolling for a
 /// reflecting body never shifts a single roll combat or an effect already
 /// drew: the same reasoning [`crate::minds::MindRng`] is kept apart for.
@@ -379,6 +399,12 @@ pub struct Bystanders<'w, 's> {
     // `AbilitiesPlugin` nor `EffectsPlugin`'s own `add_stream` for it, and
     // marked nobody `Reflects`, never misses it.
     rng: Option<ResMut<'w, ReflectRng>>,
+    // `Option` for the same reason as `rng`: `combat::Arena` and the items
+    // resolver build a `Bystanders` with neither `AbilitiesPlugin` nor
+    // `EffectsPlugin` added, and nothing here writes one until a body
+    // actually reflects, which the stream above already requires both of
+    // to roll for.
+    reflected: Option<MessageWriter<'w, Reflected>>,
 }
 
 impl Bystanders<'_, '_> {
@@ -451,11 +477,18 @@ impl Bystanders<'_, '_> {
     /// carry it out, never by the targeting cursor's preview of the same
     /// aim, so looking at a reflecting body costs nothing and decides
     /// nothing before the use is actually made.
+    ///
+    /// Writes a [`Reflected`] for every target it turns back; a target
+    /// left standing where it was aimed writes none.
     pub fn reflect(&mut self, landing: &mut Landing) {
         let user = landing.user;
+        let source = landing.source;
         let mut landed: Vec<Entity> = Vec::with_capacity(landing.targets.len());
         for target in landing.targets.drain(..) {
             let reflected = target != user && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
+            if reflected && let Some(writer) = self.reflected.as_mut() {
+                writer.write(Reflected { by: target, onto: user, source });
+            }
             let onto = if reflected { user } else { target };
             if !landed.contains(&onto) {
                 landed.push(onto);
@@ -1146,6 +1179,36 @@ mod tests {
             targets_hurt += them_hurt as u32;
         }
         assert!(casters_hurt > 0 && targets_hurt > 0, "both outcomes over forty seeds: {casters_hurt} reflected, {targets_hurt} landed");
+    }
+
+    /// A reflection writes a [`Reflected`] naming the reflecting body and
+    /// the caster it turned the bolt back onto; a bolt that lands where it
+    /// was aimed writes none.
+    #[test]
+    fn a_reflection_writes_what_turned_back_and_a_landing_writes_none() {
+        let bolt_name = "bolt";
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let bolt = ability(&app, bolt_name);
+            let me = caster(&mut app, start, 20, &[bolt]);
+            let them = foe(&mut app, start.offset(3, 0));
+            app.world_mut().entity_mut(them).insert(Reflects);
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
+            app.update();
+
+            let reflected: Vec<Reflected> = app.world_mut().resource_mut::<Messages<Reflected>>().drain().collect();
+            let them_hurt = hp(&app, them) < 20;
+            if them_hurt {
+                assert!(reflected.is_empty(), "seed {seed}: a landing that was not reflected writes no Reflected");
+            } else {
+                assert_eq!(reflected.len(), 1, "seed {seed}: a reflection writes exactly one Reflected");
+                assert_eq!(reflected[0].by, them, "seed {seed}: by names the reflecting body");
+                assert_eq!(reflected[0].onto, me, "seed {seed}: onto names the caster it turned back onto");
+            }
+        }
     }
 
     /// An unaffordable ability is refused, costs the player no time, keeps

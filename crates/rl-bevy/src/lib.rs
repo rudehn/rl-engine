@@ -55,7 +55,7 @@ pub mod turn;
 pub mod work;
 pub mod world;
 
-pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
+pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Reflected, Use};
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
@@ -130,7 +130,7 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 /// those stay at the crate root, and an effect in the prelude was a name
 /// that collided with a game's own `Shove` action.
 pub mod prelude {
-    pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, ReflectRng, Reflects, Use};
+    pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, ReflectRng, Reflected, Reflects, Use};
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
