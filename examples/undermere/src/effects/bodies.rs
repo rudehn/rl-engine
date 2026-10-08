@@ -457,3 +457,209 @@ pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
     }
     true
 }
+
+/// Hastens every ally the user can see, itself included, for `turns`:
+/// Grubnak's `war cry`. `aim: SelfOnly` and `mode: Own`, the same reason
+/// `conjure blades` takes neither: its own sight decides who it hits,
+/// never a cursor, and an ordinary `Aim::Ally` bolt only ever finds the
+/// one nearest. Written `(kind: "Rally", args: (turns: 6))`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rally {
+    /// How many whole turns the haste lasts.
+    pub turns: u32,
+}
+
+impl Effect for Rally {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (user, turns) = (landing.user, self.turns);
+        world.commands.queue(move |world: &mut World| rally(world, user, turns));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("hastens every ally in sight for {} turns", self.turns)
+    }
+}
+
+impl FromArgs for Rally {
+    const KIND: &'static str = "Rally";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            turns: u32,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { turns: a.turns })
+    }
+}
+
+/// Hastens every actor on `user`'s own side that `user` can see, `user`
+/// included, for `turns`, as [`Rally`] says. Nothing with no side of its
+/// own, nor with no sight to rally by.
+pub fn rally(world: &mut World, user: Entity, turns: u32) {
+    let Some(hasted) = world.resource::<Registries>().statuses.id(crate::content::HASTED) else { return };
+    let map = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
+    let Some(sight) = world.get::<Viewshed>(user).cloned() else { return };
+    let side = world.get::<Faction>(user).copied();
+    // Collected before `CombatRules` is borrowed, so the query's own
+    // borrow of `world` is done with by the time the relation is read,
+    // `CombatRules` not being `Clone` to hold onto instead.
+    let seen: Vec<(Entity, Option<Faction>)> = world
+        .query_filtered::<(Entity, &Position, Option<&OnMap>, Option<&Faction>), With<Actor>>()
+        .iter(world)
+        .filter(|(_, pos, on, _)| on.map_or(MapId::SURFACE, |m| m.0) == map && sight.can_see(pos.0))
+        .map(|(e, _, _, theirs)| (e, theirs.copied()))
+        .collect();
+    let rules = world.get_resource::<CombatRules>();
+    let allies: Vec<Entity> = seen
+        .into_iter()
+        .filter(|(e, theirs)| {
+            *e == user || matches!((rules, side, theirs), (Some(rules), Some(mine), Some(theirs)) if rules.factions.relation(theirs.0, mine.0) == Relation::Allied)
+        })
+        .map(|(e, _)| e)
+        .collect();
+    for ally in allies {
+        world.write_message(Afflict { target: ally, status: hasted, turns, by: Some(user), held_by: None });
+    }
+}
+
+/// Stands up to `count` drowned thralls on cells of standing water within
+/// `range` of `user`, wading tiles rather than the lake's own deep water
+/// or the throne's black pools, which stop a body rather than letting one
+/// rise: the Drowned Abbess's `call the drowned`. Written `(kind:
+/// "CallDrowned", args: (count: 2, range: 6))`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CallDrowned {
+    /// How many rise, at most.
+    pub count: u32,
+    /// How far from the caller a cell of water may lie.
+    pub range: i32,
+}
+
+impl Effect for CallDrowned {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (user, count, range) = (landing.user, self.count, self.range);
+        let landing = landing.clone();
+        world.commands.queue(move |world: &mut World| {
+            if call_drowned(world, user, count, range) == 0 {
+                super::showed_nothing(world, &landing);
+            }
+        });
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("up to {} drowned thralls rise from water within {}", self.count, self.range)
+    }
+}
+
+impl FromArgs for CallDrowned {
+    const KIND: &'static str = "CallDrowned";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            count: u32,
+            range: i32,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { count: a.count, range: a.range })
+    }
+}
+
+/// A tile's move cost that marks it as standing water: the wading tiles
+/// `dungeon.rs` builds with its own `wading` helper, the shallows, the
+/// flooded floor and the black pools, every one of them twice the cost of
+/// bare ground and none other. Shared rather than read off a name, since
+/// `call_drowned` has no list of tile names of its own to keep in step
+/// with the biomes that add one.
+const WADING_MOVE_COST: u32 = 200;
+
+/// Stands up to `count` drowned thralls on free cells of standing water
+/// within `range` of `caller`, nearest rows first so two runs of one seed
+/// agree, as [`CallDrowned`] says. Returns how many rose.
+pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -> usize {
+    let Some(thrall) = world.resource::<Bestiary>().defs.id("drowned thrall") else { return 0 };
+    let Some(at) = world.get::<Position>(caller).map(|p| p.0) else { return 0 };
+    let map = world.get::<OnMap>(caller).map_or(MapId::SURFACE, |m| m.0);
+    let worldmap = world.resource::<WorldMap>();
+    let tables = worldmap.tables();
+    let occupancy = world.resource::<Occupancy>();
+    let mut cells: Vec<Point> = geometry::square(at, range)
+        .filter(|p| *p != at && geometry::chebyshev(*p, at) <= range)
+        .filter(|p| worldmap.tile(*p).is_some_and(|t| tables.walkable[t.index()] && tables.move_cost[t.index()] == WADING_MOVE_COST))
+        .filter(|p| !occupancy.is_occupied(*p))
+        .collect();
+    cells.sort_by_key(|p| (p.y, p.x));
+    cells.truncate(count as usize);
+    let n = cells.len();
+    for cell in cells {
+        spawn_monster_now(world, thrall, cell, map);
+    }
+    if n > 0 && world.query_filtered::<&Viewshed, With<Player>>().iter(world).any(|v| v.can_see(at)) {
+        let line = match n {
+            1 => "A drowned thrall rises from the water!".to_string(),
+            _ => format!("{n} drowned thralls rise from the water!"),
+        };
+        world.write_message(Tell::new(line, Tones::BAD));
+    }
+    n
+}
+
+/// Hatches an egg sac into two cave spiders beside `at`: the Widow's own,
+/// landed either when a sac is struck (its one health spent, the engine's
+/// `destroyed` moment) or when something steps beside it, which
+/// `crate::tricks::hatch_beside` watches for. Written `(kind: "Hatch",
+/// args: (monster: "cave spider", count: 2))`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hatch {
+    /// The kind that hatches out.
+    pub monster: String,
+    /// How many.
+    pub count: u32,
+}
+
+impl Effect for Hatch {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (at, map, monster, count) = (landing.origin, world.map().current(), self.monster.clone(), self.count);
+        world.commands.queue(move |world: &mut World| {
+            hatch(world, &monster, count, at, map);
+        });
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("{} {} hatch out", self.count, self.monster)
+    }
+}
+
+impl FromArgs for Hatch {
+    const KIND: &'static str = "Hatch";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            monster: String,
+            count: u32,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { monster: a.monster, count: a.count })
+    }
+}
+
+/// Spawns up to `count` of the monster named `monster` on free cells
+/// nearest `at` on `map`: an egg sac's hatch, struck or stepped beside.
+/// Nothing with no monster of that name, which a content typo would
+/// otherwise leave as a sac that hatches nothing rather than a load-time
+/// failure; `Hatch`'s own name is read against the bestiary at this
+/// moment rather than resolved at load, since a prop's trigger effects
+/// are built against the engine's registered kinds, which know nothing of
+/// a game's own monsters.
+pub fn hatch(world: &mut World, monster: &str, count: u32, at: Point, map: MapId) {
+    let Some(kind) = world.resource::<Bestiary>().defs.id(monster) else { return };
+    let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize, super::NEAR);
+    for cell in cells {
+        spawn_monster_now(world, kind, cell, map);
+    }
+}

@@ -29,7 +29,7 @@
 //   armor:      flat armor, added to the monster's own
 //   abilities:  names from `abilities.ron`: "fire breath" | "drowning grasp" | "spit web" |
 //               "blink" | "ward ally" | "mend ally" | "firebolt" | "slowness" | "conjure blades" |
-//               "raise dead"
+//               "raise dead" | "war cry" | "spit" | "call the drowned"
 //   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //               "webbed" | "warded" | "weakened" | "asleep"
 //   triggers:   what it does at its own moments: [(on: "hit" | "struck" | "died", area: Here |
@@ -138,4 +138,14 @@
     // a blow's damage is resolved, so `judge_draining` reads `DamageDealt`
     // in `TurnSet::React` instead of a trigger.
     (name: "draining", says: "drinks what it wounds", trick: true),
+    // Task 8a's own: a mini-boss's tricks and its entourage's. `war-cry`,
+    // `spit` and `calling the drowned` each grant an ability, so they are
+    // tricks as every other ability-granting trait is; `singing` is
+    // plain, the same reasoning `regenerates` already is, since what it
+    // grants its choir is a status held while it is near, not a discrete
+    // thing that lands and could be watched landing.
+    (name: "war-cry", says: "rallies its band", abilities: ["war cry"], trick: true),
+    (name: "singing", says: "its song mends the dead that follow it"),
+    (name: "spit", says: "spits poison from afar", abilities: ["spit"], trick: true),
+    (name: "calling the drowned", says: "calls the drowned up out of the water", abilities: ["call the drowned"], trick: true),
 ]

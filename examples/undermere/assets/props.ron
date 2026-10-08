@@ -31,9 +31,9 @@
 //              registers, written as in abilities.ron
 //   hidden:    optional; (spot:) percent a turn to spot it while in sight
 //
-// Everything here but the chest is scenery: it offers, holds and does nothing, so
-// the engine leaves it off the list of what is nearby and the look cursor still
-// names it.
+// Everything here but the chest and the egg sac is scenery: it offers, holds
+// and does nothing, so the engine leaves it off the list of what is nearby
+// and the look cursor still names it.
 #![enable(implicit_some)]
 [
     // The town. A lamp post's lantern and a forge's fire are lit by `light.rs`.
@@ -64,4 +64,17 @@
      container: (contents: [(tag: "weapon", count: (0, 1)), (tag: "armor", count: (0, 1)), (tag: "potion", count: (1, 2))],
                  opened: (glyph: '=', color: (r: 110, g: 85, b: 50))),
      offers: [(verb: "open", time: 100)]),
+
+    // Task 8a's five lairs: Grubnak's banners, the Choirmaster's bone organ,
+    // the Abbess's font, the Forgemaster's racks, and the Widow's egg sacs,
+    // the one of these that is not scenery. One hit spends its one health,
+    // and the `Hatch` effect its `destroyed` trigger lands is `effects/bodies.rs`'s
+    // own; stepped beside rather than struck, `tricks::hatch_beside` lands
+    // the same way, since a step beside it never breaks it.
+    (name: "banner",     glyph: '|', color: (r: 150, g: 40, b: 40)),
+    (name: "bone organ", glyph: 'n', color: (r: 220, g: 215, b: 195), blocks: true),
+    (name: "font",       glyph: 'u', color: (r: 150, g: 195, b: 205), blocks: true),
+    (name: "rack",       glyph: '=', color: (r: 110, g: 90, b: 70), blocks: true),
+    (name: "egg sac", glyph: 'o', color: (r: 230, g: 230, b: 200), blocks: true, health: 1,
+     triggers: [(on: "destroyed", effects: [(kind: "Hatch", args: (monster: "cave spider", count: 2))])]),
 ]

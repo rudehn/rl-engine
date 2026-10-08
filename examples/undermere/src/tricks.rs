@@ -53,6 +53,9 @@ pub struct Tricks {
     pub burns_badly: bool,
     /// `draining`: mends itself what a landed blow of its own dealt.
     pub drains: bool,
+    /// `singing`: a choir plays while allies within [`SING_RANGE`] stand
+    /// near it, the Choirmaster's own.
+    pub sings: bool,
 }
 
 impl Tricks {
@@ -71,6 +74,7 @@ impl Tricks {
             led: has("led"),
             burns_badly: has("burns-badly"),
             drains: has("draining"),
+            sings: has("singing"),
         }
     }
 
@@ -79,7 +83,7 @@ impl Tricks {
     /// and `flits`, which are brain shapes built once at load and nothing
     /// a running turn has to look up.
     pub fn needs_marker(self) -> bool {
-        self.splits || self.shrouds || self.fire_trail || self.reflects || self.burns_badly || self.drains
+        self.splits || self.shrouds || self.fire_trail || self.reflects || self.burns_badly || self.drains || self.sings
     }
 }
 
@@ -498,6 +502,81 @@ pub fn wither(world: &mut World, target: Entity, by: Option<Entity>, turns: u32)
         return;
     }
     world.write_message(Afflict { target, status: weakened, turns, by, held_by: None });
+}
+
+/// Marks a kind whose choir mends whoever of its own side stands near it:
+/// the Choirmaster's `singing`. Marked at spawn off [`Tricks::sings`].
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Choir;
+
+/// How far a [`Choir`]'s own song reaches: the content sheet's own four.
+const SING_RANGE: i32 = 4;
+
+/// Keeps `regenerating` on every actor of a [`Choir`]'s own side within
+/// [`SING_RANGE`] of it, and takes it off the turn it falls out of range:
+/// a Choirmaster's song is heard exactly as far as it carries. Plain
+/// rather than a blunt mending-wide change, since a status already
+/// scaled by the mending stat is what "regenerate" already means
+/// everywhere else in this bestiary.
+///
+/// Edge-triggered, as `keep_shrouded` is: `Afflict` only the turn a body
+/// comes into range, `Cure` only the turn it leaves it.
+///
+/// In `TurnSet::React`.
+pub fn sing_choir(
+    registries: Res<Registries>,
+    choir: Query<(&Position, &Faction), With<Choir>>,
+    bodies: Query<(Entity, &Position, &Faction, &Afflicted), With<Actor>>,
+    mut afflict: MessageWriter<Afflict>,
+    mut cure: MessageWriter<Cure>,
+) {
+    let Some(status) = registries.statuses.id("regenerating") else { return };
+    for (e, pos, side, held) in &bodies {
+        let sung_to = choir.iter().any(|(at, theirs)| theirs.0 == side.0 && geometry::chebyshev(at.0, pos.0) <= SING_RANGE);
+        let has = held.0.has(status);
+        if sung_to && !has {
+            afflict.write(Afflict { target: e, status, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
+        } else if !sung_to && has {
+            cure.write(Cure { target: e, status });
+        }
+    }
+}
+
+/// The prop the Widow's cave scatters: `assets/props.ron`'s own name.
+const EGG_SAC: &str = "egg sac";
+
+/// What an egg sac hatches into, and how many: the content sheet's own
+/// two cave spiders, shared by both ways a sac hatches so one number says
+/// it once.
+const EGG_SAC_HATCH: &str = "cave spider";
+
+/// How many hatch at once.
+const EGG_SAC_HATCH_COUNT: u32 = 2;
+
+/// Hatches an egg sac into [`EGG_SAC_HATCH_COUNT`] of [`EGG_SAC_HATCH`]
+/// the moment something steps beside it, despawning the sac so the same
+/// step cannot hatch it twice: the Widow's "struck or stepped beside",
+/// the half a blow does not cover. Read by `PropKind` against the
+/// registry each pass rather than a marker component, since nothing hands
+/// this game the entity a prefab's own slot spawned when it stood the sac
+/// up. A blow that spends the sac's one health hatches it too, through
+/// `props.ron`'s own `destroyed` trigger and
+/// [`crate::effects::bodies::Hatch`] instead of here, since combat
+/// already knows where and when it broke.
+///
+/// In `TurnSet::React`.
+pub fn hatch_beside(mut commands: Commands, mut steps: MessageReader<Stepped>, registries: Res<Registries>, map: Res<WorldMap>, props: Query<(Entity, &PropKind, &Position, &OnMap), With<Prop>>) {
+    let Some(sac) = registries.props.id(EGG_SAC) else { return };
+    let here = map.current();
+    for step in steps.read() {
+        for (prop, kind, pos, on) in &props {
+            if kind.0 == sac && on.0 == here && geometry::chebyshev(pos.0, step.to) <= 1 {
+                commands.entity(prop).despawn();
+                let at = pos.0;
+                commands.queue(move |world: &mut World| crate::effects::bodies::hatch(world, EGG_SAC_HATCH, EGG_SAC_HATCH_COUNT, at, here));
+            }
+        }
+    }
 }
 
 #[cfg(test)]

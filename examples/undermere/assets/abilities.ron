@@ -28,7 +28,9 @@
 //                per_level:), the user along the line aimed, up to reach cells, Conjure(blades:,
 //                turns:), spectral blades on the user's own side, RaiseDead, the nearest body in
 //                sight and reach stood up as the user's own ally, Wither(turns:), `weakened` capped
-//                at three stacks, and Steal, a landed blow's own trick. The damage kinds are
+//                at three stacks, Steal, a landed blow's own trick, Rally(turns:), task 8a's own,
+//                every ally in sight hasted, and CallDrowned(count:, range:), drowned thralls stood
+//                up out of the water within range. The damage kinds are
 //                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison" | "lightning", and the
 //                statuses "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //                "slowed" | "hasted" | "fireproof" | "shrouded" | "paralysed" | "confused" |
@@ -141,5 +143,37 @@
         mode: Own,
         cooldown: 1000,
         effects: [(kind: "RaiseDead")],
+    ),
+    // Task 8a's five mini-bosses. Grubnak's war cry needs nowhere pointed,
+    // the same reason `conjure blades` and `raise dead` take none: its own
+    // sight is who it hits, not a cursor.
+    (
+        name: "war cry",
+        description: "A roar that hastens every ally in sight for a while.",
+        look: (glyph: '*', color: (r: 255, g: 210, b: 80)),
+        aim: SelfOnly,
+        mode: Own,
+        cooldown: 2000,
+        effects: [(kind: "Rally", args: (turns: 6))],
+    ),
+    // The Drowned Abbess's venomous spit, at range rather than a bite.
+    (
+        name: "spit",
+        description: "A gout of venom spat from afar.",
+        look: (glyph: '*', color: (r: 140, g: 200, b: 120)),
+        mode: Bolt(range: 6),
+        cooldown: 400,
+        effects: [(kind: "Inflict", args: (status: "poisoned", turns: 6))],
+    ),
+    // The Drowned Abbess's: thralls stand up out of whatever water is
+    // within her reach, not pointed at one, as `raise dead` is not.
+    (
+        name: "call the drowned",
+        description: "Calls drowned thralls up out of the water within reach.",
+        look: (glyph: '*', color: (r: 100, g: 150, b: 170)),
+        aim: SelfOnly,
+        mode: Own,
+        cooldown: 1500,
+        effects: [(kind: "CallDrowned", args: (count: 2, range: 6))],
     ),
 ]

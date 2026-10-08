@@ -139,7 +139,14 @@ impl Plugin for UndermerePlugin {
         // out in a different order from one run to the next.
         app.add_systems(
             Turn,
-            (crate::tally::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures, crate::finds::lay)
+            (
+                crate::tally::remember_depth,
+                crate::stairs::link_places,
+                crate::population::populate,
+                crate::population::lead_lair_bands,
+                crate::light::light_fixtures,
+                crate::finds::lay,
+            )
                 .chain()
                 .in_set(TurnSet::React)
                 .after(PrefabSet::Fill)
@@ -192,8 +199,9 @@ impl Plugin for UndermerePlugin {
         // The bestiary's own tricks that read what a turn did rather than
         // the trait model's fold: a blow that splits what it left alive, a
         // blow that mends its own drainer, a step that leaves fire behind
-        // it, a cell's own dark kept or lifted, and a troll's regeneration
-        // halted while it burns.
+        // it, a cell's own dark kept or lifted, a troll's regeneration
+        // halted while it burns, a Choirmaster's choir kept over its own
+        // side, and the Widow's egg sacs, stepped beside.
         app.add_systems(
             Turn,
             (
@@ -202,6 +210,8 @@ impl Plugin for UndermerePlugin {
                 crate::tricks::trail_fire,
                 crate::tricks::keep_shrouded,
                 crate::tricks::keep_regen_halted,
+                crate::tricks::sing_choir,
+                crate::tricks::hatch_beside,
             )
                 .in_set(TurnSet::React),
         );
@@ -217,6 +227,7 @@ impl Plugin for UndermerePlugin {
                 crate::bestiary_lore::learn_splitting,
                 crate::bestiary_lore::learn_fire_trail,
                 crate::bestiary_lore::learn_draining,
+                crate::bestiary_lore::learn_reflecting,
             )
                 .in_set(TurnSet::React),
         );

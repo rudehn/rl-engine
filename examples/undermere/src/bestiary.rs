@@ -699,6 +699,9 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
         if def.tricks.drains {
             e.insert(crate::tricks::Drains);
         }
+        if def.tricks.sings {
+            e.insert(crate::tricks::Choir);
+        }
     }
     e.id()
 }
@@ -808,6 +811,11 @@ mod tests {
             "salamander",
             "skeleton knight",
             "the Drowned King",
+            "Grubnak the goblin king",
+            "the Widow",
+            "the Choirmaster",
+            "the Drowned Abbess",
+            "the Forgemaster",
             "spectral blade",
         ];
         let defs = &library.bestiary.defs;

@@ -380,6 +380,7 @@ pub fn add_game_effects(app: &mut App) {
     app.add_effect::<senses::Darkness>().add_effect::<senses::MagicMapping>();
     app.add_effect::<charges::Recharge>();
     app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
+    app.add_effect::<bodies::Rally>().add_effect::<bodies::CallDrowned>().add_effect::<bodies::Hatch>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through
@@ -575,12 +576,17 @@ mod tests {
             ("brazier", true),
             ("throne", true),
             ("chest", true),
+            ("banner", false),
+            ("bone organ", true),
+            ("font", true),
+            ("rack", true),
+            ("egg sac", true),
         ];
         assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
         for (name, blocks) in props {
             let def = r.props.get(r.props.id(name).unwrap_or_else(|| panic!("no prop called {name:?}")));
             assert_eq!(def.blocks, blocks, "{name}: whether it stands in the way");
-            assert_eq!(def.is_scenery(), name != "chest", "{name}");
+            assert_eq!(def.is_scenery(), name != "chest" && name != "egg sac", "{name}");
         }
         let chest = r.props.get(r.props.expect("chest"));
         assert!(chest.container.as_ref().is_some_and(|c| c.contents.len() == 3), "a weapon, armor and a potion, by tag");

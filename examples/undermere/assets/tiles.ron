@@ -77,4 +77,11 @@
     (tile: "throne floor",   glyph: '.',  fg: (0.6, 0.7, 0.74),   bg: (0.12, 0.17, 0.2),  vary: (0.08, 0.02)),
     (tile: "dais",           glyph: '-',  fg: (0.74, 0.82, 0.86), bg: (0.19, 0.25, 0.29), vary: (0.06, 0.02)),
     (tile: "black pool",     glyph: '~',  fg: (0.28, 0.5, 0.6),   bg: (0.02, 0.07, 0.11), vary: (0.08, 0.03), shimmer: 0.2),
+    // Task 8a's five lairs. Four reuse their own host band's wall and
+    // floor; only Grubnak's hall and the Widow's web are new, since no
+    // band his own floors fall in is a hall, and no band has anything
+    // like a web.
+    (tile: "goblin hall wall",  glyph: '#', fg: (0.7, 0.55, 0.3),   bg: (0.35, 0.25, 0.12), vary: (0.08, 0.03)),
+    (tile: "goblin hall floor", glyph: '.', fg: (0.55, 0.45, 0.25), bg: (0.22, 0.16, 0.08), vary: (0.1, 0.03)),
+    (tile: "web",               glyph: '"', fg: (0.85, 0.85, 0.88), bg: (0.3, 0.3, 0.34),   vary: (0.06, 0.02)),
 ]
