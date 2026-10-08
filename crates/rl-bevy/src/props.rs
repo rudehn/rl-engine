@@ -34,7 +34,7 @@ use rl_core::{Id, Interner, Point, geometry};
 use rl_rules::TagId;
 use rl_rules::prop::PropId;
 
-use crate::combat::Health;
+use crate::combat::{CombatRules, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position};
 use crate::effects::{Effects, Fired, LandsAsItself, Moments, Remnant, Triggers};
 use crate::items::{Inventory, Tagged};
@@ -266,8 +266,8 @@ impl OfferedHere {
     }
 }
 
-/// Whoever holds the turn, and what it carries.
-type Reacher<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Inventory>), With<MyTurn>>;
+/// Whoever holds the turn, what it carries, and whose side it is on.
+type Reacher<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Inventory>, Option<&'static Faction>), With<MyTurn>>;
 
 /// Everything that could offer something, as the gate reads it: a prop by
 /// its definition, and anything carrying [`Offers`] by its own.
@@ -276,6 +276,10 @@ pub struct Offerers<'w, 's> {
     props: Query<'w, 's, (Entity, &'static PropKind, &'static Position, Option<&'static OnMap>), With<Prop>>,
     others: Query<'w, 's, (Entity, &'static Offers, &'static Position, Option<&'static OnMap>)>,
     emptied: Query<'w, 's, (), With<Emptied>>,
+    /// How sides stand, so a foe's offers are kept from whoever it is
+    /// hostile to. Without rules nobody is anybody's foe.
+    rules: Option<Res<'w, CombatRules>>,
+    sides: Query<'w, 's, &'static Faction>,
 }
 
 /// Works out what the actor holding the turn is offered by what it can
@@ -295,10 +299,10 @@ pub fn offer_here(
     offerers: Offerers,
     tagged: Query<&Tagged>,
 ) {
-    let Offerers { props, others, emptied } = &offerers;
+    let Offerers { props, others, emptied, rules, sides } = &offerers;
     offered.actor = None;
     offered.offers.clear();
-    let Ok((actor, pos, on, bag)) = reacher.single() else { return };
+    let Ok((actor, pos, on, bag, side)) = reacher.single() else { return };
     offered.actor = Some(actor);
     let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
     // What it stands on and what stands beside it: a body underfoot is as
@@ -326,9 +330,16 @@ pub fn offer_here(
         }
     }
     // Never the turn holder's own: what a person offers is offered to
-    // whoever stands by them, not to themselves.
+    // whoever stands by them, not to themselves. Nor to a foe: a captive's
+    // captor is not offered to free it, and a hostile trader does not
+    // trade. Decided here, once, so the interact key, the offers screen
+    // and the bump all agree.
+    let hostile = |other: Entity| match (rules.as_deref(), side, sides.get(other).ok()) {
+        (Some(rules), Some(mine), Some(theirs)) => rules.factions.relation(theirs.0, mine.0) == rl_rules::Relation::Hostile,
+        _ => false,
+    };
     for (other, offers, at, other_on) in others {
-        if other == actor || !in_reach(at, other_on) {
+        if other == actor || !in_reach(at, other_on) || hostile(other) {
             continue;
         }
         for offer in &offers.0 {
@@ -1418,6 +1429,29 @@ mod actor_offers {
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before + 200, "carried, it costs what the offer said");
         assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: captive, verb: free }], "and the game is told");
+    }
+
+    /// A foe's offers are kept from whoever it is hostile to, in the gate,
+    /// so no key can take one up peacefully; someone of no side beside it
+    /// still offers.
+    #[test]
+    fn an_actor_offers_nothing_to_one_it_is_hostile_to_and_reaching_for_it_is_refused() {
+        let (mut app, start, free, _) = arena();
+        let sides = crate::testing::two_sides(&mut app);
+        let foe = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200)]));
+        app.world_mut().entity_mut(foe).insert(crate::combat::Faction(sides.theirs));
+        let neutral = someone(&mut app, start.offset(-1, 0), Offers(vec![Offering::new(free, 200)]));
+        let player = player_at(&mut app, start, Offers::default());
+        app.world_mut().entity_mut(player).insert(crate::combat::Faction(sides.ours));
+        app.update();
+        watch(&mut app);
+        assert_eq!(offered(&app, player).iter().map(|o| o.target).collect::<Vec<_>>(), vec![neutral], "the foe offers nothing, the neutral does");
+
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Interact { target: foe, verb: free }));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), before, "reaching for a foe's offer costs nothing");
+        assert!(app.world().resource::<Seen>().0.is_empty(), "and does nothing");
     }
 
     /// Who reaches for the captive, once, when it holds the turn.
