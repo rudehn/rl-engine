@@ -515,7 +515,8 @@ pub fn rally(world: &mut World, user: Entity, turns: u32) {
     let allies: Vec<Entity> = seen
         .into_iter()
         .filter(|(e, theirs)| {
-            *e == user || matches!((rules, side, theirs), (Some(rules), Some(mine), Some(theirs)) if rules.factions.relation(theirs.0, mine.0) == Relation::Allied)
+            *e == user
+                || matches!((rules, side, theirs), (Some(rules), Some(mine), Some(theirs)) if rules.factions.relation(theirs.0, mine.0) == Relation::Allied)
         })
         .map(|(e, _)| e)
         .collect();

@@ -225,8 +225,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [2_439_668_221_019_590_717, 6_362_693_109_992_535_431, 3_925_558_732_060_146_829],
-        "fingerprint tripwire: re-baselined for part 3 task 6b (every monster now leaves remains for `raising` to find, and \
-         the new traits, abilities, effects and band placements move every roll, spawn and order after them)"
+        [1_044_805_334_682_371_504, 7_589_848_212_434_706_788, 4_234_396_970_800_120_060],
+        "fingerprint tripwire: re-baselined for part 3 task 8a (five mini-bosses, each with its own lair, drawn two a run \
+         between floors three and nine, move the floors' own generation and the streams after it)"
     );
 }

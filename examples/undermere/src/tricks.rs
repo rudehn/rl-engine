@@ -565,7 +565,13 @@ const EGG_SAC_HATCH_COUNT: u32 = 2;
 /// already knows where and when it broke.
 ///
 /// In `TurnSet::React`.
-pub fn hatch_beside(mut commands: Commands, mut steps: MessageReader<Stepped>, registries: Res<Registries>, map: Res<WorldMap>, props: Query<(Entity, &PropKind, &Position, &OnMap), With<Prop>>) {
+pub fn hatch_beside(
+    mut commands: Commands,
+    mut steps: MessageReader<Stepped>,
+    registries: Res<Registries>,
+    map: Res<WorldMap>,
+    props: Query<(Entity, &PropKind, &Position, &OnMap), With<Prop>>,
+) {
     let Some(sac) = registries.props.id(EGG_SAC) else { return };
     let here = map.current();
     for step in steps.read() {

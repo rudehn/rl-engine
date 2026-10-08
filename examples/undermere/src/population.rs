@@ -258,7 +258,12 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
 ///
 /// After [`PrefabSet::Fill`], in the same pass, so a lair's band is whole
 /// before anything decides a turn.
-pub fn lead_lair_bands(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, bestiary: Res<Bestiary>, posted: Query<(Entity, &Kind, &OnMap), With<Post>>) {
+pub fn lead_lair_bands(
+    mut commands: Commands,
+    mut entered: MessageReader<PlaceEntered>,
+    bestiary: Res<Bestiary>,
+    posted: Query<(Entity, &Kind, &OnMap), With<Post>>,
+) {
     for ev in entered.read().filter(|ev| ev.first) {
         let (mut boss, mut followers) = (None, Vec::new());
         for (e, kind, on) in &posted {

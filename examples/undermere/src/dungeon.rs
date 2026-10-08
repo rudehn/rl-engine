@@ -366,8 +366,9 @@ impl Undermere {
                 let (wall, moss) = (t("cave wall"), t("moss"));
                 let chain = Chain::new().then(CellularCave { wall, floor: moss, fill_pct: CAVE_FILL_PCT, ..Default::default() });
                 // Before `JoinCaves`, so the lair's own hall is just one
-                // more pocket for it to join to the rest of the cave.
-                let chain = match self.lair_pass(floor)? {
+                // more pocket for it to join to the rest of the cave; a
+                // cave band needs no corridor of its own.
+                let chain = match self.lair_pass(floor, false)? {
                     Some(lair) => chain.then(lair),
                     None => chain,
                 };
@@ -380,15 +381,12 @@ impl Undermere {
                     .then(Underfoot)
             }
             Biome::Catacombs => {
-                let (wall, crypt) = (t("crypt wall"), t("crypt floor"));
+                let crypt = t("crypt floor");
                 let chain = Chain::new().then(Bsp { floor: crypt, min_leaf: 9, padding: 1 }).then(Doors { door: t("door") });
-                // After the rooms and their doors, so a lair's own hall
-                // overwrites a door along with whatever corridor it ate,
-                // and `JoinCaves` joins back whatever that cut off, the
-                // same pass a cave band already trusts to keep itself
-                // whole.
-                let chain = match self.lair_pass(floor)? {
-                    Some(lair) => chain.then(lair).then(JoinCaves { floor: crypt, wall }),
+                // After the rooms and their doors, so the lair's own
+                // corridor can find one clear of its hall to join.
+                let chain = match self.lair_pass(floor, true)? {
+                    Some(lair) => chain.then(lair),
                     None => chain,
                 };
                 chain
@@ -400,12 +398,17 @@ impl Undermere {
                     .then(Underfoot)
             }
             Biome::DrownedCathedral => {
-                let (wall, marble, deep, flooded) = (t("cathedral wall"), t("marble"), t("deep water"), t("flooded floor"));
-                let chain = Chain::new()
-                    .then(Rooms { floor: marble, attempts: 40, min_size: 6, max_size: 12, min_rooms: 4 })
-                    .then(Patches { name: "pools", tile: deep, on: marble, count: (4, 7), size: (6, 24), phase: Phase::Structures });
-                let chain = match self.lair_pass(floor)? {
-                    Some(lair) => chain.then(lair).then(JoinCaves { floor: marble, wall }),
+                let (marble, deep, flooded) = (t("marble"), t("deep water"), t("flooded floor"));
+                let chain = Chain::new().then(Rooms { floor: marble, attempts: 40, min_size: 6, max_size: 12, min_rooms: 4 }).then(Patches {
+                    name: "pools",
+                    tile: deep,
+                    on: marble,
+                    count: (4, 7),
+                    size: (6, 24),
+                    phase: Phase::Structures,
+                });
+                let chain = match self.lair_pass(floor, true)? {
+                    Some(lair) => chain.then(lair),
                     None => chain,
                 };
                 chain
@@ -420,7 +423,7 @@ impl Undermere {
             Biome::ForgeOfEmbers => {
                 let (wall, ash) = (t("forge wall"), t("ash"));
                 let chain = Chain::new().then(CellularCave { wall, floor: ash, fill_pct: CAVE_FILL_PCT, ..Default::default() });
-                let chain = match self.lair_pass(floor)? {
+                let chain = match self.lair_pass(floor, false)? {
                     Some(lair) => chain.then(lair),
                     None => chain,
                 };
@@ -1083,10 +1086,13 @@ impl Undermere {
 
     /// The [`Lair`] pass `floor`'s own chain stamps, if this run draws one
     /// there: the piece named exactly as its boss is in `monsters.ron`,
-    /// so the one name serves both.
-    fn lair_pass(&self, floor: u32) -> Result<Option<Lair>, BuildError> {
+    /// so the one name serves both. `connect` is the caller's: a room
+    /// band's own, since `JoinCaves` reads a closed door as a wall and
+    /// would as readily wall a room behind one in as join it, which only
+    /// a cave band, with no doors to misread, may ask this to leave to it.
+    fn lair_pass(&self, floor: u32, connect: bool) -> Result<Option<Lair>, BuildError> {
         match self.lair_on(floor) {
-            Some((boss, margin)) => Ok(Some(Lair { name: boss.name, piece: self.prefabs.piece(boss.name)?, margin })),
+            Some((boss, margin)) => Ok(Some(Lair { name: boss.name, piece: self.prefabs.piece(boss.name)?, margin, connect })),
             None => Ok(None),
         }
     }
@@ -1095,13 +1101,14 @@ impl Undermere {
 /// Lays a mini-boss's lair somewhere midway through the floor's own
 /// generation: a hall a cell larger than the piece all round, carved
 /// over whatever stood there, the piece stamped fixed in its centre, as
-/// [`ThroneHall`] lays the throne. Carving it can as readily cut an
-/// existing room off from another as it can wall in a stray cave pocket,
-/// so this never tries to join it itself: every chain that may draw one
-/// runs a [`JoinCaves`] right after it, the same pass a cave band already
-/// keeps whole with, over the band's own floor, so whatever the hall cut
-/// off, on any band's generation, is joined back the one way the engine
-/// already trusts.
+/// [`ThroneHall`] lays the throne. A cave band's own `JoinCaves`, which
+/// runs right after this, joins the hall to the rest of the floor the
+/// same way it joins off any cut-off pocket of its own cave; a room band
+/// cannot be handed to `JoinCaves` the same way, since a closed door
+/// reads to it as a wall and a room reached by one alone as a pocket to
+/// wall in rather than join, so `connect` asks this to join itself
+/// instead, by a corridor to the nearest room clear of the hall, exactly
+/// as the throne's own hall does.
 struct Lair {
     /// A stable name, so two lairs, or the throne, draw different streams.
     name: &'static str,
@@ -1109,6 +1116,10 @@ struct Lair {
     piece: Prefab,
     /// What the hall is floored with outside the piece's own footprint.
     margin: TileId,
+    /// Whether to carve its own corridor to the nearest room: a room
+    /// band needs one; a cave band's `JoinCaves` already joins whatever
+    /// this leaves disconnected.
+    connect: bool,
 }
 
 impl Pass<BaseContext> for Lair {
@@ -1123,17 +1134,41 @@ impl Pass<BaseContext> for Lair {
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let (w, h) = (self.piece.width(), self.piece.height());
         let bounds = ctx.terrain().bounds();
-        // The hall, and a row of wall all round it at the map's edge.
-        if w + 4 > bounds.width || h + 4 > bounds.height {
+        // The hall, a row of wall all round it at the map's edge, and,
+        // where it must connect itself, one more row below for the
+        // corridor out of its mouth.
+        if w + 4 > bounds.width || h + 5 > bounds.height {
             return Err(BuildError::new(self.name, format!("a {w}x{h} lair does not fit a {}x{} floor", bounds.width, bounds.height)));
         }
         let x = ctx.rng().random_range(1..=bounds.width - w - 3);
-        let y = ctx.rng().random_range(1..=bounds.height - h - 3);
+        let y = ctx.rng().random_range(1..=bounds.height - h - 4);
         let hall = Rect::new(x, y, w + 2, h + 2);
         for p in hall.cells() {
             ctx.terrain_mut().set(p, self.margin);
         }
-        StampPrefab { name: self.name, prefab: self.piece.clone(), at: Placement::At(Point::new(hall.x + 1, hall.y + 1)), orient: Orient::Fixed }.apply(ctx)
+        StampPrefab { name: self.name, prefab: self.piece.clone(), at: Placement::At(Point::new(hall.x + 1, hall.y + 1)), orient: Orient::Fixed }.apply(ctx)?;
+        if !self.connect {
+            return Ok(());
+        }
+        let mouth = Point::new(hall.x + 1 + w / 2, hall.y + 1 + h);
+        let under = hall.bottom();
+        let nearest = ctx
+            .outputs()
+            .iter::<Room>()
+            .map(|room| room.0)
+            .filter(|room| room.intersection(&hall).is_none())
+            .min_by_key(|room| (geometry::manhattan(room.center(), mouth), room.center()));
+        let room = nearest.ok_or_else(|| BuildError::new(self.name, format!("no room clear of the {w}x{h} lair's hall to join its mouth to")))?;
+        let to = room.center();
+        let corridor = (mouth.y..=under)
+            .map(|y| Point::new(mouth.x, y))
+            .chain((mouth.x.min(to.x)..=mouth.x.max(to.x)).map(|x| Point::new(x, under)))
+            .chain((under.min(to.y)..=under.max(to.y)).map(|y| Point::new(to.x, y)))
+            .collect::<Vec<_>>();
+        for p in corridor {
+            ctx.terrain_mut().set(p, self.margin);
+        }
+        Ok(())
     }
 }
 
@@ -1397,8 +1432,15 @@ mod tests {
         let undermere = Undermere::new(RunSeed(0));
         let look = undermere.appearance();
         let glows = |name: &str| crate::light::GLOWING.iter().any(|(glowing, _)| *glowing == name);
+        // A tile that is itself some band's own wall, task 8a's lairs
+        // listing a foreign one beside their floors, reads against that
+        // band's own floor elsewhere in this very loop and is never asked
+        // to read as a floor here, which two walls' colours were never
+        // chosen against each other to do. Every wall in this file is
+        // named for it, `"... wall"`, which is what this reads rather
+        // than a second list of them to keep in step with `tiles.ron`.
         for biome in Biome::ALL {
-            for floor in biome.tiles().iter().filter(|t| **t != biome.wall() && !["door", "open door"].contains(*t) && !glows(t)) {
+            for floor in biome.tiles().iter().filter(|t| **t != biome.wall() && !["door", "open door"].contains(*t) && !glows(t) && !t.ends_with("wall")) {
                 reads_against(&undermere, &look, biome.name(), biome.wall(), floor);
             }
         }

@@ -139,14 +139,7 @@ impl Plugin for UndermerePlugin {
         // out in a different order from one run to the next.
         app.add_systems(
             Turn,
-            (
-                crate::tally::remember_depth,
-                crate::stairs::link_places,
-                crate::population::populate,
-                crate::population::lead_lair_bands,
-                crate::light::light_fixtures,
-                crate::finds::lay,
-            )
+            (crate::tally::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures, crate::finds::lay)
                 .chain()
                 .in_set(TurnSet::React)
                 .after(PrefabSet::Fill)
@@ -265,6 +258,11 @@ impl Plugin for UndermerePlugin {
         crate::input::declare_controls(app);
         app.add_message::<AimFire>().add_message::<AimThrow>();
         app.add_systems(Update, crate::input::player_input.in_set(EngineSet::Input));
+        // A lair's own band, led the moment its prefab's slots are
+        // filled. Its own call rather than folded into the chain above,
+        // since nothing in that chain's own order depends on this nor
+        // this on it.
+        app.add_systems(Turn, crate::population::lead_lair_bands.in_set(TurnSet::React).after(PrefabSet::Fill));
     }
 
     /// Every line Undermere says from inside a turn is a `Tell`, which
