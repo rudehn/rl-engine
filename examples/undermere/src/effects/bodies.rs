@@ -17,7 +17,7 @@ use rl_engine::rl_rules::ability::{RawValue, read_args};
 
 use super::moving::no_args;
 use super::{free_cells_near, the};
-use crate::allies::{Ally, Fades, befriend, vanish};
+use crate::allies::{Ally, Fades, befriend, fight_for, vanish};
 use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster_now};
 
 /// The name of the kind a staff of conjuration calls up, as `monsters.ron`
@@ -291,10 +291,11 @@ impl FromArgs for Life {
 }
 
 /// Calls up spectral blades on the free cells nearest its user, on the
-/// user's side, for a few turns: a staff of conjuration's. Written
-/// `(kind: "Conjure", args: (blades: 1, turns: 15))`: one blade more for
-/// each of its carrier's [`EffectBonus`] amount, and that amount added to
-/// every blade's blow, so a staff a level better calls one more and each
+/// user's own side, for a few turns: a staff of conjuration's, and a
+/// goblin conjurer's trait of the same name. Written `(kind: "Conjure",
+/// args: (blades: 1, turns: 15))`: one blade more for each of its
+/// carrier's [`EffectBonus`] amount, and that amount added to every
+/// blade's blow, so a staff a level better calls one more and each
 /// strikes harder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Conjure {
@@ -338,21 +339,36 @@ impl FromArgs for Conjure {
 }
 
 /// Calls up `count` spectral blades beside `user`, each blow `sharper`, on
-/// the user's side until `turns` whole turns from now, as [`Conjure`] says.
+/// `user`'s own side until `turns` whole turns from now, as [`Conjure`]
+/// says: the adventurer's own staff calls up a companion, and a goblin
+/// conjurer's trait calls up one more goblin blade, never a rival on the
+/// adventurer's side of its own fight.
+///
+/// `user` with no side of its own, which nothing under the lake is, shows
+/// nothing rather than calling up a blade nobody's mind can read a side
+/// for.
 pub fn conjure(world: &mut World, user: Entity, count: u32, sharper: i32, turns: u32) {
     let Some(blade) = world.resource::<Bestiary>().defs.id(SPECTRAL_BLADE) else { return };
+    let Some(side) = world.get::<Faction>(user).copied() else { return };
     let Some(at) = world.get::<Position>(user).map(|p| p.0) else { return };
     let map = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
     let fades = Fades { at: world.resource::<Turns>().now() + turns * BASE_ACTION_COST };
     let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize, super::NEAR);
     for cell in &cells {
         let made = spawn_monster_now(world, blade, *cell, map);
-        befriend(world, made);
+        fight_for(world, made, side.0);
         let mut e = world.entity_mut(made);
         e.insert(fades);
         if let Some(mut blow) = e.get_mut::<MeleeAttack>() {
             blow.dice.bonus += sharper;
         }
+    }
+    // Only the adventurer's own casting is told: a goblin's blades spring
+    // up where the goblin stands, which the adventurer sees for themselves
+    // if they are watching, and "beside you" would be a lie said of a
+    // goblin's own conjuring.
+    if world.get::<Player>(user).is_none() {
+        return;
     }
     let line = match cells.len() {
         0 => return,

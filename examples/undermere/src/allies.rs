@@ -18,7 +18,10 @@ use rl_engine::prelude::*;
 use crate::bestiary::{Bestiary, Kind};
 
 /// A monster fighting for the adventurer, for good: dominated, conjured,
-/// or made of one by a wand of plenty.
+/// or made of one by a wand of plenty. Not what [`fight_for`] puts on one
+/// conjured to fight for a side that is not the adventurer's, a goblin
+/// conjurer's own blades: the save keeps this one, by it, as whom the
+/// adventurer fights beside, and a goblin's blades are no such thing.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Ally;
 
@@ -29,19 +32,36 @@ pub struct Fades {
     pub at: u32,
 }
 
-/// Puts `monster` on the adventurer's side for good: the adventurer's
-/// faction, its kind's ally mind, and [`Ally`]. What it had noticed of the
-/// adventurer is forgotten, since it no longer hunts them. Nothing for an
-/// entity that is no monster of the bestiary's.
-pub fn befriend(world: &mut World, monster: Entity) {
+/// Puts `monster` on `side` for good: `side`'s own ally mind of its kind,
+/// so it keeps station on `side`'s own and fights what comes near rather
+/// than wandering or fetching. [`Ally`] goes with it only when `side` is
+/// the adventurer's, which is what the save reads and what tells a
+/// companion from a foe; a goblin conjurer's blades fight for the goblins
+/// and are no companion of the adventurer's, however this puts them there.
+/// What either had noticed of whoever it used to hunt is forgotten, since
+/// it hunts for `side` now. Nothing for an entity that is no monster of
+/// the bestiary's.
+pub fn fight_for(world: &mut World, monster: Entity, side: FactionId) {
     let Some(kind) = world.get::<Kind>(monster).map(|k| k.0) else { return };
     let mind = world.resource::<Bestiary>().defs.get(kind).ally_mind();
-    let side = world.resource::<Registries>().factions.expect("adventurer");
+    let adventurer = world.resource::<Registries>().factions.expect("adventurer");
     let mut e = world.entity_mut(monster);
-    e.insert((Faction(side), mind, Ally));
+    e.insert((Faction(side), mind));
+    if side == adventurer {
+        e.insert(Ally);
+    }
     if let Some(mut aware) = e.get_mut::<Aware>() {
         aware.0.clear();
     }
+}
+
+/// Puts `monster` on the adventurer's side for good, as [`fight_for`]
+/// says: a wand of domination's foe, a wand of plenty's second, a save's
+/// own restored companion. [`fight_for`] itself is for a conjurer whose
+/// own side is not necessarily the adventurer's.
+pub fn befriend(world: &mut World, monster: Entity) {
+    let adventurer = world.resource::<Registries>().factions.expect("adventurer");
+    fight_for(world, monster, adventurer);
 }
 
 /// Takes `actor` out of play without a death, as the engine takes out the
