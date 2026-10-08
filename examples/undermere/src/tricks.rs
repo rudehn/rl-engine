@@ -610,6 +610,72 @@ mod tests {
         assert!(app.world().get::<Afflicted>(e).unwrap().0.has(status), "pitch dark, so shrouded");
     }
 
+    /// The Choirmaster's `singing`: an ally of its own side within
+    /// `SING_RANGE` regenerates, and loses it the pass it steps past
+    /// that range, as `keep_shrouded`'s own toggle does.
+    #[test]
+    fn a_choirs_own_side_within_its_range_regenerates_and_loses_it_once_out_of_range() {
+        let mut app = App::new();
+        app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
+        let registries = crate::content::registries();
+        let undead = registries.factions.expect("undead");
+        app.insert_resource(registries);
+        app.add_systems(Update, (sing_choir, resolve_afflictions).chain());
+        app.world_mut().spawn((Position(Point::ZERO), Faction(undead), Choir));
+        let near = app.world_mut().spawn((Actor, Position(Point::new(3, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
+        let far = app.world_mut().spawn((Actor, Position(Point::new(10, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
+        app.update();
+        let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
+        assert!(app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "within the choir's range, it regenerates");
+        assert!(!app.world().get::<Afflicted>(far).unwrap().0.has(regenerating), "past it, nothing");
+        app.world_mut().entity_mut(near).insert(Position(Point::new(10, 0)));
+        app.update();
+        assert!(!app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "stepped past the range, the choir's own gift is lifted");
+    }
+
+    /// The Widow's egg sac, stepped beside: two cave spiders hatch and
+    /// the sac itself is gone, so the same step cannot hatch it twice.
+    #[test]
+    fn an_egg_sac_hatches_two_cave_spiders_when_stepped_beside_and_then_is_gone() {
+        use crate::bestiary::Bestiary;
+        use crate::testing::{arena, pass_turns};
+        let (mut app, me, here) = arena(31);
+        let sac_id = app.world().resource::<Registries>().props.expect(EGG_SAC);
+        let map = app.world().resource::<WorldMap>().current();
+        let at = here.offset(3, 0);
+        let sac = app.world_mut().spawn((Prop, PropKind(sac_id), Position(at), OnMap(map))).id();
+        app.world_mut().write_message(Stepped { actor: me, from: here, to: at.offset(-1, 0) });
+        pass_turns(&mut app, 1);
+        assert!(app.world().get::<Prop>(sac).is_none(), "the sac is gone, hatched");
+        let spider_id = app.world().resource::<Bestiary>().defs.expect(EGG_SAC_HATCH);
+        let world = app.world_mut();
+        let spiders = world.query::<&Kind>().iter(world).filter(|k| k.0 == spider_id).count();
+        assert_eq!(spiders, EGG_SAC_HATCH_COUNT as usize, "two cave spiders hatched");
+    }
+
+    /// The same sac, struck rather than stepped beside: its one health
+    /// spent lands `props.ron`'s own `destroyed` trigger, `Hatch`, the
+    /// other half of "struck or stepped beside".
+    #[test]
+    fn an_egg_sac_also_hatches_when_struck() {
+        use crate::bestiary::Bestiary;
+        use crate::testing::{arena, kill};
+        let (mut app, _, here) = arena(32);
+        let sac_id = app.world().resource::<Registries>().props.expect(EGG_SAC);
+        let map = app.world().resource::<WorldMap>().current();
+        let at = here.offset(2, 0);
+        let sac = app.world_mut().spawn((Prop, PropKind(sac_id), Position(at), OnMap(map), Health::full(1))).id();
+        // A pass so `arm_props` gives the freshly spawned sac its own
+        // `Triggers`, built from `props.ron`'s `destroyed` the moment
+        // the app was built; only then does breaking it land `Hatch`.
+        app.update();
+        kill(&mut app, sac, None);
+        let spider_id = app.world().resource::<Bestiary>().defs.expect(EGG_SAC_HATCH);
+        let world = app.world_mut();
+        let spiders = world.query::<&Kind>().iter(world).filter(|k| k.0 == spider_id).count();
+        assert_eq!(spiders, EGG_SAC_HATCH_COUNT as usize, "two cave spiders hatched when the sac was struck down");
+    }
+
     /// A `BurnsBadly` body's mending is zeroed while `resolve_afflictions`
     /// holds `scorched` on it, and lifted the moment it is cured.
     #[test]

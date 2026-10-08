@@ -545,4 +545,44 @@ mod tests {
             assert_eq!(app.world().get::<Kind>(leader).map(|k| k.0), Some(goblin_id), "seed {s}: led by a goblin");
         }
     }
+
+    /// Task 8a's own: whichever lair a floor draws holds its boss, found
+    /// by `MonsterDef::miniboss` rather than by name, and every other
+    /// monster the lair's own slots stood is led by it, `lead_lair_bands`
+    /// run the moment the arrival filled them. The Widow's own entourage
+    /// is egg sacs, props rather than monsters, so she alone is let
+    /// stand with none `Leader`'d to her.
+    #[test]
+    fn whichever_lair_a_floor_draws_holds_its_boss_and_every_monster_its_own_slots_stood_follows_it() {
+        let mut checked = 0;
+        for s in 0..20u64 {
+            let undermere = crate::dungeon::Undermere::new(RunSeed(s));
+            let mut app = headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            for (boss, floor) in undermere.lairs() {
+                let name = crate::dungeon::MINI_BOSSES[boss].name;
+                let map = map_of(floor);
+                arrive(&mut app, map);
+                let world = app.world_mut();
+                let present: Vec<(Entity, Id<MonsterDef>)> =
+                    world.query::<(Entity, &Kind, &OnMap)>().iter(world).filter(|(_, _, on)| on.0 == map).map(|(e, k, _)| (e, k.0)).collect();
+                let led: Vec<(Entity, Entity)> =
+                    world.query::<(Entity, &Leader, &OnMap)>().iter(world).filter(|(_, _, on)| on.0 == map).map(|(e, l, _)| (e, l.0)).collect();
+                let bestiary = world.resource::<Bestiary>();
+                let Some((boss_entity, kind)) = present.iter().find(|(_, k)| bestiary.defs.get(*k).miniboss) else {
+                    continue;
+                };
+                assert_eq!(bestiary.defs.get(*kind).name, name, "seed {s}, floor {floor}: the lair's own boss by name");
+                let followers: Vec<Entity> = led.iter().filter(|(_, leader)| leader == boss_entity).map(|(e, _)| *e).collect();
+                if name == "the Widow" {
+                    assert!(followers.is_empty(), "seed {s}: the Widow's own entourage is egg sacs, never led monsters: {followers:?}");
+                } else {
+                    assert!(!followers.is_empty() && followers.len() <= 4, "seed {s}, floor {floor}: {} followers of {name}", followers.len());
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "some lair was drawn and checked over the span");
+    }
 }

@@ -550,6 +550,9 @@ mod tests {
         assert_eq!(said("mend ally"), vec!["mends 3d6"]);
         assert_eq!(said("firebolt"), vec!["2d6 fire"]);
         assert_eq!(said("slowness"), vec!["slowed for 5 turns"]);
+        assert_eq!(said("war cry"), vec!["hastens every ally in sight for 6 turns"]);
+        assert_eq!(said("spit"), vec!["poisoned for 6 turns"]);
+        assert_eq!(said("call the drowned"), vec!["up to 2 drowned thralls rise from water within 6"]);
     }
 
     /// A tripwire over what stands in the places, by name, so a prop is

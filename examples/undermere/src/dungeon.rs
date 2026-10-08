@@ -1031,18 +1031,20 @@ impl Pass<BaseContext> for FarthestFromTheThrone {
 /// its lair's hall is floored with outside the piece's own footprint,
 /// chosen to match the band most of its own floors fall in; only
 /// Grubnak's is new, since no band his own floors fall in is a hall.
-struct MiniBoss {
+pub(crate) struct MiniBoss {
     /// The name both `monsters.ron` and the prefab's `name:` field use.
-    name: &'static str,
+    pub(crate) name: &'static str,
     /// The shallowest and the deepest floor it may stand on, both
     /// included: `content-sheet-monsters.md`'s own "Mini-bosses" row.
-    floors: (u32, u32),
+    pub(crate) floors: (u32, u32),
     /// What floors the margin round its lair's own piece.
     margin: &'static str,
 }
 
-/// The five, in the content sheet's own order.
-const MINI_BOSSES: [MiniBoss; 5] = [
+/// The five, in the content sheet's own order. `pub(crate)` so
+/// `population.rs`'s own tests can read a boss's name and floors without
+/// a second list of them to keep in step.
+pub(crate) const MINI_BOSSES: [MiniBoss; 5] = [
     MiniBoss { name: "Grubnak the goblin king", floors: (3, 5), margin: "goblin hall floor" },
     MiniBoss { name: "the Widow", floors: (4, 6), margin: "moss" },
     MiniBoss { name: "the Choirmaster", floors: (5, 7), margin: "crypt floor" },
@@ -1057,7 +1059,7 @@ impl Undermere {
     /// so every call during one run agrees without keeping the draw
     /// anywhere, the same reasoning `generate`'s own per-place stream
     /// follows.
-    fn lairs(&self) -> [(usize, u32); 2] {
+    pub(crate) fn lairs(&self) -> [(usize, u32); 2] {
         let mut rng = self.seed.rng(SeedDomain::new(b"undermere.lairs"), 0);
         let mut order: Vec<usize> = (0..MINI_BOSSES.len()).collect();
         for i in (1..order.len()).rev() {
@@ -1539,5 +1541,25 @@ mod tests {
         let hall = ThroneHall { piece: undermere.prefabs().piece("the throne").unwrap(), floor };
         let refused = Chain::new().then(hall).run(&mut ctx, RunSeed(0)).expect_err("no rooms, so nothing to join the hall to");
         assert_eq!(refused.pass, "throne_hall", "{refused}");
+    }
+
+    /// Task 8a's own draw: two mini-bosses a run, never the same one
+    /// twice, each on a floor within its own range, and over enough
+    /// seeds every one of the five is drawn somewhere.
+    #[test]
+    fn two_lairs_a_run_never_the_same_boss_twice_and_all_five_drawn_over_a_span_of_seeds() {
+        let mut seen = BTreeSet::new();
+        for s in 0..60 {
+            let undermere = Undermere::new(RunSeed(s));
+            let lairs = undermere.lairs();
+            assert_ne!(lairs[0].0, lairs[1].0, "seed {s}: the same boss drawn twice: {lairs:?}");
+            for (boss, floor) in lairs {
+                let (lo, hi) = MINI_BOSSES[boss].floors;
+                assert!((lo..=hi).contains(&floor), "seed {s}: {} drawn on floor {floor}, outside {lo}-{hi}", MINI_BOSSES[boss].name);
+                seen.insert(boss);
+            }
+            assert_ne!(lairs[0].1, lairs[1].1, "seed {s}: both lairs on floor {}", lairs[0].1);
+        }
+        assert_eq!(seen.len(), MINI_BOSSES.len(), "every mini-boss drawn somewhere over the span: {seen:?}");
     }
 }

@@ -1310,6 +1310,25 @@ mod tests {
         assert!(app.world().get::<Mind>(rat).is_some(), "a mind to fight with again");
     }
 
+    /// Grubnak's `war cry`: every ally in sight hastened for the trait's
+    /// own six turns, Grubnak himself included, a foe beside them left as
+    /// it was.
+    #[test]
+    fn grubnaks_war_cry_hastens_every_ally_in_sight_itself_included() {
+        use crate::testing::{arena, monster, settle};
+        let (mut app, me, here) = arena(29);
+        let grubnak = monster(&mut app, "Grubnak the goblin king", here.offset(1, 0));
+        let guard = monster(&mut app, "goblin", here.offset(2, 0));
+        settle(&mut app);
+        crate::effects::bodies::rally(app.world_mut(), grubnak, 6);
+        settle(&mut app);
+        let hasted = app.world().resource::<Registries>().statuses.expect("hasted");
+        let has = |e: Entity| app.world().get::<Afflicted>(e).is_some_and(|a| a.iter().any(|s| s.id == hasted));
+        assert!(has(grubnak), "Grubnak rallies himself too");
+        assert!(has(guard), "and his own guard beside him");
+        assert!(!has(me), "never the adventurer, who is no ally of his");
+    }
+
     /// Draining: a landed blow mends its own attacker what it dealt.
     #[test]
     fn a_draining_kinds_landed_blow_mends_it_what_it_dealt() {
@@ -1448,5 +1467,38 @@ mod tests {
         };
         let decision = brain.decide(ctx);
         assert_eq!(decision.1, Some("follow"), "keeps station on its own ally instead of freezing, a real decision and not a wait");
+    }
+
+    /// Review Focus 5, the brief's own case: Grubnak's band. A plain
+    /// goblin, which his own honor guard may draw, is `led` for exactly
+    /// this, task 8a's own line to `monsters.ron`'s row; the same engine
+    /// mechanism the dar's own test above already proves, read through
+    /// the one kind task 8a added it to rather than one that already
+    /// carried it.
+    #[test]
+    fn a_goblin_of_grubnaks_band_whose_leader_is_gone_keeps_station_on_its_allies_rather_than_freezing() {
+        let library = library();
+        let goblin = library.bestiary.defs.get(library.bestiary.defs.expect("goblin"));
+        let (world, e) = spawn(&library, goblin);
+        let brain = world.get::<Mind>(e).expect("a mind").0.clone();
+        let me =
+            ActorView { id: e, pos: Point::ZERO, health: Some(Vitals { current: goblin.hp, max: goblin.hp }), faction: world.get::<Faction>(e).map(|f| f.0) };
+        let ally =
+            ActorView { id: Entity::PLACEHOLDER, pos: Point::new(5, 0), health: Some(Vitals { current: goblin.hp, max: goblin.hp }), faction: me.faction };
+        let mut snapshot = Snapshot::alone(me);
+        snapshot.allies.push(ally);
+        snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let ctx = &mut TacticCtx {
+            snapshot: &snapshot,
+            fields: &mut NoFields,
+            can_step: &|_| true,
+            blocks_shot: &|_| false,
+            blocks_burst: &|_| false,
+            bounds: Rect::new(-20, -20, 40, 40),
+            rng: &mut rng,
+        };
+        let decision = brain.decide(ctx);
+        assert_eq!(decision.1, Some("follow"), "a goblin of Grubnak's own band keeps station on its ally instead of freezing once its king is gone");
     }
 }
