@@ -99,6 +99,12 @@ pub enum Phrase {
     MissesYou,
     /// Someone attacked someone else and missed.
     OthersMiss,
+    /// A reflecting body turned your own aim back onto you.
+    ReflectsOntoYou,
+    /// You turned someone else's aim back onto them.
+    YouReflect,
+    /// A reflecting body turned someone else's aim back onto them.
+    OthersReflect,
     /// You hurt yourself.
     YouHurtYourself,
     /// You were mended.
@@ -410,6 +416,7 @@ impl Plugin for NarrationViewPlugin {
             .add_message::<LightEvent>()
             .add_message::<FireEvent>()
             .add_message::<AbilityEvent>()
+            .add_message::<Reflected>()
             .add_message::<Travelled>()
             .add_message::<Tell>()
             .add_systems(Turn, collect_narration.in_set(TurnSet::Record));
@@ -432,6 +439,7 @@ pub struct Heard<'w, 's> {
     doors: MessageReader<'w, 's, DoorEvent>,
     travels: MessageReader<'w, 's, Travelled>,
     items: MessageReader<'w, 's, ItemEvent>,
+    reflected: MessageReader<'w, 's, Reflected>,
     dealt: MessageReader<'w, 's, DamageDealt>,
     healed: MessageReader<'w, 's, Healed>,
     missed: MessageReader<'w, 's, Missed>,
@@ -705,6 +713,18 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         };
         rows.push(say(phrase, Some(m.attacker), Some(m.target)));
     }
+    // Said before the harm it caused, so a line that reads the caster hurt
+    // is never met with no reason: the row the reflection explains.
+    for r in heard.reflected.read() {
+        let phrase = if witness.is_you(r.onto) {
+            Phrase::ReflectsOntoYou
+        } else if witness.is_you(r.by) {
+            Phrase::YouReflect
+        } else {
+            Phrase::OthersReflect
+        };
+        rows.push(say(phrase, Some(r.by), Some(r.onto)));
+    }
     for d in heard.dealt.read() {
         let target = d.target;
         let you_target = witness.is_you(target);
@@ -896,7 +916,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 73] = [
+        let table: [(Phrase, &str, ToneId); 76] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -916,6 +936,9 @@ impl Default for Phrasebook {
             (YouMiss, "You miss {whom}.", Tones::MUTED),
             (MissesYou, "{Who} misses you.", Tones::MUTED),
             (OthersMiss, "{Who} misses {whom}.", Tones::MUTED),
+            (ReflectsOntoYou, "{Who} turns it back on you.", Tones::BAD),
+            (YouReflect, "You turn it back on {whom}.", Tones::HIT),
+            (OthersReflect, "{Who} turns it back on {whom}.", Tones::TEXT),
             (OthersFight, "{Who} hits {whom} for {n}.", Tones::TEXT),
             (OthersHitNothing, "{Who} hits {whom}, to no effect.", Tones::MUTED),
             (YouHurtYourself, "You hurt yourself for {n}.", Tones::BAD),
@@ -1695,6 +1718,36 @@ mod tests {
         stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(droid, kind, 3)));
         stage.tick();
         assert_eq!(spoken(&stage, &["The line droid"])[0], "The line droid hits you for 3.");
+    }
+
+    /// A reflected landing is said before the harm it caused, and from
+    /// whoever it turned back onto: onto you, onto someone else by your
+    /// own hand, and between two others besides you.
+    #[test]
+    fn a_reflected_landing_is_said_before_the_harm_it_caused_from_whoever_it_lands_on() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (player, kind) = (stage.player, stage.kind);
+        let droid = stage.actor("line droid", 'd', 4, 0);
+        let rat = stage.actor("rat", 'r', -4, 0);
+        stage.tick();
+
+        stage.app.world_mut().write_message(Reflected { by: droid, onto: player, source: rl_bevy::Source::Offer(droid) });
+        stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(droid, kind, 3)));
+        stage.tick();
+        let said = spoken(&stage, &["The line droid"]);
+        assert_eq!(said[0], "The line droid turns it back on you.", "said before the harm it caused: {said:#?}");
+        assert_eq!(said[1], "The line droid hits you for 3.", "{said:#?}");
+        assert_eq!(lines(&stage).into_iter().find(|(t, _)| t == &said[0]).unwrap().1, Tones::BAD);
+
+        stage.app.world_mut().write_message(Reflected { by: player, onto: rat, source: rl_bevy::Source::Offer(player) });
+        stage.tick();
+        let said: Vec<String> = lines(&stage).into_iter().map(|(t, _)| t).collect();
+        assert!(said.contains(&"You turn it back on the rat.".to_string()), "{said:?}");
+
+        stage.app.world_mut().write_message(Reflected { by: droid, onto: rat, source: rl_bevy::Source::Offer(droid) });
+        stage.tick();
+        let said: Vec<String> = lines(&stage).into_iter().map(|(t, _)| t).collect();
+        assert!(said.contains(&"The line droid turns it back on the rat.".to_string()), "{said:?}");
     }
 
     /// A bolt from a thing used, or from an ability, is not a blow: the
