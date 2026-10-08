@@ -126,8 +126,12 @@ enum Choice {
 fn decide(world: &mut World, me: Entity, tried: &mut BTreeSet<(MapId, Point)>) -> Choice {
     let here = world.resource::<WorldMap>().current();
     let at = world.get::<Position>(me).expect("standing somewhere").0;
+    // `With<Actor>` rather than `Without<Dead>`: every monster now leaves
+    // remains once it dies, still `Kind` and still lying beside whoever
+    // killed it, and `Dead` itself lasts only the one pass between dying
+    // and being laid down as a body; `Actor` is what a body no longer is.
     let foe = world
-        .query_filtered::<(Entity, &Position, &OnMap), (With<Kind>, Without<Dead>)>()
+        .query_filtered::<(Entity, &Position, &OnMap), (With<Kind>, With<Actor>)>()
         .iter(world)
         .filter(|(_, p, on)| on.0 == here && p.0 != at && geometry::chebyshev(at, p.0) <= 1)
         .min_by_key(|(e, _, _)| e.index().index())
@@ -221,8 +225,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [2_073_382_087_050_215_813, 17_357_407_024_065_977_876, 16_626_036_120_815_691_551],
-        "fingerprint tripwire: re-baselined for part 3 task 6a (the armor floor, part 3's new traits, abilities and statuses, \
-         and the thirteen kinds added to the bestiary move every roll, spawn and order after them)"
+        [2_439_668_221_019_590_717, 6_362_693_109_992_535_431, 3_925_558_732_060_146_829],
+        "fingerprint tripwire: re-baselined for part 3 task 6b (every monster now leaves remains for `raising` to find, and \
+         the new traits, abilities, effects and band placements move every roll, spawn and order after them)"
     );
 }
