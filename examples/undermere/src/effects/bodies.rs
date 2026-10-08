@@ -17,6 +17,9 @@ use rl_engine::rl_rules::ability::{RawValue, read_args};
 
 use super::moving::no_args;
 use super::{free_cells_near, the};
+use rl_engine::rl_bevy::Life as EngineLife;
+use rl_engine::rl_bevy::revive;
+
 use crate::allies::{Ally, Fades, befriend, fight_for, vanish};
 use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster_now};
 
@@ -376,4 +379,75 @@ pub fn conjure(world: &mut World, user: Entity, count: u32, sharper: i32, turns:
         n => format!("{n} spectral blades spring up beside you."),
     };
     world.write_message(Tell::new(line, Tones::GOOD));
+}
+
+/// How far from the one who raises it a body may lie and still be
+/// raised, and still be sought by [`raise_dead`]: `raising`'s own number.
+pub const RAISE_REACH: i32 = 6;
+
+/// Stands the nearest body in sight and within [`RAISE_REACH`] back up as
+/// its user's own ally, for good: `raising`'s ability, `raise dead`,
+/// built on the engine's own `revive`, which gives a raised body back its
+/// own health and everything else it died with, and [`fight_for`], which
+/// is the "a raised body becomes an ally of the raiser through a
+/// `befriend` generalised to any side" the research called for. Takes no
+/// arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RaiseDead;
+
+impl Effect for RaiseDead {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (user, landing) = (landing.user, landing.clone());
+        world.commands.queue(move |world: &mut World| {
+            if !raise_dead(world, user) {
+                super::showed_nothing(world, &landing);
+            }
+        });
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("a body within {RAISE_REACH} cells in sight rises as its own ally")
+    }
+}
+
+impl FromArgs for RaiseDead {
+    const KIND: &'static str = "RaiseDead";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Stands the nearest body within [`RAISE_REACH`] of `raiser`, in its
+/// sight, back up on `raiser`'s own side, as [`RaiseDead`] says, and says
+/// whether it found one to raise: nothing with no body `raiser` can see
+/// and reach, nor one something already stands on with nowhere within
+/// the engine's own standing room free.
+///
+/// Nearest first, by steps, then row, then column, so two runs of one
+/// seed agree on which body a necromancer with more than one in reach
+/// raises.
+pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
+    let Some(at) = world.get::<Position>(raiser).map(|p| p.0) else { return false };
+    let map = world.get::<OnMap>(raiser).map_or(MapId::SURFACE, |m| m.0);
+    let Some(sight) = world.get::<Viewshed>(raiser).cloned() else { return false };
+    let mut bodies: Vec<(Entity, Point)> = world
+        .query_filtered::<(Entity, &Position, Option<&OnMap>), With<Remains>>()
+        .iter(world)
+        .filter(|(_, pos, on)| on.map_or(MapId::SURFACE, |m| m.0) == map && geometry::chebyshev(pos.0, at) <= RAISE_REACH && sight.can_see(pos.0))
+        .map(|(e, pos, _)| (e, pos.0))
+        .collect();
+    bodies.sort_by_key(|(e, pos)| (geometry::chebyshev(*pos, at), pos.y, pos.x, e.index()));
+    let Some((body, _)) = bodies.into_iter().next() else { return false };
+    let twin = world.get::<EngineLife>(body).map(|life| life.0);
+    let max = twin.and_then(|twin| world.get::<Health>(twin)).map_or(1, |h| h.max);
+    if !revive(world, body, max) {
+        return false;
+    }
+    if let Some(side) = world.get::<Faction>(raiser).copied() {
+        fight_for(world, body, side.0);
+    }
+    let name = world.get::<Name>(body).map_or_else(String::new, |n| n.as_str().to_string());
+    world.write_message(Tell::new(format!("{} rises to fight for its raiser!", the(&name)), Tones::BAD));
+    true
 }

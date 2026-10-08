@@ -355,8 +355,9 @@ pub fn effect_kinds() -> EffectKinds {
 /// engine knows nothing of: a thing's level, what is known of it, a curse,
 /// the adventurer's strength, and what [`effects`](crate::effects) holds,
 /// where someone stands, who they are, whose side they are on, what they
-/// see and what their things hold. The one list, for the app and for
-/// [`effect_kinds`] alike.
+/// see and what their things hold; and [`tricks`](crate::tricks) holds a
+/// landed blow that steals and a touch that saps strength no faster than
+/// three stacks. The one list, for the app and for [`effect_kinds`] alike.
 ///
 /// The engine's one by one rather than by `add_engine_effects`, whose
 /// `Teleport` moves its user to where a use landed: Undermere's scroll of
@@ -374,10 +375,11 @@ pub fn add_game_effects(app: &mut App) {
     app.add_effect::<moving::Blink>().add_effect::<moving::TeleportOther>().add_effect::<moving::Beckon>().add_effect::<moving::Descend>();
     app.add_effect::<moving::Teleport>();
     app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>().add_effect::<bodies::Life>();
-    app.add_effect::<bodies::Summon>();
+    app.add_effect::<bodies::Summon>().add_effect::<bodies::RaiseDead>();
     app.add_effect::<minds::Dominate>().add_effect::<minds::Discord>().add_effect::<minds::Aggravate>();
     app.add_effect::<senses::Darkness>().add_effect::<senses::MagicMapping>();
     app.add_effect::<charges::Recharge>();
+    app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through

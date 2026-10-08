@@ -60,7 +60,11 @@ impl Plugin for UndermerePlugin {
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
             .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
-            .add_plugins((FactsPlugin, RecordsPlugin));
+            .add_plugins((FactsPlugin, RecordsPlugin))
+            // What the dead leave lying where they fell, for `raising` to
+            // find within sight and reach: every monster but the king, who
+            // never dies in a way anything could be left to raise.
+            .add_plugins(RemainsPlugin::naming("{what} corpse"));
         // The engine's effects Undermere names, for the potions, the staffs
         // and the breaths, beside the `Ignite` fire declares and the `Emit`
         // the clouds do; and Undermere's own, for the scrolls, the potions,
@@ -175,11 +179,28 @@ impl Plugin for UndermerePlugin {
         // What the potions' statuses do that the engine's do not: a
         // confused step turned about once everyone has chosen and before
         // anything resolves it, and fire immunity kept on whoever holds it.
-        // What a monster throws: only what strikes.
-        app.add_systems(Turn, crate::bestiary::throw_what_strikes.in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
+        // What a monster throws: only what strikes, and whether it has
+        // stolen something and should run with it.
+        app.add_systems(Turn, (crate::bestiary::throw_what_strikes, crate::tricks::sense_stole).in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
         app.add_stream::<crate::conditions::Stumbles>("UndermerePlugin");
         app.add_systems(Turn, crate::conditions::stumble.in_set(DecideSet::Game));
         app.add_systems(Turn, (crate::conditions::keep_fireproof, crate::conditions::keep_discord).in_set(TurnSet::React));
+        // The bestiary's own tricks that read what a turn did rather than
+        // the trait model's fold: a blow that splits what it left alive, a
+        // blow that mends its own drainer, a step that leaves fire behind
+        // it, a cell's own dark kept or lifted, and a troll's regeneration
+        // halted while it burns.
+        app.add_systems(
+            Turn,
+            (
+                crate::tricks::judge_splits,
+                crate::tricks::judge_draining,
+                crate::tricks::trail_fire,
+                crate::tricks::keep_shrouded,
+                crate::tricks::keep_regen_halted,
+            )
+                .in_set(TurnSet::React),
+        );
         // The shriek a scroll of aggravate monsters lets out.
         app.add_sound(crate::effects::minds::SHRIEK_SOUND);
         // A drinker of descent set down on the floor below once it stands:

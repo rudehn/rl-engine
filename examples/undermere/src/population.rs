@@ -120,12 +120,106 @@ pub struct Stock<'w, 's> {
     ways: Query<'w, 's, (&'static Position, &'static OnMap), With<Way>>,
 }
 
-/// Populates every floor on the arrival that built it: [`groups_on`] its
-/// number, drawn at its own band, planned against the floor as built and
-/// off every cell a piece marked, where a chest, a brazier or the king's
-/// court stands or will stand even where the engine's slot drew nothing,
-/// and off every way the floor has, so a group never stands on the stairs
-/// themselves.
+/// A leader and the followers it is drawn with, one band to a floor's own
+/// band of floors: the dar trio, always all three, and a goblin war band,
+/// a goblin leading two of its own kinds. Placed by [`place_band`] before
+/// [`plan`]'s own random groups, so neither ever lands on the band's
+/// cells, and never the camp, the fire or the watch round a goblin band,
+/// which is a lived-in dungeon's and not this.
+struct Band {
+    /// The first and last floor it comes together on, both included.
+    floors: (u32, u32),
+    /// Leads; never named among `followers`, and never `led` itself.
+    leader: &'static str,
+    /// Drawn `count` of, without repeats, `led` every one.
+    followers: &'static [&'static str],
+    /// How many of `followers` come, besides the leader.
+    count: usize,
+}
+
+/// The dar trio, floors eight and nine, the blademaster leading; a goblin
+/// war band, floors three to six, a goblin leading two of archer,
+/// conjurer or mystic, so a war band never doubles one kind.
+const BANDS: &[Band] = &[
+    Band { floors: (3, 6), leader: "goblin", followers: &["goblin archer", "goblin conjurer", "goblin mystic"], count: 2 },
+    Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2 },
+];
+
+/// Where a band or a group is placed: the map, the ground it may stand
+/// on and the entry nothing may stand [`MIN_DISTANCE_FROM_ENTRY`] of.
+/// Bundled so [`place_band`] takes seven arguments rather than nine, not
+/// a ninth thing a band is placed on.
+struct Site {
+    map: MapId,
+    bounds: Rect,
+    entry: Point,
+}
+
+/// Stands one `band` together on free cells near an anchor drawn the same
+/// way [`plan`]'s own groups are, the leader first and the rest of
+/// `band.count`'s own followers, each wired with the engine's own
+/// `Leader` to the one it leads, and says which cells it used, for the
+/// caller to keep `plan`'s own groups off them.
+///
+/// `None` for a leader or a follower this build's bestiary does not have
+/// by that name, or for a floor with no room for the whole band at once:
+/// a leader with nobody beside it is no band, and `plan`'s own groups
+/// fill in whatever room is left.
+fn place_band(
+    commands: &mut Commands,
+    bestiary: &Bestiary,
+    registries: &Registries,
+    site: &Site,
+    band: &Band,
+    free: &mut impl FnMut(Point) -> bool,
+    rng: &mut impl Rng,
+) -> Option<Vec<Point>> {
+    let leader_id = bestiary.defs.id(band.leader)?;
+    let mut followers: Vec<Id<MonsterDef>> = band.followers.iter().filter_map(|name| bestiary.defs.id(name)).collect();
+    if followers.len() != band.followers.len() {
+        return None;
+    }
+    // A Fisher-Yates shuffle over the registered ids, so two of three is
+    // drawn without repeats and the one left out is as likely to be any
+    // of them.
+    for i in (1..followers.len()).rev() {
+        followers.swap(i, rng.random_range(0..=i));
+    }
+    followers.truncate(band.count);
+    let open: Vec<Point> = site.bounds.cells().filter(|p| geometry::chebyshev(*p, site.entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
+    if open.is_empty() {
+        return None;
+    }
+    let anchor = open[rng.random_range(0..open.len())];
+    let wanted = 1 + followers.len();
+    let mut cells = vec![anchor];
+    for p in geometry::square(anchor, GROUP_SPREAD) {
+        if cells.len() >= wanted {
+            break;
+        }
+        if p != anchor && open.contains(&p) {
+            cells.push(p);
+        }
+    }
+    if cells.len() < wanted {
+        return None;
+    }
+    let leader = spawn_monster(commands, bestiary.defs.get(leader_id), cells[0], site.map, registries);
+    for (follower, at) in followers.iter().zip(&cells[1..]) {
+        let made = spawn_monster(commands, bestiary.defs.get(*follower), *at, site.map, registries);
+        commands.entity(made).insert(Leader(leader));
+    }
+    Some(cells)
+}
+
+/// Populates every floor on the arrival that built it: a band of its own,
+/// the dar trio or a goblin war band wherever [`BANDS`] names its floor,
+/// then [`groups_on`]'s number of ordinary groups, drawn at its own band,
+/// planned against the floor as built and off every cell a piece marked,
+/// where a chest, a brazier or the king's court stands or will stand even
+/// where the engine's slot drew nothing, off every way the floor has, so
+/// a group never stands on the stairs themselves, and off a band's own
+/// cells, so neither ever lands on the other's.
 ///
 /// Draws from `Seed::stream(b"undermere.population", floor)`, a stream for
 /// each floor alone, so what stands on floor two never depends on how many
@@ -137,8 +231,16 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         let mut rng = seed.stream(b"undermere.population", u64::from(floor));
         let mut marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
         marked.extend(ways.iter().filter(|(_, on)| on.0 == ev.map).map(|(p, _)| p.0));
+        let bounds = place.terrain.bounds();
+        let site = Site { map: ev.map, bounds, entry: ev.entry };
+        for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            if let Some(used) = place_band(&mut commands, bestiary, registries, &site, band, &mut free, &mut rng) {
+                marked.extend(used);
+            }
+        }
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
-        let groups = plan(&bestiary.spawns, floor as i32, place.terrain.bounds(), ev.entry, groups_on(floor), &mut free, &mut rng);
+        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor), &mut free, &mut rng);
         for (id, at) in groups.into_iter().flatten() {
             spawn_monster(&mut commands, bestiary.defs.get(id), at, ev.map, registries);
         }
@@ -331,6 +433,71 @@ mod tests {
             assert!(monsters > 0 && lying as u32 >= crate::finds::things_on(1), "seed {s}: floor one has its people and its things: {monsters} and {lying}");
             arrive(&mut app, TOWN);
             assert_eq!(on(&mut app, TOWN), (0, 0), "seed {s}: and on coming back");
+        }
+    }
+
+    /// Every entity of one of `ids`, standing on `map` and given a
+    /// `Leader`, paired with who leads it: both a band's placement and
+    /// the ordinary spawn table can put a kind on a floor, so this reads
+    /// every one of them and leaves telling a band's own from the
+    /// table's to the `Leader` each actually carries, rather than to
+    /// which the query happens to find first.
+    fn led_among(world: &mut World, map: MapId, ids: &[Id<MonsterDef>]) -> Vec<(Entity, Entity)> {
+        let mut q = world.query::<(Entity, &Kind, &OnMap, Option<&Leader>)>();
+        q.iter(world)
+            .filter(|(_, k, on, leader)| on.0 == map && ids.contains(&k.0) && leader.is_some())
+            .map(|(e, _, _, leader)| (e, leader.unwrap().0))
+            .collect()
+    }
+
+    /// Review Focus 5's placement half, and the brief's own: the dar come
+    /// as a band of three, one of each, the blademaster leading, so both
+    /// of its followers are given its own `Leader` the moment the floor
+    /// that can draw all three is entered, whatever else the ordinary
+    /// spawn table also drew of any of the three.
+    #[test]
+    fn the_dar_trio_is_placed_together_the_blademaster_leading_over_a_span_of_seeds() {
+        for s in 0..6u64 {
+            let mut app = headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            let floor = map_of(8);
+            arrive(&mut app, floor);
+            let (blademaster_id, followers) = {
+                let bestiary = app.world().resource::<Bestiary>();
+                (bestiary.defs.expect("dar blademaster"), [bestiary.defs.expect("dar priestess"), bestiary.defs.expect("dar battlemage")])
+            };
+            let led = led_among(app.world_mut(), floor, &followers);
+            assert_eq!(led.len(), 2, "seed {s}: the priestess and the battlemage, led: {led:?}");
+            let leader = led[0].1;
+            assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same one");
+            assert_eq!(app.world().get::<Kind>(leader).map(|k| k.0), Some(blademaster_id), "seed {s}: led by the blademaster");
+        }
+    }
+
+    /// The brief's other band: a goblin leads two of archer, conjurer or
+    /// mystic, drawn without repeats, each given the goblin's own
+    /// `Leader`, whatever else the ordinary spawn table also drew.
+    #[test]
+    fn a_goblin_war_band_is_placed_together_a_goblin_leading_two_of_its_own_kinds_over_a_span_of_seeds() {
+        for s in 0..6u64 {
+            let mut app = headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            let floor = map_of(4);
+            arrive(&mut app, floor);
+            let (goblin_id, band) = {
+                let bestiary = app.world().resource::<Bestiary>();
+                (
+                    bestiary.defs.expect("goblin"),
+                    [bestiary.defs.expect("goblin archer"), bestiary.defs.expect("goblin conjurer"), bestiary.defs.expect("goblin mystic")],
+                )
+            };
+            let led = led_among(app.world_mut(), floor, &band);
+            assert_eq!(led.len(), 2, "seed {s}: two of the three, led: {led:?}");
+            let leader = led[0].1;
+            assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same goblin");
+            assert_eq!(app.world().get::<Kind>(leader).map(|k| k.0), Some(goblin_id), "seed {s}: led by a goblin");
         }
     }
 }

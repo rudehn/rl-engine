@@ -27,6 +27,7 @@ use serde::Deserialize;
 
 use crate::armory::ItemDef;
 use crate::traits::{Folded, TraitDef};
+use crate::tricks::Tricks;
 
 /// The bestiary file, compiled in so the binary runs from anywhere.
 const MONSTERS_RON: &str = include_str!("../assets/monsters.ron");
@@ -81,6 +82,12 @@ pub struct MonsterDef {
     /// once: a bite that poisons what it struck, a burst where it died.
     /// Empty for a kind with nothing of its own to answer with.
     pub triggers: Triggers,
+    /// Whether it carries the trait of the same name, read off its
+    /// `traits` list once at load rather than every spawn: each is a
+    /// small game system of its own, built in [`crate::tricks`], and none
+    /// is a value the trait model's own folding already knows how to add
+    /// up.
+    pub tricks: Tricks,
     /// Its own id in the bestiary, so a spawn handed only the definition
     /// can mark what it made.
     id: Id<MonsterDef>,
@@ -308,7 +315,8 @@ fn resolve(
         return Err(errors);
     }
     let triggers = Triggers::build(&folded.triggers, &[], moments, kinds, names)?;
-    let brain = Arc::new(brain(&folded, ranged.is_some()));
+    let tricks = Tricks::from_listed(&listed, traits);
+    let brain = Arc::new(brain(&folded, ranged.is_some(), tricks));
     let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
     Ok(MonsterDef {
         name: a.name.clone(),
@@ -325,6 +333,7 @@ fn resolve(
         traits: listed.iter().map(|t| traits.get(*t).name.clone()).collect(),
         folded,
         triggers,
+        tricks,
         id,
         brain,
         allied,
@@ -415,8 +424,20 @@ const SCAVENGE_REACH: i32 = 4;
 /// where it last saw it, walk back to the post a piece stood it at, and
 /// drift. A monster with no post passes straight over `KeepPost`, so one
 /// brain serves a kind whether a piece placed it or a floor's population.
-fn brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
+///
+/// `tricks` adds four more, none of them a value the trait model's own
+/// fold reads: a monkey that has stolen flees for the way out before
+/// anything else, outranking even `FleeWhenHurt`, since the job is done
+/// and nothing is worth trading a blow for now; a flitting kind's steps
+/// are one in three random, in [`crate::tricks::Flit`] right before the
+/// hunt; and a packing or a led kind keeps station on its own allies or
+/// its one leader there too, above `Wander` and below the blow, exactly
+/// where [`Keep`] already sits for a will-o'-wisp's enemies.
+fn brain(folded: &Folded, shoots: bool, tricks: Tricks) -> Brain<Entity> {
     let mut brain = Brain::new();
+    if tricks.steals {
+        brain = brain.then(crate::tricks::FleeAfterStealing);
+    }
     if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
         brain = brain.then(FleeWhenHurt { at_pct });
     }
@@ -436,8 +457,36 @@ fn brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
     if uses_things(folded.wits) {
         brain = brain.then(Scavenge { reach: SCAVENGE_REACH });
     }
+    if tricks.packs {
+        brain = brain.then(Keep::allies(PACK_KEEPS_WITHIN, PACK_NO_CLOSER_THAN));
+    }
+    if tricks.led {
+        brain = brain.then(Keep::leader(LED_KEEPS_WITHIN, LED_NO_CLOSER_THAN));
+    }
+    if tricks.flits {
+        brain = brain.then(crate::tricks::Flit { chance_pct: FLIT_CHANCE_PCT });
+    }
     brain.then(Hunt).then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: WANDER_CHANCE_PCT })
 }
+
+/// How far a packing kind, a rat's or a jackal's, lets its own kind get
+/// before it closes, and how close it lets one get before it backs off:
+/// the same span `led` keeps on its one leader, since both are "stay near
+/// somebody of your own" and the content sheet gives neither a number of
+/// its own.
+const PACK_KEEPS_WITHIN: i32 = 3;
+/// How close a packing kind lets its own get before backing off: never,
+/// since packing only wants nobody too far, not elbow room from its own.
+const PACK_NO_CLOSER_THAN: i32 = 1;
+/// How far a led kind, the dar and the goblins of a war band, lets its
+/// leader get before it closes: the brief's own number.
+const LED_KEEPS_WITHIN: i32 = 3;
+/// How close a led kind lets its leader get before backing off: the
+/// brief's own number.
+const LED_NO_CLOSER_THAN: i32 = 1;
+/// How often a flitting kind's step is random rather than its usual
+/// tactic's: one in three, the trait's own words.
+const FLIT_CHANCE_PCT: u32 = 33;
 
 /// How far an ally lets the adventurer get before it follows: three
 /// steps, so it fights what comes near without wandering off after
@@ -577,7 +626,11 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     if !f.abilities.is_empty() {
         e.insert(Grants(f.abilities.clone()));
     }
-    if !f.statuses.is_empty() {
+    // `Shrouds` and `BurnsBadly` hold no status of their own at spawn, but
+    // `keep_shrouded` and `keep_regen_halted` still need `Afflicted` and
+    // `StatBlock` on the entity to read and to modify, exactly as a
+    // trait's own held statuses do.
+    if !f.statuses.is_empty() || def.tricks.shrouds || def.tricks.burns_badly {
         let (mut held, mut stats) = (Statuses::new(), Stats::new());
         for status in &f.statuses {
             held.apply(*status, FOR_LIFE, None, &registries.statuses, &mut stats);
@@ -592,6 +645,32 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     // where it dies, built once by the bestiary and shared by every copy.
     if !def.triggers.0.is_empty() {
         e.insert(def.triggers.clone());
+    }
+    // A monster leaves what `necromancer`'s `raising` can find within
+    // sight and reach, never the king, whose own death ends the run
+    // before anything could stand him back up.
+    if !def.boss {
+        e.insert(LeavesRemains);
+    }
+    if def.tricks.needs_marker() {
+        if def.tricks.splits {
+            e.insert(crate::tricks::Splits);
+        }
+        if def.tricks.shrouds {
+            e.insert(crate::tricks::Shrouds);
+        }
+        if def.tricks.fire_trail {
+            e.insert(crate::tricks::FireTrail);
+        }
+        if def.tricks.reflects {
+            e.insert(Reflects);
+        }
+        if def.tricks.burns_badly {
+            e.insert(crate::tricks::BurnsBadly);
+        }
+        if def.tricks.drains {
+            e.insert(crate::tricks::Drains);
+        }
     }
     e.id()
 }
@@ -1126,5 +1205,212 @@ mod tests {
             rng: &mut rng,
         };
         assert_eq!(brain.decide(ctx).1, Some("shadow"), "a foe one cell off, inside its no-closer-than, is backed away from rather than struck");
+    }
+
+    /// Splitting: a blow that leaves a pink jelly alive splits it into
+    /// two, each with half what was left, neither below two.
+    #[test]
+    fn a_jelly_struck_becomes_two_each_with_its_share() {
+        use crate::testing::{arena, monster, settle};
+        let (mut app, _, here) = arena(18);
+        let jelly = monster(&mut app, "pink jelly", here.offset(1, 0));
+        app.world_mut().entity_mut(jelly).insert(Health { current: 10, max: 30 });
+        let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
+        app.world_mut().write_message(DamageEvent::new(jelly, rl_engine::rl_rules::Hit::from_source(None, crush, 4)));
+        settle(&mut app);
+        let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
+        let world = app.world_mut();
+        let halves: Vec<i32> = world.query::<(&Kind, &Health)>().iter(world).filter(|(k, _)| k.0 == jelly_id).map(|(_, h)| h.current).collect();
+        assert_eq!(halves.len(), 2, "the jelly and its half");
+        assert!(halves.iter().all(|h| *h == 3), "ten taken four leaves six, split evenly: {halves:?}");
+    }
+
+    /// Stealing: a landed blow takes a random carried thing, not worn,
+    /// and marks the thief to flee with it; killed, it drops what it
+    /// took where it fell.
+    #[test]
+    fn a_monkey_takes_a_thing_and_runs_and_drops_it_when_killed() {
+        use crate::testing::{arena, give, kill, make, monster, pass_turns};
+        let (mut app, me, here) = arena(21);
+        let dagger = make(&mut app, "dagger");
+        give(&mut app, me, dagger);
+        let monkey = monster(&mut app, "monkey", here.offset(1, 0));
+        let mut stole = false;
+        for _ in 0..40 {
+            pass_turns(&mut app, 1);
+            if app.world().get::<Inventory>(monkey).is_some_and(|bag| bag.items.contains(&dagger)) {
+                stole = true;
+                break;
+            }
+        }
+        assert!(stole, "the monkey never stole the dagger in forty turns");
+        assert!(app.world().get::<crate::tricks::Stole>(monkey).is_some(), "marked to flee with it");
+        kill(&mut app, monkey, Some(me));
+        assert_eq!(app.world().get::<Position>(dagger).map(|p| p.0), app.world().get::<Position>(monkey).map(|p| p.0), "the dagger lies where the monkey fell");
+    }
+
+    /// Raising: a necromancer raises a body in its sight and reach as its
+    /// own ally, which then fights for it rather than its raiser's kind.
+    #[test]
+    fn a_necromancer_raises_a_body_in_its_sight_and_it_fights_for_it() {
+        use crate::testing::{arena, kill, monster, settle};
+        let (mut app, me, here) = arena(25);
+        let rat = monster(&mut app, "rat", here.offset(2, 0));
+        kill(&mut app, rat, Some(me));
+        assert!(app.world().get::<Actor>(rat).is_none(), "the rat is a body now, not an actor");
+        let necromancer = monster(&mut app, "necromancer", here.offset(1, 0));
+        // A pass so the necromancer's own sight is cast at least once:
+        // `raise_dead` is called directly here, outside the turn its
+        // `Viewshed` is normally cast within.
+        settle(&mut app);
+        let raised = crate::effects::bodies::raise_dead(app.world_mut(), necromancer);
+        assert!(raised, "the necromancer found the rat's body to raise");
+        assert!(app.world().get::<Actor>(rat).is_some(), "it stands again");
+        assert_eq!(
+            app.world().get::<Faction>(rat).map(|f| f.0),
+            app.world().get::<Faction>(necromancer).map(|f| f.0),
+            "fighting for its raiser rather than its own kind"
+        );
+        assert!(app.world().get::<Mind>(rat).is_some(), "a mind to fight with again");
+    }
+
+    /// Draining: a landed blow mends its own attacker what it dealt.
+    #[test]
+    fn a_draining_kinds_landed_blow_mends_it_what_it_dealt() {
+        use crate::testing::{arena, monster, pass_turns};
+        let (mut app, _, here) = arena(27);
+        let bat = monster(&mut app, "vampire bat", here.offset(1, 0));
+        app.world_mut().entity_mut(bat).insert(Health { current: 1, max: 9 });
+        let mut healed = false;
+        for _ in 0..40 {
+            pass_turns(&mut app, 1);
+            if app.world().get::<Health>(bat).is_some_and(|h| h.current > 1) {
+                healed = true;
+                break;
+            }
+        }
+        assert!(healed, "the bat never mended itself off a landed blow in forty turns");
+    }
+
+    /// Fire-trail: a salamander's own step ignites the cell it left.
+    #[test]
+    fn a_fire_trail_kind_ignites_the_cell_it_steps_off() {
+        use crate::testing::{arena, monster, settle};
+        let (mut app, _, here) = arena(29);
+        let salamander = monster(&mut app, "salamander", here.offset(1, 0));
+        let (from, to) = (here.offset(1, 0), here.offset(1, 1));
+        app.world_mut().write_message(Stepped { actor: salamander, from, to });
+        settle(&mut app);
+        assert!(app.world().resource::<Fire>().is_burning(from), "the cell it stepped off is alight");
+    }
+
+    /// Reflecting: a golem carries the engine's own `Reflects` the moment
+    /// it is spawned, so an aimed use or an ability that lands on it
+    /// turns back on whoever aimed it, one time in two, exactly as
+    /// `rl-bevy`'s own test of `Reflects` says.
+    #[test]
+    fn a_golem_carries_the_engines_own_reflects() {
+        let library = library();
+        let golem = library.bestiary.defs.get(library.bestiary.defs.expect("golem"));
+        let (world, e) = spawn(&library, golem);
+        assert!(world.get::<Reflects>(e).is_some(), "turns magic back");
+    }
+
+    /// Packing: a rat too far from its own kind, with nothing else in
+    /// sight, closes the gap rather than waiting or wandering off alone.
+    #[test]
+    fn a_packing_kind_closes_on_its_own_kind_when_nothing_else_is_in_sight() {
+        let library = library();
+        let rat = library.bestiary.defs.get(library.bestiary.defs.expect("rat"));
+        let (world, e) = spawn(&library, rat);
+        let brain = world.get::<Mind>(e).expect("a mind").0.clone();
+        let me = ActorView { id: e, pos: Point::ZERO, health: Some(Vitals { current: rat.hp, max: rat.hp }), faction: world.get::<Faction>(e).map(|f| f.0) };
+        let ally = ActorView { id: Entity::PLACEHOLDER, pos: Point::new(5, 0), health: Some(Vitals { current: rat.hp, max: rat.hp }), faction: me.faction };
+        let mut snapshot = Snapshot::alone(me);
+        snapshot.allies.push(ally);
+        snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let ctx = &mut TacticCtx {
+            snapshot: &snapshot,
+            fields: &mut NoFields,
+            can_step: &|_| true,
+            blocks_shot: &|_| false,
+            blocks_burst: &|_| false,
+            bounds: Rect::new(-20, -20, 40, 40),
+            rng: &mut rng,
+        };
+        assert_eq!(brain.decide(ctx).1, Some("follow"), "closes the gap on its own kind");
+    }
+
+    /// Led: a dar priestess with its leader sensed closes the gap on it
+    /// rather than waiting or wandering off alone.
+    #[test]
+    fn a_led_kind_closes_on_its_leader_when_nothing_else_is_in_sight() {
+        let library = library();
+        let priestess = library.bestiary.defs.get(library.bestiary.defs.expect("dar priestess"));
+        let (world, e) = spawn(&library, priestess);
+        let brain = world.get::<Mind>(e).expect("a mind").0.clone();
+        let me = ActorView {
+            id: e,
+            pos: Point::ZERO,
+            health: Some(Vitals { current: priestess.hp, max: priestess.hp }),
+            faction: world.get::<Faction>(e).map(|f| f.0),
+        };
+        let mut snapshot = Snapshot::alone(me);
+        snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
+        snapshot.add_sense(rl_engine::rl_rules::ai::tactics::Led { at: Point::new(5, 0), in_sight: true });
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let ctx = &mut TacticCtx {
+            snapshot: &snapshot,
+            fields: &mut NoFields,
+            can_step: &|_| true,
+            blocks_shot: &|_| false,
+            blocks_burst: &|_| false,
+            bounds: Rect::new(-20, -20, 40, 40),
+            rng: &mut rng,
+        };
+        assert_eq!(brain.decide(ctx).1, Some("follow"), "closes the gap on its leader");
+    }
+
+    /// Review Focus 5: a band whose leader has died keeps together
+    /// rather than freezing. The engine's own `Keep::leader` falls back
+    /// to keeping station on allies, exactly as `Keep::allies` would, the
+    /// moment nothing senses a `Led` to follow, which is what a dead
+    /// leader looks like to a follower's snapshot: a dar priestess with
+    /// an ally in sight and no leader sensed still closes the gap on its
+    /// ally, a real decision, rather than deciding nothing.
+    #[test]
+    fn a_dar_priestess_whose_leader_is_gone_keeps_station_on_its_allies_rather_than_freezing() {
+        let library = library();
+        let priestess = library.bestiary.defs.get(library.bestiary.defs.expect("dar priestess"));
+        let (world, e) = spawn(&library, priestess);
+        let brain = world.get::<Mind>(e).expect("a mind").0.clone();
+        let me = ActorView {
+            id: e,
+            pos: Point::ZERO,
+            health: Some(Vitals { current: priestess.hp, max: priestess.hp }),
+            faction: world.get::<Faction>(e).map(|f| f.0),
+        };
+        let ally = ActorView {
+            id: Entity::PLACEHOLDER,
+            pos: Point::new(5, 0),
+            health: Some(Vitals { current: priestess.hp, max: priestess.hp }),
+            faction: me.faction,
+        };
+        let mut snapshot = Snapshot::alone(me);
+        snapshot.allies.push(ally);
+        snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let ctx = &mut TacticCtx {
+            snapshot: &snapshot,
+            fields: &mut NoFields,
+            can_step: &|_| true,
+            blocks_shot: &|_| false,
+            blocks_burst: &|_| false,
+            bounds: Rect::new(-20, -20, 40, 40),
+            rng: &mut rng,
+        };
+        let decision = brain.decide(ctx);
+        assert_eq!(decision.1, Some("follow"), "keeps station on its own ally instead of freezing, a real decision and not a wait");
     }
 }
