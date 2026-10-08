@@ -29,7 +29,7 @@ The model is Brogue: a dungeon that is beautiful to look at, items as the only p
 4. The run is won the moment the boss on floor ten dies, and lost when the adventurer dies.
 5. The end screen gives the score, line by line, and the run's story in numbers; the run joins the records.
 
-Whether the adventurer can come back to town mid-run is the town part's call (part 5), and the skeleton keeps the gate open both ways so either answer is cheap.
+The adventurer can come back to town mid-run: by climbing out, or by a waystone, ten turns of kneeling that any harm breaks off, and the gate then leads back down to where they knelt, so a trip home buys time at the shops and never moves them forward.
 
 ## The screen
 
@@ -115,6 +115,7 @@ They cross: fire and a web, lightning and water, a dominated ogre and a horn tha
 Mereholt, for part 5: the Sunken Lantern tavern where mercenaries are hired and rumours about this run's dungeon are heard; a smithy for weapons and armor; an apothecary for potions and scrolls; a curio shop with rare, expensive stock; a temple that heals, lifts curses and identifies, for a price; townsfolk with a line each; and the Drowned Gate.
 Gold is found below and spent here; shop stock is drawn per run.
 The skeleton's town is the map, its lamps and the gate, with nobody to talk to yet.
+Part 5's spec, `docs/superpowers/specs/2026-10-08-undermere-town-design.md`, is the content sheet: the keepers, their stock and prices, the temple's rites, the townsfolk's lines, this run's rumours, and the waystone.
 
 ## Mercenaries
 
