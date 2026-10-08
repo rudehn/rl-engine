@@ -13,6 +13,15 @@
 //! `stealing`'s taking and `withering`'s capped stacking are effects,
 //! landed by the engine's actor triggers exactly as `venomous`'s bite is,
 //! each registered in [`crate::content::add_game_effects`].
+//!
+//! Task 9's own: [`Spawns`] and [`Wells`] are counted off the engine's own
+//! `ActionDone`, its own turns rather than the floor's clock, so a slow
+//! spawner's trick comes no faster for standing beside a swift one. The
+//! Mother Below's `spawning` opens a wall cell in her own sight into the
+//! floor tile she herself stands on, so this reads no tile name of
+//! `dungeon.rs`'s own; the Drowned King's `welling` is `call_drowned`
+//! again, read as a forced turn rather than a chosen ability, over the
+//! one water his hall holds, a black pool.
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -22,7 +31,8 @@ use rl_engine::rl_rules::ability::{RawValue, read_args};
 use rl_engine::rl_rules::ai::brain::Tactic;
 use rl_engine::rl_rules::ai::tactics::Ways;
 
-use crate::bestiary::{Kind, spawn_monster_now};
+use crate::bestiary::{Bestiary, Kind, spawn_monster_now};
+use crate::bestiary_lore::MonsterLore;
 use crate::effects::free_cells_near;
 use crate::traits::TraitDef;
 
@@ -56,6 +66,12 @@ pub struct Tricks {
     /// `singing`: a choir plays while allies within [`SING_RANGE`] stand
     /// near it, the Choirmaster's own.
     pub sings: bool,
+    /// `spawning`: a spawnling appears at a wall cell in its sight every
+    /// [`SPAWN_INTERVAL`]th of its own turns, the Mother Below's own.
+    pub spawns: bool,
+    /// `welling`: a drowned thrall rises from the water within reach
+    /// every [`RISE_INTERVAL`]th of its own turns, the Drowned King's own.
+    pub wells: bool,
 }
 
 impl Tricks {
@@ -75,6 +91,8 @@ impl Tricks {
             burns_badly: has("burns-badly"),
             drains: has("draining"),
             sings: has("singing"),
+            spawns: has("spawning"),
+            wells: has("welling"),
         }
     }
 
@@ -83,7 +101,7 @@ impl Tricks {
     /// and `flits`, which are brain shapes built once at load and nothing
     /// a running turn has to look up.
     pub fn needs_marker(self) -> bool {
-        self.splits || self.shrouds || self.fire_trail || self.reflects || self.burns_badly || self.drains || self.sings
+        self.splits || self.shrouds || self.fire_trail || self.reflects || self.burns_badly || self.drains || self.sings || self.spawns || self.wells
     }
 }
 
@@ -598,6 +616,145 @@ pub fn hatch_beside(
     }
 }
 
+/// How many of a [`Spawns`] kind's own turns pass between each spawnling:
+/// the content sheet's own three.
+const SPAWN_INTERVAL: u32 = 3;
+
+/// What a [`Spawns`] kind spawns: the content sheet's own spawnling.
+const SPAWNLING: &str = "spawnling";
+
+/// Marks a kind that spawns young from the walls near it, a counter
+/// toward [`SPAWN_INTERVAL`] of its own turns: the Mother Below's
+/// `spawning`. Marked at spawn off [`Tricks::spawns`].
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Spawns {
+    /// Its own turns since the last one spawned.
+    elapsed: u32,
+}
+
+/// Links a spawnling to whoever's own `spawning` made it, so
+/// [`die_with_mother`] takes it out of play the moment its maker dies:
+/// the Mother Below's "spawnlings die with her".
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Spawned(Entity);
+
+/// Ticks every [`Spawns`] kind's own counter on its own `ActionDone`, and
+/// stands a [`SPAWNLING`] at a wall cell in its sight every
+/// [`SPAWN_INTERVAL`]th: the Mother Below's `spawning`, "a spawnling
+/// appears at a wall cell in its sight".
+///
+/// In `TurnSet::React`, after the engine has reported this pass's own
+/// `ActionDone`.
+pub fn spawn_young(mut done: MessageReader<ActionDone>, mut spawners: Query<&mut Spawns>, mut commands: Commands) {
+    for d in done.read() {
+        let Ok(mut spawns) = spawners.get_mut(d.actor) else { continue };
+        spawns.elapsed += 1;
+        if spawns.elapsed < SPAWN_INTERVAL {
+            continue;
+        }
+        spawns.elapsed = 0;
+        let spawner = d.actor;
+        commands.queue(move |world: &mut World| spawn_one_young(world, spawner));
+    }
+}
+
+/// `spawner`'s own one spawnling, as [`spawn_young`] says: the nearest by
+/// row of every wall cell in its sight, opened to the floor tile
+/// `spawner` itself stands on rather than a tile named here, so this
+/// reads nothing of `dungeon.rs`'s own and works wherever a future
+/// `spawns` kind is put down; stood with a [`Spawned`] link back to
+/// `spawner`, so its own death takes the spawnling with it. Nothing with
+/// no such cell in `spawner`'s sight.
+fn spawn_one_young(world: &mut World, spawner: Entity) {
+    let Some(young) = world.resource::<Bestiary>().defs.id(SPAWNLING) else { return };
+    let Some(at) = world.get::<Position>(spawner).map(|p| p.0) else { return };
+    let map = world.get::<OnMap>(spawner).map_or(MapId::SURFACE, |m| m.0);
+    let Some(view) = world.get::<Viewshed>(spawner).cloned() else { return };
+    let cell = {
+        let worldmap = world.resource::<WorldMap>();
+        let tables = worldmap.tables();
+        let mut walls: Vec<Point> =
+            geometry::square(at, view.range).filter(|p| view.can_see(*p)).filter(|p| worldmap.tile(*p).is_some_and(|t| !tables.walkable[t.index()])).collect();
+        walls.sort_by_key(|p| (p.y, p.x));
+        walls.into_iter().next()
+    };
+    let Some(cell) = cell else { return };
+    let Some(own_floor) = world.resource::<WorldMap>().tile(at) else { return };
+    world.resource_mut::<WorldMap>().set_tile(cell, own_floor);
+    let made = spawn_monster_now(world, young, cell, map);
+    world.entity_mut(made).insert(Spawned(spawner));
+    if seen_by_player(world, at) {
+        if let Some(kind) = world.get::<Kind>(spawner).map(|k| k.0) {
+            let name = world.resource::<Bestiary>().defs.get(kind).name.clone();
+            world.resource_mut::<MonsterLore>().show(&name, "spawning");
+        }
+        world.write_message(Tell::new("A spawnling tears its way out of the wall!".to_string(), Tones::BAD));
+    }
+}
+
+/// Takes every [`Spawned`] whose own maker just died out of play with it,
+/// by `allies::vanish` rather than a death of its own, since nothing
+/// struck it down: the Mother Below's spawnlings, "die with her".
+///
+/// In `TurnSet::React`, after the engine has written this pass's own
+/// `DeathEvent`.
+pub fn die_with_mother(mut deaths: MessageReader<DeathEvent>, spawned: Query<(Entity, &Spawned)>, mut commands: Commands) {
+    let dead: Vec<Entity> = deaths.read().map(|d| d.entity).collect();
+    if dead.is_empty() {
+        return;
+    }
+    for (e, link) in &spawned {
+        if dead.contains(&link.0) {
+            commands.queue(move |world: &mut World| crate::allies::vanish(world, e));
+        }
+    }
+}
+
+/// How many of a [`Wells`] kind's own turns pass between each thrall: the
+/// content sheet's own eight.
+const RISE_INTERVAL: u32 = 8;
+
+/// How far from a [`Wells`] kind a cell of water may lie and still rise a
+/// thrall: wide enough to cover the one hall a `welling` kind's own
+/// water, a black pool, ever stands in.
+const RISE_RANGE: i32 = 12;
+
+/// Marks a kind whose own water rises a drowned thrall every
+/// [`RISE_INTERVAL`] of its own turns: the Drowned King's `welling`.
+/// Marked at spawn off [`Tricks::wells`].
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Wells {
+    /// Its own turns since the last one rose.
+    elapsed: u32,
+}
+
+/// Ticks every [`Wells`] kind's own counter on its own `ActionDone`, and
+/// calls [`crate::effects::bodies::call_drowned`] for one thrall every
+/// [`RISE_INTERVAL`]th: the Drowned King's `welling`, forced rather than
+/// chosen, unlike the Drowned Abbess's own `calling the drowned` ability.
+///
+/// In `TurnSet::React`, after the engine has reported this pass's own
+/// `ActionDone`.
+pub fn rise_from_the_pool(mut done: MessageReader<ActionDone>, mut wells: Query<&mut Wells>, mut commands: Commands) {
+    for d in done.read() {
+        let Ok(mut w) = wells.get_mut(d.actor) else { continue };
+        w.elapsed += 1;
+        if w.elapsed < RISE_INTERVAL {
+            continue;
+        }
+        w.elapsed = 0;
+        let king = d.actor;
+        commands.queue(move |world: &mut World| {
+            if crate::effects::bodies::call_drowned(world, king, 1, RISE_RANGE) > 0
+                && let Some(kind) = world.get::<Kind>(king).map(|k| k.0)
+            {
+                let name = world.resource::<Bestiary>().defs.get(kind).name.clone();
+                world.resource_mut::<MonsterLore>().show(&name, "welling");
+            }
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
@@ -755,5 +912,61 @@ mod tests {
             }
         }
         assert!((40..100).contains(&rolled), "about a third of two hundred rolls stepped randomly: {rolled}");
+    }
+
+    /// The Mother Below's `spawning`: left alone near a wall, she stands a
+    /// spawnling at it given enough of her own turns, as the content
+    /// sheet's "every 3 of its turns while alive" says.
+    #[test]
+    fn a_spawns_kind_stands_a_spawnling_at_a_wall_cell_in_its_sight_given_enough_of_its_own_turns() {
+        use crate::bestiary::Bestiary;
+        use crate::testing::{arena, monster, pass_turns, sturdy, wall_off};
+        let (mut app, me, here) = arena(60);
+        sturdy(&mut app, me);
+        monster(&mut app, "the Mother Below", here.offset(4, 0));
+        wall_off(&mut app, &[here.offset(4, 2)]);
+        pass_turns(&mut app, 40);
+        let spawnling = app.world().resource::<Bestiary>().defs.expect(SPAWNLING);
+        let world = app.world_mut();
+        let count = world.query::<&Kind>().iter(world).filter(|k| k.0 == spawnling).count();
+        assert!(count >= 1, "no spawnling stood after forty of the adventurer's own turns");
+    }
+
+    /// The Drowned King's `welling`: left alone near a black pool, he
+    /// wells a drowned thrall up out of it given enough of his own turns,
+    /// as the content sheet's "every 8 turns" says.
+    #[test]
+    fn a_wells_kind_wells_a_drowned_thrall_up_from_water_in_reach_given_enough_of_its_own_turns() {
+        use crate::bestiary::Bestiary;
+        use crate::testing::{arena, monster, pass_turns, sturdy};
+        let (mut app, me, here) = arena(61);
+        sturdy(&mut app, me);
+        monster(&mut app, "the Drowned King", here.offset(4, 0));
+        let pool_at = here.offset(4, 2);
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            let pool = TileId(map.tables().names.iter().position(|n| n == "black pool").expect("a black pool is a tile") as u16);
+            map.set_tile(pool_at, pool);
+        }
+        pass_turns(&mut app, 70);
+        let thrall = app.world().resource::<Bestiary>().defs.expect("drowned thrall");
+        let world = app.world_mut();
+        let count = world.query::<&Kind>().iter(world).filter(|k| k.0 == thrall).count();
+        assert!(count >= 1, "no drowned thrall rose after seventy of the adventurer's own turns");
+    }
+
+    /// The Mother Below's own spawnlings stop the moment she dies: killing
+    /// her takes every `Spawned` link of hers out of play with her, as
+    /// `allies::vanish` does, since nothing struck them down.
+    #[test]
+    fn the_mother_belows_spawnlings_are_taken_out_of_play_the_moment_she_dies() {
+        use crate::testing::{arena, kill, monster, settle};
+        let (mut app, _, here) = arena(70);
+        let mother = monster(&mut app, "the Mother Below", here.offset(3, 0));
+        let young = monster(&mut app, "spawnling", here.offset(3, 1));
+        app.world_mut().entity_mut(young).insert(Spawned(mother));
+        kill(&mut app, mother, None);
+        settle(&mut app);
+        assert!(app.world().get_entity(young).is_err(), "the spawnling is gone with her");
     }
 }

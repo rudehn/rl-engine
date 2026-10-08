@@ -1,0 +1,37 @@
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for. The chain that builds a place in `src/dungeon.rs` asks for it by
+// name and says where it goes; the engine fills its slots on the arrival that
+// built the place.
+//
+// Every field: see `throne.ron`'s own comment, which this repeats nothing of.
+//
+// Task 9's own: one of the three floor ten bosses a run may draw, the Mother
+// Below alone in a vast, open cave, its walls pocked with the burrows her own
+// `spawning` tears fresh ones from while she lives. No court, no furniture:
+// what she carries is herself. Laid exactly as the throne is, at one end of
+// the floor, facing south, its mouth the five cells of floor at the foot of
+// the drawing.
+(
+    name: "the Mother Below",
+    ground: "moss",
+    rows: [
+        "===================",
+        "=.................=",
+        "=.................=",
+        "=........M........=",
+        "=.................=",
+        "=.................=",
+        "=.................=",
+        "=.................=",
+        "=.................=",
+        "=.................=",
+        "=.................=",
+        "=.................=",
+        "=======.....=======",
+    ],
+    legend: {
+        '=': Tile("cave wall"),
+        '.': Tile("moss"),
+        'M': Monster(monster: "the Mother Below"),
+    },
+)

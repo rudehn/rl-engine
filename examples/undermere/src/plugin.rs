@@ -194,7 +194,9 @@ impl Plugin for UndermerePlugin {
         // blow that mends its own drainer, a step that leaves fire behind
         // it, a cell's own dark kept or lifted, a troll's regeneration
         // halted while it burns, a Choirmaster's choir kept over its own
-        // side, and the Widow's egg sacs, stepped beside.
+        // side, the Widow's egg sacs stepped beside, the Mother Below's
+        // young torn from the walls and gone the pass she dies, and the
+        // Drowned King's own pool.
         app.add_systems(
             Turn,
             (
@@ -205,6 +207,9 @@ impl Plugin for UndermerePlugin {
                 crate::tricks::keep_regen_halted,
                 crate::tricks::sing_choir,
                 crate::tricks::hatch_beside,
+                crate::tricks::spawn_young,
+                crate::tricks::die_with_mother,
+                crate::tricks::rise_from_the_pool,
             )
                 .in_set(TurnSet::React),
         );

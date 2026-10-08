@@ -1,0 +1,39 @@
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for. The chain that builds a place in `src/dungeon.rs` asks for it by
+// name and says where it goes; the engine fills its slots on the arrival that
+// built the place.
+//
+// Every field: see `throne.ron`'s own comment, which this repeats nothing of.
+//
+// Task 9's own: one of the three floor ten bosses a run may draw, the Ember
+// Wyrm alone in a hall of pillars over lava pools, the floor scorched to ash.
+// 'O' is forge wall standing free as a pillar, exactly the trick `throne.ron`
+// already plays with its own 'O'. Laid exactly as the throne is, at one end
+// of the floor, facing south, its mouth the five cells of floor at the foot
+// of the drawing.
+(
+    name: "the Ember Wyrm",
+    ground: "ash",
+    rows: [
+        "===================",
+        "=~~.............~~=",
+        "=....O.......O....=",
+        "=........D........=",
+        "=.................=",
+        "=....O.......O....=",
+        "=.................=",
+        "=.................=",
+        "=~...............~=",
+        "=~~~...........~~~=",
+        "=.................=",
+        "=.................=",
+        "=======.....=======",
+    ],
+    legend: {
+        '=': Tile("forge wall"),
+        'O': Tile("forge wall"),
+        '.': Tile("ash"),
+        '~': Tile("lava"),
+        'D': Monster(monster: "the Ember Wyrm"),
+    },
+)

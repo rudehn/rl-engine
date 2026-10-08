@@ -50,6 +50,20 @@
             (kind: "Ignite", args: (turns: 3)),
         ],
     ),
+    // The Ember Wyrm's own: wider and hotter than the salamander's, so a
+    // trait of its own grants it rather than `fire breath`, whose numbers
+    // are the salamander's to keep.
+    (
+        name: "wyrm breath",
+        description: "A wide gout of flame that burns whatever it reaches and leaves the ground alight.",
+        look: (glyph: '*', color: (r: 255, g: 115, b: 25)),
+        mode: Cone(length: 5),
+        cooldown: 500,
+        effects: [
+            (kind: "Harm", args: (kind: "fire", roll: "4d6")),
+            (kind: "Ignite", args: (turns: 3)),
+        ],
+    ),
     // The Drowned King's: a grip of cold water reaching out of the dark,
     // which chills what it catches, a quarter slower for four turns.
     (

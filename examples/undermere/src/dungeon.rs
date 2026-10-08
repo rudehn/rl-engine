@@ -160,6 +160,12 @@ impl Biome {
     /// Choirmaster's nave over the Catacombs and the Drowned Cathedral,
     /// the Abbess's chapel over the same two, and the Forgemaster's forge
     /// over the Drowned Cathedral and the Forge of Embers.
+    ///
+    /// Task 9's own floor ten boss, drawn from three, reads the same way:
+    /// the Throne lists its own tiles first, the Mother Below's cave
+    /// tiles next (the Fungal Deeps' own) and the Ember Wyrm's hall tiles
+    /// last (the Forge of Embers' own), since every one of the three may
+    /// stand on this one floor.
     pub fn tiles(self) -> &'static [&'static str] {
         match self {
             Biome::UpperHalls => &["hall wall", "hall floor", "rubble", "door", "open door"],
@@ -182,7 +188,7 @@ impl Biome {
                 &["cathedral wall", "marble", "flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"]
             }
             Biome::ForgeOfEmbers => &["forge wall", "ash", "lava"],
-            Biome::Throne => &["throne wall", "throne floor", "dais", "black pool"],
+            Biome::Throne => &["throne wall", "throne floor", "dais", "black pool", "cave wall", "moss", "forge wall", "ash", "lava"],
         }
     }
 }
@@ -342,7 +348,12 @@ impl Undermere {
         let biome = Biome::of(floor);
         let t = |name: &str| self.tile(name);
         let (width, height) = FLOOR_SIZE;
-        let ctx = BaseContext::blank(width, height, self.tiles.clone(), t(biome.wall()));
+        // Floor ten's own wall is whichever of the three [`FINAL_BOSSES`]
+        // this run draws, never `Biome::Throne`'s fixed one, so the whole
+        // floor is built of the drawn boss's own look and not only its
+        // piece.
+        let fill = if floor == FLOORS { t(self.final_boss().wall) } else { t(biome.wall()) };
+        let ctx = BaseContext::blank(width, height, self.tiles.clone(), fill);
         let start = RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY);
         // A chest or two on every floor but the throne's, where the run ends.
         let chests = Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: (1, 2) };
@@ -435,12 +446,16 @@ impl Undermere {
                     .then(chests)
                     .then(Underfoot)
             }
-            // No way down: the throne is where the Undermere ends.
+            // No way down: the throne is where the Undermere ends. The
+            // piece and the floor tile are whichever of the three
+            // `FINAL_BOSSES` this run draws; `ThroneHall` itself asks for
+            // neither by name; see `FinalBoss`.
             Biome::Throne => {
-                let floor = t("throne floor");
+                let boss = self.final_boss();
+                let floor = t(boss.floor);
                 Chain::new()
                     .then(Rooms { floor, attempts: 40, min_size: 5, max_size: 10, min_rooms: 4 })
-                    .then(ThroneHall { piece: self.prefabs.piece("the throne")?, floor })
+                    .then(ThroneHall { piece: self.prefabs.piece(boss.piece)?, floor })
                     .then(FarthestFromTheThrone)
                     .then(Underfoot)
             }
@@ -1025,6 +1040,52 @@ impl Pass<BaseContext> for FarthestFromTheThrone {
     }
 }
 
+/// One of the three floor ten bosses a run draws between: task 9's own.
+/// `piece` is its own `assets/prefabs/` file's `name:`, the Drowned
+/// King's own kept as `"the throne"` from part 1 rather than renamed, and
+/// the other two matching `monsters.ron`'s as a mini-boss's lair already
+/// does; `monsters.ron`'s own name, what the score and the records use,
+/// is read off whichever monster the piece's own slot stands, never kept
+/// twice here. `wall` and `floor` are what the whole of floor ten is
+/// built of when this one is drawn, its own hall and the ordinary rooms
+/// leading to it alike, so the walk to the throne reads as one place
+/// rather than the drawn boss's own colours leading to somebody else's
+/// door.
+pub(crate) struct FinalBoss {
+    /// The name its own `assets/prefabs/` piece is loaded by.
+    pub(crate) piece: &'static str,
+    /// What floor ten is filled with before anything is carved, when this
+    /// one is drawn.
+    wall: &'static str,
+    /// What floor ten's rooms and its own hall are carved as, when this
+    /// one is drawn.
+    floor: &'static str,
+}
+
+/// The three, the content sheet's own order: the Drowned King's own
+/// flooded hall kept exactly as part 1 built it, the Mother Below's cave
+/// reusing the Fungal Deeps' own wall and floor, and the Ember Wyrm's hall
+/// reusing the Forge of Embers' own, so no new tile is spent on a look the
+/// floors above already have.
+pub(crate) const FINAL_BOSSES: [FinalBoss; 3] = [
+    FinalBoss { piece: "the throne", wall: "throne wall", floor: "throne floor" },
+    FinalBoss { piece: "the Mother Below", wall: "cave wall", floor: "moss" },
+    FinalBoss { piece: "the Ember Wyrm", wall: "forge wall", floor: "ash" },
+];
+
+impl Undermere {
+    /// The one of [`FINAL_BOSSES`] this run's floor ten holds: pure over
+    /// `self.seed`, so every call during the run agrees without the draw
+    /// being kept anywhere, the same reasoning [`Undermere::lairs`]
+    /// already follows for the two mini-bosses. A continued run therefore
+    /// keeps the boss it started with, since nothing but the seed ever
+    /// decides it.
+    pub(crate) fn final_boss(&self) -> &'static FinalBoss {
+        let mut rng = self.seed.rng(SeedDomain::new(b"undermere.final_boss"), 0);
+        &FINAL_BOSSES[rng.random_range(0..FINAL_BOSSES.len())]
+    }
+}
+
 /// One of the five mini-bosses a run may draw a lair for: task 8a's own.
 /// Its name is `monsters.ron`'s and its lair's own `assets/prefabs/`
 /// file's, its floors the span it may stand on, and its margin the tile
@@ -1304,15 +1365,21 @@ mod tests {
         assert!(built.exit.is_some_and(|gate| seen.contains(&gate)), "and so can the gate");
     }
 
+    /// Floor ten holds whichever of the three `FINAL_BOSSES` this seed
+    /// draws, alone at its own throne but for the Drowned King's own
+    /// five knights, and the way in is as far from its mouth, walking, as
+    /// any cell of the floor outside it: task 9's own, over every one of
+    /// the three.
     #[test]
-    fn floor_ten_holds_the_throne_and_the_king() {
+    fn floor_ten_holds_whichever_boss_this_seed_draws_alone_at_its_own_throne() {
         let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
         for s in 0..40 {
             let undermere = Undermere::new(RunSeed(s));
-            let key = undermere.prefabs().defs().expect("the throne").raw();
+            let boss = undermere.final_boss();
+            let key = undermere.prefabs().defs().expect(boss.piece).raw();
             let ctx = undermere.generate(map_of(FLOORS)).unwrap();
             let throne: Vec<Rect> = ctx.outputs().iter::<Stamped>().filter(|st| st.prefab == Some(key)).map(|st| st.bounds).collect();
-            assert_eq!(throne.len(), 1, "seed {s}: one throne on floor ten");
+            assert_eq!(throne.len(), 1, "seed {s}: one {} on floor ten", boss.piece);
             let throne = throne[0];
             let built = PlaceBuild::from_context(ctx).unwrap();
             let mut monsters: Vec<&str> = Vec::new();
@@ -1323,12 +1390,20 @@ mod tests {
                     Some(Slot::Prop(id)) => props.push(&library.registries.props.get(*id).name),
                     _ => {}
                 }
-                assert!(throne.contains(spot.at), "seed {s}: a slot at {:?} outside the throne", spot.at);
+                assert!(throne.contains(spot.at), "seed {s}: a slot at {:?} outside the {}", spot.at, boss.piece);
             }
             monsters.sort_unstable();
             props.sort_unstable();
-            assert_eq!(monsters, ["skeleton knight"; 5].into_iter().chain(["the Drowned King"]).collect::<Vec<_>>(), "seed {s}: the king and his court");
-            assert_eq!(props, ["brazier", "brazier", "brazier", "brazier", "throne"], "seed {s}");
+            // The Drowned King's piece keeps its part 1 name, `"the
+            // throne"`, rather than his own, `"the Drowned King"`; the
+            // other two's piece is named exactly as their own monster.
+            let (expected_monsters, expected_props): (Vec<&str>, Vec<&str>) = if boss.piece == "the throne" {
+                (["skeleton knight"; 5].into_iter().chain(["the Drowned King"]).collect(), vec!["brazier", "brazier", "brazier", "brazier", "throne"])
+            } else {
+                (vec![boss.piece], vec![])
+            };
+            assert_eq!(monsters, expected_monsters, "seed {s}: {}", boss.piece);
+            assert_eq!(props, expected_props, "seed {s}: {}", boss.piece);
             // The way in is as far from the throne's mouth, walking, as any
             // cell of the floor outside the throne.
             let view = built.terrain.view(undermere.tiles());
@@ -1340,6 +1415,21 @@ mod tests {
             let clear = geometry::chebyshev(built.entry, geometry::clamp_to(built.entry, throne));
             assert!(clear >= MIN_DISTANCE_FROM_ENTRY, "seed {s}: the way in is {clear} from the throne");
         }
+    }
+
+    /// The floor ten boss is drawn from the three `FINAL_BOSSES`, stable
+    /// over repeated calls of one seed and over every one of them drawn
+    /// somewhere across a span: task 9's own.
+    #[test]
+    fn the_floor_ten_boss_is_drawn_from_three_stably_and_all_three_drawn_over_a_span_of_seeds() {
+        let mut seen = BTreeSet::new();
+        for s in 0..60 {
+            let undermere = Undermere::new(RunSeed(s));
+            let first = undermere.final_boss().piece;
+            assert_eq!(undermere.final_boss().piece, first, "seed {s}: two calls disagree");
+            seen.insert(first);
+        }
+        assert_eq!(seen.len(), FINAL_BOSSES.len(), "every one of the three drawn somewhere over the span: {seen:?}");
     }
 
     #[test]
@@ -1373,7 +1463,17 @@ mod tests {
                 let biome = Biome::of(floor);
                 let built = undermere.build(map_of(floor), None).unwrap();
                 let drawn: BTreeSet<&str> = built.terrain.iter().map(|(_, t)| undermere.tiles().get(t).name.as_str()).collect();
-                assert!(drawn.contains(biome.wall()) && drawn.contains(biome.floor()), "floor {floor}, seed {s}: {drawn:?}");
+                // Floor ten's own wall and floor are whichever of the
+                // three `FINAL_BOSSES` this seed draws, never
+                // `Biome::Throne`'s fixed one, which task 9 kept as the
+                // Drowned King's own.
+                let (wall, floor_tile) = if floor == FLOORS {
+                    let boss = undermere.final_boss();
+                    (boss.wall, boss.floor)
+                } else {
+                    (biome.wall(), biome.floor())
+                };
+                assert!(drawn.contains(wall) && drawn.contains(floor_tile), "floor {floor}, seed {s}: {drawn:?}");
                 // The gate lets out on floor one: its other side.
                 let allowed: BTreeSet<&str> = biome.tiles().iter().copied().chain((floor == 1).then_some("gate")).collect();
                 let strays: Vec<&&str> = drawn.difference(&allowed).collect();
@@ -1492,7 +1592,10 @@ mod tests {
     /// stand on the dais.
     #[test]
     fn a_slot_stands_on_the_floor_drawn_round_it() {
-        let undermere = Undermere::new(RunSeed(0));
+        // Seed 1: one of the three `FINAL_BOSSES` this task draws between,
+        // and this test's own last two lines are the Drowned King's own,
+        // so it wants a seed that draws him.
+        let undermere = Undermere::new(RunSeed(1));
         let name = |built: &PlaceBuild, p: Point| undermere.tiles().get(built.terrain.get(p).expect("on the map")).name.clone();
         let town = undermere.build(TOWN, None).unwrap();
         let under = |x: i32, y: i32| name(&town, Point::new(x, y));

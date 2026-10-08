@@ -267,6 +267,32 @@ mod tests {
         assert_eq!((record.outcome, record.summary.as_str()), (RecordOutcome::Won, "Slew the Drowned King"));
     }
 
+    /// Task 9's own: killing whichever of the three floor ten bosses this
+    /// seed drew wins the run just as the king's own death does, since
+    /// `report_bosses` reads `MonsterDef::boss` rather than a name. Over a
+    /// span of seeds, so every one of the three is drawn and slain.
+    #[test]
+    fn killing_whichever_boss_was_drawn_wins_the_run_over_a_span_of_seeds() {
+        use rl_engine::rl_core::RunSeed;
+
+        use crate::dungeon::map_of;
+        use crate::testing::{arrive, headless, sturdy};
+        for s in 0..12 {
+            let mut app = headless(RunSeed(s));
+            let me = arrive(&mut app, map_of(10));
+            sturdy(&mut app, me);
+            let boss_ids: Vec<_> = app.world().resource::<Bestiary>().defs.iter().filter(|(_, d)| d.boss).map(|(id, _)| id).collect();
+            let boss = {
+                let world = app.world_mut();
+                world.query::<(Entity, &Kind)>().iter(world).find(|(_, k)| boss_ids.contains(&k.0)).map(|(e, _)| e).expect("a boss on the throne")
+            };
+            let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
+            app.world_mut().write_message(DamageEvent::new(boss, rl_engine::rl_rules::Hit::by(me, crush, 100_000)));
+            app.update();
+            assert_eq!(app.world().get_resource::<Ending>().map(|e| e.outcome), Some(Outcome::Won), "seed {s}: won");
+        }
+    }
+
     /// A file in which nothing wins the run is refused, since a run under
     /// it could only end in death; so is an objective counting something
     /// Undermere never writes.

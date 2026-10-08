@@ -29,7 +29,7 @@
 //   armor:      flat armor, added to the monster's own
 //   abilities:  names from `abilities.ron`: "fire breath" | "drowning grasp" | "spit web" |
 //               "blink" | "ward ally" | "mend ally" | "firebolt" | "slowness" | "conjure blades" |
-//               "raise dead" | "war cry" | "spit" | "call the drowned"
+//               "raise dead" | "war cry" | "spit" | "call the drowned" | "wyrm breath"
 //   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //               "webbed" | "warded" | "weakened" | "asleep"
 //   triggers:   what it does at its own moments: [(on: "hit" | "struck" | "died", area: Here |
@@ -148,4 +148,13 @@
     (name: "singing", says: "its song mends the dead that follow it"),
     (name: "spit", says: "spits poison from afar", abilities: ["spit"], trick: true),
     (name: "calling the drowned", says: "calls the drowned up out of the water", abilities: ["call the drowned"], trick: true),
+    // Task 9's own: the floor ten boss, drawn from three. `spawning` and
+    // `welling` are game systems, read in `tricks.rs` exactly as
+    // `splitting` and the rest of task 6b's own are, never an ability or
+    // a trigger; `wyrm breath` is the Ember Wyrm's own larger breath, a
+    // new ability since its numbers are not the salamander's `fire
+    // breath`.
+    (name: "spawning", says: "spawns its young from the walls", trick: true),
+    (name: "welling", says: "a drowned thrall rises from the black pool to join him", trick: true),
+    (name: "wyrm breath", says: "breathes fire", abilities: ["wyrm breath"], trick: true),
 ]

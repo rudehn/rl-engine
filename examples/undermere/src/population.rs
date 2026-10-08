@@ -438,14 +438,17 @@ mod tests {
                 let people: Vec<Point> = spawned.iter().copied().filter(|p| !posts.contains(p)).collect();
                 assert!(people.iter().all(|p| !marked.contains(p)), "seed {s}, floor {floor}: one of the people on a piece's mark");
                 assert!(people.len() as u32 >= groups_on(floor), "seed {s}, floor {floor}: {} people for {} groups", people.len(), groups_on(floor));
-                // The throne's own six, the king and his court, on floor
-                // ten alone; elsewhere nothing, unless this seed draws one
-                // of task 8a's own lairs on this floor, whose boss and
-                // entourage are posted the same way and never more than
-                // five strong.
+                // The throne's own, on floor ten alone: six where this
+                // run draws the Drowned King, the king and his five
+                // knights, or one alone where it draws the Mother Below
+                // or the Ember Wyrm, task 9's own two with no entourage.
+                // Elsewhere nothing, unless this seed draws one of task
+                // 8a's own lairs on this floor, whose boss and entourage
+                // are posted the same way and never more than five
+                // strong.
                 let court = spawned.len() - people.len();
                 if floor == FLOORS {
-                    assert_eq!(court, 6, "seed {s}, floor {floor}: the king and his court");
+                    assert!(court == 1 || court == 6, "seed {s}, floor {floor}: the drawn boss alone, or the king and his court: {court}");
                 } else {
                     assert!(court == 0 || (1..=5).contains(&court), "seed {s}, floor {floor}: an unexpected court of {court}");
                 }

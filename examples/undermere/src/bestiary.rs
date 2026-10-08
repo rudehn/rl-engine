@@ -702,6 +702,12 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
         if def.tricks.sings {
             e.insert(crate::tricks::Choir);
         }
+        if def.tricks.spawns {
+            e.insert(crate::tricks::Spawns::default());
+        }
+        if def.tricks.wells {
+            e.insert(crate::tricks::Wells::default());
+        }
     }
     e.id()
 }
@@ -777,9 +783,9 @@ mod tests {
 
     /// A tripwire over the bestiary, by name, so a kind is added or
     /// dropped on purpose, and the spectral blade a staff conjures; and
-    /// the king is the one death that wins the run.
+    /// task 9's own three, any one of whose death wins the run.
     #[test]
-    fn every_monster_of_the_bestiary_is_in_the_file_and_the_drowned_king_is_its_one_boss() {
+    fn every_monster_of_the_bestiary_is_in_the_file_and_the_floor_ten_boss_is_one_of_three() {
         let library = library();
         let bestiary_kinds = [
             "rat",
@@ -811,6 +817,9 @@ mod tests {
             "salamander",
             "skeleton knight",
             "the Drowned King",
+            "the Mother Below",
+            "spawnling",
+            "the Ember Wyrm",
             "Grubnak the goblin king",
             "the Widow",
             "the Choirmaster",
@@ -824,7 +833,7 @@ mod tests {
         }
         assert_eq!(defs.len(), bestiary_kinds.len(), "a monster this list does not name");
         let bosses: Vec<&str> = defs.iter().filter(|(_, d)| d.boss).map(|(_, d)| d.name.as_str()).collect();
-        assert_eq!(bosses, ["the Drowned King"]);
+        assert_eq!(bosses, ["the Drowned King", "the Mother Below", "the Ember Wyrm"]);
         assert!(defs.iter().all(|(id, d)| d.id() == id), "each knows its own id");
     }
 

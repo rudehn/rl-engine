@@ -582,6 +582,7 @@ mod tests {
         assert_eq!(said("war cry"), vec!["hastens every ally in sight for 6 turns"]);
         assert_eq!(said("spit"), vec!["poisoned for 6 turns"]);
         assert_eq!(said("call the drowned"), vec!["up to 2 drowned thralls rise from water within 6"]);
+        assert_eq!(said("wyrm breath"), vec!["4d6 fire", "sets the ground alight for 3 turns"]);
     }
 
     /// A tripwire over what stands in the places, by name, so a prop is

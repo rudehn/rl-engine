@@ -368,6 +368,9 @@ mod tests {
             "singing",
             "spit",
             "calling the drowned",
+            "spawning",
+            "welling",
+            "wyrm breath",
         ];
         for name in skeleton {
             let id = traits.id(name).unwrap_or_else(|| panic!("no trait called {name:?}"));
