@@ -8,7 +8,7 @@
             crates/rl-core/src/seed.rs
             crates/rl-world/src/chunk.rs
             crates/rl-bevy/src/places.rs
-     fingerprint: c18f1f81 -->
+     fingerprint: ba3994c8 -->
 
 # Map generation
 
@@ -23,14 +23,14 @@ There is no plugin and no system: `rl-mapgen` is tier 1, has no Bevy in it, and 
 A game builds a `BaseContext` over a blank terrain, assembles a `Chain` with `then`, and runs it with a `RunSeed`.
 Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered, or inside the `ChunkRules::chain` the streamer calls for a region.
 `Chain::run` stops at the first failure and hands back the `BuildError` naming the pass, so a caller that asked for six rooms on a map with space for four retries rather than shipping a map its game does not expect.
-A retry builds a fresh `BaseContext` and runs the chain again with a different seed or a different index: a pass that fails may already have written part of its work, as `Rooms` does, so the context it failed in is not a clean slate to try again in.
+`Chain::run_retrying` is that retry: it takes a function that makes a fresh `BaseContext`, since a pass that fails may already have written part of its work, as `Rooms` does, and runs the chain again from the next attempt until one succeeds or the attempts are spent.
 
 ## The model
 
 `Pass<C>` is three methods: `name`, which must be stable because it keys the pass's stream, `phase`, which says when it runs, and `apply`, which does the work or returns a `BuildError`.
 `Phase` is six variants in pipeline order: `Ground`, `Growth`, `Structures`, `Connect`, `Exits`, `Finish`.
 `Chain::then` asserts the new pass's phase is not before the last one's and that its name is fresh, so a chain that would have run its doors before its rooms fails where it was written instead of in a screenshot.
-`Chain::run` installs `seed.rng(SeedDomain::new(name), 0)` on the context before each `apply`, then takes a snapshot, and `names` and `len` let a caller report what a chain is.
+`Chain::run` installs `seed.rng(SeedDomain::new(name), 0)` on the context before each `apply`, then takes a snapshot, and `names` and `len` let a caller report what a chain is; an attempt of `run_retrying` is the same with the attempt's number in place of the nought.
 `BuildContext` is the boundary an engine pass sees: `terrain` and `terrain_mut`, `tiles`, `rng` and `set_rng`, `emit` and `outputs`, and a `take_snapshot` that defaults to doing nothing.
 Every engine pass is generic over `C: BuildContext`, which is the whole extension mechanism: a game wraps `BaseContext` in a struct carrying its own fields, implements the trait by delegation, and the engine's passes still run over it unchanged.
 `rl-world`'s `ChunkContext` is the engine's own instance of that, a `BaseContext` with a region's neighbourhood, per-tile heights and per-tile facts alongside it.
@@ -38,6 +38,7 @@ Every engine pass is generic over `C: BuildContext`, which is the whole extensio
 `Outputs` is typed rather than keyed: `emit` pushes any `Any + Send` value, and `iter::<T>`, `first::<T>` and `take::<T>` read back only the ones of that type, so two passes publishing different things never collide.
 `passes` holds what needs nothing but a terrain and a registry: `Fill` and `Border` in `Ground`, `Scatter` and `ScatterBy` in `Growth`, `CellularCave` in `Ground`, `KeepLargestRegion` in `Connect`, and `CentralStart` in `Exits`.
 `Scatter` and `ScatterBy` carry their own `name` field because two scatters in one chain must draw different streams, and `ScatterBy` takes a `ChanceFn<C>` so a chance can follow moisture or slope rather than being one number.
+A place grown piece by piece, `Accrete` and the passes that survey it and hold it to a recipe, is [the layout page](layout.md)'s.
 `dungeon` holds the bounded-map passes: `Rooms` and `Bsp` in `Structures`, `Doors` behind them, and `RandomStart` and `FarthestExit` in `Exits`.
 `Rooms` scatters non-overlapping rectangles and joins each to the one before it with an L-shaped corridor, failing below `min_rooms`; `Bsp` splits the map into a tree of leaves, carves a room per leaf and joins siblings, so the layout fills the map evenly.
 Both publish a `Room` per room in placement order, which is what lets `Doors` find the ring around each one and a prefab ask for a room to sit in.
@@ -95,7 +96,7 @@ A pass that rolls takes the stream from the context rather than making one, and 
 The engine decides the pipeline: what a phase is and what order the six come in, that a name keys a stream, that a failure stops the chain and names itself, and how each shipped pass does its work.
 The game decides which passes are in the chain, which tile ids each one writes, what the numbers are, what the context carries beyond a terrain, and what the outputs mean.
 No shipped pass knows what a wall or a cave or a road is; every tile it writes arrives as a parameter, which is why the same `CellularCave` carves a warren, a mine and a nest of tunnels in three different games.
-The passes that place a piece by room, `Placement::InRoom`, `Placement::AnyRoom` and `StampEachRoom`, read the `Room`s that `Rooms` and `Bsp` emit and nothing else, so on a cave, or any map whose builder emits no `Room`, they have nowhere to put a piece; a cave that wants furnishing places its pieces `At` points of its own choosing for now.
+The passes that place a piece by room, `Placement::InRoom`, `Placement::AnyRoom` and `StampEachRoom`, read the `Room`s that `Rooms`, `Bsp` and `Accrete` emit and nothing else, so on a cave, or any map whose builder emits no `Room`, they have nowhere to put a piece; a cave that wants furnishing places its pieces `At` points of its own choosing for now.
 
 ## Where it lives
 

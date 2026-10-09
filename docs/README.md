@@ -29,9 +29,11 @@ These are the reasoning; the overview is the list.
 - [effects.md](design/effects.md), what lands and what sets it off: the effects subsystem, its moments and triggers, and what a use costs a thing.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
 - [items.md](design/items.md), what a thing does: the three carriers of an effect list, why an item never lends an ability even when its use is aimed, and why the unknown, the stuck and ammunition are the engine's.
+- [layout.md](design/layout.md), a place grown piece by piece, surveyed, and built again when it falls short; [research/gridsage-mapgen.md](research/gridsage-mapgen.md) is what it was drawn from.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
 - [loot.md](design/loot.md), where items turn up and how many, with what an item is left to the game.
 - [minds.md](design/minds.md), how a non-player decides.
+- [names.md](design/names.md), names drawn from syllables: libtcod's rejections over typed, weighted patterns, and why a draw is bounded.
 - [noise.md](design/noise.md), what a sound is and who hears it.
 - [prefabs.md](design/prefabs.md), a piece of a place as data: slots for props, items and monsters drawn at the place's depth, roles, and guards that hold their post.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.

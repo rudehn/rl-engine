@@ -179,6 +179,10 @@ pub struct ItemDef {
     /// Unique; spawn tables and drops refer to it. One of it, singular,
     /// since the engine says a stack as "12 arrows".
     pub name: String,
+    /// Whether the name is said with no `a`, a stuff: `chain mail`. The
+    /// engine's narrator reads it as [`MassNoun`] on the thing.
+    #[serde(default)]
+    pub mass: bool,
     /// One character.
     pub glyph: char,
     /// `(r, g, b)` in `0..=1`.
@@ -402,6 +406,32 @@ impl Armory {
         let d = self.defs.get(def);
         let own = if d.armor != 0 { d.armor + ARMOR_PER_LEVEL * level } else { 0 };
         own + self.lent[def.index()].armor.unwrap_or(0)
+    }
+
+    /// Whether a thing of `def`'s level moves its wearer's armor: armor's
+    /// own, a level a point, and a thing whose line gives the stat `armor`
+    /// names for each level. What the vitals' mark asks of a thing whose
+    /// kind is known and whose level is not, and a fact of the kind alone.
+    pub fn level_moves_armor(&self, def: Id<ItemDef>, armor: Option<StatId>) -> bool {
+        self.armor_at(def, 1) != self.armor_at(def, 0) || self.defs.get(def).per_level.iter().any(|(stat, _)| Some(stat.id()) == armor)
+    }
+
+    /// What a thing of `def` at `level` gives its wearer's stats: its own,
+    /// a level's worth of each stat its line gives per level, the most each
+    /// stat it caps comes to, and for a weapon the accuracy a level lends,
+    /// by the stat `accuracy` names; nothing that comes to nought. The one rule [`Bestows`] is written by
+    /// when a thing is made or its level changes, and what a thing whose
+    /// level is not known yet seems to give, at nought.
+    pub fn gives_at(&self, def: Id<ItemDef>, level: i32, accuracy: Option<StatId>) -> Vec<(StatId, Op)> {
+        let d = self.defs.get(def);
+        let mut gives: Vec<(StatId, Op)> = d.bestows.iter().map(|(stat, n)| (stat.id(), Op::Add(*n))).collect();
+        gives.extend(d.per_level.iter().map(|(stat, n)| (stat.id(), Op::Add(n * level))));
+        gives.extend(d.caps.iter().map(|(stat, most)| (stat.id(), Op::AtMost(*most))));
+        if let Some(accuracy) = accuracy.filter(|_| d.melee.is_some() || d.ranged.is_some()) {
+            gives.push((accuracy, Op::Add(ACCURACY_PER_LEVEL * level)));
+        }
+        gives.retain(|(_, op)| *op != Op::Add(0));
+        gives
     }
 
     /// Whether `def` takes levels: a weapon, armor, a ring, a staff or a
@@ -774,6 +804,9 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect()));
     }
+    if d.mass {
+        e.insert(MassNoun);
+    }
     // What it does at its moments, a potion drunk and one broken where it lands,
     // built once by the armory and shared by every copy; the engine lands
     // them, and spends what doing it costs.
@@ -878,13 +911,7 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
     } else {
         e.remove::<Armor>();
     }
-    let mut gives: Vec<(StatId, Op)> = d.bestows.iter().map(|(stat, n)| (stat.id(), Op::Add(*n))).collect();
-    gives.extend(d.per_level.iter().map(|(stat, n)| (stat.id(), Op::Add(n * level))));
-    gives.extend(d.caps.iter().map(|(stat, most)| (stat.id(), Op::AtMost(*most))));
-    if let Some(accuracy) = accuracy.filter(|_| melee.is_some() || ranged.is_some()) {
-        gives.push((accuracy, Op::Add(ACCURACY_PER_LEVEL * level)));
-    }
-    gives.retain(|(_, op)| *op != Op::Add(0));
+    let gives = armory.gives_at(def, level, accuracy);
     if gives.is_empty() {
         e.remove::<Bestows>();
     } else {
@@ -966,8 +993,9 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
 
 /// Spawns `def` at `level` as [`spawn_item_at`] does, as a thing found
 /// rather than set out with: one whose level its wearer learns by wearing
-/// it is [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until
-/// it has been worn long enough or is identified.
+/// it is [`Unfamiliar`](crate::lore::Unfamiliar), so it is called by its
+/// kind alone, with no level, until it has been worn long enough or is
+/// identified.
 pub fn spawn_found(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let thing = spawn_item_at(commands, armory, def, level, registries);
     if armory.learned_by_wear(def) {
@@ -999,8 +1027,8 @@ impl ItemMaker for Armory {
     /// What is found is not yet known for what it is: each thing that takes
     /// levels at the level [`found_level`](Self::found_level) rolls, and a
     /// thing whose level its wearer learns by wearing it marked
-    /// [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until it
-    /// has been worn long enough or is identified.
+    /// [`Unfamiliar`](crate::lore::Unfamiliar), so it is called by its kind
+    /// alone until it has been worn long enough or is identified.
     fn make(
         &self,
         commands: &mut Commands,
@@ -1080,6 +1108,23 @@ mod tests {
         let made = names.iter().map(|n| spawn_item(&mut commands, armory, armory.defs.expect(n), &library.registries)).collect();
         queue.apply(&mut world);
         (world, made)
+    }
+
+    /// Every coat of body armor is a stuff, said with no `a`, `chain mail`
+    /// and `leather armor`, and the shield, the helm and every weapon are
+    /// counted one at a time.
+    #[test]
+    fn body_armor_is_said_with_no_article_and_a_shield_or_a_sword_with_one() {
+        let library = library();
+        let body = library.registries.slots.expect("body");
+        let coats: Vec<&str> =
+            library.armory.defs.iter().filter(|(_, d)| d.slot.as_ref().is_some_and(|s| s.id() == body)).map(|(_, d)| d.name.as_str()).collect();
+        assert_eq!(coats.len(), 6, "{coats:?}");
+        let counted = ["shield", "helm", "sword", "bow", "ring of light"];
+        let (world, made) = spawned(&library, &[coats.as_slice(), &counted].concat());
+        let (stuffs, ones) = made.split_at(coats.len());
+        assert!(stuffs.iter().all(|e| world.get::<MassNoun>(*e).is_some()), "{coats:?} are each a stuff");
+        assert!(ones.iter().all(|e| world.get::<MassNoun>(*e).is_none()), "{counted:?} are each counted");
     }
 
     /// A tripwire over the armory, by name, so a thing is added or dropped

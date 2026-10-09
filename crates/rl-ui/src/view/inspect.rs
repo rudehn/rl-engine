@@ -65,6 +65,11 @@ pub struct InspectView {
     /// says so where it would say what the thing is, so a look at a thing
     /// tells no more than the bag does.
     pub unknown: bool,
+    /// What the game says the subject seems, while it is not yet known,
+    /// printed in place of the bare `unknown`, as
+    /// [`ItemRow::seems`](crate::view::inventory::ItemRow::seems) is in the
+    /// bag. Empty for anything else, and read only while `unknown`.
+    pub seems: Vec<Facet>,
 }
 
 impl InspectView {
@@ -229,6 +234,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.duel = None;
     view.odds = None;
     view.facets.clear();
+    view.seems.clear();
     view.ground.clear();
     view.burning = false;
     view.gas = None;

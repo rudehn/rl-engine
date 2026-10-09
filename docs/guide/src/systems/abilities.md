@@ -16,7 +16,7 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: e8c1bc3e -->
+     fingerprint: 8d795e51 -->
 
 # Abilities
 

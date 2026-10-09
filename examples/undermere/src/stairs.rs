@@ -93,20 +93,23 @@ pub fn place_line(map: MapId) -> String {
     format!("Floor {floor}: {}. {mood}", Biome::of(floor).name())
 }
 
-/// Writes every cell of Mereholt into what the adventurer remembers, so
-/// the town's shape is there from the first frame rather than the slivers
-/// of it in sight, which read as walls strewn about.
+/// Writes every cell of Mereholt into what the adventurer remembers, and
+/// what stands in it, so the town is there whole from the first frame
+/// rather than the slivers of it in sight, which read as walls strewn
+/// about.
 ///
 /// Remembered, not seen: what is in view is still what sight and the light
-/// allow, and the rest is drawn as memory draws anything. Written into the
-/// town's own memory whatever place is being read, since a warp later in
-/// the same pass may already have moved the adventurer on.
+/// allow, and the rest is drawn as memory draws anything, the town's props
+/// and things with it, which the map takes in at its next look since they
+/// are put down in the same pass as this. Written into the town's own
+/// memory whatever place is being read, since a warp later in the same
+/// pass may already have moved the adventurer on.
 pub fn know_the_town(map: &WorldMap, knowledge: &mut Knowledge) {
     let Some(town) = map.place(TOWN) else { return };
     let reading = knowledge.current();
     knowledge.switch(TOWN);
     for p in town.terrain.bounds().cells() {
-        knowledge.mark(p);
+        knowledge.learn(p);
     }
     knowledge.switch(reading);
 }

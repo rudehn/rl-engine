@@ -495,7 +495,7 @@ fn laid_in(room: Rect, piece: &Prefab, keep: &[Point]) -> Option<Point> {
 /// Panics if `roll` is not below the sum of `weights`; every caller draws
 /// it from `0..total` first, so that sum is always the bound `roll` was
 /// drawn under.
-fn pick_weighted(weights: &[u32], roll: u32) -> usize {
+pub(crate) fn pick_weighted(weights: &[u32], roll: u32) -> usize {
     let mut roll = roll;
     weights
         .iter()

@@ -4,6 +4,8 @@
 // Every field (the ones marked "optional" may be left out):
 //   name:      unique; the spawn table and drops refer to it; one of it, singular, since the engine
 //              says a stack as "12 slugs"
+//   mass:      optional; true for a name said with no "a", a pair named in the plural: "You put on
+//              combat gauntlets.", never "a combat gauntlets"; false when left out
 //   glyph:     one character
 //   color:     (r, g, b) in 0..=1
 //   slot:      optional; where it is worn: "main hand" | "off hand" | "head" | "torso" | "arms" | "legs"
@@ -140,8 +142,8 @@
     (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), slot: "head", tags: ["armor"], armor: 1, dark_sight: 6, enchant: (max: 3, dark_sight: 1)),
     (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), slot: "torso", tags: ["armor"], armor: 1, enchant: (max: 3)),
     (name: "composite plate", glyph: '[', color: (0.9, 0.9, 0.85), slot: "torso", tags: ["armor"], armor: 2, resists: [("energy", 10)], enchant: (max: 3)),
-    (name: "combat gauntlets", glyph: '[', color: (0.7, 0.7, 0.7), slot: "arms", tags: ["armor"], armor: 1, enchant: (max: 3)),
-    (name: "armored greaves", glyph: '[', color: (0.65, 0.65, 0.6), slot: "legs", tags: ["armor"], armor: 1, enchant: (max: 3)),
+    (name: "combat gauntlets", mass: true, glyph: '[', color: (0.7, 0.7, 0.7), slot: "arms", tags: ["armor"], armor: 1, enchant: (max: 3)),
+    (name: "armored greaves", mass: true, glyph: '[', color: (0.65, 0.65, 0.6), slot: "legs", tags: ["armor"], armor: 1, enchant: (max: 3)),
     // Knits its wearer's wounds, a point every ten turns while it is
     // worn, and a turn quicker for every level, to a point every turn at
     // +9. The clock starts when it goes on, so it is a plate to live in,

@@ -16,7 +16,7 @@
             crates/rl-ui/src/interact.rs
             crates/rl-ui/src/focus.rs
             crates/rl-save/src/run.rs
-     fingerprint: b28275b0 -->
+     fingerprint: 30735ec8 -->
 
 # Props
 
@@ -64,7 +64,7 @@ Each trigger is the `TriggerSpec` an item's are, an `on` moment by name, an `Are
 `report_entered` reads `Stepped`, which the move resolver writes for every step it lets through, so anything that walks sets off a plate, and it lands in the same pass, before damage.
 `report_destroyed` reads `DeathEvent`, which a prop with `Health` raises like anything else, and since the prop is gone by the end of the frame it leaves a `Remnant` carrying its triggers and its name, reported and landed a pass later; a prop with nothing to do when broken leaves none.
 Both only report `Fired { on, moment, by, at }`, the second through the remnant; [Effects](effects.md) lands the list, rolling each chance and reading each argument exactly as a spell does, over the one cell or the burst the trigger names, and a game reads the same message for what no effect can say.
-`Hidden { spot }` is a prop nobody has spotted: the map view and a mind's contributor both skip one, which is a query filter rather than a second drawing path, and `spot_hidden_props` rolls `spot` percent a turn for the player alone while it is in sight, writing `Spotted` and taking the component off.
+`Hidden { spot }` is a prop nobody has spotted: the map view, what it remembers and a mind's contributor all skip one, which is a query filter rather than a second drawing path, and `spot_hidden_props` rolls `spot` percent a turn for the player alone while it is in sight, writing `Spotted` and taking the component off.
 `perceive_props` puts what the mind holding the turn can see into `Snapshot::props` as a `PropView` of which entity, where, and whose side, so a mind that walks to wrecks and a mind that walks to crates read one list.
 
 ## Using it

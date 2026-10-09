@@ -26,6 +26,9 @@
 //!   item ids: a banded table drawn by weight, by group and by tag, what
 //!   the dead leave, a place's scatter, and how good a found thing is by
 //!   band.
+//! - [`namegen`]: names drawn from syllables, a set of pools and weighted
+//!   patterns per kind of name in one RON file, every drawn name checked
+//!   against rejections and drawn again a bounded number of times.
 //! - [`prop`]: what stands on a map that is neither an actor nor an item,
 //!   as data: a look, what it offers, what it holds, what sets it off and
 //!   how hard it is to spot.
@@ -35,6 +38,9 @@
 //!   tile or a slot, a prop, an item row, a monster or a mark, every name
 //!   but a fixed item's resolved at load; the terrain and the stamp are
 //!   `rl-mapgen`'s.
+//! - [`layout`]: the shapes a place is grown from, the districts that
+//!   favor some of them and the recipes a place names, as one file with
+//!   every name resolved at load; the growing is `rl-mapgen`'s.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
 //! - [`work`]: one thing an actor does across many turns, counted in its
 //!   own turns, and the one cell it reaches its target from.
@@ -70,7 +76,9 @@ pub mod faction;
 pub mod fire;
 pub mod forecast;
 pub mod gas;
+pub mod layout;
 pub mod loot;
+pub mod namegen;
 pub mod names;
 pub mod prefab;
 pub mod prop;
@@ -95,7 +103,9 @@ pub use faction::{FactionId, Factions, Relation};
 pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
 pub use gas::{Breath, GasDef, GasId};
+pub use layout::LayoutDef;
 pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
+pub use namegen::{NameBook, NameCase, NameSet};
 pub use names::{NameRef, Names};
 pub use prefab::{Coverage, CoverageRow, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
@@ -127,6 +137,7 @@ pub mod prelude {
     pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
     pub use crate::gas::{Breath, GasDef, GasId};
     pub use crate::loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
+    pub use crate::namegen::{NameBook, NameCase, NameSet};
     pub use crate::names::{NameRef, Names};
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};

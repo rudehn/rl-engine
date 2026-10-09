@@ -18,7 +18,7 @@
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 8158a100 -->
+     fingerprint: d79f0261 -->
 
 # Statuses
 

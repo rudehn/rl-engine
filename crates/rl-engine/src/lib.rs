@@ -196,6 +196,9 @@ impl PluginGroup for RoguelikePlugins {
 /// let _begin: fn(&mut World) = begin_run;
 /// fn records(_: RunRecord, _: RunRecords, _: RecordOutcome, _: RecordSection, _: RecordRun, _: RecordsPlugin, _: RecordsPanel) {}
 /// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: OverworldPlugin, _: Saves) {}
+/// // Bevy's own names a game uses beside the engine's: the shape a mesh
+/// // is made from, which a grown place's shapes must not shadow.
+/// fn bevy_own(_: Rectangle, _: Circle) {}
 /// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
 /// fn title_screen(_: TitlePanel, _: TitleWords, _: TitleMenu, _: TitleRow, _: TitleSet) {}
 /// let _up = title_is_up;

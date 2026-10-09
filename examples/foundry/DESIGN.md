@@ -44,6 +44,23 @@ The foundry is not collapsing around the commando; it is simply old, neglected a
 It is dark, and getting darker the deeper it goes.
 The tone is tense rather than heroic: one person with a lamp, in a building that is still working, surrounded by things that are not.
 
+## Decks
+
+A deck is grown, not laid out: a first piece, then every later one attached to a wall of what already stands, so rooms share walls and every deck can be walked end to end (**exists**).
+What is drawn depends on where on the deck it goes: a deck has districts of wide halls opening onto each other, of rooms behind hatches, and of narrow service passages, with no wall between them.
+The longest detours are then cut through with a hatch, so there is more than one way round, and a passage that leads nowhere is rock again.
+A deck that falls short of its recipe, too few loops, too many dead ends, the way down too near the way in, is thrown away and grown again from the same seed.
+
+Two recipes in `assets/layout.ron` **exist**: the upper three decks favor halls, and the seven below are a tighter warren with more ways round.
+A deck is 84 by 48, larger than the screen, and stays that small while there is this little to put in it; the size is a number in the recipe.
+
+Everything the grower knows about a deck it publishes: each area, each way through, and for each area whether it is a dead end, a chokepoint or a junction and how far it lies from the direct route.
+Three things are **planned** on top of that, in this order:
+
+- A furnisher that fills a room to its size, rows of one machine with aisles between, in place of one piece centered in every room.
+- A director that decides what a run holds and where: pieces that exist in some runs and not others, limits per deck and per run, and what is worth finding put where it is far from the direct route.
+- Tells: a thing seen before it is reached.
+
 ## Rooms
 
 Every room should say what it was for when the foundry was working, and a blank room is what this is here to avoid.
@@ -99,7 +116,7 @@ Each zone has its own tiles, hazards, light and population, and bands overlap at
 | 7-9 | Reactor ring | Dark | Coolant vents, collapsed sections | Heavier droids, bounty hunters, lamp moths |
 | 10 | The core | Dark | All of the above | The foundry's best, and whoever followed you |
 
-All ten decks **exist** and are played; the four zones are **planned**, so every deck is still built as an assembly hall and they differ only in population and depth.
+All ten decks **exist** and are played; the four zones are **planned**, so the decks differ only in their layout recipe, their population and their depth.
 
 A charge is set on the reactor console on decks 3, 6 and 9, and on the core on deck 10.
 Setting a charge takes three whole turns beside the console and opens a pick of one upgrade from three (**exists** on decks 3, 6, 9 and 10).

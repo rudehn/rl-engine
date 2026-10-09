@@ -47,10 +47,14 @@ const TARGET_ROWS: i32 = 10;
 /// badges, blank most turns, which sets what is worn off from the gauges.
 const VITALS_ROWS: i32 = 8;
 /// Rows the rail gives to what is worn: the heading and its rule, one
-/// apiece for the seven slots, and a blank row setting the list off from
-/// what is nearby under it, the gap the badges' row leaves above. Nothing
-/// Undermere wears says anything beside its name yet, so no slot wraps.
-const GEAR_ROWS: i32 = 10;
+/// apiece for the seven slots, a blank row setting the list off from what
+/// is nearby under it, the gap the badges' row leaves above, and two more
+/// for names that wrap. A name past nineteen cells wraps,
+/// `unidentified chain` over `mail`, and a ring that clings says so on a
+/// row of its own, so an unidentified ring that will not come off and
+/// unidentified armor beside it take the three; past that a name is kept
+/// to its row, and no slot is ever pushed off the rail.
+const GEAR_ROWS: i32 = 12;
 
 /// The screen, cut up once so every panel and the map agree on it.
 ///
@@ -652,6 +656,292 @@ mod tests {
         let face = ttf_parser::Face::parse(DEJAVU_SANS_MONO, 0).expect("the typeface is a font");
         let lacking: Vec<_> = seen.iter().filter(|(glyph, _)| face.glyph_index(**glyph).is_none()).collect();
         assert!(lacking.is_empty(), "the typeface has no glyph for {lacking:?}");
+    }
+
+    /// The cell the screen's map view draws the world tile `p` in.
+    fn tile_drawn(app: &App, p: Point) -> Option<rl_engine::rl_render::Cell> {
+        let view = *app.world().resource::<MapView>();
+        view.get(app.world().resource::<Terminal>(), p)
+    }
+
+    /// Whether the adventurer sees `p` now.
+    fn sees(app: &mut App, p: Point) -> bool {
+        let me = undermere::testing::adventurer(app);
+        app.world().get::<Viewshed>(me).expect("eyes").can_see(p)
+    }
+
+    /// Stands the adventurer on the floor tile nearest `p` from which `p`
+    /// is out of sight but still on the screen, the way a player walks a
+    /// few rooms away from something; returns where.
+    fn walk_out_of_sight_of(app: &mut App, p: Point) -> Point {
+        let me = undermere::testing::adventurer(app);
+        let place = app.world().resource::<WorldMap>().place(undermere::testing::here(app)).expect("a place").terrain.bounds();
+        let mut cells: Vec<Point> = place.cells().filter(|c| rl_engine::rl_core::geometry::chebyshev(*c, p) > 4).collect();
+        cells.sort_by_key(|c| (rl_engine::rl_core::geometry::chebyshev(*c, p), *c));
+        for cell in cells {
+            if !app.world().resource::<WorldMap>().is_walkable(cell) || app.world().resource::<Occupancy>().is_occupied(cell) {
+                continue;
+            }
+            undermere::testing::stand_on(app, me, cell);
+            if undermere::testing::at(app, me) == cell && !sees(app, p) && tile_drawn(app, p).is_some() {
+                return cell;
+            }
+        }
+        panic!("nowhere on the place is out of sight of {p:?} and on the screen with it");
+    }
+
+    /// The bug a playtest found: the stairs left behind vanished from the
+    /// map the moment they were out of sight, since only tiles were
+    /// remembered. Walked away from, they are drawn where they were seen,
+    /// darker than in sight; and so they still are after going down a
+    /// floor and coming back.
+    #[test]
+    fn stairs_walked_away_from_are_still_drawn_where_they_were_seen() {
+        for s in 0..2 {
+            let mut app = on_screen(RunSeed(s));
+            let me = undermere::testing::arrive(&mut app, undermere::dungeon::map_of(2));
+            let stairs = undermere::testing::at(&app, me);
+            let seen = tile_drawn(&app, stairs).expect("on screen");
+            let far = walk_out_of_sight_of(&mut app, stairs);
+            let remembered = tile_drawn(&app, stairs).expect("on screen");
+            assert_eq!(remembered.glyph, '<', "seed {s}: the way up, out of sight from {far:?}, is still drawn");
+            let lum = |c: Color| c.to_linear().luminance();
+            assert!(lum(remembered.fg) < lum(undermere::stairs::STAIRS) * 0.6, "seed {s}: and drawn as remembered, not as seen: {seen:?} then {remembered:?}");
+
+            undermere::testing::arrive(&mut app, undermere::dungeon::map_of(3));
+            app.world_mut().write_message(WarpRequest { actor: me, to: Destination::Place { map: undermere::dungeon::map_of(2), arrive: Arrive::At(far) } });
+            undermere::testing::settle(&mut app);
+            assert!(!sees(&mut app, stairs), "seed {s}");
+            assert_eq!(tile_drawn(&app, stairs).map(|c| c.glyph), Some('<'), "seed {s}: down a floor and back up, the floor above remembers its stairs");
+        }
+    }
+
+    /// The same screen a few frames into a run continued from `text`, the
+    /// way a player continues one: the save in the slot at launch, and
+    /// Continue, which the title picks out when there is one, taken.
+    fn continued_on_screen(text: &str) -> App {
+        let mut app = undermere::testing::headless(RunSeed(0));
+        app.world().resource::<Saves>().persist(undermere::save::SLOT, text).expect("the memory backend takes it");
+        let screen = Screen::new();
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
+        app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
+        add_panels(&mut app, &screen);
+        app.finish();
+        app.cleanup();
+        app.update();
+        press(&mut app, KeyCode::Enter);
+        for _ in 0..4 {
+            app.update();
+        }
+        app
+    }
+
+    /// What the adventurer saw is saved with the run: continued, the stairs
+    /// walked away from are drawn where they were seen.
+    #[test]
+    fn a_continued_run_still_draws_the_stairs_it_walked_away_from() {
+        let mut app = on_screen(RunSeed(1));
+        let me = undermere::testing::arrive(&mut app, undermere::dungeon::map_of(2));
+        let stairs = undermere::testing::at(&app, me);
+        walk_out_of_sight_of(&mut app, stairs);
+        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is saved");
+        let text = app.world().resource::<Saves>().load(undermere::save::SLOT).expect("the slot reads").expect("a save");
+
+        let mut continued = continued_on_screen(&text);
+        assert_eq!(undermere::testing::here(&continued), undermere::dungeon::map_of(2), "continued where it was saved");
+        assert!(!sees(&mut continued, stairs));
+        assert_eq!(tile_drawn(&continued, stairs).map(|c| c.glyph), Some('<'));
+    }
+
+    /// The adventurer knows the town they live in, what stands in it as
+    /// well as its walls: on the first frame of a run every prop of
+    /// Mereholt on the screen is drawn, in sight or not.
+    #[test]
+    fn mereholt_is_drawn_whole_with_what_stands_in_it_from_the_first_frame() {
+        for s in 0..2 {
+            let mut app = on_screen(RunSeed(s));
+            let town = undermere::dungeon::TOWN;
+            let mut q = app.world_mut().query_filtered::<(&Position, &OnMap, &Glyph), With<Prop>>();
+            let props: Vec<(Point, char)> = q.iter(app.world()).filter(|(_, on, _)| on.0 == town).map(|(p, _, g)| (p.0, g.ch)).collect();
+            let unseen: Vec<(Point, char)> = props.into_iter().filter(|(p, _)| tile_drawn(&app, *p).is_some() && !sees(&mut app, *p)).collect();
+            assert!(unseen.len() > 3, "seed {s}: some of the town's props are on the screen and out of sight: {unseen:?}");
+            let drawn: Vec<(Point, char)> = unseen.iter().map(|(p, _)| (*p, tile_drawn(&app, *p).expect("on screen").glyph)).collect();
+            assert_eq!(drawn, unseen, "seed {s}: and every one of them is drawn");
+        }
+    }
+
+    /// The text inside a panel's frame on row `y`, from its left border to
+    /// its right, the border and the padding cut off and the end trimmed.
+    fn framed(app: &App, rect: Rect, y: i32) -> String {
+        let line: String = row(app, y).chars().skip(rect.x as usize + 2).take(rect.width as usize - 4).collect();
+        line.trim_end().to_string()
+    }
+
+    /// The pack opened on `thing`: its row in the list, and every line under
+    /// the rule saying what it is, top to bottom, as the screen draws them.
+    fn pack_on(app: &mut App, thing: Entity) -> (String, Vec<String>) {
+        press(app, KeyCode::KeyI);
+        let at = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == thing).expect("in the pack");
+        app.world_mut().resource_mut::<InventoryMenu>().selected = at;
+        app.update();
+        let pack = Screen::new().pack;
+        let lines: Vec<String> = (pack.y + 1..pack.bottom() - 1).map(|y| framed(app, pack, y)).collect();
+        let rule = lines.iter().position(|l| l.starts_with('\u{2500}')).expect("a rule under the rows");
+        let listed = lines[..rule].iter().find(|l| l.contains(&undermere::testing::name_of(app, thing))).cloned().unwrap_or_default();
+        let detail = lines[rule + 1..].iter().take_while(|l| !l.is_empty()).cloned().collect();
+        press(app, KeyCode::Escape);
+        (listed, detail)
+    }
+
+    /// The look cursor opened on `cell`: every line inside its panel, top to
+    /// bottom, as the screen draws them, wherever it moved to.
+    fn looking_at(app: &mut App, cell: Point) -> Vec<String> {
+        press(app, KeyCode::KeyX);
+        app.world_mut().resource_mut::<InspectView>().cursor = cell;
+        app.update();
+        app.update();
+        let rect = app.world().resource::<rl_engine::rl_ui::panel::inspect::InspectPlacement>().0.expect("the panel is up");
+        let lines = (rect.y + 1..rect.bottom() - 1).map(|y| framed(app, rect, y)).take_while(|l| !l.is_empty()).collect();
+        press(app, KeyCode::Escape);
+        lines
+    }
+
+    /// A found chain mail is called unidentified chain mail until its level
+    /// is known; the pack says what any chain mail is at +0, that its
+    /// numbers are shown so, and how long it must be worn to tell its
+    /// level, counting down while it is worn; the first time it goes on,
+    /// the log says so once; and worn long enough, it is +2 chain mail and
+    /// reads its own numbers. Played on the screen that ships, in the
+    /// pack's own frame.
+    #[test]
+    fn a_found_chain_mail_is_unidentified_and_says_how_long_until_its_level_is_known() {
+        use undermere::testing::{equip, find, give, name_of, pass_turns, said, unequip};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let mail = find(&mut app, "chain mail", 2);
+        give(&mut app, me, mail);
+        app.update();
+        let (listed, detail) = pack_on(&mut app, mail);
+        assert!(listed.starts_with("[ unidentified chain mail"), "{listed:?}");
+        let short = "needs 13 strength, you have 12: -1 armor";
+        let found = ["numbers shown at +0", "wearing it 200 turns will tell its level", "armor +3", "footfall +1", short, "goes on the body"];
+        assert_eq!(detail, found, "what any chain mail is, and what wearing it will tell");
+
+        let worn_for = |app: &App| said(app).iter().filter(|l| *l == "You will know its level once you have worn it 200 turns.").count();
+        equip(&mut app, me, mail);
+        assert_eq!(worn_for(&app), 1, "put on, the log says how long: {:#?}", said(&app));
+        pass_turns(&mut app, 60);
+        let (_, detail) = pack_on(&mut app, mail);
+        // Sixty turns, and the turn it went on.
+        assert_eq!(detail, ["numbers shown at +0", "level known in 139 more turns worn", "armor +3", "footfall +1", short, "worn on the body"]);
+        unequip(&mut app, me, mail);
+        let (_, detail) = pack_on(&mut app, mail);
+        assert_eq!(detail[1], "wearing it 139 more turns will tell its level", "taken off, it keeps what it counted");
+        equip(&mut app, me, mail);
+        assert_eq!(worn_for(&app), 1, "and put on again, the log says nothing more");
+
+        pass_turns(&mut app, 140);
+        assert_eq!(name_of(&app, mail), "+2 chain mail");
+        let (listed, detail) = pack_on(&mut app, mail);
+        assert!(listed.starts_with("[ +2 chain mail"), "{listed:?}");
+        assert_eq!(detail, ["armor +5", "footfall +1", short, "worn on the body"], "known, its own numbers and nothing more");
+    }
+
+    /// The look cursor over a found sword lying on the floor calls it
+    /// unidentified and says what any sword strikes for at +0; over a
+    /// potion of a kind not yet known, only that it is unknown, as before.
+    #[test]
+    fn the_look_cursor_says_what_a_found_things_kind_is_and_a_potion_not_yet_known_is_unknown() {
+        use undermere::testing::{at, find, lay, lay_floor};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let here = at(&app, me);
+        let (east, west) = (here.offset(1, 0), here.offset(-1, 0));
+        lay_floor(&mut app, &[east, west]);
+        let sword = find(&mut app, "sword", 1);
+        lay(&mut app, sword, east);
+        let potion = find(&mut app, "potion of extra healing", 0);
+        lay(&mut app, potion, west);
+        app.update();
+        let lines = looking_at(&mut app, east);
+        assert_eq!(lines[0], ") unidentified sword", "{lines:#?}");
+        assert_eq!(lines[2..], ["numbers shown at +0", "wearing it 200 turns will tell its level", "1d7+1 slash", "needs 12 strength"], "{lines:#?}");
+        let lines = looking_at(&mut app, west);
+        assert_eq!(lines[2..], ["unknown"], "a potion of a kind not yet known: {lines:#?}");
+    }
+
+    /// The kit's sword, known whole at nought, is called sword with no
+    /// number, and the pack says the strength it asks in the muted tone;
+    /// a war hammer found asks more than the adventurer has, and the pack
+    /// says by how much and what it costs, in the bad tone.
+    #[test]
+    fn the_pack_says_what_a_thing_asks_of_strength_and_warns_when_the_adventurer_is_short() {
+        use undermere::testing::{find, give};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let sword =
+            app.world().get::<Equipped>(me).and_then(|w| w.in_slot(app.world().resource::<Registries>().slots.expect("main hand"))).expect("the kit's sword");
+        let (listed, detail) = pack_on(&mut app, sword);
+        assert!(listed.starts_with(") sword") && listed.ends_with("main hand"), "{listed:?}");
+        assert_eq!(detail, ["1d7+1 slash", "needs 12 strength", "worn on the main hand"]);
+
+        let hammer = find(&mut app, "war hammer", 1);
+        give(&mut app, me, hammer);
+        app.update();
+        let (listed, detail) = pack_on(&mut app, hammer);
+        assert!(listed.starts_with(") unidentified war hammer"), "{listed:?}");
+        let warning = "needs 20 strength, you have 12: -32 accuracy";
+        assert!(detail.iter().any(|l| l == warning), "{detail:#?}");
+        // The line as the screen draws it, in the bad tone.
+        press(&mut app, KeyCode::KeyI);
+        let at = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == hammer).expect("in the pack");
+        app.world_mut().resource_mut::<InventoryMenu>().selected = at;
+        app.update();
+        let pack = Screen::new().pack;
+        let y = (pack.y..pack.bottom()).find(|y| framed(&app, pack, *y) == warning).expect("the warning is on the screen");
+        let bad = app.world().resource::<Palette>().get(Tones::BAD);
+        assert_eq!(app.world().resource::<Terminal>().get(pack.x + 2, y).map(|c| c.fg), Some(bad), "in the bad tone");
+    }
+
+    /// A ring of light found at -2 clings to the adventurer when it goes on,
+    /// and the pack then says its level is below nought without saying how
+    /// far, what any ring of light does for each level, how long until its
+    /// level is known, and that it will not come off; its name says it is
+    /// unidentified.
+    #[test]
+    fn a_cursed_ring_that_clung_says_its_level_is_below_nought_and_will_not_come_off() {
+        use undermere::testing::{equip, find, said};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let ring = find(&mut app, "ring of light", -2);
+        equip(&mut app, me, ring);
+        let lines = said(&app);
+        assert!(lines.iter().any(|l| l == "The ring of light clings to you, and will not come off."), "{lines:#?}");
+        let (listed, detail) = pack_on(&mut app, ring);
+        assert!(listed.starts_with("= unidentified ring of light"), "{listed:?}");
+        let slot = app.world().resource::<InventoryView>().rows.iter().find(|r| r.entity == ring).map(|r| r.slot_name.clone()).expect("worn");
+        let shown = ["level below nought, how far not yet known", "level known in 199 more turns worn", "light +1 a level"];
+        assert_eq!(detail[..3], shown, "{detail:#?}");
+        assert_eq!(detail[3..], [format!("worn on the {slot}"), "will not come off".to_string()], "{detail:#?}");
+
+        // The rail says it will not come off as the pack does, under the
+        // whole name, and every slot is still drawn; and the vitals' armor
+        // is plain, since no ring of light moves it.
+        let gear = Screen::new().gear;
+        let rail: Vec<String> = (gear.y..gear.bottom()).map(|y| from(&app, gear.x, y)).collect();
+        let at = rail.iter().position(|r| r.starts_with(&slot)).expect("the ring's slot");
+        assert_eq!(
+            rail[at..at + 3],
+            [format!("{slot:<12} = unidentified ring"), format!("{:15}of light", ""), format!("{:15}will not come off", "")],
+            "{rail:#?}"
+        );
+        assert!(rail.iter().any(|r| r.starts_with("light")), "the last slot is still on the rail: {rail:#?}");
+        let x = gear.x + 15;
+        let bad = rl_engine::rl_ui::readable(app.world().resource::<Palette>().get(Tones::BAD), app.world().resource::<Palette>());
+        assert_eq!(app.world().resource::<Terminal>().get(x, gear.y + at as i32 + 2).map(|c| c.fg), Some(bad), "in the bad tone");
+        let vitals = Screen::new().vitals;
+        let armor = (vitals.y..vitals.bottom()).map(|y| from(&app, vitals.x, y)).find(|r| r.contains("armor")).expect("the armor");
+        assert!(armor.contains("armor 1") && !armor.contains("armor 1?"), "{armor:?}");
     }
 
     /// A run played from a script, a replay, a recording or a capture,

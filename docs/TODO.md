@@ -373,6 +373,17 @@ Left over from the worn gear and unseen slice on 2026-09-27, the same way.
   Since 2026-10-05 a `use` trigger may be aimed, and Undermere's staffs and wands harm others from one, so the case is real; no game yet has an unseen status beside an aimed use, Foundry's cloak having nothing to zap and Undermere no cloak, so it waits for the first that has both.
   The aimed use's landing is worked out in `ResolveSet::Triggers`, before `reveal_attackers` runs, so the fix is a report of who it landed on that the reveal can read, as `AbilityEvent::Used` is for an ability.
 
+Left over from the layout slice on 2026-10-01: the three pieces of work `docs/design/layout.md` section 0 says key on what it publishes.
+
+- **A furnisher that fills an area to its size.**
+  Rows of one machine with aisles between, by a theme per district, in place of `StampEachRoom`'s one centered piece.
+- **A run director.**
+  Which pieces a run holds and on which place, limits per place and per run, and rewards put by `AreaFacts::seclusion`; prefabs attached by their own door as a `Shape` belong here.
+- **Tells.**
+  A thing seen before it is reached.
+- **Foundry's recipes are a first draw.**
+  Two recipes over three districts at 84 by 48; the size and the mix are meant to grow as the furnisher and the director give a deck more to hold.
+
 ## Tracked elsewhere
 
 - The plan's "Next" line: nights on Corsair's surface, scripted encounters, Bevy UI presenters over the panel views, and the living-world-rogue conversion.

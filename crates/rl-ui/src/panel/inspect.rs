@@ -264,10 +264,17 @@ pub fn draw_inspect(
         terminal.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
-    // A thing not yet known is no more than its name here, as in the bag.
-    if view.unknown && y < inner.bottom() {
-        terminal.print_on(inner.x, y, &clip("unknown", width), palette.get(Tones::MUTED), bg);
-        y += 1;
+    // A thing not yet known is no more than its name here, as in the bag,
+    // and what the game says it seems in place of the bare word.
+    if view.unknown {
+        let said: Vec<(&str, ToneId)> = match view.seems.as_slice() {
+            [] => vec![("unknown", Tones::MUTED)],
+            seems => seems.iter().map(|f| (f.text.as_str(), f.tone)).collect(),
+        };
+        for (text, tone) in said.into_iter().take((inner.bottom() - y).max(0) as usize) {
+            terminal.print_on(inner.x, y, &clip(text, width), palette.get(tone), bg);
+            y += 1;
+        }
     }
     if let Some(work) = &subject.work
         && y < inner.bottom()
@@ -622,6 +629,30 @@ mod tests {
 
         let (_, roomy) = looked_at_with(TRAITS, height + 1);
         assert_eq!(roomy[first + 10..].join(" "), TRAITS[5], "with room for the sixth, it is drawn and nothing says more");
+    }
+
+    /// What the game says a thing not yet known seems is printed in place
+    /// of the bare `unknown`, a line apiece in its own tone, with what else
+    /// it added under it.
+    #[test]
+    fn what_a_game_says_a_thing_not_yet_known_seems_is_said_in_place_of_unknown() {
+        let mut stage = staged();
+        let vial = stage.thing("vial", '!', 2, 0);
+        stage.app.world_mut().entity_mut(vial).insert(rl_bevy::Unknown);
+        stage.app.add_systems(
+            Update,
+            (|mut view: ResMut<InspectView>, mut facets: ResMut<crate::Facets>| {
+                view.seems.push(facets.facet("seems", "strength not yet known").toned(Tones::BAD));
+                view.facets.push(facets.facet("holds", "holds a draught"));
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
+        assert_eq!([inner(22), inner(23), inner(24), inner(25)], ["! vial", "2 tiles away, on floor", "strength not yet known", "holds a draught"]);
+        let palette = stage.app.world().resource::<Palette>();
+        assert_eq!(stage.app.world().resource::<Terminal>().get(2, 24).map(|c| c.fg), Some(palette.get(Tones::BAD)), "in its own tone");
     }
 
     #[test]

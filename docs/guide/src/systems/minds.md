@@ -17,7 +17,7 @@
             crates/rl-bevy/src/fire.rs
             crates/rl-bevy/src/noise.rs
             crates/rl-bevy/src/effects/mod.rs
-     fingerprint: 7c54f67a -->
+     fingerprint: 67b3a1a2 -->
 
 # Minds
 

@@ -7,7 +7,7 @@
             crates/rl-bevy/src/knowledge.rs
             crates/rl-grid/src/fov.rs
             crates/rl-grid/src/light.rs
-     fingerprint: 2eb1e255 -->
+     fingerprint: 1c7b9fa7 -->
 
 # Sight and lighting
 
@@ -42,6 +42,7 @@ The `Lighting` resource carries `ambient` and `threshold` as public fields and i
 `gate` writes the second from the first, and `perceives` answers the same question about a single target without a viewshed; with no `Lighting` it is always true.
 `Viewshed::everywhere()` is one that sees every tile of the loaded window: its cast sets both grids whole, asking neither the shadowcast nor the light, which is what an onlooker carries so that a run nobody plays is shown and told in full.
 A mind's range comes from `Perception`, and an actor with `RevealsMap` writes `visible` into `Knowledge`, so a dark corridor is not remembered until something lights it.
+`Knowledge` also keeps, per map, a `Recalled` glyph and colour for each tile a still thing was last seen on, which the map view writes through `see_still` and reads through `recalled`; `learn` marks a tile known without sight and has the next look take in what stands on it.
 
 ## Using it
 

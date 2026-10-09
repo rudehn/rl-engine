@@ -307,7 +307,7 @@ fn draw_line(terminal: &mut Terminal, rect: Rect, view: &VitalsView, layout: &Vi
 }
 
 /// The armor reading, with a question mark after it while it counts a
-/// worn thing not yet known, the way a `+?` on a name marks a level.
+/// worn thing not yet known, a figure the wearer cannot settle yet.
 fn armor_reading(armor: i32, uncertain: bool) -> String {
     format!("armor {armor}{}", if uncertain { "?" } else { "" })
 }
@@ -345,7 +345,7 @@ mod tests {
         for rect in [Rect::new(0, 0, 60, 1), Rect::new(0, 0, 24, 6)] {
             let mut stage = Stage::new(VitalsPanel::new(rect).bars(6)).screen(60, 6);
             let body = rl_rules::Registry::from_defs(vec![rl_rules::SlotDef::new("body")]).unwrap().expect("body");
-            let mail = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("+? chain mail"), rl_bevy::Armor(5), rl_bevy::Unknown)).id();
+            let mail = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("chain mail"), rl_bevy::Armor(5), rl_bevy::Unknown)).id();
             let mut worn = rl_bevy::Equipped(rl_rules::Equipment::with_slot_count(1));
             worn.equip(mail, &rl_rules::EquipShape::in_slot(body)).expect("the slot exists");
             let player = stage.player;

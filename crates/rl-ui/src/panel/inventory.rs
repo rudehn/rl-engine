@@ -30,7 +30,9 @@
 //! are left, and whatever the game pushed onto it in
 //! [`ViewSet::Annotate`](crate::ViewSet). A thing not yet known is
 //! described as unknown, by where it goes and what the game pushed, and by
-//! nothing else.
+//! nothing else; what the game says it seems, in
+//! [`ItemRow::seems`](crate::view::inventory::ItemRow::seems), is said in
+//! place of the bare word.
 //!
 //! Every action closes every screen, since it spends a turn and the turn
 //! loop assumes nothing is up while it runs.
@@ -402,8 +404,15 @@ fn strike(s: &Strike) -> String {
 fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
     let mut lines: Vec<(String, ToneId)> = Vec::new();
     let mut say = |text: String, tone: ToneId| lines.extend(wrap(&text, width).into_iter().map(|l| (l, tone)));
-    if row.unknown {
+    // What the game says a thing not yet known seems, its kind known and
+    // not its level, say, and the bare word where it says nothing.
+    if row.unknown && row.seems.is_empty() {
         say("unknown".to_string(), Tones::MUTED);
+    }
+    if row.unknown {
+        for seems in &row.seems {
+            say(seems.text.clone(), seems.tone);
+        }
     }
     if let Some(blow) = &row.blow {
         say(strike(blow), Tones::TEXT);
@@ -1193,6 +1202,50 @@ mod tests {
         stage.press(KeyCode::KeyU);
         let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
         assert_eq!(uses, vec![draught], "and it is used as what it is");
+    }
+
+    /// A game that knows what a thing not yet known seems says so in place
+    /// of the bare `unknown`, line by line in its own tones, and the numbers
+    /// it wrote into the row read as a known thing's do; what it seems is
+    /// never said of a thing known, and a thing it says nothing of still
+    /// reads `unknown`.
+    #[test]
+    fn what_a_game_says_an_unknown_thing_seems_is_said_in_place_of_unknown() {
+        let mut stage = Stage::new_with(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"), |app| {
+            app.world_mut().resource_mut::<Registries>().slots = Registry::from_defs(vec![SlotDef::new("body")]).unwrap();
+        })
+        .screen(52, 14);
+        let player = stage.player;
+        let body = stage.app.world().resource::<Registries>().slots.expect("body");
+        let coat = |name: &str| (Item, Name::new(name.to_string()), Wearable(EquipShape::in_slot(body)), Armor(5));
+        let unknown = stage.app.world_mut().spawn((coat("mail"), Unknown)).id();
+        let known = stage.app.world_mut().spawn(coat("coat")).id();
+        let silent = stage.app.world_mut().spawn((coat("hauberk"), Unknown)).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![unknown, known, silent] });
+        stage.app.add_systems(
+            Update,
+            (move |mut view: ResMut<InventoryView>, mut facets: ResMut<crate::Facets>| {
+                for row in view.rows.iter_mut().filter(|r| r.entity != silent) {
+                    row.seems.push(facets.facet("seems", "worth not yet known").toned(Tones::MUTED));
+                    row.seems.push(facets.facet("seems", "known in 3 turns").toned(Tones::BAD));
+                    if row.unknown {
+                        row.armor = 3;
+                    }
+                }
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        stage.tick();
+        stage.press(KeyCode::KeyI);
+        let said = |stage: &Stage| detail(stage)[4..].iter().filter(|l| !l.is_empty()).cloned().collect::<Vec<_>>();
+        assert_eq!(said(&stage), ["worth not yet known", "known in 3 turns", "armor +3", "goes on the body"], "in place of the bare word");
+        let palette = stage.app.world().resource::<Palette>();
+        let tone_at = |y: i32| stage.app.world().resource::<Terminal>().get(2, y).map(|c| c.fg);
+        assert_eq!((tone_at(5), tone_at(6)), (Some(palette.get(Tones::MUTED)), Some(palette.get(Tones::BAD))), "each in its own tone");
+        stage.press(KeyCode::ArrowDown);
+        assert_eq!(said(&stage), ["armor +5", "goes on the body"], "a thing known needs no word on what it seems");
+        stage.press(KeyCode::ArrowDown);
+        assert_eq!(said(&stage), ["unknown", "goes on the body"], "and one the game said nothing of is unknown");
     }
 
     /// A thing not yet known that can be thrown says nothing of how far it

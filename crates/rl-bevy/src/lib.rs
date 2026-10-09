@@ -31,6 +31,7 @@ pub mod fov;
 pub mod gas;
 pub mod items;
 pub mod knowledge;
+pub mod layout;
 pub mod lighting;
 pub mod loot;
 pub mod minds;
@@ -84,7 +85,7 @@ pub use items::{
     Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore,
     PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
 };
-pub use knowledge::{Knowledge, KnowledgeSave, TileSet};
+pub use knowledge::{Knowledge, KnowledgeSave, Recalled, TileSet};
 pub use lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
