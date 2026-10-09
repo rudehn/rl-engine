@@ -6,6 +6,13 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- An actor's offer may have a price: the new `Offering::priced(price)` costs that much in the trade slice's `Currency`, and the gate refuses it to a taker carrying less with the new `Refused::Short(price)`, as it refuses one needing a tag the taker lacks; `Offer` carries the new `price` field beside its time.
+  Taken up, the price is paid as a deal is, from the taker's stacks into the offerer's own pack, given one if it carries none, before the game's `Interacted` answer runs in `TurnSet::React`, so a service is a verb with a price and the currency stays conserved.
+  A priced offer in a game with no `Currency` stops play, saying what is missing, rather than being refused for ever; a game that prices an offer adds `TradePlugin`.
+  `Currency::count(bag, piece)` and `Currency::is(tags)` are the trade slice's own way to count a purse, public so a screen counts by the same rule.
+  The offers screen shows a price beside the time, and a row the purse cannot meet reads `needs 50 scrip`, named by the currency's tag; `OfferRow` has the new `price` and `OffersView` the new `currency`.
+  A game constructing an `Offer` by hand adds `price: None`, and one that matches on `Refused` exhaustively gains an arm.
+
 - A trade has a screen: the new `TradePanel::new(rect)` goes up when the engine opens a trade and comes down when it ends, listing the trader's wares on the left with what one costs and the customer's pack on the right with what the trader would pay for one, the customer's currency at the foot, named by the currency's own `Name`.
   The direction keys walk the rows and cross between the sides, the cursors' confirm key buys or sells one of the row picked out, the new `TradeKeys::whole` (`a` by default) deals the whole of it, and the cursors' close key puts the screen away and ends the trade; dealing takes no turn and leaves the screen up.
   Its view is the new `TradeView`, kept by the new `TradeViewPlugin`: each side's rows are a `TradeRow` holding the shared `Row`, its count, the price of one and the `TradeRefusal` a deal for one would meet, greyed and said in the words of the new `TradeWords`, which a game replaces with `TradePanel::words`.

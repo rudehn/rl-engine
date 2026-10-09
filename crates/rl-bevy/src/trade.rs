@@ -117,6 +117,24 @@ pub struct Ware<'a> {
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Currency(pub TagId);
 
+impl Currency {
+    /// Whether a thing carrying `tags` is a piece of it.
+    pub fn is(&self, tags: Option<&Tagged>) -> bool {
+        tags.is_some_and(|t| t.contains(&self.0))
+    }
+
+    /// How much of it `bag` holds: a stack counts its count, a single
+    /// piece one. Each carried thing is read through `piece`, which gives
+    /// its tags and its stack.
+    ///
+    /// Through a reader rather than a query of its own, so the trade, the
+    /// offer gate and a screen each count with whatever they already hold,
+    /// the world or their own query, and still count by this one rule.
+    pub fn count<'a>(&self, bag: &Inventory, piece: impl Fn(Entity) -> (Option<&'a Tagged>, Option<&'a Stack>)) -> u32 {
+        bag.items.iter().map(|i| piece(*i)).filter(|(tags, _)| self.is(*tags)).map(|(_, stack)| stack.map_or(1, |s| s.count)).fold(0u32, u32::saturating_add)
+    }
+}
+
 /// The two sides of a trade.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Parties {
@@ -266,16 +284,9 @@ fn still_open(world: &World, parties: Parties) -> bool {
         && within_reach(whereabouts(world, parties.customer), whereabouts(world, parties.trader))
 }
 
-/// How much currency `who` carries: a stack counts its count, anything
-/// else one.
-fn purse(world: &World, who: Entity, currency: TagId) -> u32 {
-    let Some(bag) = world.get::<Inventory>(who) else { return 0 };
-    bag.items.iter().filter(|i| is_currency(world, **i, currency)).map(|i| world.get::<Stack>(*i).map_or(1, |s| s.count)).sum()
-}
-
-/// Whether `item` is a piece of the currency.
-fn is_currency(world: &World, item: Entity, currency: TagId) -> bool {
-    world.get::<Tagged>(item).is_some_and(|t| t.contains(&currency))
+/// How much currency `who` carries.
+fn purse(world: &World, who: Entity, currency: Currency) -> u32 {
+    world.get::<Inventory>(who).map_or(0, |bag| currency.count(bag, |i| (world.get::<Tagged>(i), world.get::<Stack>(i))))
 }
 
 /// Moves `count` of `item` out of `from`'s bag into `to`'s, and returns
@@ -326,9 +337,12 @@ fn hand_over(world: &mut World, from: Entity, to: Entity, item: Entity, count: u
 
 /// Moves `amount` of the currency from `payer`'s bag to `payee`'s,
 /// drawing the payer's pieces down in the order they are carried.
-fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currency: TagId) {
+///
+/// The crate's one way to spend it, a deal's price and an offer's alike,
+/// so what is paid is always a real pile that lands in someone's pack.
+pub(crate) fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currency: Currency) {
     let pieces: Vec<Entity> =
-        world.get::<Inventory>(payer).map(|b| b.items.iter().copied().filter(|i| is_currency(world, *i, currency)).collect()).unwrap_or_default();
+        world.get::<Inventory>(payer).map(|b| b.items.iter().copied().filter(|i| currency.is(world.get::<Tagged>(*i))).collect()).unwrap_or_default();
     let mut left = amount;
     for piece in pieces {
         if left == 0 {
@@ -351,7 +365,7 @@ struct Asked {
 
 /// Works one deal through: `None` for one that could not be meant, a
 /// refusal with its reason, or the deal done.
-fn strike(world: &mut World, asked: Asked, currency: TagId) -> Option<Result<Traded, TradeRefused>> {
+fn strike(world: &mut World, asked: Asked, currency: Currency) -> Option<Result<Traded, TradeRefused>> {
     let Asked { parties, deal, item, count } = asked;
     let Parties { customer, trader } = parties;
     if !still_open(world, parties) || world.get::<Inventory>(customer).is_none() || world.get::<Inventory>(trader).is_none() {
@@ -406,7 +420,7 @@ pub fn resolve_trades(world: &mut World, mut buys: Local<MessageCursor<Buy>>, mu
             count: s.count,
         }));
     }
-    let Some(Currency(currency)) = world.get_resource::<Currency>().copied() else { return };
+    let Some(currency) = world.get_resource::<Currency>().copied() else { return };
     for one in asked {
         match strike(world, one, currency) {
             Some(Ok(done)) => drop(world.write_message(done)),
@@ -560,7 +574,7 @@ mod tests {
         }
 
         fn purse(&self, who: Entity) -> u32 {
-            purse(self.app.world(), who, self.currency)
+            purse(self.app.world(), who, Currency(self.currency))
         }
 
         fn carried(&mut self, who: Entity, thing: impl Bundle) -> Entity {
@@ -693,6 +707,19 @@ mod tests {
         assert_eq!((rig.purse(rig.player), rig.purse(rig.trader)), (50, 100), "no currency moved");
         assert_eq!(rig.bag(rig.player).len(), 5, "and every thing stayed where it was");
         assert_eq!(rig.bag(rig.trader).len(), 3);
+    }
+
+    /// Currency is counted by its stacks, a single piece as one, and
+    /// nothing else in the pack counts toward it.
+    #[test]
+    fn the_currency_counts_a_stack_by_its_count_a_single_piece_as_one_and_nothing_else() {
+        let mut rig = Rig::new();
+        let (currency, tool) = (rig.currency, rig.tool);
+        rig.carried(rig.player, Tagged(vec![currency]));
+        rig.carried(rig.player, (Tagged(vec![tool]), Stack { key: TOOL, count: 9 }));
+        let w = rig.app.world();
+        let bag = w.get::<Inventory>(rig.player).unwrap();
+        assert_eq!(Currency(currency).count(bag, |i| (w.get::<Tagged>(i), w.get::<Stack>(i))), 51, "50 in a stack and one alone");
     }
 
     /// A deal with a trader out of reach could not have been asked from a

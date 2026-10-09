@@ -37,9 +37,10 @@ use rl_rules::prop::PropId;
 use crate::combat::{CombatRules, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position};
 use crate::effects::{Effects, Fired, LandsAsItself, Moments, Remnant, Triggers};
-use crate::items::{Inventory, Tagged};
+use crate::items::{Inventory, Stack, Tagged};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
+use crate::trade::Currency;
 use crate::turn::{Action, Intent, Resolution};
 use crate::world::WorldMap;
 
@@ -178,6 +179,9 @@ pub struct Offer {
     pub verb: VerbId,
     /// What the turn would cost.
     pub time: u32,
+    /// What taking it up costs in the trade slice's
+    /// [`Currency`](crate::trade::Currency), when it has a price.
+    pub price: Option<u32>,
     /// Why it cannot be taken up, when it cannot. An offer is listed
     /// either way, so a screen can grey a row and say why, as the ability
     /// menu does.
@@ -189,6 +193,9 @@ pub struct Offer {
 pub enum Refused {
     /// It wants something the actor is not carrying.
     Needs(TagId),
+    /// It has a price, and the actor carries less currency than this, the
+    /// price it wants.
+    Short(u32),
 }
 
 /// What an actor offers whoever stands beside it: a captive to be freed,
@@ -215,12 +222,30 @@ pub struct Offering {
     pub time: u32,
     /// A tag the one taking it up must carry, or it is refused and says so.
     pub needs: Option<TagId>,
+    /// What taking it up costs, in the trade slice's
+    /// [`Currency`](crate::trade::Currency), or nothing.
+    pub price: Option<u32>,
 }
 
 impl Offering {
     /// `verb`, taking `time`, open to anyone.
     pub fn new(verb: VerbId, time: u32) -> Self {
-        Self { verb, time, needs: None }
+        Self { verb, time, needs: None, price: None }
+    }
+
+    /// Costs `price` in the trade slice's [`Currency`](crate::trade::Currency):
+    /// refused to anyone carrying less, and paid into the offerer's own
+    /// pack, given one if it carries none, when taken up, before the game
+    /// hears of it in [`Interacted`].
+    ///
+    /// A service is a verb with a price rather than a thing pretending to
+    /// be carried for an instant, and it is paid the way a deal is, so the
+    /// currency stays conserved. A game that prices an offer adds
+    /// [`TradePlugin`](crate::trade::TradePlugin) for its currency; one
+    /// without a `Currency` is a mistake in the setup and stops play.
+    pub fn priced(mut self, price: u32) -> Self {
+        self.price = Some(price);
+        self
     }
 
     /// Refused to anyone not carrying something tagged `tag`.
@@ -290,14 +315,16 @@ pub struct Offerers<'w, 's> {
 /// ability gate and for the same reason: the player's screen and a mind's
 /// tactic both read one answer, worked out once, rather than each walking
 /// the world themselves. Asked of where everything stands at that moment,
-/// so an offer walks off with whoever makes it.
+/// so an offer walks off with whoever makes it, and a price is weighed
+/// against what the actor carries now.
 pub fn offer_here(
     mut offered: ResMut<OfferedHere>,
     registries: Res<Registries>,
     verbs: Res<Verbs>,
     reacher: Reacher,
     offerers: Offerers,
-    tagged: Query<&Tagged>,
+    pieces: Query<(Option<&Tagged>, Option<&Stack>)>,
+    currency: Option<Res<Currency>>,
 ) {
     let Offerers { props, others, emptied, rules, sides } = &offerers;
     offered.actor = None;
@@ -309,7 +336,16 @@ pub fn offer_here(
     // reachable as a crate in the next cell.
     let in_reach =
         |at: &Position, there: Option<&OnMap>| there.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && (at.0 == pos.0 || geometry::is_adjacent(pos.0, at.0));
-    let refused = |wants: Option<TagId>| wants.filter(|tag| !carries(bag, &tagged, *tag)).map(Refused::Needs);
+    // Counted by the trade slice's own rule, so an offer and a deal never
+    // disagree over what the actor can pay. With no currency there is
+    // nothing to pay with: `check_priced_offers` has already stopped play
+    // if anything here has a price.
+    let purse = bag.zip(currency.as_deref()).map_or(0, |(bag, currency)| currency.count(bag, |i| pieces.get(i).unwrap_or((None, None))));
+    // What it lacks first, then what it cannot pay: a key it does not
+    // carry is the refusal no purse answers.
+    let refused = |wants: Option<TagId>, price: Option<u32>| {
+        wants.filter(|tag| !carries(bag, &pieces, *tag)).map(Refused::Needs).or_else(|| price.filter(|p| purse < *p).map(Refused::Short))
+    };
     for (prop, kind, at, prop_on) in props {
         if !in_reach(at, prop_on) {
             continue;
@@ -325,8 +361,8 @@ pub fn offer_here(
             if done && verb == Verbs::OPEN {
                 continue;
             }
-            let refused = refused(offer.needs.or(lock.filter(|_| verb == Verbs::OPEN)));
-            offered.offers.push(Offer { target: prop, verb, time: offer.time, refused });
+            let refused = refused(offer.needs.or(lock.filter(|_| verb == Verbs::OPEN)), None);
+            offered.offers.push(Offer { target: prop, verb, time: offer.time, price: None, refused });
         }
     }
     // Never the turn holder's own: what a person offers is offered to
@@ -343,14 +379,36 @@ pub fn offer_here(
             continue;
         }
         for offer in &offers.0 {
-            offered.offers.push(Offer { target: other, verb: offer.verb, time: offer.time, refused: refused(offer.needs) });
+            let refused = refused(offer.needs, offer.price);
+            offered.offers.push(Offer { target: other, verb: offer.verb, time: offer.time, price: offer.price, refused });
         }
     }
 }
 
 /// Whether the actor carries anything tagged `tag`.
-fn carries(bag: Option<&Inventory>, tagged: &Query<&Tagged>, tag: TagId) -> bool {
-    bag.is_some_and(|bag| bag.items.iter().any(|item| tagged.get(*item).is_ok_and(|t| t.0.contains(&tag))))
+fn carries(bag: Option<&Inventory>, pieces: &Query<(Option<&Tagged>, Option<&Stack>)>, tag: TagId) -> bool {
+    bag.is_some_and(|bag| bag.items.iter().any(|item| pieces.get(*item).is_ok_and(|(t, _)| t.is_some_and(|t| t.0.contains(&tag)))))
+}
+
+/// Stops play when something offers at a price and the game has no
+/// [`Currency`] to pay it in.
+///
+/// A price is in the trade slice's currency, so a priced offer in a game
+/// without one is a mistake in the setup, and it is said loudly, in the
+/// words a missing need is said in, rather than refused for ever to a
+/// player who could never learn why. Offers are put on during play, so it
+/// is checked as each is put on, just before the gate reads it, rather
+/// than once when play begins.
+fn check_priced_offers(currency: Option<Res<Currency>>, offers: Query<&Offers, Changed<Offers>>, verbs: Res<Verbs>) {
+    if currency.is_some() {
+        return;
+    }
+    let priced: Vec<&str> = offers.iter().flat_map(|o| &o.0).filter(|o| o.price.is_some()).map(|o| verbs.name(o.verb)).collect();
+    assert!(
+        priced.is_empty(),
+        "play cannot go on: one piece is missing.\n  PropsPlugin needs {}: an offer of {priced:?} has a price, paid in the trade slice's currency; add TradePlugin and insert `Currency(registries.tags.expect(\"...\"))`, the tag every piece of the currency carries",
+        std::any::type_name::<Currency>()
+    );
 }
 
 /// Do what a prop or an actor offers: the one action, whatever the verb
@@ -394,6 +452,8 @@ pub struct Answering<'w, 's> {
     registries: Res<'w, Registries>,
     verbs: Res<'w, Verbs>,
     props: Query<'w, 's, &'static PropKind, With<Prop>>,
+    /// What a priced offer is paid in.
+    currency: Option<Res<'w, Currency>>,
 }
 
 /// Resolves an interaction against what the gate offered.
@@ -404,7 +464,7 @@ pub fn resolve_interactions(
     what: Answering,
     mut world: crate::effects::EffectWorld,
 ) {
-    let Answering { offered, effects, registries, verbs, props } = &what;
+    let Answering { offered, effects, registries, verbs, props, currency } = &what;
     for intent in intents.read() {
         let Some(offer) = offered.find(intent.actor, intent.action.target, intent.action.verb) else {
             continue;
@@ -413,6 +473,21 @@ pub fn resolve_interactions(
             continue;
         }
         resolution.done(intent.actor, offer.time);
+        // The price, from the taker's pack into the offerer's own, in a
+        // command applied at the end of `Resolve`, so a game answering the
+        // offer in `React` finds it already paid, and paid as a deal pays,
+        // so the currency stays a pile somebody carries. No currency and a
+        // price never meet here: `check_priced_offers` stops play first.
+        if let (Some(price), Some(&currency)) = (offer.price, currency.as_deref()) {
+            let (taker, offerer) = (intent.actor, intent.action.target);
+            world.commands.queue(move |w: &mut World| {
+                let Ok(mut paid) = w.get_entity_mut(offerer) else { return };
+                if !paid.contains::<Inventory>() {
+                    paid.insert(Inventory::default());
+                }
+                crate::trade::pay(w, taker, offerer, price, currency);
+            });
+        }
         // What the offer carried, when it carried anything: an offer with
         // no effects, which an actor's always is, is answered by the game,
         // from the message below.
@@ -968,7 +1043,12 @@ impl Plugin for PropsPlugin {
             // rather than bare `Update`, where it would be unordered against
             // whatever exclusive system a game runs there.
             .add_systems(PostUpdate, report_bare_props)
-            .add_systems(Turn, offer_here.in_set(DecideSet::Offer))
+            // After the ability gate beside it, since a price counts the
+            // stacks a pack holds and that gate reaches them through the
+            // ability resolver's own mutable query: neither writes them
+            // here, but unordered they would be a conflict every game's
+            // ambiguity check reports.
+            .add_systems(Turn, (check_priced_offers, offer_here).chain().in_set(DecideSet::Offer).after(crate::ability::offer_abilities))
             .add_systems(Turn, (resolve_interactions, resolve_takes).in_set(ResolveSet::Act))
             .add_systems(Turn, close_emptied_containers.in_set(crate::plugin::TurnSet::React))
             // Outside the turn loop: a container is stocked the frame it is
@@ -1320,20 +1400,22 @@ mod offers {
 mod actor_offers {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Viewshed};
-    use crate::items::{Inventory, Item, Tagged};
+    use crate::items::{Inventory, Item, Stack, Tagged};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
+    use crate::trade::Currency;
     use crate::turn::{Intent, Turns};
     use rl_rules::{Registry, TagDef};
 
-    /// A world with props on, a verb of the game's own, `free`, and a tag
-    /// for what a lock might want.
+    /// A world with props on, a verb of the game's own, `free`, a tag for
+    /// what a lock might want, and a tag `scrip` a test may make the
+    /// currency.
     fn arena() -> (App, Point, VerbId, TagId) {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
         app.add_verb("free");
         let start = crate::testing::surface(&mut app);
-        let tags = Registry::from_defs(vec![TagDef::new("key")]).expect("one tag");
+        let tags = Registry::from_defs(vec![TagDef::new("key"), TagDef::new("scrip")]).expect("two tags");
         let key = tags.expect("key");
         app.insert_resource(Registries { tags, ..Default::default() });
         app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
@@ -1375,7 +1457,7 @@ mod actor_offers {
         let beside = someone(&mut app, start.offset(1, 1), Offers(vec![Offering::new(free, 200)]));
         someone(&mut app, start.offset(2, 0), Offers(vec![Offering::new(free, 200)]));
         let player = player_at(&mut app, start, Offers(vec![Offering::new(free, 100)]));
-        assert_eq!(offered(&app, player), vec![Offer { target: beside, verb: free, time: 200, refused: None }]);
+        assert_eq!(offered(&app, player), vec![Offer { target: beside, verb: free, time: 200, price: None, refused: None }]);
     }
 
     /// The offer is asked of where the actor stands when the gate runs,
@@ -1429,6 +1511,115 @@ mod actor_offers {
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before + 200, "carried, it costs what the offer said");
         assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: captive, verb: free }], "and the game is told");
+    }
+
+    /// The arena with `scrip` as the currency, and a stack of `count` of it.
+    fn scrip(app: &mut App, count: u32) -> Entity {
+        let scrip = app.world().resource::<Registries>().tags.expect("scrip");
+        app.insert_resource(Currency(scrip));
+        app.world_mut().spawn((Item, Tagged(vec![scrip]), Stack { key: 1, count })).id()
+    }
+
+    /// How much currency `who` carries, counted by the trade slice's rule.
+    fn purse(world: &World, who: Entity) -> u32 {
+        let currency = *world.resource::<Currency>();
+        world.get::<Inventory>(who).map_or(0, |bag| currency.count(bag, |i| (world.get::<Tagged>(i), world.get::<Stack>(i))))
+    }
+
+    /// An offer with a price is listed to a taker carrying less, refused
+    /// with the price it wants, and costs nothing reached for; one priced
+    /// at exactly what the taker carries is open.
+    #[test]
+    fn an_offer_whose_taker_carries_less_than_its_price_is_refused_and_says_how_much() {
+        let (mut app, start, free, _) = arena();
+        let coins = scrip(&mut app, 30);
+        let dear = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).priced(50)]));
+        let fair = someone(&mut app, start.offset(-1, 0), Offers(vec![Offering::new(free, 200).priced(30)]));
+        let player = player_at(&mut app, start, Offers::default());
+        app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
+        app.update();
+        watch(&mut app);
+        let here = app.world().resource::<OfferedHere>();
+        let dear_offer = *here.find(player, dear, free).expect("listed");
+        assert_eq!((dear_offer.price, dear_offer.refused), (Some(50), Some(Refused::Short(50))), "listed with its price, and refused saying how much");
+        assert_eq!(here.find(player, fair, free).map(|o| o.refused), Some(None), "30 carried meets a price of 30");
+
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Interact { target: dear, verb: free }));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), before, "a price not met costs nothing");
+        assert!(app.world().resource::<Seen>().0.is_empty(), "and nothing is done");
+        assert_eq!(purse(app.world(), player), 30, "nor paid");
+    }
+
+    #[derive(Resource, Default)]
+    struct Paid(Vec<(u32, u32)>);
+
+    /// Taken up, the price leaves the taker's pack for the offerer's own,
+    /// one made for an offerer that carried none, and the game's answer in
+    /// `React` finds it already paid.
+    #[test]
+    fn taken_up_the_price_leaves_the_takers_currency_for_the_offerers_pack_before_the_answer_runs() {
+        let (mut app, start, free, _) = arena();
+        let coins = scrip(&mut app, 80);
+        let priest = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).priced(50)]));
+        let player = player_at(&mut app, start, Offers::default());
+        app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
+        app.update();
+        app.init_resource::<Paid>().add_systems(
+            crate::plugin::Turn,
+            (move |mut done: MessageReader<Interacted>,
+                   bags: Query<&Inventory>,
+                   pieces: Query<(Option<&Tagged>, Option<&Stack>)>,
+                   currency: Res<Currency>,
+                   mut paid: ResMut<Paid>| {
+                let count = |who: Entity| bags.get(who).map_or(0, |bag| currency.count(bag, |i| pieces.get(i).unwrap_or((None, None))));
+                for _ in done.read() {
+                    paid.0.push((count(player), count(priest)));
+                }
+            })
+            .in_set(crate::plugin::TurnSet::React),
+        );
+        assert!(app.world().get::<Inventory>(priest).is_none(), "the offerer carries nothing yet");
+
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Interact { target: priest, verb: free }));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), before + 200, "it costs its time");
+        assert_eq!(app.world().resource::<Paid>().0, vec![(30, 50)], "the answer ran with the 50 already moved");
+        assert_eq!((purse(app.world(), player), purse(app.world(), priest)), (30, 50), "and nothing was made or lost");
+        let refused = app.world().resource::<OfferedHere>().find(player, priest, free).and_then(|o| o.refused);
+        assert_eq!(refused, Some(Refused::Short(50)), "30 left does not meet it a second time");
+    }
+
+    /// An offer with no price is listed with none, needs no currency in the
+    /// game at all, and taking it up moves nothing the taker carries.
+    #[test]
+    fn an_offer_with_no_price_needs_no_currency_and_takes_nothing_from_the_taker() {
+        let (mut app, start, free, _) = arena();
+        let scrip = app.world().resource::<Registries>().tags.expect("scrip");
+        let coins = app.world_mut().spawn((Item, Tagged(vec![scrip]), Stack { key: 1, count: 80 })).id();
+        let captive = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200)]));
+        let player = player_at(&mut app, start, Offers::default());
+        app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
+        app.update();
+        watch(&mut app);
+        assert_eq!(offered(&app, player), vec![Offer { target: captive, verb: free, time: 200, price: None, refused: None }]);
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.update();
+        assert_eq!(app.world().resource::<Seen>().0.len(), 1, "taken up");
+        assert_eq!(app.world().get::<Stack>(coins).map(|s| s.count), Some(80), "and the taker's pile is untouched");
+        assert!(app.world().get::<Inventory>(captive).is_none(), "nor is anything handed over");
+    }
+
+    /// A priced offer in a game with no currency to pay it in is a mistake
+    /// in the setup, and stops play saying what is missing.
+    #[test]
+    #[should_panic(expected = "PropsPlugin needs rl_bevy::trade::Currency")]
+    fn a_priced_offer_in_a_game_without_a_currency_stops_play_and_says_what_is_missing() {
+        let (mut app, start, free, _) = arena();
+        someone(&mut app, start.offset(4, 0), Offers(vec![Offering::new(free, 200).priced(50)]));
+        player_at(&mut app, start, Offers::default());
     }
 
     /// A foe's offers are kept from whoever it is hostile to, in the gate,

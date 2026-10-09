@@ -10,7 +10,9 @@
 //! invents nothing: a game that calls its verb `charge` and its prop
 //! `reactor console` gets "charge reactor console", one whose captive is
 //! `Mirela` gets "free Mirela", and a game that wants other words names
-//! them other things.
+//! them other things. A price is named the same way, by the tag the game
+//! made its [`Currency`], so a game whose currency is `scrip` is asked for
+//! "50 scrip".
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
@@ -26,6 +28,8 @@ pub struct OfferRow {
     pub label: String,
     /// What the turn would cost, in hundredths of a step.
     pub time: u32,
+    /// What it would cost in the currency, when it has a price.
+    pub price: Option<u32>,
     /// Why it cannot be taken up, in words, when it cannot.
     pub refused: Option<String>,
 }
@@ -44,6 +48,9 @@ pub struct OffersView {
     pub actor: Option<Entity>,
     /// The offers, in the order the engine worked them out.
     pub rows: Vec<OfferRow>,
+    /// What a price is counted in: the name of the tag the game made its
+    /// [`Currency`], empty when it made none or has no tags to name it by.
+    pub currency: String,
 }
 
 impl OffersView {
@@ -78,16 +85,22 @@ pub fn collect_offers(
     offered: Res<OfferedHere>,
     verbs: Res<Verbs>,
     registries: Option<Res<Registries>>,
+    currency: Option<Res<Currency>>,
     player: Query<Entity, With<Player>>,
     named: Query<&Name>,
 ) {
     view.rows.clear();
     view.actor = None;
+    view.currency.clear();
     let Ok(player) = player.single() else { return };
     if offered.actor() != Some(player) {
         return;
     }
     view.actor = Some(player);
+    if let (Some(registries), Some(currency)) = (registries.as_deref(), currency.as_deref()) {
+        view.currency = registries.tags.name(currency.0).to_string();
+    }
+    let currency = view.currency.clone();
     for offer in offered.for_actor(player) {
         let what = named.get(offer.target).map(|n| rl_core::noun::listed(n.as_str(), 1)).unwrap_or_default();
         let label = if what.is_empty() { verbs.name(offer.verb).to_string() } else { format!("{} {what}", verbs.name(offer.verb)) };
@@ -96,8 +109,10 @@ pub fn collect_offers(
                 Some(registries) => format!("needs a {}", registries.tags.name(tag)),
                 None => "needs something you do not carry".to_string(),
             },
+            Refused::Short(price) if currency.is_empty() => format!("needs {price}"),
+            Refused::Short(price) => format!("needs {price} {currency}"),
         });
-        view.rows.push(OfferRow { target: offer.target, verb: offer.verb, label, time: offer.time, refused });
+        view.rows.push(OfferRow { target: offer.target, verb: offer.verb, label, time: offer.time, price: offer.price, refused });
     }
 }
 
@@ -156,6 +171,38 @@ mod tests {
         let cache = view.rows.iter().find(|r| r.label == "open locked cache").expect("listed");
         assert_eq!(cache.refused.as_deref(), Some("needs a cutter"), "and a refusal names what is wanted");
         assert_eq!(view.open_rows(), 1, "one of the two can be taken up");
+    }
+
+    /// A priced row carries its price, and one the player cannot pay says
+    /// how much it wants in the currency's own name, as a need names its
+    /// tag.
+    #[test]
+    fn a_priced_row_carries_its_price_and_one_the_player_cannot_pay_says_how_much_it_wants() {
+        let mut stage = Stage::new_with(OffersViewPlugin, |app| {
+            app.add_plugins(PropsPlugin).add_verb("bless");
+            app.insert_resource(Seed(TEST_SEED));
+            let tags = Registry::from_defs(vec![TagDef::new("scrip")]).expect("one tag");
+            app.insert_resource(Currency(tags.expect("scrip")));
+            app.world_mut().resource_mut::<Registries>().tags = tags;
+        });
+        let bless = stage.app.world().resource::<Verbs>().get("bless").expect("declared");
+        let scrip = stage.app.world().resource::<Registries>().tags.expect("scrip");
+        let (at, player) = (stage.at, stage.player);
+        let w = stage.app.world_mut();
+        let coins = w.spawn((Item, Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
+        w.entity_mut(player).insert(Inventory { items: vec![coins] });
+        let cheap =
+            w.spawn((Actor, Position(at.offset(1, 0)), OnMap(MapId::SURFACE), Name::new("Odda"), Offers(vec![Offering::new(bless, 100).priced(20)]))).id();
+        let dear =
+            w.spawn((Actor, Position(at.offset(-1, 0)), OnMap(MapId::SURFACE), Name::new("Mirela"), Offers(vec![Offering::new(bless, 100).priced(50)]))).id();
+        stage.tick();
+        stage.tick();
+
+        let view = stage.app.world().resource::<OffersView>();
+        let row = |who: Entity| view.rows.iter().find(|r| r.target == who).map(|r| (r.price, r.refused.clone())).expect("listed");
+        assert_eq!(row(cheap), (Some(20), None), "within the purse, open with its price");
+        assert_eq!(row(dear), (Some(50), Some("needs 50 scrip".to_string())), "past it, refused saying how much");
+        assert_eq!(view.currency, "scrip");
     }
 
     /// Someone standing by who offers something is listed by their own

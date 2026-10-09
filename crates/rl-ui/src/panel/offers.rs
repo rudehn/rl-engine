@@ -15,7 +15,8 @@
 //! Rows that cannot be taken up are still listed, greyed, with the reason
 //! in words, the way the ability menu lists what it cannot use: a player
 //! who cannot open the cache wants to know it is a cache and that it wants
-//! a cutter.
+//! a cutter. A row with a price shows it beside the time, and one the
+//! player cannot pay says how much it wants.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
@@ -196,6 +197,12 @@ fn cost(time: u32) -> String {
     }
 }
 
+/// What a price reads as: the amount, then the currency's name when the
+/// game gave it one.
+fn priced(price: u32, currency: &str) -> String {
+    if currency.is_empty() { price.to_string() } else { format!("{price} {currency}") }
+}
+
 /// Draws what is on offer here, the row picked out, and why a row cannot
 /// be taken up.
 pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>, screen: HereScreen) {
@@ -222,9 +229,10 @@ pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>,
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
         let fg = palette.get(if row.open() { Tones::TEXT } else { Tones::MUTED });
         terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
-        let said = match &row.refused {
-            Some(why) => format!("{} \u{2014} {why}", row.label),
-            None => format!("{} ({})", row.label, cost(row.time)),
+        let said = match (&row.refused, row.price) {
+            (Some(why), _) => format!("{} \u{2014} {why}", row.label),
+            (None, Some(price)) => format!("{} ({}, {})", row.label, cost(row.time), priced(price, &view.currency)),
+            (None, None) => format!("{} ({})", row.label, cost(row.time)),
         };
         terminal.print_on(inner.x, y, &clip(&said, inner.width.max(0) as usize), fg, bg);
     }
@@ -351,6 +359,35 @@ mod tests {
         let view = stage.app.world().resource::<OffersView>();
         let row = view.rows.iter().find(|r| r.target == locker).expect("the locker is listed");
         assert_eq!(row.refused.as_deref(), Some("needs a cutter"), "and says what it wants");
+    }
+
+    /// A row with a price shows it beside the time, and one the purse
+    /// cannot meet says how much it wants.
+    #[test]
+    fn a_priced_row_shows_its_price_and_one_the_player_cannot_pay_says_how_much() {
+        let (mut stage, bench) = stage();
+        stage.app.world_mut().despawn(bench);
+        let tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("scrip")]).expect("one tag");
+        let scrip = tags.expect("scrip");
+        stage.app.insert_resource(Currency(scrip));
+        stage.app.world_mut().resource_mut::<Registries>().tags = tags;
+        let verbs = stage.app.world().resource::<Verbs>();
+        let offers = Offers(vec![
+            Offering::new(verbs.get("strip").expect("declared"), 100).priced(20),
+            Offering::new(verbs.get("tip").expect("declared"), 200).priced(50),
+        ]);
+        let (at, player) = (stage.at.offset(1, 0), stage.player);
+        let coins = stage.app.world_mut().spawn((Item, Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
+        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
+        stage.tick();
+
+        let rows = stage.rows();
+        let text = rows.join("\n");
+        assert!(rows[5].contains("strip Mirela (1 turn, 20 scrip)"), "the price beside the time:\n{text}");
+        assert!(rows[6].contains("tip Mirela") && rows[6].contains("needs 50 scrip"), "and how much a row past the purse wants:\n{text}");
     }
 
     /// Down and Enter take the second of them, and nothing is guessed at.
