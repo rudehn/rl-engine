@@ -163,9 +163,9 @@ impl Biome {
     ///
     /// Task 9's own floor ten boss, drawn from three, reads the same way:
     /// the Throne lists its own tiles first, the Mother Below's cave
-    /// tiles next (the Fungal Deeps' own) and the Ember Wyrm's hall tiles
-    /// last (the Forge of Embers' own), since every one of the three may
-    /// stand on this one floor.
+    /// tiles next (the Fungal Deeps' own, and the Catacombs' bones) and
+    /// the Ember Wyrm's hall tiles last (the Forge of Embers' own), since
+    /// every one of the three may stand on this one floor.
     pub fn tiles(self) -> &'static [&'static str] {
         match self {
             Biome::UpperHalls => &["hall wall", "hall floor", "rubble", "door", "open door"],
@@ -188,7 +188,7 @@ impl Biome {
                 &["cathedral wall", "marble", "flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"]
             }
             Biome::ForgeOfEmbers => &["forge wall", "ash", "lava"],
-            Biome::Throne => &["throne wall", "throne floor", "dais", "black pool", "cave wall", "moss", "forge wall", "ash", "lava"],
+            Biome::Throne => &["throne wall", "throne floor", "dais", "black pool", "cave wall", "moss", "glowcaps", "bones", "forge wall", "ash", "lava"],
         }
     }
 }
