@@ -227,6 +227,7 @@ Several lines teach a rule the game never explains anywhere else; that is what t
 
 The innkeeper says one rumour a talk, in a fixed order: the floor ten boss, then each mini-boss the run drew, then each band whose biome was drawn from more than one; then "That's all I've heard. Come back when you've been somewhere."
 Rumours are always true and never exact: they say what is down there, never which floor or how to beat it.
+The boss's rumour hints and never names, since part 3 keeps which of three waits on the Drowned Throne unnamed until floor ten shows it; a rumour that named it would undo that.
 They read the run's draws, which part 3 makes for the boss and the mini-bosses and part 4 for the biomes; a draw not fixed by the time the run starts has no rumour, and the plan checks that each one is.
 The lines are `assets/rumours.ron`, one per drawable thing.
 
