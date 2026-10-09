@@ -559,7 +559,7 @@ impl AimedUses<'_, '_> {
         // an ability: the items resolver already asked the same question
         // before spending the use, so this is the one and only landing of
         // it, and the right moment for a reflecting body to turn it back.
-        self.bystanders.reflect(&mut landing);
+        self.bystanders.reflect(&mut landing, aimed.targeting.mode, world.map());
         landing.bonus = bonus;
         let shot = UseLanding { landing, effects: trigger.effects.clone(), look: trigger.look };
         let Some(flight) = shot.look.and_then(|look| shot.landing.flight(world, LookOf::Given(look))) else {

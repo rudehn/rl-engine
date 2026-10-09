@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A use a `Reflects` body turns back lands whole on its user: its targets become the user alone and its cells the shape drawn on the user's own cell, the user's cell for a bolt and a burst round them for a ball, where only the targets were swapped and a turned-back bolt still set the reflecting body's cell alight.
+  Everyone else the footprint caught is spared, and one roll in two for each reflecting body it caught, in order, decides it; one `Reflected` is written, naming the body that turned it.
+  To change: `Bystanders::reflect(landing)` is `Bystanders::reflect(landing, mode, map)`, taking the shape it was aimed with and the map it bursts on.
+
 - `EffectWorld` says whether a cell is a transition: the new `EffectWorld::is_transition(p)` reads the engine's own `Transition` component at `p`, read by no effect of the engine's own, since `is_free` is silent on the question and a move onto a floor's own way through is the game's to allow or refuse.
   A game effect that moves someone through open ground, a blink or a far teleport among them, checks it beside `is_free` to keep a monster's own trick from landing it exactly on a stair.
 
