@@ -45,10 +45,14 @@ const TARGET_ROWS: i32 = 10;
 /// badges, blank most turns, which sets what is worn off from the gauges.
 const VITALS_ROWS: i32 = 8;
 /// Rows the rail gives to what is worn: the heading and its rule, one
-/// apiece for the seven slots, and a blank row setting the list off from
-/// what is nearby under it, the gap the badges' row leaves above. Nothing
-/// Undermere wears says anything beside its name yet, so no slot wraps.
-const GEAR_ROWS: i32 = 10;
+/// apiece for the seven slots, a blank row setting the list off from what
+/// is nearby under it, the gap the badges' row leaves above, and two more
+/// for names that wrap. A name past nineteen cells wraps,
+/// `unidentified chain` over `mail`, and a ring that clings says so on a
+/// row of its own, so an unidentified ring that will not come off and
+/// unidentified armor beside it take the three; past that a name is kept
+/// to its row, and no slot is ever pushed off the rail.
+const GEAR_ROWS: i32 = 12;
 
 /// The screen, cut up once so every panel and the map agree on it.
 ///
@@ -903,6 +907,25 @@ mod tests {
         let shown = ["level below nought, how far not yet known", "level known in 199 more turns worn", "light +1 a level"];
         assert_eq!(detail[..3], shown, "{detail:#?}");
         assert_eq!(detail[3..], [format!("worn on the {slot}"), "will not come off".to_string()], "{detail:#?}");
+
+        // The rail says it will not come off as the pack does, under the
+        // whole name, and every slot is still drawn; and the vitals' armor
+        // is plain, since no ring of light moves it.
+        let gear = Screen::new().gear;
+        let rail: Vec<String> = (gear.y..gear.bottom()).map(|y| from(&app, gear.x, y)).collect();
+        let at = rail.iter().position(|r| r.starts_with(&slot)).expect("the ring's slot");
+        assert_eq!(
+            rail[at..at + 3],
+            [format!("{slot:<12} = unidentified ring"), format!("{:15}of light", ""), format!("{:15}will not come off", "")],
+            "{rail:#?}"
+        );
+        assert!(rail.iter().any(|r| r.starts_with("light")), "the last slot is still on the rail: {rail:#?}");
+        let x = gear.x + 15;
+        let bad = rl_engine::rl_ui::readable(app.world().resource::<Palette>().get(Tones::BAD), app.world().resource::<Palette>());
+        assert_eq!(app.world().resource::<Terminal>().get(x, gear.y + at as i32 + 2).map(|c| c.fg), Some(bad), "in the bad tone");
+        let vitals = Screen::new().vitals;
+        let armor = (vitals.y..vitals.bottom()).map(|y| from(&app, vitals.x, y)).find(|r| r.contains("armor")).expect("the armor");
+        assert!(armor.contains("armor 1") && !armor.contains("armor 1?"), "{armor:?}");
     }
 
     /// A run played from a script, a replay, a recording or a capture,

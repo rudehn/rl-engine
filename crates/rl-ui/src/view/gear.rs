@@ -33,6 +33,10 @@ pub struct GearSlot {
     /// every panel's and a count of charges is gear's. `None` for a thing
     /// not yet known, [`Unknown`], whose bag row withholds them too.
     pub charges: Option<(u16, u16)>,
+    /// Whether the thing worn here will not come off, [`Stuck`]. On the
+    /// slot beside the charges, for the same reason: it is a fact about a
+    /// worn thing, and the bag says it of the same thing in its own words.
+    pub stuck: bool,
     /// Whether this is the slot the item was equipped into, rather than one
     /// it also claims: false only on a two-hander's off hand. A claimed
     /// slot's [`Row`] is a second copy of the same item, so a game's
@@ -88,8 +92,9 @@ impl Plugin for GearViewPlugin {
 }
 
 /// What a worn thing shows on its slot: its name, its look, how many,
-/// and its charges, and whether it is known, which decides the last.
-type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Consumable>, Has<Unknown>);
+/// and its charges, whether it is known, which decides the charges, and
+/// whether it will come off.
+type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Consumable>, Has<Unknown>, Has<Stuck>);
 
 /// Fills [`GearView`] from what the player wears.
 ///
@@ -105,13 +110,13 @@ pub fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, pla
             Some(e) => worn.is_some_and(|w| w.slot_of(e) == Some(slot)),
             None => true,
         };
-        let (name, glyph, stack, consumable, unknown) = entity.and_then(|e| items.get(e).ok()).unwrap_or((None, None, None, None, false));
+        let (name, glyph, stack, consumable, unknown, stuck) = entity.and_then(|e| items.get(e).ok()).unwrap_or((None, None, None, None, false, false));
         let item = entity.map(|entity| {
             let shown = name.map(|n| rl_core::noun::listed(n.as_str(), stack.map_or(1, |s| s.count))).unwrap_or_default();
             Row::new(entity, shown, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE)))
         });
         let charges = consumable.filter(|c| c.max > 1 && !unknown).map(|c| (c.left, c.max));
-        view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges, primary });
+        view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges, stuck, primary });
     }
 }
 

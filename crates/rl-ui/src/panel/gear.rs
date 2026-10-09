@@ -6,7 +6,7 @@ use rl_core::Rect;
 use rl_render::Terminal;
 
 use crate::facet::Facet;
-use crate::panel::{Segment, clear, clip, clip_rich, frame, print_rich, section};
+use crate::panel::{Segment, clear, clip, clip_rich, frame, print_rich, section, wrap};
 use crate::tone::{Palette, Tones};
 use crate::view::{GearView, GearViewPlugin};
 
@@ -62,7 +62,16 @@ impl Plugin for GearPanel {
     }
 }
 
+/// What the rail says of a worn thing that will not come off, in the bad
+/// tone: the bag's words for it, so one mark means one thing everywhere.
+pub const STUCK_WORDS: &str = "will not come off";
+
 /// Paints the gear list.
+///
+/// A slot whose name and words need more than one row takes the rows the
+/// panel has to spare, slot by slot from the top, and never so many that a
+/// slot below it is pushed out of the panel: what is not worn is as much
+/// the list as what is.
 pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: Res<GearView>, palette: Res<Palette>) {
     let rect = layout.rect;
     if rect.width < 8 || rect.height < 2 {
@@ -84,10 +93,14 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
     // A slot name column wide enough for the longest name, so the items
     // line up and the eye reads down one edge.
     let slot_width = view.slots.iter().map(|s| s.name.chars().count()).max().unwrap_or(0).min(inner.width as usize / 2);
-    for slot in &view.slots {
+    for (i, slot) in view.slots.iter().enumerate() {
         if y >= inner.bottom() {
             break;
         }
+        // The rows this slot may take: its own, and whatever the slots
+        // after it leave spare.
+        let spare = (inner.bottom() - y) as usize - (view.slots.len() - i).min((inner.bottom() - y) as usize);
+        let room_for = 1 + spare;
         terminal.print_on(inner.x, y, &clip(&slot.name, slot_width), palette.get(Tones::MUTED), bg);
         let x = inner.x + slot_width as i32 + 1;
         let room = (inner.right() - x).max(0) as usize;
@@ -99,8 +112,15 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
                 // item worn twice over: whatever a game noted about it
                 // already reads on the slot it was equipped into, so a
                 // second copy here would only say it again.
-                let (charges, facets): (Option<(u16, u16)>, &[Facet]) = if slot.primary { (slot.charges, &item.facets) } else { (None, &[]) };
-                let lines = labelled(&item.label, charges, facets, room.saturating_sub(2), &palette);
+                let (charges, facets, stuck): (Option<(u16, u16)>, &[Facet], bool) =
+                    if slot.primary { (slot.charges, &item.facets, slot.stuck) } else { (None, &[], false) };
+                let words: Vec<Segment> = charges
+                    .map(|(left, max)| (format!("{left}/{max}"), Some(palette.get(Tones::MUTED))))
+                    .into_iter()
+                    .chain(facets.iter().map(|f| (f.text.clone(), Some(palette.get(f.tone)))))
+                    .chain(stuck.then(|| (STUCK_WORDS.to_string(), Some(palette.get(Tones::BAD)))))
+                    .collect();
+                let lines = labelled(&item.label, words, room.saturating_sub(2), room_for);
                 for (i, line) in lines.iter().enumerate() {
                     let row_y = y + i as i32;
                     if row_y >= inner.bottom() {
@@ -117,45 +137,62 @@ pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: 
     }
 }
 
-/// An item's name, followed on the same line by its charges, muted, and
-/// then its facets, each in its own tone, when they all fit in `width`
-/// cells. When they do not, the name is kept whole and the charges and
-/// facets move to a second line, indented under where the name started:
-/// the count and the warning are the words that matter in a fight, so they
-/// are never the ones dropped for room. Only a name that alone overruns
-/// `width` still gives way, clipped from the end as it always was.
-fn labelled(label: &str, charges: Option<(u16, u16)>, facets: &[Facet], width: usize, palette: &Palette) -> Vec<Vec<Segment>> {
-    let words: Vec<Segment> = charges
-        .map(|(left, max)| (format!("{left}/{max}"), Some(palette.get(Tones::MUTED))))
-        .into_iter()
-        .chain(facets.iter().map(|f| (f.text.clone(), Some(palette.get(f.tone)))))
-        .collect();
-    if words.is_empty() {
-        return vec![clip_rich(&[(label.to_string(), None)], width)];
-    }
+/// An item's name, followed on the same line by `words`, its charges,
+/// what the game noted and whether it will come off, each in its own
+/// colour, when they all fit in `width` cells, and in no more than `lines`
+/// rows.
+///
+/// A name too long for the row wraps onto the rows under it, on its
+/// spaces, and the words follow it on its last row or on one of their
+/// own, all indented under where the name started: a name is what the
+/// player reads the rail for, and `unidentified ring of` with the rest cut
+/// off reads as a different thing. The words are the ones that matter in
+/// a fight, so they are never the ones dropped for room. Only when there
+/// are not the rows to spare does a name give way, kept to one row with
+/// the words on the next, and a name that alone overruns `width` clipped
+/// from the end and the words dropped, rather than orphaned under a
+/// truncated name.
+fn labelled(label: &str, words: Vec<Segment>, width: usize, lines: usize) -> Vec<Vec<Segment>> {
+    let joined = |words: &[Segment]| -> Vec<Segment> {
+        let mut runs: Vec<Segment> = Vec::new();
+        for (i, word) in words.iter().cloned().enumerate() {
+            if i > 0 {
+                runs.push((" \u{00b7} ".to_string(), None));
+            }
+            runs.push(word);
+        }
+        runs
+    };
     let tail: Vec<Segment> = words.iter().cloned().flat_map(|w| [(" \u{00b7} ".to_string(), None), w]).collect();
     let tail_width: usize = tail.iter().map(|(r, _)| r.chars().count()).sum();
-    let name_width = label.chars().count();
-    if name_width + tail_width <= width {
-        let runs: Vec<Segment> = std::iter::once((label.to_string(), None)).chain(tail).collect();
-        return vec![clip_rich(&runs, width)];
+    // Wrapped: the name on as many rows as it takes, and the words after
+    // its last row when they fit there, on a row of their own when not.
+    let mut wrapped: Vec<Vec<Segment>> = wrap(label, width).into_iter().map(|line| vec![(line, None)]).collect();
+    if wrapped.is_empty() {
+        wrapped.push(vec![(String::new(), None)]);
     }
-    if name_width > width {
-        // The name alone cannot fit; there is no room for a second line to
-        // mean anything either, so it gives way as before and the tail is
-        // dropped rather than orphaned under a truncated name.
-        return vec![vec![(clip(label, width), None)]];
-    }
-    // The name fits on its own; the tail, which is what a fight is decided
-    // by, gets a line to itself instead of taking the name's room.
-    let mut continuation: Vec<Segment> = Vec::new();
-    for (i, word) in words.into_iter().enumerate() {
-        if i > 0 {
-            continuation.push((" \u{00b7} ".to_string(), None));
+    if !words.is_empty() {
+        let last = wrapped.last_mut().expect("a row at least");
+        if last[0].0.chars().count() + tail_width <= width {
+            last.extend(tail.iter().cloned());
+        } else {
+            wrapped.push(clip_rich(&joined(&words), width));
         }
-        continuation.push(word);
     }
-    vec![vec![(label.to_string(), None)], clip_rich(&continuation, width)]
+    if wrapped.len() <= lines.max(1) {
+        return wrapped;
+    }
+    // No rows to spare for that: the name kept to one row as it was
+    // before names wrapped.
+    let name_width = label.chars().count();
+    let kept = if name_width > width {
+        vec![vec![(clip(label, width), None)]]
+    } else if words.is_empty() || name_width + tail_width <= width {
+        vec![clip_rich(&std::iter::once((label.to_string(), None)).chain(tail).collect::<Vec<_>>(), width)]
+    } else {
+        vec![vec![(label.to_string(), None)], clip_rich(&joined(&words), width)]
+    };
+    kept.into_iter().take(lines.max(1)).collect()
 }
 
 #[cfg(test)]
@@ -249,9 +286,82 @@ mod tests {
         assert_eq!(cell.fg, bad, "the facet is drawn in its own tone on the continuation line too");
     }
 
+    /// A worn thing that will not come off says so on the rail in the
+    /// bag's words and the bag's bad tone, after its name, so a ring that
+    /// clings reads as one here as it does in the pack; the same thing once
+    /// freed says nothing more.
+    #[test]
+    fn a_stuck_worn_thing_says_it_will_not_come_off_in_the_bad_tone() {
+        let slots = || rl_rules::Registry::from_defs(vec![SlotDef::new("finger")]).unwrap();
+        let finger = slots().expect("finger");
+        let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 40, 4)), move |app| {
+            app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
+        })
+        .screen(40, 4);
+        let ring = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("grey ring"), rl_render::Glyph::new('=', Color::WHITE), rl_bevy::Stuck)).id();
+        let mut worn = rl_bevy::Equipped(rl_rules::Equipment::with_slot_count(1));
+        worn.equip(ring, &EquipShape::in_slot(finger)).expect("the slot exists");
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        assert_eq!(stage.row(2), "finger = grey ring \u{00b7} will not come off");
+        let palette = stage.app.world().resource::<Palette>();
+        let bad = crate::tone::readable(palette.get(Tones::BAD), palette);
+        let at = stage.row(2).chars().position(|c| c == 'w').expect("the words") as i32;
+        assert_eq!(stage.app.world().resource::<Terminal>().get(at, 2).unwrap().fg, bad, "in the bad tone");
+
+        stage.app.world_mut().entity_mut(ring).remove::<rl_bevy::Stuck>();
+        stage.tick();
+        assert_eq!(stage.row(2), "finger = grey ring", "freed, it says nothing more");
+    }
+
+    /// A name too long for its row wraps on its spaces onto the rows the
+    /// panel has spare, under where it started, with its words after it;
+    /// and never onto a row a slot below it needs, so with none to spare
+    /// it is kept to one row as before and every slot is still drawn.
+    #[test]
+    fn a_long_name_wraps_onto_spare_rows_and_never_pushes_a_slot_out() {
+        let slots = || rl_rules::Registry::from_defs(vec![SlotDef::new("finger"), SlotDef::new("light")]).unwrap();
+        let finger = slots().expect("finger");
+        let staged = |height: i32| {
+            let mut stage = Stage::new_with(GearPanel::new(Rect::new(0, 0, 26, height)), move |app| {
+                app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
+            })
+            .screen(26, height);
+            let ring = stage
+                .app
+                .world_mut()
+                .spawn((rl_bevy::Item, Name::new("unidentified ring of light"), rl_render::Glyph::new('=', Color::WHITE), rl_bevy::Stuck))
+                .id();
+            let mut worn = rl_bevy::Equipped(rl_rules::Equipment::with_slot_count(2));
+            worn.equip(ring, &EquipShape::in_slot(finger)).expect("the slot exists");
+            let player = stage.player;
+            stage.app.world_mut().entity_mut(player).insert(worn);
+            stage.tick();
+            stage
+        };
+        let roomy = staged(7);
+        let indent = " ".repeat(9);
+        assert_eq!(
+            (2..7).map(|y| roomy.row(y)).collect::<Vec<_>>(),
+            [
+                "finger = unidentified ring".to_string(),
+                format!("{indent}of light"),
+                format!("{indent}will not come off"),
+                "light  \u{2014}".to_string(),
+                String::new()
+            ],
+            "the whole name, its words under it, and the slot below"
+        );
+        let tight = staged(4);
+        assert_eq!([tight.row(2), tight.row(3)], ["finger = unidentified rin\u{2026}".to_string(), "light  \u{2014}".to_string()], "no row to spare");
+    }
+
     /// A name wider than the whole row, with nothing worn to share it
-    /// with, still gives way exactly as it always has: there is no room
-    /// for a second line to mean anything either.
+    /// with, and no rows to spare for it to wrap onto, still gives way
+    /// exactly as it always has: there is no room for a second line to
+    /// mean anything either.
     #[test]
     fn a_name_wider_than_the_row_itself_still_clips_with_an_ellipsis() {
         let slots = || rl_rules::Registry::from_defs(vec![SlotDef::new("main hand")]).unwrap();
