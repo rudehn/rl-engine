@@ -22,7 +22,11 @@
 //! nothing else, not even whether it is empty, so a game's identification
 //! is a name and a marker rather than a redaction of every row in
 //! `Annotate`; a worn thing that is [`Stuck`] says so, for the keys that
-//! would take it off.
+//! would take it off. A game that knows part of an unknown thing, its kind
+//! and not its level, says what it seems in [`ItemRow::seems`], which a
+//! panel prints in place of the bare `unknown`, and may write the numbers
+//! it seems to have into the row in `Annotate`, which a panel prints as it
+//! prints a known thing's.
 
 use bevy::prelude::*;
 use rl_bevy::MomentId;
@@ -112,6 +116,13 @@ pub struct ItemRow {
     /// since its real triggers still work, and its use key stays while it
     /// is empty, since a key gone would say it was.
     pub unknown: bool,
+    /// What the game says it seems, while it is not yet known: lines a
+    /// panel prints in place of the bare `unknown`, in their own tones, such
+    /// as that its level is not yet known and how long until it will be.
+    /// Pushed in [`ViewSet::Annotate`](crate::ViewSet) as facets are, and
+    /// read only while `unknown`, since a thing known needs no word on what
+    /// it seems. Empty, the panel says `unknown`.
+    pub seems: Vec<Facet>,
     /// Whether it is worn and will not come off, [`Stuck`]: the bag offers
     /// no key that would take it off, and says so. In the bag a stuck thing
     /// is not, since only being worn holds it.
@@ -394,6 +405,7 @@ pub fn collect_inventory(
                 .unwrap_or_default(),
             tags: tagged.map(|t| t.0.iter().map(|tag| registries.map(|r| r.tags.name(*tag).to_string()).unwrap_or_default()).collect()).unwrap_or_default(),
             facets: Vec::new(),
+            seems: Vec::new(),
             ready_in,
             attuned,
             unknown: false,

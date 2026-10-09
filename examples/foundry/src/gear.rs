@@ -37,7 +37,7 @@ use rl_engine::rl_rules::{
 };
 use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
 use rl_engine::rl_ui::view::Strike;
-use rl_engine::rl_ui::{Facets, InventoryView, Tones};
+use rl_engine::rl_ui::{Facets, InventoryView, MassNoun, Tones};
 use serde::Deserialize;
 
 use crate::content::{MeleeDef, RangedDef};
@@ -57,6 +57,11 @@ const LEVELS_RON: &str = include_str!("../assets/levels.ron");
 pub struct ItemDef {
     /// Unique; spawn tables and, later, drop tables refer to it.
     pub name: String,
+    /// Whether the name is said with no `a`, as a pair named in the plural
+    /// is: `combat gauntlets`. The engine's narrator reads it as
+    /// [`MassNoun`] on the thing.
+    #[serde(default)]
+    pub mass: bool,
     /// One character.
     pub glyph: char,
     /// `(r, g, b)` in `0..=1`.
@@ -578,6 +583,9 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
     if d.enchant.is_some() {
         e.insert(Enchant(enchanted));
     }
+    if d.mass {
+        e.insert(MassNoun);
+    }
     let bonus = EffectBonus { turns: enchant.turns * level as u32, amount: enchant.amount * level };
     if bonus.turns != 0 || bonus.amount != 0 {
         e.insert(bonus);
@@ -918,6 +926,7 @@ mod tests {
     fn blank_def(name: &str) -> ItemDef {
         ItemDef {
             name: name.to_string(),
+            mass: false,
             glyph: '?',
             color: (0.0, 0.0, 0.0),
             slot: None,

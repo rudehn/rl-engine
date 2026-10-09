@@ -38,9 +38,17 @@ pub struct VitalsView {
     /// Whether anything the player wears is not yet known, [`Unknown`]: the
     /// figure above is not settled, whether it counts the thing's true
     /// armor, as the collector does, or what the game says it seems to
-    /// give, and a presenter marks it so. Any unknown worn thing counts,
-    /// not only one with armor: what it lends the wearer's stats is as
-    /// hidden.
+    /// give, and a presenter marks it so.
+    ///
+    /// Any unknown worn thing counts, not only one with armor, because a
+    /// mark set by what the thing truly gives would tell what the thing
+    /// is: a ring that lends armor would be marked and one that lends light
+    /// would not, the moment either went on, and armor cursed down to none
+    /// would read as no armor at all. So the collector marks what it cannot
+    /// rule out, and a game that knows which unknown things cannot move the
+    /// figure, by what the player already knows of them, clears the mark in
+    /// [`ViewSet::Annotate`](crate::ViewSet), as Undermere does for a ring
+    /// whose kind moves no armor at any level.
     pub armor_uncertain: bool,
     /// One per active status that has a badge glyph, in the order they
     /// were applied.
@@ -402,7 +410,7 @@ mod tests {
         stage.tick();
         assert!(!stage.app.world().resource::<VitalsView>().armor_uncertain, "an unknown thing carried, not worn, marks nothing");
 
-        let mail = stage.app.world_mut().spawn((Item, Name::new("+? chain mail"), Armor(5), Unknown)).id();
+        let mail = stage.app.world_mut().spawn((Item, Name::new("chain mail"), Armor(5), Unknown)).id();
         let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
         worn.equip(mail, &rl_rules::EquipShape::in_slot(body)).expect("the slot exists");
         stage.app.world_mut().entity_mut(player).insert(worn);

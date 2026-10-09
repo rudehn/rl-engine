@@ -10,6 +10,10 @@
 //! down, drinking a potion of strength or a continued run all read right
 //! at once with nothing to remember.
 //!
+//! What a thing asks is said where the thing is: [`note_strength`] writes
+//! it under the pack's row and the look cursor's, in the bad tone with
+//! what it costs when the adventurer is short of it.
+//!
 //! Strength itself is a stat whose base is the adventurer's twelve; the
 //! potion of strength's [`Strengthen`] raises the base, for good. Only the
 //! adventurer pays: a goblin's strength is never read, and what it wears
@@ -70,6 +74,77 @@ pub fn short_of(d: &ItemDef, strength: i32) -> i32 {
 /// a thing whose level is not known yet costs what it seems to give.
 pub fn armor_cost(d: &ItemDef, short: i32, gives: i32) -> i32 {
     if d.armor != 0 { (SHORT_ARMOR * short).min(gives.max(0)) } else { 0 }
+}
+
+/// What a thing of `d` asks of a wearer of `strength`, as the pack and the
+/// look cursor say it, and in what tone: "needs 13 strength" muted while
+/// they have it, and when they do not, how far short and what that costs,
+/// "needs 13 strength, you have 12: -4 accuracy", in the bad tone. `gives`
+/// is the armor the thing gives as the adventurer knows it, which a piece
+/// of armor's cost is capped at. `None` for a thing that asks none.
+///
+/// The strength a thing asks is its kind's, so saying it of a thing not
+/// yet known tells nothing of its level.
+pub fn requirement(d: &ItemDef, strength: i32, gives: i32) -> Option<(String, ToneId)> {
+    let needs = d.strength?;
+    let short = short_of(d, strength);
+    if short == 0 {
+        return Some((format!("needs {needs} strength"), Tones::MUTED));
+    }
+    let mut costs: Vec<String> = Vec::new();
+    if d.melee.is_some() || d.ranged.is_some() {
+        costs.push(format!("-{} accuracy", SHORT_ACCURACY * short));
+    }
+    let armor = armor_cost(d, short, gives);
+    if armor > 0 {
+        costs.push(format!("-{armor} armor"));
+    }
+    let cost = if costs.is_empty() { String::new() } else { format!(": {}", costs.join(", ")) };
+    Some((format!("needs {needs} strength, you have {strength}{cost}"), Tones::BAD))
+}
+
+/// What [`note_strength`] reads of a thing: its kind, the armor it gives,
+/// and whether it is known.
+type Asking = (&'static ItemKind, Option<&'static Armor>, Has<Unknown>);
+
+/// Says under each pack row and under the look cursor's subject what the
+/// thing asks of the adventurer's strength, as [`requirement`] words it,
+/// with the armor a thing not yet known gives counted at its kind's plain
+/// numbers, as the rest of what the pack says of it is.
+///
+/// In `ViewSet::Annotate`, after what Undermere says a thing not yet known
+/// seems, so the line reads under its numbers. Absent the adventurer, the
+/// pack or the look cursor, nothing is said there.
+pub fn note_strength(
+    pack: Option<ResMut<InventoryView>>,
+    look: Option<ResMut<InspectView>>,
+    adventurer: Query<&StatBlock, With<Adventurer>>,
+    things: Query<Asking>,
+    armory: Res<Armory>,
+    registries: Res<Registries>,
+    mut facets: ResMut<Facets>,
+) {
+    let Some(strength) = registries.stats.id(STRENGTH) else { return };
+    let Ok(stats) = adventurer.single() else { return };
+    let strength = stats.0.value(strength, &registries.stats);
+    let mut asks = |thing: Entity| {
+        let (kind, armor, unknown) = things.get(thing).ok()?;
+        let gives = if unknown { armory.armor_at(kind.0, 0) } else { armor.map_or(0, |a| a.0) };
+        let (text, tone) = requirement(armory.defs.get(kind.0), strength, gives)?;
+        Some(facets.facet("strength", text).toned(tone))
+    };
+    if let Some(mut pack) = pack {
+        for row in &mut pack.rows {
+            if let Some(facet) = asks(row.entity) {
+                row.facets.push(facet);
+            }
+        }
+    }
+    if let Some(mut look) = look
+        && let Some(facet) = look.subject.as_ref().and_then(|s| asks(s.entity))
+    {
+        look.facets.push(facet);
+    }
 }
 
 /// Keeps what the adventurer's too-heavy gear costs them on their stats:
@@ -225,6 +300,30 @@ mod tests {
         let shield = make(&mut app, "shield");
         equip(&mut app, me, shield);
         assert_eq!(armor(&mut app), 1, "and a shield's one, which asks twelve");
+    }
+
+    /// The definition of `name` in the armory.
+    fn def(name: &str) -> ItemDef {
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let armory = &library.armory;
+        armory.defs.get(armory.defs.expect(name)).clone()
+    }
+
+    /// What a thing asks is said plain while the wearer has it and with
+    /// what being short costs while they do not: a weapon's accuracy, a
+    /// piece of armor's armor, never more than it gives, and a shield's
+    /// armor alone, since it strikes nothing; a thing that asks nothing
+    /// says nothing.
+    #[test]
+    fn what_a_thing_asks_is_said_plain_when_met_and_with_its_cost_when_short() {
+        let said = |name: &str, strength: i32, gives: i32| requirement(&def(name), strength, gives);
+        assert_eq!(said("chain mail", 13, 3), Some(("needs 13 strength".to_string(), Tones::MUTED)));
+        assert_eq!(said("chain mail", 12, 3), Some(("needs 13 strength, you have 12: -1 armor".to_string(), Tones::BAD)));
+        assert_eq!(said("plate armor", 12, 6), Some(("needs 19 strength, you have 12: -6 armor".to_string(), Tones::BAD)), "no more than it gives");
+        assert_eq!(said("war hammer", 12, 0), Some(("needs 20 strength, you have 12: -32 accuracy".to_string(), Tones::BAD)));
+        assert_eq!(said("shield", 11, 1), Some(("needs 12 strength, you have 11: -1 armor".to_string(), Tones::BAD)));
+        assert_eq!(said("dagger", 12, 0), Some(("needs 10 strength".to_string(), Tones::MUTED)));
+        assert_eq!(said("ring of light", 12, 0), None, "a ring asks nothing");
     }
 
     /// The costs are worked out afresh from what is worn: taken off, the

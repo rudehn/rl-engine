@@ -421,7 +421,9 @@ mod tests {
         assert_eq!((level(held), carried.world().get::<Stuck>(held).is_some()), (Some(-1), true), "still held on");
         assert_eq!((worn_for(&carried, freed), worn_for(&carried, held)), before, "and the turns each has been worn");
         let named = |ring: Entity| carried.world().get::<Name>(ring).map(|n| n.as_str().to_string());
-        assert_eq!((named(freed), named(held)), (Some("-? ring of light".into()), Some("-? ring of stealth".into())), "both still known to be below nought");
+        assert_eq!((named(freed), named(held)), (Some("unidentified ring of light".into()), Some("unidentified ring of stealth".into())), "both unidentified");
+        let shown = |ring: Entity| carried.world().get::<CurseShown>(ring).is_some();
+        assert!(shown(freed) && shown(held), "and both still known to be below nought");
         let bag = &carried.world().get::<Inventory>(me).expect("a pack").items;
         let names: Vec<Option<String>> = bag.iter().map(|i| carried.world().get::<Name>(*i).map(|n| n.as_str().to_string())).collect();
         assert!(names.contains(&face), "the draught under its face: {names:?}");

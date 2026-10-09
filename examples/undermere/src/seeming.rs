@@ -1,5 +1,5 @@
-//! What a fight looks like to the adventurer, who does not yet know the
-//! level of everything worn in it.
+//! What a thing, and a fight, look like to the adventurer, who does not
+//! yet know the level of everything they find or wear.
 //!
 //! The engine's panels count a worn thing's true numbers, since those are
 //! what a blow meets, and mark a figure the adventurer cannot settle: left
@@ -19,6 +19,18 @@
 //! piece of armor, and what a short wearer pays for it, the damage a level
 //! adds to a weapon's blow or shot, and the accuracy it lends its wielder,
 //! each by the rule the armory applied it by.
+//!
+//! The thing itself reads the same way. The engine's pack and look cursor
+//! print a thing not yet known as `unknown` and nothing it is worth, which
+//! is right for a potion whose kind is a secret and wrong for chain mail,
+//! whose kind is plain to see and only its level is not. So for a thing
+//! whose kind is known and whose level is not, [`seem_pack`] and
+//! [`seem_looked_at`] say what any thing of its kind is at nought, the
+//! armor, the blow or the shot the pack prints for a known one and, for a
+//! ring, what each level of it gives, which is all a ring at nought does;
+//! and in place of the bare `unknown`, what is known of its level and how
+//! long it must still be worn to tell it. Nothing of the true level is
+//! read, so nothing of it shows.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -29,8 +41,13 @@ use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::forecast::{Combatant, Duel, duel};
 use rl_engine::rl_rules::{DamageStage, StatId};
 
+use rl_engine::rl_rules::stats::Op;
+use rl_engine::rl_ui::panel::sheet::plain_op;
+use rl_engine::rl_ui::view::sheet::{ResistLine, Strike};
+
 use crate::armory::{ACCURACY_PER_LEVEL, Armory, DAMAGE_PER_LEVEL, ItemKind};
-use crate::content::STRENGTH;
+use crate::content::{ACCURACY, ARMOR, STRENGTH};
+use crate::lore::{CurseShown, FAMILIAR_AFTER, Lore, Unfamiliar};
 use crate::run::Adventurer;
 use crate::strength::{armor_cost, short_of};
 
@@ -66,6 +83,7 @@ type Unknowable = (&'static ItemKind, Option<&'static Enchant>, Option<&'static 
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Seeming<'w, 's> {
     armory: Res<'w, Armory>,
+    lore: Res<'w, Lore>,
     registries: Res<'w, Registries>,
     loadout: Loadout<'w, 's>,
     worn: Query<'w, 's, &'static Equipped>,
@@ -119,6 +137,19 @@ impl Seeming<'_, '_> {
         unseen.blow = DAMAGE_PER_LEVEL * level(self.loadout.melee_with(who).and_then(|(from, _)| from));
         unseen.shot = DAMAGE_PER_LEVEL * level(self.loadout.ranged_with(who).and_then(|(from, _)| from));
         unseen
+    }
+
+    /// Whether anything `who` wears and the adventurer does not know yet
+    /// could move their armor: a thing of a kind not yet known, which could
+    /// be any kind of its family, or one of a known kind whose level moves
+    /// armor, as [`Armory::level_moves_armor`] says. Read off the kind and
+    /// never off the thing, so the answer is one the adventurer could give.
+    pub fn armor_unsettled(&self, who: Entity) -> bool {
+        let Ok(worn) = self.worn.get(who) else { return false };
+        let armor = self.registries.stats.id(ARMOR);
+        worn.0.worn().any(|(_, item)| {
+            self.unknown.get(item).is_ok_and(|(kind, ..)| !self.lore.knows(&self.armory.defs.get(kind.0).name) || self.armory.level_moves_armor(kind.0, armor))
+        })
     }
 
     /// The odds `attacker` lands what it would attack `target` with from
@@ -206,14 +237,25 @@ impl Seeming<'_, '_> {
 
 /// Counts each thing the adventurer wears and does not know yet at its
 /// kind's plain armor in the vitals' figure, which keeps the mark the
-/// engine put on it: `+2 leather armor` not yet known reads `armor 1?`,
-/// what any leather gives, and `armor 3` once it is known.
+/// engine put on it while something worn could move it: `+2 leather armor`
+/// not yet known reads `armor 1?`, what any leather gives, and `armor 3`
+/// once it is known.
+///
+/// The engine marks the figure whenever anything worn is not yet known,
+/// since it cannot tell what a thing it knows nothing of might move; this
+/// takes the mark off when nothing worn could, as
+/// [`Seeming::armor_unsettled`] says, so an unidentified ring of light
+/// leaves `armor 1` plain. A rule of the kind, which the adventurer knows,
+/// and never of the thing: marking by whether the thing gives armor would
+/// tell a cursed leather at nought armor from a plain one, or a ring of a
+/// kind that gives armor from one that gives light, the turn it went on.
 ///
 /// In `ViewSet::Annotate`, over the engine's true total. Absent vitals, as
 /// in a test that draws none, is nothing to correct.
 pub fn seem_armor(vitals: Option<ResMut<VitalsView>>, seeming: Seeming) {
     let Some(mut vitals) = vitals else { return };
     let Some(me) = vitals.entity.filter(|_| vitals.armor_uncertain) else { return };
+    vitals.armor_uncertain = seeming.armor_unsettled(me);
     let unseen = seeming.unseen(me).armor;
     if unseen != 0 {
         vitals.armor = Some(vitals.armor.unwrap_or(0) - unseen);
@@ -258,6 +300,191 @@ pub fn seem_aim(view: Option<ResMut<TargetView>>, seeming: Seeming, missiles: Qu
         (None, false) => return,
     };
     view.facets.push(facets.facet("odds", "unknown gear counted plain").toned(Tones::MUTED));
+}
+
+/// What any thing of a kind is at nought, in the terms the pack prints a
+/// known one in: what [`Unsettled::plain`] reads off the kind's line, and
+/// never off the thing, whose numbers carry its level.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Plain {
+    /// The blow it is swung with.
+    pub blow: Option<Strike>,
+    /// The shot it fires.
+    pub shot: Option<Strike>,
+    /// The armor it gives.
+    pub armor: i32,
+    /// What it resists, which no level touches.
+    pub resists: Vec<ResistLine>,
+    /// What it gives its wearer's stats, by the stat's name.
+    pub gives: Vec<(String, Op)>,
+    /// What it strikes for thrown.
+    pub thrown: Option<Strike>,
+    /// What each level of it gives, by the stat's name: all a ring does,
+    /// since at nought it gives nothing.
+    pub per_level: Vec<(String, i32)>,
+}
+
+impl Plain {
+    /// Its numbers as lines, in the pack's words and the pack's order, for
+    /// a panel that prints no numbers of its own: the look cursor's.
+    pub fn lines(&self) -> Vec<String> {
+        let strike = |s: &Strike| match s.range {
+            Some(range) => format!("{} {} to {range}", s.dice, s.kind),
+            None => format!("{} {}", s.dice, s.kind),
+        };
+        let mut lines: Vec<String> = Vec::new();
+        lines.extend(self.blow.iter().map(strike));
+        lines.extend(self.shot.iter().map(|s| format!("shoots {}", strike(s))));
+        if self.armor != 0 {
+            lines.push(format!("armor {:+}", self.armor));
+        }
+        lines.extend(self.resists.iter().map(|r| if r.pct < 0 { format!("weak to {} {}%", r.name, -r.pct) } else { format!("resists {} {}%", r.name, r.pct) }));
+        lines.extend(self.gives.iter().map(|(stat, op)| format!("{stat} {}", plain_op(*op))));
+        lines.extend(self.thrown.iter().map(|s| format!("thrown {}", strike(s))));
+        lines
+    }
+
+    /// What each level gives, a line apiece: `light +1 a level`.
+    pub fn per_level_lines(&self) -> Vec<String> {
+        self.per_level.iter().map(|(stat, n)| format!("{stat} {n:+} a level")).collect()
+    }
+}
+
+/// A thing whose level is not known yet, as [`Unsettled`] reads it: its
+/// kind, its level, how long it has been worn, whether its curse has shown,
+/// and what it resists.
+type Unlearned = (&'static ItemKind, Option<&'static Enchant>, &'static Unfamiliar, Has<CurseShown>, Option<&'static Resists>);
+
+/// What the pack and the look cursor read of a thing whose kind the
+/// adventurer knows and whose level they do not: its kind, what they have
+/// learned of its level, and the facet keys the lines go under.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Unsettled<'w, 's> {
+    armory: Res<'w, Armory>,
+    registries: Res<'w, Registries>,
+    lore: Res<'w, Lore>,
+    /// Each thing not yet known, its kind, its level, how long it has been
+    /// worn, whether its curse has shown, and what it resists.
+    things: Query<'w, 's, Unlearned, With<Unknown>>,
+    facets: ResMut<'w, Facets>,
+}
+
+impl Unsettled<'_, '_> {
+    /// What any thing of `thing`'s kind is at nought, when `thing` is one
+    /// whose kind is known and whose level is not; `None` for anything
+    /// else, a potion of a kind not yet known among them, which stays
+    /// `unknown`.
+    pub fn plain(&self, thing: Entity) -> Option<Plain> {
+        let (kind, _, _, _, resists) = self.things.get(thing).ok()?;
+        let d = self.armory.defs.get(kind.0);
+        if !self.lore.knows(&d.name) || !self.armory.learned_by_wear(kind.0) {
+            return None;
+        }
+        let r = &self.registries;
+        let strike = |kind: Id<rl_engine::rl_rules::damage::DamageKind>, dice: DiceRoll, range: Option<i32>| Strike {
+            kind: r.damage_kinds.name(kind).to_string(),
+            dice,
+            range,
+        };
+        Some(Plain {
+            // A level of nought adds nothing to a roll, so the kind's own.
+            blow: d.melee.as_ref().map(|m| strike(m.kind.id(), m.roll, None)),
+            shot: d.ranged.as_ref().map(|g| strike(g.kind.id(), g.roll, Some(g.range))),
+            armor: self.armory.armor_at(kind.0, 0),
+            resists: resists
+                .map(|resists| {
+                    r.damage_kinds
+                        .iter()
+                        .filter(|(k, _)| resists.0.get(*k) != 0)
+                        .map(|(k, def)| ResistLine { kind: k, name: def.name.clone(), pct: resists.0.get(k) })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            gives: self.armory.gives_at(kind.0, 0, r.stats.id(ACCURACY)).into_iter().map(|(stat, op)| (r.stats.name(stat).to_string(), op)).collect(),
+            thrown: d.throw.and_then(|t| t.strike.map(|(dice, k)| strike(k.id(), dice, Some(t.range)))),
+            per_level: d.per_level.iter().map(|(stat, n)| (r.stats.name(stat.id()).to_string(), *n)).collect(),
+        })
+    }
+
+    /// What is known of `thing`'s level, and how long it must still be
+    /// worn to tell it, the lines a panel prints in place of `unknown`:
+    /// "level below nought, how far not yet known" once a curse has shown;
+    /// "numbers shown at +0" over a kind's numbers at nought, which a ring,
+    /// whose lines are what a level gives, has none of; then "level known in
+    /// 140 more turns worn" while it is `worn`, and "wearing it 200 turns
+    /// will tell its level" while it is not.
+    ///
+    /// No line says the level is not yet known, since the name says
+    /// `unidentified` already. Below nought only while it still is: a curse
+    /// shown and then enchanted up to nought came unstuck saying so, and is
+    /// not known to be below anything.
+    pub fn level_lines(&mut self, thing: Entity, plain: &Plain, worn: bool) -> Vec<Facet> {
+        let Ok((_, level, unfamiliar, shown, _)) = self.things.get(thing) else { return Vec::new() };
+        let mut lines = Vec::new();
+        if shown && level.is_some_and(|l| l.level < 0) {
+            lines.push(self.facets.facet("level", "level below nought, how far not yet known").toned(Tones::BAD));
+        }
+        if !plain.lines().is_empty() {
+            lines.push(self.facets.facet("level", "numbers shown at +0").toned(Tones::MUTED));
+        }
+        let left = unfamiliar.left();
+        let turns = if left == 1 { "1 more turn".to_string() } else { format!("{left} more turns") };
+        let wear = match (worn, unfamiliar.worn) {
+            (true, _) => format!("level known in {turns} worn"),
+            (false, 0) => format!("wearing it {FAMILIAR_AFTER} turns will tell its level"),
+            (false, _) => format!("wearing it {turns} will tell its level"),
+        };
+        lines.push(self.facets.facet("level", wear).toned(Tones::MUTED));
+        lines
+    }
+
+    /// What each level of it gives, as facets under its numbers.
+    fn per_level(&mut self, plain: &Plain) -> Vec<Facet> {
+        plain.per_level_lines().into_iter().map(|line| self.facets.facet("per level", line)).collect()
+    }
+}
+
+/// Writes into each row of the pack whose kind is known and whose level is
+/// not what any thing of its kind is at nought, which the pack prints as it
+/// prints a known thing's numbers, and in place of its bare `unknown` what
+/// is known of its level and how long it must still be worn to tell it, as
+/// [`Unsettled`] reads them; a ring, which gives nothing at nought, says
+/// what each level gives under them.
+///
+/// In `ViewSet::Annotate`, over the engine's row, which keeps nothing of a
+/// thing not yet known. Absent a pack, as in a test that draws none,
+/// nothing is written.
+pub fn seem_pack(view: Option<ResMut<InventoryView>>, mut unsettled: Unsettled) {
+    let Some(mut view) = view else { return };
+    for row in view.rows.iter_mut().filter(|r| r.unknown) {
+        let Some(plain) = unsettled.plain(row.entity) else { continue };
+        row.seems = unsettled.level_lines(row.entity, &plain, row.worn());
+        let per_level = unsettled.per_level(&plain);
+        row.facets.extend(per_level);
+        let Plain { blow, shot, armor, resists, gives, thrown, .. } = plain;
+        (row.blow, row.shot, row.armor, row.resists, row.bestows, row.thrown) = (blow, shot, armor, resists, gives, thrown);
+    }
+}
+
+/// Says under the look cursor, of a thing lying there whose kind is known
+/// and whose level is not, what is known of its level and how long wearing
+/// it will take to tell it, in place of the bare `unknown`, and what any
+/// thing of its kind is at nought under that, as [`seem_pack`] says it in
+/// the pack.
+///
+/// In `ViewSet::Annotate`, over the engine's view. Absent the look cursor,
+/// nothing is said.
+pub fn seem_looked_at(view: Option<ResMut<InspectView>>, mut unsettled: Unsettled) {
+    let Some(mut view) = view else { return };
+    let Some(thing) = view.subject.as_ref().map(|s| s.entity).filter(|_| view.unknown) else { return };
+    let Some(plain) = unsettled.plain(thing) else { return };
+    view.seems = unsettled.level_lines(thing, &plain, false);
+    for line in plain.lines() {
+        let facet = unsettled.facets.facet("plain", line);
+        view.facets.push(facet);
+    }
+    let per_level = unsettled.per_level(&plain);
+    view.facets.extend(per_level);
 }
 
 #[cfg(test)]
@@ -307,6 +534,23 @@ mod tests {
         assert_eq!(vitals(&app), (Some(3), false), "familiar, its own, unmarked");
     }
 
+    /// A ring of light not yet known moves no armor at any level, so the
+    /// vitals read the armor plain while it is worn; chain mail not yet
+    /// known beside it keeps the mark.
+    #[test]
+    fn an_unknown_ring_that_moves_no_armor_leaves_the_armor_unmarked() {
+        let (mut app, me, _) = arena_with(21, VitalsViewPlugin);
+        let ring = thing(&mut app, "ring of light", 2, false);
+        equip(&mut app, me, ring);
+        settle(&mut app);
+        let plain = vitals(&app);
+        assert!(!plain.1, "an unknown ring of light, and nothing marked: {plain:?}");
+        let mail = thing(&mut app, "chain mail", 2, false);
+        equip(&mut app, me, mail);
+        settle(&mut app);
+        assert!(vitals(&app).1, "unknown chain mail beside it is marked");
+    }
+
     /// A thing made known by being told is read as it is at once, as one
     /// worn long enough is.
     #[test]
@@ -345,6 +589,49 @@ mod tests {
             assert_eq!(unknown, (plain.0, true), "{name} at {level:+}, not yet known, reads as a plain one, marked");
             assert!(!plain.1, "{name}, known, is not marked");
         }
+    }
+
+    /// A pack row as the test below compares it: what it says in place of
+    /// `unknown`, its armor, its blow, its shot, what it gives, and what the
+    /// game added.
+    type Said = (Vec<String>, i32, Option<String>, Option<String>, Vec<(String, Op)>, Vec<String>);
+
+    /// What the pack's row for `name` at `level`, found and carried, its
+    /// kind known, says it is.
+    fn pack_row(name: &str, level: i32) -> Said {
+        let (mut app, me, _) = arena_with(25, InventoryViewPlugin);
+        app.world_mut().resource_mut::<crate::lore::Lore>().learn(name);
+        let found = find(&mut app, name, level);
+        crate::testing::give(&mut app, me, found);
+        settle(&mut app);
+        let view = app.world().resource::<InventoryView>();
+        let row = view.rows.iter().find(|r| r.entity == found).expect("in the pack");
+        let strike = |s: &Option<Strike>| s.as_ref().map(|s| format!("{} {}", s.dice, s.kind));
+        let texts = |facets: &[Facet]| facets.iter().map(|f| f.text.clone()).collect::<Vec<_>>();
+        (texts(&row.seems), row.armor, strike(&row.blow), strike(&row.shot), row.bestows.clone(), texts(&row.facets))
+    }
+
+    /// Over every kind whose level is learned by wearing it, what the pack
+    /// says of one found is the same at every level it could be, cursed or
+    /// better, so nothing in it tells the level; and it is what a +0 one of
+    /// the kind gives, which is what a known +0 one reads.
+    #[test]
+    fn what_the_pack_says_of_a_thing_whose_level_is_not_known_is_the_same_at_every_level() {
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let armory = &library.armory;
+        let kinds: Vec<&str> = armory.defs.iter().filter(|(id, _)| armory.learned_by_wear(*id)).map(|(_, d)| d.name.as_str()).collect();
+        for name in ["chain mail", "sword", "bow", "shield", "ring of regeneration"] {
+            assert!(kinds.contains(&name), "{name} is learned by wearing it");
+            let plain = pack_row(name, 0);
+            assert!(plain.0.last().is_some_and(|l| l.starts_with("wearing it")), "{name}: {:?}", plain.0);
+            for level in [-3, -1, 2, 3] {
+                assert_eq!(pack_row(name, level), plain, "{name} at {level:+} reads as it does at nought");
+            }
+        }
+        let (_, armor, ..) = pack_row("chain mail", 2);
+        assert_eq!(armor, 3, "chain mail at nought");
+        let (.., per_level) = pack_row("ring of regeneration", 2);
+        assert_eq!(per_level, ["regeneration +10 a level", "mending +25 a level"], "what each level of a ring gives");
     }
 
     /// The forecast of a fight with a goblin, the chance to hit it, and what
