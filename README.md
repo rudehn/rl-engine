@@ -31,6 +31,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Noise and hearing**: every engine action makes its own sound, loudness spent walking through what a tile is made of, and a listener that hears a place rather than who made it and walks to it as a trail.
 - **Fire and gas**: a value per tile stepped a turn at a time, gas whose kinds are a game's content and fire whose rules are the engine's, both writing into what stops sight and light.
 - **Props and remains**: a crate, a lever or a console as content rather than a component and an action in every game, containers with a screen the engine runs end to end, and the dead left where they fell as the entity that died, which a game can stand back up as it was.
+- **Names from syllables**: a file of name sets, pools of syllables and weighted patterns, every drawn name checked against libtcod's rejections and drawn again a bounded number of times, and never one a run has already given.
 - **Data-driven content**: tiles, monsters, items, statuses and quests are registries loaded from RON files, with weighted spawn tables by depth band.
 - **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
@@ -298,7 +299,7 @@ The window opens above the others without taking focus, and the screen must be u
 - **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable chapters, from a map on screen to an action of your own. Start here, at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/) for the sidebar and the search. Every chapter is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
 - **[The systems reference](docs/guide/src/systems/)** is the same book's page per subsystem, checked against the code it documents: what it is, its plugins, and where to read the source.
 - [**docs/OVERVIEW.md**](docs/OVERVIEW.md) is the inventory of what exists and what is not built yet, kept current, with a table of every plugin and every panel.
-- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for twenty of them, from abilities, fire and gas, lighting and minds to run records, stealth and the UI, listed in [the docs index](docs/README.md).
+- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for twenty-one of them, from abilities, fire and gas, lighting and minds to run records, stealth and the UI, listed in [the docs index](docs/README.md).
 - [**docs/PLAN.md**](docs/PLAN.md) is the design: what was decided, why, and which milestone each piece lands in.
 - [**docs/TODO.md**](docs/TODO.md) is the work that has been found and not started.
 - [**docs/reviews/**](docs/reviews/) holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.

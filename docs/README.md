@@ -32,6 +32,7 @@ These are the reasoning; the overview is the list.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
 - [loot.md](design/loot.md), where items turn up and how many, with what an item is left to the game.
 - [minds.md](design/minds.md), how a non-player decides.
+- [names.md](design/names.md), names drawn from syllables: libtcod's rejections over typed, weighted patterns, and why a draw is bounded.
 - [noise.md](design/noise.md), what a sound is and who hears it.
 - [prefabs.md](design/prefabs.md), a piece of a place as data: slots for props, items and monsters drawn at the place's depth, roles, and guards that hold their post.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.
