@@ -17,11 +17,14 @@
 //               out
 #![enable(implicit_some)]
 [
+    // Named for the king the floor ten of part 1 held, and kept so a save
+    // still finds it; its words name no boss, since floor ten draws one of
+    // three and the run learns which only on the throne's own floor.
     (
         name: "the drowned king",
-        title: "The Drowned King",
+        title: "The Drowned Throne",
         text: "Ten floors under the lake, the thing that drowned the kingdom keeps its throne. End it.",
-        objectives: [(text: "Slay the Drowned King", on: BossSlain, need: Total(1))],
+        objectives: [(text: "Slay what waits on the throne", on: BossSlain, need: Total(1))],
         victory: true,
     ),
 ]

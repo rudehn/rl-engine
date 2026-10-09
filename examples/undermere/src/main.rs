@@ -178,7 +178,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // Every key `input::declare_controls` and the engine's screens
         // declare, with the hint that opens it in the rail's last row.
         ControlsPanel::new(screen.controls).hint(screen.hint),
-        GameMenuPanel::new(screen.menu).title("Undermere").died("The Undermere keeps you.").won("The Drowned King is dead, and the lake is still."),
+        GameMenuPanel::new(screen.menu).title("Undermere").died("The Undermere keeps you.").won("The throne is empty, and the lake is still."),
     ));
     // What holds each monster in sight, said after its name on the rail.
     app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
@@ -511,7 +511,7 @@ mod tests {
     fn the_opening_screen_names_mereholt_in_the_log_and_the_way_to_the_controls_in_the_rail() {
         let app = on_screen(RunSeed(7));
         let log: Vec<String> = (ROWS - LOG_ROWS..ROWS).map(|y| row(&app, y)).collect();
-        assert!(log.iter().any(|l| l.starts_with("Seed 7. Ten floors under the lake, the Drowned King waits.")), "{log:#?}");
+        assert!(log.iter().any(|l| l.starts_with("Seed 7. Ten floors under the lake, something waits on a drowned throne.")), "{log:#?}");
         assert!(log.iter().any(|l| l.starts_with("Mereholt, at dusk, on the shore of the black lake.")), "{log:#?}");
         assert!(log.iter().any(|l| l.starts_with("Press ? for the controls.")), "{log:#?}");
         assert!(row(&app, ROWS - 1).trim_end().ends_with("? controls"), "the rail's last row: {:?}", row(&app, ROWS - 1));
