@@ -36,7 +36,7 @@
             crates/rl-bevy/src/turn.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: f70fc902 -->
+     fingerprint: c1f36be1 -->
 
 # Panels
 
@@ -78,9 +78,9 @@ A tone with no colour falls back to `text` rather than panicking, and every unco
 `Focus` is the one entity picked out of that list, held by entity rather than by cell so two things on a tile are two stops, and a focus on something that has left sight is treated as none rather than as an error.
 The rail highlights it, the look cursor opens on it and an aim opens on it when the aim can take it, so the row picked out and the thing aimed at are one choice.
 An aim put away, fired or not, leaves nothing picked out, so the rail is not left pointing at what a grenade already landed on; what it was fired at is kept apart as `LastAimed`, and the next aim opens there when nothing is picked out.
-`VitalsView` is the player: a label, a list of `Bar`s, armor, with `armor_uncertain` while anything the player wears is `Unknown`, which the strip writes `armor 5?` since the total counts what the unknown thing truly lends until a game writes it again in `ViewSet::Annotate` as the thing seems, status badges, game facets, the turn, the position, whether the player is seen, the `LightBand` it stands in, and how loud it has been.
+`VitalsView` is the player: a label, a list of `Bar`s, armor, with `armor_uncertain` while anything the player wears is `Unknown`, which the strip writes `armor 5?` since the total counts what the unknown thing truly lends until a game writes it again in `ViewSet::Annotate` as the thing seems, and which a game clears there for unknown things it knows cannot move the figure, status badges, game facets, the turn, the position, whether the player is seen, the `LightBand` it stands in, and how loud it has been.
 `exposure` is `None` without lighting, and the strip prints it beside seen or hidden, since the same band decides how well a watcher sees the player and how hard it is to hit.
-`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one and is known, a fed weapon's rounds as the `ammo` facet [Ammunition](ammunition.md) describes, and `primary` false only on a two-hander's claimed hand, whose row is the same item worn twice.
+`NearbyView` is `actors` and `things` as `Row`s with the `focused` `Sighting`; `GearView` is a `GearSlot` per registered slot in declared order, filled or empty, since what is not worn reads as clearly as what is, with a worn thing's charges when it holds more than one and is known, `stuck` for one that will not come off, which the panel writes `will not come off` in the bad tone as the bag does, a fed weapon's rounds as the `ammo` facet [Ammunition](ammunition.md) describes, and `primary` false only on a two-hander's claimed hand, whose row is the same item worn twice.
 `InspectView` is where the cursor is, what the ground there is called, whether it burns, what gas hangs there, the `Row` under it, `unknown` when that is a thing not yet known, which the panel says in place of anything more, or what the game pushed on `seems` in its place, and a `Duel` fought at the distance the cursor stands from the player, each side counted as it would fight once in reach and at the speed `Speeds` gives it, so a monster across the room still reads in turns and a hasted one in its own.
 Its collector builds `blows` and `shots` for both sides, packs each pair with `Loadout::arms` and hands that Chebyshev gap to `Combatant::armed`, so an actor carrying only a gun reads dangerous across the room and harmless once you are beside it.
 Each side's chance of landing what it would attack with from there comes from `Marksmanship::at_distance` and scales its `Combatant` through `hitting`, and the player's own is kept as `odds` for the panel to print under the forecast, the same lines the targeting cursor prints.
@@ -98,7 +98,7 @@ The view also holds the `AimRange`, how far the aim reaches against how far the 
 A presenter reads a view, reads the `Palette`, and writes cells to the `Terminal`; it owns no state and makes no decision a game might want made differently.
 `panel::split_right`, `split_bottom` and `split_top` hand back both halves of a cut, which is the whole of the engine's opinion about layout: no resource holds every panel's rectangle.
 `clear`, `frame`, `section` and `bar` are public so a game taking the view and drawing its own does not rewrite a box-drawing routine, and `ListMenu` is the selection a screen keeps.
-A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read; the gear panel's one exception moves a name's facet to the line under it rather than cut the name that carries a level.
+A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read; the gear panel's one exception wraps a name too long for its row onto the rows it has spare, and moves its words to the line under it, rather than cut the name that says what the thing is, and never takes a row a slot below it needs.
 
 ## Using it
 

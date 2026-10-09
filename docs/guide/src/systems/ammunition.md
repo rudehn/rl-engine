@@ -4,7 +4,7 @@
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/items.rs
             crates/rl-ui/src/view/gear.rs
-     fingerprint: 6256b889 -->
+     fingerprint: 5569a737 -->
 
 # Ammunition
 

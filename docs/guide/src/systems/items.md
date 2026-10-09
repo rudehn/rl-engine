@@ -18,7 +18,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 883b1825 -->
+     fingerprint: 44821384 -->
 
 # Items and equipment
 
@@ -47,11 +47,11 @@ A two-hander is `EquipShape::in_slot(main).and_claims(off)` and a ring is `in_an
 `Stack { key, count }` makes an item countable: picking one up merges it into a carried item with the same key instead of adding a row, and the key is the game's, usually the definition id.
 `Tagged` is what an item counts as, by registered tag; `Enchant` is its `+N` and rolled affixes; `Bestows` is what it does to registered stats while worn, as `(StatId, Op)` pairs the game writes when it spawns the item with the enchant already applied, and `EffectBonus` is what its triggers' effects land stronger by, written the same way.
 `GearScore` is what wearing it is worth in the game's own units, and only the comparison matters: a mind weighs an item in sight against everything it would displace and, for a thing whose blow would replace its own, against its `OwnBlowScore` too, and puts on what is worth more than all of them together, never a thing that would push off something that stays on.
-`Unknown` is a thing not yet known: the bag, the look cursor's panel and the targeting box show its name and where it goes and say `unknown` in place of what it does and is worth, the gear rail shows none of its charges, and the vitals mark the armor total uncertain while one is worn.
+`Unknown` is a thing not yet known: the bag, the look cursor's panel and the targeting box show its name and where it goes and say `unknown` in place of what it does and is worth, the gear rail shows none of its charges, and the vitals mark the armor total uncertain while one is worn, any one, since a mark set by what the thing truly gives would tell what it is.
 A game that knows part of it, its kind and not its level, pushes what it seems as facets on `ItemRow::seems` or `InspectView::seems`, which the bag and the look cursor print in place of `unknown`, and may write the numbers it seems to have into its `ItemRow`.
 Nor is its use refused by anything only its kind, its reach or its charges would explain: `may_use` lets it be used empty, for the turn and to land nothing, and its aim is previewed as a plain line, as [Uses](uses.md) says.
 What it does is untouched, so an unknown draught drunk does what it does and an unknown blade strikes for what it strikes for.
-`Stuck` is a thing that will not come off while it is worn: taking it off, dropping or throwing it, and putting on anything that would push it off are each refused as any impossible item action is, the player keeping the turn, and reported as `ItemEvent::WouldNotComeOff`, which the narrator says as `A ring will not come off.`
+`Stuck` is a thing that will not come off while it is worn: taking it off, dropping or throwing it, and putting on anything that would push it off are each refused as any impossible item action is, the player keeping the turn, and reported as `ItemEvent::WouldNotComeOff`, which the narrator says as `Your ring will not come off.`, and the bag and the gear rail both say `will not come off` beside it while it is worn.
 Only being worn holds it, so in the bag a stuck thing is put on, dropped and thrown as anything else is, and dying lets it fall.
 `EquipFromGround` costs `EQUIP_FROM_GROUND_COST`, half a step more than picking up or putting on alone, so taking up a sword in the middle of a fight is a real choice rather than a free one or two turns wasted.
 `resolve_items` reads all eight intents into one list, so one turn spends one item action whichever kind it is; an impossible one is refused for the player and charged as a wait to anyone else, the way an impossible move is, and what refuses a use is told in [Uses and charges](uses.md).
@@ -115,7 +115,7 @@ The engine carries a bonus on the carrier and never learns what a level is: `Enc
 What a level does is therefore a rule of the game's, written once where the game chooses; Foundry's is an `enchant` block on each item in its own item file, what one level adds beside numbers that stay what the thing is at `+0`, and another game's may be a table, a curse or nothing.
 Whether a thing is known and whether it stays on are the engine's to honour and the game's to decide: what `Unknown` withholds is withheld on every panel alike, and what `Stuck` refuses is every path that would take a thing off, so a game writing identification or a curse writes when its marker goes on and comes off, not a redaction of every panel and a check on every key.
 Neither marker is put on, taken off or saved by the engine, since what makes a thing known, a use, a reading or a long wear, and what frees it are the game's, and a game keeps both in its own save.
-`Unknown` hides what a thing is worth and never what it does, because a game whose unknown draught did nothing until named would have to mirror every effect, and the armor total still counts an unknown worn thing, marked as uncertain, because the total is what a blow meets, until a game that knows what the thing seems to be counts it so in `ViewSet::Annotate`.
+`Unknown` hides what a thing is worth and never what it does, because a game whose unknown draught did nothing until named would have to mirror every effect, and the armor total still counts an unknown worn thing, marked as uncertain, because the total is what a blow meets, until a game that knows what the thing seems to be counts it so in `ViewSet::Annotate`, and clears the mark there for an unknown thing it knows cannot move the figure.
 The container screen is take-only, because putting things back is a stash mechanic and the engine has no opinion about stashes.
 Weight, bulk, encumbrance, durability, prices, and what makes a thing known or lifts a curse are each a game's rule over these components and these messages, and none of them is assumed here.
 
