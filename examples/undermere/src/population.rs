@@ -443,7 +443,10 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool) -> Opti
 ///
 /// Draws from `Seed::stream(b"undermere.population", floor)`, a stream for
 /// each floor alone, so what stands on floor two never depends on how many
-/// draws floor one happened to make, or on whether it was entered first.
+/// draws floor one happened to make, or on whether it was entered first;
+/// the bands from `undermere.population.bands` and the ordinary groups
+/// from `undermere.population.plan`, each of the floor alone too, so a
+/// roll added to one of the three never moves what the other two stand.
 pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
     let Stock { bestiary, map, seed, registries, ways, turns, verbs } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
@@ -454,13 +457,19 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         let bounds = place.terrain.bounds();
         let site = Site { map: ev.map, bounds, entry: ev.entry, floor };
         let stocked = Stocked { bestiary, registries, verbs };
+        // The bands draw where they stand and who sleeps from a stream of
+        // their own, as `plan` does below: the camp's coin flip, the
+        // feeding ground, the patrol and the captive all roll on `rng`,
+        // and a band drawing from it would stand somewhere else whenever
+        // one of them was added or tuned.
+        let mut band_rng = seed.stream(b"undermere.population.bands", u64::from(floor));
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
             // together as a camp round its own fire instead of standing
             // in the open: the controller's own share for task 10's camps.
             let camp = band.leader == "goblin" && rng.random_ratio(1, 2);
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
-            if let Some(used) = place_band(&mut commands, &stocked, &site, band, &mut free, &mut rng, camp) {
+            if let Some(used) = place_band(&mut commands, &stocked, &site, band, &mut free, &mut band_rng, camp) {
                 if camp {
                     let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
                     if let Some(fire_at) = camp_fire_cell(&used, &mut free) {
@@ -504,9 +513,11 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
         let mut plan_rng = seed.stream(b"undermere.population.plan", u64::from(floor));
         let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor), &mut free, &mut plan_rng);
+        // Who of them sleeps draws from the same stream, after `plan` has
+        // drawn all it will, so it moves with nothing but the groups.
         for (id, at) in groups.into_iter().flatten() {
             let def = bestiary.defs.get(id);
-            let asleep = rng.random_ratio(sleep_chance(floor, def.tricks.sleepy, def.tricks.wakeful), 100);
+            let asleep = plan_rng.random_ratio(sleep_chance(floor, def.tricks.sleepy, def.tricks.wakeful), 100);
             spawn_monster(&mut commands, def, at, ev.map, registries, asleep);
         }
     }
