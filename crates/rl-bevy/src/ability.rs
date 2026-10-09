@@ -491,15 +491,27 @@ impl Bystanders<'_, '_> {
     /// aim, so looking at a reflecting body costs nothing and decides
     /// nothing before the use is actually made.
     ///
+    /// Only a use aimed at the body as a foe is turned back: one aimed
+    /// [`Aim::Foe`], or aimed at the ground or at anyone by a user hostile
+    /// to it. A mend or a ward aimed at allies lands as it would, since a
+    /// body turns back what is thrown at it and not what is offered to it;
+    /// turning back half of every mend an ally aimed at a reflecting
+    /// companion made it the one companion nobody could heal.
+    ///
     /// Writes a [`Reflected`] for every target it turns back; a target
     /// left standing where it was aimed writes none.
-    pub fn reflect(&mut self, landing: &mut Landing, mode: TargetMode, map: &WorldMap) {
+    pub fn reflect(&mut self, landing: &mut Landing, targeting: Targeting, map: &WorldMap) {
         let user = landing.user;
         let source = landing.source;
         let mut landed: Vec<Entity> = Vec::with_capacity(landing.targets.len());
         let (mut turned, mut stayed) = (false, false);
         for target in landing.targets.drain(..) {
-            let reflected = target != user && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
+            let thrown = match targeting.aim {
+                Aim::Foe => true,
+                Aim::Ground | Aim::Anyone => self.relation(user, target) == Some(Relation::Hostile),
+                Aim::Ally | Aim::SelfOnly => false,
+            };
+            let reflected = target != user && thrown && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
             if reflected && let Some(writer) = self.reflected.as_mut() {
                 writer.write(Reflected { by: target, onto: user, source });
             }
@@ -513,7 +525,7 @@ impl Bystanders<'_, '_> {
         landing.targets = landed;
         if turned && !stayed {
             let at = landing.origin;
-            landing.cells = match mode {
+            landing.cells = match targeting.mode {
                 TargetMode::Ball { radius, .. } => burst(at, radius, map.window_tiles(), |p| map.blocks_projectiles(p)),
                 _ => vec![at],
             };
@@ -580,7 +592,7 @@ pub fn resolve_abilities(
         // Not refused, and about to be cast: the one moment a reflecting
         // body's turn is actually spent, never the gate above or the
         // cursor's own look at the same aim.
-        bystanders.reflect(&mut landing, def.mode, world.map());
+        bystanders.reflect(&mut landing, def.targeting(), world.map());
 
         pay(user, def, &mut state);
         if def.cooldown > 0
@@ -1068,6 +1080,12 @@ mod tests {
         mode: Bolt(range: 6),
         effects: [(kind: "Probe", args: ())],
     ),
+    (
+        name: "salve",
+        aim: Ally,
+        mode: Bolt(range: 6),
+        effects: [(kind: "Mend", args: (roll: "5"))],
+    ),
 ]"#;
 
     /// A game's own effect, doing something the engine has no word for.
@@ -1363,6 +1381,34 @@ mod tests {
                 assert_eq!(reflected[0].by, them, "seed {seed}: by names the reflecting body");
                 assert_eq!(reflected[0].onto, me, "seed {seed}: onto names the caster it turned back onto");
             }
+        }
+    }
+
+    /// A reflecting body turns back only what is aimed at it as a foe: a
+    /// mend aimed at it by an ally, and a blast an ally aims at the ground
+    /// it stands on, land on it every time, over a span of seeds, and never
+    /// come back on the one who used them.
+    #[test]
+    fn a_reflecting_body_never_turns_back_what_an_ally_aims_at_it() {
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let (salve, burst) = (ability(&app, "salve"), ability(&app, "burst"));
+            let me = caster(&mut app, start, 20, &[salve, burst]);
+            let there = start.offset(4, 0);
+            let ours = friend(&mut app, there);
+            app.world_mut().entity_mut(ours).insert((Reflects, Health { current: 10, max: 20 }));
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: salve, aim: there }));
+            app.update();
+            assert_eq!(hp(&app, ours), 15, "seed {seed}: an ally's mend lands on the reflecting body");
+
+            settle(&mut app);
+            app.world_mut().write_message(Intent::new(me, Use { ability: burst, aim: there }));
+            app.update();
+            assert_eq!(hp(&app, ours), 12, "seed {seed}: and so does an ally's blast on its ground");
+            assert_eq!(hp(&app, me), 30, "seed {seed}: and neither came back on the one who used it");
         }
     }
 
