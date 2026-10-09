@@ -1059,6 +1059,45 @@ mod tests {
         assert!(count >= 1, "no drowned thrall rose after seventy of the adventurer's own turns");
     }
 
+    /// On a real floor ten, the Mother Below's spawnlings and the Drowned
+    /// King's thralls come out of the throne's own geometry: each stands on
+    /// open ground inside the floor and off its outermost ring, so a wall
+    /// torn open for a spawnling never opens the floor onto nothing. The
+    /// adventurer is at peace with everyone, so what the boss does in forty
+    /// turns is its own tricks and nothing it was provoked into.
+    #[test]
+    fn on_a_real_throne_floor_spawnlings_and_thralls_stand_on_open_ground_inside_it() {
+        use crate::bestiary::Bestiary;
+        use crate::dungeon::{FLOORS, Undermere, map_of};
+        use crate::testing::{adventurer, arrive, headless, pass_turns, sturdy};
+        use rl_engine::rl_core::RunSeed;
+        for (piece, young) in [("the Mother Below", SPAWNLING), ("the throne", "drowned thrall")] {
+            let seed = (0..100).map(RunSeed).find(|s| Undermere::new(*s).final_boss().piece == piece).expect("some seed draws each boss");
+            let mut app = headless(seed);
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            let peace = CombatRules::new(&app.world().resource::<Registries>().factions);
+            app.insert_resource(peace);
+            let floor = map_of(FLOORS);
+            arrive(&mut app, floor);
+            pass_turns(&mut app, 40);
+            let young = app.world().resource::<Bestiary>().defs.expect(young);
+            let bounds = app.world().resource::<WorldMap>().place(floor).expect("floor ten is built").terrain.bounds();
+            let world = app.world_mut();
+            let stood: Vec<Point> =
+                world.query::<(&Kind, &Position, &OnMap)>().iter(world).filter(|(k, _, on)| k.0 == young && on.0 == floor).map(|(_, p, _)| p.0).collect();
+            assert!(!stood.is_empty(), "{seed:?}: under {piece}, nothing came in forty turns");
+            let map = app.world().resource::<WorldMap>();
+            for at in stood {
+                assert!(
+                    bounds.contains(at) && !bounds.is_border(at),
+                    "{seed:?}: under {piece}, one stands at {at:?}, on or past the floor's own edge {bounds:?}"
+                );
+                assert!(map.is_walkable_on(floor, at), "{seed:?}: under {piece}, one stands at {at:?}, which is not open ground");
+            }
+        }
+    }
+
     /// The Mother Below's own spawnlings stop the moment she dies: killing
     /// her takes every `Spawned` link of hers out of play with her, as
     /// `allies::vanish` does, since nothing struck them down.
