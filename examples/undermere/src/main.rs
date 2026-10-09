@@ -405,7 +405,9 @@ mod tests {
     #[test]
     fn new_game_after_a_run_ends_and_is_left_for_the_title_begins_on_a_fresh_seed() {
         let mut app = on_screen(RunSeed(7));
-        let me = undermere::testing::adventurer(&mut app);
+        // Mereholt is at peace with the adventurer, so a blow struck there
+        // is dropped before it reaches Health; floor one is not.
+        let me = undermere::testing::arrive(&mut app, undermere::dungeon::map_of(1));
         undermere::testing::kill(&mut app, me, None);
         undermere::testing::settle(&mut app);
         assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Over, "the run is over");
