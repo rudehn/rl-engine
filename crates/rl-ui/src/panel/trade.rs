@@ -85,6 +85,10 @@ pub struct TradeWords {
     pub no_worth: String,
     /// It is worn.
     pub worn: String,
+    /// After the price on a row of more than one, which is the price of
+    /// one, since the confirm key deals one: without it `10 arrows  2`
+    /// reads as the ten for two.
+    pub each: String,
 }
 
 impl Default for TradeWords {
@@ -102,6 +106,7 @@ impl Default for TradeWords {
             not_bought: "not wanted".into(),
             no_worth: "no worth".into(),
             worn: "worn".into(),
+            each: "each".into(),
         }
     }
 }
@@ -391,14 +396,20 @@ fn draw_side(
         let fg = palette.get(if row.open() { Tones::TEXT } else { Tones::MUTED });
         terminal.fill(Rect::new(list.x, y, list.width, 1), Cell::new(' ', fg).on(bg));
         // What one changes hands for, or why it cannot: a short purse
-        // still shows the price, since how short is the useful part.
+        // still shows the price, since how short is the useful part. A
+        // row of more than one says the price is for one, where it fits.
         let price = match (row.refused, row.each) {
             (None, Some(each)) => each.to_string(),
             (Some(TradeRefusal::Short), Some(each)) => format!("{} {each}", words.refusal(TradeRefusal::Short, deal)),
             (Some(why), _) => words.refusal(why, deal).to_string(),
             (None, None) => String::new(),
         };
-        let price = clip(&price, (list.width / 2).max(0) as usize);
+        let room = (list.width / 2).max(0) as usize;
+        let per_one = format!("{price} {}", words.each);
+        let price = match row.count > 1 && row.each.is_some() && matches!(row.refused, None | Some(TradeRefusal::Short)) && per_one.chars().count() <= room {
+            true => per_one,
+            false => clip(&price, room),
+        };
         let price_x = list.right() - price.chars().count() as i32;
         terminal.print_on(price_x, y, &price, fg, bg);
         terminal.set(list.x, y, Cell::new(row.row.glyph.ch, row.row.glyph.fg).on(bg));
@@ -536,7 +547,7 @@ mod tests {
         assert_eq!(rows[5], "          ┌─ Odda ───────────────────────────────────────────────────┐", "the trader's name is the title:\n{text}");
         assert_eq!(rows[8], "          │ For sale                     Yours                       │", "{text}");
         assert_eq!(rows[6], "          │ Look around.                                             │", "the game's line under the name:\n{text}");
-        assert_eq!(rows[10], "          │ - 2 files                10  - awl                     3 │", "a price on each row:\n{text}");
+        assert_eq!(rows[10], "          │ - 2 files           10 each  - awl                     3 │", "a price on each row, for one of a stack:\n{text}");
         assert_eq!(rows[11], "          │ ! lamp        cannot pay 30  - saw          they lack 20 │", "a row a purse cannot meet says whose:\n{text}");
         assert_eq!(rows[15], "          │ 9 scrips                     25 scrips                   │", "each purse at its side's foot:\n{text}");
         assert!(rows[16].ends_with(" enter buy • a all • esc close ─┘"), "{text}");

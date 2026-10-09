@@ -518,6 +518,29 @@ mod tests {
         }
     }
 
+    /// A photograph's ask to start by a keeper stands the adventurer in
+    /// Mereholt beside that keeper, one step from its shop, for each of
+    /// the four and every seed tried.
+    #[test]
+    fn a_run_started_by_a_keeper_stands_beside_it_in_mereholt() {
+        use crate::testing::settle;
+        for s in [0, 1, 7] {
+            for post in crate::shops::POSTS {
+                let mut app = headless(RunSeed(s));
+                app.insert_resource(StartNear(post.role.to_string()));
+                let me = adventurer(&mut app);
+                settle(&mut app);
+                let keeper = {
+                    let world = app.world_mut();
+                    let mut q = world.query::<(&Position, &crate::shops::Shopkeeper)>();
+                    q.iter(world).find(|(_, k)| k.0 == post).map(|(p, _)| p.0).expect("the keeper stands")
+                };
+                assert_eq!(geometry::chebyshev(at(&app, me), keeper), 1, "seed {s}: beside the {} at {keeper:?}, stood at {:?}", post.role, at(&app, me));
+                assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
+            }
+        }
+    }
+
     /// A run begun after another in the same launch has been nowhere and
     /// done nothing: the deepest floor the last one reached and the kill
     /// it made are not the new one's.
