@@ -336,6 +336,8 @@ enum Choice {
     Throw(Entity, Point),
     /// A thing put on.
     Wear(Entity),
+    /// A captive beside them freed, by the one thing it offers.
+    Free(Entity, VerbId),
     /// Nothing.
     Wait,
 }
@@ -345,7 +347,13 @@ impl Choice {
     /// thing: what a refusal is remembered by.
     fn thing(self) -> Option<Entity> {
         match self {
-            Choice::Rummage(it) | Choice::Use(it) | Choice::UseOn(it, _) | Choice::Zap(it, _) | Choice::Throw(it, _) | Choice::Wear(it) => Some(it),
+            Choice::Rummage(it)
+            | Choice::Use(it)
+            | Choice::UseOn(it, _)
+            | Choice::Zap(it, _)
+            | Choice::Throw(it, _)
+            | Choice::Wear(it)
+            | Choice::Free(it, _) => Some(it),
             _ => None,
         }
     }
@@ -385,6 +393,11 @@ struct Memory {
     /// running and shooting would otherwise lead the adventurer round the
     /// floor for good.
     let_go: BTreeSet<Entity>,
+    /// A diagonal step refused, and how many of its two straight halves
+    /// have been tried since: the engine refuses a diagonal between a
+    /// closed door and a wall, which the way it is walked counts as open
+    /// ground, so the walk takes it a straight step at a time instead.
+    squeezed: Option<(Direction, u8)>,
 }
 
 /// How many blows in a row that take nothing from a foe make it one to
@@ -497,6 +510,14 @@ fn from_afar(view: &Sight, things: &[&Thing], armory: &Armory) -> Option<Choice>
 /// on the throne's floor the king. A walk refused since the last turn
 /// spent is a wait.
 fn walk(world: &mut World, view: &Sight, memory: &mut Memory) -> Choice {
+    if let Some((dir, tried)) = memory.squeezed.filter(|(_, tried)| *tried < 2) {
+        memory.squeezed = Some((dir, tried + 1));
+        let (dx, dy) = (dir.offset().x, dir.offset().y);
+        let halves = [Point::new(dx, 0), Point::new(0, dy)];
+        if let Some(half) = Direction::between(Point::ZERO, halves[tried as usize]) {
+            return Choice::Bump(half);
+        }
+    }
     if memory.stuck {
         return Choice::Wait;
     }
@@ -509,6 +530,22 @@ fn walk(world: &mut World, view: &Sight, memory: &mut Memory) -> Choice {
     if lying.iter().any(|(_, p)| *p == view.at) {
         memory.done.extend(lying.iter().filter(|(_, p)| *p == view.at).map(|(e, _)| *e));
         return Choice::TakeUp;
+    }
+    // A captive beside them is freed, as a player freeing the one they
+    // found shackled would, and never walked into: walking into one asks
+    // what to do with it, and a captive shackled in a corridor otherwise
+    // held a delve still on the far side of it for good.
+    let free = world.resource::<Verbs>().get(undermere::captives::FREE_VERB);
+    let shackled = world
+        .query::<(Entity, &Position, &OnMap, &Offers)>()
+        .iter(world)
+        .find(|(e, p, on, offers)| {
+            on.0 == view.here && geometry::chebyshev(p.0, view.at) == 1 && !memory.done.contains(e) && offers.0.iter().any(|o| Some(o.verb) == free)
+        })
+        .map(|(e, ..)| e);
+    if let (Some(captive), Some(verb)) = (shackled, free) {
+        memory.done.insert(captive);
+        return Choice::Free(captive, verb);
     }
     if memory.chasing.is_none()
         && let Some(shooter) = view.foes.iter().find(|f| f.shoots && f.far > 1 && !memory.let_go.contains(&f.who))
@@ -583,6 +620,7 @@ fn act(world: &mut World, me: Entity, choice: Choice) {
         Choice::Zap(item, at) => send(world, me, UseItemAt { item, at }),
         Choice::Throw(item, at) => send(world, me, Throw { item, at }),
         Choice::Wear(it) => send(world, me, Equip(it)),
+        Choice::Free(target, verb) => send(world, me, Interact { target, verb }),
         Choice::Wait => send(world, me, Wait),
     }
 }
@@ -794,7 +832,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         let before = world.resource::<Turns>().now();
         watch.sight(world, me);
         let choice = decide(world, me, &mut memory);
-        if memory.on_floor == FLOOR_TURNS * 3 {
+        if (FLOOR_TURNS * 3..FLOOR_TURNS * 3 + 3).contains(&memory.on_floor) {
             // Long past when it should have gone down: say where it is
             // and what it keeps choosing, for whoever reads a stall.
             let here = world.resource::<WorldMap>().current();
@@ -803,6 +841,13 @@ fn delve(seed: u64, plan: Plan) -> Delve {
             let at = world.get::<Position>(me).map(|p| p.0);
             let with = choice.thing().and_then(|it| world.get::<Name>(it)).map(|n| n.as_str().to_string());
             eprintln!("seed {seed} {plan:?}: {} turns on floor {floor}, at {at:?}, ways {ways:?}, choosing {choice:?} with {with:?}", memory.on_floor);
+            let beside: Vec<String> = world
+                .query::<(&Position, &OnMap, &Name, Option<&Faction>)>()
+                .iter(world)
+                .filter(|(p, on, ..)| on.0 == here && at.is_some_and(|at| geometry::chebyshev(p.0, at) <= 2))
+                .map(|(p, _, name, side)| format!("{} at {:?} of {:?}", name.as_str(), p.0, side.map(|s| s.0)))
+                .collect();
+            eprintln!("    beside them: {beside:?}");
         }
         let level = |world: &World, on: Entity| world.get::<Enchant>(on).map(|e| e.0.level);
         let into = match choice {
@@ -825,14 +870,15 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         }
         let world = app.world_mut();
         if world.resource::<Turns>().now() == before && !world.contains_resource::<Ending>() {
-            match choice.thing() {
-                Some(it) if matches!(choice, Choice::Wear(_) | Choice::Rummage(_)) => _ = memory.never.insert(it),
-                Some(it) => _ = memory.refused.insert(it),
-                None => memory.stuck = true,
+            match (choice, choice.thing()) {
+                (_, Some(it)) if matches!(choice, Choice::Wear(_) | Choice::Rummage(_) | Choice::Free(..)) => _ = memory.never.insert(it),
+                (_, Some(it)) => _ = memory.refused.insert(it),
+                (Choice::Bump(dir), None) if dir.is_diagonal() && memory.squeezed.is_none() => memory.squeezed = Some((dir, 0)),
+                _ => memory.stuck = true,
             }
             continue;
         }
-        (memory.stuck, memory.refused) = (false, BTreeSet::new());
+        (memory.stuck, memory.refused, memory.squeezed) = (false, BTreeSet::new(), None);
         if let Some((foe, was)) = struck {
             let futile = memory.futile.entry(foe).or_default();
             *futile = if health_of(world, foe) < was { 0 } else { *futile + 1 };
