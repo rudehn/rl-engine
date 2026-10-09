@@ -24,6 +24,7 @@ pub mod nearby;
 pub mod offers;
 pub mod sheet;
 pub mod target;
+pub mod trade;
 pub mod vitals;
 
 pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
@@ -36,6 +37,7 @@ pub use nearby::{NearbyView, NearbyViewPlugin};
 pub use offers::{OfferRow, OffersView, OffersViewPlugin};
 pub use sheet::{Change, ResistLine, SheetView, SheetViewPlugin, StatLine, StatusLine, Strike, WornLine};
 pub use target::{AimAt, AimFire, AimRange, AimThrow, AimUse, TargetView, TargetViewPlugin, target_modal};
+pub use trade::{TradeRow, TradeView, TradeViewPlugin};
 pub use vitals::{VitalsView, VitalsViewPlugin};
 
 use bevy::prelude::*;

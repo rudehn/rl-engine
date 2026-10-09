@@ -75,6 +75,39 @@ impl Trader {
     pub fn pays(&self, worth: u32) -> u32 {
         (u64::from(worth) * u64::from(self.pays_pct) / 100).min(u64::from(u32::MAX)) as u32
     }
+
+    /// What `count` of `ware` would come to going the way `deal` says, or
+    /// why it would be refused, when whoever pays carries `purse`.
+    ///
+    /// The rule [`resolve_trades`] strikes every deal by, public so a
+    /// screen greys the rows the resolver would refuse and says why
+    /// without a second copy of the rule that could drift from this one.
+    pub fn quote(&self, deal: Deal, ware: Ware, count: u32, purse: u32) -> Result<u32, TradeRefusal> {
+        if ware.worn {
+            return Err(TradeRefusal::Worn);
+        }
+        if deal == Deal::Sold && !self.buys(ware.tags) {
+            return Err(TradeRefusal::NotBought);
+        }
+        let Some(Worth(worth)) = ware.worth else { return Err(TradeRefusal::NoWorth) };
+        let each = match deal {
+            Deal::Bought => worth,
+            Deal::Sold => self.pays(worth),
+        };
+        let price = each.saturating_mul(count);
+        if purse < price { Err(TradeRefusal::Short) } else { Ok(price) }
+    }
+}
+
+/// What a deal needs to know of the thing changing hands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ware<'a> {
+    /// Its [`Worth`], if it has one.
+    pub worth: Option<Worth>,
+    /// Its tags, which say whether a trader buys it.
+    pub tags: &'a [TagId],
+    /// Whether whoever holds it wears it.
+    pub worn: bool,
 }
 
 /// The tag every piece of the currency carries.
@@ -332,27 +365,17 @@ fn strike(world: &mut World, asked: Asked, currency: TagId) -> Option<Result<Tra
     if !world.get::<Inventory>(from).is_some_and(|b| b.contains(item)) {
         return None;
     }
-    let refused = |why| Some(Err(TradeRefused { customer, trader, deal, item, why }));
-    if world.get::<Equipped>(from).is_some_and(|w| w.contains(item)) {
-        return refused(TradeRefusal::Worn);
-    }
-    let terms = world.get::<Trader>(trader)?.clone();
-    if deal == Deal::Sold && !world.get::<Tagged>(item).is_some_and(|t| terms.buys(t)) {
-        return refused(TradeRefusal::NotBought);
-    }
-    let Some(Worth(worth)) = world.get::<Worth>(item).copied() else { return refused(TradeRefusal::NoWorth) };
     let count = count.min(world.get::<Stack>(item).map_or(1, |s| s.count));
     if count == 0 {
         return None;
     }
-    let each = match deal {
-        Deal::Bought => worth,
-        Deal::Sold => terms.pays(worth),
+    let terms = world.get::<Trader>(trader)?.clone();
+    let tags = world.get::<Tagged>(item).map(|t| t.0.clone()).unwrap_or_default();
+    let ware = Ware { worth: world.get::<Worth>(item).copied(), tags: &tags, worn: world.get::<Equipped>(from).is_some_and(|w| w.contains(item)) };
+    let price = match terms.quote(deal, ware, count, purse(world, to, currency)) {
+        Ok(price) => price,
+        Err(why) => return Some(Err(TradeRefused { customer, trader, deal, item, why })),
     };
-    let price = each.saturating_mul(count);
-    if purse(world, to, currency) < price {
-        return refused(TradeRefusal::Short);
-    }
     pay(world, to, from, price, currency);
     let item = hand_over(world, from, to, item, count);
     Some(Ok(Traded { customer, trader, deal, item, count, price }))

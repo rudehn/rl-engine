@@ -117,7 +117,7 @@ pub use status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent, Sta
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
-pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Worth};
+pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth};
 pub use turn::{
     Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
 };
@@ -184,7 +184,7 @@ pub mod prelude {
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
-    pub use crate::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Worth};
+    pub use crate::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth};
     pub use crate::turn::{
         Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
     };

@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A trade has a screen: the new `TradePanel::new(rect)` goes up when the engine opens a trade and comes down when it ends, listing the trader's wares on the left with what one costs and the customer's pack on the right with what the trader would pay for one, the customer's currency at the foot, named by the currency's own `Name`.
+  The direction keys walk the rows and cross between the sides, the cursors' confirm key buys or sells one of the row picked out, the new `TradeKeys::whole` (`a` by default) deals the whole of it, and the cursors' close key puts the screen away and ends the trade; dealing takes no turn and leaves the screen up.
+  Its view is the new `TradeView`, kept by the new `TradeViewPlugin`: each side's rows are a `TradeRow` holding the shared `Row`, its count, the price of one and the `TradeRefusal` a deal for one would meet, greyed and said in the words of the new `TradeWords`, which a game replaces with `TradePanel::words`.
+  The trader is a `Row` too, titled by its `Name`, and the line under its name is whatever the game pushes onto it as a `Facet` in `ViewSet::Annotate`.
+  The rule a deal is refused by is public as the new `Trader::quote(deal, Ware { worth, tags, worn }, count, purse)`, which both the engine and the screen ask.
+
 - Two actors can trade: the new `TradePlugin` declares the `trade` verb, `TRADE`, and opens a trade in the new `Trading` resource when the player takes up that offer from an actor carrying the new `Trader { buys, pays_pct }`, closing it again when either side is out of reach, dead or gone.
   Inside it, the new `Buy` and `Sell` messages are resolved at once and take no turn: a buy pays the thing's `Worth` per one, a sell is paid the trader's `pays_pct` share of it per one, rounded down, and each is answered with `Traded`, or with `TradeRefused` and a `TradeRefusal` a screen can say: `Short` of currency, `NotBought`, `NoWorth`, or `Worn`.
   The currency is whatever carries the tag the game names in the new `Currency` resource, which the plugin needs before play begins; it changes hands as real stacks, split off and merged as a pickup merges, so nothing is made or destroyed, and a trader that buys needs currency of its own to pay with.

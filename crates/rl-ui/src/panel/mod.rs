@@ -32,6 +32,7 @@ pub mod settings;
 pub mod sheet;
 pub mod target;
 pub mod title;
+pub mod trade;
 pub mod vitals;
 
 pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability_modal, reach};
@@ -49,6 +50,7 @@ pub use settings::{SETTINGS_MODAL, SettingsLayout, SettingsPanel, SettingsScreen
 pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
 pub use target::{TargetLayout, TargetPanel};
 pub use title::{TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, title_is_up};
+pub use trade::{TRADE_MODAL, TradeKeys, TradeLayout, TradeMenu, TradePanel, TradeSide, TradeWords, trade_modal};
 pub use vitals::VitalsPanel;
 
 use bevy::prelude::Color;
