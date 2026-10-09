@@ -130,6 +130,15 @@ pub struct MonsterSave {
     /// anything could.
     #[serde(default)]
     pub ally: bool,
+    /// Whether it follows one who freed it by name rather than whichever
+    /// ally is nearest: task 10's own freed captive, read off whether it
+    /// carries the engine's own `Leader` at the moment it is captured.
+    /// `Leader` itself is the generic entity-state machinery's to put
+    /// back, once every entity of the save has one; this is only the
+    /// word for which mind to give it once that happens, since the mind
+    /// a captive follows with is not the mind an ordinary ally does.
+    #[serde(default)]
+    pub following: bool,
     /// The moment on the turn clock a conjured thing fades at, which the
     /// save keeps with the clock; `None` for anything else.
     #[serde(default)]
@@ -143,7 +152,13 @@ impl Saveable for Kind {
         let kind = world.get::<Kind>(entity).expect("a monster's kind");
         MonsterSave {
             def: world.resource::<Bestiary>().defs.name(kind.0).to_string(),
+            // `Leader` alone is a band follower's as readily as a freed
+            // captive's; only paired with `Ally` does it mean the
+            // follower fights for the adventurer and is one of task 10's
+            // own, since nothing else on the adventurer's own side gets a
+            // named leader to begin with.
             ally: world.get::<crate::allies::Ally>(entity).is_some(),
+            following: world.get::<crate::allies::Ally>(entity).is_some() && world.get::<Leader>(entity).is_some(),
             fades: world.get::<crate::allies::Fades>(entity).map(|f| f.at),
         }
     }
@@ -156,10 +171,19 @@ impl Saveable for Kind {
         let registries = world.resource::<Registries>().clone();
         let monster = spawned(world, |commands, world| {
             // Nowhere and on no place: the engine puts it back where it was.
-            crate::bestiary::spawn_monster(commands, world.resource::<Bestiary>().defs.get(id), Point::ZERO, MapId::SURFACE, &registries)
+            crate::bestiary::spawn_monster(commands, world.resource::<Bestiary>().defs.get(id), Point::ZERO, MapId::SURFACE, &registries, false)
         });
         if saved.ally {
             crate::allies::befriend(world, monster);
+        }
+        if saved.following {
+            // Overrides `befriend`'s own ally mind with the one that
+            // follows by name: the generic entity state the save already
+            // restores puts `Leader` back on this same entity once every
+            // entity of the save exists to point it at, so the mind only
+            // has to be shaped to read it, not to know yet who it names.
+            let mind = world.resource::<Bestiary>().defs.get(id).follow_mind();
+            world.entity_mut(monster).insert(mind);
         }
         if let Some(at) = saved.fades {
             world.entity_mut(monster).insert(crate::allies::Fades { at });

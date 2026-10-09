@@ -1086,6 +1086,17 @@ impl Undermere {
     }
 }
 
+/// The one floor this run's single captive stands shackled on: pure over
+/// `seed`, the same reasoning [`Undermere::lairs`] and
+/// [`Undermere::final_boss`] already follow, so `population::populate`
+/// can ask it on any floor's own arrival without a run keeping the draw
+/// anywhere. Never the throne's own floor, which `FLOORS` is past: a run
+/// draws at most one captive, somewhere in the nine floors above it.
+pub(crate) fn captive_floor(seed: RunSeed) -> u32 {
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.captive"), 0);
+    rng.random_range(1..FLOORS)
+}
+
 /// One of the five mini-bosses a run may draw a lair for: task 8a's own.
 /// Its name is `monsters.ron`'s and its lair's own `assets/prefabs/`
 /// file's, its floors the span it may stand on, and its margin the tile

@@ -20,10 +20,12 @@
 //! ten floors under it, each a chain of the engine's passes varied by its
 //! band. [`prefabs`] loads the pieces they are stamped from, [`stairs`]
 //! lays the ways between them and names each in the log, [`population`]
-//! puts each floor's people down the first time it is entered and
-//! [`finds`] its things, drawn a kind at a time with a scroll of
-//! enchanting besides, and [`light`] lights them and dims the lantern as
-//! the adventurer descends.
+//! puts each floor's people down the first time it is entered, asleep,
+//! on patrol, at a goblin camp's fire or a feeding ground by its own
+//! shares, and [`captives`] is the one of them the adventurer may free to
+//! follow; [`finds`] lays its things, drawn a kind at a time with a
+//! scroll of enchanting besides, and [`light`] lights them and dims the
+//! lantern as the adventurer descends.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -60,6 +62,7 @@ pub mod armory;
 pub mod artifacts;
 pub mod bestiary;
 pub mod bestiary_lore;
+pub mod captives;
 pub mod conditions;
 pub mod content;
 pub mod damage;

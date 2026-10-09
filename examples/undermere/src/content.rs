@@ -133,6 +133,10 @@ pub const CONFUSED: &str = "confused";
 /// A scroll of discord's, and the side its holder fights for while it
 /// lasts, at odds with every side and with itself.
 pub const DISCORDANT: &str = "discordant";
+/// Task 10's own: a shackled monster of the floor while it is still
+/// shackled, neutral to every side, the adventurer's captors among them,
+/// until it is freed and put on the adventurer's own.
+pub const CAPTIVE: &str = "captive";
 /// The cloud a potion of paralysis bursts into.
 pub const PARALYTIC: &str = "paralytic";
 /// The cloud a potion of confusion bursts into.
@@ -280,7 +284,7 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
+        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
         tags: Registry::from_defs(
             ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(TagDef::new).to_vec(),
         )
@@ -477,7 +481,7 @@ mod tests {
     #[test]
     fn the_registries_hold_every_side_kind_status_slot_and_tag_the_content_names() {
         let r = registries();
-        for side in ["adventurer", "beasts", "goblins", "undead", "dar"] {
+        for side in ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE] {
             assert!(r.factions.id(side).is_some(), "{side}");
         }
         for kind in ["slash", "pierce", "crush", "fire", "cold", "poison"] {
@@ -614,6 +618,8 @@ mod tests {
             ("font", true),
             ("rack", true),
             ("egg sac", true),
+            ("fire", true),
+            ("shackles", false),
         ];
         assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
         for (name, blocks) in props {
@@ -662,6 +668,10 @@ mod tests {
         }
         for other in ["beasts", "goblins", "undead"] {
             assert_eq!(at("dar", other), Relation::Neutral, "the dar keep to themselves: {other} is no quarrel of theirs");
+        }
+        for other in ["adventurer", "beasts", "goblins", "undead", "dar"] {
+            assert_eq!(at(CAPTIVE, other), Relation::Neutral, "a shackled captive and {other}");
+            assert_eq!(at(other, CAPTIVE), Relation::Neutral, "{other} and a shackled captive");
         }
     }
 
