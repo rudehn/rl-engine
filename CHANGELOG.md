@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The trade screen shows the trader's purse at the foot of its side, beside the customer's at the foot of theirs, from the new `TradeView::trader_purse`, and words a short purse by whose it is: `TradeWords::short` ("cannot pay") on the wares, the new `TradeWords::trader_short` ("they lack") on the pack, where it is the trader who cannot pay; `TradeWords::refusal(why, deal)` now takes the side's `Deal`.
+  The wares list only what is for sale, what the trader prices and does not wear, so a keeper's own gear and what it puts no price on are off the counter; the pack is still listed whole.
+  The new `Trader::each(deal, ware)` is the price of one, its worth bought and the trader's share sold, which `Trader::quote` and the screen both ask, so the screen no longer keeps its own copy of the rule.
+
 - An actor's offer may have a price: the new `Offering::priced(price)` costs that much in the trade slice's `Currency`, and the gate refuses it to a taker carrying less with the new `Refused::Short(price)`, as it refuses one needing a tag the taker lacks; `Offer` carries the new `price` field beside its time.
   Taken up, the price is paid as a deal is, from the taker's stacks into the offerer's own pack, given one if it carries none, before the game's `Interacted` answer runs in `TurnSet::React`, so a service is a verb with a price and the currency stays conserved.
   A priced offer in a game with no `Currency` stops play, saying what is missing, rather than being refused for ever; a game that prices an offer adds `TradePlugin`.

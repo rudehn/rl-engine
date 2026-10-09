@@ -2,7 +2,7 @@
 //!
 //! The view holds the open trade as plain rows: the trader's wares with
 //! what one costs, the customer's pack with what the trader would pay for
-//! one, and the currency the customer carries. Which trade is open is the
+//! one, and the currency each side carries. Which trade is open is the
 //! engine's, in [`Trading`]; the view only reads it.
 //!
 //! Rows are the shared [`Row`], the way the container's and the nearby
@@ -13,7 +13,8 @@
 //! words, and the engine has none to offer.
 //!
 //! A row that a deal would be refused on says so, by the same rule the
-//! engine refuses it by, [`Trader::quote`], so the screen and the trade
+//! engine refuses it by, [`Trader::quote`], priced by [`Trader::each`] and
+//! with purses counted by [`Currency::count`], so the screen and the trade
 //! never disagree. What the refusal is called is the presenter's.
 //!
 //! [`Facet`]: crate::facet::Facet
@@ -59,14 +60,19 @@ pub struct TradeView {
     /// The trader, named from its `Name`, carrying whatever the game
     /// pushed onto it: the line under its name.
     pub trader: Option<Row>,
-    /// What the trader sells: everything it carries but its currency, in
-    /// the order it carries them.
+    /// What the trader sells: what it carries that has a price and is not
+    /// worn, in the order it carries them. Its currency, what it wears and
+    /// what it puts no price on are not on the counter, so a trader's own
+    /// gear is never offered and never greyed.
     pub wares: Vec<TradeRow>,
     /// What the customer carries but its currency, in the same order,
     /// priced at what the trader would pay.
     pub pack: Vec<TradeRow>,
     /// How much currency the customer carries.
     pub purse: u32,
+    /// How much currency the trader carries, which is what it can pay for
+    /// what the customer sells.
+    pub trader_purse: u32,
     /// What one piece of the currency is called, from the `Name` of a
     /// piece either side carries; empty when neither carries any, or the
     /// pieces have no name.
@@ -119,16 +125,19 @@ pub fn collect_trade(
     view.wares.clear();
     view.pack.clear();
     view.purse = 0;
+    view.trader_purse = 0;
     view.currency.clear();
     let Some(parties) = trading.open() else { return };
     let (Ok(customer), Ok(trader), Ok(terms)) = (sides.get(parties.customer), sides.get(parties.trader), traders.get(parties.trader)) else { return };
-    let currency = currency.map(|c| c.0);
-    let is_currency = |item: Entity| items.get(item).ok().and_then(|p| p.4).zip(currency).is_some_and(|(tags, c)| tags.contains(&c));
-    let purse =
-        |bag: &Inventory| bag.items.iter().filter(|i| is_currency(**i)).map(|i| items.get(*i).ok().and_then(|p| p.2).map_or(1, |s| s.count)).sum::<u32>();
+    // Counted and told apart by the trade slice's own rule, not a copy of it.
+    let currency = currency.as_deref().copied();
+    let piece = |item: Entity| items.get(item).map_or((None, None), |p| (p.4, p.2));
+    let is_currency = |item: Entity| currency.is_some_and(|c| c.is(piece(item).0));
+    let purse = |bag: &Inventory| currency.map_or(0, |c| c.count(bag, piece));
     let (customer_purse, trader_purse) = (purse(customer.2), purse(trader.2));
     view.parties = Some(parties);
     view.purse = customer_purse;
+    view.trader_purse = trader_purse;
     view.currency = customer
         .2
         .items
@@ -154,12 +163,13 @@ pub fn collect_trade(
                 let count = stack.map_or(1, |s| s.count);
                 let label = name.map(|n| rl_core::noun::listed(n.as_str(), count)).unwrap_or_default();
                 let ware = Ware { worth: worth.copied(), tags: tags.map_or(&[], |t| t.0.as_slice()), worn: worn.is_some_and(|w| w.contains(*item)) };
-                let each = match (deal, worth) {
-                    (_, None) => None,
-                    (Deal::Sold, Some(_)) if !terms.buys(ware.tags) => None,
-                    (Deal::Bought, Some(w)) => Some(w.0),
-                    (Deal::Sold, Some(w)) => Some(terms.pays(w.0)),
-                };
+                let each = terms.each(deal, ware);
+                // Only what is for sale is on the trader's side; the
+                // customer's side lists the whole pack, greyed where the
+                // trader would refuse it, so a player learns what it takes.
+                if deal == Deal::Bought && (each.is_none() || ware.worn) {
+                    return None;
+                }
                 Some(TradeRow {
                     row: Row::new(*item, label, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE))),
                     count,
@@ -239,6 +249,27 @@ mod tests {
             "an awl fetches half its worth, and a pebble is of a kind not bought"
         );
         assert_eq!((view.purse, view.currency.as_str()), (12, "scrip"), "the customer's currency, named by its own name");
+        assert_eq!(view.trader_purse, 4, "and the trader's beside it, what it can pay with");
+    }
+
+    /// The trader's side is only what is for sale: a thing it puts no price
+    /// on and a thing it wears stay off the counter, while the customer's
+    /// side still lists the whole pack.
+    #[test]
+    fn the_wares_are_only_what_the_trader_prices_and_does_not_wear() {
+        let (mut stage, trader) = stage();
+        let w = stage.app.world_mut();
+        let rag = w.spawn((Item, Name::new("rag"))).id();
+        let coat = w.spawn((Item, Name::new("coat"), Worth(40))).id();
+        let slots = rl_rules::Registry::from_defs(vec![rl_rules::SlotDef::new("body")]).expect("one slot");
+        let mut worn = rl_rules::Equipment::for_slots(&slots);
+        worn.equip(coat, &rl_rules::EquipShape::in_slot(slots.expect("body"))).expect("it fits");
+        w.get_mut::<Inventory>(trader).expect("a bag").items.extend([rag, coat]);
+        w.entity_mut(trader).insert(Equipped(worn));
+        open(&mut stage, trader);
+        let view = stage.app.world().resource::<TradeView>();
+        assert_eq!(view.wares.iter().map(|r| r.row.label.as_str()).collect::<Vec<_>>(), vec!["2 files", "lamp"], "no rag, no coat");
+        assert_eq!(view.pack.iter().map(|r| r.row.label.as_str()).collect::<Vec<_>>(), vec!["awl", "pebble"], "the pack is listed whole");
     }
 
     /// The line under the trader's name is whatever the game pushes onto

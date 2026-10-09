@@ -76,6 +76,21 @@ impl Trader {
         (u64::from(worth) * u64::from(self.pays_pct) / 100).min(u64::from(u32::MAX)) as u32
     }
 
+    /// What one of `ware` changes hands for going the way `deal` says: its
+    /// [`Worth`] bought, this trader's share of it sold. `None` for a thing
+    /// with no worth, or sold and of a kind this trader does not buy, which
+    /// has no price to show.
+    ///
+    /// Whether it is worn does not enter into it: a worn thing still has a
+    /// price, it is only not dealt until it comes off.
+    pub fn each(&self, deal: Deal, ware: Ware) -> Option<u32> {
+        let Worth(worth) = ware.worth?;
+        match deal {
+            Deal::Bought => Some(worth),
+            Deal::Sold => self.buys(ware.tags).then(|| self.pays(worth)),
+        }
+    }
+
     /// What `count` of `ware` would come to going the way `deal` says, or
     /// why it would be refused, when whoever pays carries `purse`.
     ///
@@ -89,11 +104,7 @@ impl Trader {
         if deal == Deal::Sold && !self.buys(ware.tags) {
             return Err(TradeRefusal::NotBought);
         }
-        let Some(Worth(worth)) = ware.worth else { return Err(TradeRefusal::NoWorth) };
-        let each = match deal {
-            Deal::Bought => worth,
-            Deal::Sold => self.pays(worth),
-        };
+        let Some(each) = self.each(deal, ware) else { return Err(TradeRefusal::NoWorth) };
         let price = each.saturating_mul(count);
         if purse < price { Err(TradeRefusal::Short) } else { Ok(price) }
     }
@@ -707,6 +718,24 @@ mod tests {
         assert_eq!((rig.purse(rig.player), rig.purse(rig.trader)), (50, 100), "no currency moved");
         assert_eq!(rig.bag(rig.player).len(), 5, "and every thing stayed where it was");
         assert_eq!(rig.bag(rig.trader).len(), 3);
+    }
+
+    /// The price of one is the one a deal is struck at, asked of the trader
+    /// rather than worked out again: its worth bought, its share sold, and
+    /// none for a thing of no worth or of a kind it does not buy.
+    #[test]
+    fn the_price_of_one_is_the_worth_bought_and_the_share_sold_and_none_where_nothing_would_be_paid() {
+        let rig = Rig::new();
+        let terms = rig.app.world().get::<Trader>(rig.trader).unwrap().clone();
+        fn ware(worth: Option<u32>, tags: &[TagId]) -> Ware<'_> {
+            Ware { worth: worth.map(Worth), tags, worn: false }
+        }
+        let (tool, trinket) = (&[rig.tool][..], &[rig.trinket][..]);
+        assert_eq!(terms.each(Deal::Bought, ware(Some(30), trinket)), Some(30), "bought, its worth, whatever its kind");
+        assert_eq!(terms.each(Deal::Sold, ware(Some(30), tool)), Some(7), "sold, a quarter of it rounded down");
+        assert_eq!(terms.each(Deal::Sold, ware(Some(30), trinket)), None, "a kind not bought has no price");
+        assert_eq!(terms.each(Deal::Bought, ware(None, tool)), None, "nor has a thing of no worth");
+        assert_eq!(terms.quote(Deal::Sold, ware(Some(30), tool), 2, 100), Ok(14), "and a deal for two comes to twice it");
     }
 
     /// Currency is counted by its stacks, a single piece as one, and

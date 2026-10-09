@@ -73,8 +73,12 @@ pub struct TradeWords {
     pub all: String,
     /// The close key's hint.
     pub close: String,
-    /// Whoever would pay carries too little; drawn before the price.
+    /// The customer carries too little for a ware; drawn before its price.
     pub short: String,
+    /// The trader carries too little to pay for what the customer would
+    /// sell; drawn before what it would pay. Its own words, since on the
+    /// customer's side it is not the customer who is short.
+    pub trader_short: String,
     /// The trader does not buy a thing of its kind.
     pub not_bought: String,
     /// It has no worth.
@@ -94,6 +98,7 @@ impl Default for TradeWords {
             all: "all".into(),
             close: "close".into(),
             short: "cannot pay".into(),
+            trader_short: "they lack".into(),
             not_bought: "not wanted".into(),
             no_worth: "no worth".into(),
             worn: "worn".into(),
@@ -102,9 +107,11 @@ impl Default for TradeWords {
 }
 
 impl TradeWords {
-    /// What `why` is called.
-    pub fn refusal(&self, why: TradeRefusal) -> &str {
+    /// What `why` is called on the side a `deal` is struck from: a short
+    /// purse is the customer's buying and the trader's selling to it.
+    pub fn refusal(&self, why: TradeRefusal, deal: Deal) -> &str {
         match why {
+            TradeRefusal::Short if deal == Deal::Sold => &self.trader_short,
             TradeRefusal::Short => &self.short,
             TradeRefusal::NotBought => &self.not_bought,
             TradeRefusal::NoWorth => &self.no_worth,
@@ -302,7 +309,7 @@ pub struct ShopScreen<'w> {
 }
 
 /// Draws the open trade: the trader's name and the game's line under it,
-/// the two sides with a price on each row, the customer's currency at the
+/// the two sides with a price on each row, each side's currency at its
 /// foot, and the keys that do something.
 pub fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeMenu>, screen: ShopScreen) {
     let ShopScreen { layout, view, binds, keys, modals, palette } = &screen;
@@ -346,16 +353,28 @@ pub fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeMenu>, s
     let wares = lists;
     let pack = Rect::new(inner.x + half + gap, lists.y, inner.width - half - gap, lists.height);
     let selected = |side| (menu.side == side).then_some(menu.selected());
-    draw_side(&mut terminal, wares, &words.wares, &view.wares, selected(TradeSide::Wares), words, palette);
-    draw_side(&mut terminal, pack, &words.pack, &view.pack, selected(TradeSide::Pack), words, palette);
+    draw_side(&mut terminal, wares, (&words.wares, Deal::Bought), &view.wares, selected(TradeSide::Wares), words, palette);
+    draw_side(&mut terminal, pack, (&words.pack, Deal::Sold), &view.pack, selected(TradeSide::Pack), words, palette);
 
-    let purse = if view.currency.is_empty() { view.purse.to_string() } else { rl_core::noun::listed(&view.currency, view.purse) };
-    terminal.print_on(pack.x, inner.bottom() - 1, &clip(&purse, pack.width.max(0) as usize), palette.get(Tones::NOTICE), surface);
+    // Each purse under its own side, so whose is short reads off the
+    // screen as well as off the row.
+    let purse = |amount: u32| if view.currency.is_empty() { amount.to_string() } else { rl_core::noun::listed(&view.currency, amount) };
+    for (side, amount) in [(wares, view.trader_purse), (pack, view.purse)] {
+        terminal.print_on(side.x, inner.bottom() - 1, &clip(&purse(amount), side.width.max(0) as usize), palette.get(Tones::NOTICE), surface);
+    }
 }
 
-/// One side of the trade under its heading, the row picked out lit when
-/// the cursor is on this side.
-fn draw_side(terminal: &mut Terminal, rect: Rect, heading: &str, rows: &[TradeRow], selected: Option<usize>, words: &TradeWords, palette: &Palette) {
+/// One side of the trade under its heading, and the deal its rows are
+/// struck by, the row picked out lit when the cursor is on this side.
+fn draw_side(
+    terminal: &mut Terminal,
+    rect: Rect,
+    (heading, deal): (&str, Deal),
+    rows: &[TradeRow],
+    selected: Option<usize>,
+    words: &TradeWords,
+    palette: &Palette,
+) {
     section(terminal, rect, rect.y, heading, None, palette);
     let list = Rect::new(rect.x, rect.y + 2, rect.width, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
@@ -375,8 +394,8 @@ fn draw_side(terminal: &mut Terminal, rect: Rect, heading: &str, rows: &[TradeRo
         // still shows the price, since how short is the useful part.
         let price = match (row.refused, row.each) {
             (None, Some(each)) => each.to_string(),
-            (Some(TradeRefusal::Short), Some(each)) => format!("{} {each}", words.short),
-            (Some(why), _) => words.refusal(why).to_string(),
+            (Some(TradeRefusal::Short), Some(each)) => format!("{} {each}", words.refusal(TradeRefusal::Short, deal)),
+            (Some(why), _) => words.refusal(why, deal).to_string(),
             (None, None) => String::new(),
         };
         let price = clip(&price, (list.width / 2).max(0) as usize);
@@ -490,12 +509,17 @@ mod tests {
 
     /// The trader's name heads the screen with the game's line under it,
     /// each side lists its rows with a price or the reason there is none,
-    /// and the customer's currency is at the foot, named by its own name.
+    /// a short purse worded by whose it is, and each side's currency is at
+    /// its foot, named by its own name.
     #[test]
-    fn the_screen_draws_the_trader_the_games_line_both_sides_with_prices_and_the_purse() {
+    fn the_screen_draws_the_trader_the_games_line_both_sides_with_prices_and_both_purses() {
         let (mut stage, trader) = stage();
         let lamp = stage.app.world_mut().spawn((Item, Name::new("lamp"), rl_render::Glyph::new('!', Color::WHITE), Worth(30))).id();
         stage.app.world_mut().get_mut::<Inventory>(trader).expect("a bag").items.push(lamp);
+        let tool = stage.app.world().resource::<Registries>().tags.expect("tool");
+        let saw = stage.app.world_mut().spawn((Item, Name::new("saw"), rl_render::Glyph::new('-', Color::WHITE), Tagged(vec![tool]), Worth(40))).id();
+        let player = stage.player;
+        stage.app.world_mut().get_mut::<Inventory>(player).expect("a bag").items.push(saw);
         stage.app.add_systems(
             Update,
             (|mut view: ResMut<TradeView>, mut facets: ResMut<crate::Facets>| {
@@ -513,8 +537,8 @@ mod tests {
         assert_eq!(rows[8], "          │ For sale                     Yours                       │", "{text}");
         assert_eq!(rows[6], "          │ Look around.                                             │", "the game's line under the name:\n{text}");
         assert_eq!(rows[10], "          │ - 2 files                10  - awl                     3 │", "a price on each row:\n{text}");
-        assert_eq!(rows[11], "          │ ! lamp        cannot pay 30                              │", "a row the purse cannot meet says so:\n{text}");
-        assert_eq!(rows[15], "          │                              25 scrips                   │", "the purse at the foot:\n{text}");
+        assert_eq!(rows[11], "          │ ! lamp        cannot pay 30  - saw          they lack 20 │", "a row a purse cannot meet says whose:\n{text}");
+        assert_eq!(rows[15], "          │ 9 scrips                     25 scrips                   │", "each purse at its side's foot:\n{text}");
         assert!(rows[16].ends_with(" enter buy • a all • esc close ─┘"), "{text}");
     }
 }

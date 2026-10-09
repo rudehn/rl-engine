@@ -230,7 +230,7 @@ pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>,
         let fg = palette.get(if row.open() { Tones::TEXT } else { Tones::MUTED });
         terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
         let said = match (&row.refused, row.price) {
-            (Some(why), _) => format!("{} \u{2014} {why}", row.label),
+            (Some(why), _) => format!("{} - {why}", row.label),
             (None, Some(price)) => format!("{} ({}, {})", row.label, cost(row.time), priced(price, &view.currency)),
             (None, None) => format!("{} ({})", row.label, cost(row.time)),
         };
@@ -387,7 +387,7 @@ mod tests {
         let rows = stage.rows();
         let text = rows.join("\n");
         assert!(rows[5].contains("strip Mirela (1 turn, 20 scrip)"), "the price beside the time:\n{text}");
-        assert!(rows[6].contains("tip Mirela") && rows[6].contains("needs 50 scrip"), "and how much a row past the purse wants:\n{text}");
+        assert!(rows[6].contains("tip Mirela - needs 50 scrip"), "and how much a row past the purse wants:\n{text}");
     }
 
     /// Down and Enter take the second of them, and nothing is guessed at.
