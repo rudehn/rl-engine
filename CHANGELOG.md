@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A mind no longer casts an ability aimed at itself alone that would find nothing to act on, where `UseAbility` cast one whenever a foe was in sight: a mend at full health, or a game's raising with no body in reach.
+  The new `Effect::would_act(landing, world)` says whether an effect, landed now, would act on anything, read from the world without changing it; it is true unless the effect says otherwise, and the engine's `Mend` says so only with someone hurt among its targets.
+  `AbilitiesPlugin`'s new `weigh_self_abilities`, in `DecideSet::Perceive` after `PerceiveSet::Annotate`, takes from what the mind holding the turn may use every self-aimed ability none of whose effects would act on the landing the resolver would land; an ability with no effects is kept, since a game answers it itself.
+  What the player is offered is unchanged.
+  A game whose monsters know a self-aimed mend now see them keep it for when they are hurt; one with an effect that needs something there to act on implements `would_act` to say so.
+
 - The narrator says whom an ability was used on only when it is aimed at someone: one aimed at the ground reads `The necromancer uses blink.` and `You use burst.`, whoever it caught, where a step through the air pointed past the player read `The necromancer uses blink on you.`
   Whoever a ground-aimed use caught is told by the harm it did them, as before.
 

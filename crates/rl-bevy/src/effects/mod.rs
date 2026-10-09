@@ -345,6 +345,22 @@ pub trait Effect: Send + Sync + 'static {
     fn mends(&self) -> bool {
         false
     }
+
+    /// Whether landing this on `landing` now would act on anything, read
+    /// from `world` as it stands: what a mind is told before it spends a
+    /// turn on an ability aimed at its user alone, which leaves it no
+    /// footprint to weigh.
+    ///
+    /// True unless the effect says otherwise, so one that cannot tell is
+    /// cast as it always was. One that needs something there says so: the
+    /// engine's [`Mend`] needs someone hurt among its targets, and a game's
+    /// effect that stands the nearest body back up needs a body in reach.
+    /// The world is read, never changed, and nothing is rolled, so asking
+    /// cannot move the run.
+    fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        let _ = (landing, world);
+        true
+    }
 }
 
 /// An effect that knows how to build itself out of an ability's RON.
@@ -469,6 +485,14 @@ impl Effects {
     /// whatever its chance: what a mind is told of a thing it carries.
     pub fn mends(&self) -> bool {
         self.0.iter().any(|b| b.effect.mends())
+    }
+
+    /// Whether landing these on `landing` now would act on anything, by
+    /// [`Effect::would_act`]: when any of them would, and when there are
+    /// none, since a list with no effects is one a game answers itself,
+    /// from the [`AbilityEvent`](crate::ability::AbilityEvent) it writes.
+    pub fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        self.0.is_empty() || self.0.iter().any(|b| b.effect.would_act(landing, world))
     }
 
     /// Lands every effect on `landing`, rolling each that may miss.

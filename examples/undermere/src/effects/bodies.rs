@@ -408,6 +408,12 @@ impl Effect for RaiseDead {
     fn describe(&self, _: &Registries, _: EffectBonus) -> String {
         format!("a body within {RAISE_REACH} cells in sight rises as its own ally")
     }
+
+    // Only with a body to raise, so a necromancer with none in reach does
+    // something else with its turn rather than raising nothing.
+    fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        nearest_body(world, landing.user).is_some()
+    }
 }
 
 impl FromArgs for RaiseDead {
@@ -416,6 +422,24 @@ impl FromArgs for RaiseDead {
     fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
         no_args(args, Self::KIND).map(|_| Self)
     }
+}
+
+/// The body [`raise_dead`] would stand up for `raiser`, and where it lies:
+/// the nearest within [`RAISE_REACH`] that `raiser` can see, by steps, then
+/// row, then column. Read-only, so [`RaiseDead`] asks it before a turn is
+/// spent as well as when the turn lands.
+fn nearest_body(world: &World, raiser: Entity) -> Option<(Entity, Point)> {
+    let at = world.get::<Position>(raiser)?.0;
+    let map = world.get::<OnMap>(raiser).map_or(MapId::SURFACE, |m| m.0);
+    let sight = world.get::<Viewshed>(raiser)?;
+    let mut remains = world.try_query_filtered::<(Entity, &Position, Option<&OnMap>), With<Remains>>()?;
+    let mut bodies: Vec<(Entity, Point)> = remains
+        .iter(world)
+        .filter(|(_, pos, on)| on.map_or(MapId::SURFACE, |m| m.0) == map && geometry::chebyshev(pos.0, at) <= RAISE_REACH && sight.can_see(pos.0))
+        .map(|(e, pos, _)| (e, pos.0))
+        .collect();
+    bodies.sort_by_key(|(e, pos)| (geometry::chebyshev(*pos, at), pos.y, pos.x, e.index()));
+    bodies.into_iter().next()
 }
 
 /// Stands the nearest body within [`RAISE_REACH`] of `raiser`, in its
@@ -428,17 +452,7 @@ impl FromArgs for RaiseDead {
 /// seed agree on which body a necromancer with more than one in reach
 /// raises.
 pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
-    let Some(at) = world.get::<Position>(raiser).map(|p| p.0) else { return false };
-    let map = world.get::<OnMap>(raiser).map_or(MapId::SURFACE, |m| m.0);
-    let Some(sight) = world.get::<Viewshed>(raiser).cloned() else { return false };
-    let mut bodies: Vec<(Entity, Point)> = world
-        .query_filtered::<(Entity, &Position, Option<&OnMap>), With<Remains>>()
-        .iter(world)
-        .filter(|(_, pos, on)| on.map_or(MapId::SURFACE, |m| m.0) == map && geometry::chebyshev(pos.0, at) <= RAISE_REACH && sight.can_see(pos.0))
-        .map(|(e, pos, _)| (e, pos.0))
-        .collect();
-    bodies.sort_by_key(|(e, pos)| (geometry::chebyshev(*pos, at), pos.y, pos.x, e.index()));
-    let Some((body, body_at)) = bodies.into_iter().next() else { return false };
+    let Some((body, body_at)) = nearest_body(world, raiser) else { return false };
     let twin = world.get::<EngineLife>(body).map(|life| life.0);
     let max = twin.and_then(|twin| world.get::<Health>(twin)).map_or(1, |h| h.max);
     if !revive(world, body, max) {

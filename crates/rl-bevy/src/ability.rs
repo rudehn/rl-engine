@@ -816,6 +816,63 @@ pub fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered:
     }
 }
 
+/// Takes from what the mind holding the turn may use every ability aimed
+/// at its user alone whose effects would find nothing to act on, by
+/// [`Effect::would_act`](crate::effects::Effect::would_act), once
+/// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate), where
+/// [`perceive_abilities`] tells it what it may use, is done.
+///
+/// Only those aimed at the user alone. One pointed somewhere is weighed
+/// by whoever its footprint would land on, which already says whether it
+/// has anything to act on; one aimed at its user leaves a tactic nothing
+/// to weigh, and was cast whenever a foe was in sight, standing up no body
+/// where none lay. Asked of the landing the resolver would land, on the
+/// user's own cell. What the menu offers the player is untouched: the
+/// player is offered what they can afford and judges what it is worth.
+pub fn weigh_self_abilities(world: &mut World) {
+    let Some(thinking) = world.get_resource::<crate::minds::Thinking>() else { return };
+    let (Some(thinker), Some(usable)) = (thinking.actor(), thinking.snapshot().map(|s| s.usable.clone())) else { return };
+    if !usable.iter().any(|u| u.aim == Aim::SelfOnly) {
+        return;
+    }
+    let Some(origin) = world.get::<crate::components::Position>(thinker).map(|p| p.0) else { return };
+    let kept: Vec<Usable> = {
+        let world: &World = world;
+        let (Some(abilities), Some(map), Some(occupancy)) =
+            (world.get_resource::<Abilities>(), world.get_resource::<WorldMap>(), world.get_resource::<Occupancy>())
+        else {
+            return;
+        };
+        let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
+        usable
+            .into_iter()
+            .filter(|u| {
+                if u.aim != Aim::SelfOnly {
+                    return true;
+                }
+                let cells = footprint(u.mode, origin, origin, map.window_tiles(), stops, |p| map.blocks_projectiles(p)).cells;
+                let source = Source::Ability(u.ability);
+                let landing = Landing {
+                    user: thinker,
+                    source,
+                    origin,
+                    aim: origin,
+                    cells,
+                    path: Vec::new(),
+                    landed_at: None,
+                    targets: vec![thinker],
+                    bonus: EffectBonus::default(),
+                    on: None,
+                };
+                abilities.built[u.ability.index()].would_act(&landing, world)
+            })
+            .collect()
+    };
+    if let Some(snapshot) = world.resource_mut::<crate::minds::Thinking>().snapshot_mut() {
+        snapshot.usable = kept;
+    }
+}
+
 /// Rebuilds every actor's [`Known`] from its own [`Grants`].
 ///
 /// Rebuilt rather than edited, the way gear modifiers are: a grant taken
@@ -869,6 +926,10 @@ impl Plugin for AbilitiesPlugin {
             .needs::<Registries>("AbilitiesPlugin", "`Registries`, with the stats an ability's costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
             .add_systems(Turn, perceive_abilities.in_set(crate::plugin::PerceiveSet::Annotate))
+            // After every annotator rather than among them: it reads the
+            // whole world, so it runs alone, and once the snapshot is
+            // whole, before any mind decides on it.
+            .add_systems(Turn, weigh_self_abilities.after(crate::plugin::PerceiveSet::Annotate).in_set(crate::plugin::DecideSet::Perceive))
             // What has landed, then what is cast this pass.
             .add_systems(Turn, (land_abilities.in_set(crate::plugin::LandSet::Ability), resolve_abilities.in_set(ResolveSet::Act)).chain())
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
@@ -1595,6 +1656,40 @@ mod tests {
         assert!(used.contains(&them), "the monster reached for its bolt: {used:?}");
         assert!(hp(&app, me) < before, "and it landed: {} then {}", before, hp(&app, me));
         assert!(app.world().get::<Pools>(them).unwrap().get(StatId::from_raw(0)) < 20, "it paid for it");
+    }
+
+    /// A monster does not cast an ability aimed at itself alone whose
+    /// effects would find nothing to act on: a mend at full health, with a
+    /// foe in sight, is left alone, and cast once it is hurt.
+    #[test]
+    fn a_mind_casts_a_self_aimed_ability_only_when_it_has_something_to_act_on() {
+        use rl_rules::ai::tactics::{Hunt, UseAbility};
+        use rl_rules::{Brain, MovementProfile};
+        use std::sync::Arc;
+
+        let (mut app, start) = app();
+        let quaff = ability(&app, "quaff");
+        let me = caster(&mut app, start, 20, &[]);
+        let them = foe(&mut app, start.offset(4, 0));
+        app.world_mut().entity_mut(them).insert((
+            crate::minds::Mind(Arc::new(Brain::new().then(UseAbility::default()).then(Hunt))),
+            crate::minds::Perception(10),
+            crate::minds::Profile(MovementProfile::default()),
+            Grants(vec![quaff]),
+            Inventory::default(),
+        ));
+        settle(&mut app);
+        let used_by_them = |app: &mut App| {
+            for _ in 0..3 {
+                app.world_mut().write_message(Intent::new(me, crate::turn::Wait));
+                app.update();
+            }
+            app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().any(|e| matches!(e, AbilityEvent::Used { user, .. } if user == them))
+        };
+        assert!(!used_by_them(&mut app), "whole, with a foe in sight, it has nothing to mend");
+
+        app.world_mut().get_mut::<Health>(them).unwrap().current = 5;
+        assert!(used_by_them(&mut app), "hurt, it mends");
     }
 
     /// A monster is never offered an ability it could not pay for, which

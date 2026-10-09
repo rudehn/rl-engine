@@ -1418,6 +1418,22 @@ mod tests {
         }
     }
 
+    /// And the other half: a necromancer with no body in reach never spends
+    /// a turn on raise dead, which it once cast whenever it saw a foe and
+    /// raised nothing with, over the same span of seeds and turns.
+    #[test]
+    fn a_necromancer_with_no_body_in_reach_never_reaches_for_raise_dead() {
+        use crate::testing::{arena, monster, pass_turns, said};
+        for s in 0..6 {
+            let (mut app, me, here) = arena(40 + s);
+            monster(&mut app, "necromancer", here.offset(REACH_OF_RAISING - 1, 0));
+            app.world_mut().entity_mut(me).insert(Health::full(1000));
+            pass_turns(&mut app, 40);
+            let lines = said(&app);
+            assert!(!lines.iter().any(|l| l.contains("raise dead")), "seed {s}: raised nothing, and never tried: {lines:#?}");
+        }
+    }
+
     /// How far from the adventurer the body a necromancer is left to raise
     /// lies: inside the arena's open ground, a step behind the necromancer.
     const REACH_OF_RAISING: i32 = 4;
