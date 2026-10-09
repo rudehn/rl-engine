@@ -158,10 +158,13 @@ impl Plugin for UndermerePlugin {
         // onto the stat in the reactions, unordered against these.
         app.add_systems(Turn, crate::stats::keep_footfall.in_set(TurnSet::Schedule));
         // What the adventurer's hands showed of their things, then a curse
-        // closing on them, then the turns they have worn what they do not
-        // know yet: chained, since each says so in the log, and the lines
-        // land in this order.
-        app.add_systems(Turn, (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::grow_familiar).chain().in_set(TurnSet::React));
+        // closing on them, then how long wearing a thing tells its level,
+        // then the turns they have worn what they do not know yet: chained,
+        // since each says so in the log, and the lines land in this order.
+        app.add_systems(
+            Turn,
+            (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::tell_unfamiliar, crate::lore::grow_familiar).chain().in_set(TurnSet::React),
+        );
         // What a zap at somewhere strikes, weighed between the actions that
         // make one and the triggers that land it, so a wand zapped at
         // nobody is not learned by it; and what any use showed nothing of,
@@ -199,10 +202,15 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));
         // What the panels count of a worn thing not yet known: its kind's
         // plain numbers, over the engine's true ones, for the vitals' armor,
-        // the look cursor's forecast and the targeting box's chance. Each
-        // reads its view when the game draws it and does nothing where it
-        // does not.
-        app.add_systems(Update, (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim).in_set(ViewSet::Annotate));
+        // the look cursor's forecast and the targeting box's chance; and
+        // what the pack and the look cursor say of a thing whose kind is
+        // known and whose level is not. Each reads its view when the game
+        // draws it and does nothing where it does not.
+        app.add_systems(
+            Update,
+            (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim, crate::seeming::seem_pack, crate::seeming::seem_looked_at)
+                .in_set(ViewSet::Annotate),
+        );
         // Each place's ambient, set between the turns and the light, so the
         // frame the stairs land on is drawn in the new place's light.
         app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));

@@ -396,6 +396,23 @@ impl Armory {
         own + self.lent[def.index()].armor.unwrap_or(0)
     }
 
+    /// What a thing of `def` at `level` gives its wearer's stats: its own,
+    /// a level's worth of each stat its line gives per level, and for a
+    /// weapon the accuracy a level lends, by the stat `accuracy` names;
+    /// nothing that comes to nought. The one rule [`Bestows`] is written by
+    /// when a thing is made or its level changes, and what a thing whose
+    /// level is not known yet seems to give, at nought.
+    pub fn gives_at(&self, def: Id<ItemDef>, level: i32, accuracy: Option<StatId>) -> Vec<(StatId, Op)> {
+        let d = self.defs.get(def);
+        let mut gives: Vec<(StatId, Op)> = d.bestows.iter().map(|(stat, n)| (stat.id(), Op::Add(*n))).collect();
+        gives.extend(d.per_level.iter().map(|(stat, n)| (stat.id(), Op::Add(n * level))));
+        if let Some(accuracy) = accuracy.filter(|_| d.melee.is_some() || d.ranged.is_some()) {
+            gives.push((accuracy, Op::Add(ACCURACY_PER_LEVEL * level)));
+        }
+        gives.retain(|(_, op)| *op != Op::Add(0));
+        gives
+    }
+
     /// Whether `def` takes levels: a weapon, armor, a ring, a staff or a
     /// wand, and nothing that stacks.
     pub fn takes_levels(&self, def: Id<ItemDef>) -> bool {
@@ -870,12 +887,7 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
     } else {
         e.remove::<Armor>();
     }
-    let mut gives: Vec<(StatId, Op)> = d.bestows.iter().map(|(stat, n)| (stat.id(), Op::Add(*n))).collect();
-    gives.extend(d.per_level.iter().map(|(stat, n)| (stat.id(), Op::Add(n * level))));
-    if let Some(accuracy) = accuracy.filter(|_| melee.is_some() || ranged.is_some()) {
-        gives.push((accuracy, Op::Add(ACCURACY_PER_LEVEL * level)));
-    }
-    gives.retain(|(_, op)| *op != Op::Add(0));
+    let gives = armory.gives_at(def, level, accuracy);
     if gives.is_empty() {
         e.remove::<Bestows>();
     } else {
@@ -957,8 +969,9 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
 
 /// Spawns `def` at `level` as [`spawn_item_at`] does, as a thing found
 /// rather than set out with: one whose level its wearer learns by wearing
-/// it is [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until
-/// it has been worn long enough or is identified.
+/// it is [`Unfamiliar`](crate::lore::Unfamiliar), so it is called by its
+/// kind alone, with no level, until it has been worn long enough or is
+/// identified.
 pub fn spawn_found(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let thing = spawn_item_at(commands, armory, def, level, registries);
     if armory.learned_by_wear(def) {
@@ -990,8 +1003,8 @@ impl ItemMaker for Armory {
     /// What is found is not yet known for what it is: each thing that takes
     /// levels at the level [`found_level`](Self::found_level) rolls, and a
     /// thing whose level its wearer learns by wearing it marked
-    /// [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until it
-    /// has been worn long enough or is identified.
+    /// [`Unfamiliar`](crate::lore::Unfamiliar), so it is called by its kind
+    /// alone until it has been worn long enough or is identified.
     fn make(
         &self,
         commands: &mut Commands,

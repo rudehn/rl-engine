@@ -750,6 +750,127 @@ mod tests {
         }
     }
 
+    /// The text inside a panel's frame on row `y`, from its left border to
+    /// its right, the border and the padding cut off and the end trimmed.
+    fn framed(app: &App, rect: Rect, y: i32) -> String {
+        let line: String = row(app, y).chars().skip(rect.x as usize + 2).take(rect.width as usize - 4).collect();
+        line.trim_end().to_string()
+    }
+
+    /// The pack opened on `thing`: its row in the list, and every line under
+    /// the rule saying what it is, top to bottom, as the screen draws them.
+    fn pack_on(app: &mut App, thing: Entity) -> (String, Vec<String>) {
+        press(app, KeyCode::KeyI);
+        let at = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == thing).expect("in the pack");
+        app.world_mut().resource_mut::<InventoryMenu>().selected = at;
+        app.update();
+        let pack = Screen::new().pack;
+        let lines: Vec<String> = (pack.y + 1..pack.bottom() - 1).map(|y| framed(app, pack, y)).collect();
+        let rule = lines.iter().position(|l| l.starts_with('\u{2500}')).expect("a rule under the rows");
+        let listed = lines[..rule].iter().find(|l| l.contains(&undermere::testing::name_of(app, thing))).cloned().unwrap_or_default();
+        let detail = lines[rule + 1..].iter().take_while(|l| !l.is_empty()).cloned().collect();
+        press(app, KeyCode::Escape);
+        (listed, detail)
+    }
+
+    /// The look cursor opened on `cell`: every line inside its panel, top to
+    /// bottom, as the screen draws them, wherever it moved to.
+    fn looking_at(app: &mut App, cell: Point) -> Vec<String> {
+        press(app, KeyCode::KeyX);
+        app.world_mut().resource_mut::<InspectView>().cursor = cell;
+        app.update();
+        app.update();
+        let rect = app.world().resource::<rl_engine::rl_ui::panel::inspect::InspectPlacement>().0.expect("the panel is up");
+        let lines = (rect.y + 1..rect.bottom() - 1).map(|y| framed(app, rect, y)).take_while(|l| !l.is_empty()).collect();
+        press(app, KeyCode::Escape);
+        lines
+    }
+
+    /// A found chain mail is called what it is, chain mail, with no level
+    /// in its name until one is known; the pack says what any chain mail
+    /// is at +0, that this one's level is not yet known, and how long it
+    /// must be worn to tell it, counting down while it is worn; the first
+    /// time it goes on, the log says so once; and worn long enough, it is
+    /// +2 chain mail and reads its own numbers. Played on the screen that
+    /// ships, in the pack's own frame.
+    #[test]
+    fn a_found_chain_mail_says_what_its_kind_is_and_how_long_until_its_level_is_known() {
+        use undermere::testing::{equip, find, give, name_of, pass_turns, said, unequip};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let mail = find(&mut app, "chain mail", 2);
+        give(&mut app, me, mail);
+        app.update();
+        let (listed, detail) = pack_on(&mut app, mail);
+        assert!(listed.starts_with("[ chain mail"), "called by its kind alone: {listed:?}");
+        let found = ["level not yet known, shown as +0", "wearing it 200 turns will tell its level", "armor +3", "footfall +1", "goes on the body"];
+        assert_eq!(detail, found, "what any chain mail is, and what wearing it will tell");
+
+        let worn_for = |app: &App| said(app).iter().filter(|l| *l == "You will know its level once you have worn it 200 turns.").count();
+        equip(&mut app, me, mail);
+        assert_eq!(worn_for(&app), 1, "put on, the log says how long: {:#?}", said(&app));
+        pass_turns(&mut app, 60);
+        let (_, detail) = pack_on(&mut app, mail);
+        // Sixty turns, and the turn it went on.
+        assert_eq!(detail, ["level not yet known, shown as +0", "known in 139 more turns worn", "armor +3", "footfall +1", "worn on the body"]);
+        unequip(&mut app, me, mail);
+        let (_, detail) = pack_on(&mut app, mail);
+        assert_eq!(detail[1], "wearing it 139 more turns will tell its level", "taken off, it keeps what it counted");
+        equip(&mut app, me, mail);
+        assert_eq!(worn_for(&app), 1, "and put on again, the log says nothing more");
+
+        pass_turns(&mut app, 140);
+        assert_eq!(name_of(&app, mail), "+2 chain mail");
+        let (listed, detail) = pack_on(&mut app, mail);
+        assert!(listed.starts_with("[ +2 chain mail"), "{listed:?}");
+        assert_eq!(detail, ["armor +5", "footfall +1", "worn on the body"], "known, its own numbers and nothing more");
+    }
+
+    /// The look cursor over a found sword lying on the floor says what any
+    /// sword strikes for at +0 and that its level is not yet known; over a
+    /// potion of a kind not yet known, only that it is unknown, as before.
+    #[test]
+    fn the_look_cursor_says_what_a_found_things_kind_is_and_a_potion_not_yet_known_is_unknown() {
+        use undermere::testing::{at, find, lay, lay_floor};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let here = at(&app, me);
+        let (east, west) = (here.offset(1, 0), here.offset(-1, 0));
+        lay_floor(&mut app, &[east, west]);
+        let sword = find(&mut app, "sword", 1);
+        lay(&mut app, sword, east);
+        let potion = find(&mut app, "potion of extra healing", 0);
+        lay(&mut app, potion, west);
+        app.update();
+        let lines = looking_at(&mut app, east);
+        assert_eq!(lines[0], ") sword", "called by its kind alone: {lines:#?}");
+        assert_eq!(lines[2..], ["level not yet known, shown as +0", "wearing it 200 turns will tell its level", "1d7+1 slash"], "{lines:#?}");
+        let lines = looking_at(&mut app, west);
+        assert_eq!(lines[2..], ["unknown"], "a potion of a kind not yet known: {lines:#?}");
+    }
+
+    /// A ring of light found at -2 clings to the adventurer when it goes on,
+    /// and the pack then says its level is below nought without saying how
+    /// far, what any ring of light does for each level, how long until its
+    /// level is known, and that it will not come off; its name says only
+    /// its kind.
+    #[test]
+    fn a_cursed_ring_that_clung_says_its_level_is_below_nought_and_will_not_come_off() {
+        use undermere::testing::{equip, find, said};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let ring = find(&mut app, "ring of light", -2);
+        equip(&mut app, me, ring);
+        let lines = said(&app);
+        assert!(lines.iter().any(|l| l == "The ring of light clings to you, and will not come off."), "{lines:#?}");
+        let (listed, detail) = pack_on(&mut app, ring);
+        assert!(listed.starts_with("= ring of light"), "{listed:?}");
+        let slot = app.world().resource::<InventoryView>().rows.iter().find(|r| r.entity == ring).map(|r| r.slot_name.clone()).expect("worn");
+        let shown = ["level below nought, how far not yet known", "known in 199 more turns worn", "light +1 a level"];
+        assert_eq!(detail[..3], shown, "{detail:#?}");
+        assert_eq!(detail[3..], [format!("worn on the {slot}"), "will not come off".to_string()], "{detail:#?}");
+    }
+
     /// A run played from a script, a replay, a recording or a capture,
     /// saves somewhere of its own: it neither starts on the player's save
     /// nor writes over it.

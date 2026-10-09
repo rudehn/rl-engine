@@ -74,7 +74,13 @@ Potions, scrolls, staffs, wands and rings wear a face per run: potions a colour 
 `Lore`, saved with the run, holds each kind's face and whether it is known, drawn from the run's seed; a thing of an unknown kind spawns `Unknown` under its face's name.
 Using one makes its kind known when what it did was plain to see, and every thing of that kind is renamed at once, with a line in the log ("That was a potion of strength.").
 A scroll of identify makes one chosen thing known.
-Weapons, armor and rings are known by kind and not by level: their level reads `+?` until they have been worn for 200 turns or identified.
+Weapons, armor and rings are known by kind and not by level, and their level is learned by wearing them for 200 turns or by a scroll of identify.
+A name carries a level only once the level is known, nought included: a found one is `chain mail` and the kit's sword is `+0 sword`, so a number in a name always means known.
+This replaced `+? chain mail` and `-? ring of light` after a playtest: the mark read as clutter, told nothing a player did not have to learn first, and stayed on a thing that had been put on, so equipping one seemed to do nothing.
+While the level is not known, the pack and the look cursor say what any thing of the kind is at nought, its armor, its blow or its shot, and for a ring what each level gives, since a ring at nought gives nothing; that its level is not yet known; and how many more turns wearing it will take, counting down while it is worn.
+The first time one goes on, the log says how long it takes, once.
+A curse that clung shows its sign and not its size: the pack says the level is below nought, how far not yet known, and while it holds the thing on the engine's own line says it will not come off.
+The name does not say `cursed`: while the curse holds, that line and the log's say it, and after a scroll of remove curse lifts it the name would still be claiming a curse the scroll had just lifted, while the level is still below nought; so the sign is said where the rest of what is known of the level is, and the name keeps one rule, the kind and the level once known.
 
 ### Enchanting
 

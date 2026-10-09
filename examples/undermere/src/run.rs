@@ -320,13 +320,13 @@ mod tests {
             let named = |names: [Option<&str>; 7]| names.map(|n| n.map(String::from)).to_vec();
             assert_eq!(
                 worn(&app, me),
-                named([Some("sword"), None, None, Some("leather armor"), None, None, Some(LANTERN)]),
+                named([Some("+0 sword"), None, None, Some("+0 leather armor"), None, None, Some(LANTERN)]),
                 "seed {s}: hands, head, body, fingers and light"
             );
             let mut carried = pack(&app, me);
             carried.sort();
             let kit: Vec<(String, u32)> =
-                [(LANTERN, 1), ("leather armor", 1), ("potion of healing", 2), ("sword", 1)].map(|(n, c)| (n.to_string(), c)).to_vec();
+                [("+0 leather armor", 1), ("+0 sword", 1), (LANTERN, 1), ("potion of healing", 2)].map(|(n, c)| (n.to_string(), c)).to_vec();
             assert_eq!(carried, kit, "seed {s}: everything worn is carried, and the potions are one stack of two");
             let bag = &app.world().get::<Inventory>(me).expect("a pack").items;
             let lantern = bag.iter().copied().find(|i| app.world().get::<Name>(*i).is_some_and(|n| n.as_str() == LANTERN));

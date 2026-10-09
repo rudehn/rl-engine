@@ -524,7 +524,7 @@ mod tests {
         assert_eq!((found(&app), carried(&app)), (15, 15), "and the first pile, taken into it, counts nothing, though every coin is carried");
 
         let things = |app: &App| app.world().resource::<Tally>().items_found;
-        let sword = app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "sword").expect("the kit's sword");
+        let sword = app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "+0 sword").expect("the kit's sword");
         put_down(&mut app, me, sword);
         take_up(&mut app, me);
         assert_eq!(things(&app), 0, "the sword the adventurer set out with is no find");

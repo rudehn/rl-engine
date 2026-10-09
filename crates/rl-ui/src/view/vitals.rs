@@ -402,7 +402,7 @@ mod tests {
         stage.tick();
         assert!(!stage.app.world().resource::<VitalsView>().armor_uncertain, "an unknown thing carried, not worn, marks nothing");
 
-        let mail = stage.app.world_mut().spawn((Item, Name::new("+? chain mail"), Armor(5), Unknown)).id();
+        let mail = stage.app.world_mut().spawn((Item, Name::new("chain mail"), Armor(5), Unknown)).id();
         let mut worn = Equipped(rl_rules::Equipment::with_slot_count(1));
         worn.equip(mail, &rl_rules::EquipShape::in_slot(body)).expect("the slot exists");
         stage.app.world_mut().entity_mut(player).insert(worn);
