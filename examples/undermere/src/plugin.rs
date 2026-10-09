@@ -97,6 +97,12 @@ impl Plugin for UndermerePlugin {
         // What Mereholt's keepers may stock, read once with the rest: each
         // stocking is drawn from it, never written back.
         app.insert_resource(library.wares);
+        // The temple's rites, read with the rest, each a verb the priest
+        // offers: declared here, before any priest is made to offer it.
+        for rite in library.rites.iter() {
+            app.add_verb(&rite.verb);
+        }
+        app.insert_resource(library.rites);
         // What the adventurer knows of the run's things, dealt out afresh
         // by every run's start and given back by a continued run's save;
         // nothing between two runs, so the next one's faces are its own.
@@ -244,6 +250,7 @@ impl Plugin for UndermerePlugin {
         );
         // A shackled captive's own "free": task 10's.
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
+        app.add_systems(Turn, crate::temple::answer_rites.in_set(TurnSet::React));
         // What is known of a kind's tricks, learned off the same messages
         // the tricks above, an ability's own landing and the engine's own
         // actor triggers already answer with: each only once its effect

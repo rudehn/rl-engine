@@ -204,6 +204,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
     app.add_systems(Update, undermere::captives::note_captives.in_set(ViewSet::Annotate));
     // A keeper's wares by their true names, in the shop's own colour.
     app.add_systems(Update, undermere::shops::shelf_names.in_set(ViewSet::Annotate));
+    // The temple's rites by what they do, not "name the priest".
+    app.add_systems(Update, undermere::temple::rite_rows.in_set(ViewSet::Annotate));
     // What is known of a monster's traits on the look panel: every plain
     // one in its own words, and a "?" for every trick not yet seen.
     app.add_systems(Update, undermere::bestiary_lore::annotate_inspect.in_set(ViewSet::Annotate));
@@ -713,5 +715,50 @@ mod tests {
         // the first press would have shown, had it reached the screen.
         press(&mut app, KeyCode::ArrowDown);
         assert_eq!(app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>().wares, 1, "the next press moves down a row");
+    }
+
+    /// Walking into the priest asks rather than pays: the offers screen
+    /// opens listing `trade` and the three rites, each rite at its price,
+    /// and the press that opened it spends nothing, takes nothing up and
+    /// moves nobody, since the walk key never spends gold.
+    #[test]
+    fn walking_into_the_priest_opens_the_offers_screen_with_each_rites_price_and_pays_nothing() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let priest = {
+            let world = app.world_mut();
+            world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == "the priest").map(|(e, _)| e).expect("the priest")
+        };
+        let at = undermere::testing::at(&app, priest);
+        let town = undermere::dungeon::TOWN;
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let sides = [((0, -1), KeyCode::ArrowDown), ((0, 1), KeyCode::ArrowUp), ((-1, 0), KeyCode::ArrowRight), ((1, 0), KeyCode::ArrowLeft)];
+        let map = app.world().resource::<WorldMap>();
+        let (from, key) = sides
+            .into_iter()
+            .map(|((dx, dy), key)| (at.offset(dx, dy), key))
+            .find(|(cell, _)| map.is_walkable_on(town, *cell) && !taken.contains(cell))
+            .expect("a side of the priest to walk in from");
+        undermere::testing::stand_on(&mut app, me, from);
+        let (mine, theirs) = (undermere::testing::pack(&app, me), undermere::testing::pack(&app, priest));
+        press(&mut app, key);
+        undermere::testing::settle(&mut app);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "the offers screen is up: {:#?}", written(&app));
+        assert!(!modals.is_open(trade_modal(modals)), "and not the shop");
+        let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+        let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
+        let offered = [("trade the priest", None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
+            .map(|(v, p)| (v.to_string(), p));
+        assert_eq!(rows, offered.to_vec(), "trade and the rites at their prices");
+        for rite in ["mend your wounds", "unbind what you wear", "name what you wear"] {
+            assert!(written(&app).iter().any(|r| r.contains(rite)), "the screen lists {rite:?}: {:#?}", written(&app));
+        }
+        assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
+        assert_eq!(undermere::testing::pack(&app, priest), theirs, "and nothing taken");
+        assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
     }
 }

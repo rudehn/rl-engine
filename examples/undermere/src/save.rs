@@ -361,6 +361,7 @@ impl Saveable for Shopkeeper {
             world.resource::<Armory>(),
             world.resource::<Registries>(),
             world.resource::<Verbs>(),
+            world.resource::<crate::temple::Rites>(),
         );
         // Nowhere, on no place, carrying nothing: the engine puts it back
         // where it was with what it had.

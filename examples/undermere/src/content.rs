@@ -398,7 +398,8 @@ pub fn effect_kinds() -> EffectKinds {
 /// engine knows nothing of: a thing's level, what is known of it, a curse,
 /// the adventurer's strength, and what [`effects`](crate::effects) holds,
 /// where someone stands, who they are, whose side they are on, what they
-/// see and what their things hold; and [`tricks`](crate::tricks) holds a
+/// see, what their things hold and a body made whole; and
+/// [`tricks`](crate::tricks) holds a
 /// landed blow that steals and a touch that saps strength no faster than
 /// three stacks. The one list, for the app and for [`effect_kinds`] alike.
 ///
@@ -408,13 +409,15 @@ pub fn effect_kinds() -> EffectKinds {
 /// and two effects registered under one name would be the second quietly
 /// taking the first's place.
 pub fn add_game_effects(app: &mut App) {
-    use crate::effects::{bodies, charges, minds, moving, senses};
+    use crate::effects::{bodies, charges, mending, minds, moving, senses};
     use rl_engine::rl_bevy::{Cleanse, Harm, Inflict, Mend, Pull, Shove};
     app.add_effect::<Harm>().add_effect::<Mend>().add_effect::<Inflict>().add_effect::<Cleanse>().add_effect::<Shove>().add_effect::<Pull>();
     app.add_effect::<crate::enchant::Enchanting>()
         .add_effect::<crate::enchant::RemoveCurse>()
         .add_effect::<crate::lore::Identify>()
+        .add_effect::<crate::lore::NameWorn>()
         .add_effect::<crate::strength::Strengthen>();
+    app.add_effect::<mending::Whole>().add_effect::<mending::CureLasting>();
     app.add_effect::<moving::Blink>().add_effect::<moving::TeleportOther>().add_effect::<moving::Beckon>().add_effect::<moving::Descend>();
     app.add_effect::<moving::Teleport>();
     app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>().add_effect::<bodies::Life>();
@@ -455,6 +458,8 @@ pub struct Library {
     pub faces: crate::lore::Faces,
     /// What Mereholt's keepers may stock.
     pub wares: crate::shops::Wares,
+    /// The rites the temple's priest offers, their effects built.
+    pub rites: crate::temple::Rites,
 }
 
 impl Library {
@@ -469,7 +474,8 @@ impl Library {
         let bestiary = Bestiary::load(&registries, &traits, &armory.defs, kinds, moments);
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
         let wares = crate::shops::Wares::load(&registries, &armory);
-        Self { registries, abilities, traits, armory, bestiary, faces, wares }
+        let rites = crate::temple::Rites::load(&registries, kinds);
+        Self { registries, abilities, traits, armory, bestiary, faces, wares, rites }
     }
 }
 

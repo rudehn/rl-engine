@@ -28,7 +28,8 @@
 //! lantern as the adventurer descends. [`shops`] is Mereholt's keepers:
 //! what they may stock, a stocking of their shelves drawn at the depth
 //! reached, and the keepers themselves, standing at their counters on the
-//! first arrival and selling from those shelves.
+//! first arrival and selling from those shelves; [`temple`] is the rites
+//! the priest among them mends, unbinds and names by, for a price.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -89,6 +90,7 @@ pub mod stairs;
 pub mod stats;
 pub mod strength;
 pub mod tally;
+pub mod temple;
 pub mod testing;
 pub mod title;
 pub mod traits;

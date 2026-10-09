@@ -23,7 +23,8 @@
 //! The keepers are the engine's traders: [`keep_shops`] stands each at its
 //! [`Post`], a mark in `mereholt.ron`, on Mereholt's first arrival, with
 //! the run's first stocking as the `Inventory` it sells from and its purse
-//! in gold beside it, offering the engine's `trade`; and on a later
+//! in gold beside it, offering the engine's `trade`, and the priest the
+//! [`temple`](crate::temple)'s rites besides; and on a later
 //! arrival from a deeper tier than the shelves were drawn for, it clears
 //! them and draws the next stocking, which [`Shelves`] counts. A keeper is
 //! saved as its [`Shopkeeper`] post, so a continued run finds the same
@@ -55,6 +56,7 @@ use crate::dungeon::TOWN;
 use crate::lore::Lore;
 use crate::run::Adventurer;
 use crate::tally::Tally;
+use crate::temple::{Rites, TEMPLE};
 
 const WARES_RON: &str = include_str!("../assets/wares.ron");
 
@@ -378,7 +380,8 @@ pub struct Shopkeeper(pub Post);
 ///
 /// A keeper is an actor of the townsfolk, with no mind, so it keeps to
 /// its counter; it offers `trade` and nothing else, so a walk into it opens
-/// the shop. Its shelf is its `Inventory`, each ware made by the armory at
+/// the shop, but for the priest, who offers the temple's rites beside it,
+/// so a walk into them opens the offers screen. Its shelf is its `Inventory`, each ware made by the armory at
 /// the level the stocking rolled for it, as a thing found is, and its purse
 /// is gold coins in the same bag, which is what the engine pays out of.
 ///
@@ -432,15 +435,20 @@ fn shelf_of(stocking: &[Stocking], post: Post) -> &Stocking {
 /// keeper stood at its counter and one a continued run puts back are the
 /// same: its [`Post`], its name and glyph in the shop's colour, its health,
 /// the townsfolk's side, the [`Trader`] that buys what `wares.ron` says and
-/// its offer of `trade`, neither of which the engine saves.
-pub fn keeper(post: Post, wares: &Wares, armory: &Armory, registries: &Registries, verbs: &Verbs) -> impl Bundle {
+/// its offer of `trade`, and the priest's of the [`Rites`] too, neither of
+/// which the engine saves.
+pub fn keeper(post: Post, wares: &Wares, armory: &Armory, registries: &Registries, verbs: &Verbs, rites: &Rites) -> impl Bundle {
     let keeper = wares.keeper(post.keeper).expect("every post's keeper is in wares.ron");
     let trade = verbs.get(TRADE).expect("TradePlugin declares the trade verb");
+    let mut offers = vec![Offering::new(trade, TRADE_TIME)];
+    if post.keeper == TEMPLE {
+        offers.extend(rites.offerings(verbs));
+    }
     let (r, g, b) = post.color;
     (
         (Shopkeeper(post), Actor, Blocks, Name::new(post.called), Glyph::new('@', Color::srgb(r, g, b)).on_layer(5)),
         (Health::full(KEEPER_HEALTH), Faction(registries.factions.expect(TOWNSFOLK))),
-        (Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT }, Offers(vec![Offering::new(trade, TRADE_TIME)])),
+        (Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT }, Offers(offers)),
     )
 }
 
@@ -453,13 +461,14 @@ pub struct Shops<'w> {
     armory: Res<'w, Armory>,
     registries: Res<'w, Registries>,
     verbs: Res<'w, Verbs>,
+    rites: Res<'w, Rites>,
 }
 
 impl Shops<'_> {
     /// Spawns the keeper of `post` at `at` in Mereholt, carrying `shelf`.
     fn stand(&self, commands: &mut Commands, post: Post, shelf: &Stocking, at: Point) -> Entity {
         let bag = self.shelve(commands, shelf);
-        let keeper = keeper(post, &self.wares, &self.armory, &self.registries, &self.verbs);
+        let keeper = keeper(post, &self.wares, &self.armory, &self.registries, &self.verbs, &self.rites);
         commands.spawn((keeper, Position(at), OnMap(TOWN), Inventory { items: bag })).id()
     }
 
@@ -898,12 +907,12 @@ mod tests {
     }
 
     /// Every keeper stands at its own mark the first time a run is in
-    /// Mereholt: one of the townsfolk, called by its role, offering trade
-    /// and nothing else, at a quarter of a thing's worth; and a cell of
+    /// Mereholt: one of the townsfolk, called by its role, offering trade,
+    /// and the priest the temple's rites besides, at a quarter of a thing's worth; and a cell of
     /// the shop floor the adventurer can walk to from where the run
     /// arrives is beside each, since an offer is taken up from beside.
     #[test]
-    fn every_keeper_stands_at_its_mark_on_the_first_arrival_in_mereholt_on_the_townsfolk_side_offering_trade_over_a_span_of_seeds() {
+    fn every_keeper_stands_at_its_mark_on_the_first_arrival_in_mereholt_on_the_townsfolk_side_offering_trade_and_the_priest_the_rites_over_a_span_of_seeds() {
         for s in 0..3 {
             let (mut app, me) = in_mereholt(s);
             let townsfolk = app.world().resource::<Registries>().factions.expect(TOWNSFOLK);
@@ -919,7 +928,11 @@ mod tests {
                 assert_eq!(world.get::<OnMap>(k).map(|m| m.0), Some(TOWN), "seed {s}: {} in Mereholt", post.called);
                 assert_eq!(world.get::<Faction>(k).map(|f| f.0), Some(townsfolk), "seed {s}: {} of the townsfolk", post.called);
                 let offers: Vec<VerbId> = world.get::<Offers>(k).expect("offers").0.iter().map(|o| o.verb).collect();
-                assert_eq!(offers, vec![trade], "seed {s}: {} offers trade and nothing else", post.called);
+                let mut offered = vec![trade];
+                if post.keeper == TEMPLE {
+                    offered.extend(world.resource::<Rites>().offerings(world.resource::<Verbs>()).iter().map(|o| o.verb));
+                }
+                assert_eq!(offers, offered, "seed {s}: {} offers trade, and the priest the rites besides", post.called);
                 assert_eq!(world.get::<Trader>(k).map(|t| t.pays_pct), Some(25), "seed {s}: {} pays a quarter", post.called);
                 assert!(beside(&mut app, k).iter().any(|cell| walked.contains(cell)), "seed {s}: {} can be walked up to", post.called);
             }

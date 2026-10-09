@@ -60,8 +60,11 @@
 //               known; Discord(turns:), every foe in sight at odds with everyone for that many
 //               turns; Aggravate, a shriek and every monster on the floor aware of the user;
 //               Summon(fewest:, most:), that many of the floor's monsters beside the user, aware
-//               of them. Each of Undermere's own takes
-//               only the arguments it names, and none where it names none. Landed by any trigger
+//               of them; Whole, the user healed to their greatest health; CureLasting, every
+//               status on the user that lasts until cured cured, but what a worn thing holds;
+//               NameWorn, everything the user wears made known, its kind and its level. Each of
+//               Undermere's own takes only the arguments it names, and none where it names none.
+//               `rites.ron`, the temple's, is written in these same words. Landed by any trigger
 //               with no list of its own
 //   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, targeting:, asks:)] what it
 //               does at its moments: on is "use" (used from the pack; lands on the user, or where

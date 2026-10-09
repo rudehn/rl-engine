@@ -710,6 +710,66 @@ pub fn identify(world: &mut World, thing: Entity) {
     world.write_message(Tell::new(line, tone));
 }
 
+/// Make everything the user wears known, its kind and its level, and so
+/// whether it is cursed: the temple's `name`. What they carry and do not
+/// wear is left as it was, so the scroll of identify stays the way to
+/// name a potion. Written `(kind: "NameWorn")`.
+///
+/// Each thing is made known as [`identify`] makes one, and said so in the
+/// same words; a wearer who knew all of it already is told that once.
+/// Only the adventurer's knowledge is kept, so on anyone else it does
+/// nothing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NameWorn;
+
+impl Effect for NameWorn {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let wearer = landing.user;
+        world.commands.queue(move |world: &mut World| name_worn(world, wearer));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "makes known everything worn".to_string()
+    }
+}
+
+impl FromArgs for NameWorn {
+    const KIND: &'static str = "NameWorn";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        crate::effects::moving::no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Identifies everything the adventurer `wearer` wears that they do not
+/// know whole yet: a kind still wearing its face, or a level they are not
+/// familiar with.
+pub fn name_worn(world: &mut World, wearer: Entity) {
+    if world.get::<Player>(wearer).is_none() {
+        return;
+    }
+    let Some(equipped) = world.get::<Equipped>(wearer) else { return };
+    let mut worn: Vec<Entity> = Vec::new();
+    for (_, item) in equipped.0.worn() {
+        if !worn.contains(&item) {
+            worn.push(item);
+        }
+    }
+    let (armory, lore) = (world.resource::<Armory>(), world.resource::<Lore>());
+    let untold = |thing: &Entity| {
+        let Some(kind) = world.get::<ItemKind>(*thing) else { return false };
+        let name = &armory.defs.get(kind.0).name;
+        world.get::<Unfamiliar>(*thing).is_some() || (lore.face(name).is_some() && !lore.knows(name))
+    };
+    let untold: Vec<Entity> = worn.into_iter().filter(untold).collect();
+    if untold.is_empty() {
+        world.write_message(Tell::new("You know everything you wear already.", Tones::MUTED));
+    }
+    for thing in untold {
+        identify(world, thing);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rl_engine::rl_core::RunSeed;

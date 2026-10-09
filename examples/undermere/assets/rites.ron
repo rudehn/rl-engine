@@ -1,0 +1,28 @@
+// The rites of the temple of the Still Water: what Mereholt's priest does for whoever
+// stands beside them and pays. A rite is a verb the priest offers, not a thing anyone
+// carries, so it is never in `items.ron`; it is written in the same effect words, so a
+// rite and the scroll or potion that does the same cannot drift apart.
+//
+// Every field:
+//   verb:     the word the priest offers it by, one row a word, and never "trade", the
+//             engine's own; `src/temple.rs` declares each as a verb and answers it
+//   says:     what the offers screen lists it as, the whole row: the engine's own words
+//             would be the verb and the priest's name, "name the priest", which is not what
+//             the rite does
+//   price:    what taking it up costs, in gold coins, more than nought: refused to anyone
+//             carrying less, and paid into the priest's purse before it lands. The same all
+//             run, and never out of stock
+//   effects:  [(kind:, chance:, args:)] what it lands on whoever took it up, as their own
+//             use of it, the effect words of `items.ron`'s header: the engine's Mend(roll:),
+//             Cleanse(status:) and Inflict(status:, turns:), and Undermere's own, those that
+//             land on the user: RemoveCurse, everything worn free to come off; Strengthen(by:);
+//             Life(by:); Whole, health made whole; CureLasting, every status that lasts until
+//             cured cured, but what a worn thing holds; NameWorn, everything worn known, its
+//             kind and its level, and so its curse. A word that reads where a use was aimed
+//             or the thing it was read on, Enchant, Identify, Blink and the rest, has nothing
+//             to land on here and does nothing
+[
+    (verb: "mend", says: "mend your wounds", price: 30, effects: [(kind: "Whole"), (kind: "CureLasting")]),
+    (verb: "unbind", says: "unbind what you wear", price: 60, effects: [(kind: "RemoveCurse")]),
+    (verb: "name", says: "name what you wear", price: 60, effects: [(kind: "NameWorn")]),
+]
