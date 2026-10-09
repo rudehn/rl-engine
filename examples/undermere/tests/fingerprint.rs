@@ -225,10 +225,10 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [15_342_442_557_417_225_364, 3_791_365_179_012_816_275, 17_512_802_706_716_597_283],
-        "fingerprint tripwire: re-baselined for part 3 task 10 (a lived-in dungeon: sleepers, goblin camps, feeding \
-         grounds, patrols and a captive all draw from a floor's own population stream ahead of its ordinary groups, \
-         which plan now draws on a stream of its own so they move nothing of its, but the earlier draws move the \
-         bands' own and, through LeavesRemains and the rest, the floors behind them)"
+        [12_042_115_077_540_659_513, 2_062_553_943_749_299_901, 2_891_562_110_806_429_677],
+        "fingerprint tripwire: re-baselined for part 3 task 11 (bands and the ordinary groups' sleep draw from \
+         streams of their own, a camp's fire only in the open, nobody of the floor's population in a boss's hall or a \
+         lair, a captive's shackles from one place, the soak's tuning: sixty health, the sheet's healing, three groups \
+         a floor with a band, feeding ground or patrol standing in for one, and the softer kinds)"
     );
 }
