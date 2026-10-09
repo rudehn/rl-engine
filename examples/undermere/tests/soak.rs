@@ -634,6 +634,22 @@ struct Delve {
     /// Potions of healing and extra healing still in the pack at the end,
     /// known or not: what the run had to spare.
     spare: u32,
+    /// The mini-bosses and the boss it met, and what came of them.
+    encounters: Encounters,
+}
+
+/// The mini-bosses and the boss a delve met: whether a lair is a fight a
+/// run can win, and which of the three bosses it came to.
+#[derive(Debug, Clone, Default)]
+struct Encounters {
+    /// Every mini-boss seen, by name.
+    minis: Vec<String>,
+    /// The mini-bosses seen that died, by whoever's hand.
+    fallen: Vec<String>,
+    /// The boss seen, by name, once the throne's floor showed it.
+    boss: Option<String>,
+    /// The artifacts taken up, by name.
+    artifacts: Vec<String>,
 }
 
 /// The most turns a delve decides before it is called stalled.
@@ -649,14 +665,49 @@ const FRAMES_A_TURN: u32 = 400;
 struct Watch {
     picked: MessageCursor<ItemEvent>,
     harmed: MessageCursor<DamageDealt>,
+    died: MessageCursor<DeathEvent>,
     last_harm: String,
     /// What the adventurer has thrown, which taking up again is no find.
     thrown: BTreeSet<Entity>,
+    /// Every mini-boss and boss the adventurer has seen, by entity, with
+    /// its name and whether it is the boss: read off by name at its death,
+    /// when the dead are already despawned.
+    met: BTreeMap<Entity, (String, bool)>,
+    /// The mini-bosses that died after they were seen, by whoever's hand.
+    fallen: Vec<String>,
+    /// Every artifact's name: what a mini-boss leaves.
+    artifacts: BTreeSet<String>,
+    /// The artifacts the adventurer took up, in the order they did.
+    took: Vec<String>,
 }
 
 impl Watch {
+    /// Notes every mini-boss and boss `me` can see now.
+    fn sight(&mut self, world: &mut World, me: Entity) {
+        let Some(sees) = world.get::<Viewshed>(me).cloned() else { return };
+        let here = world.resource::<WorldMap>().current();
+        let seen: Vec<(Entity, Kind)> = world
+            .query_filtered::<(Entity, &Position, &OnMap, &Kind), Without<Dead>>()
+            .iter(world)
+            .filter(|(_, p, on, _)| on.0 == here && sees.can_see(p.0))
+            .map(|(e, _, _, k)| (e, *k))
+            .collect();
+        let bestiary = world.resource::<Bestiary>();
+        for (who, kind) in seen {
+            let def = bestiary.defs.get(kind.0);
+            if def.miniboss || def.boss {
+                self.met.entry(who).or_insert_with(|| (def.name.clone(), def.boss));
+            }
+        }
+    }
+
     fn read(&mut self, world: &World, me: Entity, leg: &mut Leg) {
         let (armory, registries, bestiary) = (world.resource::<Armory>(), world.resource::<Registries>(), world.resource::<Bestiary>());
+        for death in self.died.read(world.resource::<Messages<DeathEvent>>()) {
+            if let Some((name, false)) = self.met.get(&death.entity) {
+                self.fallen.push(name.clone());
+            }
+        }
         for event in self.picked.read(world.resource::<Messages<ItemEvent>>()) {
             let (actor, item, merged_into) = match *event {
                 ItemEvent::Thrown { actor, item, .. } if actor == me => {
@@ -667,6 +718,9 @@ impl Watch {
                 _ => continue,
             };
             let kind = [Some(item), merged_into].into_iter().flatten().find_map(|e| world.get::<ItemKind>(e));
+            if let Some(name) = kind.filter(|_| actor == me).map(|k| &armory.defs.get(k.0).name).filter(|name| self.artifacts.contains(*name)) {
+                self.took.push(name.clone());
+            }
             if let Some(kind) = kind.filter(|_| actor == me).and_then(|k| kind_of(armory.defs.get(k.0), registries)) {
                 *leg.taken.entry(kind).or_default() += 1;
             }
@@ -688,11 +742,19 @@ fn delve(seed: u64, plan: Plan) -> Delve {
     let me = undermere::testing::adventurer(&mut app);
     let mut memory = Memory { plan: Some(plan), ..Memory::default() };
     let world = app.world();
+    let (bestiary, armory) = (world.resource::<Bestiary>(), world.resource::<Armory>());
+    let artifacts =
+        bestiary.defs.iter().filter(|(_, d)| d.miniboss).flat_map(|(_, d)| d.drops.0.iter().map(|row| armory.defs.get(row.item).name.clone())).collect();
     let mut watch = Watch {
         picked: world.resource::<Messages<ItemEvent>>().get_cursor(),
         harmed: world.resource::<Messages<DamageDealt>>().get_cursor(),
+        died: world.resource::<Messages<DeathEvent>>().get_cursor(),
         last_harm: String::from("nothing"),
         thrown: BTreeSet::new(),
+        met: BTreeMap::new(),
+        fallen: Vec::new(),
+        artifacts,
+        took: Vec::new(),
     };
     let (mut legs, mut floor, mut arrived, mut decided, mut idle) = (BTreeMap::<u32, Leg>::new(), 0, 0, 0, 0);
     let end = loop {
@@ -730,6 +792,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         }
         idle = 0;
         let before = world.resource::<Turns>().now();
+        watch.sight(world, me);
         let choice = decide(world, me, &mut memory);
         if memory.on_floor == FLOOR_TURNS * 3 {
             // Long past when it should have gone down: say where it is
@@ -809,7 +872,10 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         }
     }
     let tally = world.resource::<Tally>().clone();
-    Delve { plan, legs, end, at: (floor, turn), tally, enchanted: memory.enchanted, armor, most: health.1, staff, spare }
+    let met = |boss: bool| watch.met.values().filter(|(_, b)| *b == boss).map(|(name, _)| name.clone()).collect::<Vec<String>>();
+    let (minis, boss) = (met(false), met(true).into_iter().next());
+    let encounters = Encounters { minis, fallen: watch.fallen, boss, artifacts: watch.took };
+    Delve { plan, legs, end, at: (floor, turn), tally, enchanted: memory.enchanted, armor, most: health.1, staff, spare, encounters }
 }
 
 /// Prints the census: each kind's average a floor, floor by floor; a run's
@@ -927,6 +993,60 @@ fn print_delves(delves: &[(u64, Delve)]) {
     }
 }
 
+/// Prints every plan's delves together: where and to what they died, the
+/// one kind that killed most and its share, and what came of the
+/// mini-bosses, the boss and the artifacts, each by name.
+fn print_encounters(delves: &[(u64, Delve)]) {
+    let all: Vec<&Delve> = delves.iter().map(|(_, d)| d).collect();
+    let deaths: Vec<(u32, &str)> = all.iter().filter_map(|d| if let End::Died(by) = &d.end { Some((d.at.0, by.as_str())) } else { None }).collect();
+    let won = all.iter().filter(|d| d.end == End::Won).count();
+    println!("\n== All {} delves: {won} won ({:.0}%), {} died ==", all.len(), won as f32 * 100.0 / all.len() as f32, deaths.len());
+    println!("died on floor: {}", (1..=FLOORS).map(|f| format!("{f}:{}", deaths.iter().filter(|(at, _)| *at == f).count())).collect::<Vec<_>>().join("  "));
+    let mut causes: BTreeMap<&str, u32> = BTreeMap::new();
+    for (_, by) in &deaths {
+        *causes.entry(by).or_default() += 1;
+    }
+    let mut causes: Vec<(&str, u32)> = causes.into_iter().collect();
+    causes.sort_by_key(|(name, n)| (std::cmp::Reverse(*n), *name));
+    if let Some((name, n)) = causes.first() {
+        println!("the deadliest, {name}, took {n} of {} ({:.0}%)", deaths.len(), *n as f32 * 100.0 / deaths.len().max(1) as f32);
+    }
+    let named = |of: &dyn Fn(&Delve) -> Vec<String>| {
+        let mut counts: BTreeMap<String, u32> = BTreeMap::new();
+        for d in &all {
+            for name in of(d) {
+                *counts.entry(name).or_default() += 1;
+            }
+        }
+        counts
+    };
+    let met = named(&|d| d.encounters.minis.clone());
+    let fallen = named(&|d| d.encounters.fallen.clone());
+    let artifacts = named(&|d| d.encounters.artifacts.clone());
+    println!("mini-boss                  met  fell  killed the adventurer");
+    for (name, n) in &met {
+        let killed = deaths.iter().filter(|(_, by)| by == name).count();
+        println!("  {name:<24} {n:>4} {:>5} {killed:>5}", fallen.get(name).copied().unwrap_or(0));
+    }
+    let with_minis = all.iter().filter(|d| !d.encounters.minis.is_empty()).count();
+    let felled = all.iter().filter(|d| !d.encounters.fallen.is_empty()).count();
+    let took = all.iter().filter(|d| !d.encounters.artifacts.is_empty()).count();
+    println!("{with_minis} delves met a mini-boss, {felled} saw one fall, {took} took up an artifact");
+    for (name, n) in &artifacts {
+        println!("  {name:<28} {n:>4}");
+    }
+    println!("boss                       met   won  killed the adventurer");
+    for (name, n) in named(&|d| d.encounters.boss.clone().into_iter().collect()) {
+        let won = all.iter().filter(|d| d.encounters.boss.as_deref() == Some(name.as_str()) && d.end == End::Won).count();
+        let killed = deaths.iter().filter(|(_, by)| *by == name).count();
+        println!("  {name:<24} {n:>4} {won:>5} {killed:>5}");
+    }
+    let turns: Vec<u32> = all.iter().filter(|d| d.end == End::Won).map(|d| d.at.1).collect();
+    if !turns.is_empty() {
+        println!("a run won took {} turns on the mean", turns.iter().sum::<u32>() / turns.len() as u32);
+    }
+}
+
 /// Runs `job` on each of `jobs` across the machine's threads, and gives
 /// back what each came to in the order the jobs were given.
 fn spread<J: Copy + Send + Sync, R: Send>(jobs: &[J], job: impl Fn(J) -> R + Sync) -> Vec<R> {
@@ -964,6 +1084,7 @@ fn soak_fifty_seeds_counted_and_delved_to_their_ends() {
     let jobs: Vec<(u64, Plan)> = seeds.iter().flat_map(|seed| PLANS.map(|plan| (*seed, plan))).collect();
     let delves: Vec<(u64, Delve)> = jobs.iter().map(|(seed, _)| *seed).zip(spread(&jobs, |(seed, plan)| delve(seed, plan))).collect();
     print_delves(&delves);
+    print_encounters(&delves);
     assert!(delves.iter().all(|(_, d)| d.legs.contains_key(&1)), "every delve went through the gate");
 }
 
