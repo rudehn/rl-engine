@@ -85,9 +85,9 @@
     (name: "spore-burst", says: "bursts into spores when it dies", trick: true,
      triggers: [(on: "died", area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "confusing", amount: 200))])]),
     (name: "brittle", says: "bones that blades glance off and hammers break",
-     resists: [("slash", 50), ("pierce", 50), ("crush", -50)]),
+     resists: [("slash", 33), ("pierce", 33), ("crush", -50)]),
     (name: "paralysing", says: "a touch that freezes", trick: true,
-     triggers: [(on: "hit", effects: [(kind: "Inflict", chance: 25, args: (status: "paralysed", turns: 2))])]),
+     triggers: [(on: "hit", effects: [(kind: "Inflict", chance: 15, args: (status: "paralysed", turns: 2))])]),
     // `Wither` rather than the plain `Inflict` every other hit trigger
     // uses: `Stacking::Stack` has no maximum of its own, and the sheet
     // caps this one at three.

@@ -1081,7 +1081,7 @@ mod tests {
         let registries = &library.registries;
         assert_eq!(world.get::<Kind>(e), Some(&Kind(king.id())));
         assert_eq!(world.get::<Armor>(e).map(|a| a.0), Some(4));
-        assert_eq!(world.get::<Health>(e).map(|h| h.max), Some(120));
+        assert_eq!(world.get::<Health>(e).map(|h| h.max), Some(90));
         assert!(world.get::<LightSource>(e).is_some(), "grave light");
         assert!(world.get::<Hearing>(e).is_some(), "keen-eared");
         assert_eq!(world.get::<Resists>(e).map(|r| r.get(registries.damage_kinds.expect("poison"))), Some(100), "deathless");
@@ -1452,7 +1452,7 @@ mod tests {
     }
 
     /// Grubnak's `war cry`: every ally in sight hastened for the trait's
-    /// own six turns, Grubnak himself included, a foe beside them left as
+    /// own four turns, Grubnak himself included, a foe beside them left as
     /// it was.
     #[test]
     fn grubnaks_war_cry_hastens_every_ally_in_sight_itself_included() {
@@ -1461,7 +1461,7 @@ mod tests {
         let grubnak = monster(&mut app, "Grubnak the goblin king", here.offset(1, 0));
         let guard = monster(&mut app, "goblin", here.offset(2, 0));
         settle(&mut app);
-        crate::effects::bodies::rally(app.world_mut(), grubnak, 6);
+        crate::effects::bodies::rally(app.world_mut(), grubnak, 4);
         settle(&mut app);
         let hasted = app.world().resource::<Registries>().statuses.expect("hasted");
         let has = |e: Entity| app.world().get::<Afflicted>(e).is_some_and(|a| a.iter().any(|s| s.id == hasted));

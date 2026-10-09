@@ -565,7 +565,7 @@ impl FromArgs for Whisper {
 /// Grubnak's `war cry`. `aim: SelfOnly` and `mode: Own`, the same reason
 /// `conjure blades` takes neither: its own sight decides who it hits,
 /// never a cursor, and an ordinary `Aim::Ally` bolt only ever finds the
-/// one nearest. Written `(kind: "Rally", args: (turns: 6))`.
+/// one nearest. Written `(kind: "Rally", args: (turns: 4))`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rally {
     /// How many whole turns the haste lasts.
@@ -653,7 +653,10 @@ impl Effect for CallDrowned {
     }
 
     fn describe(&self, _: &Registries, _: EffectBonus) -> String {
-        format!("up to {} drowned thralls rise from water within {}", self.count, self.range)
+        match self.count {
+            1 => format!("a drowned thrall rises from water within {}", self.range),
+            n => format!("up to {n} drowned thralls rise from water within {}", self.range),
+        }
     }
 }
 

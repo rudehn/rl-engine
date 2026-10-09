@@ -734,9 +734,11 @@ pub fn die_with_mother(mut deaths: MessageReader<DeathEvent>, spawned: Query<(En
     }
 }
 
-/// How many of a [`Wells`] kind's own turns pass between each thrall: the
-/// content sheet's own eight.
-const RISE_INTERVAL: u32 = 8;
+/// How many of a [`Wells`] kind's own turns pass between each thrall:
+/// twelve, where the content sheet said eight, since at eight a fight with
+/// the Drowned King was a fight with his court and a thrall a turn behind
+/// it, and the soak's delves came to his hall to die on the thralls.
+const RISE_INTERVAL: u32 = 12;
 
 /// How far from a [`Wells`] kind a cell of water may lie and still rise a
 /// thrall: wide enough to cover the one hall a `welling` kind's own
@@ -1054,7 +1056,7 @@ mod tests {
 
     /// The Drowned King's `welling`: left alone near a black pool, he
     /// wells a drowned thrall up out of it given enough of his own turns,
-    /// as the content sheet's "every 8 turns" says.
+    /// every twelve of his own turns, as `RISE_INTERVAL` says.
     #[test]
     fn a_wells_kind_wells_a_drowned_thrall_up_from_water_in_reach_given_enough_of_its_own_turns() {
         use crate::bestiary::Bestiary;

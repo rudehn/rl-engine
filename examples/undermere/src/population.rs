@@ -24,17 +24,19 @@ use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
 use crate::stairs::Way;
 
-/// Groups every floor draws before its depth adds any, a first cut: four,
-/// and one more for each floor down, so floor one holds five groups and
-/// floor nine thirteen.
-pub const BASE_GROUPS: u32 = 4;
+/// Groups every floor draws before its depth adds any: three, and one more
+/// for each floor down, so floor one holds four groups and floor nine
+/// twelve. Four until part 3's soak, when a bestiary with venom, webs,
+/// paralysis and blades that glance off bone made a floor of four and its
+/// depth a floor too many.
+pub const BASE_GROUPS: u32 = 3;
 
 /// Groups the throne's floor draws besides its court: few, so the king
 /// and his knights are the fight that matters there and the way to them
 /// is not a fourteenth floor of the dead. What they are is the spawn
 /// table's floor ten, the drowned, the wights and the ogres of the floors
 /// above, and never a knight, who is the throne's alone.
-pub const THRONE_GROUPS: u32 = 4;
+pub const THRONE_GROUPS: u32 = 3;
 
 /// The percent chance a plain monster starts a floor asleep, by floor:
 /// about half on floor one, falling to about a sixth by floor nine, the
@@ -207,7 +209,7 @@ struct Feeder {
 /// what already stands there.
 const FEEDERS: &[Feeder] = &[
     Feeder { floors: (1, 2), beast: "jackal", prey: "rat" },
-    Feeder { floors: (3, 4), beast: "ogre", prey: "goblin" },
+    Feeder { floors: (4, 4), beast: "ogre", prey: "goblin" },
     Feeder { floors: (5, 7), beast: "ghoul", prey: "skeleton" },
     Feeder { floors: (8, 9), beast: "troll", prey: "fire imp" },
 ];
@@ -447,7 +449,8 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool, open: i
 
 /// Populates every floor on the arrival that built it: a band of its own,
 /// the dar trio or a goblin war band wherever [`BANDS`] names its floor,
-/// then [`groups_on`]'s number of ordinary groups, drawn at its own band,
+/// then [`groups_on`]'s number of ordinary groups less one for each band,
+/// feeding ground and patrol placed, drawn at its own band,
 /// planned against the floor as built and off every cell a piece marked,
 /// where a chest, a brazier or the king's court stands or will stand even
 /// where the engine's slot drew nothing, off every way the floor has, so
@@ -491,6 +494,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // and a band drawing from it would stand somewhere else whenever
         // one of them was added or tuned.
         let mut band_rng = seed.stream(b"undermere.population.bands", u64::from(floor));
+        let mut scenes = 0;
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
             // together as a camp round its own fire instead of standing
@@ -498,6 +502,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
             let camp = band.leader == "goblin" && rng.random_ratio(1, 2);
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_band(&mut commands, &stocked, &site, band, &mut free, &mut band_rng, camp) {
+                scenes += 1;
                 if camp {
                     let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
                     if let Some(fire_at) = camp_fire_cell(&used, &mut free, |p| map.is_walkable_on(ev.map, p)) {
@@ -514,12 +519,14 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         {
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_feeding_ground(&mut commands, &stocked, &site, feeder, turns.now(), &mut free, &mut rng) {
+                scenes += 1;
                 marked.extend(used);
             }
         }
         {
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_patrol(&mut commands, &stocked, &site, &mut free, &mut rng) {
+                scenes += 1;
                 marked.extend(used);
             }
         }
@@ -540,7 +547,13 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // existed, for whichever seed happens to land one.
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
         let mut plan_rng = seed.stream(b"undermere.population.plan", u64::from(floor));
-        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor), &mut free, &mut plan_rng);
+        // A band, a feeding ground and a patrol each stand in for one of
+        // the floor's ordinary groups rather than beside all of them:
+        // three goblins round a fire are one of the floor's fights, and a
+        // floor with its scenes and every group as well was a floor more
+        // crowded than its depth, the soak's first read of part 3 dying
+        // on floors three to five three runs in five.
+        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor).saturating_sub(scenes), &mut free, &mut plan_rng);
         // Who of them sleeps draws from the same stream, after `plan` has
         // drawn all it will, so it moves with nothing but the groups.
         for (id, at) in groups.into_iter().flatten() {
@@ -650,14 +663,14 @@ mod tests {
         crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).bestiary
     }
 
-    /// Four groups and one more for each floor down, to floor nine's
-    /// thirteen, and the throne's floor four: what every floor draws where
+    /// Three groups and one more for each floor down, to floor nine's
+    /// twelve, and the throne's floor three: what every floor draws where
     /// nothing is in the way.
     #[test]
-    fn on_open_ground_every_floor_draws_four_groups_and_one_more_for_each_floor_down_but_the_throne_over_a_span_of_seeds() {
+    fn on_open_ground_every_floor_draws_three_groups_and_one_more_for_each_floor_down_but_the_throne_over_a_span_of_seeds() {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
-        assert_eq!((1..=FLOORS).map(groups_on).collect::<Vec<_>>(), [5, 6, 7, 8, 9, 10, 11, 12, 13, 4]);
+        assert_eq!((1..=FLOORS).map(groups_on).collect::<Vec<_>>(), [4, 5, 6, 7, 8, 9, 10, 11, 12, 3]);
         for floor in 1..=FLOORS {
             for s in 0..20 {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(s);
@@ -671,9 +684,9 @@ mod tests {
     /// The throne's floor draws few groups, and only of what walks floors
     /// seven to nine, the drowned, the wights and the ogres, so the
     /// court is the fight that matters there: never a knight of it out on
-    /// the floor, and never more than four groups.
+    /// the floor, and never more than three groups.
     #[test]
-    fn the_throne_floor_draws_at_most_four_groups_of_what_walks_floors_seven_to_nine_over_a_span_of_seeds() {
+    fn the_throne_floor_draws_at_most_three_groups_of_what_walks_floors_seven_to_nine_over_a_span_of_seeds() {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
         let deep: Vec<Id<MonsterDef>> = (7..=9).flat_map(|band| bestiary.spawns.at(band).map(|row| row.item)).collect();
@@ -682,7 +695,7 @@ mod tests {
         for s in 0..40 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(s);
             let groups = plan(&bestiary.spawns, FLOORS as i32, bounds, entry, groups_on(FLOORS), &mut |_| true, &mut rng);
-            assert!(!groups.is_empty() && groups.len() <= 4, "seed {s}: {} groups", groups.len());
+            assert!(!groups.is_empty() && groups.len() <= 3, "seed {s}: {} groups", groups.len());
             for (id, _) in groups.iter().flatten() {
                 assert!(*id != court, "seed {s}: a knight of the court out on the floor");
                 assert!(deep.contains(id), "seed {s}: a {} on the throne's floor", bestiary.defs.get(*id).name);
