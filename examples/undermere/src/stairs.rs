@@ -5,14 +5,16 @@
 //! through on each the first time the place is entered, the way Foundry's
 //! lifts are laid, so the way on is always as far from the arrival as the
 //! place allows. In Mereholt the way on is the Drowned Gate, which leads to
-//! floor one's way in; on floor one the way up is the gate's far side, and
+//! floor one's way in, or to the gate mark a waystone left, by
+//! [`waystone`](crate::waystone); on floor one the way up is the gate's far side, and
 //! leads back onto the gate; every other floor has stairs up at its way in
 //! and down at its way on, and the tenth has no way down, since the throne
 //! is where the Undermere ends.
 //!
 //! A way through is an entity, a [`Transition`] where the engine looks for
 //! one when a body goes through, marked with the [`Way`] it is. Stairs are
-//! drawn by a glyph of their own, as Foundry's lifts are. The gate is drawn
+//! drawn by a glyph of their own, as Foundry's lifts are, and kept on the
+//! map from memory once seen, a `Landmark`, as the tiles are. The gate is drawn
 //! by the tile it stands on, which shimmers and glows violet on both its
 //! sides, so it carries no glyph to hide the tile under.
 //!
@@ -68,7 +70,7 @@ impl Way {
 fn lay(commands: &mut Commands, way: Way, at: Point, map: MapId, to: Destination) {
     let mut e = commands.spawn((Position(at), OnMap(map), Transition { to }, way, Name::new(way.name())));
     if let Some(glyph) = way.glyph() {
-        e.insert(glyph);
+        e.insert((glyph, rl_engine::rl_render::Landmark));
     }
 }
 
@@ -125,6 +127,7 @@ pub fn link_places(
     mut tell: MessageWriter<Tell>,
     map: Res<WorldMap>,
     mut knowledge: ResMut<Knowledge>,
+    marks: crate::waystone::GateMarks,
 ) {
     for ev in entered.read() {
         tell.write(Tell::new(place_line(ev.map), Tones::NOTICE));
@@ -133,11 +136,12 @@ pub fn link_places(
         }
         let Some(floor) = floor_of(ev.map) else {
             // The town: how to see the keys, the gate, its way on, leading
-            // to floor one's way in, and the whole of it known.
+            // to floor one's way in or to a gate mark left before the town
+            // was ever entered, and the whole of it known.
             if ev.map == TOWN {
                 tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
                 if let Some(gate) = ev.exit {
-                    lay(&mut commands, Way::Gate, gate, ev.map, Destination::Place { map: map_of(1), arrive: Arrive::Entry });
+                    lay(&mut commands, Way::Gate, gate, ev.map, crate::waystone::gate_to(marks.mark()));
                 }
                 know_the_town(&map, &mut knowledge);
             }
@@ -213,6 +217,26 @@ mod tests {
             assert_eq!(here(&app), TOWN, "seed {s}: floor one's way up leads back to Mereholt");
             assert_eq!(at(&app, me), gate, "seed {s}: onto the gate");
         }
+    }
+
+    /// Every stair is a landmark, kept on the map from memory once seen as
+    /// the floor under it is, and still one in a continued run.
+    #[test]
+    fn every_stair_is_kept_on_the_map_from_memory_through_a_save() {
+        use rl_engine::rl_render::Landmark;
+        let unremembered = |app: &mut App| {
+            let world = app.world_mut();
+            let stairs = world.query::<(&Way, Has<Landmark>)>().iter(world).filter(|(w, _)| **w != Way::Gate).map(|(_, l)| l).collect::<Vec<_>>();
+            (stairs.len(), stairs.iter().filter(|l| !**l).count())
+        };
+        let mut app = headless(RunSeed(2));
+        arrive(&mut app, map_of(2));
+        let (laid, forgotten) = unremembered(&mut app);
+        assert!(laid >= 2 && forgotten == 0, "{laid} stairs, {forgotten} not landmarks");
+        let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
+        let mut carried_on = crate::testing::continued(&text);
+        let (laid, forgotten) = unremembered(&mut carried_on);
+        assert!(laid >= 2 && forgotten == 0, "continued: {laid} stairs, {forgotten} not landmarks");
     }
 
     #[test]

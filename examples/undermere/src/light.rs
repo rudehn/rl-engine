@@ -55,6 +55,9 @@ pub const BRAZIER: LightDef = LightDef { radius: 6, color: (1.0, 0.6, 0.28), fli
 pub const COLD_BRAZIER: LightDef = LightDef { radius: 6, color: (0.35, 0.95, 0.8), flicker: 0.25 };
 /// The Drowned Gate, on both its sides: violet.
 pub const GATE: LightDef = LightDef { radius: 5, color: (0.75, 0.42, 1.0), flicker: 0.15 };
+/// A gate mark, where a waystone was last used: the gate's violet, nearer
+/// in, a glow on the floor rather than a gate's worth of light.
+pub const GATE_MARK: LightDef = LightDef { radius: 4, ..GATE };
 /// A glowcap: a soft teal, a step or so round it, so a clump of them is a
 /// pool of light and a lone one a mark in the dark.
 pub const GLOWCAP: LightDef = LightDef { radius: 2, color: (0.4, 1.0, 0.85), flicker: 0.0 };
@@ -177,8 +180,8 @@ pub struct Fixtures {
     tiles: Vec<(TileId, LightDef)>,
     /// Each prop that sheds light, and its light, braziers aside.
     props: Vec<(PropId, LightDef)>,
-    /// Each prop that sheds light wherever it stands, stood by the
-    /// population rather than a piece's slot: a camp's fire.
+    /// Each prop that sheds light wherever it stands, stood by the game
+    /// rather than a piece's slot: a camp's fire, and a gate mark.
     loose: Vec<(PropId, LightDef)>,
     /// The brazier, whose flame is the colour of the place it burns in.
     brazier: PropId,
@@ -197,7 +200,7 @@ impl Fixtures {
         Self {
             tiles: GLOWING.iter().map(|(name, light)| (tile(name), *light)).collect(),
             props: vec![(prop("lamp post"), LAMP), (prop("forge"), FIRE), (prop("hearth"), FIRE), (prop("altar"), CANDLES), (prop("candelabra"), CANDLES)],
-            loose: vec![(prop("fire"), CAMPFIRE)],
+            loose: vec![(prop("fire"), CAMPFIRE), (prop(crate::waystone::GATE_MARK), GATE_MARK)],
             brazier: prop("brazier"),
             prefabs: undermere.prefabs().clone(),
         }
@@ -231,8 +234,8 @@ pub fn light_fixtures(mut commands: Commands, mut entered: MessageReader<PlaceEn
 
 /// Lights every prop that sheds light wherever it stands, on the prop
 /// itself, the frame it appears: a camp's fire, which the population stands
-/// on a floor's first arrival with no slot [`Fixtures::of`] could read it
-/// off.
+/// on a floor's first arrival, and a gate mark, which a waystone leaves,
+/// neither with a slot [`Fixtures::of`] could read it off.
 ///
 /// On the prop rather than a light beside it, so a fire put out takes its
 /// light with it, and read off the prop's kind as it appears rather than

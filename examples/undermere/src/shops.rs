@@ -759,10 +759,11 @@ mod tests {
     }
 
     #[test]
-    fn arrows_and_three_potions_of_healing_are_always_there_and_each_keeper_draws_its_count_over_a_span_of_seeds() {
+    fn arrows_three_potions_of_healing_and_three_waystones_are_always_there_and_each_keeper_draws_its_count_over_a_span_of_seeds() {
         let library = library();
         let healing = library.armory.defs.expect("potion of healing");
         let arrow = library.armory.defs.expect("arrow");
+        let waystone = library.armory.defs.expect(crate::waystone::WAYSTONE);
         for tier in TIERS {
             for stocking in stockings(&library, tier) {
                 let first = stocking.wares.first().map(|w| (w.def, w.count));
@@ -770,7 +771,7 @@ mod tests {
                     "smith" => assert_eq!((first, stocking.wares.len()), (Some((arrow, 10)), 7)),
                     "apothecary" => assert_eq!((first, stocking.wares.len()), (Some((healing, 3)), 5)),
                     "curio" => assert!((4..=5).contains(&stocking.wares.len()), "four drawn, and a potion of life by chance"),
-                    "temple" => assert!(stocking.wares.is_empty(), "its rites are not wares"),
+                    "temple" => assert_eq!((first, stocking.wares.len()), (Some((waystone, 3)), 1), "its rites are not wares"),
                     other => panic!("a keeper called {other}"),
                 }
             }

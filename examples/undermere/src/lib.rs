@@ -29,7 +29,9 @@
 //! what they may stock, a stocking of their shelves drawn at the depth
 //! reached, and the keepers themselves, standing at their counters on the
 //! first arrival and selling from those shelves; [`temple`] is the rites
-//! the priest among them mends, unbinds and names by, for a price.
+//! the priest among them mends, unbinds and names by, for a price; and
+//! [`waystone`] is the way home from below, ten quiet turns of kneeling,
+//! and the mark the gate leads back down to.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -96,4 +98,5 @@ pub mod title;
 pub mod traits;
 pub mod tricks;
 pub mod typeface;
+pub mod waystone;
 pub mod wearing;

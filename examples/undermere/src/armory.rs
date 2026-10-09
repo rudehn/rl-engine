@@ -1223,6 +1223,7 @@ mod tests {
             "gold coin",
             "lantern",
             "torch",
+            "waystone",
             "the Crown of Grubnak",
             "the Widow's Fang",
             "the Choirmaster's Staff",

@@ -295,7 +295,9 @@ pub fn registries() -> Registries {
         factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK].map(FactionDef::new).to_vec())
             .unwrap(),
         tags: Registry::from_defs(
-            ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact"].map(TagDef::new).to_vec(),
+            ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact", "waystone"]
+                .map(TagDef::new)
+                .to_vec(),
         )
         .unwrap(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
@@ -398,7 +400,8 @@ pub fn effect_kinds() -> EffectKinds {
 /// engine knows nothing of: a thing's level, what is known of it, a curse,
 /// the adventurer's strength, and what [`effects`](crate::effects) holds,
 /// where someone stands, who they are, whose side they are on, what they
-/// see, what their things hold and a body made whole; and
+/// see, what their things hold and a body made whole; a waystone's call
+/// home, in [`waystone`](crate::waystone); and
 /// [`tricks`](crate::tricks) holds a
 /// landed blow that steals and a touch that saps strength no faster than
 /// three stacks. The one list, for the app and for [`effect_kinds`] alike.
@@ -428,6 +431,7 @@ pub fn add_game_effects(app: &mut App) {
     app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
     app.add_effect::<bodies::Rally>().add_effect::<bodies::CallDrowned>().add_effect::<bodies::Hatch>();
     app.add_effect::<bodies::RaiseAlly>().add_effect::<bodies::Whisper>().add_effect::<minds::AlertDrowned>();
+    app.add_effect::<crate::waystone::CallGate>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through
@@ -516,7 +520,7 @@ mod tests {
         for slot in ["main hand", "off hand", "head", "body", "left finger", "right finger", "light"] {
             assert!(r.slots.id(slot).is_some(), "{slot}");
         }
-        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact"] {
+        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact", "waystone"] {
             assert!(r.tags.id(tag).is_some(), "{tag}");
         }
         for (one, other) in PAIRS {
@@ -643,6 +647,7 @@ mod tests {
             ("egg sac", true),
             ("fire", true),
             ("shackles", false),
+            ("gate mark", false),
         ];
         assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
         for (name, blocks) in props {

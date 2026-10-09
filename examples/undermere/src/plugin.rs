@@ -67,7 +67,11 @@ impl Plugin for UndermerePlugin {
             // What the dead leave lying where they fell, for `raising` to
             // find within sight and reach: every monster but the king, who
             // never dies in a way anything could be left to raise.
-            .add_plugins(RemainsPlugin::naming("{what} corpse"));
+            .add_plugins(RemainsPlugin::naming("{what} corpse"))
+            // The engine's multi-turn work, for the waystone's kneeling:
+            // broken off by harm, and answered by `waystone`.
+            .add_plugins(WorkPlugin)
+            .add_work(crate::waystone::CALLING);
         // The engine's effects Undermere names, for the potions, the staffs
         // and the breaths, beside the `Ignite` fire declares and the `Emit`
         // the clouds do; and Undermere's own, for the scrolls, the potions,
@@ -251,6 +255,12 @@ impl Plugin for UndermerePlugin {
         // A shackled captive's own "free": task 10's.
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
         app.add_systems(Turn, crate::temple::answer_rites.in_set(TurnSet::React));
+        // A waystone: refused in Mereholt before its use is spent, the
+        // adventurer's every turn spent kneeling once it is used, and the
+        // call answered, or broken off by harm.
+        app.add_systems(Turn, crate::waystone::refuse_at_home.in_set(ResolveSet::Travel));
+        app.add_systems(Turn, crate::waystone::kneel.in_set(DecideSet::Game));
+        app.add_systems(Turn, (crate::waystone::answer_the_call, crate::waystone::broken_off).in_set(TurnSet::React));
         // What is known of a kind's tricks, learned off the same messages
         // the tricks above, an ability's own landing and the engine's own
         // actor triggers already answer with: each only once its effect
@@ -309,7 +319,7 @@ impl Plugin for UndermerePlugin {
         // beside it a camp's fire lit, so the frame it is stood is lit.
         app.add_systems(
             Update,
-            (crate::light::set_ambient, crate::light::light_loose_props)
+            (crate::light::set_ambient, crate::light::light_loose_props, crate::waystone::keep_in_memory)
                 .after(EngineSet::Turns)
                 .before(EngineSet::Light)
                 .run_if(in_state(EngineState::Playing)),

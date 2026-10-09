@@ -86,4 +86,11 @@
     // changes who the captive fights for rather than what is lying there.
     (name: "fire", glyph: '^', color: (r: 255, g: 120, b: 40), blocks: true),
     (name: "shackles", glyph: ',', color: (r: 150, g: 150, b: 160)),
+
+    // Where the adventurer last knelt with a waystone, which the Drowned Gate
+    // leads back to: one in the whole run, moved by every call, stood by
+    // `src/waystone.rs` rather than a piece, lit the gate's violet by
+    // `light.rs` and drawn from memory once seen, so the map shows where the
+    // gate will bring the adventurer back.
+    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255)),
 ]

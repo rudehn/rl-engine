@@ -106,4 +106,7 @@
     (item: "dart",    bands: (1, 10), weight: 3, group: (4, 8)),
     (item: "javelin", bands: (3, 10), weight: 2, group: (2, 4)),
     (item: "torch",   bands: (1, 10), weight: 1),
+    // A waystone, a kind of its own and the rarest found (`finds.rs`), and only
+    // from floor five, where the walk home is long enough to want it.
+    (item: "waystone", bands: (5, 10), weight: 1),
 ]

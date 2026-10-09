@@ -100,8 +100,8 @@
             (item: "potion of strength", bands: (3, 5), weight: 1),
             (item: "potion of life", bands: (5, 5), chance: 25),
         ]),
-        // The temple of the Still Water: its rites are offerings, not wares, and its
-        // waystones are stocked by a later part.
-        (name: "temple", buys: Tags([])),
+        // The temple of the Still Water: its rites are offerings, not wares; its wares
+        // are waystones, three on every shelf, and waystones are all it buys.
+        (name: "temple", buys: Tags(["waystone"]), always: [(item: "waystone", count: 3)]),
     ],
 )

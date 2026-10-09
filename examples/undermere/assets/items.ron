@@ -21,11 +21,11 @@
 //               either hand's finger, "left finger" | "right finger"
 //   also:       optional; slots it also claims when worn, for a two-hander
 //   tags:       optional; "weapon" | "armor" | "potion" | "scroll" | "staff" | "wand" | "ring" |
-//               "gold" | "arrow" | "light" | "thrown" | "artifact"; what a chest's row asks for
+//               "gold" | "arrow" | "light" | "thrown" | "artifact" | "waystone"; what a chest's row asks for
 //               by tag, what a keeper buys, the curio every tag a priced thing carries, so an
 //               artifact carries its own for the curio to buy it by, and the kinds a floor's
 //               things are drawn by: potions, scrolls, weapons, armor,
-//               staffs, wands, rings and thrown things, each kind as often as `finds.rs` weighs
+//               staffs, wands, rings, thrown things and waystones, each kind as often as `finds.rs` weighs
 //               it and each thing of a kind as `item_spawns.ron` does. A weapon, armor,
 //               ring, staff or wand that does not stack takes levels: each level adds one to a
 //               weapon's every damage roll and five to its wielder's accuracy, one to armor's
@@ -62,7 +62,10 @@
 //               Summon(fewest:, most:), that many of the floor's monsters beside the user, aware
 //               of them; Whole, the user healed to their greatest health; CureLasting, every
 //               status on the user that lasts until cured cured, but what a worn thing holds;
-//               NameWorn, everything the user wears made known, its kind and its level. Each of
+//               NameWorn, everything the user wears made known, its kind and its level; CallGate,
+//               the user kneeling ten turns that any harm breaks off, and then home through
+//               the Drowned Gate, the one carried spent and a gate mark left where they knelt,
+//               refused in Mereholt, in `src/waystone.rs`. Each of
 //               Undermere's own takes only the arguments it names, and none where it names none.
 //               `rites.ron`, the temple's, is written in these same words. Landed by any trigger
 //               with no list of its own
@@ -391,6 +394,14 @@
      bestows: [("footfall", 6)],
      melee: (roll: "3d6+3", kind: "crush", shape: Sweep, look: (glyph: '*', color: (r: 255, g: 120, b: 40))),
      triggers: [(on: "hit", effects: [(kind: "Ignite", args: (turns: 3))])]),
+    // A waystone: used from the pack, it sets the adventurer kneeling for
+    // ten turns, and any harm breaks it off with the stone kept; finished,
+    // the stone is spent and the Drowned Gate takes them home to Mereholt,
+    // and leads back to where they knelt. Not consumed by the use itself,
+    // which only begins the kneeling: `src/waystone.rs` spends it at the end.
+    (name: "waystone", glyph: '*', color: (0.72, 0.6, 0.95), price: 40, tags: ["waystone"], stack: true,
+     triggers: [(on: "use", effects: [(kind: "CallGate")])]),
+
     // A pile is three to twenty-four coins on floor one, and floor times
     // that further down; a floor's piles are laid besides its things, and
     // what the dead leave is their own.
