@@ -48,8 +48,9 @@
     (monster: "fire imp",        floors: (9, 9),   weight: 40, group: (1, 2)),
     (monster: "salamander",      floors: (9, 9),   weight: 30, group: (1, 1)),
     // The deepest culture under the lake, and the one golem that still
-    // stands guard: each its own row until a later task bands the dar as
-    // the trio the design means, each one of a kind.
+    // stands guard. The dar also come as the trio the design means,
+    // `population.rs`'s own band, the blademaster leading; these rows are
+    // the dar met apart from it, one at a time.
     (monster: "golem",           floors: (8, 9),   weight: 10, group: (1, 1)),
     (monster: "dar blademaster", floors: (8, 9),   weight: 15, group: (1, 1)),
     (monster: "dar priestess",   floors: (8, 9),   weight: 10, group: (1, 1)),

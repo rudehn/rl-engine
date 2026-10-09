@@ -44,7 +44,7 @@ pub const THRONE_GROUPS: u32 = 3;
 /// rounded to the nearest whole percent. Index `0` is floor one.
 const SLEEP_PCT: [u32; 9] = [50, 46, 42, 38, 33, 29, 25, 21, 17];
 
-/// The percent chance a monster of `floor` starts asleep: [`SLEEP_PCT`]'s
+/// The percent chance a monster of `floor` starts asleep: `SLEEP_PCT`'s
 /// own, doubled and capped at a hundred for a `sleepy` kind, and nought,
 /// whatever `floor` says, for a `wakeful` one. Pure, so a test can check
 /// the share it draws without an `App`.
@@ -448,7 +448,7 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool, open: i
 }
 
 /// Populates every floor on the arrival that built it: a band of its own,
-/// the dar trio or a goblin war band wherever [`BANDS`] names its floor,
+/// the dar trio or a goblin war band wherever `BANDS` names its floor,
 /// then [`groups_on`]'s number of ordinary groups less one for each band,
 /// feeding ground and patrol placed, drawn at its own band,
 /// planned against the floor as built and off every cell a piece marked,
