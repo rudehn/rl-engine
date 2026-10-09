@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The nearby rail's default heading over its things is `Things in sight`, where it was `On the ground`: the list is every item and prop in sight, nearest first, not what lies underfoot. A game that set its own with `NearbyPanel::headings` is unchanged.
+  The count of hostiles beside the actors' heading is left unsaid at nought, so a `0` no longer stands over a list of people as though it counted them.
+
 - The map draws a `Landmark` from memory: an entity carrying the new `rl_render::Landmark` marker is drawn out of sight on a cell the player has seen, in the colours of memory as the tile under it is, where anything else is drawn only while in sight.
   Memory is kept a cell at a time, so it suits what stands still and was there when its cell was seen, a way through or a mark the game leaves where the player stands, and nothing that moves.
   A prop is one by its definition: `props.ron`'s new optional `remembered: true`, read as `rl_rules::prop::Look::remembered`, makes `dress_props` put the marker on it whenever it appears, a continued run's included, with no game code; a game inserts `Landmark` itself only on a glyph entity of its own that is no prop, such as stairs drawn by a `Glyph` it gave them. A game constructing a prop `Look` by hand adds `remembered: false`.

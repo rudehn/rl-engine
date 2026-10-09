@@ -175,15 +175,22 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // says so by its own status and one awake and unaware does not
         // sleep. What
         // it is doing outranks what it knows when it is running, at its
-        // post, or drifting with nothing better to do.
-        NearbyPanel::new(screen.nearby).titled("").cursor(CursorStyle::ticks()).alerts(AlertWords::new("unaware", "searching", "hunting")).activities(
-            ActivityWords::new()
-                .word("flee_when_hurt", "fleeing")
-                .word("keep_post", "guarding")
-                .word("wander", "wandering")
-                .word(undermere::conditions::SLEEPING, "asleep")
-                .word(undermere::captives::SHACKLED, "shackled"),
-        ),
+        // post, or drifting with nothing better to do. The things below
+        // are everything in sight that is not someone, stairs and a gate
+        // mark as well as what lies about, so not "on the ground".
+        NearbyPanel::new(screen.nearby)
+            .titled("")
+            .headings("In sight", "Around you")
+            .cursor(CursorStyle::ticks())
+            .alerts(AlertWords::new("unaware", "searching", "hunting"))
+            .activities(
+                ActivityWords::new()
+                    .word("flee_when_hurt", "fleeing")
+                    .word("keep_post", "guarding")
+                    .word("wander", "wandering")
+                    .word(undermere::conditions::SLEEPING, "asleep")
+                    .word(undermere::captives::SHACKLED, "shackled"),
+            ),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),

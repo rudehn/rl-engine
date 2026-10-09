@@ -26,9 +26,12 @@ pub struct NearbyLayout {
     pub rect: Rect,
     /// The title in the top border. Empty draws no frame.
     pub title: String,
-    /// The heading over the actors.
+    /// The heading over the actors, with how many of them are hostile at
+    /// its right when any are: nought is left unsaid, since a `0` over a
+    /// list of people reads as a count of them that is wrong.
     pub actors: String,
-    /// The heading over the things on the ground.
+    /// The heading over the things: every item and prop in sight, nearest
+    /// first, which is more than what lies underfoot.
     pub things: String,
     /// What each state is called, in the game's own words. An empty word
     /// says nothing at all for that state, which is what a game that
@@ -120,13 +123,15 @@ impl ActivityWords {
 pub struct NearbyPanel(NearbyLayout);
 
 impl NearbyPanel {
-    /// A rail in `rect`, with the engine's default headings.
+    /// A rail in `rect`, with the engine's default headings: `In sight`
+    /// over the actors and `Things in sight` over the things, which says
+    /// what that list holds where a game has not said it in its own words.
     pub fn new(rect: Rect) -> Self {
         Self(NearbyLayout {
             rect,
             title: "Nearby".into(),
             actors: "In sight".into(),
-            things: "On the ground".into(),
+            things: "Things in sight".into(),
             alerts: AlertWords::default(),
             activities: ActivityWords::default(),
             cursor: CursorStyle::glow(Tones::SELECT),
@@ -215,7 +220,8 @@ pub fn draw_nearby(
     };
     let mut y = inner.y;
     let bottom = inner.bottom();
-    for (heading, rows, count) in [(&layout.actors, &view.actors, Some(view.threats())), (&layout.things, &view.things, None)] {
+    let threats = Some(view.threats()).filter(|n| *n > 0);
+    for (heading, rows, count) in [(&layout.actors, &view.actors, threats), (&layout.things, &view.things, None)] {
         if rows.is_empty() || y + 3 > bottom {
             continue;
         }
@@ -306,7 +312,7 @@ mod tests {
         assert_eq!(rows[0], "In sight               1", "the heading carries the threat count");
         assert!(rows[1].starts_with('\u{2500}'), "underlined: {:?}", rows[1]);
         assert!(rows[2].starts_with("c crab"), "glyph then name: {:?}", rows[2]);
-        assert_eq!(rows[4], "On the ground", "the second heading has no count");
+        assert_eq!(rows[4], "Things in sight", "the second heading says what it lists, and has no count");
         assert!(rows[6].starts_with("! rum"), "{:?}", rows[6]);
 
         // The row is the bar: a crab at full health is washed edge to
@@ -321,6 +327,19 @@ mod tests {
             assert_eq!(bg(&stage, x, 2), full, "the crab's row is washed at column {x}");
         }
         assert_eq!(bg(&stage, 12, 6), surface, "a thing on the floor has no health to show");
+    }
+
+    /// With nobody hostile in sight the heading carries no count, so a
+    /// `0` never stands over a list of people as though it counted them.
+    #[test]
+    fn the_heading_says_no_count_when_nothing_in_sight_is_hostile() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let keeper = stage.actor("keeper", 'k', 2, 0);
+        stage.app.world_mut().entity_mut(keeper).remove::<rl_bevy::Faction>();
+        stage.tick();
+        let rows = stage.rows();
+        assert_eq!(rows[0], "In sight", "no count at nought");
+        assert!(rows[2].starts_with("k keeper"), "{:?}", rows[2]);
     }
 
     #[test]
