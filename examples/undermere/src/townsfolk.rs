@@ -624,16 +624,41 @@ pub struct Said<'w> {
     tell: MessageWriter<'w, Tell>,
 }
 
-/// Says a person's role under their name on the look panel, `Hesk`, "the
-/// smith": the name is the run's and says nothing of what they do.
+/// Says a person's role beside their name, `Hesk`, "the smith", since the
+/// name is the run's and says nothing of what they do: under it on the
+/// look panel, in place of a fight's forecast, which nothing in Mereholt
+/// can have; and after it on the rail, in place of what the person knows
+/// of the adventurer, since a lamplighter on their round is not a sentry
+/// who has not noticed anyone.
 ///
-/// In `ViewSet::Annotate`, first among the facets, reading what the look
-/// panel's collector put under the cursor this frame.
-pub fn name_roles(view: Option<ResMut<InspectView>>, people: Query<&Townsperson>, townsfolk: Res<Townsfolk>, mut facets: ResMut<Facets>) {
-    let Some(mut view) = view else { return };
-    let Some(entity) = view.subject.as_ref().map(|s| s.entity) else { return };
-    let Some(role) = people.get(entity).ok().and_then(|p| townsfolk.role(&p.0)) else { return };
-    view.facets.insert(0, facets.facet("role", role.called.clone()));
+/// In `ViewSet::Annotate`, after the game's own forecast, reading what the
+/// look panel's and the rail's collectors put there this frame; each view
+/// is read only where the game draws it.
+pub fn name_roles(look: Option<ResMut<InspectView>>, rail: Option<ResMut<NearbyView>>, people: Query<&Townsperson>, roles: Roles) {
+    let Roles { townsfolk, mut facets } = roles;
+    let role_of = |entity: Entity| people.get(entity).ok().and_then(|p| townsfolk.role(&p.0));
+    if let Some(mut view) = look
+        && let Some(role) = view.subject.as_ref().and_then(|s| role_of(s.entity))
+    {
+        let forecast = facets.declare("forecast");
+        view.facets.retain(|f| f.key != forecast);
+        (view.duel, view.odds) = (None, None);
+        view.facets.insert(0, facets.facet("role", role.called.clone()));
+    }
+    if let Some(mut view) = rail {
+        for row in &mut view.actors {
+            let Some(role) = role_of(row.entity) else { continue };
+            (row.doing, row.alert) = (None, None);
+            row.facets.push(facets.facet("role", role.called.clone()));
+        }
+    }
+}
+
+/// What [`name_roles`] reads besides the views.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Roles<'w> {
+    townsfolk: Res<'w, Townsfolk>,
+    facets: ResMut<'w, Facets>,
 }
 
 /// Puts a keeper's greeting on the trade screen, the line under their
@@ -993,5 +1018,34 @@ mod tests {
         assert_eq!(lines, ["\"Steel, leather, and arrows by the bundle. I buy what's straight and sell what's sharp.\""]);
         let tone = app.world().resource::<Tones>().get("townsfolk smith").expect("declared");
         assert_eq!(trader.facets[0].tone, tone, "in the smith's own tone");
+    }
+
+    /// A person's role is said beside their name: under it on the look
+    /// panel, with no fight forecast for somebody nothing in Mereholt can
+    /// harm, and after it on the rail, with nothing said of what they know
+    /// of the adventurer.
+    #[test]
+    fn the_look_panel_and_the_rail_say_a_persons_role_beside_their_name() {
+        let (mut app, me) = in_mereholt(2);
+        app.add_plugins((rl_engine::rl_ui::InspectViewPlugin, rl_engine::rl_ui::NearbyViewPlugin)).add_systems(Update, name_roles.in_set(ViewSet::Annotate));
+        let smith = person(&mut app, "smith");
+        let there = at(&app, smith);
+        let beside = {
+            let map = app.world().resource::<WorldMap>();
+            (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(TOWN, *p)).expect("ground beside the smith")
+        };
+        stand_on(&mut app, me, beside);
+        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        app.world_mut().resource_mut::<Modals>().open(modal);
+        app.world_mut().resource_mut::<InspectView>().cursor = there;
+        app.update();
+        let look = app.world().resource::<InspectView>();
+        assert_eq!(look.subject.as_ref().map(|s| s.entity), Some(smith), "the look is on the smith");
+        assert_eq!(look.facets.first().map(|f| f.text.as_str()), Some("the smith"), "the role first under the name");
+        assert!(look.duel.is_none() && look.odds.is_none(), "and no fight forecast");
+        let rail = app.world().resource::<NearbyView>();
+        let row = rail.actors.iter().find(|r| r.entity == smith).expect("the smith on the rail");
+        assert_eq!(row.facets.iter().map(|f| f.text.as_str()).collect::<Vec<_>>(), ["the smith"]);
+        assert_eq!((row.doing, row.alert), (None, None), "nothing said of what the smith knows");
     }
 }

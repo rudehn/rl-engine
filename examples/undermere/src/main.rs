@@ -216,8 +216,10 @@ fn add_panels(app: &mut App, screen: &Screen) {
     // A keeper's wares by their true names, in the shop's own colour, and
     // the keeper's greeting under their name.
     app.add_systems(Update, (undermere::shops::shelf_names, undermere::townsfolk::greet).in_set(ViewSet::Annotate));
-    // A person of Mereholt's role under their name on the look panel.
-    app.add_systems(Update, undermere::townsfolk::name_roles.in_set(ViewSet::Annotate));
+    // A person of Mereholt's role beside their name, on the look panel in
+    // place of the forecast the game's own seeming may have redone, and on
+    // the rail in place of what they know of the adventurer.
+    app.add_systems(Update, undermere::townsfolk::name_roles.after(undermere::seeming::seem_forecast).in_set(ViewSet::Annotate));
     // The temple's rites by what they do, not "name the priest", and every
     // keeper's trade as "trade with" them, not "trade the priest".
     app.add_systems(Update, (undermere::temple::rite_rows, undermere::shops::trade_rows).in_set(ViewSet::Annotate));
