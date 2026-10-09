@@ -11,7 +11,8 @@
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-rules/src/status.rs
-     fingerprint: bf9e1f74 -->
+            crates/rl-bevy/src/ability.rs
+     fingerprint: 4c22518a -->
 
 # Narration
 
@@ -37,6 +38,8 @@ Two kinds rather than a phrase a game may add to, because `Phrase` enumerates wh
 `Phrase` is closed for the same reason, and it is split by perspective and by how the damage arrived: `YouHit`, `HitsYou` and `OthersFight` for a blow, `YouShoot`, `ShootsYou` and `OthersShoot` for a shot, and `YourUseHits`, `UseHitsYou` and `OthersUseHits` for harm an ability or a thing landed, each of the nine with a twin for the one that got through nothing, so no grammar and no branch on who did it lives in the engine.
 What tells them apart is `Reach`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: `Shot` is worded as a shot, `Ability` and `Thing` as harm named by what landed it, `Your ash rod hits the rat for 4.` and `The goblin's firebolt hits you for 3.`, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a poison is already narrated by whatever inflicted it.
 A rolled attack that missed is `YouMiss`, `MissesYou` or `OthersMiss`, read from `Missed` and said in the muted tone of a blow that did nothing, whatever way it travelled.
+Using an ability or a thing from the pack is told apart from what it hit: `YouUse` and `Uses` are all it says of one aimed at nobody or that caught nobody by name, `You use burst.`, since only one caught alone, by `witness.aims_at_someone(ability)`, is told as `YouUseOn` or `UsesOn`, `The necromancer uses blink on you.`; several caught by a ground-aimed use are still counted, `You use burst, catching 2.`, which says nothing of being aimed at any one of them.
+A use a `Reflects` body turns back is told before the harm line it caused, so a caster hurt by its own cast is never met with no reason first: `YouReflect`, `ReflectsOntoYou` or `OthersReflect`, naming who turned it back and whom it landed on in its place.
 A status landing on the player is `YouAreAfflicted`, or `YouGainABoon` for a `StatusDef` marked `boon`, the same words told as good news; one running out is `YouAreNoLonger`, and a cure is `YourAfflictionPasses`, except that a boon broken off, a cloak ended by a blow or by its plate coming off, is lost rather than cured and says `YouAreNoLonger`.
 Every one of them says "you are", because a status is named as what its holder is, `warded` or `scorched`, and each is told when a status begins and never when a `StatusEvent::Renewed` keeps it up, so a cloud is told once and not every turn it is breathed.
 `called` is what `who`, `whom` and `what` were called when the row was made, filled in by the collector, because a row is made inside the pass and spoken after it and things change in between: what dies becomes remains and is renamed, what is thrown merges into a stack.
