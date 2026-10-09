@@ -871,10 +871,17 @@ pub struct Arena<'w, 's> {
 
 /// What an attack is seen as, and the shots in the air while it is.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Shown<'w> {
+pub struct Shown<'w, 's> {
     cues: MessageWriter<'w, Cued>,
     hold: ResMut<'w, TurnHold>,
     airborne: ResMut<'w, Airborne<ShotLanding>>,
+    /// For a shot in the air whose shooter answers `hit`, the stand-in
+    /// that lands its own hit should it be gone by then.
+    commands: Commands<'w, 's>,
+    /// What that stand-in takes from the shooter. Absent in a game without
+    /// [`EffectsPlugin`](crate::effects::EffectsPlugin), where nothing
+    /// answers a moment at all.
+    keeps: Option<Res<'w, crate::effects::RemnantKeeps>>,
 }
 
 /// A shot fired and not yet arrived: whom it is at, and every hit it
@@ -900,6 +907,17 @@ pub struct ShotLanding {
     /// struck for the same reason: a shooter killed while its shot flies is
     /// gone before it lands, and its venom lands all the same.
     own: Option<crate::effects::Triggers>,
+    /// Who lands those should the shooter be gone: a [`Remnant`](crate::effects::Remnant)
+    /// kept `Disabled`, so no query sees it, with what
+    /// [`RemnantKeeps`](crate::effects::RemnantKeeps) takes copied from the
+    /// shooter as it fired, its `Name` first. Without it the bite of a
+    /// shooter killed while its shot flew landed from nobody, named
+    /// nothing in the log and credited to an entity no longer there, where
+    /// a `died` remnant is named as what it stands in for. Taken only for
+    /// a shot that flies with something watching, the one that lands a
+    /// pass later, and despawned unused whenever the shooter is still
+    /// there or the shot lands nothing.
+    stand_in: Option<Entity>,
     /// Whether it flew or was struck in reach, kept so the landing a pass
     /// later narrates as what it was.
     reach: Reach,
@@ -962,7 +980,7 @@ pub fn resolve_attacks(
     shown: Shown,
 ) {
     let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, missed, alive, sides, rules, watchers } = &mut arena;
-    let Shown { mut cues, mut hold, mut airborne } = shown;
+    let Shown { mut cues, mut hold, mut airborne, mut commands, keeps } = shown;
     let house = rules.as_deref().and_then(|r| r.unaware);
     for intent in intents.read() {
         let (actor, target) = (intent.actor, intent.action.0);
@@ -1042,7 +1060,8 @@ pub fn resolve_attacks(
                     hit.amount = (i64::from(hit.amount) * i64::from(worth) / 100).try_into().unwrap_or(i32::MAX);
                 }
             }
-            let shot = ShotLanding { target: foe, attacker: actor, with: from, carried: carried.clone(), own: own.clone(), reach, hits, missed: wide };
+            let shot =
+                ShotLanding { target: foe, attacker: actor, with: from, carried: carried.clone(), own: own.clone(), stand_in: None, reach, hits, missed: wide };
             landings.push((shot, at));
         }
         match (look, ranged) {
@@ -1054,7 +1073,19 @@ pub fn resolve_attacks(
                     _ => (target, target_pos.0),
                 };
                 cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to: Anchor::on(to, to_at), look: LookOf::Given(look) } });
-                for (shot, at) in landings {
+                for (mut shot, at) in landings {
+                    // Copied now, while the shooter is here to copy: by the
+                    // time the shot lands it may not be.
+                    if hold.is_watched()
+                        && shot.own.is_some()
+                        && !shot.missed
+                        && let Some(keeps) = keeps.as_deref()
+                    {
+                        let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(actor), at };
+                        let stand_in = commands.spawn((bevy::ecs::entity_disabling::Disabled, remnant)).id();
+                        keeps.copy(&mut commands, actor, stand_in);
+                        shot.stand_in = Some(stand_in);
+                    }
                     if let Some(shot) = airborne.launched(&mut hold, shot) {
                         land(shot, at, &mut damage, fired, missed);
                     }
@@ -1137,7 +1168,13 @@ pub fn land_shots(
     mut arriving: Arriving,
 ) {
     for mut shot in airborne.landing(&mut hold, &mut turns) {
-        let Ok(at) = alive.get(shot.target) else { continue };
+        let stand_in = shot.stand_in.take();
+        let Ok(at) = alive.get(shot.target) else {
+            if let Some(unused) = stand_in {
+                arriving.commands.entity(unused).despawn();
+            }
+            continue;
+        };
         // A thing spent to nothing by firing is gone by now: what its hits
         // carry lands from a remnant in its place, as the shooter's doing.
         if let Some(item) = shot.with
@@ -1151,13 +1188,24 @@ pub fn land_shots(
             shot.with = None;
         }
         // And a shooter dead and gone: what its own hit carries lands from
-        // a remnant too, still its doing.
-        if !arriving.present.contains(shot.attacker)
-            && !shot.missed
-            && let Some(triggers) = shot.own.take()
-        {
-            let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
-            arriving.commands.spawn((triggers, remnant));
+        // its stand-in, named as it was and landing as itself, as a `died`
+        // remnant does, so the log names the shooter and a foe the bite
+        // kills is the shooter's kill. From a bare remnant, its doing still,
+        // when nothing was kept of it.
+        let gone = !arriving.present.contains(shot.attacker) && !shot.missed;
+        match (gone.then(|| shot.own.take()).flatten(), stand_in) {
+            (Some(triggers), Some(stand_in)) => {
+                let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
+                arriving.commands.entity(stand_in).insert((triggers, remnant, crate::effects::LandsAsItself)).remove::<bevy::ecs::entity_disabling::Disabled>();
+            }
+            (Some(triggers), None) => {
+                let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
+                arriving.commands.spawn((triggers, remnant));
+            }
+            (None, Some(unused)) => {
+                arriving.commands.entity(unused).despawn();
+            }
+            (None, None) => {}
         }
         land(shot, at.0, &mut arriving.damage, &mut arriving.fired, &mut arriving.missed);
     }
@@ -2804,10 +2852,67 @@ mod tests {
         assert_eq!(remnants, 0, "and what carried it is gone");
     }
 
+    /// Who each [`DamageDealt`] was credited to, by name, read as it is
+    /// written: a stand-in is gone by the end of its frame.
+    #[derive(Resource, Default)]
+    struct Credited(Vec<Option<String>>);
+
+    fn credited(mut dealt: MessageReader<DamageDealt>, names: Query<&Name>, mut seen: ResMut<Credited>) {
+        for d in dealt.read() {
+            seen.0.push(d.hit.credit.and_then(|c| names.get(c).ok()).map(|n| n.as_str().to_string()));
+        }
+    }
+
     /// A shooter that answers `hit` and is dead and gone before its watched
-    /// shot lands still lands it, from a remnant, as its doing.
+    /// shot lands still lands it, from a stand-in named as it was: the shot
+    /// is its doing, and the bite is its stand-in's, which the log names as
+    /// it names a `died` remnant. Nothing of the stand-in is left after.
     #[test]
     fn a_shooter_gone_before_its_shot_lands_still_lands_its_own_hit_trigger() {
+        use rl_rules::ai::{Brain, tactics::ShootAtRange};
+        let (mut app, start, player, _) = crowd_with(|app| _ = app.add_plugins(crate::minds::MindsPlugin), 0, |_| (), &[]);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        let shooter = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(start.offset(4, 0)), Health::full(10), Faction(THEIRS), crate::minds::Perception(8)),
+                RangedAttack::new(kind, DiceRoll::flat(0), 6).looking(LOOK),
+                crate::minds::Mind(std::sync::Arc::new(Brain::new().then(ShootAtRange::default()))),
+                Name::new("spitter"),
+            ))
+            .id();
+        answers(&mut app, shooter, &harming("hit", "Here", 3));
+        app.init_resource::<Credited>().add_systems(PostUpdate, credited);
+        app.world_mut().resource_mut::<TurnHold>().watch();
+        wait(&mut app, player, 1);
+        assert!(app.world().resource::<TurnHold>().in_flight(), "it fired");
+        assert_eq!(hp(&app, player), 30);
+        app.world_mut().resource_mut::<Turns>().remove(shooter);
+        app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), shooter);
+        app.world_mut().despawn(shooter);
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        app.update();
+        assert_eq!(hp(&app, player), 27, "its bite arrived with the shot");
+        let credit: Vec<Option<Entity>> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.target == player).map(|d| d.hit.credit).collect();
+        assert_eq!(credit.len(), 2, "the shot and the bite");
+        assert_eq!(credit[0], Some(shooter), "the shot its own doing");
+        assert!(credit[1].is_some_and(|c| c != shooter), "and the bite its stand-in's");
+        let names = &app.world().resource::<Credited>().0;
+        assert_eq!(names.last(), Some(&Some("spitter".to_string())), "which is called what the shooter was called");
+        let world = app.world_mut();
+        let left = world
+            .query_filtered::<Entity, (With<crate::effects::Remnant>, bevy::ecs::query::Allow<bevy::ecs::entity_disabling::Disabled>)>()
+            .iter(world)
+            .count();
+        assert_eq!(left, 0, "and no stand-in is left over");
+    }
+
+    /// A shooter still standing when its watched shot lands bites as
+    /// itself, and the stand-in taken for it as it fired is put away
+    /// unused.
+    #[test]
+    fn a_shooter_still_there_when_its_shot_lands_leaves_no_stand_in() {
         use rl_rules::ai::{Brain, tactics::ShootAtRange};
         let (mut app, start, player, _) = crowd_with(|app| _ = app.add_plugins(crate::minds::MindsPlugin), 0, |_| (), &[]);
         let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
@@ -2823,15 +2928,17 @@ mod tests {
         app.world_mut().resource_mut::<TurnHold>().watch();
         wait(&mut app, player, 1);
         assert!(app.world().resource::<TurnHold>().in_flight(), "it fired");
-        assert_eq!(hp(&app, player), 30);
-        app.world_mut().resource_mut::<Turns>().remove(shooter);
-        app.world_mut().resource_mut::<Occupancy>().remove(start.offset(4, 0), shooter);
-        app.world_mut().despawn(shooter);
         app.world_mut().resource_mut::<TurnHold>().release();
         app.update();
         app.update();
         assert_eq!(hp(&app, player), 27, "its bite arrived with the shot");
         let credit: Vec<Option<Entity>> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.target == player).map(|d| d.hit.credit).collect();
-        assert_eq!(credit, vec![Some(shooter), Some(shooter)], "the shot and the bite, both its doing");
+        assert!(credit.iter().all(|c| *c == Some(shooter)), "both its own doing: {credit:?}");
+        let world = app.world_mut();
+        let left = world
+            .query_filtered::<Entity, (With<crate::effects::Remnant>, bevy::ecs::query::Allow<bevy::ecs::entity_disabling::Disabled>)>()
+            .iter(world)
+            .count();
+        assert_eq!(left, 0, "and no stand-in is left over");
     }
 }
