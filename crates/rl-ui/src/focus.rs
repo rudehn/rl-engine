@@ -59,7 +59,7 @@ pub struct Sighting {
 }
 
 /// What a sighting is read off.
-type Seen = (Entity, &'static Position, &'static Name, Option<&'static OnMap>, Has<Actor>);
+type Seen = (Entity, &'static Position, &'static Name, Option<&'static OnMap>, Has<Actor>, Has<Concealed>);
 
 /// What may be listed: something drawn, still alive, not a prop nobody
 /// has spotted, and not [`Scenery`], which is there to be looked at with
@@ -71,18 +71,19 @@ type Sightable = (Without<Dead>, With<Glyph>, Without<Hidden>, Without<Scenery>)
 /// Something needs a [`Name`] and a [`Glyph`] to be on it, the same rule
 /// every row in a view follows, so the list never stops on a thing no
 /// panel could name. A hidden prop is left out until it is spotted, which
-/// is the whole of what hidden means.
+/// is the whole of what hidden means. What the player sees at all is
+/// [`PlayerSight::shows`], the question the map asks too, so a thing
+/// [`Concealed`] in the dark is neither drawn nor listed.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct InSight<'w, 's> {
-    map: Res<'w, WorldMap>,
-    player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed), With<Player>>,
+    sight: PlayerSight<'w, 's>,
     seen: Query<'w, 's, Seen, Sightable>,
 }
 
 impl InSight<'_, '_> {
     /// The player and the cell it stands on, when there is exactly one.
     pub fn viewer(&self) -> Option<(Entity, Point)> {
-        self.player.single().ok().map(|(entity, pos, _)| (entity, pos.0))
+        self.sight.viewer().map(|(entity, at, _)| (entity, at))
     }
 
     /// Everything the player can see but itself, in list order: actors
@@ -92,13 +93,12 @@ impl InSight<'_, '_> {
     /// not trade places from one frame to the next, and Tab pressed twice
     /// from one place lands on the same second thing in two runs of a seed.
     pub fn list(&self) -> Vec<Sighting> {
-        let Ok((me, origin, viewshed)) = self.player.single() else { return Vec::new() };
-        let here = self.map.current();
+        let Some((me, origin)) = self.viewer() else { return Vec::new() };
         let mut found: Vec<(Sighting, &str)> = self
             .seen
             .iter()
-            .filter(|(entity, pos, _, on, _)| *entity != me && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && viewshed.can_see(pos.0))
-            .map(|(entity, pos, name, _, actor)| (Sighting { entity, at: pos.0, actor, distance: geometry::chebyshev(origin.0, pos.0) }, name.as_str()))
+            .filter(|(entity, pos, _, on, _, concealed)| *entity != me && self.sight.shows(pos.0, *on, *concealed))
+            .map(|(entity, pos, name, _, actor, _)| (Sighting { entity, at: pos.0, actor, distance: geometry::chebyshev(origin, pos.0) }, name.as_str()))
             .collect();
         found.sort_by(|(a, a_name), (b, b_name)| (!a.actor, a.distance, *a_name, a.entity).cmp(&(!b.actor, b.distance, *b_name, b.entity)));
         found.into_iter().map(|(sighting, _)| sighting).collect()
@@ -255,5 +255,31 @@ mod tests {
         assert_eq!(list.iter().map(|s| s.entity).collect::<Vec<_>>(), vec![near, far, coin], "the coin is nearer but a thing");
         assert_eq!(list[0].distance, 2);
         assert!(list[0].actor && !list[2].actor);
+    }
+
+    /// In the dark, seen by dark sight alone: a [`Concealed`] actor is
+    /// left off the list every panel and cursor reads, until it stands
+    /// beside the player, while a plain one at the same reach is listed.
+    #[test]
+    fn a_concealed_actor_in_the_dark_is_out_of_sight_until_it_is_beside_the_player() {
+        let mut stage = Stage::new_with(crate::NearbyViewPlugin, |app| {
+            app.add_plugins(LightingPlugin);
+            let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).expect("the player");
+            app.world_mut().entity_mut(player).insert(DarkSight(6));
+        });
+        let plain = stage.actor("plain one", 'p', 3, 0);
+        let hiding = stage.actor("hiding one", 'h', 4, 0);
+        let close = stage.actor("close one", 'c', 0, 1);
+        for e in [hiding, close] {
+            stage.app.world_mut().entity_mut(e).insert(Concealed);
+        }
+        stage.tick();
+        let listed = |stage: &mut Stage| {
+            stage.app.world_mut().run_system_once(|sight: InSight| sight.list()).expect("the list ran").iter().map(|s| s.entity).collect::<Vec<_>>()
+        };
+        assert_eq!(listed(&mut stage), vec![close, plain], "the concealed one four tiles off in the dark is not listed");
+        stage.app.world_mut().entity_mut(hiding).insert(Position(stage.at.offset(1, -1)));
+        stage.tick();
+        assert!(listed(&mut stage).contains(&hiding), "beside the player it is seen");
     }
 }

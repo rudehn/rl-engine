@@ -83,7 +83,7 @@ pub use items::{
     PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, TileSet};
-pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
+pub use lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Leader, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight,
@@ -156,7 +156,7 @@ pub mod prelude {
         Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
     };
     pub use crate::knowledge::Knowledge;
-    pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
+    pub use crate::lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
     pub use crate::minds::{AddChoice, Doing, Intelligence, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};

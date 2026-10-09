@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- An actor can be hard for the player to see: one carrying the new `Concealed` component is not drawn on the map, listed in the nearby rail, stepped to by the look and aim cursors or named by the look panel while it stands outside the lit band and is not beside the player.
+  Stealth hid a subject only from minds, and the player is no mind, so a monster meant to be hard to see in the dark was drawn plainly.
+  What the player sees of a thing is now one question, the new `PlayerSight::shows(at, on, concealed)`, asked by the map, by `InSight` and so `Sighted`, and by the look panel, with the rule itself the new `conceals(lighting, from, at)`; with no `Lighting` every cell is lit and the marker hides nothing.
+  The look panel now names only what the map draws: a thing out of the player's sight, or a prop nobody has spotted, under the cursor reads as its ground alone, where it was named and forecast.
+  A game adds and removes `Concealed` itself, and the engine does not save it.
+
 - A mind no longer casts an ability aimed at itself alone that would find nothing to act on, where `UseAbility` cast one whenever a foe was in sight: a mend at full health, or a game's raising with no body in reach.
   The new `Effect::would_act(landing, world)` says whether an effect, landed now, would act on anything, read from the world without changing it; it is true unless the effect says otherwise, and the engine's `Mend` says so only with someone hurt among its targets.
   `AbilitiesPlugin`'s new `weigh_self_abilities`, in `DecideSet::Perceive` after `PerceiveSet::Annotate`, takes from what the mind holding the turn may use every self-aimed ability none of whose effects would act on the landing the resolver would land; an ability with no effects is kept, since a game answers it itself.

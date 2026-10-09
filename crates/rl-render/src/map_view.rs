@@ -416,6 +416,10 @@ pub struct LightOverlay(pub bool);
 /// enough to read as motion, slow enough that a still frame costs nothing.
 const ANIMATION_RATE: f32 = 12.0;
 
+/// What a thing on the map is drawn by: where, as what, on which map, and
+/// whether it is [`Concealed`] in the dark.
+type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Concealed>);
+
 /// What the map is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Scene<'w, 's> {
@@ -430,7 +434,10 @@ pub struct Scene<'w, 's> {
     /// What is drawn on the map. A prop nobody has spotted is not: being
     /// unseen is the whole of what `Hidden` means, and it is one filter
     /// here rather than a second drawing path.
-    glyphs: Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>), Without<Hidden>>,
+    glyphs: Query<'w, 's, Drawn, Without<Hidden>>,
+    /// Which of them the player sees: the question the list of what is in
+    /// sight asks too, so the map never draws a thing no panel names.
+    sight: PlayerSight<'w, 's>,
     fields: Res<'w, FieldAppearance>,
     shown: Res<'w, ShownFields>,
     registries: Option<Res<'w, Registries>>,
@@ -438,11 +445,10 @@ pub struct Scene<'w, 's> {
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
 pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
-    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, fields, shown, registries } = &scene;
+    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries } = &scene;
     let now = time.elapsed_secs();
     let t = (now * ANIMATION_RATE).floor() / ANIMATION_RATE;
     let viewshed = player.single().ok();
-    let here = map.current();
     let lighting = lighting.as_deref();
     let overlay = overlay.as_deref().is_some_and(|o| o.0) && lighting.is_some();
     let sees = |p: Point| viewshed.is_some_and(|v| v.can_see(p));
@@ -479,8 +485,8 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
         view.set(&mut terminal, p, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
-    for (pos, glyph, on) in glyphs {
-        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !viewshed.is_some_and(|v| v.can_see(pos.0)) {
+    for (pos, glyph, on, concealed) in glyphs {
+        if !sight.shows(pos.0, on, concealed) {
             continue;
         }
         if view.to_screen(pos.0).is_none() {
