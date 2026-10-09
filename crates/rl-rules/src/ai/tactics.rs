@@ -7,7 +7,7 @@ use rl_core::{Direction, Point, geometry};
 use rl_grid::{TargetMode, clear_shot, footprint};
 
 use crate::ability::{Aim, Usable};
-use crate::ai::brain::{Decision, Tactic, TacticCtx};
+use crate::ai::brain::{Decision, Fields, Tactic, TacticCtx};
 use crate::ai::snapshot::{ActorView, ItemView, Snapshot};
 use crate::ai::wits::Wits;
 use crate::faction::Relation;
@@ -81,7 +81,7 @@ impl<A: Copy> Tactic<A> for FleeWhenHurt {
         let away = Direction::between(enemy, me)?;
         for d in [away, away.rotate_cw(), away.rotate_ccw()] {
             let step = me + d.offset();
-            if steps_to(ctx.can_step, me, step) {
+            if steps_to(ctx, me, step) {
                 return Some(Decision::Step(step));
             }
         }
@@ -127,7 +127,7 @@ impl<A: Copy> Tactic<A> for Hunt {
         let toward = Direction::between(me, target)?;
         for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
             let step = me + d.offset();
-            if steps_to(ctx.can_step, me, step) && geometry::chebyshev(step, target) < geometry::chebyshev(me, target) {
+            if steps_to(ctx, me, step) && geometry::chebyshev(step, target) < geometry::chebyshev(me, target) {
                 return Some(Decision::Step(step));
             }
         }
@@ -168,7 +168,7 @@ impl<A: Copy> Tactic<A> for SearchLastKnown {
         let toward = Direction::between(me, target)?;
         for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
             let step = me + d.offset();
-            if steps_to(ctx.can_step, me, step) && geometry::chebyshev(step, target) < geometry::chebyshev(me, target) {
+            if steps_to(ctx, me, step) && geometry::chebyshev(step, target) < geometry::chebyshev(me, target) {
                 return Some(Decision::Step(step));
             }
         }
@@ -337,7 +337,7 @@ impl<A: Copy> Tactic<A> for Keep {
             let toward = Direction::between(me, nearest)?;
             for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
                 let step = me + d.offset();
-                if steps_to(ctx.can_step, me, step) && geometry::chebyshev(step, nearest) < gap {
+                if steps_to(ctx, me, step) && geometry::chebyshev(step, nearest) < gap {
                     return Some(Decision::Step(step));
                 }
             }
@@ -354,7 +354,7 @@ impl<A: Copy> Tactic<A> for Keep {
         let straight = Direction::between(nearest, me)?;
         let (cw, ccw) = (straight.rotate_cw(), straight.rotate_ccw());
         let turns = [straight, cw, ccw, cw.rotate_cw(), ccw.rotate_ccw(), cw.rotate_cw().rotate_cw(), ccw.rotate_ccw().rotate_ccw()];
-        let direct = turns.iter().map(|d| me + d.offset()).filter(|p| steps_to(ctx.can_step, me, *p));
+        let direct = turns.iter().map(|d| me + d.offset()).filter(|p| steps_to(ctx, me, *p));
         let open: Vec<Point> = field.into_iter().chain(direct).filter(|p| (ctx.can_step)(*p)).collect();
         let widening = open.iter().copied().filter(|p| geometry::chebyshev(*p, nearest) > gap);
         let holding = open.iter().copied().filter(|p| geometry::chebyshev(*p, nearest) == gap);
@@ -368,12 +368,19 @@ impl<A: Copy> Tactic<A> for Keep {
     }
 }
 
+/// Whether `p` may be a corner a diagonal cuts past: a cell the actor can
+/// step on, and one the move resolver lets a diagonal past. Both, because
+/// each refuses what the other allows: `can_step` a cell an ally stands
+/// in, the corner rule a closed door a mind that opens doors may step into.
+fn corner_ok(can_step: &dyn Fn(Point) -> bool, fields: &dyn Fields, p: Point) -> bool {
+    can_step(p) && fields.lets_diagonal_past(p)
+}
+
 /// Whether stepping from `from` to the cell `to` beside it cuts a corner
-/// between two cells the actor cannot step on, which the move resolver
-/// refuses.
-fn squeezes(can_step: &dyn Fn(Point) -> bool, from: Point, to: Point) -> bool {
+/// the move resolver refuses, or one the actor cannot step on.
+fn squeezes(can_step: &dyn Fn(Point) -> bool, fields: &dyn Fields, from: Point, to: Point) -> bool {
     let (dx, dy) = (to.x - from.x, to.y - from.y);
-    dx != 0 && dy != 0 && !(can_step(from.offset(dx, 0)) && can_step(from.offset(0, dy)))
+    dx != 0 && dy != 0 && !(corner_ok(can_step, fields, from.offset(dx, 0)) && corner_ok(can_step, fields, from.offset(0, dy)))
 }
 
 /// Whether a step from `from` to the cell `to` beside it is one the move
@@ -387,14 +394,17 @@ fn squeezes(can_step: &dyn Fn(Point) -> bool, from: Point, to: Point) -> bool {
 /// its next turn, and a droid could shuffle at a doorway for as long as its
 /// target stayed where it was.
 ///
-/// It is stricter than the resolver by a hair, and deliberately so: the
-/// resolver's corner rule reads terrain alone, while `can_step` also
-/// refuses a cell that is occupied or on fire, so a mind declines a
-/// diagonal whose crook holds an ally where the resolver would have let it
-/// through. Declining a legal step costs one turn; deciding on an illegal
-/// one costs every turn until the world moves.
-fn steps_to(can_step: &dyn Fn(Point) -> bool, from: Point, to: Point) -> bool {
-    can_step(to) && !squeezes(can_step, from, to)
+/// The corner is the resolver's own rule, [`Fields::lets_diagonal_past`],
+/// and `can_step` besides, which makes it stricter than the resolver by a
+/// hair, and deliberately so: `can_step` also refuses a cell that is
+/// occupied or on fire, so a mind declines a diagonal whose crook holds an
+/// ally where the resolver would have let it through. Declining a legal
+/// step costs one turn; deciding on an illegal one costs every turn until
+/// the world moves. `can_step` alone was once the whole of it, and was not
+/// stricter at a closed door, which a mind that opens doors may step into
+/// and no diagonal goes past.
+fn steps_to<A: Copy>(ctx: &TacticCtx<'_, A>, from: Point, to: Point) -> bool {
+    (ctx.can_step)(to) && !squeezes(ctx.can_step, &*ctx.fields, from, to)
 }
 
 /// Hold still while there is something to keep an eye on: an enemy in
@@ -524,7 +534,7 @@ impl<A: Copy> Tactic<A> for Wander {
         let mut only_back = None;
         for i in 0..8 {
             let step: Point = me + Direction::from_index((start + i) % 8).offset();
-            if !steps_to(ctx.can_step, me, step) {
+            if !steps_to(ctx, me, step) {
                 continue;
             }
             if Some(step) == back {
@@ -574,7 +584,7 @@ impl<A: Copy> Tactic<A> for GiveWay {
         let away = Direction::between(nearest, me)?;
         for d in [away, away.rotate_cw(), away.rotate_ccw()] {
             let step = me + d.offset();
-            if steps_to(ctx.can_step, me, step) {
+            if steps_to(ctx, me, step) {
                 return Some(Decision::Step(step));
             }
         }
@@ -949,17 +959,17 @@ impl<A: Copy> Tactic<A> for Scavenge {
             });
         }
         let target = s.items.iter().filter(|i| geometry::chebyshev(me, i.pos) <= self.reach).find(|i| Self::wanted(s, i).is_some())?;
-        first_step(me, target.pos, self.reach + 2, ctx.can_step).map(Decision::Step)
+        first_step(me, target.pos, self.reach + 2, ctx.can_step, &*ctx.fields).map(Decision::Step)
     }
 }
 
 /// The first step of a shortest walk from `from` to `to` through cells
 /// `can_step` allows, never straying more than `limit` from `from`.
 ///
-/// A diagonal step may not cut between two cells it cannot step on, the
+/// A diagonal step may not cut past a corner [`steps_to`] would refuse, the
 /// rule a move is resolved by, so the walk is one the mover can take. Ties
 /// go to the first direction in [`Direction::ALL`], so two runs agree.
-fn first_step(from: Point, to: Point, limit: i32, can_step: &dyn Fn(Point) -> bool) -> Option<Point> {
+fn first_step(from: Point, to: Point, limit: i32, can_step: &dyn Fn(Point) -> bool, fields: &dyn Fields) -> Option<Point> {
     if from == to {
         return None;
     }
@@ -979,7 +989,7 @@ fn first_step(from: Point, to: Point, limit: i32, can_step: &dyn Fn(Point) -> bo
             let next = at + d.offset();
             let Some(i) = index(next) else { continue };
             let (dx, dy) = d.delta();
-            let squeezes = d.is_diagonal() && !(can_step(at.offset(dx, 0)) && can_step(at.offset(0, dy)));
+            let squeezes = d.is_diagonal() && !(corner_ok(can_step, fields, at.offset(dx, 0)) && corner_ok(can_step, fields, at.offset(0, dy)));
             if came_from[i].is_some() || squeezes || !can_step(next) {
                 continue;
             }
@@ -1182,27 +1192,11 @@ mod tests {
         assert!(!brain().keeps_with_allies());
     }
 
-    /// No tactic decides on a diagonal that squeezes between two walls.
-    ///
-    /// The move resolver refuses that step, and refuses it silently: a mind
-    /// that decided on it spent the turn, moved nowhere, and decided the
-    /// same way on its next turn, so a droid could shuffle at a doorway for
-    /// as long as its target stood still. Every tactic that picks a
-    /// neighbour itself is here, because every one of them had the bug and
-    /// they all now ask `steps_to`.
-    #[test]
-    fn no_tactic_decides_on_a_diagonal_that_squeezes_between_two_walls() {
-        let (t, r) = cornered();
-        let view_t = t.view(&r);
-        let can_step = |p: Point| view_t.is_walkable(p);
-        let mut rng = StdRng::seed_from_u64(1);
-        let me = Point::new(5, 5);
-        let corner = Point::new(6, 6);
-        assert!(can_step(corner), "the cell itself is open; it is the way in that is not");
-
-        // Each tactic, and a mind it fires for whose straight-line
-        // fallback points at that corner: something to chase southeast,
-        // something to run from northwest, or a friend to catch up with.
+    /// Each tactic that picks a neighbour itself, and a mind standing at
+    /// `me` it fires for whose straight-line fallback points at the cell
+    /// southeast of it: something to chase southeast, something to run
+    /// from northwest, or a friend to catch up with.
+    fn toward_the_corner(me: Point) -> Vec<(&'static str, Brain<u32>, Snapshot<u32>)> {
         let mut cases: Vec<(&str, Brain<u32>, Snapshot<u32>)> = Vec::new();
 
         let mut hunting = Snapshot::alone(view(1, me.x, me.y, 10));
@@ -1228,8 +1222,28 @@ mod tests {
         let mut crowded = Snapshot::alone(view(1, me.x, me.y, 10));
         crowded.others.push(view(4, 4, 4, 10));
         cases.push(("give_way", Brain::new().then(GiveWay::default()), crowded));
+        cases
+    }
 
-        for (name, brain, snapshot) in &cases {
+    /// No tactic decides on a diagonal that squeezes between two walls.
+    ///
+    /// The move resolver refuses that step, and refuses it silently: a mind
+    /// that decided on it spent the turn, moved nowhere, and decided the
+    /// same way on its next turn, so a droid could shuffle at a doorway for
+    /// as long as its target stood still. Every tactic that picks a
+    /// neighbour itself is here, because every one of them had the bug and
+    /// they all now ask `steps_to`.
+    #[test]
+    fn no_tactic_decides_on_a_diagonal_that_squeezes_between_two_walls() {
+        let (t, r) = cornered();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(1);
+        let me = Point::new(5, 5);
+        let corner = Point::new(6, 6);
+        assert!(can_step(corner), "the cell itself is open; it is the way in that is not");
+
+        for (name, brain, snapshot) in &toward_the_corner(me) {
             let (decision, which) = brain.decide(&mut TacticCtx {
                 snapshot,
                 fields: &mut NoFields,
@@ -1241,6 +1255,58 @@ mod tests {
             });
             assert_ne!(decision, Decision::Step(corner), "{name} decided on the squeeze: {which:?}");
         }
+        assert_ne!(first_step(me, Point::new(9, 9), 6, &can_step, &NoFields), Some(corner), "nor does the scavenger's walk");
+    }
+
+    /// No fields, and closed doors in the crook of a corner: cells a mind
+    /// that opens doors may step into, and that no diagonal goes past.
+    struct ClosedDoors(Vec<Point>);
+
+    impl Fields for ClosedDoors {
+        fn descents_toward(&mut self, _: &[Point], _: Point) -> Vec<Point> {
+            Vec::new()
+        }
+
+        fn descents_away(&mut self, _: &[Point], _: Point) -> Vec<Point> {
+            Vec::new()
+        }
+
+        fn lets_diagonal_past(&self, p: Point) -> bool {
+            !self.0.contains(&p)
+        }
+    }
+
+    /// A mind that opens doors, beside a closed door's corner, never picks
+    /// the diagonal past it.
+    ///
+    /// It may step into the door, so `can_step` says yes to the corner, and
+    /// asked that alone every tactic chose the diagonal, which the move
+    /// resolver refuses, and chose it again every turn. The corner is the
+    /// resolver's own rule, asked of the fields.
+    #[test]
+    fn a_mind_that_opens_doors_never_picks_the_diagonal_past_a_closed_doors_corner() {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut rng = StdRng::seed_from_u64(1);
+        let me = Point::new(5, 5);
+        let corner = Point::new(6, 6);
+        let doors = || ClosedDoors(vec![Point::new(6, 5), Point::new(5, 6)]);
+
+        for (name, brain, snapshot) in &toward_the_corner(me) {
+            let (decision, which) = brain.decide(&mut TacticCtx {
+                snapshot,
+                fields: &mut doors(),
+                can_step: &can_step,
+                blocks_shot: &nothing_blocks,
+                blocks_burst: &|_| false,
+                bounds: arena(),
+                rng: &mut rng,
+            });
+            assert_ne!(decision, Decision::Step(corner), "{name} decided on the diagonal past the door: {which:?}");
+        }
+        assert_ne!(first_step(me, Point::new(9, 9), 6, &can_step, &doors()), Some(corner), "nor does the scavenger's walk");
+        assert_eq!(first_step(me, Point::new(9, 9), 6, &can_step, &NoFields), Some(corner), "which with no doors takes the diagonal");
     }
 
     /// A drift with nowhere to drift but through a corner waits.
