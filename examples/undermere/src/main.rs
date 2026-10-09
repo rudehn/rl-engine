@@ -159,15 +159,21 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // and position: the strip's last row is the badges'.
         VitalsPanel::new(screen.vitals).bars(16).heading("Vitals").noise("noise", 2000).without_whereabouts(),
         GearPanel::new(screen.gear),
-        // A monster that knows of nothing sleeps, one walking to a noise
-        // is searching, and one that has the adventurer is hunting; what
+        // A monster that knows of nothing is unaware, one walking to a
+        // noise is searching, and one that has the adventurer is hunting:
+        // not "sleeping" for the first, since a monster that truly sleeps
+        // says so by its own status and one awake and unaware does not
+        // sleep. What
         // it is doing outranks what it knows when it is running, at its
         // post, or drifting with nothing better to do.
-        NearbyPanel::new(screen.nearby)
-            .titled("")
-            .cursor(CursorStyle::ticks())
-            .alerts(AlertWords::new("sleeping", "searching", "hunting"))
-            .activities(ActivityWords::new().word("flee_when_hurt", "fleeing").word("keep_post", "guarding").word("wander", "wandering")),
+        NearbyPanel::new(screen.nearby).titled("").cursor(CursorStyle::ticks()).alerts(AlertWords::new("unaware", "searching", "hunting")).activities(
+            ActivityWords::new()
+                .word("flee_when_hurt", "fleeing")
+                .word("keep_post", "guarding")
+                .word("wander", "wandering")
+                .word(undermere::conditions::SLEEPING, "asleep")
+                .word(undermere::captives::SHACKLED, "shackled"),
+        ),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
@@ -184,6 +190,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
     ));
     // What holds each monster in sight, said after its name on the rail.
     app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
+    // A captive said shackled on the rail, until it is freed.
+    app.add_systems(Update, undermere::captives::note_captives.in_set(ViewSet::Annotate));
     // What is known of a monster's traits on the look panel: every plain
     // one in its own words, and a "?" for every trick not yet seen.
     app.add_systems(Update, undermere::bestiary_lore::annotate_inspect.in_set(ViewSet::Annotate));
@@ -573,7 +581,7 @@ mod tests {
         let rail = |app: &App| (0..ROWS).map(|y| from(app, COLS - RAIL, y)).find(|r| r.contains("rat (")).unwrap_or_default();
         let alert = Awareness::Alert { at: here, stale_turns: 0 };
         for (doing, sees, heard, word) in [
-            (None, None, None, "sleeping"),
+            (None, None, None, "unaware"),
             (Some("wander"), None, None, "wandering"),
             (None, None, Some(alert), "searching"),
             (Some("hunt"), Some(alert), None, "hunting"),

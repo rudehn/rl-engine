@@ -12,6 +12,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
+use rl_engine::rl_ui::view::Alert;
 
 use crate::content::{CONFUSED, DISCORDANT, FIREPROOF};
 
@@ -157,14 +158,29 @@ pub fn keep_fireproof(mut commands: Commands, registries: Res<Registries>, mut b
 /// it. A status with no badge, the king's regenerating, is what a monster
 /// is rather than what happened to it, and stays unsaid, as the vitals
 /// leave it off the adventurer's own badges.
+///
+/// A sleeper says it sleeps where the rail says what a monster is doing,
+/// `goblin archer (asleep)`, and reads muted as one unaware of the
+/// adventurer does, since a body asleep knows of nothing: not beside its
+/// name as well, which said the one thing twice in more than the rail's
+/// width, and not in the hostile red of one that knows they are there.
 pub fn note_statuses(mut nearby: ResMut<NearbyView>, mut facets: ResMut<Facets>, registries: Res<Registries>, held: Query<&Afflicted>) {
     for row in &mut nearby.actors {
         let Ok(held) = held.get(row.entity) else { continue };
-        for active in held.iter().filter(|active| registries.statuses.get(active.id).badge.is_some()) {
-            row.facets.push(facets.facet("status", registries.statuses.name(active.id)));
+        for active in held.iter().map(|active| (active.id, registries.statuses.get(active.id))) {
+            match active {
+                (_, def) if def.sleeps => (row.alert, row.doing) = (Some(Alert::Unaware), Some(SLEEPING)),
+                (id, def) if def.badge.is_some() => row.facets.push(facets.facet("status", registries.statuses.name(id))),
+                _ => {}
+            }
         }
     }
 }
+
+/// What a sleeper is doing, as the rail's activity words name it: not one
+/// of the engine's tactics, so `main.rs` gives it a word of its own beside
+/// theirs.
+pub const SLEEPING: &str = "asleep";
 
 #[cfg(test)]
 mod tests {
@@ -199,5 +215,20 @@ mod tests {
         afflict(&mut app, free, "regenerating");
         assert_eq!(said_of(&app, held), Some(vec![PARALYSED.to_string()]), "the held goblin says what holds it");
         assert_eq!(said_of(&app, free), Some(vec![]), "and the other, regenerating, says nothing beside its name");
+    }
+
+    /// A goblin asleep is doing nothing but sleeping on the rail, muted as
+    /// one that knows of nothing, with no facet saying so twice; one awake
+    /// beside it is doing nothing of the kind.
+    #[test]
+    fn a_sleeper_in_sight_is_said_asleep_once_and_muted() {
+        let (mut app, _, here) = arena(1);
+        app.add_plugins(NearbyViewPlugin).add_systems(Update, note_statuses.in_set(ViewSet::Annotate));
+        let (sleeper, waking) = (still(&mut app, "goblin", here + Point::new(2, 0)), still(&mut app, "goblin", here + Point::new(-2, 0)));
+        afflict(&mut app, sleeper, crate::content::ASLEEP);
+        let row = |app: &App, who: Entity| app.world().resource::<NearbyView>().actors.iter().find(|row| row.entity == who).cloned().expect("on the list");
+        assert_eq!(said_of(&app, sleeper), Some(vec![]), "said once, as what it is doing, not beside its name too");
+        assert_eq!((row(&app, sleeper).doing, row(&app, sleeper).alert), (Some(SLEEPING), Some(Alert::Unaware)));
+        assert_eq!(row(&app, waking).doing, None, "awake, it is doing nothing of the kind");
     }
 }
