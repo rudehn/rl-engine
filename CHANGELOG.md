@@ -12,8 +12,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
   What the player is offered is unchanged.
   A game whose monsters know a self-aimed mend now see them keep it for when they are hurt; one with an effect that needs something there to act on implements `would_act` to say so.
 
-- The narrator says whom an ability was used on only when it is aimed at someone: one aimed at the ground reads `The necromancer uses blink.` and `You use burst.`, whoever it caught, where a step through the air pointed past the player read `The necromancer uses blink on you.`
-  Whoever a ground-aimed use caught is told by the harm it did them, as before.
+- The narrator says whom an ability was used on only when it is aimed at someone: one aimed at the ground that caught one reads `The necromancer uses blink.` and `You use burst.`, where a step through the air pointed past the player read `The necromancer uses blink on you.`
+  One aimed at the ground that caught several still reads `You use burst, catching 2.`, and whoever it caught is told by the harm it did them, as before.
 
 - The nearby rail clips a long name and keeps what the thing is doing whole after it, `Grubnak the… (unaware)` where it read `Grubnak the goblin king (unawar…`; a row too narrow to keep four of the name's characters beside the state is clipped from the end as before.
 
