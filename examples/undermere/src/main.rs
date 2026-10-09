@@ -824,7 +824,17 @@ mod tests {
         let (listed, detail) = pack_on(&mut app, mail);
         assert!(listed.starts_with("[ unidentified chain mail"), "{listed:?}");
         let short = "needs 13 strength, you have 12: -1 armor";
-        let found = ["numbers shown at +0", "wearing it 200 turns will tell its level", "armor +3", "footfall +1", short, "goes on the body"];
+        // Body armor mends a little faster a level, so any chain mail says
+        // so beside what it turns.
+        let found = [
+            "numbers shown at +0",
+            "wearing it 200 turns will tell its level",
+            "armor +3",
+            "footfall +1",
+            "regeneration +1 a level",
+            short,
+            "goes on the body",
+        ];
         assert_eq!(detail, found, "what any chain mail is, and what wearing it will tell");
 
         let worn_for = |app: &App| said(app).iter().filter(|l| *l == "You will know its level once you have worn it 200 turns.").count();
@@ -833,7 +843,10 @@ mod tests {
         pass_turns(&mut app, 60);
         let (_, detail) = pack_on(&mut app, mail);
         // Sixty turns, and the turn it went on.
-        assert_eq!(detail, ["numbers shown at +0", "level known in 139 more turns worn", "armor +3", "footfall +1", short, "worn on the body"]);
+        assert_eq!(
+            detail,
+            ["numbers shown at +0", "level known in 139 more turns worn", "armor +3", "footfall +1", "regeneration +1 a level", short, "worn on the body"]
+        );
         unequip(&mut app, me, mail);
         let (_, detail) = pack_on(&mut app, mail);
         assert_eq!(detail[1], "wearing it 139 more turns will tell its level", "taken off, it keeps what it counted");
@@ -844,7 +857,7 @@ mod tests {
         assert_eq!(name_of(&app, mail), "+2 chain mail");
         let (listed, detail) = pack_on(&mut app, mail);
         assert!(listed.starts_with("[ +2 chain mail"), "{listed:?}");
-        assert_eq!(detail, ["armor +5", "footfall +1", short, "worn on the body"], "known, its own numbers and nothing more");
+        assert_eq!(detail, ["armor +5", "footfall +1", "regeneration +2", short, "worn on the body"], "known, its own numbers and nothing more");
     }
 
     /// The look cursor over a found sword lying on the floor calls it
