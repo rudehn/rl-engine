@@ -257,6 +257,12 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
         app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Schedule));
         app.add_systems(Update, crate::lore::keep_names.after(EngineSet::Turns).before(EngineSet::Present));
+        // Every thing's `Worth` current with what is known of it, at the
+        // same three moments as its name, since a shop or a sale reads it
+        // no differently from how the log reads a name.
+        app.add_systems(Turn, crate::armory::keep_worth.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
+        app.add_systems(Turn, crate::armory::keep_worth.in_set(TurnSet::Schedule));
+        app.add_systems(Update, crate::armory::keep_worth.after(EngineSet::Turns).before(EngineSet::Present));
         // A scroll that asks which thing to read it on is named as it asks:
         // after the keys that turn the pack to choosing, before the names.
         app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));
