@@ -841,7 +841,9 @@ pub fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered:
 /// has anything to act on; one aimed at its user leaves a tactic nothing
 /// to weigh, and was cast whenever a foe was in sight, standing up no body
 /// where none lay. Asked of the landing the resolver would land, on the
-/// user's own cell. What the menu offers the player is untouched: the
+/// user's own cell, so its cells are the resolver's too: empty for a shape
+/// that flies, which aimed at its own user goes nowhere, and an effect
+/// asked reads the targets instead. What the menu offers the player is untouched: the
 /// player is offered what they can afford and judges what it is worth.
 pub fn weigh_self_abilities(world: &mut World) {
     let Some(thinking) = world.get_resource::<crate::minds::Thinking>() else { return };

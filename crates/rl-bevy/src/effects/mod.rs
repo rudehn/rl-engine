@@ -356,7 +356,10 @@ pub trait Effect: Send + Sync + 'static {
     /// engine's [`Mend`] needs someone hurt among its targets, and a game's
     /// effect that stands the nearest body back up needs a body in reach.
     /// The world is read, never changed, and nothing is rolled, so asking
-    /// cannot move the run.
+    /// cannot move the run. Read `landing.targets`, not `landing.cells`:
+    /// the landing asked about is the one the resolver lands, and a shape
+    /// that flies, a ball among them, aimed at its own user's cell covers
+    /// no cells at all.
     fn would_act(&self, landing: &Landing, world: &World) -> bool {
         let _ = (landing, world);
         true
