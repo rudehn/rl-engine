@@ -411,7 +411,7 @@ mod tests {
         arrive(&mut app, map_of(4));
         let before = looks(&mut app);
         assert_eq!((before.place, before.deepest), (map_of(4), 4), "{before:?}");
-        assert_eq!(before.pack.len(), 4, "the kit: {before:?}");
+        assert_eq!(before.pack.len(), 5, "the kit: {before:?}");
         assert_eq!(before.lantern, Some(crate::light::lantern_radius(Some(4))), "the lantern dimmed for floor four");
         assert!(!before.monsters.is_empty() && !before.ways.is_empty(), "{before:?}");
         let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("the arrival wrote the run down");

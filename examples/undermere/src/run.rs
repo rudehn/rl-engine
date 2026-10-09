@@ -29,9 +29,9 @@ pub const HEALTH: i32 = 40;
 pub const LANTERN: &str = "lantern";
 
 /// What the adventurer walks out of Mereholt with, by name and count: a
-/// sword in hand, leather on their back, a lit lantern, and two potions of
-/// healing in the pack. Everything that is worn is worn.
-pub const KIT: [(&str, u32); 4] = [("sword", 1), ("leather armor", 1), (LANTERN, 1), ("potion of healing", 2)];
+/// sword in hand, leather on their back, a lit lantern, two potions of
+/// healing and fifty gold in the pack. Everything that is worn is worn.
+pub const KIT: [(&str, u32); 5] = [("sword", 1), ("leather armor", 1), (LANTERN, 1), ("potion of healing", 2), ("gold coin", 50)];
 
 /// How the adventurer is drawn.
 pub const ADVENTURER: Color = Color::WHITE;
@@ -400,7 +400,7 @@ mod tests {
     /// A new run, over a span of seeds: the one adventurer in Mereholt,
     /// where its piece marks the arrival, at full health, the sword in
     /// hand, the leather on and the lantern lit in its place, and two
-    /// potions of healing in the pack.
+    /// potions of healing and fifty gold in the pack.
     #[test]
     fn a_new_run_puts_the_adventurer_in_mereholt_with_their_kit() {
         for s in 0..4 {
@@ -419,7 +419,7 @@ mod tests {
             let mut carried = pack(&app, me);
             carried.sort();
             let kit: Vec<(String, u32)> =
-                [(LANTERN, 1), ("leather armor", 1), ("potion of healing", 2), ("sword", 1)].map(|(n, c)| (n.to_string(), c)).to_vec();
+                [("gold coin", 50), (LANTERN, 1), ("leather armor", 1), ("potion of healing", 2), ("sword", 1)].map(|(n, c)| (n.to_string(), c)).to_vec();
             assert_eq!(carried, kit, "seed {s}: everything worn is carried, and the potions are one stack of two");
             let bag = &app.world().get::<Inventory>(me).expect("a pack").items;
             let lantern = bag.iter().copied().find(|i| app.world().get::<Name>(*i).is_some_and(|n| n.as_str() == LANTERN));

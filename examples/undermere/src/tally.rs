@@ -503,6 +503,14 @@ mod tests {
         sturdy(&mut app, me);
         clear_monsters(&mut app);
         clear_floor(&mut app);
+        // This test is about a pile found below, not the kit's own purse,
+        // which `the_kits_purse_is_not_counted_as_treasure` already
+        // covers: taken clean out of the pack, so a fresh pile is the only
+        // gold the adventurer ever carries here.
+        let purse =
+            app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "gold coin").expect("the kit's purse");
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.retain(|i| *i != purse);
+        app.world_mut().despawn(purse);
         let here = at(&app, me);
         let beside = here.offset(1, 0);
         lay_floor(&mut app, &[beside]);
@@ -544,6 +552,57 @@ mod tests {
         lay(&mut app, dagger, here);
         take_up(&mut app, me);
         assert_eq!(things(&app), 1, "a dagger off the floor is");
+    }
+
+    /// The fifty gold the adventurer walks out of Mereholt with is their
+    /// own from the first turn, never a find: a fresh run's tally counts
+    /// no treasure before anything is picked up off a floor.
+    #[test]
+    fn the_kits_purse_is_not_counted_as_treasure() {
+        let mut app = headless(RunSeed(0));
+        adventurer(&mut app);
+        assert_eq!(app.world().resource::<Tally>().gold_found, 0, "the kit's purse is carried, not found");
+    }
+
+    /// A sale pays the adventurer in gold out of the trader's own purse:
+    /// it rises in the adventurer's pack, but it is paid, not found, so
+    /// the tally counts none of it as treasure.
+    #[test]
+    fn gold_paid_for_a_sale_is_not_counted_as_treasure() {
+        let mut app = headless(RunSeed(1));
+        let me = arrive(&mut app, map_of(1));
+        clear_monsters(&mut app);
+        let here = at(&app, me);
+        let weapon = app.world().resource::<Registries>().tags.expect("weapon");
+        let dagger = make(&mut app, "dagger");
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.push(dagger);
+        let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
+        let till = make(&mut app, "gold coin");
+        app.world_mut().get_mut::<Stack>(till).expect("gold stacks").count = 1000;
+        let trader = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(here.offset(1, 0)),
+                Inventory { items: vec![till] },
+                Trader { buys: vec![weapon], pays_pct: 25 },
+                Offers(vec![Offering::new(trade, 0)]),
+            ))
+            .id();
+        app.update();
+        let coins = |app: &App| -> u32 {
+            let world = app.world();
+            let bag = &world.get::<Inventory>(me).expect("a pack").items;
+            bag.iter().filter(|i| name_of(app, **i) == "gold coin").map(|i| world.get::<Stack>(*i).map_or(1, |s| s.count)).sum()
+        };
+        app.world_mut().write_message(Intent::new(me, Interact { target: trader, verb: trade }));
+        settle(&mut app);
+        let before = coins(&app);
+        app.world_mut().write_message(Sell { customer: me, trader, item: dagger, count: 1 });
+        app.update();
+        assert!(coins(&app) > before, "paid for the dagger: {before} before, {} after", coins(&app));
+        assert_eq!(app.world().resource::<Tally>().gold_found, 0, "paid, not found");
     }
 
     /// The tally is saved with the run: continued from the save the
