@@ -741,14 +741,11 @@ impl FromArgs for NameWorn {
     }
 }
 
-/// Identifies everything the adventurer `wearer` wears that they do not
-/// know whole yet: a kind still wearing its face, or a level they are not
-/// familiar with.
-pub fn name_worn(world: &mut World, wearer: Entity) {
-    if world.get::<Player>(wearer).is_none() {
-        return;
-    }
-    let Some(equipped) = world.get::<Equipped>(wearer) else { return };
+/// Everything `wearer` wears that they do not know whole yet, once each
+/// however many slots it fills: a kind still wearing its face, or a level
+/// they are not familiar with. What [`NameWorn`] tells.
+pub fn untold_worn(world: &World, wearer: Entity) -> Vec<Entity> {
+    let Some(equipped) = world.get::<Equipped>(wearer) else { return Vec::new() };
     let mut worn: Vec<Entity> = Vec::new();
     for (_, item) in equipped.0.worn() {
         if !worn.contains(&item) {
@@ -761,7 +758,17 @@ pub fn name_worn(world: &mut World, wearer: Entity) {
         let name = &armory.defs.get(kind.0).name;
         world.get::<Unfamiliar>(*thing).is_some() || (lore.face(name).is_some() && !lore.knows(name))
     };
-    let untold: Vec<Entity> = worn.into_iter().filter(untold).collect();
+    worn.into_iter().filter(untold).collect()
+}
+
+/// Identifies everything the adventurer `wearer` wears that they do not
+/// know whole yet: a kind still wearing its face, or a level they are not
+/// familiar with.
+pub fn name_worn(world: &mut World, wearer: Entity) {
+    if world.get::<Player>(wearer).is_none() || world.get::<Equipped>(wearer).is_none() {
+        return;
+    }
+    let untold = untold_worn(world, wearer);
     if untold.is_empty() {
         world.write_message(Tell::new("You know everything you wear already.", Tones::MUTED));
     }

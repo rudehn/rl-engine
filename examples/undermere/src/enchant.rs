@@ -112,16 +112,26 @@ impl FromArgs for RemoveCurse {
     }
 }
 
-/// Takes [`Stuck`] off everything `wearer` wears, and tells them what came
-/// free, or that nothing was held.
-pub fn remove_curse(world: &mut World, wearer: Entity) {
-    let Some(equipped) = world.get::<Equipped>(wearer) else { return };
+/// Everything `wearer` wears that will not come off, once each however
+/// many slots it fills: what [`RemoveCurse`] frees.
+pub fn held_on(world: &World, wearer: Entity) -> Vec<Entity> {
+    let Some(equipped) = world.get::<Equipped>(wearer) else { return Vec::new() };
     let mut held: Vec<Entity> = Vec::new();
     for (_, item) in equipped.0.worn() {
         if world.get::<Stuck>(item).is_some() && !held.contains(&item) {
             held.push(item);
         }
     }
+    held
+}
+
+/// Takes [`Stuck`] off everything `wearer` wears, and tells them what came
+/// free, or that nothing was held.
+pub fn remove_curse(world: &mut World, wearer: Entity) {
+    if world.get::<Equipped>(wearer).is_none() {
+        return;
+    }
+    let held = held_on(world, wearer);
     let mut lines: Vec<String> = Vec::new();
     for item in &held {
         world.entity_mut(*item).remove::<Stuck>();

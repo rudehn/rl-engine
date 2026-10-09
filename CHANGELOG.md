@@ -6,6 +6,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The trade slice's one way to move currency is public, as `rl_bevy::pay(world, payer, payee, amount, currency)`: real stacks split off and merged into the payee's pack, as a deal and an offer's price are paid, so a game that gives a price back, for an offer its answer found nothing to do for, moves the coins by the same rule the engine took them by rather than making or destroying any.
+
 - A walk into someone that brings up the offers screen no longer also logs them as in the way: the narrator's `Phrase::YouBumpInto` is said only of a `Bumped` without `offers`, so walking into a keeper whose one offer has a price, or into anything offering several things or one refused, is asked about on the screen alone.
   A game without `OffersPanel` hears nothing from such a bump, where it heard `The clerk is in the way.`; one that wants a line for it reads `Bumped { offers: true }` and tells its own.
 

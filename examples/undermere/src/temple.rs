@@ -24,6 +24,8 @@
 //! is made: when Mereholt is first entered and when a continued run puts
 //! the keepers back.
 
+use bevy::ecs::message::MessageCursor;
+use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::Source;
@@ -51,8 +53,33 @@ pub struct Rite {
     pub says: String,
     /// Its price in gold coins, more than nought.
     pub price: u32,
+    /// What the priest is said to find when there is nothing for it to
+    /// do, by [`answer_rites`], who gives the price back.
+    pub idle: String,
     /// What it lands, built once from the file.
     pub effects: Effects,
+    /// The effect words it lands, as the file writes them: what
+    /// [`Rite::finds_work`] asks of each.
+    words: Vec<String>,
+}
+
+impl Rite {
+    /// Whether taking the rite up would do anything for `taker`: true
+    /// when any word it lands has something to do, a wound to close, a
+    /// status that lasts until cured, a worn thing that will not come off
+    /// or one not known whole. A word this cannot judge is taken to have
+    /// something to do, so a rite is never refused for a word it does not
+    /// know.
+    pub fn finds_work(&self, world: &World, taker: Entity) -> bool {
+        use crate::effects::mending::{CureLasting, Whole, lasting, wounded};
+        self.words.iter().any(|word| match word.as_str() {
+            Whole::KIND => wounded(world, taker),
+            CureLasting::KIND => !lasting(world, taker).is_empty(),
+            crate::enchant::RemoveCurse::KIND => !crate::enchant::held_on(world, taker).is_empty(),
+            crate::lore::NameWorn::KIND => !crate::lore::untold_worn(world, taker).is_empty(),
+            _ => true,
+        })
+    }
 }
 
 /// Every rite the priest offers, in the file's order, which is the order
@@ -91,6 +118,9 @@ impl Rites {
             if a.says.trim().is_empty() {
                 errors.push(format!("{}: says nothing on the offers screen", a.verb));
             }
+            if a.idle.trim().is_empty() {
+                errors.push(format!("{}: says nothing when there is nothing to do", a.verb));
+            }
             if a.effects.is_empty() {
                 errors.push(format!("{}: lands nothing", a.verb));
             }
@@ -98,7 +128,8 @@ impl Rites {
                 errors.extend(mine.into_iter().map(|e| format!("{}: {e}", a.verb)));
                 Effects::default()
             });
-            rites.push(Rite { verb: a.verb, says: a.says, price: a.price, effects });
+            let words = a.effects.iter().map(|e| e.kind.clone()).collect();
+            rites.push(Rite { verb: a.verb, says: a.says, price: a.price, idle: a.idle, effects, words });
         }
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
@@ -138,6 +169,7 @@ struct AuthoredRite {
     verb: String,
     says: String,
     price: u32,
+    idle: String,
     effects: Vec<EffectSpec>,
 }
 
@@ -166,16 +198,43 @@ pub fn rite_rows(mut view: ResMut<OffersView>, rites: Res<Rites>, verbs: Res<Ver
 /// doings, before whatever the rite's effects say. The coins are named as
 /// the trade screen names them, by a piece's own name.
 ///
+/// A rite with nothing to do for its taker, by [`Rite::finds_work`], lands
+/// nothing and the priest gives the price back, by the engine's own
+/// [`pay`](rl_engine::rl_bevy::pay), saying so in the rite's `idle` words,
+/// `The priest finds nothing to mend, and gives back your 30 gold coins.`:
+/// the engine takes the price before the answer runs, and a rite that
+/// sold the adventurer nothing should cost them nothing.
+///
 /// In `TurnSet::React`, where every answer to `Interacted` is read; every
-/// other verb is left for whatever answers it.
-pub fn answer_rites(mut done: MessageReader<Interacted>, rites: Res<Rites>, verbs: Res<Verbs>, purse: Purse, mut world: EffectWorld) {
-    for ev in done.read() {
-        let Some(rite) = rites.get(verbs.name(ev.verb)) else { continue };
-        let paid = sum_of(&purse.coin_name([ev.target, ev.actor]), rite.price);
-        world.commands.write_message(Tell::new(format!("You give {{whom}} {paid}."), Tones::TEXT).to(ev.target));
-        let at = world.position(ev.actor).unwrap_or_default();
-        rite.effects.land_on(Source::Offer(ev.target), ev.actor, at, vec![ev.actor], &mut world);
+/// other verb is left for whatever answers it. Exclusive, since whether a
+/// rite finds work reads the taker's whole state as the effects that would
+/// land on it read it.
+pub fn answer_rites(world: &mut World, mut cursor: Local<MessageCursor<Interacted>>) {
+    let taken: Vec<Interacted> = cursor.read(world.resource::<Messages<Interacted>>()).copied().collect();
+    if taken.is_empty() {
+        return;
     }
+    world.resource_scope(|world, rites: Mut<Rites>| {
+        for ev in taken {
+            let Some(rite) = rites.get(world.resource::<Verbs>().name(ev.verb)) else { continue };
+            let works = rite.finds_work(world, ev.actor);
+            if !works && let Some(currency) = world.get_resource::<Currency>().copied() {
+                rl_engine::rl_bevy::pay(world, ev.target, ev.actor, rite.price, currency);
+            }
+            let mut state = SystemState::<(Purse, EffectWorld)>::new(world);
+            let Ok((purse, mut effects)) = state.get_mut(world) else { continue };
+            let paid = sum_of(&purse.coin_name([ev.target, ev.actor]), rite.price);
+            if works {
+                effects.commands.write_message(Tell::new(format!("You give {{whom}} {paid}."), Tones::TEXT).to(ev.target));
+                let at = effects.position(ev.actor).unwrap_or_default();
+                rite.effects.land_on(Source::Offer(ev.target), ev.actor, at, vec![ev.actor], &mut effects);
+            } else {
+                let line = format!("{{Whom}} {}, and gives back your {paid}.", rite.idle);
+                effects.commands.write_message(Tell::new(line, Tones::MUTED).to(ev.target));
+            }
+            state.apply(world);
+        }
+    });
 }
 
 /// Where the currency's name is read from: what each side carries, and
@@ -276,6 +335,15 @@ mod tests {
         settle(app);
     }
 
+    /// Gives every rite something to do for the adventurer: a wound, and a
+    /// cursed dagger on, its level not yet known. Returns the dagger.
+    fn needing_every_rite(app: &mut App, me: Entity) -> Entity {
+        let cursed = find(app, "dagger", -1);
+        equip(app, me, cursed);
+        app.world_mut().get_mut::<Health>(me).expect("health").current = 3;
+        cursed
+    }
+
     /// Whether `who` wears `thing`.
     fn wears(app: &App, who: Entity, thing: Entity) -> bool {
         app.world().get::<Equipped>(who).is_some_and(|e| e.contains(thing))
@@ -302,6 +370,7 @@ mod tests {
     fn each_rite_taken_up_spends_its_price_into_the_priests_purse() {
         for (rite, price) in PRICED {
             let (mut app, me, priest) = in_mereholt(1);
+            needing_every_rite(&mut app, me);
             set_gold(&mut app, me, 100);
             let theirs = gold(&app, priest);
             take_rite(&mut app, me, priest, rite);
@@ -318,7 +387,7 @@ mod tests {
         for (rite, price) in PRICED {
             let (mut app, me, priest) = in_mereholt(4);
             set_gold(&mut app, me, 100);
-            app.world_mut().get_mut::<Health>(me).expect("health").current = 3;
+            needing_every_rite(&mut app, me);
             take_rite(&mut app, me, priest, rite);
             let lines: Vec<(String, ToneId)> = app.world().resource::<MessageLog>().iter().map(|l| (l.text.clone(), l.tone)).collect();
             let given = format!("You give the priest {price} gold coins.");
@@ -334,6 +403,28 @@ mod tests {
         set_gold(&mut app, me, 10);
         take_rite(&mut app, me, priest, "mend");
         assert!(!said(&app).iter().any(|t| t.starts_with("You give")), "nothing given: {:#?}", said(&app));
+    }
+
+    /// A rite with nothing to do, taken up by an adventurer whole, wearing
+    /// nothing cursed and knowing all they wear, costs nothing: the price
+    /// the engine took is given back, from the priest's purse to theirs,
+    /// and the log says so in the rite's own words, in the muted tone, and
+    /// never that anything was given or that they were whole already.
+    #[test]
+    fn a_rite_with_nothing_to_do_costs_nothing_and_says_the_price_was_given_back() {
+        let idle = [("mend", "finds nothing to mend"), ("unbind", "finds nothing bound on you"), ("name", "has nothing to tell you of what you wear")];
+        for ((rite, price), (_, words)) in PRICED.into_iter().zip(idle) {
+            let (mut app, me, priest) = in_mereholt(5);
+            set_gold(&mut app, me, 100);
+            let theirs = gold(&app, priest);
+            take_rite(&mut app, me, priest, rite);
+            assert_eq!((gold(&app, me), gold(&app, priest)), (100, theirs), "{rite}: both purses as they were");
+            let lines: Vec<(String, ToneId)> = app.world().resource::<MessageLog>().iter().map(|l| (l.text.clone(), l.tone)).collect();
+            let back = format!("The priest {words}, and gives back your {price} gold coins.");
+            assert!(lines.contains(&(back.clone(), Tones::MUTED)), "{rite}: {back:?} not in {lines:#?}");
+            let silent = ["You give", "You were whole already.", "A cleansing light", "You know everything"];
+            assert!(!lines.iter().any(|(t, _)| silent.iter().any(|s| t.starts_with(s))), "{rite}: nothing landed: {lines:#?}");
+        }
     }
 
     /// A rite the adventurer cannot pay for is listed as wanting its price
@@ -450,17 +541,23 @@ mod tests {
         let says: Vec<&str> = library.rites.iter().map(|r| r.says.as_str()).collect();
         assert_eq!(says, ["mend your wounds", "unbind what you wear", "name what you wear"]);
         let text = r#"[
-            (verb: "mend", says: "mend", price: 30, effects: [(kind: "Whole")]),
-            (verb: "mend", says: "mend", price: 30, effects: [(kind: "Whole")]),
-            (verb: "trade", says: "trade", price: 10, effects: [(kind: "Whole")]),
-            (verb: "bless", says: " ", price: 0, effects: []),
-            (verb: "curse", says: "curse", price: 5, effects: [(kind: "Smite")]),
+            (verb: "mend", says: "mend", idle: "rests", price: 30, effects: [(kind: "Whole")]),
+            (verb: "mend", says: "mend", idle: "rests", price: 30, effects: [(kind: "Whole")]),
+            (verb: "trade", says: "trade", idle: "rests", price: 10, effects: [(kind: "Whole")]),
+            (verb: "bless", says: " ", idle: "", price: 0, effects: []),
+            (verb: "curse", says: "curse", idle: "rests", price: 5, effects: [(kind: "Smite")]),
         ]"#;
         let Err(ContentError::Invalid(errors)) = Rites::read(text, &library.registries, &crate::content::effect_kinds()) else { panic!("refused") };
         let joined = errors.join("\n");
-        for said in
-            ["mend: a second rite", "trade: the engine's own verb", "bless: a price of nought", "bless: says nothing", "bless: lands nothing", "curse: "]
-        {
+        for said in [
+            "mend: a second rite",
+            "trade: the engine's own verb",
+            "bless: a price of nought",
+            "bless: says nothing on",
+            "bless: says nothing when",
+            "bless: lands nothing",
+            "curse: ",
+        ] {
             assert!(joined.contains(said), "{said:?} not in:\n{joined}");
         }
     }

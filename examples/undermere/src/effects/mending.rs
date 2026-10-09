@@ -48,8 +48,8 @@ impl FromArgs for Whole {
 /// Sets `who`'s health to the most it can be, and tells the adventurer
 /// their wounds closed, or that there were none.
 pub fn make_whole(world: &mut World, who: Entity) {
+    let wounded = wounded(world, who);
     let Some(mut health) = world.get_mut::<Health>(who) else { return };
-    let wounded = health.current < health.max;
     health.current = health.max;
     if world.get::<Player>(who).is_none() {
         return;
@@ -87,12 +87,23 @@ impl FromArgs for CureLasting {
     }
 }
 
+/// Whether `who` is below their greatest health, which [`Whole`] would
+/// close.
+pub fn wounded(world: &World, who: Entity) -> bool {
+    world.get::<Health>(who).is_some_and(|h| h.current < h.max)
+}
+
+/// Every status on `who` that lasts until cured and nothing worn holds:
+/// what [`CureLasting`] takes off.
+pub fn lasting(world: &World, who: Entity) -> Vec<StatusId> {
+    let Some(held) = world.get::<Afflicted>(who) else { return Vec::new() };
+    held.0.iter().filter(|s| s.turns == UNTIL_CURED && s.held_by.is_none()).map(|s| s.id).collect()
+}
+
 /// Asks a [`Cure`] for every status on `who` that lasts until cured and
 /// nothing worn holds.
 pub fn cure_lasting(world: &mut World, who: Entity) {
-    let Some(held) = world.get::<Afflicted>(who) else { return };
-    let lasting: Vec<StatusId> = held.0.iter().filter(|s| s.turns == UNTIL_CURED && s.held_by.is_none()).map(|s| s.id).collect();
-    for status in lasting {
+    for status in lasting(world, who) {
         world.write_message(Cure { target: who, status });
     }
 }

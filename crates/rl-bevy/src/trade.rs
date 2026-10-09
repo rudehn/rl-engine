@@ -351,7 +351,11 @@ fn hand_over(world: &mut World, from: Entity, to: Entity, item: Entity, count: u
 ///
 /// The crate's one way to spend it, a deal's price and an offer's alike,
 /// so what is paid is always a real pile that lands in someone's pack.
-pub(crate) fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currency: Currency) {
+/// Public so a game that hands currency over, as one giving back the price
+/// of an offer its answer found nothing to do for, moves it by the same
+/// rule rather than making or destroying coins of its own. Pays what the
+/// payer has, up to `amount`, and no more.
+pub fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currency: Currency) {
     let pieces: Vec<Entity> =
         world.get::<Inventory>(payer).map(|b| b.items.iter().copied().filter(|i| currency.is(world.get::<Tagged>(*i))).collect()).unwrap_or_default();
     let mut left = amount;
