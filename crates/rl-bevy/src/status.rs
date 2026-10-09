@@ -115,15 +115,32 @@ pub enum StatusEvent {
     },
 }
 
-/// Applies and removes statuses as asked.
+/// Who was put to sleep this pass, kept from where the sleep is put on to
+/// where harm would wake it, which takes the list.
+///
+/// A resource the two status systems share rather than the [`Afflict`]s
+/// read a second time: a second reader of those would be one more system
+/// touching them unordered beside every game system that writes one.
+#[derive(Resource, Debug, Default)]
+pub struct FellAsleep(Vec<Entity>);
+
+/// Applies and removes statuses as asked, and notes who was put to sleep
+/// in [`FellAsleep`]. With no [`StatusPlugin`], and so no `FellAsleep` and
+/// nothing to wake anyone on harm, there is nothing to note.
 pub fn resolve_afflictions(
     mut afflicts: MessageReader<Afflict>,
     mut cures: MessageReader<Cure>,
     mut events: MessageWriter<StatusEvent>,
+    mut fell: Option<ResMut<FellAsleep>>,
     registries: Res<Registries>,
     mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
 ) {
     for a in afflicts.read() {
+        if let Some(fell) = fell.as_deref_mut()
+            && registries.statuses.get(a.status).sleeps
+        {
+            fell.0.push(a.target);
+        }
         let Ok((mut statuses, mut stats)) = actors.get_mut(a.target) else { continue };
         let by = a.by.map(|e| e.to_bits());
         let began = !statuses.0.has(a.status);
@@ -263,17 +280,17 @@ fn wake(target: Entity, statuses: &mut Statuses, stats: &mut Stats, registries: 
 /// bites would otherwise cure itself the first turn it bit. And harm that
 /// lands in the pass the sleep was put on: a dart that wounds and sends to
 /// sleep is one landing, its sleep resolved before its harm, and woken by
-/// its own wound it never slept at all. What was put to sleep this pass is
-/// read off this pass's [`Afflict`]s, which is where the sleep began.
+/// its own wound it never slept at all. Who was put to sleep this pass is
+/// [`FellAsleep`], taken here so the next pass starts it empty.
 pub fn wake_on_harm(
     mut dealt: MessageReader<DamageDealt>,
-    mut slept: MessageReader<Afflict>,
+    mut fell: ResMut<FellAsleep>,
     mut events: MessageWriter<StatusEvent>,
     registries: Res<Registries>,
     mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
 ) {
     let sleeps = |status: StatusId| registries.statuses.get(status).sleeps;
-    let fresh: Vec<Entity> = slept.read().filter(|a| sleeps(a.status)).map(|a| a.target).collect();
+    let fresh = std::mem::take(&mut fell.0);
     for d in dealt.read() {
         if d.hit.status.is_some_and(sleeps) || fresh.contains(&d.target) {
             continue;
@@ -396,6 +413,7 @@ impl Plugin for StatusPlugin {
         app.add_message::<Afflict>()
             .add_message::<Cure>()
             .add_message::<StatusEvent>()
+            .init_resource::<FellAsleep>()
             .needs::<Registries>("StatusPlugin", "`Registries`, with the statuses, which may be empty")
             .add_systems(Turn, pass_held_turns.in_set(DecideSet::Sense))
             // After the noticing, which is stealth's and runs only if the

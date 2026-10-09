@@ -259,6 +259,12 @@ impl<L: Lands> Airborne<L> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// What is in the air, for the subsystem that put it there to add to
+    /// before it lands.
+    pub(crate) fn in_air_mut(&mut self) -> impl Iterator<Item = &mut L> {
+        self.0.iter_mut()
+    }
 }
 
 /// Registers a kind of landing, and what a run's end does with it.

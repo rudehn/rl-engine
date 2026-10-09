@@ -871,17 +871,10 @@ pub struct Arena<'w, 's> {
 
 /// What an attack is seen as, and the shots in the air while it is.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Shown<'w, 's> {
+pub struct Shown<'w> {
     cues: MessageWriter<'w, Cued>,
     hold: ResMut<'w, TurnHold>,
     airborne: ResMut<'w, Airborne<ShotLanding>>,
-    /// For a shot in the air whose shooter answers `hit`, the stand-in
-    /// that lands its own hit should it be gone by then.
-    commands: Commands<'w, 's>,
-    /// What that stand-in takes from the shooter. Absent in a game without
-    /// [`EffectsPlugin`](crate::effects::EffectsPlugin), where nothing
-    /// answers a moment at all.
-    keeps: Option<Res<'w, crate::effects::RemnantKeeps>>,
 }
 
 /// A shot fired and not yet arrived: whom it is at, and every hit it
@@ -910,13 +903,13 @@ pub struct ShotLanding {
     /// Who lands those should the shooter be gone: a [`Remnant`](crate::effects::Remnant)
     /// kept `Disabled`, so no query sees it, with what
     /// [`RemnantKeeps`](crate::effects::RemnantKeeps) takes copied from the
-    /// shooter as it fired, its `Name` first. Without it the bite of a
-    /// shooter killed while its shot flew landed from nobody, named
-    /// nothing in the log and credited to an entity no longer there, where
-    /// a `died` remnant is named as what it stands in for. Taken only for
-    /// a shot that flies with something watching, the one that lands a
-    /// pass later, and despawned unused whenever the shooter is still
-    /// there or the shot lands nothing.
+    /// shooter by [`keep_shooters`] in the pass it fired, its `Name` first.
+    /// Without it the bite of a shooter killed while its shot flew landed
+    /// from nobody, named nothing in the log and credited to an entity no
+    /// longer there, where a `died` remnant is named as what it stands in
+    /// for. Taken only for a shot in the air, the one that lands a pass
+    /// later, and despawned unused whenever the shooter is still there or
+    /// the shot lands nothing.
     stand_in: Option<Entity>,
     /// Whether it flew or was struck in reach, kept so the landing a pass
     /// later narrates as what it was.
@@ -980,7 +973,7 @@ pub fn resolve_attacks(
     shown: Shown,
 ) {
     let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, missed, alive, sides, rules, watchers } = &mut arena;
-    let Shown { mut cues, mut hold, mut airborne, mut commands, keeps } = shown;
+    let Shown { mut cues, mut hold, mut airborne } = shown;
     let house = rules.as_deref().and_then(|r| r.unaware);
     for intent in intents.read() {
         let (actor, target) = (intent.actor, intent.action.0);
@@ -1073,19 +1066,7 @@ pub fn resolve_attacks(
                     _ => (target, target_pos.0),
                 };
                 cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to: Anchor::on(to, to_at), look: LookOf::Given(look) } });
-                for (mut shot, at) in landings {
-                    // Copied now, while the shooter is here to copy: by the
-                    // time the shot lands it may not be.
-                    if hold.is_watched()
-                        && shot.own.is_some()
-                        && !shot.missed
-                        && let Some(keeps) = keeps.as_deref()
-                    {
-                        let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(actor), at };
-                        let stand_in = commands.spawn((bevy::ecs::entity_disabling::Disabled, remnant)).id();
-                        keeps.copy(&mut commands, actor, stand_in);
-                        shot.stand_in = Some(stand_in);
-                    }
+                for (shot, at) in landings {
                     if let Some(shot) = airborne.launched(&mut hold, shot) {
                         land(shot, at, &mut damage, fired, missed);
                     }
@@ -1154,6 +1135,31 @@ pub struct Arriving<'w, 's> {
     commands: Commands<'w, 's>,
     present: Query<'w, 's, (), With<crate::effects::Triggers>>,
     missed: MessageWriter<'w, crate::accuracy::Missed>,
+}
+
+/// Takes a stand-in for the shooter of every shot that went up this pass
+/// answering `hit` and not yet missed, while the shooter is still there to
+/// copy: what [`RemnantKeeps`](crate::effects::RemnantKeeps) lists, onto a
+/// [`Remnant`](crate::effects::Remnant) kept `Disabled` so no query sees
+/// it until [`land_shots`] needs it.
+///
+/// Its own system, after [`resolve_attacks`] in the same chain, rather than
+/// a step inside it: the resolver is one of the busiest systems a game
+/// meets, and giving it `Commands` widened what a game had to order
+/// against it. Nothing in the air is taken for in a game without
+/// [`EffectsPlugin`](crate::effects::EffectsPlugin), where no shooter
+/// answers a moment.
+pub fn keep_shooters(mut commands: Commands, mut airborne: ResMut<Airborne<ShotLanding>>, keeps: Option<Res<crate::effects::RemnantKeeps>>, there: Query<()>) {
+    let Some(keeps) = keeps else { return };
+    for shot in airborne.in_air_mut() {
+        if shot.stand_in.is_some() || shot.own.is_none() || shot.missed || !there.contains(shot.attacker) {
+            continue;
+        }
+        let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: Point::ZERO };
+        let stand_in = commands.spawn((bevy::ecs::entity_disabling::Disabled, remnant)).id();
+        keeps.copy(&mut commands, shot.attacker, stand_in);
+        shot.stand_in = Some(stand_in);
+    }
 }
 
 /// Lands every shot in the air, on the first pass after its flight has
@@ -1423,7 +1429,10 @@ impl Plugin for CombatPlugin {
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
-            .add_systems(Turn, (land_shots.in_set(crate::plugin::LandSet::Shot), resolve_attacks.in_set(ResolveSet::Act)).chain())
+            .add_systems(
+                Turn,
+                (land_shots.in_set(crate::plugin::LandSet::Shot), resolve_attacks.in_set(ResolveSet::Act), keep_shooters.in_set(ResolveSet::Act)).chain(),
+            )
             .add_systems(Turn, (apply_damage, apply_healing).chain().in_set(ResolveSet::Damage))
             .add_systems(Turn, end_run_on_player_death.in_set(crate::plugin::TurnSet::React))
             .add_systems(Turn, process_deaths.in_set(CleanupSet::Remove))
