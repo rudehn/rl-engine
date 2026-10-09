@@ -225,8 +225,10 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [1_044_805_334_682_371_504, 7_589_848_212_434_706_788, 4_234_396_970_800_120_060],
-        "fingerprint tripwire: re-baselined for part 3 task 8a (five mini-bosses, each with its own lair, drawn two a run \
-         between floors three and nine, move the floors' own generation and the streams after it)"
+        [15_342_442_557_417_225_364, 3_791_365_179_012_816_275, 17_512_802_706_716_597_283],
+        "fingerprint tripwire: re-baselined for part 3 task 10 (a lived-in dungeon: sleepers, goblin camps, feeding \
+         grounds, patrols and a captive all draw from a floor's own population stream ahead of its ordinary groups, \
+         which plan now draws on a stream of its own so they move nothing of its, but the earlier draws move the \
+         bands' own and, through LeavesRemains and the rest, the floors behind them)"
     );
 }
