@@ -51,6 +51,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 24 | Furnishing a room of any size | 1 | medium | medium |
 | 25 | A furnishing pool with bands and a budget | 1 | low | medium |
 | 26 | Furnishing a map that is not rooms | 1 | low | medium |
+| 27 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -72,6 +73,7 @@ Why the order that is left, in four moves:
 4. **The rest wait on something.**
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
    Items 23 to 26 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 23 is what the furnished rooms most visibly lack, 24 what the larger rooms do, and 25 and 26 wait on Foundry's zones and on a game that furnishes a cave.
+   Item 27 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -112,6 +114,12 @@ The five items that opened this section were built in the six stages of `docs/de
   It changes how every game's monsters search, so every fingerprint moves with it.
 
 ## 3. Make what exists real
+
+- **A coloured light cannot warm a tile with little of its colour.**
+  `Shading::light` in `crates/rl-render/src/shade.rs` multiplies a tile's colour by the light that lands on it, channel by channel, so a light's colour can only take away: a fire's orange on green moss darkens the green rather than warming it, and the floor reads as lit by the lantern.
+  Undermere's play found it on 2026-10-07, in task 11 of its part 3, and its camps' fires burn yellower to get round it (`9e68e0e`).
+  Brogue adds a share of a light's own colour as well as multiplying, so a light can lend a tile a colour it does not have; adding a share of the light's colour, scaled by its intensity, after the multiply would do the same here.
+  Every lit game's pictures move with it, so it is polish for a part that works on how a game looks, not a fault to fix in passing.
 
 - **A prop cannot block sight, or block the way and let a shot past.**
   A prop's `blocks` is `Blocks`, which the occupancy index reads for movement and `combat::shot` reads as stopping a shot, and nothing a prop is can block sight.
