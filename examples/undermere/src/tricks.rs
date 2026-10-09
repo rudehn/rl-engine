@@ -402,6 +402,11 @@ pub struct Shrouds;
 /// hard to notice as a drinker of that potion, since both are read by the
 /// same stealth stat.
 ///
+/// Dark is anything short of [`LightBand::Lit`], a light's own pool: every
+/// floor's ambient is bright enough to be seen by, so the floor's shape
+/// reads beyond the lantern, and a wraith judged by whether its cell is
+/// seen at all would never once be shrouded below Mereholt.
+///
 /// Edge-triggered, as `keep_fireproof` is: `Afflict` only the turn a
 /// `Shrouds` kind enters the dark, `Cure` only the turn it leaves it.
 ///
@@ -415,7 +420,7 @@ pub fn keep_shrouded(
 ) {
     let Some(status) = registries.statuses.id(crate::content::SHROUDED) else { return };
     for (e, pos, held) in &bodies {
-        let dark = !lighting.is_lit(pos.0);
+        let dark = lighting.band(pos.0) != LightBand::Lit;
         let has = held.0.has(status);
         if dark && !has {
             afflict.write(Afflict { target: e, status, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
@@ -852,6 +857,31 @@ mod tests {
         app.update();
         let status = app.world().resource::<Registries>().statuses.expect(crate::content::SHROUDED);
         assert!(app.world().get::<Afflicted>(e).unwrap().0.has(status), "pitch dark, so shrouded");
+    }
+
+    /// Both ways, played on a real floor: a wraith stood in the catacombs
+    /// beyond every light, where the floor's own ambient lets it be seen
+    /// but nothing lights it, is shrouded, and stood beside the adventurer,
+    /// in their lantern's light, is shrouded no longer.
+    #[test]
+    fn a_wraith_is_shrouded_in_the_dark_and_loses_it_the_turn_it_stands_in_the_light() {
+        use crate::testing::{arena_on, pass_turns, stand_on, still};
+        let (mut app, _, here) = arena_on(7, 7);
+        let status = app.world().resource::<Registries>().statuses.expect(crate::content::SHROUDED);
+        let dark = {
+            let (map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
+            geometry::square(here, 40).find(|p| map.is_walkable(*p) && lighting.band(*p) != LightBand::Lit && geometry::chebyshev(*p, here) > 10)
+        };
+        let dark = dark.expect("somewhere on the floor is dark");
+        let wraith = still(&mut app, "wraith", dark);
+        pass_turns(&mut app, 1);
+        let shrouded = |app: &App| app.world().get::<Afflicted>(wraith).is_some_and(|a| a.0.has(status));
+        assert!(shrouded(&app), "in the dark at {dark:?}, shrouded");
+        let beside = here.offset(1, 0);
+        assert_eq!(app.world().resource::<Lighting>().band(beside), LightBand::Lit, "the lantern lights the cell beside the adventurer");
+        stand_on(&mut app, wraith, beside);
+        pass_turns(&mut app, 1);
+        assert!(!shrouded(&app), "in the lantern's light beside the adventurer, shrouded no longer");
     }
 
     /// The Choirmaster's `singing`: an ally of its own side within
