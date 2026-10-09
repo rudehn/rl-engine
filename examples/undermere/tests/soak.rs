@@ -274,6 +274,12 @@ impl<V: CostSource> CostSource for Ground<'_, V> {
         let at = self.map.to_world(self.view.idx_point(idx));
         if self.closed.contains(&at) { None } else { self.view.cost_idx(idx) }
     }
+
+    // The engine's own corner rule, which the opening view answers: what is
+    // closed here is only kept out of, not something a diagonal cannot pass.
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.view.lets_diagonal_past(p)
+    }
 }
 
 /// The first step from `from` on the shortest way to the nearest of
@@ -393,11 +399,6 @@ struct Memory {
     /// running and shooting would otherwise lead the adventurer round the
     /// floor for good.
     let_go: BTreeSet<Entity>,
-    /// A diagonal step refused, and how many of its two straight halves
-    /// have been tried since: the engine refuses a diagonal between a
-    /// closed door and a wall, which the way it is walked counts as open
-    /// ground, so the walk takes it a straight step at a time instead.
-    squeezed: Option<(Direction, u8)>,
 }
 
 /// How many blows in a row that take nothing from a foe make it one to
@@ -510,14 +511,6 @@ fn from_afar(view: &Sight, things: &[&Thing], armory: &Armory) -> Option<Choice>
 /// on the throne's floor the king. A walk refused since the last turn
 /// spent is a wait.
 fn walk(world: &mut World, view: &Sight, memory: &mut Memory) -> Choice {
-    if let Some((dir, tried)) = memory.squeezed.filter(|(_, tried)| *tried < 2) {
-        memory.squeezed = Some((dir, tried + 1));
-        let (dx, dy) = (dir.offset().x, dir.offset().y);
-        let halves = [Point::new(dx, 0), Point::new(0, dy)];
-        if let Some(half) = Direction::between(Point::ZERO, halves[tried as usize]) {
-            return Choice::Bump(half);
-        }
-    }
     if memory.stuck {
         return Choice::Wait;
     }
@@ -873,12 +866,11 @@ fn delve(seed: u64, plan: Plan) -> Delve {
             match (choice, choice.thing()) {
                 (_, Some(it)) if matches!(choice, Choice::Wear(_) | Choice::Rummage(_) | Choice::Free(..)) => _ = memory.never.insert(it),
                 (_, Some(it)) => _ = memory.refused.insert(it),
-                (Choice::Bump(dir), None) if dir.is_diagonal() && memory.squeezed.is_none() => memory.squeezed = Some((dir, 0)),
                 _ => memory.stuck = true,
             }
             continue;
         }
-        (memory.stuck, memory.refused, memory.squeezed) = (false, BTreeSet::new(), None);
+        (memory.stuck, memory.refused) = (false, BTreeSet::new());
         if let Some((foe, was)) = struck {
             let futile = memory.futile.entry(foe).or_default();
             *futile = if health_of(world, foe) < was { 0 } else { *futile + 1 };

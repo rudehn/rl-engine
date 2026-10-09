@@ -406,6 +406,20 @@ impl WorldMap {
         self.tile(p).is_some_and(|t| self.tables.walkable[t.index()])
     }
 
+    /// Whether a diagonal step may pass beside `p`: only beside something
+    /// an actor could stand on now, so never past a wall's corner nor a
+    /// closed door's.
+    ///
+    /// The one corner rule, read by the move resolver and by every view a
+    /// flood or a search runs over, [`Self::opening_view`] included. That
+    /// view prices a closed door at its opening, so a door can be entered
+    /// on it; asked whether a diagonal slips past the door's corner, it
+    /// answers as the move resolver will, or a mind plans a step it is
+    /// refused every turn and never moves.
+    pub fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.is_walkable(p)
+    }
+
     /// What `p` becomes when opened, if it is something that opens.
     pub fn opens(&self, p: Point) -> Option<TileId> {
         self.tile(p).and_then(|t| self.tables.opens[t.index()])
@@ -587,6 +601,10 @@ impl CostSource for WindowView<'_> {
             self.map.tables.walkable[into].then(|| rl_core::turn::BASE_ACTION_COST + self.map.tables.move_cost[into])
         };
         self.map.cost(p).or_else(|| if self.opening { opened() } else { None })
+    }
+
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.checked_idx(p).is_some_and(|idx| self.map.lets_diagonal_past(self.world(idx)))
     }
 }
 

@@ -87,6 +87,11 @@ impl<V: CostSource> CostSource for Ground<'_, V> {
         let at = self.map.to_world(self.view.idx_point(idx));
         if self.props.contains(&at) { None } else { self.view.cost_idx(idx) }
     }
+
+    // The engine's own corner rule, which the opening view answers.
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.view.lets_diagonal_past(p)
+    }
 }
 
 /// The step from `from` toward `goal` on the place being read, the
@@ -225,10 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [12_042_115_077_540_659_513, 2_062_553_943_749_299_901, 2_891_562_110_806_429_677],
-        "fingerprint tripwire: re-baselined for part 3 task 11 (bands and the ordinary groups' sleep draw from \
-         streams of their own, a camp's fire only in the open, nobody of the floor's population in a boss's hall or a \
-         lair, a captive's shackles from one place, the soak's tuning: sixty health, the sheet's healing, three groups \
-         a floor with a band, feeding ground or patrol standing in for one, and the softer kinds)"
+        [3_980_971_438_599_573_768, 13_862_721_143_101_052_644, 2_891_562_110_806_429_677],
+        "fingerprint tripwire: re-baselined for part 3 task 11b (a mind that opens doors, and the script's own walk, \
+         go round a closed door's corner rather than planning the diagonal past it the engine refuses)"
     );
 }

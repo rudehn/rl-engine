@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A mind that opens doors no longer plans a diagonal past a closed door's corner, which the move resolver refuses, so it is no longer held refused at the same step every turn: the new `WorldMap::lets_diagonal_past(p)` is the one corner rule, read by the move resolver and answered by `opening_view`, which prices a closed door at its opening and still lets no diagonal past it.
+  The rule reaches the searches through the new `CostSource::lets_diagonal_past(p)`, which A* and `DijkstraMap` ask of both cells a diagonal squeezes between, and which is `is_passable(p)` unless a source says otherwise, so every other source paths as it did.
+  To change: a game that wraps `opening_view` in a `CostSource` of its own forwards `lets_diagonal_past` to it, or its wrapper keeps the old disagreement.
+
 - A use a `Reflects` body turns back lands whole on its user: its targets become the user alone and its cells the shape drawn on the user's own cell, the user's cell for a bolt and a burst round them for a ball, where only the targets were swapped and a turned-back bolt still set the reflecting body's cell alight.
   Everyone else the footprint caught is spared, and one roll in two for each reflecting body it caught, in order, decides it; one `Reflected` is written, naming the body that turned it.
   To change: `Bystanders::reflect(landing)` is `Bystanders::reflect(landing, mode, map)`, taking the shape it was aimed with and the map it bursts on.

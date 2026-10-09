@@ -251,6 +251,28 @@ mod tests {
         assert_eq!(rig.now(), 100, "nor does open ground");
     }
 
+    /// A mover that opens doors paths over the opening view, where a closed
+    /// door can be entered at its opening's cost; the way it is handed past
+    /// the door's corner is still one the move resolver takes, since both
+    /// ask one corner rule, and never a diagonal it refuses every turn.
+    #[test]
+    fn a_way_through_the_opening_view_never_squeezes_past_a_closed_doors_corner() {
+        let mut rig = Rig::new("door_closed");
+        // The door is east; the goal north of it, one diagonal away past
+        // the door's corner, or two straight steps round it.
+        let goal = rig.door().offset(0, -1);
+        let step = {
+            let map = rig.app.world().resource::<WorldMap>();
+            let view = map.opening_view();
+            let mut flood = rl_grid::DijkstraMap::covering(&view);
+            flood.build(&view, [map.to_local(goal).unwrap()], rl_grid::PathRules::default());
+            let next = flood.descend(map.to_local(rig.start).unwrap()).expect("a way to the goal");
+            Direction::between(map.to_local(rig.start).unwrap(), next).expect("a neighbour")
+        };
+        rig.act(Step(step));
+        assert_ne!(rig.at(), rig.start, "the step the way began with, {step:?}, is taken, not refused");
+    }
+
     #[test]
     fn an_actor_without_the_wits_for_doors_is_stopped_by_one() {
         let mut rig = Rig::new("door_closed");

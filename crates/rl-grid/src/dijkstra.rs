@@ -33,12 +33,19 @@ pub struct DijkstraMap {
     /// The rules the last flood stepped by, so descending takes only the
     /// steps it took.
     rules: PathRules,
+    /// Whether a diagonal may pass beside each reached cell, as the source
+    /// said when the flood reached it, so descending asks the corner rule
+    /// the flood stepped by without the source to hand. A cell's having a
+    /// value is not the same answer: a source that prices a closed door
+    /// reaches it and still lets nothing past its corner.
+    past: Vec<bool>,
 }
 
 impl DijkstraMap {
     /// An unreached map over `region`.
     pub fn new(region: Rect) -> Self {
-        Self { region, values: vec![UNREACHED; region.area().max(0) as usize], heap: BinaryHeap::new(), rules: PathRules::default() }
+        let cells = region.area().max(0) as usize;
+        Self { region, values: vec![UNREACHED; cells], heap: BinaryHeap::new(), rules: PathRules::default(), past: vec![false; cells] }
     }
 
     /// A map over a whole grid.
@@ -57,6 +64,8 @@ impl DijkstraMap {
         let cells = region.area().max(0) as usize;
         self.values.clear();
         self.values.resize(cells, UNREACHED);
+        self.past.clear();
+        self.past.resize(cells, false);
         self.heap.clear();
     }
 
@@ -84,6 +93,7 @@ impl DijkstraMap {
     /// attractive goal can start lower.
     pub fn build_weighted(&mut self, source: &impl CostSource, goals: impl IntoIterator<Item = (Point, i32)>, rules: PathRules) {
         self.values.iter_mut().for_each(|v| *v = UNREACHED);
+        self.past.iter_mut().for_each(|p| *p = false);
         self.heap.clear();
         self.rules = rules;
         let mut order = 0u64;
@@ -146,6 +156,7 @@ impl DijkstraMap {
                 continue;
             }
             let here = self.point(local);
+            self.past[local] = source.lets_diagonal_past(here);
             for dir in rules.directions() {
                 let Some((next, cost)) = step_cost(source, here, *dir, rules) else {
                     continue;
@@ -217,9 +228,9 @@ impl DijkstraMap {
 
     /// Whether the flood could have stepped from `p` toward `dir`.
     ///
-    /// A cell beside a reached one that the flood could enter was reached,
-    /// so within the region "both sides have a value" is the flood's own
-    /// corner test, asked without the terrain it was built over.
+    /// Asked of what the source said of each side as the flood reached it,
+    /// so it is the flood's own corner test, asked without the terrain it
+    /// was built over; a side the flood never reached lets nothing past.
     fn steps(&self, p: Point, dir: Direction) -> bool {
         if !dir.is_diagonal() {
             return true;
@@ -228,7 +239,8 @@ impl DijkstraMap {
             return false;
         }
         let (dx, dy) = dir.delta();
-        self.rules.cut_corners || (self.value(p.offset(dx, 0)).is_some() && self.value(p.offset(0, dy)).is_some())
+        let past = |q: Point| self.local(q).is_some_and(|i| self.past[i]);
+        self.rules.cut_corners || (past(p.offset(dx, 0)) && past(p.offset(0, dy)))
     }
 
     /// Copies the values of a map of the same shape, whatever its region
@@ -239,6 +251,7 @@ impl DijkstraMap {
     pub fn copy_values_from(&mut self, other: &DijkstraMap) {
         assert_eq!(self.values.len(), other.values.len(), "maps differ in shape");
         self.values.copy_from_slice(&other.values);
+        self.past.copy_from_slice(&other.past);
         self.rules = other.rules;
     }
 
@@ -256,6 +269,11 @@ impl DijkstraMap {
         assert_eq!(self.values.len(), other.values.len(), "maps differ in shape");
         for (mine, theirs) in self.values.iter_mut().zip(&other.values) {
             *mine = (*mine).min(*theirs);
+        }
+        // What a cell lets past is the source's, not the flood's, so a
+        // cell either reached says the same of it.
+        for (mine, theirs) in self.past.iter_mut().zip(&other.past) {
+            *mine |= *theirs;
         }
     }
 
@@ -323,6 +341,47 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Floor everywhere, but `shut` costs its opening and lets nothing
+    /// past its corner, as a closed door read by a mover that opens doors.
+    struct Shut<'a> {
+        view: crate::terrain::TerrainView<'a>,
+        shut: Point,
+    }
+
+    impl Grid2D for Shut<'_> {
+        fn width(&self) -> i32 {
+            self.view.width()
+        }
+
+        fn height(&self) -> i32 {
+            self.view.height()
+        }
+    }
+
+    impl CostSource for Shut<'_> {
+        fn cost_idx(&self, idx: usize) -> Option<u32> {
+            if self.idx_point(idx) == self.shut { Some(200) } else { self.view.cost_idx(idx) }
+        }
+
+        fn lets_diagonal_past(&self, p: Point) -> bool {
+            p != self.shut && self.is_passable(p)
+        }
+    }
+
+    #[test]
+    fn a_cell_that_lets_no_diagonal_past_is_gone_round_by_the_flood_and_the_search_alike() {
+        // From (1, 1) the goal (2, 0) is one diagonal away, squeezing past
+        // the shut cell (2, 1), so the way is north and then east.
+        let (t, r) = parse(&["....", "....", "...."]);
+        let source = Shut { view: t.view(&r), shut: p(2, 1) };
+        let mut map = DijkstraMap::covering(&source);
+        map.build(&source, [p(2, 0)], PathRules::default());
+        assert_eq!(map.value(p(1, 1)), Some(200), "the diagonal is not a step the flood takes");
+        assert_eq!(map.descents(p(1, 1)), vec![p(1, 0)], "nor one descending offers");
+        let path = AStar::new().find(&source, p(1, 1), p(2, 0), PathRules::default()).expect("a way round");
+        assert_eq!(path.steps, vec![p(1, 0), p(2, 0)], "and the search goes round it too");
     }
 
     #[test]

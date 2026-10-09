@@ -586,13 +586,15 @@ pub fn resolve_moves(
     }
 }
 
-/// A diagonal step may not squeeze between two unwalkable orthogonals.
+/// A diagonal step may squeeze only between two orthogonals that let it
+/// past, by [`WorldMap::lets_diagonal_past`], the rule every view a mind
+/// paths over answers too.
 pub(crate) fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
     if !dir.is_diagonal() {
         return true;
     }
     let (dx, dy) = dir.delta();
-    map.is_walkable(from.offset(dx, 0)) && map.is_walkable(from.offset(0, dy))
+    map.lets_diagonal_past(from.offset(dx, 0)) && map.lets_diagonal_past(from.offset(0, dy))
 }
 
 /// Resolves a wait: the turn passes and nothing else happens.
