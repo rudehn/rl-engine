@@ -1,7 +1,7 @@
 # Undermere, part 5: the town
 
 Status: written 2026-10-08, while part 3 is being built on branch `undermere` and part 4 on `undermere-dungeon`; docs only, with no plan yet, since a plan is written against the code as it stands when the part begins.
-Revised the same day to the user's direction: the townsfolk are named by part 6's name generator, a shop's goods are rolled, the temple's rites are priced verbs, not items, and runes are deferred, since Undermere has none to roll.
+Revised the same day to the user's direction: the townsfolk are named by part 6's name generator, a shop's goods are rolled, the temple's rites are priced verbs, not items, runes are deferred, since Undermere has none to roll, and the curio shop sells nothing unidentified.
 The game design is `examples/undermere/DESIGN.md`, section "The town"; this is how that section is built, and the content sheet it is built from.
 The user asked for the design calls to be made without further questions, so every call below is the author's, made to be reviewed afterwards.
 
@@ -10,7 +10,7 @@ The user asked for the design calls to be made without further questions, so eve
 Gold is found below and spent in Mereholt, so a run has a second economy beside the scrolls of enchanting: what to buy, what to sell, and when to come back up for it.
 Mereholt is a place with people in it.
 Five keepers each run a shop or a service, six townsfolk each have something to say, and some of what they say is true of this run's dungeon and of no other.
-No two runs meet the same people or the same shelves: everyone in Mereholt is named by part 6's name generator each run, and a shop's goods are rolled, their levels and, at the curio shop, one thing whose kind nobody knows.
+No two runs meet the same people or the same shelves: everyone in Mereholt is named by part 6's name generator each run, and a shop's goods are rolled, which things and at what level.
 The question the skeleton left open is answered: the gate takes the adventurer back mid-run, at a price, and returns them to where they left.
 
 ## The gate goes back
@@ -95,10 +95,8 @@ Each stocking draws from the run's own `Seed::stream("wares", stocking)`, so the
 ### What a shop rolls
 
 `assets/wares.ron` is shaped as part 6's `mercenaries.ron` is: per keeper, `parts` of rows each drawn as a `LootTable` draws at a band, with `chance`, `weight`, `group` for a stack's count and `bands` for the tiers a row appears in, and one shared `levels` table rolled as a `LevelTable`, so a hireling's kit and a shop's shelf are read by the same code and tuned in the same shape.
-On top of the draw, two things make a stocking unlike the last:
-
-- **Levels.** Anything that takes levels rolls one from `levels` at the tier: nought mostly, +1 from tier 2, +2 from tier 4. A keeper never stocks below nought.
-- **One thing nobody can name.** Every other ware is sold under its true name. One curio row a stocking is instead a potion, scroll, staff, wand or ring whose kind the adventurer has not identified yet, listed exactly as it would look found on a floor, "murky potion", "scroll titled XOMBA", at a flat 80 gold whatever it really is: "Came up from below. I couldn't tell you what it is, and I've stopped guessing." It might be a potion of life or a scroll of aggravate monsters; buying it is a gamble on the unidentified at a known price, and drinking or reading it identifies the kind as a floor's find would. Once every kind is known there is nothing left for the row and it is not stocked.
+On top of the draw, anything that takes levels rolls one from `levels` at the tier: nought mostly, +1 from tier 2, +2 from tier 4.
+A keeper never stocks below nought, and every ware is sold under its true name.
 
 
 **The smithy**, in the stone building with the forge: six rows drawn, plus arrows always.
@@ -145,7 +143,7 @@ It buys potions and scrolls.
 
 Never stocked anywhere: scrolls of aggravate monsters and of summon monsters, which keepers buy at 10 and 15 like any known thing, so a known bad scroll is worth carrying up.
 
-**The curio shop**, in the south-east building with the counter: four rows drawn, rare and dear, and one unknown.
+**The curio shop**, in the south-east building with the counter: four rows drawn, rare and dear.
 It buys anything with a worth.
 
 | Ware | Price | From tier |
@@ -265,7 +263,7 @@ A gate mark is a landmark the adventurer remembers once seen, so the map shows w
 ## Testing
 
 The trade slice in `rl-bevy` and `rl-ui`: a buy moves the ware and its price in currency and takes no turn; a sell pays the seller's share; each refusal is refused and says why; a shop's stock survives a save; an offering with a price is refused to a taker who carries less, and spends the price when taken up.
-The game's: a waystone's kneeling is broken by a blow and the stone kept, and finished it brings the adventurer to the gate and leaves a mark the gate then leads to, through a save; no waystone works in Mereholt; nothing is harmed in Mereholt; a thing of unknown level sells at its nought price over a span of seeds, and an unknown kind or a cursed sign does not sell; buying a potion makes its kind known; a rite lands its effects and spends its price, and is refused when the gold is short; the townsfolk's names are drawn distinct from each other and from every hireling's over a span of seeds, and survive a save; a line's `{role}` says that role's name; a shop never stocks below nought, over a span of seeds; the curio's unidentified row is of a kind not yet known when it is stocked, and is not stocked once every kind is known; stock is redrawn on a return from a deeper tier and not from the same one; each line's `when` holds it back until it holds; every rumour's subject is a draw the run has fixed when it starts; the kit's purse and gold from selling are not counted as treasure.
+The game's: a waystone's kneeling is broken by a blow and the stone kept, and finished it brings the adventurer to the gate and leaves a mark the gate then leads to, through a save; no waystone works in Mereholt; nothing is harmed in Mereholt; a thing of unknown level sells at its nought price over a span of seeds, and an unknown kind or a cursed sign does not sell; buying a potion makes its kind known; a rite lands its effects and spends its price, and is refused when the gold is short; the townsfolk's names are drawn distinct from each other and from every hireling's over a span of seeds, and survive a save; a line's `{role}` says that role's name; a shop never stocks below nought, over a span of seeds; stock is redrawn on a return from a deeper tier and not from the same one; each line's `when` holds it back until it holds; every rumour's subject is a draw the run has fixed when it starts; the kit's purse and gold from selling are not counted as treasure.
 The soak gains the gold found by each floor, over its fifty seeds, and the prices are checked against it.
 
 ## Not in this part
