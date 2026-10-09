@@ -136,6 +136,86 @@ impl ExtraPack {
     }
 }
 
+/// What a photograph of a deeper floor wants in sight on arriving there:
+/// `main.rs` reads it from `UNDERMERE_NEAR`, beside `UNDERMERE_START`.
+/// `camp` is a goblin camp's fire, `captive` a captive's shackles, `lair`
+/// the floor's mini-boss, `throne` the floor's boss, and anything else a
+/// monster of that name. Absent, nothing, which is every real run.
+///
+/// The adventurer is warped along the way from where they arrived to it,
+/// [`NEAR_STEPS`] short of it, so what they see is what a player walking
+/// up to it would see, not a cell picked from above that might look at it
+/// through a wall.
+#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+pub struct StartNear(pub String);
+
+/// How many steps short of what [`StartNear`] names the adventurer is
+/// stood: near enough that it is in the lantern's reach on every floor,
+/// far enough that what stands round it is in sight too.
+pub const NEAR_STEPS: usize = 4;
+
+/// Stands the adventurer [`NEAR_STEPS`] short of what [`StartNear`] names,
+/// once it stands on the floor they arrived on, and forgets the ask; does
+/// nothing in Mereholt, or while the floor holds nothing by that name.
+pub fn stand_near(world: &mut World) {
+    let Some(near) = world.get_resource::<StartNear>().map(|n| n.0.clone()) else { return };
+    let Some((me, at, here)) = world.query_filtered::<(Entity, &Position, &OnMap), With<Adventurer>>().iter(world).next().map(|(e, p, on)| (e, p.0, on.0))
+    else {
+        return;
+    };
+    if here == TOWN {
+        return;
+    }
+    let Some(target) = sought(world, &near, here) else { return };
+    world.remove_resource::<StartNear>();
+    let taken: Vec<Point> = world.query_filtered::<(&Position, &OnMap), With<Actor>>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
+    let map = world.resource::<WorldMap>();
+    let (Some(from), Some(goal)) = (map.to_local(at), map.to_local(target)) else { return };
+    let view = map.opening_view();
+    let mut flood = DijkstraMap::covering(&view);
+    flood.build(&view, [goal], PathRules::default());
+    let mut way = vec![from];
+    while let Some(next) = flood.descend(*way.last().expect("never empty")).filter(|n| *n != goal) {
+        way.push(next);
+    }
+    let stand = way.iter().rev().skip(NEAR_STEPS.saturating_sub(1)).map(|p| map.to_world(*p)).find(|p| !taken.contains(p));
+    if let Some(stand) = stand {
+        world.write_message(WarpRequest { actor: me, to: Destination::Place { map: here, arrive: Arrive::At(stand) } });
+    }
+}
+
+/// Where on `here` what [`StartNear`] names as `near` stands, if it does.
+fn sought(world: &mut World, near: &str, here: MapId) -> Option<Point> {
+    let registries = world.resource::<Registries>().clone();
+    let prop = |name: &str| registries.props.id(name);
+    let props: Vec<(Point, PropKind)> =
+        world.query::<(&Position, &OnMap, &PropKind)>().iter(world).filter(|(_, on, _)| on.0 == here).map(|(p, _, k)| (p.0, *k)).collect();
+    let find_prop = |name: &str| prop(name).and_then(|id| props.iter().find(|(_, k)| k.0 == id).map(|(p, _)| *p));
+    match near {
+        "camp" => return find_prop("fire"),
+        "captive" => return find_prop("shackles"),
+        _ => {}
+    }
+    let living: Vec<(Point, crate::bestiary::Kind)> = world
+        .query_filtered::<(&Position, &OnMap, &crate::bestiary::Kind), With<Actor>>()
+        .iter(world)
+        .filter(|(_, on, _)| on.0 == here)
+        .map(|(p, _, k)| (p.0, *k))
+        .collect();
+    let bestiary = world.resource::<crate::bestiary::Bestiary>();
+    living
+        .into_iter()
+        .find(|(_, kind)| {
+            let def = bestiary.defs.get(kind.0);
+            match near {
+                "lair" => def.miniboss,
+                "throne" => def.boss,
+                name => def.name == name,
+            }
+        })
+        .map(|(p, _)| p)
+}
+
 /// Gives `adventurer` the [`KIT`], made by the `armory`: every piece in the
 /// pack, and each that is worn in its slot. And `extra`, as if found, into
 /// the pack alone.
@@ -388,6 +468,30 @@ mod tests {
             let me = adventurer(&mut app);
             let entry = app.world().resource::<WorldMap>().place(map_of(floor)).map(|p| p.entry);
             assert_eq!((here(&app), Some(at(&app, me))), (map_of(floor), entry), "floor {floor}: on it, at its way in");
+        }
+    }
+
+    /// A photograph's ask to start near the throne's boss stands the
+    /// adventurer on the way to it, a few steps short, for every seed
+    /// tried and so for each of the three bosses a seed may draw.
+    #[test]
+    fn a_run_started_near_the_throne_stands_a_few_steps_short_of_its_boss() {
+        use crate::testing::settle;
+        for s in 0..6 {
+            let mut app = headless(RunSeed(s));
+            app.insert_resource(StartFloor(FLOORS)).insert_resource(StartNear("throne".to_string()));
+            let me = adventurer(&mut app);
+            settle(&mut app);
+            let boss = {
+                let world = app.world_mut();
+                let bosses: Vec<(Point, crate::bestiary::Kind)> =
+                    world.query::<(&Position, &crate::bestiary::Kind)>().iter(world).map(|(p, k)| (p.0, *k)).collect();
+                let bestiary = app.world().resource::<crate::bestiary::Bestiary>();
+                bosses.into_iter().find(|(_, k)| bestiary.defs.get(k.0).boss).map(|(p, _)| p).expect("a boss on the throne")
+            };
+            let far = geometry::chebyshev(at(&app, me), boss);
+            assert!((1..=NEAR_STEPS as i32 + 1).contains(&far), "seed {s}: stood {far} from the boss");
+            assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
         }
     }
 

@@ -5,14 +5,16 @@
 //!
 //! `cargo run -p undermere -- --seed 7`. For a picture of a deeper floor,
 //! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
-//! and for one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
+//! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what
+//! it names there (`camp`, `captive`, `lair`, `throne` or a monster's
+//! name), and for one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
 //! extra healing*2"` puts those in it as if found.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
 use undermere::plugin::UndermerePlugin;
-use undermere::run::{ExtraPack, StartFloor};
+use undermere::run::{ExtraPack, StartFloor, StartNear};
 use undermere::typeface::DEJAVU_SANS_MONO;
 
 /// Terminal size in cells.
@@ -263,6 +265,9 @@ fn main() -> AppExit {
     tint_clouds(&mut app);
     if let Some(floor) = std::env::var("UNDERMERE_START").ok().and_then(|f| f.parse().ok()) {
         app.insert_resource(StartFloor(floor));
+    }
+    if let Ok(near) = std::env::var("UNDERMERE_NEAR") {
+        app.insert_resource(StartNear(near));
     }
     if let Ok(pack) = std::env::var("UNDERMERE_PACK") {
         app.insert_resource(ExtraPack::parse(&pack));

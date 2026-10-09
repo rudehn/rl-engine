@@ -271,6 +271,12 @@ impl Plugin for UndermerePlugin {
                 .before(EngineSet::Light)
                 .run_if(in_state(EngineState::Playing)),
         );
+        // A photograph's ask to stand near something on the floor it
+        // starts on, which a real run never makes.
+        app.add_systems(
+            Update,
+            crate::run::stand_near.after(EngineSet::Turns).run_if(resource_exists::<crate::run::StartNear>).run_if(in_state(EngineState::Playing)),
+        );
         // The keys, declared once so the controls screen lists what the
         // input reads. `f` and `t` hand the engine's targeting cursor an
         // `AimFire` or an `AimThrow`; registering both here is a no-op
