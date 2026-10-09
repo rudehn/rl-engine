@@ -542,8 +542,9 @@ pub struct Choir;
 const SING_RANGE: i32 = 4;
 
 /// A body a choir might sing to: where it stands, its side, what it
-/// suffers, and whether the song already gave it its regeneration.
-type SingingTo = (Entity, &'static Position, &'static Faction, &'static Afflicted, Has<Sung>);
+/// suffers and its stats, which the song's regeneration is kept in, and
+/// whether the song already gave it its regeneration.
+type SingingTo = (Entity, &'static Position, &'static Faction, &'static mut Afflicted, &'static mut StatBlock, Has<Sung>);
 
 /// Keeps `regenerating` on every actor of a [`Choir`]'s own side within
 /// [`SING_RANGE`] of it, and takes it off the turn it falls out of range:
@@ -552,28 +553,33 @@ type SingingTo = (Entity, &'static Position, &'static Faction, &'static Afflicte
 /// scaled by the mending stat is what "regenerate" already means
 /// everywhere else in this bestiary.
 ///
-/// Edge-triggered, as `keep_shrouded` is: `Afflict` only the turn a body
-/// comes into range, `Cure` only the turn it leaves it. Only what the song
+/// Edge-triggered, as `keep_shrouded` is: given only the turn a body
+/// comes into range, taken only the turn it leaves it. Only what the song
 /// gave is taken back, marked [`Sung`]: a body already regenerating by its
 /// own trait or a worn ring keeps it, in range or out.
+///
+/// Put on and taken off the body's own statuses rather than through
+/// `Afflict` and `Cure`, which the narrator says aloud: the song is a
+/// trait of the Choirmaster's, known on sight, as a troll's own
+/// regeneration is there from its first turn unannounced, and the log of
+/// a crypt walked into read "The skeleton is regenerating. (x4)", and
+/// again every time one stepped out of range and back.
 ///
 /// In `TurnSet::React`.
 pub fn sing_choir(
     mut commands: Commands,
     registries: Res<Registries>,
     choir: Query<(&Position, &Faction), With<Choir>>,
-    bodies: Query<SingingTo, With<Actor>>,
-    mut afflict: MessageWriter<Afflict>,
-    mut cure: MessageWriter<Cure>,
+    mut bodies: Query<SingingTo, With<Actor>>,
 ) {
     let Some(status) = registries.statuses.id("regenerating") else { return };
-    for (e, pos, side, held, sung) in &bodies {
+    for (e, pos, side, mut held, mut stats, sung) in &mut bodies {
         let sung_to = choir.iter().any(|(at, theirs)| theirs.0 == side.0 && geometry::chebyshev(at.0, pos.0) <= SING_RANGE);
         if sung_to && !sung && !held.0.has(status) {
-            afflict.write(Afflict { target: e, status, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
+            held.0.apply(status, crate::bestiary::FOR_LIFE, None, &registries.statuses, &mut stats.0);
             commands.entity(e).insert(Sung);
         } else if !sung_to && sung {
-            cure.write(Cure { target: e, status });
+            held.0.cure(status, &mut stats.0);
             commands.entity(e).remove::<Sung>();
         }
     }
@@ -669,13 +675,17 @@ pub fn spawn_young(mut done: MessageReader<ActionDone>, mut spawners: Query<&mut
     }
 }
 
-/// `spawner`'s own one spawnling, as [`spawn_young`] says: the nearest by
-/// row of every wall cell in its sight, opened to the floor tile
-/// `spawner` itself stands on rather than a tile named here, so this
+/// `spawner`'s own one spawnling, as [`spawn_young`] says: the nearest
+/// wall cell in its sight, then by row and column, opened to the floor
+/// tile `spawner` itself stands on rather than a tile named here, so this
 /// reads nothing of `dungeon.rs`'s own and works wherever a future
 /// `spawns` kind is put down; stood with a [`Spawned`] link back to
 /// `spawner`, so its own death takes the spawnling with it. Nothing with
 /// no such cell in `spawner`'s sight.
+///
+/// Never a wall on the place's own edge, one with a neighbour off the
+/// map: the topmost wall in sight was the first taken, and under a real
+/// throne that was the floor's outermost row, opened onto nothing.
 fn spawn_one_young(world: &mut World, spawner: Entity) {
     let Some(young) = world.resource::<Bestiary>().defs.id(SPAWNLING) else { return };
     let Some(at) = world.get::<Position>(spawner).map(|p| p.0) else { return };
@@ -684,9 +694,12 @@ fn spawn_one_young(world: &mut World, spawner: Entity) {
     let cell = {
         let worldmap = world.resource::<WorldMap>();
         let tables = worldmap.tables();
-        let mut walls: Vec<Point> =
-            geometry::square(at, view.range).filter(|p| view.can_see(*p)).filter(|p| worldmap.tile(*p).is_some_and(|t| !tables.walkable[t.index()])).collect();
-        walls.sort_by_key(|p| (p.y, p.x));
+        let inside = |p: Point| geometry::square(p, 1).all(|n| worldmap.tile(n).is_some());
+        let mut walls: Vec<Point> = geometry::square(at, view.range)
+            .filter(|p| view.can_see(*p) && inside(*p))
+            .filter(|p| worldmap.tile(*p).is_some_and(|t| !tables.walkable[t.index()]))
+            .collect();
+        walls.sort_by_key(|p| (geometry::chebyshev(*p, at), p.y, p.x));
         walls.into_iter().next()
     };
     let Some(cell) = cell else { return };
@@ -886,9 +899,10 @@ mod tests {
 
     /// The Choirmaster's `singing`: an ally of its own side within
     /// `SING_RANGE` regenerates, and loses it the pass it steps past
-    /// that range, as `keep_shrouded`'s own toggle does.
+    /// that range, as `keep_shrouded`'s own toggle does, and nothing of it
+    /// is a status the narrator would say aloud.
     #[test]
-    fn a_choirs_own_side_within_its_range_regenerates_and_loses_it_once_out_of_range() {
+    fn a_choirs_own_side_within_its_range_regenerates_quietly_and_loses_it_once_out_of_range() {
         let mut app = App::new();
         app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
         let registries = crate::content::registries();
@@ -902,6 +916,8 @@ mod tests {
         let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
         assert!(app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "within the choir's range, it regenerates");
         assert!(!app.world().get::<Afflicted>(far).unwrap().0.has(regenerating), "past it, nothing");
+        let said = app.world().resource::<Messages<rl_engine::rl_bevy::status::StatusEvent>>().iter_current_update_messages().count();
+        assert_eq!(said, 0, "given quietly, as a trait of the choir's known on sight");
         app.world_mut().entity_mut(near).insert(Position(Point::new(10, 0)));
         app.update();
         assert!(!app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "stepped past the range, the choir's own gift is lifted");
