@@ -116,10 +116,15 @@ pub fn know_the_town(map: &WorldMap, knowledge: &mut Knowledge) {
 /// Lays a place's ways through the first time it is entered, and names the
 /// place in the log on every arrival, coming up as well as going down.
 ///
-/// On the run's first arrival in Mereholt it also says how to see the
-/// keys, under the town's own line: said when the run is begun, it would
-/// be written before the arrival and read as though it came first. And
-/// the adventurer knows the town they live in, [`know_the_town`].
+/// On the run's first arrival anywhere, which is Mereholt in every real
+/// run and a deeper floor in a photograph begun there, it also says how to
+/// see the keys, under the place's own line: said when the run is begun,
+/// it would be written before the arrival and read as though it came
+/// first, and said on the town's first arrival instead, it would be said
+/// again on coming home to a town first seen mid-run. The first arrival is
+/// the one that finds no other place visited, which the save keeps, so a
+/// continued run never says it twice. And the adventurer knows the town
+/// they live in, [`know_the_town`].
 pub fn link_places(
     mut commands: Commands,
     mut entered: MessageReader<PlaceEntered>,
@@ -134,12 +139,15 @@ pub fn link_places(
         if !ev.first {
             continue;
         }
+        let visited = std::iter::once(TOWN).chain((1..=FLOORS).map(map_of)).filter(|m| map.place(*m).is_some_and(|p| p.visited)).count();
+        if visited == 1 {
+            tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
+        }
         let Some(floor) = floor_of(ev.map) else {
-            // The town: how to see the keys, the gate, its way on, leading
-            // to floor one's way in or to a gate mark left before the town
-            // was ever entered, and the whole of it known.
+            // The town: the gate, its way on, leading to floor one's way in
+            // or to a gate mark left before the town was ever entered, and
+            // the whole of it known.
             if ev.map == TOWN {
-                tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
                 if let Some(gate) = ev.exit {
                     lay(&mut commands, Way::Gate, gate, ev.map, crate::waystone::gate_to(marks.mark()));
                 }
@@ -332,6 +340,50 @@ mod tests {
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let line = |text: &str| lines.iter().position(|l| l == text).unwrap_or_else(|| panic!("{text:?} not in {lines:#?}"));
         assert!(line(&place_line(TOWN)) < line("Press ? for the controls."), "{lines:#?}");
+    }
+
+    /// How to see the keys is said once a run, on the first arrival in
+    /// Mereholt, and never again however the adventurer comes back: up
+    /// through the gate, or home by a waystone.
+    #[test]
+    fn the_controls_line_is_said_once_a_run_however_often_mereholt_is_entered() {
+        let mut app = headless(RunSeed(3));
+        let me = arrive(&mut app, TOWN);
+        let gate = ways_here(&mut app)[0].0;
+        stand_on(&mut app, me, gate);
+        go_through(&mut app, me);
+        go_through(&mut app, me);
+        assert_eq!(here(&app), TOWN, "up through the gate");
+        stand_on(&mut app, me, gate);
+        go_through(&mut app, me);
+        let stone = crate::testing::make(&mut app, crate::waystone::WAYSTONE);
+        crate::testing::give(&mut app, me, stone);
+        crate::testing::use_thing(&mut app, me, stone);
+        for _ in 0..40 {
+            app.update();
+        }
+        assert_eq!(here(&app), TOWN, "home by a waystone");
+        let said = crate::testing::said(&app);
+        assert_eq!(said.iter().filter(|l| *l == "Press ? for the controls.").count(), 1, "{said:#?}");
+        assert_eq!(said.iter().filter(|l| **l == place_line(TOWN)).count(), 3, "while the town's own line is said on every arrival");
+
+        // A run begun below, as a photograph's is, says it on that first
+        // floor, and not again on the town's first arrival by a waystone.
+        let mut app = headless(RunSeed(3));
+        app.insert_resource(crate::run::StartFloor(2));
+        let me = crate::testing::adventurer(&mut app);
+        assert_eq!(here(&app), map_of(2), "begun on floor two");
+        let stone = crate::testing::make(&mut app, crate::waystone::WAYSTONE);
+        crate::testing::give(&mut app, me, stone);
+        crate::testing::use_thing(&mut app, me, stone);
+        for _ in 0..40 {
+            app.update();
+        }
+        assert_eq!(here(&app), TOWN, "home by a waystone, the town's first arrival");
+        let said = crate::testing::said(&app);
+        let controls = said.iter().position(|l| l == "Press ? for the controls.").expect("said on the first floor");
+        assert_eq!(said[controls - 1], place_line(map_of(2)), "under floor two's line: {said:#?}");
+        assert_eq!(said.iter().filter(|l| *l == "Press ? for the controls.").count(), 1, "once: {said:#?}");
     }
 
     /// The adventurer lives in Mereholt, so the first arrival there knows
