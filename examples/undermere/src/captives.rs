@@ -3,7 +3,7 @@
 //! `population::place_captive` stands
 //! one a run, neutral and anchored by a one-waypoint `PatrolRoute`, the
 //! universal brain's own `Patrol`, offering [`FREE_VERB`]
-//! through the engine's own actor offers (task 4): a long action of
+//! through the engine's own actor offers: a long action of
 //! [`FREE_TIME`], one of a few turns, not interrupted once begun, because
 //! the engine's multi-turn work skips the player and a single long-costed
 //! offer is what is left for the player to take up at all. [`answer_free`]

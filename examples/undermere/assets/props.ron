@@ -67,7 +67,7 @@
                  opened: (glyph: '=', color: (r: 110, g: 85, b: 50))),
      offers: [(verb: "open", time: 100)]),
 
-    // Task 8a's five lairs: Grubnak's banners, the Choirmaster's bone organ,
+    // The five mini-bosses' lairs: Grubnak's banners, the Choirmaster's bone organ,
     // the Abbess's font, the Forgemaster's racks, and the Widow's egg sacs,
     // the one of these that is not scenery. One hit spends its one health,
     // and the `Hatch` effect its `destroyed` trigger lands is `effects/bodies.rs`'s
@@ -80,7 +80,7 @@
     (name: "egg sac", glyph: 'o', color: (r: 230, g: 230, b: 200), blocks: true, health: 1,
      triggers: [(on: "destroyed", effects: [(kind: "Hatch", args: (monster: "cave spider", count: 2))])]),
 
-    // Task 10's own: a lived-in dungeon. A camp's fire burns beside its
+    // A lived-in dungeon. A camp's fire burns beside its
     // sleeping band, stood by `population::populate` rather than a piece,
     // so a game that spawns it directly, not through a slot, still shows
     // and lights nothing it was not given; shackles lie at a captive's

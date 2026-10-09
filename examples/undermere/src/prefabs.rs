@@ -12,10 +12,10 @@
 //! population would make it. The one mark Undermere gives a meaning to
 //! itself is the town's `@`, where a run arrives.
 //!
-//! Task 8a's five mini-bosses add a lair apiece, each its own piece, and
+//! The five mini-bosses add a lair apiece, each its own piece, and
 //! the one role a slot draws for yet, `grubnak-honor-guard`, in
-//! `assets/roles.ron`. Task 9 adds two more thrones, the Mother Below's
-//! cave and the Ember Wyrm's hall, beside the Drowned King's own.
+//! `assets/roles.ron`. Two more thrones, the Mother Below's cave and the
+//! Ember Wyrm's hall, stand beside the Drowned King's own.
 
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::prefab;
@@ -36,7 +36,7 @@ const PIECES: [&str; 12] = [
     include_str!("../assets/prefabs/choirmaster.ron"),
     include_str!("../assets/prefabs/drowned_abbess.ron"),
     include_str!("../assets/prefabs/forgemaster.ron"),
-    // Task 9's own: the floor ten boss, drawn from three.
+    // The floor ten boss, drawn from three.
     include_str!("../assets/prefabs/mother_below.ron"),
     include_str!("../assets/prefabs/ember_wyrm.ron"),
 ];

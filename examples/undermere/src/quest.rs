@@ -267,7 +267,7 @@ mod tests {
         assert_eq!((record.outcome, record.summary.as_str()), (RecordOutcome::Won, "Slew the Drowned King"));
     }
 
-    /// Task 9's own: killing whichever of the three floor ten bosses this
+    /// Killing whichever of the three floor ten bosses this
     /// seed drew wins the run just as the king's own death does, since
     /// `report_bosses` reads `MonsterDef::boss` rather than a name. Over a
     /// span of seeds, so every one of the three is drawn and slain.

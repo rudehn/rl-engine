@@ -133,7 +133,7 @@ pub const CONFUSED: &str = "confused";
 /// A scroll of discord's, and the side its holder fights for while it
 /// lasts, at odds with every side and with itself.
 pub const DISCORDANT: &str = "discordant";
-/// Task 10's own: a shackled monster of the floor while it is still
+/// The run's captive: a shackled monster of the floor while it is still
 /// shackled, neutral to every side, the adventurer's captors among them,
 /// until it is freed and put on the adventurer's own.
 pub const CAPTIVE: &str = "captive";

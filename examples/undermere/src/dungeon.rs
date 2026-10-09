@@ -152,7 +152,7 @@ impl Biome {
     /// another's. The doors the halls and the crypts hang are the one
     /// thing two bands share.
     ///
-    /// Task 8a's own lairs carry their own tiles wherever their boss's
+    /// A mini-boss's lair carries its own tiles wherever its boss's
     /// range takes them, never the host band's, so a band whose floors a
     /// boss's own range reaches past its first lists that boss's lair
     /// tiles too, beside its own: Grubnak's hall over the Fungal Deeps
@@ -161,7 +161,7 @@ impl Biome {
     /// the Abbess's chapel over the same two, and the Forgemaster's forge
     /// over the Drowned Cathedral and the Forge of Embers.
     ///
-    /// Task 9's own floor ten boss, drawn from three, reads the same way:
+    /// The floor ten boss, drawn from three, reads the same way:
     /// the Throne lists its own tiles first, the Mother Below's cave
     /// tiles next (the Fungal Deeps' own, and the Catacombs' bones) and
     /// the Ember Wyrm's hall tiles last (the Forge of Embers' own), since
@@ -251,7 +251,7 @@ fn registry() -> TileRegistry {
             TileProps::floor("throne floor"),
             TileProps::floor("dais"),
             wading("black pool"),
-            // Task 8a's lairs: Grubnak's hall, since no band his own
+            // The mini-bosses' lairs: Grubnak's hall, since no band his own
             // floors fall in is one, and the Widow's web, slow to cross
             // and gone three turns after it catches, burnt back to the
             // moss of the den it is strung across.
@@ -1040,7 +1040,7 @@ impl Pass<BaseContext> for FarthestFromTheThrone {
     }
 }
 
-/// One of the three floor ten bosses a run draws between: task 9's own.
+/// One of the three floor ten bosses a run draws between.
 /// `piece` is its own `assets/prefabs/` file's `name:`, the Drowned
 /// King's own kept as `"the throne"` from part 1 rather than renamed, and
 /// the other two matching `monsters.ron`'s as a mini-boss's lair already
@@ -1097,7 +1097,7 @@ pub(crate) fn captive_floor(seed: RunSeed) -> u32 {
     rng.random_range(1..FLOORS)
 }
 
-/// One of the five mini-bosses a run may draw a lair for: task 8a's own.
+/// One of the five mini-bosses a run may draw a lair for.
 /// Its name is `monsters.ron`'s and its lair's own `assets/prefabs/`
 /// file's, its floors the span it may stand on, and its margin the tile
 /// its lair's hall is floored with outside the piece's own footprint,
@@ -1379,8 +1379,8 @@ mod tests {
     /// Floor ten holds whichever of the three `FINAL_BOSSES` this seed
     /// draws, alone at its own throne but for the Drowned King's own
     /// five knights, and the way in is as far from its mouth, walking, as
-    /// any cell of the floor outside it: task 9's own, over every one of
-    /// the three.
+    /// any cell of the floor outside it, for every one of the three floor
+    /// ten bosses.
     #[test]
     fn floor_ten_holds_whichever_boss_this_seed_draws_alone_at_its_own_throne() {
         let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
@@ -1430,7 +1430,7 @@ mod tests {
 
     /// The floor ten boss is drawn from the three `FINAL_BOSSES`, stable
     /// over repeated calls of one seed and over every one of them drawn
-    /// somewhere across a span: task 9's own.
+    /// somewhere across a span.
     #[test]
     fn the_floor_ten_boss_is_drawn_from_three_stably_and_all_three_drawn_over_a_span_of_seeds() {
         let mut seen = BTreeSet::new();
@@ -1476,8 +1476,8 @@ mod tests {
                 let drawn: BTreeSet<&str> = built.terrain.iter().map(|(_, t)| undermere.tiles().get(t).name.as_str()).collect();
                 // Floor ten's own wall and floor are whichever of the
                 // three `FINAL_BOSSES` this seed draws, never
-                // `Biome::Throne`'s fixed one, which task 9 kept as the
-                // Drowned King's own.
+                // `Biome::Throne`'s fixed one, which is the Drowned King's
+                // own.
                 let (wall, floor_tile) = if floor == FLOORS {
                     let boss = undermere.final_boss();
                     (boss.wall, boss.floor)
@@ -1545,7 +1545,7 @@ mod tests {
         let undermere = Undermere::new(RunSeed(0));
         let look = undermere.appearance();
         let glows = |name: &str| crate::light::GLOWING.iter().any(|(glowing, _)| *glowing == name);
-        // A tile that is itself some band's own wall, task 8a's lairs
+        // A tile that is itself some band's own wall, the mini-bosses' lairs
         // listing a foreign one beside their floors, reads against that
         // band's own floor elsewhere in this very loop and is never asked
         // to read as a floor here, which two walls' colours were never
@@ -1603,7 +1603,7 @@ mod tests {
     /// stand on the dais.
     #[test]
     fn a_slot_stands_on_the_floor_drawn_round_it() {
-        // Seed 1: one of the three `FINAL_BOSSES` this task draws between,
+        // Seed 1: one of the three `FINAL_BOSSES` a run draws between,
         // and this test's own last two lines are the Drowned King's own,
         // so it wants a seed that draws him.
         let undermere = Undermere::new(RunSeed(1));
@@ -1657,7 +1657,7 @@ mod tests {
         assert_eq!(refused.pass, "throne_hall", "{refused}");
     }
 
-    /// Task 8a's own draw: two mini-bosses a run, never the same one
+    /// The mini-bosses' draw: two a run, never the same one
     /// twice, each on a floor within its own range, and over enough
     /// seeds every one of the five is drawn somewhere.
     #[test]

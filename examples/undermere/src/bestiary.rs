@@ -129,7 +129,7 @@ pub struct MonsterDef {
     allied: Arc<Brain<Entity>>,
     /// The brain one of its kind decides with once it is freed from
     /// shackles and follows the one who freed it, built beside the other
-    /// two: task 10's captive, who keeps station on the adventurer by
+    /// two: a freed captive, who keeps station on the adventurer by
     /// name through `Leader` rather than on whichever ally is nearest.
     following: Arc<Brain<Entity>>,
 }
@@ -633,8 +633,8 @@ fn ally_brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
 /// The brain a monster of `folded` decides with once it is freed from
 /// shackles: what it runs from, breathes and strikes as its own kind
 /// does, exactly as [`ally_brain`], and then keeps station on whoever
-/// freed it, by the engine's own `Keep::leader` over the `Leader` task
-/// 10's own freeing puts on it, rather than `Keep::allies`'s "whoever of
+/// freed it, by the engine's own `Keep::leader` over the `Leader`
+/// [`crate::captives::free`] puts on it, rather than `Keep::allies`'s "whoever of
 /// my side is nearest": a freed captive follows the one who freed it
 /// specifically, through a crowd of the adventurer's other allies as
 /// readily as alone with them.
@@ -735,7 +735,7 @@ pub fn spawn_monster_now(world: &mut World, def: Id<MonsterDef>, at: Point, map:
 /// did not just start to.
 ///
 /// `asleep` puts the engine's own `asleep` on it the same way, [`FOR_LIFE`]
-/// so it holds until woken rather than for a counted span: task 10's own
+/// so it holds until woken rather than for a counted span: the
 /// share of a floor's monsters that starts a run already dozing. `false`
 /// for every caller but a floor's own population, which alone decides who
 /// sleeps.
@@ -904,7 +904,7 @@ mod tests {
 
     /// A tripwire over the bestiary, by name, so a kind is added or
     /// dropped on purpose, and the spectral blade a staff conjures; and
-    /// task 9's own three, any one of whose death wins the run.
+    /// the three floor ten bosses, any one of whose death wins the run.
     #[test]
     fn every_monster_of_the_bestiary_is_in_the_file_and_the_floor_ten_boss_is_one_of_three() {
         let library = library();
@@ -1773,9 +1773,9 @@ mod tests {
 
     /// Review Focus 5, the brief's own case: Grubnak's band. A plain
     /// goblin, which his own honor guard may draw, is `led` for exactly
-    /// this, task 8a's own line to `monsters.ron`'s row; the same engine
+    /// this, a line of its own in `monsters.ron`'s row; the same engine
     /// mechanism the dar's own test above already proves, read through
-    /// the one kind task 8a added it to rather than one that already
+    /// the one kind it was added to for a mini-boss rather than one that already
     /// carried it.
     #[test]
     fn a_goblin_of_grubnaks_band_whose_leader_is_gone_keeps_station_on_its_allies_rather_than_freezing() {

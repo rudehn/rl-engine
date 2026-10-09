@@ -225,8 +225,7 @@ pub fn learn_draining(
 }
 
 /// Learns `reflecting` the moment a landing turned back is seen: the
-/// engine's own `Reflected`, at the reflecting body's own cell, the seam
-/// task 7's report found missing.
+/// engine's own `Reflected`, at the reflecting body's own cell.
 ///
 /// In `TurnSet::React`.
 pub fn learn_reflecting(
@@ -304,7 +303,7 @@ mod tests {
 
     /// A golem's `reflecting` reads "?" on the look panel until the
     /// adventurer has seen a landing turned back off it, and its own
-    /// words once it has: the seam task 7's report found missing.
+    /// words once it has.
     #[test]
     fn a_reflected_landing_teaches_reflecting_once_seen() {
         let (mut app, _, here) = arena_with(4, InspectViewPlugin);

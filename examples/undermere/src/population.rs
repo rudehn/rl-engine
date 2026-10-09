@@ -162,7 +162,7 @@ const LAIR_CLEARANCE: i32 = 8;
 
 /// A leader and the followers it is drawn with, one band to a floor's own
 /// band of floors: the dar trio, always all three, and a goblin war band,
-/// a goblin leading two of its own kinds. Placed by [`place_band`] before
+/// a goblin leading two of its own kinds. Placed by `place_band` before
 /// [`plan`]'s own random groups, so neither ever lands on the band's
 /// cells, and never the camp, the fire or the watch round a goblin band,
 /// which is a lived-in dungeon's and not this.
@@ -222,7 +222,7 @@ const FEEDING_GROUND_PCT: u32 = 50;
 /// How the feeding ground's own corpse is dressed, a bone-pale glyph
 /// rather than whatever the live kind looked like: [`lay_down`] keeps a
 /// body's glyph as it was in life, since the engine does not say what
-/// remains look like, and task 10's own scene wants its prey to read as
+/// remains look like, and a feeding ground wants its prey to read as
 /// dead on sight rather than as the animal it was standing beside its
 /// own feeder.
 const REMAINS_GLYPH: char = '%';
@@ -318,7 +318,7 @@ fn place_patrol(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &
 
 /// Stands a monster of `floor`'s own band shackled and neutral, offering
 /// [`crate::captives::FREE_VERB`] through the engine's own actor offers,
-/// with shackles lying at its feet: task 10's own captive, the one a run
+/// with shackles lying at its feet: the run's own captive, the one a run
 /// draws drawn by [`crate::dungeon::captive_floor`].
 ///
 /// Held in place by a one-waypoint `PatrolRoute`, the universal brain's
@@ -356,7 +356,7 @@ struct Site {
     floor: u32,
 }
 
-/// What every one of task 10's placing functions reads from the
+/// What every one of the lived-in dungeon's placing functions reads from the
 /// bestiary's own content, bundled for the same reason [`Site`] is: a
 /// function reads only the field its own scene needs, and clippy's limit
 /// on a function's own arguments is never the reason one of them is
@@ -498,7 +498,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
             // together as a camp round its own fire instead of standing
-            // in the open: the controller's own share for task 10's camps.
+            // in the open: the share of war bands a camp is.
             let camp = band.leader == "goblin" && rng.random_ratio(1, 2);
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_band(&mut commands, &stocked, &site, band, &mut free, &mut band_rng, camp) {
@@ -536,7 +536,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
                 marked.extend(used);
             }
         }
-        // Its own stream, not `rng`'s current position: task 10's own
+        // Its own stream, not `rng`'s current position: the lived-in dungeon's
         // bands, camps, feeding grounds, patrols and captives all draw
         // from `rng` ahead of this, floor by floor and run by run, and
         // `plan` drawing from the same position they left it at would
@@ -566,8 +566,8 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
 
 /// Wires every entourage member a lair's own prefab just stood up to the
 /// one mini-boss among them with the engine's own `Leader`, the moment a
-/// floor's arrival fills its slots: task 8a's own band, brought together
-/// the same way [`place_band`]'s already are, but by the engine's prefab
+/// floor's arrival fills its slots: a mini-boss's own band, brought together
+/// the same way `place_band`'s already are, but by the engine's prefab
 /// slots rather than by this module's own placement. Read by
 /// [`MonsterDef::miniboss`] rather than a name, since nothing else `Post`
 /// marks is ever a monster but a slot's own, and the throne's court
@@ -800,9 +800,9 @@ mod tests {
                 // The throne's own, on floor ten alone: six where this
                 // run draws the Drowned King, the king and his five
                 // knights, or one alone where it draws the Mother Below
-                // or the Ember Wyrm, task 9's own two with no entourage.
-                // Elsewhere nothing, unless this seed draws one of task
-                // 8a's own lairs on this floor, whose boss and entourage
+                // or the Ember Wyrm, the two floor ten bosses with no
+                // entourage. Elsewhere nothing, unless this seed draws a
+                // mini-boss's lair on this floor, whose boss and entourage
                 // are posted the same way and never more than five
                 // strong.
                 let court = spawned.len() - people.len();
@@ -908,7 +908,7 @@ mod tests {
         }
     }
 
-    /// Task 8a's own: whichever lair a floor draws holds its boss, found
+    /// A mini-boss's lair: whichever lair a floor draws holds its boss, found
     /// by `MonsterDef::miniboss` rather than by name, and every other
     /// monster the lair's own slots stood is led by it, `lead_lair_bands`
     /// run the moment the arrival filled them. The Widow's own entourage
@@ -988,7 +988,7 @@ mod tests {
         }
     }
 
-    /// Task 10's camps: half the floors a goblin war band is placed on
+    /// A goblin camp: half the floors a goblin war band is placed on
     /// floors three to six dress it round a fire, every follower asleep
     /// and the leader alone keeping the watch, found somewhere over a
     /// span of seeds since the dressing itself is a coin flip.
@@ -1036,7 +1036,7 @@ mod tests {
         assert!(camps > 0, "some seed over the span dressed its goblin band as a camp");
     }
 
-    /// Task 10's feeding grounds: a beast stands over its prey's own
+    /// A feeding ground: a beast stands over its prey's own
     /// remains, a real body the engine's own `Remains` carries rather
     /// than a scenery corpse, found somewhere over a span of seeds since
     /// a floor draws one only [`FEEDING_GROUND_PCT`] of the time.

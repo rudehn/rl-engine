@@ -139,7 +139,7 @@
     // a blow's damage is resolved, so `judge_draining` reads `DamageDealt`
     // in `TurnSet::React` instead of a trigger.
     (name: "draining", says: "drinks what it wounds", trick: true),
-    // Task 8a's own: a mini-boss's tricks and its entourage's. `war-cry`,
+    // A mini-boss's tricks and its entourage's. `war-cry`,
     // `spit` and `calling the drowned` each grant an ability, so they are
     // tricks as every other ability-granting trait is; `singing` is
     // plain, the same reasoning `regenerates` already is, since what it
@@ -149,9 +149,9 @@
     (name: "singing", says: "its song mends the dead that follow it"),
     (name: "spit", says: "spits poison from afar", abilities: ["spit"], trick: true),
     (name: "calling the drowned", says: "calls the drowned up out of the water", abilities: ["call the drowned"], trick: true),
-    // Task 9's own: the floor ten boss, drawn from three. `spawning` and
+    // The floor ten boss, drawn from three. `spawning` and
     // `welling` are game systems, read in `tricks.rs` exactly as
-    // `splitting` and the rest of task 6b's own are, never an ability or
+    // `splitting` and the rest of the game's own tricks are, never an ability or
     // a trigger; `wyrm breath` is the Ember Wyrm's own larger breath, a
     // new ability since its numbers are not the salamander's `fire
     // breath`.

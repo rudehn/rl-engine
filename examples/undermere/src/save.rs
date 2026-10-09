@@ -131,7 +131,7 @@ pub struct MonsterSave {
     #[serde(default)]
     pub ally: bool,
     /// Whether it follows one who freed it by name rather than whichever
-    /// ally is nearest: task 10's own freed captive, read off whether it
+    /// ally is nearest: a freed captive, read off whether it
     /// carries the engine's own `Leader` at the moment it is captured.
     /// `Leader` itself is the generic entity-state machinery's to put
     /// back, once every entity of the save has one; this is only the
@@ -192,8 +192,8 @@ impl Saveable for Kind {
             def: world.resource::<Bestiary>().defs.name(kind.0).to_string(),
             // `Leader` alone is a band follower's as readily as a freed
             // captive's; only paired with `Ally` does it mean the
-            // follower fights for the adventurer and is one of task 10's
-            // own, since nothing else on the adventurer's own side gets a
+            // follower fights for the adventurer and is a freed captive,
+            // since nothing else on the adventurer's own side gets a
             // named leader to begin with.
             ally: world.get::<crate::allies::Ally>(entity).is_some(),
             following: world.get::<crate::allies::Ally>(entity).is_some() && world.get::<Leader>(entity).is_some(),

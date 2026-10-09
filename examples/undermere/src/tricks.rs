@@ -18,7 +18,7 @@
 //! landed by the engine's actor triggers exactly as `venomous`'s bite is,
 //! each registered in [`crate::content::add_game_effects`].
 //!
-//! Task 9's own: [`Spawns`] and [`Wells`] are counted off the engine's own
+//! The floor ten bosses' own: [`Spawns`] and [`Wells`] are counted off the engine's own
 //! `ActionDone`, its own turns rather than the floor's clock, so a slow
 //! spawner's trick comes no faster for standing beside a swift one. The
 //! Mother Below's `spawning` opens a wall cell in her own sight into the
@@ -67,14 +67,14 @@ pub struct Tricks {
     pub burns_badly: bool,
     /// `draining`: mends itself what a landed blow of its own dealt.
     pub drains: bool,
-    /// `singing`: a choir plays while allies within [`SING_RANGE`] stand
+    /// `singing`: a choir plays while allies within `SING_RANGE` stand
     /// near it, the Choirmaster's own.
     pub sings: bool,
     /// `spawning`: a spawnling appears at a wall cell in its sight every
-    /// [`SPAWN_INTERVAL`]th of its own turns, the Mother Below's own.
+    /// `SPAWN_INTERVAL`th of its own turns, the Mother Below's own.
     pub spawns: bool,
     /// `welling`: a drowned thrall rises from the water within reach
-    /// every [`RISE_INTERVAL`]th of its own turns, the Drowned King's own.
+    /// every `RISE_INTERVAL`th of its own turns, the Drowned King's own.
     pub wells: bool,
     /// `sleepy`: twice as likely to start a floor asleep as a plain kind.
     pub sleepy: bool,
@@ -134,7 +134,7 @@ const SPLIT_MIN_HEALTH: i32 = 4;
 /// half its current health each, rounded down, the second made on a free
 /// cell beside the first. Nothing for one the blow killed, read fresh off
 /// its `Health` rather than off the event, nothing for one left with less
-/// than [`SPLIT_MIN_HEALTH`], and nothing for one with no free cell to
+/// than `SPLIT_MIN_HEALTH`, and nothing for one with no free cell to
 /// stand a second half on.
 ///
 /// A blow, not any harm: a status's own tick, a burn from the fire it
@@ -534,7 +534,7 @@ type Singing = (With<Choir>, With<Actor>);
 type SingingTo = (Entity, &'static Position, &'static Faction, &'static mut Afflicted, &'static mut StatBlock, Has<Sung>);
 
 /// Keeps `regenerating` on every actor of a [`Choir`]'s own side within
-/// [`SING_RANGE`] of it, and takes it off the turn it falls out of range:
+/// `SING_RANGE` of it, and takes it off the turn it falls out of range:
 /// a Choirmaster's song is heard exactly as far as it carries. Plain
 /// rather than a blunt mending-wide change, since a status already
 /// scaled by the mending stat is what "regenerate" already means
@@ -588,7 +588,7 @@ const EGG_SAC_HATCH: &str = "cave spider";
 /// How many hatch at once.
 const EGG_SAC_HATCH_COUNT: u32 = 2;
 
-/// Hatches an egg sac into [`EGG_SAC_HATCH_COUNT`] of [`EGG_SAC_HATCH`]
+/// Hatches an egg sac into `EGG_SAC_HATCH_COUNT` of `EGG_SAC_HATCH`
 /// the moment something steps beside it, despawning the sac so the same
 /// step cannot hatch it twice: the Widow's "struck or stepped beside",
 /// the half a blow does not cover. Read by `PropKind` against the
@@ -634,7 +634,7 @@ pub fn hatch_beside(
 }
 
 /// Whose step beside an egg sac is a foe's of what hatches from it: the
-/// side [`EGG_SAC_HATCH`] is written with, against the side of whoever
+/// side `EGG_SAC_HATCH` is written with, against the side of whoever
 /// stepped, by the faction matrix every blow reads.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct BroodFoes<'w, 's> {
@@ -661,7 +661,7 @@ const SPAWN_INTERVAL: u32 = 3;
 const SPAWNLING: &str = "spawnling";
 
 /// Marks a kind that spawns young from the walls near it, a counter
-/// toward [`SPAWN_INTERVAL`] of its own turns: the Mother Below's
+/// toward `SPAWN_INTERVAL` of its own turns: the Mother Below's
 /// `spawning`. Marked at spawn off [`Tricks::spawns`].
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Spawns {
@@ -676,8 +676,8 @@ pub struct Spawns {
 pub struct Spawned(Entity);
 
 /// Ticks every [`Spawns`] kind's own counter on its own `ActionDone`, and
-/// stands a [`SPAWNLING`] at a wall cell in its sight every
-/// [`SPAWN_INTERVAL`]th: the Mother Below's `spawning`, "a spawnling
+/// stands a `SPAWNLING` at a wall cell in its sight every
+/// `SPAWN_INTERVAL`th: the Mother Below's `spawning`, "a spawnling
 /// appears at a wall cell in its sight".
 ///
 /// In `TurnSet::React`, after the engine has reported this pass's own
@@ -766,7 +766,7 @@ const RISE_INTERVAL: u32 = 12;
 const RISE_RANGE: i32 = 12;
 
 /// Marks a kind whose own water rises a drowned thrall every
-/// [`RISE_INTERVAL`] of its own turns: the Drowned King's `welling`.
+/// `RISE_INTERVAL` of its own turns: the Drowned King's `welling`.
 /// Marked at spawn off [`Tricks::wells`].
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Wells {
@@ -776,7 +776,7 @@ pub struct Wells {
 
 /// Ticks every [`Wells`] kind's own counter on its own `ActionDone`, and
 /// calls [`crate::effects::bodies::call_drowned`] for one thrall every
-/// [`RISE_INTERVAL`]th: the Drowned King's `welling`, forced rather than
+/// `RISE_INTERVAL`th: the Drowned King's `welling`, forced rather than
 /// chosen, unlike the Drowned Abbess's own `calling the drowned` ability.
 /// Learned only where the adventurer sees the king or the water a thrall
 /// rose from, as `spawning` is only where they see its maker: a thrall
@@ -804,7 +804,7 @@ pub fn rise_from_the_pool(mut done: MessageReader<ActionDone>, mut wells: Query<
     }
 }
 
-/// A loop of cells a monster walks for task 10's own: not a trait's trick,
+/// A loop of cells a monster walks, the lived-in dungeon's: not a trait's trick,
 /// since nothing in the bestiary names it, but a floor's population may
 /// put it on anyone it stands, the same way it decides who sleeps.
 ///
@@ -1254,7 +1254,7 @@ mod tests {
         assert!(app.world().get_entity(young).is_err(), "the spawnling is gone with her");
     }
 
-    /// Task 10's own patrol: a `PatrolRoute` of three waypoints is walked
+    /// A floor's patrol: a `PatrolRoute` of three waypoints is walked
     /// in order and the loop starts over, every waypoint visited at least
     /// twice over enough passes, by the universal brain's own `Patrol`
     /// slot, with no trait and no marker beyond the route itself.
