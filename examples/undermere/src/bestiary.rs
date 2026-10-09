@@ -1251,7 +1251,9 @@ mod tests {
     /// Review Focus 1's game half: a monster the test puts to sleep with
     /// Undermere's own `asleep` is unaware of the adventurer standing
     /// over it, takes their blow at the unaware bonus, and the harm wakes
-    /// it, as every sleeper wakes of a blow landed on it.
+    /// it, as every sleeper wakes of a blow landed on it. Given health
+    /// enough to live through the blow, since a dagger's unaware least is
+    /// a goblin's whole health and a dead goblin wakes to nothing.
     #[test]
     fn a_sleeping_goblin_takes_the_unaware_blow_and_then_wakes() {
         use crate::testing::{arena, equip, make, monster, settle};
@@ -1327,6 +1329,7 @@ mod tests {
 
     /// Splitting: a blow that leaves a pink jelly alive splits it into
     /// two, each with half what was left, neither below two.
+        app.world_mut().entity_mut(goblin).insert(Health::full(100));
     #[test]
     fn a_jelly_struck_becomes_two_each_with_its_share() {
         use crate::testing::{arena, monster, settle};
@@ -1337,6 +1340,11 @@ mod tests {
         app.world_mut().write_message(DamageEvent::new(jelly, rl_engine::rl_rules::Hit::from_source(None, crush, 4)));
         settle(&mut app);
         let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
+        // The dagger's own least is 2, `1d4+1`; a blow at three times that
+        // is past anything an aware goblin could take from it, and the
+        // unaware bonus's five times makes its least 10.
+        let lost = 100 - app.world().get::<Health>(goblin).expect("it lived through the blow").current;
+        assert!(lost >= 3 * 2, "the blow landed at the unaware rate, at least three times the dagger's least: {lost}");
         let world = app.world_mut();
         let halves: Vec<i32> = world.query::<(&Kind, &Health)>().iter(world).filter(|(k, _)| k.0 == jelly_id).map(|(_, h)| h.current).collect();
         assert_eq!(halves.len(), 2, "the jelly and its half");
