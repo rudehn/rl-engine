@@ -56,7 +56,9 @@
     // drawn near white and its own light colours it: orange in the halls,
     // blue-green before the throne.
     (name: "brazier",    glyph: '&', color: (r: 235, g: 225, b: 210), blocks: true),
-    (name: "throne",     glyph: '#', color: (r: 150, g: 195, b: 205), blocks: true),
+    // A throne is a high-backed seat, not a block of wall: '#' read as a
+    // piece of the hall's own wall left standing in the middle of it.
+    (name: "throne",     glyph: 'Π', color: (r: 150, g: 195, b: 205), blocks: true),
 
     // A chest in the dungeon: a weapon, a piece of armor or both, maybe, and a
     // potion or two for certain, each drawn at the floor it stands on.
@@ -71,7 +73,7 @@
     // and the `Hatch` effect its `destroyed` trigger lands is `effects/bodies.rs`'s
     // own; stepped beside rather than struck, `tricks::hatch_beside` lands
     // the same way, since a step beside it never breaks it.
-    (name: "banner",     glyph: '|', color: (r: 150, g: 40, b: 40)),
+    (name: "banner",     glyph: '|', color: (r: 210, g: 60, b: 50)),
     (name: "bone organ", glyph: 'n', color: (r: 220, g: 215, b: 195), blocks: true),
     (name: "font",       glyph: 'u', color: (r: 150, g: 195, b: 205), blocks: true),
     (name: "rack",       glyph: '=', color: (r: 110, g: 90, b: 70), blocks: true),
