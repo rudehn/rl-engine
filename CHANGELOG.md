@@ -16,6 +16,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
   A captive's offer was still taken up on its corpse, and a body still carrying the actor's own triggers was never armed with those of a prop kind a game dressed it as.
   A game that wants a body to offer something, or to answer a moment, puts that on it at `RemainsLeft`.
 
+- A sleep no longer cures itself: `wake_on_harm` passes over harm that is a sleeping status's own tick, and harm landed on someone in the pass a sleep is put on them, so a sleep that bites sleeps on and a landing of a wound and a sleep together, a dart that does both, leaves its target asleep.
+  Harm in any later pass wakes a sleeper as before.
+
 - A mind no longer casts an ability aimed at itself alone that would find nothing to act on, where `UseAbility` cast one whenever a foe was in sight: a mend at full health, or a game's raising with no body in reach.
   The new `Effect::would_act(landing, world)` says whether an effect, landed now, would act on anything, read from the world without changing it; it is true unless the effect says otherwise, and the engine's `Mend` says so only with someone hurt among its targets.
   `AbilitiesPlugin`'s new `weigh_self_abilities`, in `DecideSet::Perceive` after `PerceiveSet::Annotate`, takes from what the mind holding the turn may use every self-aimed ability none of whose effects would act on the landing the resolver would land; an ability with no effects is kept, since a game answers it itself.

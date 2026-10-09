@@ -258,13 +258,26 @@ fn wake(target: Entity, statuses: &mut Statuses, stats: &mut Stats, registries: 
 /// sleeper and lands as on the unaware, and the sleeper's next turn is its
 /// own. Its statuses are cured here rather than by a [`Cure`], which would
 /// not be read until the next pass's statuses resolve.
+///
+/// Two harms wake nobody. A sleeping status's own tick: a sleep that also
+/// bites would otherwise cure itself the first turn it bit. And harm that
+/// lands in the pass the sleep was put on: a dart that wounds and sends to
+/// sleep is one landing, its sleep resolved before its harm, and woken by
+/// its own wound it never slept at all. What was put to sleep this pass is
+/// read off this pass's [`Afflict`]s, which is where the sleep began.
 pub fn wake_on_harm(
     mut dealt: MessageReader<DamageDealt>,
+    mut slept: MessageReader<Afflict>,
     mut events: MessageWriter<StatusEvent>,
     registries: Res<Registries>,
     mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
 ) {
+    let sleeps = |status: StatusId| registries.statuses.get(status).sleeps;
+    let fresh: Vec<Entity> = slept.read().filter(|a| sleeps(a.status)).map(|a| a.target).collect();
     for d in dealt.read() {
+        if d.hit.status.is_some_and(sleeps) || fresh.contains(&d.target) {
+            continue;
+        }
         let Ok((mut statuses, mut stats)) = actors.get_mut(d.target) else { continue };
         wake(d.target, &mut statuses.0, &mut stats.0, &registries, &mut events);
     }
@@ -720,6 +733,9 @@ mod tests {
         theirs: rl_rules::FactionId,
         asleep: StatusId,
         snared: StatusId,
+        /// A sleep that bites every turn it lasts.
+        drowsing: StatusId,
+        kind: rl_rules::damage::DamageKindId,
     }
 
     fn bedroom(extra: impl FnOnce(&mut App)) -> Bedroom {
@@ -729,8 +745,9 @@ mod tests {
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.world_mut().resource_mut::<CombatRules>().unaware = Some(300);
-        let statuses = Registry::from_defs(vec![StatusDef::new("asleep").sleeps(), StatusDef::new("snared").holds()]).unwrap();
-        let (asleep, snared) = (statuses.expect("asleep"), statuses.expect("snared"));
+        let defs = vec![StatusDef::new("asleep").sleeps(), StatusDef::new("snared").holds(), StatusDef::new("drowsing").sleeps().ticks(sides.kind, 1)];
+        let statuses = Registry::from_defs(defs).unwrap();
+        let (asleep, snared, drowsing) = (statuses.expect("asleep"), statuses.expect("snared"), statuses.expect("drowsing"));
         app.world_mut().resource_mut::<Registries>().statuses = statuses;
         app.init_resource::<Spent>().add_systems(crate::plugin::Turn, record_spent.in_set(crate::plugin::TurnSet::Record));
         let blow = MeleeAttack::new(sides.kind, DiceRoll::flat(2));
@@ -738,7 +755,7 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
-        Bedroom { app, start, player, theirs: sides.theirs, asleep, snared }
+        Bedroom { app, start, player, theirs: sides.theirs, asleep, snared, drowsing, kind: sides.kind }
     }
 
     impl Bedroom {
@@ -851,6 +868,46 @@ mod tests {
         assert!(room.app.world().get::<Aware>(sleeper).unwrap().knows(room.player), "knowing who struck it");
         assert_eq!(asked.load(Ordering::Relaxed), 1, "its turn after the blow is its own");
         assert_eq!(room.strike(sleeper), 2, "so the next blow lands as on anyone");
+    }
+
+    /// A sleep that bites does not wake its holder with its own bite: the
+    /// tick is harm, and harm wakes, but not harm that is the sleep itself.
+    #[test]
+    fn a_sleep_that_bites_every_turn_never_wakes_its_holder_by_its_own_bite() {
+        let mut room = bedroom(|_| {});
+        let (sleeper, _) = room.sleeper(4);
+        let drowsing = room.drowsing;
+        room.app.world_mut().write_message(Afflict { target: sleeper, status: drowsing, turns: 10, by: None, held_by: None });
+        pass(&mut room.app, room.player);
+        room.app.world_mut().write_message(Cure { target: sleeper, status: room.asleep });
+        for _ in 0..4 {
+            pass(&mut room.app, room.player);
+        }
+        assert!(room.health(sleeper) < 20, "the sleep bit");
+        assert!(room.app.world().get::<Afflicted>(sleeper).unwrap().has(drowsing), "and its holder sleeps on through it");
+    }
+
+    /// A wound and a sleep landed in one pass, as a dart that does both
+    /// lands them, leave the one they land on wounded and asleep: the sleep
+    /// is put on before the wound in the pass, and the wound does not undo
+    /// it. A blow in a later pass still wakes it.
+    #[test]
+    fn harm_landed_in_the_pass_a_sleep_is_put_on_does_not_wake_it() {
+        let mut room = bedroom(|_| {});
+        let (target, _) = room.sleeper(4);
+        let (asleep, kind) = (room.asleep, room.kind);
+        pass(&mut room.app, room.player);
+        room.app.world_mut().write_message(Cure { target, status: asleep });
+        pass(&mut room.app, room.player);
+        assert!(!room.asleep(target), "awake to begin with");
+        room.app.world_mut().write_message(Afflict { target, status: asleep, turns: UNTIL_CURED, by: None, held_by: None });
+        room.app.world_mut().write_message(DamageEvent::new(target, Hit::from_source(None, kind, 3)));
+        pass(&mut room.app, room.player);
+        assert_eq!(room.health(target), 17, "wounded");
+        assert!(room.asleep(target), "and asleep");
+        room.app.world_mut().write_message(DamageEvent::new(target, Hit::from_source(None, kind, 3)));
+        pass(&mut room.app, room.player);
+        assert!(!room.asleep(target), "until harm lands in a later pass");
     }
 
     /// Without stealth a sleeper sees on sight: a foe it can see within two
