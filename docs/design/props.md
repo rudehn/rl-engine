@@ -47,8 +47,8 @@ A lock is written on the container rather than on the verb, and the gate folds i
 
 The engine collects the offers in reach of the actor holding the turn, the way the ability gate collects what it could use, and answers three questions the player asks: what can I do here, how long does it take, and why not.
 
-`Interact { prop, verb }` is the one action.
-Its resolver claims the turn, spends the offer's `time`, lands any effects the offer carried, and writes `Interacted { actor, prop, verb }`.
+`Interact { target, verb }` is the one action.
+Its resolver claims the turn, spends the offer's `time`, lands any effects the offer carried, and writes `Interacted { actor, target, verb }`.
 
 **That message is the whole extension mechanism.**
 Foundry's console is not a trait impl and not a registered interaction: it is a system in `TurnSet::React` reading `Interacted`, keeping the ones whose verb is `charge`, and doing what it already does.
@@ -77,6 +77,22 @@ The minds register `Intent<Attack>` the same way and for the same reason.
 A refusal is free.
 The offers are computed before the player acts, so the engine knows an interaction is impossible before a turn is spent on finding out.
 Foundry charges a turn for setting a charge where there is no console, which was a workaround for not knowing.
+
+### 2.2 An actor offers too
+
+Built 2026-10-07, for a captive to free and a person to talk to.
+An actor that offers carries `Offers`, the same `Offering { verb, time, needs }` an `OfferDef` holds, written by hand rather than read from a registry entry, since what one actor offers is its own and not its kind's: a captive is freed only until it is, and freeing it is not a fact its definition could hold.
+
+The field renamed, not the mechanism: `Offer`, `Interact`, `Interacted` and `OfferRow` all said `prop`, and now say `target`, because what offers is no longer always one.
+`offer_here` reads an actor's `Offers` exactly where it already read a prop's definition, so the offers screen, the interact key and the bump redirect agree about an actor without being told to.
+
+One rule is new, in the gate rather than in each caller: an actor's offers are never offered to its own holder, as a prop's never were, and never to anyone the actor is hostile to by `CombatRules`.
+Without it the interact key, which asks nothing about relation, would let a shackled captor be talked past as readily as its own ally, and a second check copied into the bump and the offers screen is a second place for the two to disagree.
+An ally's offers stand regardless, as a prop's do: a party member that offers something is still walked past rather than attacked, the way a bump into an ally always has been.
+
+`Bumped` gained `offers`, what the thing bumped offered, because the panel used to ask whether the thing bumped was a prop to decide whether to open; now anything that offers opens it, prop or captive, and the question "was this a prop" stopped being the one the screen needed answered.
+
+Freeing a captive is one verb whose answer takes longer than its offer's `time` costs, so the game begins a `Works` on it rather than answering `Interacted` at once; the ruling that it may not be broken off, because the engine's multi-turn work already skips the player rather than reading its mind to resume it, and that the player's own long actions have no such seam yet, is `docs/TODO.md`'s.
 
 ## 3. Containers
 
