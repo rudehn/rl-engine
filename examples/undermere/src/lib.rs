@@ -27,7 +27,8 @@
 //! scroll of enchanting besides, and [`light`] lights them and dims the
 //! lantern as the adventurer descends. [`townsfolk`] is Mereholt's
 //! people, named afresh each run, standing at their posts or walking the
-//! town, each with something to say; [`shops`] is the keepers among them:
+//! town, each with something to say, and [`rumours`] what the innkeeper
+//! among them has heard of this run's dungeon; [`shops`] is the keepers among them:
 //! what they may stock, a stocking of their shelves drawn at the depth
 //! reached, and the shelves they sell from; [`temple`] is the rites
 //! the priest among them mends, unbinds and names by, for a price; and
@@ -84,6 +85,7 @@ pub mod plugin;
 pub mod population;
 pub mod prefabs;
 pub mod quest;
+pub mod rumours;
 pub mod run;
 pub mod save;
 pub mod seeming;

@@ -1,0 +1,47 @@
+// What the Sunken Lantern's innkeeper has heard of the dungeon: one rumour
+// for each thing a run may draw, and the line said once they are all told.
+// `src/rumours.rs` reads it; townsfolk.ron's `rumours: true` says who tells
+// them.
+//
+// Every field:
+//   rumours: one row for each thing a run may draw, each (of: "...", say: "...")
+//              of:   what it is of, by name: a floor ten boss or a mini-boss
+//                    as monsters.ron names it, or a biome as the log names a
+//                    band on arrival; every boss and every mini-boss has one
+//              say:  the words, said as written; always true of what is down
+//                    there and never exact, so never which floor nor how to
+//                    beat it; a floor ten boss's never names any floor ten
+//                    boss, since which of them waits is kept until floor ten
+//                    shows it
+//   last:    said once every rumour of the run is told, and on every talk
+//            after
+//
+// A run's rumours are told one a talk, in this order: the floor ten boss it
+// drew, then each mini-boss it drew, shallowest first, then each band whose
+// biome it drew from more than one, shallowest first; a thing it did not draw
+// is never told. Any of the lines may name a person by role, `{gatewarden}`,
+// and says their name this run.
+(
+    rumours: [
+        // The floor ten bosses.
+        (of: "the Drowned King", say: "Nets come up with crowns in them some nights. Something down there still thinks it rules."),
+        (of: "the Mother Below", say: "The well's tasted of eggs since spring. {gatewarden} says the lake has a mother."),
+        (of: "the Ember Wyrm", say: "The lake steams over the deep water now, winter and all. Nothing cold breathes like that."),
+        // The mini-bosses. The Bone Choir is the Choirmaster's, under his name.
+        (of: "Grubnak the goblin king", say: "Goblins sing marching songs below, and they've got themselves a king."),
+        (of: "the Widow", say: "A delver came back up wrapped in silk, and none of it his."),
+        (of: "the Choirmaster", say: "There's singing near the crypts, and nobody down there has a throat left."),
+        (of: "the Drowned Abbess", say: "The old abbey sank with its abbess at prayer. Some say she hasn't stopped."),
+        (of: "the Forgemaster", say: "Somebody's working a forge under the lake. You can hear the hammer from the jetty."),
+        // The biomes, told only for a band drawn from more than one.
+        (of: "the Upper Halls", say: "Just past the gate it's the old king's halls. Broken stone and long corridors."),
+        (of: "the Cellars", say: "Just past the gate it's cellars this season. Casks, damp, and rats the size of dogs."),
+        (of: "the Fungal Deeps", say: "Past the first stairs it's caves lit by mushrooms. Don't breathe what the big ones puff."),
+        (of: "the Spider Warrens", say: "Past the first stairs it's webs, whole galleries of them. Burn what you can't cut."),
+        (of: "the Catacombs", say: "Halfway down you walk through the dead. They were buried. It didn't take."),
+        (of: "the Sunken Library", say: "There's a library halfway down, half full of water. Scholars went in. Pages came out."),
+        (of: "the Drowned Cathedral", say: "Deep down there's a cathedral. Mind the bridges; the water's colder than it looks."),
+        (of: "the Underlake", say: "Deep down there's a lake under the lake, and things in it that never saw the sun."),
+    ],
+    last: "That's all I've heard. Come back when you've been somewhere.",
+)

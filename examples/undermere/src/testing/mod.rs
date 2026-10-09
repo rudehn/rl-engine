@@ -103,6 +103,23 @@ pub fn townsperson(app: &mut App, role: &str) -> Entity {
     found.unwrap_or_else(|| panic!("nobody in Mereholt is the {role}"))
 }
 
+/// Talks to the person of `role` through the engine's own offer, as a
+/// walk into them would, from ground beside them in Mereholt, and returns
+/// what the log said last.
+pub fn talk_to(app: &mut App, me: Entity, role: &str) -> String {
+    let who = townsperson(app, role);
+    let talk = app.world().resource::<Verbs>().get(crate::townsfolk::TALK).expect("declared");
+    let there = at(app, who);
+    let beside = {
+        let map = app.world().resource::<WorldMap>();
+        (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(crate::dungeon::TOWN, *p)).expect("ground beside them")
+    };
+    stand_on(app, me, beside);
+    app.world_mut().write_message(Intent::new(me, Interact { target: who, verb: talk }));
+    settle(app);
+    said(app).last().cloned().expect("something said")
+}
+
 /// Takes the way through `me` stands on.
 pub fn go_through(app: &mut App, me: Entity) {
     app.world_mut().write_message(Intent::new(me, GoThrough));

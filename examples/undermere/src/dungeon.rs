@@ -1040,20 +1040,33 @@ impl Pass<BaseContext> for FarthestFromTheThrone {
     }
 }
 
+/// Each band whose biome the run of this seed drew from more than one,
+/// shallowest first: none, since every band of this game has the one
+/// biome [`Biome::of`] gives its floors. A band that could have been
+/// nothing else is no news, so the innkeeper tells a band's rumour only
+/// for a band this returns, and a run's draw of a band's biome is to be
+/// made here, from the seed alone, so the rumour and the floor agree.
+pub(crate) fn biomes_drawn(_seed: RunSeed) -> Vec<Biome> {
+    Vec::new()
+}
+
 /// One of the three floor ten bosses a run draws between: task 9's own.
 /// `piece` is its own `assets/prefabs/` file's `name:`, the Drowned
 /// King's own kept as `"the throne"` from part 1 rather than renamed, and
 /// the other two matching `monsters.ron`'s as a mini-boss's lair already
-/// does; `monsters.ron`'s own name, what the score and the records use,
-/// is read off whichever monster the piece's own slot stands, never kept
-/// twice here. `wall` and `floor` are what the whole of floor ten is
-/// built of when this one is drawn, its own hall and the ordinary rooms
+/// does. `name` is `monsters.ron`'s, kept here as well so the
+/// innkeeper's rumour can be found by it without building floor ten; a
+/// test holds it to the monster the piece's own slot stands. `wall` and
+/// `floor` are what the whole of floor ten is built of when this one is
+/// drawn, its own hall and the ordinary rooms
 /// leading to it alike, so the walk to the throne reads as one place
 /// rather than the drawn boss's own colours leading to somebody else's
 /// door.
 pub(crate) struct FinalBoss {
     /// The name its own `assets/prefabs/` piece is loaded by.
     pub(crate) piece: &'static str,
+    /// The name `monsters.ron` gives it, which its rumour is written under.
+    pub(crate) name: &'static str,
     /// What floor ten is filled with before anything is carved, when this
     /// one is drawn.
     wall: &'static str,
@@ -1068,22 +1081,29 @@ pub(crate) struct FinalBoss {
 /// reusing the Forge of Embers' own, so no new tile is spent on a look the
 /// floors above already have.
 pub(crate) const FINAL_BOSSES: [FinalBoss; 3] = [
-    FinalBoss { piece: "the throne", wall: "throne wall", floor: "throne floor" },
-    FinalBoss { piece: "the Mother Below", wall: "cave wall", floor: "moss" },
-    FinalBoss { piece: "the Ember Wyrm", wall: "forge wall", floor: "ash" },
+    FinalBoss { piece: "the throne", name: "the Drowned King", wall: "throne wall", floor: "throne floor" },
+    FinalBoss { piece: "the Mother Below", name: "the Mother Below", wall: "cave wall", floor: "moss" },
+    FinalBoss { piece: "the Ember Wyrm", name: "the Ember Wyrm", wall: "forge wall", floor: "ash" },
 ];
 
 impl Undermere {
-    /// The one of [`FINAL_BOSSES`] this run's floor ten holds: pure over
-    /// `self.seed`, so every call during the run agrees without the draw
-    /// being kept anywhere, the same reasoning [`Undermere::lairs`]
-    /// already follows for the two mini-bosses. A continued run therefore
-    /// keeps the boss it started with, since nothing but the seed ever
-    /// decides it.
+    /// The one of [`FINAL_BOSSES`] this run's floor ten holds, by
+    /// [`final_boss`] over the run's seed.
     pub(crate) fn final_boss(&self) -> &'static FinalBoss {
-        let mut rng = self.seed.rng(SeedDomain::new(b"undermere.final_boss"), 0);
-        &FINAL_BOSSES[rng.random_range(0..FINAL_BOSSES.len())]
+        final_boss(self.seed)
     }
+}
+
+/// The one of [`FINAL_BOSSES`] the run of `seed` holds on floor ten: pure
+/// over the seed, so every call during the run agrees without the draw
+/// being kept anywhere, the same reasoning [`lairs`] already follows for
+/// the two mini-bosses. A continued run therefore keeps the boss it
+/// started with, since nothing but the seed ever decides it, and the
+/// innkeeper's rumour in Mereholt, told before floor ten is ever built,
+/// is of the boss floor ten will hold, since both ask this.
+pub(crate) fn final_boss(seed: RunSeed) -> &'static FinalBoss {
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.final_boss"), 0);
+    &FINAL_BOSSES[rng.random_range(0..FINAL_BOSSES.len())]
 }
 
 /// The one floor this run's single captive stands shackled on: pure over
@@ -1124,32 +1144,39 @@ pub(crate) const MINI_BOSSES: [MiniBoss; 5] = [
     MiniBoss { name: "the Forgemaster", floors: (7, 9), margin: "ash" },
 ];
 
+/// The two mini-bosses the run of `seed` draws, and which floor each
+/// stands on, by index into [`MINI_BOSSES`]: never the same boss twice,
+/// each on a floor of its own within its own range. Pure over the seed,
+/// so every call during one run agrees without keeping the draw
+/// anywhere, the same reasoning `generate`'s own per-place stream
+/// follows, and the innkeeper's rumours are of the lairs the floors will
+/// hold, since both ask this.
+pub(crate) fn lairs(seed: RunSeed) -> [(usize, u32); 2] {
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.lairs"), 0);
+    let mut order: Vec<usize> = (0..MINI_BOSSES.len()).collect();
+    for i in (1..order.len()).rev() {
+        order.swap(i, rng.random_range(0..=i));
+    }
+    let mut chosen: Vec<(usize, u32)> = Vec::new();
+    for &boss in order.iter().take(2) {
+        let (lo, hi) = MINI_BOSSES[boss].floors;
+        let mut floor = rng.random_range(lo..=hi);
+        // Its range is always at least three floors wide and only one
+        // other boss was drawn before it, so there is always a floor
+        // in its own range the other did not take.
+        if chosen.iter().any(|(_, f)| *f == floor) {
+            floor = (lo..=hi).find(|f| chosen.iter().all(|(_, g)| g != f)).unwrap_or(floor);
+        }
+        chosen.push((boss, floor));
+    }
+    [chosen[0], chosen[1]]
+}
+
 impl Undermere {
     /// The two mini-bosses this run draws, and which floor each stands
-    /// on, by index into [`MINI_BOSSES`]: never the same boss twice, each
-    /// on a floor of its own within its own range. Pure over `self.seed`,
-    /// so every call during one run agrees without keeping the draw
-    /// anywhere, the same reasoning `generate`'s own per-place stream
-    /// follows.
+    /// on, by [`lairs`] over the run's seed.
     pub(crate) fn lairs(&self) -> [(usize, u32); 2] {
-        let mut rng = self.seed.rng(SeedDomain::new(b"undermere.lairs"), 0);
-        let mut order: Vec<usize> = (0..MINI_BOSSES.len()).collect();
-        for i in (1..order.len()).rev() {
-            order.swap(i, rng.random_range(0..=i));
-        }
-        let mut chosen: Vec<(usize, u32)> = Vec::new();
-        for &boss in order.iter().take(2) {
-            let (lo, hi) = MINI_BOSSES[boss].floors;
-            let mut floor = rng.random_range(lo..=hi);
-            // Its range is always at least three floors wide and only one
-            // other boss was drawn before it, so there is always a floor
-            // in its own range the other did not take.
-            if chosen.iter().any(|(_, f)| *f == floor) {
-                floor = (lo..=hi).find(|f| chosen.iter().all(|(_, g)| g != f)).unwrap_or(floor);
-            }
-            chosen.push((boss, floor));
-        }
-        [chosen[0], chosen[1]]
+        lairs(self.seed)
     }
 
     /// The mini-boss and its lair's own margin tile this run stands on
@@ -1414,6 +1441,7 @@ mod tests {
                 (vec![boss.piece], vec![])
             };
             assert_eq!(monsters, expected_monsters, "seed {s}: {}", boss.piece);
+            assert!(monsters.contains(&boss.name), "seed {s}: the boss stood is the one {:?} names, as its rumour is told", boss.name);
             assert_eq!(props, expected_props, "seed {s}: {}", boss.piece);
             // The way in is as far from the throne's mouth, walking, as any
             // cell of the floor outside the throne.

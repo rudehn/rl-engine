@@ -468,6 +468,8 @@ pub struct Library {
     pub townsfolk: crate::townsfolk::Townsfolk,
     /// The sets every name the run gives is drawn from.
     pub names: crate::townsfolk::NameSets,
+    /// What the innkeeper may tell of a run's dungeon.
+    pub rumours: crate::rumours::Rumours,
 }
 
 impl Library {
@@ -486,7 +488,9 @@ impl Library {
         // After the monsters, which a line waiting on one slain names.
         let townsfolk = crate::townsfolk::Townsfolk::load(&bestiary);
         let names = crate::townsfolk::NameSets::load();
-        Self { registries, abilities, traits, armory, bestiary, faces, wares, rites, townsfolk, names }
+        // After the townsfolk, whose roles a rumour's `{role}` names.
+        let rumours = crate::rumours::Rumours::load(&townsfolk);
+        Self { registries, abilities, traits, armory, bestiary, faces, wares, rites, townsfolk, names, rumours }
     }
 }
 

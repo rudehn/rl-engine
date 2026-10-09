@@ -113,7 +113,7 @@ impl Plugin for UndermerePlugin {
         // offers, and each role's lines are said in a tone of its own.
         app.add_verb(crate::townsfolk::TALK);
         crate::townsfolk::declare_tones(app, &library.townsfolk);
-        app.insert_resource(library.townsfolk).insert_resource(library.names);
+        app.insert_resource(library.townsfolk).insert_resource(library.names).insert_resource(library.rumours);
         app.init_resource::<crate::townsfolk::Folk>().reset_on_new_run::<crate::townsfolk::Folk>();
         app.init_resource::<crate::townsfolk::GivenNames>().reset_on_new_run::<crate::townsfolk::GivenNames>();
         // What the adventurer knows of the run's things, dealt out afresh

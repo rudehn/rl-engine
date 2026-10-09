@@ -26,9 +26,12 @@
 //! Talking is the engine's offer of [`TALK`]: [`answer_talk`] says the
 //! next line not yet said whose [`When`] holds, in the speaker's own
 //! colour, `Hesk: "..."`, and once every line that holds is said, the last
-//! of them again. A keeper offers `trade` instead, and [`greet`] puts its
-//! greeting under its name on the trade screen.
+//! of them again. The innkeeper's row says `rumours: true`, and tells the
+//! run's [`rumours`](crate::rumours) in place of lines of its own. A
+//! keeper offers `trade` instead, and [`greet`] puts its greeting under
+//! its name on the trade screen.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -155,6 +158,10 @@ pub struct Role {
     /// What talking says, in order.
     #[serde(default)]
     pub lines: Vec<Line>,
+    /// Whether talking tells this run's rumours, from
+    /// [`Rumours`](crate::rumours::Rumours), in place of `lines`.
+    #[serde(default)]
+    pub rumours: bool,
 }
 
 impl Role {
@@ -190,8 +197,8 @@ impl Townsfolk {
     /// nothing offered, talk with no line that always holds or lines with
     /// no talk, a trade with no shop or a shop with no trade, rites
     /// anywhere but beside the temple's trade, a tile to wander nobody
-    /// could stand on, a `{role}` that is nobody's, and a `slain` that is
-    /// no monster's.
+    /// could stand on, a `{role}` that is nobody's, a `slain` that is no
+    /// monster's, and rumours with lines besides or with no talk.
     pub fn read(text: &str, bestiary: &Bestiary) -> Result<Self, ContentError> {
         let options = Options::default().with_default_extension(Extensions::IMPLICIT_SOME);
         let roles: Vec<Role> = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -212,11 +219,17 @@ impl Townsfolk {
                 fault("offers nothing, so a walk into them does nothing".into());
             }
             let talks = r.offers.contains(&Offer::Talk);
-            if talks && !r.lines.iter().any(|l| l.when.is_none()) {
+            if talks && !r.rumours && !r.lines.iter().any(|l| l.when.is_none()) {
                 fault("talks, with no line that always holds to say first".into());
             }
             if !talks && !r.lines.is_empty() {
                 fault("has lines, and offers no talk to say them by".into());
+            }
+            if !talks && r.rumours {
+                fault("tells rumours, and offers no talk to tell them by".into());
+            }
+            if r.rumours && !r.lines.is_empty() {
+                fault("has lines, and tells rumours in their place".into());
             }
             let post = POSTS.iter().find(|p| p.role == r.role);
             match (r.offers.contains(&Offer::Trade), post) {
@@ -267,7 +280,7 @@ impl Townsfolk {
 }
 
 /// Every `{name}` in `text`, by the name inside the braces.
-fn placeholders(text: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn placeholders(text: &str) -> impl Iterator<Item = &str> {
     text.split('{').skip(1).filter_map(|rest| rest.split_once('}').map(|(name, _)| name))
 }
 
@@ -343,12 +356,13 @@ impl Folk {
         self.names.iter().fold(text.to_string(), |text, (role, name)| text.replace(&format!("{{{role}}}"), name))
     }
 
-    /// The line `role` says when talked to, and marks it said: the first
-    /// not yet said whose [`When`] `holds`, or once each of those has been,
-    /// the last that holds again. `None` for a role with nothing to say.
-    pub fn speak(&mut self, role: &Role, holds: impl Fn(&When) -> bool) -> Option<usize> {
-        let said = self.said.entry(role.role.clone()).or_default();
-        let line = next_line(&role.lines, said, holds)?;
+    /// Which of `lines` `role` says when talked to, and marks it said: the
+    /// first not yet said whose [`When`] `holds`, or once each of those
+    /// has been, the last that holds again. `None` for a role with nothing
+    /// to say. `lines` are the role's own, or a teller's rumours.
+    pub fn speak(&mut self, role: &str, lines: &[Line], holds: impl Fn(&When) -> bool) -> Option<usize> {
+        let said = self.said.entry(role.to_string()).or_default();
+        let line = next_line(lines, said, holds)?;
         said.insert(line);
         Some(line)
     }
@@ -594,7 +608,9 @@ pub fn rounds(stops: &[Point], open: impl Fn(Point) -> bool) -> Vec<Point> {
 }
 
 /// Says what talking to one of Mereholt's people says: their next line,
-/// by [`Folk::speak`], with every `{role}` that role's name, written to
+/// by [`Folk::speak`], or for one whose row tells rumours the run's next
+/// rumour, by [`Rumours::told`](crate::rumours::Rumours::told) over the
+/// run's seed, with every `{role}` that role's name, written to
 /// the log in the speaker's own colour as `Name: "line"`. The engine has
 /// already spent the talk's turn; everything else `Interacted` reports is
 /// left for whatever reads it.
@@ -602,13 +618,14 @@ pub fn rounds(stops: &[Point], open: impl Fn(Point) -> bool) -> Vec<Point> {
 /// In `TurnSet::React`, the set every game system answering `Interacted`
 /// reads from.
 pub fn answer_talk(mut done: MessageReader<Interacted>, verbs: Res<Verbs>, people: Query<(&Townsperson, &Name)>, said: Said) {
-    let Said { townsfolk, mut folk, tally, tones, mut tell } = said;
+    let Said { townsfolk, rumours, seed, mut folk, tally, tones, mut tell } = said;
     let Some(talk) = verbs.get(TALK) else { return };
     for ev in done.read().filter(|ev| ev.verb == talk) {
         let Ok((person, name)) = people.get(ev.target) else { continue };
         let Some(role) = townsfolk.role(&person.0) else { continue };
-        let Some(line) = folk.speak(role, |when| when.holds(&tally)) else { continue };
-        let words = folk.say(&role.lines[line].say);
+        let lines: Cow<[Line]> = if role.rumours { Cow::Owned(rumours.told(seed.0)) } else { Cow::Borrowed(&role.lines) };
+        let Some(line) = folk.speak(&role.role, &lines, |when| when.holds(&tally)) else { continue };
+        let words = folk.say(&lines[line].say);
         let tone = tones.get(&role.tone()).unwrap_or(Tones::TEXT);
         tell.write(Tell::new(format!("{}: \"{words}\"", name.as_str()), tone));
     }
@@ -618,6 +635,8 @@ pub fn answer_talk(mut done: MessageReader<Interacted>, verbs: Res<Verbs>, peopl
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Said<'w> {
     townsfolk: Res<'w, Townsfolk>,
+    rumours: Res<'w, crate::rumours::Rumours>,
+    seed: Res<'w, Seed>,
     folk: ResMut<'w, Folk>,
     tally: Res<'w, Tally>,
     tones: Res<'w, Tones>,
@@ -680,7 +699,7 @@ mod tests {
 
     use super::*;
     use crate::content::Library;
-    use crate::testing::{adventurer, arrive, at, continued, headless, name_of, pass_turns, said, settle, stand_on};
+    use crate::testing::{adventurer, arrive, at, continued, headless, name_of, pass_turns, said, settle, stand_on, talk_to};
 
     fn library() -> Library {
         Library::load(&crate::content::effect_kinds(), &Moments::default())
@@ -709,7 +728,7 @@ mod tests {
     /// has come to `tally`, by the shipped file.
     fn talks(folk: &mut Folk, townsfolk: &Townsfolk, role: &str, tally: &Tally, times: usize) -> Vec<usize> {
         let role = townsfolk.role(role).expect("a role of the file");
-        (0..times).map(|_| folk.speak(role, |w| w.holds(tally)).expect("something to say")).collect()
+        (0..times).map(|_| folk.speak(&role.role, &role.lines, |w| w.holds(tally)).expect("something to say")).collect()
     }
 
     /// The shipped file reads, with every role of the design in it, five
@@ -815,7 +834,7 @@ mod tests {
         let mistakes = r#"
             (role: "a", called: "the a", glyph: 'a', color: (1.0, 1.0, 1.0), post: 'A', moves: Keeps, offers: [Talk], lines: [(say: "x", when: deepest(2))]),
             (role: "a", called: "the a", glyph: 'a', color: (1.5, 1.0, 1.0), post: 'S', moves: Keeps, offers: []),
-            (role: "b", called: "the b", glyph: 'b', color: (1.0, 1.0, 1.0), post: 'B', moves: Wanders(["quicksand"]), offers: [Rites], lines: [(say: "hi {nobody}")]),
+            (role: "b", called: "the b", glyph: 'b', color: (1.0, 1.0, 1.0), post: 'B', moves: Wanders(["quicksand"]), offers: [Rites], lines: [(say: "hi {nobody}")], rumours: true),
             (role: "c", called: "the c", glyph: 'c', color: (1.0, 1.0, 1.0), post: 'C', moves: Keeps, offers: [Trade, Talk], lines: [(say: "y"), (say: "z", when: slain("Nobody"))]),
         "#;
         let text = format!("[{keepers}{mistakes}]");
@@ -830,6 +849,8 @@ mod tests {
             "a: a colour outside 0..=1, (1.5, 1.0, 1.0)",
             "a: offers nothing, so a walk into them does nothing",
             "b: has lines, and offers no talk to say them by",
+            "b: tells rumours, and offers no talk to tell them by",
+            "b: has lines, and tells rumours in their place",
             "b: offers rites, and is not the temple's keeper",
             "b: wanders onto \"quicksand\", which is no tile",
             "b: says {nobody}, which is nobody's role",
@@ -947,22 +968,6 @@ mod tests {
             assert!(squares.len() > 5, "seed {s}: the child wandered: {squares:?}");
             assert_eq!(lit.len(), lamps.len(), "seed {s}: the lamplighter came by every lamp post: {lit:?} of {lamps:?}");
         }
-    }
-
-    /// Talks to the person of `role` through the engine's own offer, as a
-    /// walk into them would, and returns what the log said last.
-    fn talk_to(app: &mut App, me: Entity, role: &str) -> String {
-        let who = person(app, role);
-        let talk = app.world().resource::<Verbs>().get(TALK).expect("declared");
-        let there = at(app, who);
-        let beside = {
-            let map = app.world().resource::<WorldMap>();
-            (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(TOWN, *p)).expect("ground beside them")
-        };
-        stand_on(app, me, beside);
-        app.world_mut().write_message(Intent::new(me, Interact { target: who, verb: talk }));
-        settle(app);
-        said(app).last().cloned().expect("something said")
     }
 
     /// A run saved in Mereholt and continued has the same people by the

@@ -28,8 +28,9 @@
 //             someone who offers more, it asks which.
 //   greeting: optional: a keeper's line under their name on the trade screen,
 //             said as written
-//   lines:    optional, and needed by Talk: what talking says, each
-//             (say: "...", when: ...), with `when` optional and one of
+//   lines:    optional, and needed by Talk unless `rumours`: what talking
+//             says, each (say: "...", when: ...), with `when` optional and
+//             one of
 //               deepest(n)     once the adventurer has been down to floor n
 //               slain("name")  once that monster of monsters.ron has died
 //             Talking says the next line not yet said whose `when` holds,
@@ -37,6 +38,8 @@
 //             role that talks has a first line with no `when`. A line may
 //             name another person by role, `{gatewarden}`, and says their
 //             name this run.
+//   rumours:  optional, false if left out: true to tell this run's rumours
+//             from rumours.ron through Talk, in place of `lines`
 [
     // The keepers.
     (
@@ -47,11 +50,7 @@
         post: 'I',
         moves: Keeps,
         offers: [Talk],
-        // The next part's rumours take this line's place, and keep it as the
-        // one said once they have all been told.
-        lines: [
-            (say: "That's all I've heard. Come back when you've been somewhere."),
-        ],
+        rumours: true,
     ),
     (
         role: "smith",
