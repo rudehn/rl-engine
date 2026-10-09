@@ -120,7 +120,7 @@ pub struct Keeper {
     always: Vec<(Id<ItemDef>, u32, Option<i32>)>,
     /// How many parts are drawn by weight a stocking.
     draws: u32,
-    /// The parts, each item at most once.
+    /// The parts, each item at most once and none of them an `always` one.
     parts: Vec<Part>,
 }
 
@@ -133,8 +133,6 @@ struct Part {
     row: LootRow<Id<ItemDef>>,
     /// Percent of stockings it is on the shelf, instead of being drawn.
     chance: Option<u32>,
-    /// The most times it is drawn in one stocking.
-    most: Option<u32>,
     /// The level a thing of it is at plain, when it takes levels.
     plain: Option<i32>,
 }
@@ -200,8 +198,11 @@ impl Wares {
 
     /// Draws one stocking of `keeper`'s shelf at `tier` from `rng`: what is
     /// always there, then its draws by weight among the parts at the tier
-    /// that have not reached their most, then each part with a chance at
-    /// the tier rolled on its own. Each thing that takes levels rolls one
+    /// not on the shelf yet, then each part with a chance at the tier
+    /// rolled on its own. No item is on one shelf twice: a second dagger
+    /// would be a row the browsing reads as another kind, and a shelf of
+    /// six draws that came up three daggers is a poorer smithy than six
+    /// kinds. Each thing that takes levels rolls one
     /// from the level table at the tier on top of its plain level, so it is
     /// never below nought; a thing that takes none draws nothing for it.
     /// Draws stop early when nothing is left to draw. Panics on a keeper
@@ -214,14 +215,12 @@ impl Wares {
             wares.push(Ware { def, count, level: self.level(plain, band, rng) });
         }
         let drawn: Vec<&Part> = keeper.parts.iter().filter(|p| p.chance.is_none()).collect();
-        let mut taken = vec![0; drawn.len()];
         for _ in 0..keeper.draws {
-            let open = drawn.iter().zip(&taken).filter(|(p, n)| p.most.is_none_or(|most| **n < most)).map(|(p, _)| p.row.clone()).collect();
+            let open = drawn.iter().filter(|p| wares.iter().all(|w| w.def != p.row.item)).map(|p| p.row.clone()).collect();
             let table = LootTable::new(open, |id| drawn.iter().find(|p| p.row.item == id).map(|p| p.name.clone()).unwrap_or_default());
             let Some((def, count)) = table.pick(band, rng) else { break };
-            let i = drawn.iter().position(|p| p.row.item == def).expect("drawn from these parts");
-            taken[i] += 1;
-            wares.push(Ware { def, count, level: self.level(drawn[i].plain, band, rng) });
+            let plain = drawn.iter().find(|p| p.row.item == def).and_then(|p| p.plain);
+            wares.push(Ware { def, count, level: self.level(plain, band, rng) });
         }
         let chanced: Vec<&Part> = keeper.parts.iter().filter(|p| p.chance.is_some() && p.row.applies(band)).collect();
         let rows = chanced.iter().map(|p| DropRow::new(p.row.item, p.chance.unwrap_or(0)).count(p.row.group.0, p.row.group.1)).collect();
@@ -318,8 +317,6 @@ struct AuthoredPart {
     chance: Option<u32>,
     #[serde(default)]
     group: Option<(u32, u32)>,
-    #[serde(default)]
-    most: Option<u32>,
 }
 
 impl AuthoredKeeper {
@@ -357,6 +354,9 @@ impl AuthoredKeeper {
             if keeper.parts.iter().any(|p| p.row.item == def) {
                 errors.push(format!("{at}: a second part of the same thing"));
             }
+            if keeper.always.iter().any(|(always, ..)| *always == def) {
+                errors.push(format!("{at}: a part of something always on the shelf"));
+            }
             let (first, last) = a.bands;
             if first > last || !TIERS.contains(&(first.max(0) as u32)) || !TIERS.contains(&(last.max(0) as u32)) {
                 errors.push(format!("{at}: tiers {first} to {last} are not a range within {} to {}", TIERS.start(), TIERS.end()));
@@ -372,17 +372,8 @@ impl AuthoredKeeper {
             if group.0 == 0 || group.0 > group.1 {
                 errors.push(format!("{at}: a group of {} to {} is no group at all", group.0, group.1));
             }
-            if a.most == Some(0) {
-                errors.push(format!("{at}: drawn at most no times is never drawn"));
-            }
             let row = LootRow::new(def).bands(first, last).weight(a.weight.unwrap_or(0)).group(group.0, group.1);
-            keeper.parts.push(Part {
-                name: armory.defs.get(def).name.clone(),
-                row,
-                chance: a.chance,
-                most: a.most,
-                plain: plain_level(def, registries, armory),
-            });
+            keeper.parts.push(Part { name: armory.defs.get(def).name.clone(), row, chance: a.chance, plain: plain_level(def, registries, armory) });
         }
         keeper
     }
@@ -475,14 +466,13 @@ mod tests {
     }
 
     #[test]
-    fn a_scroll_of_enchanting_and_a_potion_of_strength_are_stocked_at_most_once_a_stocking_over_a_span_of_seeds() {
+    fn no_shelf_holds_two_of_the_same_item_over_a_span_of_seeds() {
         let library = library();
         for tier in TIERS {
             for stocking in stockings(&library, tier) {
                 let names = names(&library, &stocking);
-                for capped in ["scroll of enchanting", "potion of strength"] {
-                    assert!(names.iter().filter(|n| *n == capped).count() <= 1, "{capped} twice in {names:?}");
-                }
+                let distinct: std::collections::BTreeSet<&String> = names.iter().collect();
+                assert_eq!(distinct.len(), names.len(), "{} at tier {tier}: {names:?}", stocking.keeper);
             }
         }
     }
@@ -571,20 +561,26 @@ mod tests {
     }
 
     #[test]
-    fn gold_an_artifact_a_bad_scroll_or_a_kind_the_keeper_does_not_buy_is_refused_naming_each() {
+    fn gold_an_artifact_a_bad_scroll_a_kind_the_keeper_does_not_buy_or_a_part_always_there_is_refused_naming_each() {
         let library = library();
         let errors = refused(
             &library,
-            r#"(name: "smith", buys: Tags(["weapon"]), always: [(item: "gold coin", count: 1)], draws: 1, parts: [
+            r#"(name: "smith", buys: Tags(["weapon"]), always: [(item: "gold coin", count: 1), (item: "dagger", count: 1)], draws: 1, parts: [
+                (item: "dagger", bands: (1, 5), weight: 1),
                 (item: "the Widow's Fang", bands: (1, 5), weight: 1),
                 (item: "scroll of summon monsters", bands: (1, 5), weight: 1),
                 (item: "sword", bands: (0, 6), weight: 1, chance: 10),
             ])"#,
         );
         let joined = errors.join("\n");
-        for said in
-            ["gold coin has no price", "the Widow's Fang is never stocked", "scroll of summon monsters is nothing the keeper buys", "tiers 0 to 6", "not both"]
-        {
+        for said in [
+            "gold coin has no price",
+            "the Widow's Fang is never stocked",
+            "scroll of summon monsters is nothing the keeper buys",
+            "tiers 0 to 6",
+            "not both",
+            "dagger: a part of something always on the shelf",
+        ] {
             assert!(joined.contains(said), "{said:?} not in:\n{joined}");
         }
     }

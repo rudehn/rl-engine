@@ -17,18 +17,18 @@
 //     always: optional; [(item:, count:)] on every shelf of every stocking, that many
 //     draws:  optional; how many of `parts` are drawn by weight a stocking, nought when
 //             left out
-//     parts:  optional; [(item:, bands:, weight:, chance:, group:, most:)], each drawn as
-//             the engine's `LootTable` draws at a band, the band being the tier:
+//     parts:  optional; [(item:, bands:, weight:, chance:, group:)], each drawn as the
+//             engine's `LootTable` draws at a band, the band being the tier, and never one
+//             already on the shelf, so no item is on one shelf twice:
 //       item:   a name in `items.ron`, with a price, so never gold, and never an artifact,
-//               a scroll of aggravate monsters or one of summon monsters; one part a keeper
+//               a scroll of aggravate monsters or one of summon monsters; one part a keeper,
+//               and none of an item in `always`
 //       bands:  (first tier, last tier), both included, tiers running 1 to 5
 //       weight: optional; how often against every other drawn part that applies at the
 //               tier; required on a part without a chance, refused on one with
 //       chance: optional; percent of the stockings at its tiers the part is on the shelf,
 //               rolled on its own as a drop is, on top of the draws and never among them
 //       group:  optional; (fewest, most) of it on the shelf when it is drawn; one when left out
-//       most:   optional; the most times a weighted part is drawn in one stocking; no cap
-//               when left out
 (
     levels: [
         (bands: (1, 1), levels: [(0, 1)]),
@@ -96,8 +96,8 @@
             (item: "ring of regeneration", bands: (3, 5), weight: 1),
             (item: "ring of reaping", bands: (3, 5), weight: 1),
             (item: "wand of domination", bands: (3, 5), weight: 1),
-            (item: "scroll of enchanting", bands: (2, 5), weight: 1, most: 1),
-            (item: "potion of strength", bands: (3, 5), weight: 1, most: 1),
+            (item: "scroll of enchanting", bands: (2, 5), weight: 1),
+            (item: "potion of strength", bands: (3, 5), weight: 1),
             (item: "potion of life", bands: (5, 5), chance: 25),
         ]),
         // The temple of the Still Water: its rites are offerings, not wares, and its
