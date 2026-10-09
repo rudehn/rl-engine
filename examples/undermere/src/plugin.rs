@@ -68,6 +68,9 @@ impl Plugin for UndermerePlugin {
             // find within sight and reach: every monster but the king, who
             // never dies in a way anything could be left to raise.
             .add_plugins(RemainsPlugin::naming("{what} corpse"));
+        // Which kind a death's remnant stands for, so a burst of spores
+        // where a myconid fell is learned as the myconid's.
+        rl_engine::rl_bevy::KeepOnRemnant::keep_on_remnant::<crate::bestiary::KindTag>(app);
         // The engine's effects Undermere names, for the potions, the staffs
         // and the breaths, beside the `Ignite` fire declares and the `Emit`
         // the clouds do; and Undermere's own, for the scrolls, the potions,
@@ -199,7 +202,7 @@ impl Plugin for UndermerePlugin {
         // The bestiary's own tricks that read what a turn did rather than
         // the trait model's fold: a blow that splits what it left alive, a
         // blow that mends its own drainer, a step that leaves fire behind
-        // it, a cell's own dark kept or lifted, a troll's regeneration
+        // it, a troll's regeneration
         // halted while it burns, a Choirmaster's choir kept over its own
         // side, the Widow's egg sacs stepped beside, the Mother Below's
         // young torn from the walls and gone the pass she dies, and the
@@ -210,7 +213,6 @@ impl Plugin for UndermerePlugin {
                 crate::tricks::judge_splits,
                 crate::tricks::judge_draining,
                 crate::tricks::trail_fire,
-                crate::tricks::keep_shrouded,
                 crate::tricks::keep_regen_halted,
                 crate::tricks::sing_choir,
                 crate::tricks::hatch_beside,
@@ -231,7 +233,7 @@ impl Plugin for UndermerePlugin {
             (
                 crate::bestiary_lore::learn_from_abilities,
                 crate::bestiary_lore::learn_from_triggers,
-                crate::bestiary_lore::learn_splitting,
+                crate::bestiary_lore::learn_from_statuses,
                 crate::bestiary_lore::learn_fire_trail,
                 crate::bestiary_lore::learn_draining,
                 crate::bestiary_lore::learn_reflecting,

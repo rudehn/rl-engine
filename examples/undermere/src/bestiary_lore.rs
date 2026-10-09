@@ -1,7 +1,7 @@
 //! What the adventurer knows of a kind's traits.
 //!
 //! A monster's plain traits, its look, its speed, whether it flies, are
-//! known the moment its kind is seen at all: [`TraitDef::trick`], written
+//! known the moment its kind is seen at all: [`TraitDef::trick`](crate::traits::TraitDef::trick), written
 //! once in `traits.ron`, says which of a trait are not. [`MonsterLore`],
 //! saved with the run as [`crate::lore::Lore`] is, holds for each kind the
 //! tricks the adventurer has seen land: a bite that poisons someone, a
@@ -14,22 +14,26 @@
 //! trick's effect landed somewhere the adventurer could see: an ability's
 //! own [`AbilityEvent::Used`] for everything an `abilities:` trait grants,
 //! fire breath, a bite that spits webs, a blink, a ward, a mend, a word of
-//! fire or of slowness, conjured blades, a raised body; and the engine's
-//! own actor triggers' [`Fired`] for everything a `triggers:` trait
-//! grants, a venomous bite, a paralysing touch, a wraith's withering
-//! touch, a spore-burst, a monkey's theft, each at the cell the trigger
-//! answered at. [`splitting`](crate::tricks::Splits), [`fire-trail`
-//! ](crate::tricks::FireTrail) and [`draining`](crate::tricks::Drains) are
-//! the bestiary's own game systems from task 6b; [`learn_splitting`],
-//! [`learn_fire_trail`] and [`learn_draining`] read the same messages
-//! those systems already do, rather than threading a new message through
-//! them.
+//! fire or of slowness, conjured blades, a raised body; and for what a
+//! `triggers:` trait grants, what the trigger's effect did rather than its
+//! moment coming round, since a touch whose chance fails fires all the
+//! same. A status it puts on is learned off the engine's own
+//! [`StatusEvent`] in [`learn_from_statuses`], a venomous bite, a
+//! paralysing touch, a wraith's withering touch; a theft where the thing is
+//! taken, in [`crate::tricks::steal`]; and only a spore-burst, which lands
+//! whenever it fires, off the actor triggers' own [`Fired`] in
+//! [`learn_from_triggers`]. [`fire-trail`](crate::tricks::FireTrail) and
+//! [`draining`](crate::tricks::Drains) are the bestiary's own game
+//! systems; [`learn_fire_trail`] and [`learn_draining`] read the same
+//! messages those systems already do, rather than threading a new message
+//! through them. [`splitting`](crate::tricks::Splits) is learned where the
+//! split itself is made, since whether a blow splits anything is decided
+//! there and nowhere a message says.
 //!
 //! `reflecting` is learned off the engine's own `Reflected`, written by
 //! [`rl_engine::rl_bevy::Bystanders::reflect`] each time it turns a
-//! landing back: task 7's report found no seam for it yet, and
-//! [`learn_reflecting`] is that seam, read at the reflecting body's own
-//! cell exactly as [`learn_splitting`] and [`learn_draining`] read theirs.
+//! landing back: [`learn_reflecting`] reads it at the reflecting body's
+//! own cell exactly as [`learn_draining`] reads the drainer's.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -37,8 +41,8 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::bestiary::{Bestiary, Kind};
-use crate::tricks::{Drains, FireTrail, Splits};
+use crate::bestiary::{Bestiary, Kind, KindTag};
+use crate::tricks::{Drains, FireTrail};
 
 /// What the adventurer knows of the run's monsters: which of each kind's
 /// tricks they have seen land. A plain trait needs no entry here; it is
@@ -112,17 +116,20 @@ pub fn learn_from_abilities(
     }
 }
 
-/// Learns every trick landed through the engine's own actor triggers, by
-/// [`crate::bestiary::MonsterDef::trick_moments`]: a bite's poison, a
-/// touch's chill or its sapped strength, a hand that steals, a burst of
-/// spores where something died, each at [`Fired::at`], the cell it
-/// happened at.
+/// Learns every trick landed through the engine's own actor triggers that
+/// does what it does whenever its moment comes, by
+/// [`crate::bestiary::MonsterDef::trick_moments`]: a burst of spores where
+/// something died, at [`Fired::at`], the cell it happened at.
+///
+/// Read through [`KindTag`] rather than [`Kind`], since a `died` moment
+/// fires a pass later on the engine's remnant of the monster, which the
+/// tag goes to and the saved kind does not.
 ///
 /// In `TurnSet::React`, after combat and the engine's own actor triggers
 /// have reported the pass's [`Fired`].
 pub fn learn_from_triggers(
     mut fired: MessageReader<Fired>,
-    kinds: Query<&Kind>,
+    kinds: Query<&KindTag>,
     bestiary: Res<Bestiary>,
     players: Query<&Viewshed, With<Player>>,
     mut lore: ResMut<MonsterLore>,
@@ -138,24 +145,41 @@ pub fn learn_from_triggers(
     }
 }
 
-/// Learns `splitting` the moment a blow a jelly lived through is seen
-/// landing: the same `DamageDealt` and the same live-or-not check
-/// [`crate::tricks::judge_splits`] makes, read again here rather than
-/// threaded through it, so the two stay two small systems instead of one
-/// doing both jobs.
+/// Learns every trick whose triggers put a status on what they touch, by
+/// [`crate::bestiary::MonsterDef::trick_statuses`], the moment that status
+/// takes hold where the adventurer can see: a bite's poison, a touch that
+/// freezes, a touch that saps strength. Off the status taking hold rather
+/// than the touch landing, since a touch's chance may fail, and a fourth
+/// sapping of strength is refused.
 ///
-/// In `TurnSet::React`.
-pub fn learn_splitting(
-    mut dealt: MessageReader<DamageDealt>,
-    splitting: Query<(&Kind, &Position, &Health), With<Splits>>,
-    players: Query<&Viewshed, With<Player>>,
+/// The engine's own [`StatusEvent`] says what took hold and on whom, and
+/// the [`Afflict`] that asked for it says by whom; a status taking hold
+/// is paired with an ask of this pass for the same status on the same
+/// body, by one of the kind.
+///
+/// In `TurnSet::React`, after the pass's afflictions are resolved.
+pub fn learn_from_statuses(
+    mut asked: MessageReader<Afflict>,
+    mut took: MessageReader<StatusEvent>,
+    kinds: Query<&Kind>,
+    bodies: Query<&Position>,
     bestiary: Res<Bestiary>,
+    players: Query<&Viewshed, With<Player>>,
     mut lore: ResMut<MonsterLore>,
 ) {
-    for hit in dealt.read().filter(|d| d.dealt > 0) {
-        let Ok((kind, pos, health)) = splitting.get(hit.target) else { continue };
-        if health.current > 0 && seen(&players, pos.0) {
-            lore.show(&bestiary.defs.get(kind.0).name, "splitting");
+    let asks: Vec<(Entity, StatusId, Entity)> = asked.read().filter_map(|a| a.by.map(|by| (a.target, a.status, by))).collect();
+    for ev in took.read() {
+        let (StatusEvent::Applied { target, status } | StatusEvent::Renewed { target, status }) = *ev else { continue };
+        let Ok(at) = bodies.get(target) else { continue };
+        if !seen(&players, at.0) {
+            continue;
+        }
+        for (_, _, by) in asks.iter().filter(|(t, s, _)| *t == target && *s == status) {
+            let Ok(kind) = kinds.get(*by) else { continue };
+            let def = bestiary.defs.get(kind.0);
+            for (_, trait_name) in def.trick_statuses.iter().filter(|(s, _)| *s == status) {
+                lore.show(&def.name, trait_name);
+            }
         }
     }
 }
@@ -313,6 +337,59 @@ mod tests {
         assert!(!app.world().resource::<MonsterLore>().has_shown("pink jelly", "splitting"), "never seen, so never known");
         let lines = said(&app);
         assert!(!lines.iter().any(|l| l.contains("splits into two")), "and never named in the log either: {lines:#?}");
+    }
+
+    /// A ghoul's `hit` moment coming round in plain sight is not its
+    /// touch freezing anyone: with nothing frozen, `paralysing` stays
+    /// unknown, and the pass the ghoul's own paralysis takes hold on the
+    /// adventurer, it is known.
+    #[test]
+    fn a_paralysing_touch_is_learned_once_the_paralysis_takes_hold_and_not_before() {
+        use crate::testing::arena;
+        let (mut app, me, here) = arena(6);
+        let ghoul = monster(&mut app, "ghoul", here.offset(1, 0));
+        app.world_mut().entity_mut(ghoul).remove::<Mind>();
+        settle(&mut app);
+        app.world_mut().write_message(Fired { on: ghoul, moment: Moments::HIT, by: Some(ghoul), at: here });
+        settle(&mut app);
+        assert!(!app.world().resource::<MonsterLore>().has_shown("ghoul", "paralysing"), "a touch that froze nothing shows nothing");
+        let paralysed = app.world().resource::<Registries>().statuses.expect("paralysed");
+        app.world_mut().write_message(Afflict { target: me, status: paralysed, turns: 2, by: Some(ghoul), held_by: None });
+        settle(&mut app);
+        assert!(app.world().resource::<MonsterLore>().has_shown("ghoul", "paralysing"), "frozen in plain sight, so known");
+    }
+
+    /// A monkey's blow at an adventurer with nothing loose in their pack
+    /// takes nothing and teaches nothing of `stealing`; one at a pack with
+    /// something in it takes it, and the theft seen is the trick known.
+    #[test]
+    fn stealing_is_learned_where_a_thing_is_taken_and_not_from_an_empty_pack() {
+        use crate::testing::{arena, make};
+        let (mut app, me, here) = arena(7);
+        let monkey = monster(&mut app, "monkey", here.offset(1, 0));
+        settle(&mut app);
+        let bag: Vec<Entity> = app.world().get::<Inventory>(me).map(|b| b.items.clone()).unwrap_or_default();
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.clear();
+        assert!(!crate::tricks::steal(app.world_mut(), monkey, me), "nothing loose to take");
+        assert!(!app.world().resource::<MonsterLore>().has_shown("monkey", "stealing"), "and nothing learned of it");
+        let thing = make(&mut app, "dagger");
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.extend(bag.into_iter().chain([thing]));
+        assert!(crate::tricks::steal(app.world_mut(), monkey, me), "something taken");
+        assert!(app.world().resource::<MonsterLore>().has_shown("monkey", "stealing"), "taken in plain sight, so known");
+    }
+
+    /// A myconid's `spore-burst` lands a pass after it dies, on the
+    /// engine's remnant of it rather than on the myconid: seen bursting
+    /// where it fell, it is known.
+    #[test]
+    fn a_myconid_seen_bursting_where_it_fell_teaches_spore_burst() {
+        use crate::testing::{arena, kill};
+        let (mut app, _, here) = arena(8);
+        let myconid = monster(&mut app, "myconid", here.offset(1, 0));
+        settle(&mut app);
+        kill(&mut app, myconid, None);
+        settle(&mut app);
+        assert!(app.world().resource::<MonsterLore>().has_shown("myconid", "spore-burst"));
     }
 
     /// What is known of a kind's tricks survives a save and a continued

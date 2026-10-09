@@ -130,7 +130,7 @@ pub fn count_the_fighting(
     mut dealt: MessageReader<DamageDealt>,
     mut deaths: MessageReader<DeathEvent>,
     credit: Credit,
-    kinds: Query<&Kind>,
+    kinds: Query<(&Kind, Has<crate::effects::bodies::Raised>)>,
     healths: Query<&Health>,
     bestiary: Res<Bestiary>,
     mut tally: ResMut<Tally>,
@@ -171,7 +171,9 @@ pub fn count_the_fighting(
         if Some(death.entity) == me {
             tally.slain_by = credit.of(death.credit);
         }
-        let Ok(kind) = kinds.get(death.entity) else { continue };
+        // A raised body's second death is counted nowhere: its first
+        // already paid its kill, its mini-boss and its threat.
+        let Ok((kind, false)) = kinds.get(death.entity) else { continue };
         let def = bestiary.defs.get(kind.0);
         if def.boss {
             tally.boss_slain = Some(def.name.clone());

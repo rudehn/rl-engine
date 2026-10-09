@@ -20,7 +20,9 @@
 //            lists them; two that set the same single value are refused, naming both
 //   boss:    optional; true for the one whose death wins the run, false when left out
 //   miniboss: optional; true for a mini-boss, worth 500 to the score when the adventurer
-//            kills it, false when left out; none yet
+//            kills it, false when left out
+//   conjured: optional; true for a thing only ever called up, never found, which leaves no
+//            body when it falls; false when left out
 //   drops:   optional; [(item name, percent chance)], each rolled on its own death; a pile
 //            of gold dropped is a floor's pile
 //
@@ -52,8 +54,8 @@
     (name: "goblin mystic", glyph: 'y', color: (0.4, 0.7, 0.9), hp: 10, attack: "1d3 crush", faction: "goblins", traits: ["sapient", "cowardly", "warding", "led"]),
     (name: "myconid", glyph: 'f', color: (0.45, 0.9, 0.78), hp: 12, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "slow", "fungal glow", "spore-burst"]),
     (name: "pink jelly", glyph: 'J', color: (0.95, 0.5, 0.7), hp: 30, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "splitting"]),
-    (name: "vampire bat", glyph: 'b', color: (0.45, 0.35, 0.5), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark", "flitting", "draining"]),
-    (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: "2d6 crush", faction: "goblins", traits: ["sapient", "slow", "thick-hided"],
+    (name: "vampire bat", glyph: 'b', color: (0.45, 0.35, 0.5), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark", "flitting", "draining", "sleepy"]),
+    (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: "2d6 crush", faction: "goblins", traits: ["sapient", "slow", "thick-hided", "sleepy"],
      drops: [("gold coin", 80), ("war hammer", 15)]),
     // `led` for the Choirmaster's own four, which stand with him over
     // task 8a's `Band`; an ordinary floor's skeleton never has a
@@ -71,7 +73,7 @@
     // 8a's `Band`.
     (name: "drowned thrall", glyph: 'Z', color: (0.45, 0.65, 0.72), hp: 22, attack: "2d6 crush", faction: "undead", traits: ["mindless", "deathless", "slow", "led"]),
     (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: "1d6+1 cold", armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light", "draining"]),
-    (name: "troll", glyph: 'T', color: (0.45, 0.6, 0.35), hp: 40, attack: "2d6+1 slash", faction: "beasts", traits: ["sapient", "regenerates", "burns-badly"]),
+    (name: "troll", glyph: 'T', color: (0.45, 0.6, 0.35), hp: 40, attack: "2d6+1 slash", faction: "beasts", traits: ["sapient", "regenerates", "burns-badly", "sleepy"]),
     (name: "golem", glyph: 'X', color: (0.65, 0.6, 0.55), hp: 60, attack: "2d10 crush", faction: "goblins", traits: ["mindless", "slow", "armored", "wakeful", "reflecting"]),
     (name: "dar blademaster", glyph: 'd', color: (0.75, 0.55, 0.9), hp: 24, attack: "2d6 slash", faction: "dar", traits: ["sapient", "swift", "blinking"]),
     (name: "dar priestess", glyph: 'd', color: (0.9, 0.65, 0.85), hp: 20, attack: "1d6 crush", faction: "dar", traits: ["sapient", "cowardly", "warding", "mends allies", "led"]),
@@ -114,8 +116,8 @@
     (name: "the Forgemaster", glyph: 'O', color: (1.0, 0.5, 0.15), hp: 90, attack: "3d6 crush", faction: "beasts",
      traits: ["sapient", "fire-blooded", "armored", "slow", "wakeful"], miniboss: true, drops: [("the Forgemaster's Hammer", 100)]),
     // What a staff of conjuration calls up beside the adventurer, on their
-    // side, for a few turns: quick, and gone at the first blow. Nowhere in
-    // the spawn table, so it is never found, only made.
+    // side, for a few turns: quick, and gone at the first blow, leaving
+    // nothing. Nowhere in the spawn table, so it is never found, only made.
     (name: "spectral blade", glyph: '†', color: (0.72, 0.86, 1.0), hp: 1, attack: "1d3 slash", faction: "adventurer",
-     traits: ["mindless", "swift", "deathless"]),
+     traits: ["mindless", "swift", "deathless"], conjured: true),
 ]

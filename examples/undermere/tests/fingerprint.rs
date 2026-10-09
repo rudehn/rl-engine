@@ -230,8 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [3_980_971_438_599_573_768, 13_862_721_143_101_052_644, 2_891_562_110_806_429_677],
-        "fingerprint tripwire: re-baselined for part 3 task 11b (a mind that opens doors, and the script's own walk, \
-         go round a closed door's corner rather than planning the diagonal past it the engine refuses)"
+        [3_980_971_438_599_573_768, 13_862_721_143_101_052_644, 4_494_584_218_363_696_789],
+        "fingerprint tripwire: re-baselined for the monsters part's final review (a jelly splits only on a blow and \
+         only with four health left, and the ogre, the troll and the vampire bat sleep deeply)"
     );
 }

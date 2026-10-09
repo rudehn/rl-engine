@@ -118,10 +118,11 @@
     // it and marks the taker to run.
     (name: "stealing", says: "steals, then runs", wits: ["travels"], trick: true,
      triggers: [(on: "hit", effects: [(kind: "Steal")])]),
-    // Plain rather than a trick: this is how well it is noticed, the same
+    // Plain rather than a trick: this is whether it is seen, the same
     // kind of thing `notice`, `hearing` and `sees in the dark` already
-    // are, not an effect that lands.
-    (name: "shrouded", says: "hard to see in the dark"),
+    // are, not an effect that lands. Out of the light and not beside the
+    // adventurer, it is not on the map at all.
+    (name: "shrouded", says: "unseen out of the light"),
     // Plain: an erratic step is seen the moment it is watched move, the
     // same kind of thing `swift` and `slow` already are.
     (name: "flitting", says: "flits erratically"),

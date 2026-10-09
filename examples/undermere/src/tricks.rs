@@ -8,8 +8,12 @@
 //!
 //! `splitting` reads `DamageDealt` rather than the trait model's own
 //! `struck`, which fires before a blow's damage is known; `fire-trail`
-//! reads `Stepped`; `shrouded` and `burns-badly`'s halted mending read
-//! what is true of a body every turn, the way `keep_fireproof` does.
+//! reads `Stepped`; `burns-badly`'s halted mending reads what is true of
+//! a body every turn, the way `keep_fireproof` does. `shrouded` needs no
+//! system here at all: the engine's own `Concealed`, put on at spawn,
+//! keeps a wraith off the map, the sighted list and the look panel while
+//! it stands out of the light and not beside the adventurer, decided again
+//! every frame from where the light falls.
 //! `stealing`'s taking and `withering`'s capped stacking are effects,
 //! landed by the engine's actor triggers exactly as `venomous`'s bite is,
 //! each registered in [`crate::content::add_game_effects`].
@@ -29,7 +33,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_bevy::EffectRng;
 use rl_engine::rl_rules::ability::{RawValue, read_args};
 use rl_engine::rl_rules::ai::brain::Tactic;
-use rl_engine::rl_rules::ai::tactics::Ways;
+use rl_engine::rl_rules::ai::tactics::{Station, Ways};
 
 use crate::bestiary::{Bestiary, Kind, spawn_monster_now};
 use crate::bestiary_lore::MonsterLore;
@@ -105,9 +109,10 @@ impl Tricks {
     /// Whether any of these needs a marker component at spawn, for a
     /// `TurnSet::React` system to find by: every one but `packs`, `led`
     /// and `flits`, which are brain shapes built once at load and nothing
-    /// a running turn has to look up.
+    /// a running turn has to look up, and `shrouds`, whose `Concealed` is
+    /// the engine's and is put on whatever this says.
     pub fn needs_marker(self) -> bool {
-        self.splits || self.shrouds || self.fire_trail || self.reflects || self.burns_badly || self.drains || self.sings || self.spawns || self.wells
+        self.splits || self.fire_trail || self.reflects || self.burns_badly || self.drains || self.sings || self.spawns || self.wells
     }
 }
 
@@ -119,21 +124,27 @@ impl Tricks {
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Splits;
 
-/// The least health a split leaves either half with, the trait's own
-/// words: "none below 2".
-const SPLIT_MIN_HEALTH: i32 = 2;
+/// The least health a body must have left to split at all: two halves of
+/// the trait's own "none below 2". Below it a blow splits nothing, since
+/// halves floored at two each came to more health than the one they split
+/// from, and every split of a small jelly grew the floor's.
+const SPLIT_MIN_HEALTH: i32 = 4;
 
 /// Splits whoever a blow of this pass left alive and marked [`Splits`]:
-/// half its current health each, rounded down and never below
-/// [`SPLIT_MIN_HEALTH`], the second made on a free cell beside the first.
-/// Nothing for one the blow killed, read fresh off its `Health` rather
-/// than off the event, and nothing for one with no free cell to stand a
-/// second half on.
+/// half its current health each, rounded down, the second made on a free
+/// cell beside the first. Nothing for one the blow killed, read fresh off
+/// its `Health` rather than off the event, nothing for one left with less
+/// than [`SPLIT_MIN_HEALTH`], and nothing for one with no free cell to
+/// stand a second half on.
+///
+/// A blow, not any harm: a status's own tick, a burn from the fire it
+/// stands in among them, carries the status it is the tick of and is
+/// passed over. A jelly in a fire otherwise split on every turn it burned.
 ///
 /// In `TurnSet::React`, after `apply_damage` has written `DamageDealt`.
 pub fn judge_splits(mut dealt: MessageReader<DamageDealt>, splitting: Query<(), With<Splits>>, mut commands: Commands) {
     let mut struck: Vec<Entity> = Vec::new();
-    for hit in dealt.read().filter(|d| d.dealt > 0 && splitting.contains(d.target)) {
+    for hit in dealt.read().filter(|d| d.dealt > 0 && d.hit.status.is_none() && splitting.contains(d.target)) {
         if !struck.contains(&hit.target) {
             struck.push(hit.target);
         }
@@ -151,7 +162,7 @@ fn try_split(world: &mut World, target: Entity) -> bool {
         return false;
     }
     let Some(health) = world.get::<Health>(target).copied() else { return false };
-    if health.current <= 0 {
+    if health.current < SPLIT_MIN_HEALTH {
         return false;
     }
     let Some(kind) = world.get::<Kind>(target).map(|k| k.0) else { return false };
@@ -159,16 +170,20 @@ fn try_split(world: &mut World, target: Entity) -> bool {
     let map = world.get::<OnMap>(target).map_or(MapId::SURFACE, |m| m.0);
     let beside = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, 1, 1);
     let Some(second_at) = beside.first().copied() else { return false };
-    let half = (health.current / 2).max(SPLIT_MIN_HEALTH).min(health.max);
+    let half = health.current / 2;
     world.entity_mut(target).insert(Health { current: half, max: health.max });
     let made = spawn_monster_now(world, kind, second_at, map);
     world.entity_mut(made).insert(Health { current: half, max: health.max });
     // Told only where it is seen, as `withering`'s own touch is by the
     // engine's own narrator: a split in a room nobody is watching is not
-    // something the adventurer learns of from the log either.
+    // something the adventurer learns of from the log either. Learned here,
+    // where the split is, rather than off the blow: a blow too small to
+    // split anything, or with no room beside it, shows nothing.
     if seen_by_player(world, at) {
         let name = world.get::<Name>(target).map_or_else(String::new, |n| n.as_str().to_string());
         world.write_message(Tell::new(format!("{} splits into two!", crate::effects::the(&name)), Tones::NOTICE));
+        let kind = world.resource::<Bestiary>().defs.get(kind).name.clone();
+        world.resource_mut::<MonsterLore>().show(&kind, "splitting");
     }
     true
 }
@@ -324,6 +339,12 @@ pub fn steal(world: &mut World, thief: Entity, victim: Entity) -> bool {
         let (thief_name, victim_name, item_name) = (name(thief, world), name(victim, world), name(item, world));
         let line = format!("{} snatches {}'s {} and bolts!", crate::effects::capital(&thief_name), victim_name, item_name);
         world.write_message(Tell::new(line, Tones::BAD));
+        // Learned here, where a thing is taken, rather than off the blow
+        // it rode: a blow at an empty pack takes nothing and shows nothing.
+        if let Some(kind) = world.get::<Kind>(thief).map(|k| k.0) {
+            let name = world.resource::<Bestiary>().defs.get(kind).name.clone();
+            world.resource_mut::<MonsterLore>().show(&name, "stealing");
+        }
     }
     true
 }
@@ -391,49 +412,6 @@ pub fn trail_fire(mut stepped: MessageReader<Stepped>, trailing: Query<(), With<
     }
 }
 
-/// Marks a kind that is unseen while it stands in the dark: a wraith's
-/// `shrouded`.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct Shrouds;
-
-/// Keeps the engine's own `shrouded` status, a potion of darkness's, on
-/// every [`Shrouds`] kind while its cell is dark, and takes it off the
-/// moment it is not: a wraith standing in an unlit cell is exactly as
-/// hard to notice as a drinker of that potion, since both are read by the
-/// same stealth stat.
-///
-/// Dark is anything short of [`LightBand::Lit`], a light's own pool: every
-/// floor's ambient is bright enough to be seen by, so the floor's shape
-/// reads beyond the lantern, and a wraith judged by whether its cell is
-/// seen at all would never once be shrouded below Mereholt.
-///
-/// Edge-triggered, as `keep_fireproof` is: `Afflict` only the turn a
-/// `Shrouds` kind enters the dark, `Cure` only the turn it leaves it.
-///
-/// In `TurnSet::React`.
-pub fn keep_shrouded(
-    registries: Res<Registries>,
-    lighting: Res<Lighting>,
-    bodies: Query<(Entity, &Position, &Afflicted), With<Shrouds>>,
-    mut afflict: MessageWriter<Afflict>,
-    mut cure: MessageWriter<Cure>,
-) {
-    let Some(status) = registries.statuses.id(crate::content::SHROUDED) else { return };
-    for (e, pos, held) in &bodies {
-        let dark = lighting.band(pos.0) != LightBand::Lit;
-        let has = held.0.has(status);
-        if dark && !has {
-            afflict.write(Afflict { target: e, status, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
-        } else if !dark && has {
-            cure.write(Cure { target: e, status });
-/// A [`BurnsBadly`] body as [`keep_regen_halted`] reads it: what it
-/// suffers, its stats, and whether its mending is halted now.
-type Burning = (Entity, &'static Afflicted, &'static mut StatBlock, Has<RegenHalted>);
-
-        }
-    }
-}
-
 /// Marks a kind whose regeneration stops while it burns: a troll's
 /// `burns-badly`, the second half of its trait.
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -447,6 +425,10 @@ pub struct RegenHalted;
 /// The tag [`keep_regen_halted`]'s own modifier sits under, so it removes
 /// exactly the one it put on the mending stat and nothing else there.
 const REGEN_HALT_TAG: u64 = u64::from_be_bytes(*b"burnbad1");
+
+/// A [`BurnsBadly`] body as [`keep_regen_halted`] reads it: what it
+/// suffers, its stats, and whether its mending is halted now.
+type Burning = (Entity, &'static Afflicted, &'static mut StatBlock, Has<RegenHalted>);
 
 /// Zeroes a [`BurnsBadly`] body's mending while it holds `scorched`, and
 /// lifts the zero the moment the burning ends: regeneration, and nothing
@@ -523,11 +505,6 @@ pub const WEAKENED_MAX_STACKS: usize = 3;
 /// Inflicts `weakened` on `target` for `turns`, credited to `by`, unless
 /// it already holds [`WEAKENED_MAX_STACKS`] instances: a fourth touch
 /// before the first's clock runs out is refused rather than let the stat
-/// A choir that is singing: a living one, an `Actor`, since a
-/// Choirmaster's body keeps `Choir`, its cell and its side, and a choir
-/// read off remains sang over its own corpse for good.
-type Singing = (With<Choir>, With<Actor>);
-
 /// climb without bound.
 pub fn wither(world: &mut World, target: Entity, by: Option<Entity>, turns: u32) {
     let Some(weakened) = world.resource::<Registries>().statuses.id(crate::content::WEAKENED) else { return };
@@ -546,6 +523,11 @@ pub struct Choir;
 /// How far a [`Choir`]'s own song reaches: the content sheet's own four.
 const SING_RANGE: i32 = 4;
 
+/// A choir that is singing: a living one, an `Actor`, since a
+/// Choirmaster's body keeps `Choir`, its cell and its side, and a choir
+/// read off remains sang over its own corpse for good.
+type Singing = (With<Choir>, With<Actor>);
+
 /// A body a choir might sing to: where it stands, its side, what it
 /// suffers and its stats, which the song's regeneration is kept in, and
 /// whether the song already gave it its regeneration.
@@ -558,7 +540,7 @@ type SingingTo = (Entity, &'static Position, &'static Faction, &'static mut Affl
 /// scaled by the mending stat is what "regenerate" already means
 /// everywhere else in this bestiary.
 ///
-/// Edge-triggered, as `keep_shrouded` is: given only the turn a body
+/// Edge-triggered, as `keep_fireproof` is: given only the turn a body
 /// comes into range, taken only the turn it leaves it. Only what the song
 /// gave is taken back, marked [`Sung`]: a body already regenerating by its
 /// own trait or a worn ring keeps it, in range or out.
@@ -617,24 +599,57 @@ const EGG_SAC_HATCH_COUNT: u32 = 2;
 /// [`crate::effects::bodies::Hatch`] instead of here, since combat
 /// already knows where and when it broke.
 ///
+/// Only a foe of what hatches sets one off, the adventurer or anyone else
+/// at odds with the brood: the Widow walking her own cave, and her
+/// hatchlings stepping off their sac beside the next, once hatched every
+/// sac in a chain. And once a pass for each sac, however many steps land
+/// beside it, since the despawn waits for the pass's end and a second
+/// step in it hatched the same sac twice.
+///
 /// In `TurnSet::React`.
 pub fn hatch_beside(
     mut commands: Commands,
     mut steps: MessageReader<Stepped>,
     registries: Res<Registries>,
     map: Res<WorldMap>,
+    foes: BroodFoes,
     props: Query<(Entity, &PropKind, &Position, &OnMap), With<Prop>>,
 ) {
     let Some(sac) = registries.props.id(EGG_SAC) else { return };
     let here = map.current();
+    let mut hatched: Vec<Entity> = Vec::new();
     for step in steps.read() {
+        if !foes.is_foe(step.actor) {
+            continue;
+        }
         for (prop, kind, pos, on) in &props {
-            if kind.0 == sac && on.0 == here && geometry::chebyshev(pos.0, step.to) <= 1 {
+            if kind.0 == sac && on.0 == here && geometry::chebyshev(pos.0, step.to) <= 1 && !hatched.contains(&prop) {
+                hatched.push(prop);
                 commands.entity(prop).despawn();
                 let at = pos.0;
                 commands.queue(move |world: &mut World| crate::effects::bodies::hatch(world, EGG_SAC_HATCH, EGG_SAC_HATCH_COUNT, at, here));
             }
         }
+    }
+}
+
+/// Whose step beside an egg sac is a foe's of what hatches from it: the
+/// side [`EGG_SAC_HATCH`] is written with, against the side of whoever
+/// stepped, by the faction matrix every blow reads.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct BroodFoes<'w, 's> {
+    bestiary: Res<'w, Bestiary>,
+    rules: Option<Res<'w, CombatRules>>,
+    sides: Query<'w, 's, &'static Faction>,
+}
+
+impl BroodFoes<'_, '_> {
+    /// Whether `actor` is at odds with the brood: nothing with no side, and
+    /// nothing in a game with no faction matrix to say.
+    fn is_foe(&self, actor: Entity) -> bool {
+        let (Some(rules), Some(brood)) = (self.rules.as_deref(), self.bestiary.defs.id(EGG_SAC_HATCH)) else { return false };
+        let brood = self.bestiary.defs.get(brood).faction;
+        self.sides.get(actor).is_ok_and(|side| rules.factions.relation(side.0, brood) == Relation::Hostile)
     }
 }
 
@@ -763,6 +778,9 @@ pub struct Wells {
 /// calls [`crate::effects::bodies::call_drowned`] for one thrall every
 /// [`RISE_INTERVAL`]th: the Drowned King's `welling`, forced rather than
 /// chosen, unlike the Drowned Abbess's own `calling the drowned` ability.
+/// Learned only where the adventurer sees the king or the water a thrall
+/// rose from, as `spawning` is only where they see its maker: a thrall
+/// risen in a hall they never looked into teaches nothing.
 ///
 /// In `TurnSet::React`, after the engine has reported this pass's own
 /// `ActionDone`.
@@ -776,7 +794,7 @@ pub fn rise_from_the_pool(mut done: MessageReader<ActionDone>, mut wells: Query<
         w.elapsed = 0;
         let king = d.actor;
         commands.queue(move |world: &mut World| {
-            if crate::effects::bodies::call_drowned(world, king, 1, RISE_RANGE) > 0
+            if let (_, true) = crate::effects::bodies::call_drowned(world, king, 1, RISE_RANGE)
                 && let Some(kind) = world.get::<Kind>(king).map(|k| k.0)
             {
                 let name = world.resource::<Bestiary>().defs.get(kind).name.clone();
@@ -809,8 +827,45 @@ pub struct PatrolRoute {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Patrolling(pub Point);
 
+/// Pushed by [`sense_patrols`] beside [`Patrolling`] for a mind whose route
+/// is one cell: held there rather than walking a loop, a captive in its
+/// shackles or a beast over its meal. What [`Unanchored`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Anchored;
+
+/// The tactic it wraps, except while the mind holding the turn is
+/// [`Anchored`]: then it leaves the turn to the tactics after it, among
+/// which [`Patrol`] keeps the anchor.
+///
+/// For the tactics that move a mind for reasons of its kind, a packing
+/// jackal's closing on its own and a bat's random flit, which rank above
+/// `Patrol` in every brain and so took a shackled bat off its chain and a
+/// feeding jackal off its meal. Hunting is left alone, so a feeder that
+/// sees the adventurer still goes for them, and walks back once it has
+/// lost them.
+#[derive(Debug, Clone, Copy)]
+pub struct Unanchored<T>(pub T);
+
+impl<T: Tactic<Entity>> Tactic<Entity> for Unanchored<T> {
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+        if ctx.snapshot.sense::<Anchored>().is_some() {
+            return None;
+        }
+        self.0.evaluate(ctx)
+    }
+
+    fn keeps_with(&self) -> Option<Station> {
+        self.0.keeps_with()
+    }
+}
+
 /// Advances the turn holder's own [`PatrolRoute`] past whichever waypoint
-/// it just reached, and senses the one it is walking to now.
+/// it just reached, and senses the one it is walking to now, and whether
+/// it is [`Anchored`] there.
 ///
 /// In `PerceiveSet::Annotate`, beside the engine's own `sense_posts` and
 /// `sense_leaders`: nothing for an actor with no route, so one brain
@@ -826,8 +881,12 @@ pub fn sense_patrols(mut thinking: ResMut<Thinking>, mut routes: Query<(&Positio
         route.at = (route.at + 1) % route.waypoints.len();
     }
     let target = route.waypoints[route.at];
+    let anchored = route.waypoints.len() == 1;
     if let Some(snapshot) = thinking.snapshot_mut() {
         snapshot.add_sense(Patrolling(target));
+        if anchored {
+            snapshot.add_sense(Anchored);
+        }
     }
 }
 
@@ -862,51 +921,38 @@ mod tests {
 
     use super::*;
 
-    /// A `Shrouds` body standing in the pitch dark of [`Lighting::dark`]
-    /// is given the engine's own `shrouded` status, the same one a
-    /// potion of darkness gives: `keep_shrouded`, with `resolve_afflictions`
-    /// chained after it to carry out the `Afflict` it writes.
+    /// A wraith's `shrouded`, played on a real floor: stood on a cell the
+    /// adventurer sees but no light reaches, it is not among what they
+    /// see, where a skeleton stood in the same dark is; stood in their
+    /// lantern's light two cells off, it is.
     #[test]
-    fn a_shrouds_kind_standing_in_the_dark_is_shrouded() {
-        let mut app = App::new();
-        app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
-        app.insert_resource(crate::content::registries());
-        app.insert_resource(Lighting::dark());
-        app.add_systems(Update, (keep_shrouded, resolve_afflictions).chain());
-        let e = app.world_mut().spawn((Position(Point::ZERO), Shrouds, Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
-        app.update();
-        let status = app.world().resource::<Registries>().statuses.expect(crate::content::SHROUDED);
-        assert!(app.world().get::<Afflicted>(e).unwrap().0.has(status), "pitch dark, so shrouded");
-    }
-
-    /// Both ways, played on a real floor: a wraith stood in the catacombs
-    /// beyond every light, where the floor's own ambient lets it be seen
-    /// but nothing lights it, is shrouded, and stood beside the adventurer,
-    /// in their lantern's light, is shrouded no longer.
-    #[test]
-    fn a_wraith_is_shrouded_in_the_dark_and_loses_it_the_turn_it_stands_in_the_light() {
-        use crate::testing::{arena_on, pass_turns, stand_on, still};
-        let (mut app, _, here) = arena_on(7, 7);
-        let status = app.world().resource::<Registries>().statuses.expect(crate::content::SHROUDED);
-        let dark = {
-            let (map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
-            geometry::square(here, 40).find(|p| map.is_walkable(*p) && lighting.band(*p) != LightBand::Lit && geometry::chebyshev(*p, here) > 10)
+    fn a_wraith_in_the_dark_is_not_sighted_and_is_once_lit() {
+        use crate::testing::{REACH, arena_on, pass_turns, stand_on, still};
+        let (mut app, me, here) = arena_on(7, 7);
+        let dark: Vec<Point> = {
+            let world = app.world();
+            let (map, lighting, sight) = (world.resource::<WorldMap>(), world.resource::<Lighting>(), world.get::<Viewshed>(me).expect("sight"));
+            geometry::square(here, REACH)
+                .filter(|p| map.is_walkable(*p) && sight.can_see(*p) && lighting.band(*p) != LightBand::Lit && geometry::chebyshev(*p, here) > 1)
+                .collect()
         };
-        let dark = dark.expect("somewhere on the floor is dark");
-        let wraith = still(&mut app, "wraith", dark);
+        assert!(dark.len() >= 2, "two cells in sight that no light reaches: {dark:?}");
+        let wraith = still(&mut app, "wraith", dark[0]);
+        let skeleton = still(&mut app, "skeleton", dark[1]);
         pass_turns(&mut app, 1);
-        let shrouded = |app: &App| app.world().get::<Afflicted>(wraith).is_some_and(|a| a.0.has(status));
-        assert!(shrouded(&app), "in the dark at {dark:?}, shrouded");
-        let beside = here.offset(1, 0);
-        assert_eq!(app.world().resource::<Lighting>().band(beside), LightBand::Lit, "the lantern lights the cell beside the adventurer");
-        stand_on(&mut app, wraith, beside);
+        let sighted = |app: &App, who: Entity| app.world().resource::<Sighted>().list().iter().any(|s| s.entity == who);
+        assert!(sighted(&app, skeleton), "a skeleton in the dark at {:?} is seen", dark[1]);
+        assert!(!sighted(&app, wraith), "a wraith in the dark at {:?} is not", dark[0]);
+        let lit = here.offset(2, 0);
+        assert_eq!(app.world().resource::<Lighting>().band(lit), LightBand::Lit, "the lantern lights two cells off");
+        stand_on(&mut app, wraith, lit);
         pass_turns(&mut app, 1);
-        assert!(!shrouded(&app), "in the lantern's light beside the adventurer, shrouded no longer");
+        assert!(sighted(&app, wraith), "in the lantern's light, the wraith is seen");
     }
 
     /// The Choirmaster's `singing`: an ally of its own side within
     /// `SING_RANGE` regenerates, and loses it the pass it steps past
-    /// that range, as `keep_shrouded`'s own toggle does, and nothing of it
+    /// that range, as a body walking out of it would, and nothing of it
     /// is a status the narrator would say aloud.
     #[test]
     fn a_choirs_own_side_within_its_range_regenerates_quietly_and_loses_it_once_out_of_range() {
@@ -930,6 +976,26 @@ mod tests {
         assert!(!app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "stepped past the range, the choir's own gift is lifted");
     }
 
+    /// The song ends with the singer: a skeleton beside the Choirmaster
+    /// regenerates while he lives, and the pass he dies it no longer does,
+    /// though his body keeps lying within range of it.
+    #[test]
+    fn a_choirs_song_stops_the_moment_its_singer_dies() {
+        use crate::testing::{arena, kill, monster, pass_turns, settle};
+        let (mut app, _, here) = arena(33);
+        let singer = monster(&mut app, "the Choirmaster", here.offset(4, 0));
+        let skeleton = monster(&mut app, "skeleton", here.offset(4, 2));
+        app.world_mut().entity_mut(skeleton).remove::<Mind>();
+        settle(&mut app);
+        let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
+        let sung = |app: &App| app.world().get::<Afflicted>(skeleton).is_some_and(|a| a.0.has(regenerating));
+        assert!(sung(&app), "sung to while the Choirmaster lives");
+        kill(&mut app, singer, None);
+        pass_turns(&mut app, 1);
+        assert!(app.world().get::<Remains>(singer).is_some(), "his body lies where he fell, within range");
+        assert!(!sung(&app), "the song stopped when he died");
+    }
+
     /// The Widow's egg sac, stepped beside: two cave spiders hatch and
     /// the sac itself is gone, so the same step cannot hatch it twice.
     #[test]
@@ -948,6 +1014,31 @@ mod tests {
         let world = app.world_mut();
         let spiders = world.query::<&Kind>().iter(world).filter(|k| k.0 == spider_id).count();
         assert_eq!(spiders, EGG_SAC_HATCH_COUNT as usize, "two cave spiders hatched");
+    }
+
+    /// The Widow walking past her own sac hatches nothing; two of the
+    /// adventurer's steps beside one sac in the one pass hatch it once.
+    #[test]
+    fn an_egg_sac_hatches_once_a_pass_and_only_for_a_foe_of_the_brood() {
+        use crate::bestiary::Bestiary;
+        use crate::testing::{arena, monster, pass_turns};
+        let (mut app, me, here) = arena(34);
+        let sac_id = app.world().resource::<Registries>().props.expect(EGG_SAC);
+        let map = app.world().resource::<WorldMap>().current();
+        let at = here.offset(3, 0);
+        let sac = app.world_mut().spawn((Prop, PropKind(sac_id), Position(at), OnMap(map))).id();
+        let widow = monster(&mut app, "the Widow", here.offset(4, 2));
+        app.world_mut().entity_mut(widow).remove::<Mind>();
+        app.world_mut().write_message(Stepped { actor: widow, from: at.offset(1, 2), to: at.offset(1, 1) });
+        pass_turns(&mut app, 1);
+        assert!(app.world().get::<Prop>(sac).is_some(), "her own step beside it hatches nothing");
+        app.world_mut().write_message(Stepped { actor: me, from: here, to: at.offset(-1, 0) });
+        app.world_mut().write_message(Stepped { actor: me, from: at.offset(-1, 0), to: at.offset(-1, 1) });
+        pass_turns(&mut app, 1);
+        let spider_id = app.world().resource::<Bestiary>().defs.expect(EGG_SAC_HATCH);
+        let world = app.world_mut();
+        let spiders = world.query::<&Kind>().iter(world).filter(|k| k.0 == spider_id).count();
+        assert_eq!(spiders, EGG_SAC_HATCH_COUNT as usize, "two steps of the adventurer's in one pass hatch it once");
     }
 
     /// The same sac, struck rather than stepped beside: its one health
@@ -976,26 +1067,6 @@ mod tests {
     /// A `BurnsBadly` body's mending is zeroed while `resolve_afflictions`
     /// holds `scorched` on it, and lifted the moment it is cured.
     #[test]
-    /// The song ends with the singer: a skeleton beside the Choirmaster
-    /// regenerates while he lives, and the pass he dies it no longer does,
-    /// though his body keeps lying within range of it.
-    #[test]
-    fn a_choirs_song_stops_the_moment_its_singer_dies() {
-        use crate::testing::{arena, kill, monster, pass_turns, settle};
-        let (mut app, _, here) = arena(33);
-        let singer = monster(&mut app, "the Choirmaster", here.offset(4, 0));
-        let skeleton = monster(&mut app, "skeleton", here.offset(4, 2));
-        app.world_mut().entity_mut(skeleton).remove::<Mind>();
-        settle(&mut app);
-        let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
-        let sung = |app: &App| app.world().get::<Afflicted>(skeleton).is_some_and(|a| a.0.has(regenerating));
-        assert!(sung(&app), "sung to while the Choirmaster lives");
-        kill(&mut app, singer, None);
-        pass_turns(&mut app, 1);
-        assert!(app.world().get::<Remains>(singer).is_some(), "his body lies where he fell, within range");
-        assert!(!sung(&app), "the song stopped when he died");
-    }
-
     fn a_burns_badly_kinds_mending_is_halted_while_it_burns_and_lifted_once_it_is_not() {
         let mut app = App::new();
         app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
@@ -1100,6 +1171,33 @@ mod tests {
         let world = app.world_mut();
         let count = world.query::<&Kind>().iter(world).filter(|k| k.0 == thrall).count();
         assert!(count >= 1, "no drowned thrall rose after seventy of the adventurer's own turns");
+        assert!(app.world().resource::<MonsterLore>().has_shown("the Drowned King", "welling"), "risen in the adventurer's sight, so learned");
+    }
+
+    /// The same king and pool walled off from the adventurer's sight: a
+    /// thrall still rises, and nothing of `welling` is learned, since
+    /// neither the king nor the water it rose from was seen.
+    #[test]
+    fn a_thrall_welling_up_out_of_the_adventurers_sight_teaches_nothing() {
+        use crate::bestiary::Bestiary;
+        use crate::testing::{arena, monster, pass_turns, sturdy, wall_off};
+        let (mut app, me, here) = arena(62);
+        sturdy(&mut app, me);
+        let hall = here.offset(3, 0);
+        let ring: Vec<Point> = geometry::square(hall, 2).filter(|p| geometry::chebyshev(*p, hall) == 2).collect();
+        wall_off(&mut app, &ring);
+        monster(&mut app, "the Drowned King", hall);
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            let pool = TileId(map.tables().names.iter().position(|n| n == "black pool").expect("a black pool is a tile") as u16);
+            map.set_tile(hall.offset(0, 1), pool);
+        }
+        pass_turns(&mut app, 70);
+        let thrall = app.world().resource::<Bestiary>().defs.expect("drowned thrall");
+        let world = app.world_mut();
+        let count = world.query::<&Kind>().iter(world).filter(|k| k.0 == thrall).count();
+        assert!(count >= 1, "a thrall rose behind the walls all the same");
+        assert!(!app.world().resource::<MonsterLore>().has_shown("the Drowned King", "welling"), "never seen, so never learned");
     }
 
     /// On a real floor ten, the Mother Below's spawnlings and the Drowned
@@ -1181,5 +1279,29 @@ mod tests {
             }
         }
         assert!(visits.iter().all(|v| *v >= 2), "every waypoint visited at least twice, looping: {visits:?}, waypoints {waypoints:?}, trace {trace:?}");
+    }
+
+    /// An anchor holds what its kind would otherwise drift by: a shackled
+    /// vampire bat never flits off its chain, and a jackal anchored over
+    /// its meal never closes on a packmate standing four cells off, over
+    /// forty turns of each.
+    #[test]
+    fn an_anchored_bat_never_flits_and_an_anchored_jackal_never_drifts_to_its_pack() {
+        use crate::testing::{arena, at, monster, pass_turns, stand_on, still};
+        let (mut app, me, here) = arena(81);
+        stand_on(&mut app, me, here.offset(-5, -5));
+        let registries = app.world().resource::<Registries>().clone();
+        let chain = here.offset(5, -3);
+        let bat = monster(&mut app, "vampire bat", chain);
+        let shackles = crate::captives::shackled(&registries, app.world().resource::<Verbs>(), chain);
+        app.world_mut().entity_mut(bat).insert(shackles);
+        let meal = here.offset(5, 5);
+        let jackal = monster(&mut app, "jackal", meal);
+        app.world_mut().entity_mut(jackal).insert(PatrolRoute { waypoints: vec![meal], at: 0 });
+        still(&mut app, "jackal", here.offset(1, 5));
+        for turn in 0..40 {
+            pass_turns(&mut app, 1);
+            assert_eq!((at(&app, bat), at(&app, jackal)), (chain, meal), "turn {turn}: both held where they are anchored");
+        }
     }
 }

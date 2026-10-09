@@ -424,6 +424,38 @@ impl FromArgs for RaiseDead {
     }
 }
 
+/// A body stood back up by [`raise_dead`] or [`raise_ally`]: its second
+/// death drops nothing and counts nothing on the tally, since both were
+/// paid out by its first. Without it a mini-boss raised by the
+/// Choirmaster's Staff and killed again dropped its artifact again and
+/// scored again, as often as the staff could raise it.
+///
+/// The save keeps it, so a continued run's raised body is no fresh one.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Raised;
+
+/// Takes off a body the engine's own `revive` just stood up everything
+/// that does not outlast a death, and marks it [`Raised`]: what it drops,
+/// which its first death already dropped; sleep, which a blow on a
+/// sleeper did not end since the blow killed it; what it stole, which it
+/// let fall where it died; an offer to be freed, a patrol, a post and a
+/// leader of its old life; and a link to whoever spawned it. `revive`
+/// gives back everything the actor died with, which is right for what it
+/// is and wrong for what it was doing.
+pub fn forget_its_life(world: &mut World, body: Entity) {
+    use rl_engine::rl_bevy::Drops;
+    world
+        .entity_mut(body)
+        .remove::<(Drops<crate::armory::ItemDef>, crate::tricks::Stole, Offers, crate::tricks::PatrolRoute, crate::tricks::Spawned, Post, Leader)>();
+    world.entity_mut(body).insert(Raised);
+    // Quietly, as the twin put it back: a body that rises is not news of
+    // a sleeper waking.
+    let Some(asleep) = world.resource::<Registries>().statuses.id(crate::content::ASLEEP) else { return };
+    if let Ok((mut held, mut stats)) = world.query::<(&mut Afflicted, &mut StatBlock)>().get_mut(world, body) {
+        held.0.cure(asleep, &mut stats.0);
+    }
+}
+
 /// The body [`raise_dead`] would stand up for `raiser`, and where it lies:
 /// the nearest within [`RAISE_REACH`] that `raiser` can see, by steps, then
 /// row, then column. Read-only, so [`RaiseDead`] asks it before a turn is
@@ -458,6 +490,7 @@ pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
     if !revive(world, body, max) {
         return false;
     }
+    forget_its_life(world, body);
     if let Some(side) = world.get::<Faction>(raiser).copied() {
         fight_for(world, body, side.0);
     }
@@ -532,6 +565,7 @@ pub fn raise_ally(world: &mut World, raiser: Entity, at: Point, turns: u32) -> b
     if !revive(world, body, max) {
         return false;
     }
+    forget_its_life(world, body);
     if let Some(side) = world.get::<Faction>(raiser).copied() {
         fight_for(world, body, side.0);
     }
@@ -660,7 +694,7 @@ impl Effect for CallDrowned {
         let (user, count, range) = (landing.user, self.count, self.range);
         let landing = landing.clone();
         world.commands.queue(move |world: &mut World| {
-            if call_drowned(world, user, count, range) == 0 {
+            if call_drowned(world, user, count, range).0 == 0 {
                 super::showed_nothing(world, &landing);
             }
         });
@@ -699,10 +733,13 @@ const WADING_MOVE_COST: u32 = 200;
 
 /// Stands up to `count` drowned thralls on free cells of standing water
 /// within `range` of `caller`, nearest rows first so two runs of one seed
-/// agree, as [`CallDrowned`] says. Returns how many rose.
-pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -> usize {
-    let Some(thrall) = world.resource::<Bestiary>().defs.id("drowned thrall") else { return 0 };
-    let Some(at) = world.get::<Position>(caller).map(|p| p.0) else { return 0 };
+/// agree, as [`CallDrowned`] says. Returns where each rose, and whether
+/// the adventurer saw any of it: the caller, or the water one rose from,
+/// in their sight, since a thrall rising from a pool across the hall from
+/// a caller out of sight is still seen to rise.
+pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -> (usize, bool) {
+    let Some(thrall) = world.resource::<Bestiary>().defs.id("drowned thrall") else { return (0, false) };
+    let Some(at) = world.get::<Position>(caller).map(|p| p.0) else { return (0, false) };
     let map = world.get::<OnMap>(caller).map_or(MapId::SURFACE, |m| m.0);
     let worldmap = world.resource::<WorldMap>();
     let tables = worldmap.tables();
@@ -715,17 +752,18 @@ pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -
     cells.sort_by_key(|p| (p.y, p.x));
     cells.truncate(count as usize);
     let n = cells.len();
+    let seen = n > 0 && world.query_filtered::<&Viewshed, With<Player>>().iter(world).any(|v| v.can_see(at) || cells.iter().any(|c| v.can_see(*c)));
     for cell in cells {
         spawn_monster_now(world, thrall, cell, map);
     }
-    if n > 0 && world.query_filtered::<&Viewshed, With<Player>>().iter(world).any(|v| v.can_see(at)) {
+    if seen {
         let line = match n {
             1 => "A drowned thrall rises from the water!".to_string(),
             _ => format!("{n} drowned thralls rise from the water!"),
         };
         world.write_message(Tell::new(line, Tones::BAD));
     }
-    n
+    (n, seen)
 }
 
 /// Hatches an egg sac into two cave spiders beside `at`: the Widow's own,

@@ -17,7 +17,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{DEFAULT_PERCEPTION, MomentId};
+use rl_engine::rl_bevy::{DEFAULT_PERCEPTION, Inflict, MomentId};
+use rl_engine::rl_rules::ability::EffectSpec;
 use rl_engine::rl_rules::ai::tactics::{
     FleeWhenHurt, Hunt, Keep, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander,
 };
@@ -72,6 +73,10 @@ pub struct MonsterDef {
     /// Whether it is a mini-boss, worth the score's five hundred when the
     /// adventurer kills it.
     pub miniboss: bool,
+    /// Whether it is only ever called up, a staff's or a conjurer's
+    /// blade, and leaves no body when it falls: nothing of it was ever
+    /// flesh to raise.
+    pub conjured: bool,
     /// What it leaves when it dies, by the armory's ids.
     pub drops: DropTable<Id<ItemDef>>,
     /// Its traits' names, in the order the file lists them.
@@ -95,13 +100,24 @@ pub struct MonsterDef {
     /// per ability, since every ability-granting trait in this bestiary
     /// grants its own.
     pub trick_abilities: Vec<(AbilityId, String)>,
-    /// Every trick trait landed through the engine's own actor triggers,
-    /// by the moment it answers and the trait's name: a bite's poison, a
-    /// touch's chill or its sapped strength, a hand that steals, a burst
-    /// of spores where something died. What
-    /// [`crate::bestiary_lore::learn_from_triggers`] marks shown the
-    /// moment [`Fired::at`] is where the adventurer can see it.
+    /// Every trick trait landed through the engine's own actor triggers
+    /// that does whatever it does every time its moment comes, by the
+    /// moment and the trait's name: a burst of spores where something
+    /// died. What [`crate::bestiary_lore::learn_from_triggers`] marks shown
+    /// the moment [`Fired::at`] is where the adventurer can see it.
+    ///
+    /// A moment that fired is not an effect that landed: a touch whose
+    /// chance failed fires all the same. So a trigger's effect that may
+    /// come to nothing is read off what it does instead, into
+    /// [`trick_statuses`](Self::trick_statuses) for a status put on, or
+    /// learned by the effect itself where it lands, as a theft is.
     pub trick_moments: Vec<(MomentId, String)>,
+    /// Every trick trait whose triggers put a status on what they touch,
+    /// by the status and the trait's name: a bite's poison, a touch that
+    /// freezes, a touch that saps strength. What
+    /// [`crate::bestiary_lore::learn_from_statuses`] marks shown the moment
+    /// that status, put on by one of this kind, is seen to take hold.
+    pub trick_statuses: Vec<(StatusId, String)>,
     /// Its own id in the bestiary, so a spawn handed only the definition
     /// can mark what it made.
     id: Id<MonsterDef>,
@@ -208,6 +224,18 @@ pub struct MonsterSpawn {
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Kind(pub Id<MonsterDef>);
 
+/// The same definition as [`Kind`], on every monster, for what stands in
+/// for one once it is gone: the engine's remnant of a death, which lands
+/// the monster's `died` triggers a pass later, takes this with it by
+/// `keep_on_remnant`, so a burst of spores seen where a myconid fell is
+/// still known to be a myconid's.
+///
+/// Apart from [`Kind`] because [`Kind`] is what the save writes a monster
+/// by: a remnant carrying it would be written down as a monster of its
+/// own, and come back from a continued run standing.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KindTag(pub Id<MonsterDef>);
+
 /// The monster definitions and the floor-banded table they spawn from.
 #[derive(Resource)]
 pub struct Bestiary {
@@ -261,6 +289,8 @@ struct Authored {
     boss: bool,
     #[serde(default)]
     miniboss: bool,
+    #[serde(default)]
+    conjured: bool,
     #[serde(default)]
     drops: Vec<(NameRef<ItemDef>, u32)>,
 }
@@ -350,12 +380,21 @@ fn resolve(
     // of its own left to name.
     let trick_abilities: Vec<(AbilityId, String)> =
         listed.iter().map(|&t| traits.get(t)).filter(|t| t.trick).flat_map(|t| t.abilities.iter().map(move |a| (a.id(), t.name.clone()))).collect();
-    let trick_moments: Vec<(MomentId, String)> = listed
-        .iter()
-        .map(|&t| traits.get(t))
-        .filter(|t| t.trick)
-        .flat_map(|t| t.triggers.iter().filter_map(move |spec| moments.get(&spec.on).map(|on| (on, t.name.clone()))))
-        .collect();
+    let mut trick_moments: Vec<(MomentId, String)> = Vec::new();
+    let mut trick_statuses: Vec<(StatusId, String)> = Vec::new();
+    for t in listed.iter().map(|&t| traits.get(t)).filter(|t| t.trick) {
+        for spec in &t.triggers {
+            for effect in spec.effects.iter().flatten() {
+                match learned_by(effect, names) {
+                    Learned::Moment => trick_moments.extend(moments.get(&spec.on).map(|on| (on, t.name.clone()))),
+                    Learned::Status(status) => trick_statuses.push((status, t.name.clone())),
+                    Learned::Itself => {}
+                }
+            }
+        }
+    }
+    trick_moments.dedup();
+    trick_statuses.dedup();
     let brain = Arc::new(brain(&folded, ranged.is_some(), tricks));
     let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
     let following = Arc::new(follow_brain(&folded, ranged.is_some()));
@@ -370,6 +409,7 @@ fn resolve(
         faction: a.faction.id(),
         boss: a.boss,
         miniboss: a.miniboss,
+        conjured: a.conjured,
         drops: DropTable(a.drops.iter().map(|(item, pct)| DropRow::new(item.id(), *pct)).collect()),
         traits: listed.iter().map(|t| traits.get(*t).name.clone()).collect(),
         folded,
@@ -377,11 +417,38 @@ fn resolve(
         tricks,
         trick_abilities,
         trick_moments,
+        trick_statuses,
         id,
         brain,
         allied,
         following,
     })
+}
+
+/// How the adventurer comes to know a trick a trigger's effect lands: the
+/// one question [`resolve`] asks of each, so a trick is named only once
+/// what it does is seen, never once its moment merely came round.
+enum Learned {
+    /// Off the moment firing: an effect that lands whenever it fires,
+    /// whatever it lands on, a burst of spores.
+    Moment,
+    /// Off this status taking hold, put on by one of the kind: an effect
+    /// that may roll and miss, or be refused once enough is on.
+    Status(StatusId),
+    /// By the effect itself, where it lands: one that may find nothing to
+    /// do, a theft from an empty pack.
+    Itself,
+}
+
+/// What `effect` is learned by, as [`Learned`] says, read off its kind and,
+/// for a status it inflicts, its own arguments.
+fn learned_by(effect: &EffectSpec, names: &Names<'_>) -> Learned {
+    match effect.kind.as_str() {
+        Inflict::KIND => Inflict::from_args(&effect.args, names).map_or(Learned::Moment, |i| Learned::Status(i.status)),
+        crate::tricks::Wither::KIND => names.status(crate::content::WEAKENED).map_or(Learned::Moment, Learned::Status),
+        crate::tricks::Steal::KIND => Learned::Itself,
+        _ => Learned::Moment,
+    }
 }
 
 /// A blow as `monsters.ron` writes it, `"1d4 slash"`: a roll and a kind,
@@ -505,13 +572,13 @@ fn brain(folded: &Folded, shoots: bool, tricks: Tricks) -> Brain<Entity> {
         brain = brain.then(Scavenge { reach: SCAVENGE_REACH });
     }
     if tricks.packs {
-        brain = brain.then(Keep::allies(PACK_KEEPS_WITHIN, PACK_NO_CLOSER_THAN));
+        brain = brain.then(crate::tricks::Unanchored(Keep::allies(PACK_KEEPS_WITHIN, PACK_NO_CLOSER_THAN)));
     }
     if tricks.led {
         brain = brain.then(Keep::leader(LED_KEEPS_WITHIN, LED_NO_CLOSER_THAN));
     }
     if tricks.flits {
-        brain = brain.then(crate::tricks::Flit { chance_pct: FLIT_CHANCE_PCT });
+        brain = brain.then(crate::tricks::Unanchored(crate::tricks::Flit { chance_pct: FLIT_CHANCE_PCT }));
     }
     brain.then(Hunt).then(SearchLastKnown).then(KeepPost).then(crate::tricks::Patrol).then(Wander { chance_pct: WANDER_CHANCE_PCT })
 }
@@ -676,7 +743,7 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     let f = &def.folded;
     let (r, g, b) = def.color;
     let mut e = commands.spawn((
-        (Actor, Blocks, Position(at), OnMap(map), Kind(def.id)),
+        (Actor, Blocks, Position(at), OnMap(map), Kind(def.id), KindTag(def.id)),
         (Health::full(def.hp), Armor(def.armor), Resists(f.resists.clone()), Faction(def.faction), def.attack),
         (Perception(def.perception()), Speed(def.speed()), Mind(def.brain.clone()), Intelligence(f.wits), Notice(f.notice.unwrap_or(NOTICE))),
         (Name::new(def.name.clone()), Glyph::new(def.glyph, Color::srgb(r, g, b)).on_layer(5)),
@@ -702,11 +769,11 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     if !f.abilities.is_empty() {
         e.insert(Grants(f.abilities.clone()));
     }
-    // `Shrouds` and `BurnsBadly` hold no status of their own at spawn, but
-    // `keep_shrouded` and `keep_regen_halted` still need `Afflicted` and
-    // `StatBlock` on the entity to read and to modify, exactly as a
-    // trait's own held statuses do.
-    if !f.statuses.is_empty() || def.tricks.shrouds || def.tricks.burns_badly || asleep {
+    // `BurnsBadly` holds no status of its own at spawn, but
+    // `keep_regen_halted` still needs `Afflicted` and `StatBlock` on the
+    // entity to read and to modify, exactly as a trait's own held statuses
+    // do.
+    if !f.statuses.is_empty() || def.tricks.burns_badly || asleep {
         let (mut held, mut stats) = (Statuses::new(), Stats::new());
         for status in &f.statuses {
             held.apply(*status, FOR_LIFE, None, &registries.statuses, &mut stats);
@@ -727,16 +794,19 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     }
     // A monster leaves what `necromancer`'s `raising` can find within
     // sight and reach, never the king, whose own death ends the run
-    // before anything could stand him back up.
-    if !def.boss {
+    // before anything could stand him back up, nor a conjured blade,
+    // which was never anything to leave.
+    if !def.boss && !def.conjured {
         e.insert(LeavesRemains);
+    }
+    // Unseen out of the light, the engine's own rule for what the
+    // adventurer sees, decided again every frame: a wraith's `shrouded`.
+    if def.tricks.shrouds {
+        e.insert(Concealed);
     }
     if def.tricks.needs_marker() {
         if def.tricks.splits {
             e.insert(crate::tricks::Splits);
-        }
-        if def.tricks.shrouds {
-            e.insert(crate::tricks::Shrouds);
         }
         if def.tricks.fire_trail {
             e.insert(crate::tricks::FireTrail);
@@ -1259,6 +1329,7 @@ mod tests {
         use crate::testing::{arena, equip, make, monster, settle};
         let (mut app, me, here) = arena(5);
         let goblin = monster(&mut app, "goblin", here.offset(1, 0));
+        app.world_mut().entity_mut(goblin).insert(Health::full(100));
         let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
         app.world_mut().write_message(Afflict { target: goblin, status: asleep, turns: 20, by: None, held_by: None });
         settle(&mut app);
@@ -1269,6 +1340,11 @@ mod tests {
         equip(&mut app, me, dagger);
         app.world_mut().write_message(Intent::new(me, Attack(goblin)));
         settle(&mut app);
+        // The dagger's own least is 2, `1d4+1`; a blow at three times that
+        // is past anything an aware goblin could take from it, and the
+        // unaware bonus's five times makes its least 10.
+        let lost = 100 - app.world().get::<Health>(goblin).expect("it lived through the blow").current;
+        assert!(lost >= 3 * 2, "the blow landed at the unaware rate, at least three times the dagger's least: {lost}");
         assert!(app.world().get::<Afflicted>(goblin).is_none_or(|a| !a.0.has(asleep)), "the blow woke it");
     }
 
@@ -1327,9 +1403,75 @@ mod tests {
         assert_eq!(brain.decide(ctx).1, Some("shadow"), "a foe one cell off, inside its no-closer-than, is backed away from rather than struck");
     }
 
+    /// Sleep has both its halves in the shipped bestiary: the ogre, the
+    /// troll and the vampire bat sleep deeply, twice as often as a plain
+    /// kind, and the golem, Grubnak and the Ember Wyrm never sleep.
+    #[test]
+    fn the_shipped_bestiary_has_deep_sleepers_and_kinds_that_never_sleep() {
+        let library = library();
+        let tricks = |name: &str| library.bestiary.defs.get(library.bestiary.defs.expect(name)).tricks;
+        for name in ["ogre", "troll", "vampire bat"] {
+            assert!(tricks(name).sleepy && !tricks(name).wakeful, "{name} sleeps deeply");
+        }
+        for name in ["golem", "Grubnak the goblin king", "the Ember Wyrm"] {
+            assert!(tricks(name).wakeful && !tricks(name).sleepy, "{name} never sleeps");
+        }
+    }
+
+    /// A conjured blade struck down leaves no body, where a goblin struck
+    /// down beside it does: nothing of a blade was ever there to raise.
+    #[test]
+    fn a_conjured_blade_leaves_no_body_where_a_goblin_does() {
+        use crate::testing::{arena, kill, monster, settle};
+        let (mut app, _, here) = arena(21);
+        let blade = monster(&mut app, "spectral blade", here.offset(1, 0));
+        let goblin = monster(&mut app, "goblin", here.offset(-1, 0));
+        kill(&mut app, blade, None);
+        kill(&mut app, goblin, None);
+        settle(&mut app);
+        assert!(app.world().get_entity(blade).is_err(), "the blade is gone, with nothing left of it");
+        assert!(app.world().get::<Remains>(goblin).is_some(), "the goblin lies where it fell");
+    }
+
+    /// A burn is no blow: a pink jelly left burning loses health to every
+    /// tick of it and is still one jelly when the fire is done, where it
+    /// once split on every turn it burned.
+    #[test]
+    fn a_burning_jelly_does_not_multiply() {
+        use crate::testing::{arena, monster, pass_turns, settle};
+        let (mut app, _, here) = arena(19);
+        let jelly = monster(&mut app, "pink jelly", here.offset(3, 0));
+        app.world_mut().entity_mut(jelly).remove::<Mind>();
+        let scorched = app.world().resource::<Registries>().statuses.expect("scorched");
+        app.world_mut().write_message(Afflict { target: jelly, status: scorched, turns: 5, by: None, held_by: None });
+        settle(&mut app);
+        pass_turns(&mut app, 6);
+        let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
+        let world = app.world_mut();
+        let jellies: Vec<i32> = world.query::<(&Kind, &Health)>().iter(world).filter(|(k, _)| k.0 == jelly_id).map(|(_, h)| h.current).collect();
+        assert_eq!(jellies.len(), 1, "burned, and still the one jelly: {jellies:?}");
+        assert!(jellies[0] < 30, "the burn did reach it: {jellies:?}");
+    }
+
+    /// A jelly with less than four left splits into nothing: its halves
+    /// floored at two each would come to more than it had.
+    #[test]
+    fn a_jelly_with_less_than_four_health_left_does_not_split() {
+        use crate::testing::{arena, monster, settle};
+        let (mut app, _, here) = arena(20);
+        let jelly = monster(&mut app, "pink jelly", here.offset(1, 0));
+        app.world_mut().entity_mut(jelly).insert(Health { current: 7, max: 30 });
+        let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
+        app.world_mut().write_message(DamageEvent::new(jelly, rl_engine::rl_rules::Hit::from_source(None, crush, 4)));
+        settle(&mut app);
+        let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
+        let world = app.world_mut();
+        let jellies: Vec<i32> = world.query::<(&Kind, &Health)>().iter(world).filter(|(k, _)| k.0 == jelly_id).map(|(_, h)| h.current).collect();
+        assert_eq!(jellies, [3], "seven taken four leaves three, too little to split");
+    }
+
     /// Splitting: a blow that leaves a pink jelly alive splits it into
-    /// two, each with half what was left, neither below two.
-        app.world_mut().entity_mut(goblin).insert(Health::full(100));
+    /// two, each with half what was left, when four or more was left.
     #[test]
     fn a_jelly_struck_becomes_two_each_with_its_share() {
         use crate::testing::{arena, monster, settle};
@@ -1340,11 +1482,6 @@ mod tests {
         app.world_mut().write_message(DamageEvent::new(jelly, rl_engine::rl_rules::Hit::from_source(None, crush, 4)));
         settle(&mut app);
         let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
-        // The dagger's own least is 2, `1d4+1`; a blow at three times that
-        // is past anything an aware goblin could take from it, and the
-        // unaware bonus's five times makes its least 10.
-        let lost = 100 - app.world().get::<Health>(goblin).expect("it lived through the blow").current;
-        assert!(lost >= 3 * 2, "the blow landed at the unaware rate, at least three times the dagger's least: {lost}");
         let world = app.world_mut();
         let halves: Vec<i32> = world.query::<(&Kind, &Health)>().iter(world).filter(|(k, _)| k.0 == jelly_id).map(|(_, h)| h.current).collect();
         assert_eq!(halves.len(), 2, "the jelly and its half");

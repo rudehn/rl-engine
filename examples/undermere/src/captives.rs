@@ -1,6 +1,6 @@
 //! A shackled monster of the floor, freed to follow.
 //!
-//! [`population::place_captive`](crate::population::place_captive) stands
+//! `population::place_captive` stands
 //! one a run, neutral and anchored by a one-waypoint `PatrolRoute`, the
 //! universal brain's own `Patrol`, offering [`FREE_VERB`]
 //! through the engine's own actor offers (task 4): a long action of
@@ -32,7 +32,7 @@ pub const FREE_TIME: u32 = 300;
 /// neutral to everyone, a one-waypoint `PatrolRoute` on its own cell, the
 /// universal brain's own `Patrol` keeping it there, and the [`FREE_VERB`]
 /// it offers. The one account of it, put on by
-/// [`population::place_captive`](crate::population::place_captive) when a
+/// `population::place_captive` when a
 /// floor is first stood and again by the save when a run that left one
 /// shackled is continued, since neither the side nor the offer is the
 /// engine's to keep.
@@ -66,12 +66,28 @@ pub fn held_at(world: &World, captive: Entity) -> Option<Point> {
 /// that wit by default, and a follower who could not leave the floor it
 /// was freed on would be no follower at all.
 pub fn free(world: &mut World, captive: Entity, adventurer: Entity) {
-    let Some(kind) = world.get::<Kind>(captive).map(|k| k.0) else { return };
+    if world.get::<Kind>(captive).is_none() {
+        return;
+    }
     let Some(side) = world.get::<Faction>(adventurer).map(|f| f.0) else { return };
     fight_for(world, captive, side);
+    world.entity_mut(captive).remove::<(crate::tricks::PatrolRoute, Offers)>().insert(Leader(adventurer));
+    follow(world, captive);
+}
+
+/// Shapes a freed captive to follow its `Leader` by name: its kind's own
+/// [`crate::bestiary::MonsterDef::follow_mind`] over the ordinary ally
+/// mind, and [`Wits::TRAVELS`]. The one account of a follower, shared by
+/// [`free`] and the save's restore of one freed before the run was saved,
+/// since neither the mind nor the wit is the engine's to keep, and a
+/// follower restored with the mind and not the wit stayed behind on the
+/// first stairs after a continue. Nothing for an entity that is no
+/// monster of the bestiary's.
+pub fn follow(world: &mut World, captive: Entity) {
+    let Some(kind) = world.get::<Kind>(captive).map(|k| k.0) else { return };
     let mind = world.resource::<Bestiary>().defs.get(kind).follow_mind();
     let mut e = world.entity_mut(captive);
-    e.remove::<(crate::tricks::PatrolRoute, Offers)>().insert((mind, Leader(adventurer)));
+    e.insert(mind);
     if let Some(mut wits) = e.get_mut::<Intelligence>() {
         wits.0 = wits.0.with(Wits::TRAVELS);
     }
@@ -176,6 +192,33 @@ mod tests {
         assert_eq!((Some(at), side), (anchor, Some(captive_side)), "held where it stood, and neither friend nor foe");
     }
 
+    /// A captive killed in its shackles offers nothing from its body, and
+    /// a run continued after holds no captive at all, rather than one
+    /// shackled again over a corpse.
+    #[test]
+    fn a_captive_killed_in_its_shackles_offers_nothing_and_is_not_shackled_again_on_a_continue() {
+        use crate::testing::kill;
+        let s = 0u64;
+        let mut app = headless(RunSeed(s));
+        let me = adventurer(&mut app);
+        sturdy(&mut app, me);
+        let floor = captive_floor(RunSeed(s));
+        arrive(&mut app, map_of(floor));
+        let everyone = |app: &mut App| {
+            let mut all = app.world_mut().query::<Entity>();
+            all.iter(app.world()).collect::<Vec<_>>()
+        };
+        let captive = everyone(&mut app).into_iter().find(|e| held_at(app.world(), *e).is_some()).expect("the run's own captive");
+        kill(&mut app, captive, Some(me));
+        assert!(app.world().get::<Remains>(captive).is_some(), "its body lies where it was held");
+        assert_eq!(held_at(app.world(), captive), None, "and offers to be freed no longer");
+        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+        let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("a save");
+        let mut again = crate::testing::continued(&text);
+        let shackled: Vec<Entity> = everyone(&mut again).into_iter().filter(|e| held_at(again.world(), *e).is_some()).collect();
+        assert!(shackled.is_empty(), "nothing shackled again in the run continued: {shackled:?}");
+    }
+
     /// The rail says the captive is shackled, in plain text, until it is
     /// freed, and says nothing of the kind once it is.
     #[test]
@@ -266,12 +309,34 @@ mod tests {
         let mut again = crate::testing::continued(&text);
         let new_me = crate::testing::adventurer(&mut again);
         let world = again.world_mut();
-        let leader = world
+        let (follower, leader) = world
             .query::<(Entity, &Kind, &OnMap, Option<&Leader>, &crate::allies::Ally)>()
             .iter(world)
             .find(|(_, k, on, ..)| k.0 == captive_kind && on.0 == map_of(floor + 1))
-            .map(|(_, _, _, leader, _)| leader.copied())
+            .map(|(e, _, _, leader, _)| (e, leader.copied()))
             .expect("the freed captive continues on the floor it came down to, still an ally");
         assert_eq!(leader.map(|l| l.0), Some(new_me), "still led by the adventurer's own new entity");
+        assert!(again.world().get::<Intelligence>(follower).is_some_and(|w| w.0.has(Wits::TRAVELS)), "and can still leave with them");
+
+        // And down the next stairs beside them, the continued run's own:
+        // the wit to travel kept is the wit used. At peace with the floor,
+        // so the follower's one turn beside them is spent keeping with
+        // them rather than going after whatever of the floor it can see.
+        let peace = CombatRules::new(&again.world().resource::<Registries>().factions);
+        again.insert_resource(peace);
+        let world = again.world_mut();
+        let down = world
+            .query::<(&Position, &OnMap, &crate::stairs::Way)>()
+            .iter(world)
+            .find(|(_, on, w)| on.0 == map_of(floor + 1) && **w == crate::stairs::Way::Down)
+            .map(|(p, ..)| p.0)
+            .expect("the floor it came down to has a way down");
+        crate::testing::stand_on(&mut again, follower, down.offset(-1, 0));
+        crate::testing::stand_on(&mut again, new_me, down);
+        crate::testing::pass_turns(&mut again, 1);
+        crate::testing::go_through(&mut again, new_me);
+        let on = |app: &App, who: Entity| app.world().get::<OnMap>(who).map(|m| m.0);
+        assert_eq!(on(&again, new_me), Some(map_of(floor + 2)), "the adventurer went down again");
+        assert_eq!(on(&again, follower), on(&again, new_me), "and the captive freed before the save came down beside them");
     }
 }

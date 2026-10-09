@@ -135,6 +135,9 @@
 //   per_level:  optional; [(stat, amount)] added to its wearer's stats for each of its levels
 //               while it is worn, and taken away for each below nought; only on a thing with a
 //               slot that takes levels
+//   caps:       optional; [(stat, most)] the most its wearer's stat comes to while it is
+//               worn, whatever else they wear; the stats as for bestows; only on a thing with
+//               a slot
 //   stack:      optional; whether copies merge into one counted entry; never on a worn thing
 //   pile:       optional; how many make a pile where one is found, as "NdS+B", times the
 //               floor it is found on; only on a thing that stacks; absent, one
@@ -365,10 +368,12 @@
      triggers: [(on: "hit", effects: [(kind: "Inflict", args: (status: "poisoned", turns: 4)), (kind: "Inflict", chance: 25, args: (status: "webbed", turns: 1))]),
                 (on: "pulse", every: 6000, effects: [(kind: "Whisper")])]),
     // The Choirmaster's Staff: a two-hander with no blow of its own,
-    // `RaiseAlly` aimed at a body within six, two charges and a mending
-    // of minus ten while it is held.
+    // `RaiseAlly` aimed at a body within six, two charges, and no
+    // regeneration while it is held: a cap at nought rather than a cut of
+    // mending, which a ring of regeneration's own mending outweighed and
+    // a long rest's several points at once leaked through.
     (name: "the Choirmaster's Staff", glyph: '_', color: (0.85, 0.85, 1.0), slot: "main hand", also: ["off hand"],
-     bestows: [("mending", -10)], consumable: (charges: 2, when_empty: Kept, recharge: 300),
+     caps: [("regeneration", 0)], consumable: (charges: 2, when_empty: Kept, recharge: 300),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 6), aim: Ground), look: (glyph: '*', color: (r: 220, g: 220, b: 255)),
                  effects: [(kind: "RaiseAlly", args: (turns: 30))])]),
     // The Abbess's Chalice: carried rather than worn, one charge of Mend

@@ -245,6 +245,14 @@ pub struct ItemDef {
     /// shield's evasion.
     #[serde(default)]
     pub bestows: Vec<(NameRef<StatDef>, i32)>,
+    /// The most each named stat of its wearer's comes to while it is
+    /// worn, whatever else is worn or held: the Choirmaster's Staff's
+    /// regeneration held at nought. A cap rather than a large amount
+    /// taken away, since no amount stays past whatever a ring and armor of
+    /// regeneration might add up to, and a cut of mending only ever
+    /// rounded a single point's heal away.
+    #[serde(default)]
+    pub caps: Vec<(NameRef<StatDef>, i32)>,
     /// What each of its levels adds to its wearer's stats while it is
     /// worn, and each level under nought takes away: a ring's whole worth.
     #[serde(default)]
@@ -581,7 +589,7 @@ fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>, registries: &Registrie
     if d.consumable.is_some_and(|c| c.charges == 0 && c.per_level == 0) {
         return Err("a consumable with no charges is spent before it is found".into());
     }
-    if d.slot.is_none() && (d.strength.is_some() || !d.bestows.is_empty() || !d.per_level.is_empty()) {
+    if d.slot.is_none() && (d.strength.is_some() || !d.bestows.is_empty() || !d.caps.is_empty() || !d.per_level.is_empty()) {
         return Err("asks strength of, or gives stats to, a wearer of a thing that is never worn".into());
     }
     if !takes_levels(d, registries) && (!d.per_level.is_empty() || d.consumable.is_some_and(|c| c.per_level != 0) || d.effect_per_level.is_some()) {
@@ -872,6 +880,7 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
     }
     let mut gives: Vec<(StatId, Op)> = d.bestows.iter().map(|(stat, n)| (stat.id(), Op::Add(*n))).collect();
     gives.extend(d.per_level.iter().map(|(stat, n)| (stat.id(), Op::Add(n * level))));
+    gives.extend(d.caps.iter().map(|(stat, most)| (stat.id(), Op::AtMost(*most))));
     if let Some(accuracy) = accuracy.filter(|_| melee.is_some() || ranged.is_some()) {
         gives.push((accuracy, Op::Add(ACCURACY_PER_LEVEL * level)));
     }
