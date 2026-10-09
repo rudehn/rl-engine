@@ -36,7 +36,7 @@
             crates/rl-bevy/src/turn.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/map_view.rs
-     fingerprint: 7578ec2a -->
+     fingerprint: 183f9516 -->
 
 # Panels
 
@@ -87,6 +87,7 @@ Each side's chance of landing what it would attack with from there comes from `M
 Both sides are counted at what they truly wear, an unknown thing's true numbers included, as a fight would count them; a game whose things are written from a level forecasts again in `ViewSet::Annotate` with each unknown thing counted as it seems, writing `duel` and `odds` over the collector's.
 A `Prop` is named and never duelled, since a crate's health is there to be broken rather than fought, and `is_a_threat` is what a presenter of a game's own asks when it wants the forecast only against something the player is at odds with.
 `InspectPanel` sits over the map but never over what it describes, which is the engine's rule since a panel hiding its subject is wrong in every game: `place_inspect` moves it into `InspectPlacement` at the mirror of its rectangle in the map, or where the game's `else_at` says, while any cell of the cursor's tile or of a tile a tick stands on would sit under it, and keeps it there until the cursor goes under it again so it does not swap sides at every step; it says how far off its subject stands, `here` for what lies where the player stands.
+Each of `InspectView::facets` is drawn whole or not at all, wrapped on spaces onto as many lines as it takes rather than cut to one with an ellipsis, so a monster's five traits read as sentences; whichever the rectangle has no room for are counted on its last row in the muted tone, `InspectPanel::more("{n} more")` by default and a game's own words in its place.
 `AbilityView` is an `AbilityRow` per ability the turn-holder knows, in registration order so a key bound to the third row stays bound to it, each carrying its costs, requirements and effects as sentences and every reason it is refused.
 `TargetView` is what is being aimed, `using` when it is a thing's use, the cursor, the footprint, the flight, what lies beyond it, whether the aim is legal, why not, a `Row` per target, and `unknown` when what is named is not yet known, whose reach the box leaves out, and for a use whose footprint, refusals and targets as well, drawing a plain line to the cursor that cycles to anyone, and for a throw its chance to hit, since only a thing that strikes is rolled.
 Its `facets` are what the game added about the aim in `ViewSet::Annotate`, which the box prints under the chance, as a game that writes `odds` again with unknown gear counted as it seems says so.
@@ -98,7 +99,7 @@ The view also holds the `AimRange`, how far the aim reaches against how far the 
 A presenter reads a view, reads the `Palette`, and writes cells to the `Terminal`; it owns no state and makes no decision a game might want made differently.
 `panel::split_right`, `split_bottom` and `split_top` hand back both halves of a cut, which is the whole of the engine's opinion about layout: no resource holds every panel's rectangle.
 `clear`, `frame`, `section` and `bar` are public so a game taking the view and drawing its own does not rewrite a box-drawing routine, and `ListMenu` is the selection a screen keeps.
-A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read; the gear panel's one exception moves a name's facet to the line under it rather than cut the name that carries a level.
+A strip clips a long line and a screen wraps it, because on a strip a cut line is a cut line while on a screen the reader opened in order to read; the gear panel's one exception moves a name's facet to the line under it rather than cut the name that carries a level, and the nearby rail's is to clip a long name from the end and keep what it is doing whole after it, `Grubnak the… (unaware)`, only clipping the two together when the row is too narrow to keep four characters of the name beside the state.
 
 ## Using it
 
