@@ -127,8 +127,10 @@ impl Screen {
             // the keeper's name, the headings and their rule, fifteen rows,
             // as many as the pack shows, and the purses at the foot.
             shop: centred(80, 4, 22),
-            // What can be done here, when here is more than one thing.
-            here: centred(40, 10, 6),
+            // What can be done here, when here is more than one thing:
+            // wide enough for the temple's longest rite with its turn and
+            // its price, `unbind what you wear (1 turn, 60 gold coins)`.
+            here: centred(48, 10, 6),
             controls: map.inflate(-2),
             // The most the menu may take: the run's own line, the seed and
             // turn, the record's score and its numbers, and the choices
@@ -754,8 +756,8 @@ mod tests {
         let offered = [("trade the priest", None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
             .map(|(v, p)| (v.to_string(), p));
         assert_eq!(rows, offered.to_vec(), "trade and the rites at their prices");
-        for rite in ["mend your wounds", "unbind what you wear", "name what you wear"] {
-            assert!(written(&app).iter().any(|r| r.contains(rite)), "the screen lists {rite:?}: {:#?}", written(&app));
+        for rite in ["mend your wounds (1 turn, 30 gold coins)", "unbind what you wear - needs 60 gold coins", "name what you wear - needs 60 gold coins"] {
+            assert!(written(&app).iter().any(|r| r.contains(rite)), "the screen lists {rite:?} whole: {:#?}", written(&app));
         }
         assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
         assert_eq!(undermere::testing::pack(&app, priest), theirs, "and nothing taken");
