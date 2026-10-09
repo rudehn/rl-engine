@@ -175,13 +175,17 @@
     // The armor: the heavier, the more it turns, the more strength it
     // asks, and the louder every step taken in it, which whatever has ears
     // hears the further off. A shield turns one blow in ten aside, the
-    // one thing under the lake that does.
-    (name: "leather armor", glyph: '[', color: (0.6, 0.45, 0.3), slot: "body", tags: ["armor"], armor: 1, strength: 10),
-    (name: "scale mail", glyph: '[', color: (0.55, 0.62, 0.55), slot: "body", tags: ["armor"], armor: 2, strength: 13, bestows: [("footfall", 1)]),
-    (name: "chain mail", glyph: '[', color: (0.68, 0.7, 0.75), slot: "body", tags: ["armor"], armor: 3, strength: 13, bestows: [("footfall", 1)]),
-    (name: "banded mail", glyph: '[', color: (0.72, 0.62, 0.48), slot: "body", tags: ["armor"], armor: 4, strength: 15, bestows: [("footfall", 2)]),
-    (name: "splint mail", glyph: '[', color: (0.6, 0.65, 0.75), slot: "body", tags: ["armor"], armor: 5, strength: 17, bestows: [("footfall", 2)]),
-    (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), slot: "body", tags: ["armor"], armor: 6, strength: 19, bestows: [("footfall", 3)]),
+    // one thing under the lake that does. A scroll poured into body armor
+    // also knits its wearer's wounds a little faster a level, since the
+    // blow it turns stops growing once the engine's own half-blow floor
+    // is reached, and a scroll spent past that floor would otherwise buy
+    // nothing at all.
+    (name: "leather armor", glyph: '[', color: (0.6, 0.45, 0.3), slot: "body", tags: ["armor"], armor: 1, strength: 10, per_level: [("regeneration", 1)]),
+    (name: "scale mail", glyph: '[', color: (0.55, 0.62, 0.55), slot: "body", tags: ["armor"], armor: 2, strength: 13, bestows: [("footfall", 1)], per_level: [("regeneration", 1)]),
+    (name: "chain mail", glyph: '[', color: (0.68, 0.7, 0.75), slot: "body", tags: ["armor"], armor: 3, strength: 13, bestows: [("footfall", 1)], per_level: [("regeneration", 1)]),
+    (name: "banded mail", glyph: '[', color: (0.72, 0.62, 0.48), slot: "body", tags: ["armor"], armor: 4, strength: 15, bestows: [("footfall", 2)], per_level: [("regeneration", 1)]),
+    (name: "splint mail", glyph: '[', color: (0.6, 0.65, 0.75), slot: "body", tags: ["armor"], armor: 5, strength: 17, bestows: [("footfall", 2)], per_level: [("regeneration", 1)]),
+    (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), slot: "body", tags: ["armor"], armor: 6, strength: 19, bestows: [("footfall", 3)], per_level: [("regeneration", 1)]),
     (name: "shield", glyph: ']', color: (0.62, 0.52, 0.4), slot: "off hand", tags: ["armor"], armor: 1, strength: 12, bestows: [("evasion", 10)]),
     (name: "helm", glyph: '^', color: (0.7, 0.7, 0.75), slot: "head", tags: ["armor"], armor: 1, strength: 11),
     // The potions, each spent by its use or where it lands when thrown. The
