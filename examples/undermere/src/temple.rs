@@ -28,6 +28,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::Source;
 use rl_engine::rl_ui::view::offers::OffersView;
+use rl_engine::rl_ui::view::sum_of;
 use ron::options::Options;
 use serde::Deserialize;
 
@@ -157,16 +158,46 @@ pub fn rite_rows(mut view: ResMut<OffersView>, rites: Res<Rites>, verbs: Res<Ver
 /// Lands a rite's effects on whoever took it up, as their own use of it:
 /// its user and its one target, so a word that lands on the user, as
 /// `RemoveCurse` does, and one that lands on its targets, as `Mend` does,
-/// both reach them. Credited to the priest as the offer it came from. The
-/// price is already paid, into the priest's purse, before this runs.
+/// both reach them. Credited to the priest as the offer it came from.
+///
+/// The price is already paid, into the priest's purse, before this runs,
+/// and silently, so this says it first, `You give the priest 30 gold
+/// coins.`, in the plain tone the narrator gives the adventurer's own
+/// doings, before whatever the rite's effects say. The coins are named as
+/// the trade screen names them, by a piece's own name.
 ///
 /// In `TurnSet::React`, where every answer to `Interacted` is read; every
 /// other verb is left for whatever answers it.
-pub fn answer_rites(mut done: MessageReader<Interacted>, rites: Res<Rites>, verbs: Res<Verbs>, mut world: EffectWorld) {
+pub fn answer_rites(mut done: MessageReader<Interacted>, rites: Res<Rites>, verbs: Res<Verbs>, purse: Purse, mut world: EffectWorld) {
     for ev in done.read() {
         let Some(rite) = rites.get(verbs.name(ev.verb)) else { continue };
+        let paid = sum_of(&purse.coin_name([ev.target, ev.actor]), rite.price);
+        world.commands.write_message(Tell::new(format!("You give {{whom}} {paid}."), Tones::TEXT).to(ev.target));
         let at = world.position(ev.actor).unwrap_or_default();
         rite.effects.land_on(Source::Offer(ev.target), ev.actor, at, vec![ev.actor], &mut world);
+    }
+}
+
+/// Where the currency's name is read from: what each side carries, and
+/// every named piece in play.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Purse<'w, 's> {
+    currency: Option<Res<'w, Currency>>,
+    bags: Query<'w, 's, &'static Inventory>,
+    pieces: Query<'w, 's, (Entity, &'static Name, &'static Tagged)>,
+}
+
+impl Purse<'_, '_> {
+    /// What one piece of the currency is called: a piece in the first of
+    /// `near`'s bags that holds one, else any piece in play, the lowest
+    /// entity first, as the trade screen finds it. Empty with none, which
+    /// `sum_of` says as the bare number.
+    fn coin_name(&self, near: [Entity; 2]) -> String {
+        let Some(currency) = self.currency.as_deref() else { return String::new() };
+        let is = |(_, _, tags): &(Entity, &Name, &Tagged)| currency.is(Some(*tags));
+        let carried = near.iter().filter_map(|who| self.bags.get(*who).ok()).flat_map(|bag| bag.items.iter().copied());
+        let nearby = carried.filter_map(|e| self.pieces.get(e).ok()).find(is);
+        nearby.or_else(|| self.pieces.iter().filter(is).min_by_key(|(e, _, _)| *e)).map(|(_, name, _)| name.as_str().to_string()).unwrap_or_default()
     }
 }
 
@@ -180,7 +211,7 @@ mod tests {
     use crate::dungeon::{TOWN, map_of};
     use crate::lore::{Lore, Unfamiliar};
     use crate::shops::Shopkeeper;
-    use crate::testing::{adventurer, arrive, continued, equip, find, give, headless, make, name_of, pass_turns, settle, stand_on, unequip};
+    use crate::testing::{adventurer, arrive, continued, equip, find, give, headless, make, name_of, pass_turns, said, settle, stand_on, unequip};
 
     /// The rites as the spec prices them, in the order the priest offers
     /// them.
@@ -277,6 +308,32 @@ mod tests {
             assert_eq!(gold(&app, me), 100 - price, "{rite}: the adventurer paid");
             assert_eq!(gold(&app, priest), theirs + price, "{rite}: into the priest's purse");
         }
+    }
+
+    /// Taking up a rite says what was given and to whom, once, in the plain
+    /// tone of the adventurer's own doings and before what the rite itself
+    /// says; a rite refused for want of gold says nothing of giving.
+    #[test]
+    fn a_rite_taken_up_says_the_gold_given_to_the_priest_before_what_it_does() {
+        for (rite, price) in PRICED {
+            let (mut app, me, priest) = in_mereholt(4);
+            set_gold(&mut app, me, 100);
+            app.world_mut().get_mut::<Health>(me).expect("health").current = 3;
+            take_rite(&mut app, me, priest, rite);
+            let lines: Vec<(String, ToneId)> = app.world().resource::<MessageLog>().iter().map(|l| (l.text.clone(), l.tone)).collect();
+            let given = format!("You give the priest {price} gold coins.");
+            let at = lines.iter().position(|(t, _)| *t == given).unwrap_or_else(|| panic!("{rite}: {given:?} not in {lines:#?}"));
+            assert_eq!(lines[at].1, Tones::TEXT, "{rite}: in the plain tone");
+            assert_eq!(lines.iter().filter(|(t, _)| t.starts_with("You give")).count(), 1, "{rite}: said once: {lines:#?}");
+            if rite == "mend" {
+                let closed = lines.iter().position(|(t, _)| t == "Your wounds close.").expect("the mending is told");
+                assert!(at < closed, "the paying before the mending: {lines:#?}");
+            }
+        }
+        let (mut app, me, priest) = in_mereholt(4);
+        set_gold(&mut app, me, 10);
+        take_rite(&mut app, me, priest, "mend");
+        assert!(!said(&app).iter().any(|t| t.starts_with("You give")), "nothing given: {:#?}", said(&app));
     }
 
     /// A rite the adventurer cannot pay for is listed as wanting its price

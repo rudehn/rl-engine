@@ -45,6 +45,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_core::noun::listed;
 use rl_engine::rl_rules::loot::{DropRow, DropTable, LevelRow, LevelTable, LootRow, LootTable};
 use rl_engine::rl_ui::TradeView;
+use rl_engine::rl_ui::view::offers::OffersView;
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
@@ -530,6 +531,21 @@ pub fn shelf_names(mut view: ResMut<TradeView>, things: Query<&ItemKind>, armory
     }
 }
 
+/// Lists the trade on the offers screen as `trade with the priest`, over
+/// the engine's verb and the keeper's name, `trade the priest`, which reads
+/// as the keeper being what is traded. One wording for every keeper, as
+/// the rites have theirs in [`temple::rite_rows`](crate::temple::rite_rows);
+/// the time and any refusal stay the engine's.
+///
+/// In `ViewSet::Annotate`, over the engine's rows.
+pub fn trade_rows(mut view: ResMut<OffersView>, verbs: Res<Verbs>, named: Query<&Name>) {
+    for row in view.rows.iter_mut().filter(|row| verbs.name(row.verb) == TRADE) {
+        if let Ok(name) = named.get(row.target) {
+            row.label = format!("{TRADE} with {}", listed(name.as_str(), 1));
+        }
+    }
+}
+
 /// The file as written: the level rows, and the keepers left raw so their
 /// names are read with the registries in scope.
 #[derive(Deserialize)]
@@ -650,7 +666,7 @@ mod tests {
     use super::*;
     use crate::content::Library;
     use crate::testing::{adventurer, at, give, headless, make, name_of, pack, settle, stand_on};
-    use rl_engine::rl_ui::TradeViewPlugin;
+    use rl_engine::rl_ui::{OffersViewPlugin, TradeViewPlugin};
 
     fn library() -> Library {
         Library::load(&crate::content::effect_kinds(), &Moments::default())
@@ -857,6 +873,26 @@ mod tests {
         app.add_plugins(TradeViewPlugin).add_systems(Update, shelf_names.in_set(ViewSet::Annotate));
         let me = adventurer(&mut app);
         (app, me)
+    }
+
+    /// Standing beside each of Mereholt's keepers, the offers screen lists
+    /// the trade as trading with them, `trade with the priest`, never as
+    /// trading the keeper, which is what the engine's verb and name read.
+    #[test]
+    fn every_keepers_trade_reads_on_the_offers_screen_as_trading_with_them() {
+        let mut app = headless(RunSeed(3));
+        app.add_plugins(OffersViewPlugin).add_systems(Update, trade_rows.in_set(ViewSet::Annotate));
+        let me = adventurer(&mut app);
+        let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
+        for post in POSTS {
+            let keeper = keeper(&mut app, post.called);
+            let cell = beside(&mut app, keeper).first().copied().expect("somewhere to stand beside the keeper");
+            stand_on(&mut app, me, cell);
+            settle(&mut app);
+            let view = app.world().resource::<OffersView>();
+            let row = view.rows.iter().find(|r| r.target == keeper && r.verb == trade).expect("the keeper offers trade");
+            assert_eq!(row.label, format!("trade with {}", post.called));
+        }
     }
 
     /// The keeper called `called`.

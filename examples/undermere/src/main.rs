@@ -206,8 +206,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
     app.add_systems(Update, undermere::captives::note_captives.in_set(ViewSet::Annotate));
     // A keeper's wares by their true names, in the shop's own colour.
     app.add_systems(Update, undermere::shops::shelf_names.in_set(ViewSet::Annotate));
-    // The temple's rites by what they do, not "name the priest".
-    app.add_systems(Update, undermere::temple::rite_rows.in_set(ViewSet::Annotate));
+    // The temple's rites by what they do, not "name the priest", and every
+    // keeper's trade as "trade with" them, not "trade the priest".
+    app.add_systems(Update, (undermere::temple::rite_rows, undermere::shops::trade_rows).in_set(ViewSet::Annotate));
     // What is known of a monster's traits on the look panel: every plain
     // one in its own words, and a "?" for every trick not yet seen.
     app.add_systems(Update, undermere::bestiary_lore::annotate_inspect.in_set(ViewSet::Annotate));
@@ -754,7 +755,7 @@ mod tests {
         assert!(!modals.is_open(trade_modal(modals)), "and not the shop");
         let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
         let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
-        let offered = [("trade the priest", None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
+        let offered = [("trade with the priest", None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
             .map(|(v, p)| (v.to_string(), p));
         assert_eq!(rows, offered.to_vec(), "trade and the rites at their prices");
         for rite in ["mend your wounds (1 turn, 30 gold coins)", "unbind what you wear - needs 60 gold coins", "name what you wear - needs 60 gold coins"] {
