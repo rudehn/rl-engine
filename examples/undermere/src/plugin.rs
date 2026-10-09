@@ -262,8 +262,15 @@ impl Plugin for UndermerePlugin {
         // does not.
         app.add_systems(Update, (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim).in_set(ViewSet::Annotate));
         // Each place's ambient, set between the turns and the light, so the
-        // frame the stairs land on is drawn in the new place's light.
-        app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
+        // frame the stairs land on is drawn in the new place's light; and
+        // beside it a camp's fire lit, so the frame it is stood is lit.
+        app.add_systems(
+            Update,
+            (crate::light::set_ambient, crate::light::light_loose_props)
+                .after(EngineSet::Turns)
+                .before(EngineSet::Light)
+                .run_if(in_state(EngineState::Playing)),
+        );
         // The keys, declared once so the controls screen lists what the
         // input reads. `f` and `t` hand the engine's targeting cursor an
         // `AimFire` or an `AimThrow`; registering both here is a no-op

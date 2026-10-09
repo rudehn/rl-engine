@@ -40,6 +40,9 @@ pub const LAMP: LightDef = LightDef { radius: 5, color: (1.0, 0.8, 0.52), flicke
 pub const WINDOW: LightDef = LightDef { radius: 3, color: (1.0, 0.76, 0.42), flicker: 0.1 };
 /// A forge or a hearth: orange, and restless.
 pub const FIRE: LightDef = LightDef { radius: 4, color: (1.0, 0.5, 0.2), flicker: 0.35 };
+/// A camp's fire in the open: wider than a hearth's, so a sleeping band
+/// round it is seen from across the dark before it is reached.
+pub const CAMPFIRE: LightDef = LightDef { radius: 5, color: (1.0, 0.55, 0.22), flicker: 0.4 };
 /// Candles, on an altar or a candelabra: pale gold, and steadier than fire.
 pub const CANDLES: LightDef = LightDef { radius: 4, color: (1.0, 0.88, 0.58), flicker: 0.2 };
 /// A brazier left burning in the Upper Halls: wide enough to light the room
@@ -171,6 +174,9 @@ pub struct Fixtures {
     tiles: Vec<(TileId, LightDef)>,
     /// Each prop that sheds light, and its light, braziers aside.
     props: Vec<(PropId, LightDef)>,
+    /// Each prop that sheds light wherever it stands, stood by the
+    /// population rather than a piece's slot: a camp's fire.
+    loose: Vec<(PropId, LightDef)>,
     /// The brazier, whose flame is the colour of the place it burns in.
     brazier: PropId,
     /// The pieces, to read what a place's slots hold.
@@ -188,6 +194,7 @@ impl Fixtures {
         Self {
             tiles: GLOWING.iter().map(|(name, light)| (tile(name), *light)).collect(),
             props: vec![(prop("lamp post"), LAMP), (prop("forge"), FIRE), (prop("hearth"), FIRE), (prop("altar"), CANDLES), (prop("candelabra"), CANDLES)],
+            loose: vec![(prop("fire"), CAMPFIRE)],
             brazier: prop("brazier"),
             prefabs: undermere.prefabs().clone(),
         }
@@ -216,6 +223,24 @@ impl Fixtures {
 pub fn light_fixtures(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, fixtures: Res<Fixtures>) {
     for ev in entered.read().filter(|ev| ev.first) {
         light_place(&mut commands, &map, ev.map, &fixtures);
+    }
+}
+
+/// Lights every prop that sheds light wherever it stands, on the prop
+/// itself, the frame it appears: a camp's fire, which the population stands
+/// on a floor's first arrival with no slot [`Fixtures::of`] could read it
+/// off.
+///
+/// On the prop rather than a light beside it, so a fire put out takes its
+/// light with it, and read off the prop's kind as it appears rather than
+/// kept, so a fire a save restores is lit the same way, with nothing in the
+/// save to say so. Before the light is cast, so the frame a camp is first
+/// seen is the frame it is lit.
+pub fn light_loose_props(mut commands: Commands, props: Query<(Entity, &PropKind), Added<PropKind>>, fixtures: Res<Fixtures>) {
+    for (prop, kind) in &props {
+        if let Some((_, light)) = fixtures.loose.iter().find(|(id, _)| *id == kind.0) {
+            commands.entity(prop).insert(light.source());
+        }
     }
 }
 
@@ -391,6 +416,43 @@ mod tests {
             assert!(!beside.is_empty(), "the lamp post at {post:?} stands in the street");
             assert!(beside.iter().all(|p| lighting.band(*p) == LightBand::Lit), "the street beside the lamp post at {post:?} is lit");
         }
+    }
+
+    /// A goblin camp's fire, stood by the population with no slot to read
+    /// it off, sheds its own light on the floor it is first seen on and
+    /// again on the same floor continued from the save its arrival wrote,
+    /// found somewhere over a span of seeds since a camp is a coin flip.
+    #[test]
+    fn a_camps_fire_lights_the_ground_round_it_and_still_does_once_the_run_is_continued_over_a_span_of_seeds() {
+        let lit_fires = |app: &mut App, map: MapId| -> Vec<(Point, Option<LightSource>)> {
+            let fire = app.world().resource::<Registries>().props.expect("fire");
+            let world = app.world_mut();
+            let mut q = world.query::<(&Position, &OnMap, &PropKind, Option<&LightSource>)>();
+            q.iter(world).filter(|(_, on, kind, _)| on.0 == map && kind.0 == fire).map(|(p, _, _, light)| (p.0, light.copied())).collect()
+        };
+        let mut camps = 0;
+        for s in 0..40u64 {
+            let mut app = crate::testing::headless(RunSeed(s));
+            let me = crate::testing::adventurer(&mut app);
+            crate::testing::sturdy(&mut app, me);
+            let map = map_of(4);
+            crate::testing::arrive(&mut app, map);
+            crate::testing::settle(&mut app);
+            let fires = lit_fires(&mut app, map);
+            let Some((at, light)) = fires.first().copied() else { continue };
+            assert_eq!(light, Some(CAMPFIRE.source()), "seed {s}: the camp's fire carries its own light");
+            let me_at = crate::testing::at(&app, me);
+            let (world_map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
+            let beyond = geometry::square(at, 1).filter(|p| world_map.is_walkable(*p) && geometry::chebyshev(*p, me_at) > lantern_radius(Some(4)) + 1);
+            for p in beyond {
+                assert_eq!(lighting.band(p), LightBand::Lit, "seed {s}: the ground at {p:?} beside the fire is lit, the lantern far off");
+            }
+            let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down");
+            let mut again = crate::testing::continued(&text);
+            assert_eq!(lit_fires(&mut again, map), vec![(at, Some(CAMPFIRE.source()))], "seed {s}: the fire is lit again once the run is continued");
+            camps += 1;
+        }
+        assert!(camps > 0, "some seed over the span stood a camp's fire on floor four");
     }
 
     /// The lantern the adventurer carries reaches as far as the floor they
