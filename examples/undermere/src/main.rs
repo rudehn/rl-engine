@@ -803,7 +803,8 @@ mod tests {
         app.update();
         let (listed, detail) = pack_on(&mut app, mail);
         assert!(listed.starts_with("[ unidentified chain mail"), "{listed:?}");
-        let found = ["numbers shown at +0", "wearing it 200 turns will tell its level", "armor +3", "footfall +1", "goes on the body"];
+        let short = "needs 13 strength, you have 12: -1 armor";
+        let found = ["numbers shown at +0", "wearing it 200 turns will tell its level", "armor +3", "footfall +1", short, "goes on the body"];
         assert_eq!(detail, found, "what any chain mail is, and what wearing it will tell");
 
         let worn_for = |app: &App| said(app).iter().filter(|l| *l == "You will know its level once you have worn it 200 turns.").count();
@@ -812,7 +813,7 @@ mod tests {
         pass_turns(&mut app, 60);
         let (_, detail) = pack_on(&mut app, mail);
         // Sixty turns, and the turn it went on.
-        assert_eq!(detail, ["numbers shown at +0", "level known in 139 more turns worn", "armor +3", "footfall +1", "worn on the body"]);
+        assert_eq!(detail, ["numbers shown at +0", "level known in 139 more turns worn", "armor +3", "footfall +1", short, "worn on the body"]);
         unequip(&mut app, me, mail);
         let (_, detail) = pack_on(&mut app, mail);
         assert_eq!(detail[1], "wearing it 139 more turns will tell its level", "taken off, it keeps what it counted");
@@ -823,7 +824,7 @@ mod tests {
         assert_eq!(name_of(&app, mail), "+2 chain mail");
         let (listed, detail) = pack_on(&mut app, mail);
         assert!(listed.starts_with("[ +2 chain mail"), "{listed:?}");
-        assert_eq!(detail, ["armor +5", "footfall +1", "worn on the body"], "known, its own numbers and nothing more");
+        assert_eq!(detail, ["armor +5", "footfall +1", short, "worn on the body"], "known, its own numbers and nothing more");
     }
 
     /// The look cursor over a found sword lying on the floor calls it
@@ -844,9 +845,42 @@ mod tests {
         app.update();
         let lines = looking_at(&mut app, east);
         assert_eq!(lines[0], ") unidentified sword", "{lines:#?}");
-        assert_eq!(lines[2..], ["numbers shown at +0", "wearing it 200 turns will tell its level", "1d7+1 slash"], "{lines:#?}");
+        assert_eq!(lines[2..], ["numbers shown at +0", "wearing it 200 turns will tell its level", "1d7+1 slash", "needs 12 strength"], "{lines:#?}");
         let lines = looking_at(&mut app, west);
         assert_eq!(lines[2..], ["unknown"], "a potion of a kind not yet known: {lines:#?}");
+    }
+
+    /// The kit's sword, known whole at nought, is called sword with no
+    /// number, and the pack says the strength it asks in the muted tone;
+    /// a war hammer found asks more than the adventurer has, and the pack
+    /// says by how much and what it costs, in the bad tone.
+    #[test]
+    fn the_pack_says_what_a_thing_asks_of_strength_and_warns_when_the_adventurer_is_short() {
+        use undermere::testing::{find, give};
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let sword =
+            app.world().get::<Equipped>(me).and_then(|w| w.in_slot(app.world().resource::<Registries>().slots.expect("main hand"))).expect("the kit's sword");
+        let (listed, detail) = pack_on(&mut app, sword);
+        assert!(listed.starts_with(") sword") && listed.ends_with("main hand"), "{listed:?}");
+        assert_eq!(detail, ["1d7+1 slash", "needs 12 strength", "worn on the main hand"]);
+
+        let hammer = find(&mut app, "war hammer", 1);
+        give(&mut app, me, hammer);
+        app.update();
+        let (listed, detail) = pack_on(&mut app, hammer);
+        assert!(listed.starts_with(") unidentified war hammer"), "{listed:?}");
+        let warning = "needs 20 strength, you have 12: -32 accuracy";
+        assert!(detail.iter().any(|l| l == warning), "{detail:#?}");
+        // The line as the screen draws it, in the bad tone.
+        press(&mut app, KeyCode::KeyI);
+        let at = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == hammer).expect("in the pack");
+        app.world_mut().resource_mut::<InventoryMenu>().selected = at;
+        app.update();
+        let pack = Screen::new().pack;
+        let y = (pack.y..pack.bottom()).find(|y| framed(&app, pack, *y) == warning).expect("the warning is on the screen");
+        let bad = app.world().resource::<Palette>().get(Tones::BAD);
+        assert_eq!(app.world().resource::<Terminal>().get(pack.x + 2, y).map(|c| c.fg), Some(bad), "in the bad tone");
     }
 
     /// A ring of light found at -2 clings to the adventurer when it goes on,

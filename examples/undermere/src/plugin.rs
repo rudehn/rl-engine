@@ -211,6 +211,13 @@ impl Plugin for UndermerePlugin {
             (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim, crate::seeming::seem_pack, crate::seeming::seem_looked_at)
                 .in_set(ViewSet::Annotate),
         );
+        // What a thing asks of the adventurer's strength, under the pack's
+        // row and the look cursor's: after what a thing not yet known
+        // seems, so the line reads under its numbers.
+        app.add_systems(
+            Update,
+            crate::strength::note_strength.after(crate::seeming::seem_pack).after(crate::seeming::seem_looked_at).in_set(ViewSet::Annotate),
+        );
         // Each place's ambient, set between the turns and the light, so the
         // frame the stairs land on is drawn in the new place's light.
         app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
