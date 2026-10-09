@@ -923,8 +923,10 @@ mod tests {
             // Led by a plain goblin, never Grubnak the goblin king: his
             // own honor guard can draw the same three kinds, on the same
             // floor range, and this is the war band's camp alone.
-            let led: Vec<(Entity, Entity)> =
-                led_among(app.world_mut(), map, &band).into_iter().filter(|(_, leader)| app.world().get::<Kind>(*leader).map(|k| k.0) == Some(goblin_id)).collect();
+            let led: Vec<(Entity, Entity)> = led_among(app.world_mut(), map, &band)
+                .into_iter()
+                .filter(|(_, leader)| app.world().get::<Kind>(*leader).map(|k| k.0) == Some(goblin_id))
+                .collect();
             assert_eq!(led.len(), 2, "seed {s}: two followers, the camp's own band");
             let leader = led[0].1;
             assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same goblin");
