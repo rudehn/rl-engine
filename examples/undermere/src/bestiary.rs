@@ -1392,6 +1392,65 @@ mod tests {
         assert!(app.world().get::<Mind>(rat).is_some(), "a mind to fight with again");
     }
 
+    /// Raising, played: a necromancer left to its own mind, with a foe in
+    /// sight and a body behind it, reaches for raise dead within forty
+    /// turns over a span of seeds, though blink is declared first and is
+    /// worth more on a turn both are ready, so it waits on blink's
+    /// cooldown and the mind's own two in five of reaching at all.
+    #[test]
+    fn a_necromancer_left_to_its_own_mind_raises_the_body_behind_it_over_a_span_of_seeds() {
+        use crate::testing::{arena, kill, monster, pass_turns};
+        for s in 0..6 {
+            let (mut app, me, here) = arena(40 + s);
+            let rat = monster(&mut app, "rat", here.offset(REACH_OF_RAISING, 0));
+            kill(&mut app, rat, Some(me));
+            monster(&mut app, "necromancer", here.offset(REACH_OF_RAISING - 1, 0));
+            let mut raised = false;
+            app.world_mut().entity_mut(me).insert(Health::full(1000));
+            for _ in 0..40 {
+                pass_turns(&mut app, 1);
+                if app.world().get::<Actor>(rat).is_some() {
+                    raised = true;
+                    break;
+                }
+            }
+            assert!(raised, "seed {s}: the necromancer never raised the rat in forty turns: {:#?}", crate::testing::said(&app));
+        }
+    }
+
+    /// How far from the adventurer the body a necromancer is left to raise
+    /// lies: inside the arena's open ground, a step behind the necromancer.
+    const REACH_OF_RAISING: i32 = 4;
+
+    /// A bolt zapped at a golem and turned back reads in the log as it
+    /// plays: the golem turning it back, said before the burn it gave the
+    /// one who zapped it, and nothing saying the golem was burned by it.
+    #[test]
+    fn a_bolt_a_golem_turns_back_is_said_turned_back_before_it_burns_the_one_who_zapped_it() {
+        use crate::testing::{arena, find, give, said, settle, still};
+        let (mut app, me, here) = arena(33);
+        still(&mut app, "golem", here.offset(3, 0));
+        let mut turned = None;
+        for _ in 0..16 {
+            let staff = find(&mut app, "staff of firebolt", 2);
+            give(&mut app, me, staff);
+            settle(&mut app);
+            let before = said(&app).len();
+            app.world_mut().write_message(Intent::new(me, UseItemAt { item: staff, at: here.offset(3, 0) }));
+            settle(&mut app);
+            let lines = said(&app)[before..].to_vec();
+            if lines.iter().any(|l| l.contains("turns it back")) {
+                turned = Some(lines);
+                break;
+            }
+        }
+        let lines = turned.expect("one zap in sixteen was turned back");
+        let back = lines.iter().position(|l| l == "The golem turns it back on you.").unwrap_or_else(|| panic!("said as turned back: {lines:#?}"));
+        let burn = lines.iter().position(|l| l.starts_with("You hurt yourself for")).unwrap_or_else(|| panic!("the burn it gave you is said: {lines:#?}"));
+        assert!(back < burn, "turned back, then the burn: {lines:#?}");
+        assert!(!lines.iter().any(|l| l.contains("the golem for")), "nothing says the bolt hurt the golem: {lines:#?}");
+    }
+
     /// Grubnak's `war cry`: every ally in sight hastened for the trait's
     /// own six turns, Grubnak himself included, a foe beside them left as
     /// it was.
