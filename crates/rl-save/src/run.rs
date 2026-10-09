@@ -1445,6 +1445,39 @@ mod tests {
         assert!(stairs.is_empty(), "a transition nobody registered a kind for is not the engine's to spawn");
     }
 
+    /// A trader's stock is its pack, so it comes back as any actor's pack
+    /// does: the same things in the same order, a pile with its count,
+    /// with nothing written by the game about what it sells.
+    #[test]
+    fn a_stocked_traders_inventory_survives_a_save_as_any_actors_does() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        let till = app.world_mut().spawn((Item, Thing { def: "coin".into(), notches: 0 }, Stack { key: 1, count: 40 })).id();
+        let ware = app.world_mut().spawn((Item, Thing { def: "ring".into(), notches: 1 }, rl_bevy::Worth(25))).id();
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Person("Ada".into()),
+            Position(start.offset(1, 0)),
+            Health::full(20),
+            Inventory { items: vec![ware, till] },
+            rl_bevy::Trader { buys: Vec::new(), pays_pct: 25 },
+        ));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let stock = w.query_filtered::<&Inventory, With<Person>>().single(w).expect("the trader came back").items.clone();
+        let w = back.world();
+        let things: Vec<(&str, u8, Option<u32>)> =
+            stock.iter().map(|i| w.get::<Thing>(*i).map(|t| (t.def.as_str(), t.notches, w.get::<Stack>(*i).map(|s| s.count))).unwrap()).collect();
+        assert_eq!(things, vec![("ring", 1, None), ("coin", 0, Some(40))], "its stock, in order, the pile with its count");
+    }
+
     /// A game with the player wearing a ring in its one slot, `dazed` on
     /// them held by the ring, and, when `saved_ring`, the ring a saved
     /// kind; saved, and continued in a fresh game that has begun play.

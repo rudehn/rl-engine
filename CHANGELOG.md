@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Two actors can trade: the new `TradePlugin` declares the `trade` verb, `TRADE`, and opens a trade in the new `Trading` resource when the player takes up that offer from an actor carrying the new `Trader { buys, pays_pct }`, closing it again when either side is out of reach, dead or gone.
+  Inside it, the new `Buy` and `Sell` messages are resolved at once and take no turn: a buy pays the thing's `Worth` per one, a sell is paid the trader's `pays_pct` share of it per one, rounded down, and each is answered with `Traded`, or with `TradeRefused` and a `TradeRefusal` a screen can say: `Short` of currency, `NotBought`, `NoWorth`, or `Worn`.
+  The currency is whatever carries the tag the game names in the new `Currency` resource, which the plugin needs before play begins; it changes hands as real stacks, split off and merged as a pickup merges, so nothing is made or destroyed, and a trader that buys needs currency of its own to pay with.
+  `Worth(u32)` is the game's price on an item, the worth of one of a stack, and a thing without one is neither sold nor bought; it and `Trader` are not saved by the engine, which the game puts back as it puts back `Offers`, while the trader's stock is its `Inventory` and is saved as any actor's is.
+  The plugin needs `ItemsPlugin` and `PropsPlugin`.
+
 - `EffectWorld` says whether a cell is a transition: the new `EffectWorld::is_transition(p)` reads the engine's own `Transition` component at `p`, read by no effect of the engine's own, since `is_free` is silent on the question and a move onto a floor's own way through is the game's to allow or refuse.
   A game effect that moves someone through open ground, a blink or a far teleport among them, checks it beside `is_free` to keep a monster's own trick from landing it exactly on a stair.
 
