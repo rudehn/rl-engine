@@ -52,6 +52,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 25 | A furnishing pool with bands and a budget | 1 | low | medium |
 | 26 | Furnishing a map that is not rooms | 1 | low | medium |
 | 27 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
+| 28 | The player has no long action | 3 | medium | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -74,6 +75,7 @@ Why the order that is left, in four moves:
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
    Items 23 to 26 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 23 is what the furnished rooms most visibly lack, 24 what the larger rooms do, and 25 and 26 wait on Foundry's zones and on a game that furnishes a cave.
    Item 27 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
+   Item 28 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -103,7 +105,7 @@ What is left is furnishing, the loop every game with rooms writes next, opened o
 The five items that opened this section were built in the six stages of `docs/design/minds.md` on 2026-09-16; what remains is the tactics they make room for.
 
 - **Tactics that are missing, and weights that are fixed.**
-  No pack or leader behaviour, no keep-at-range for a shooter, no patrol or idle routine, and no scent, though `DijkstraMap` is the right tool for it; noise is built, in `docs/design/noise.md`.
+  No pack behaviour, no keep-at-range for a shooter, no patrol or idle routine, and no scent, though `DijkstraMap` is the right tool for it; noise is built, in `docs/design/noise.md`, and so is following a leader, in `docs/design/minds.md` section 7.
   A mind now shoots what it wields when there is a clear shot to take, with `ShootAtRange`, and holds a distance with `Shadow` above it; no game fields a skirmisher yet.
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
 - **A searcher dithers where it lost the trail.**
@@ -132,6 +134,10 @@ The five items that opened this section were built in the six stages of `docs/de
   Foundry's lifts are gated by the game for the commando, the core charged or not, and nothing asks that of a droid that travels.
   Following is only for a mind beside the one that left, as it left; a chase that arrives some turns later would need actors on a map nobody is reading to be dealt turns, which nothing does.
   And the narrator's `Leaves` cannot name the way, "leaves" rather than "takes the lift", because a transition has no name the engine reads.
+- **The player has no long action.**
+  `continue_work` claims a worker's decision before any mind is asked, which is how work shuts a brain out for the turns it takes, but `docs/design/work.md` section 10 has always named this one as waiting: `works.begin` on the player, continued automatically and stopped by a key or an `ExploreInterrupt`, neither of which exists yet.
+  Undermere made the gap concrete rather than closing it: a captive gives a long action to whoever frees it, but only a mind takes it up, and freeing one is ruled not interruptible by a blow, since the engine's multi-turn work already skips the player rather than reading its mind to resume one.
+  A player's own long action wants the stopping key and the interrupt section 10 names, and a ruling on whether a blow still breaks it, which a game that wants one is the day to make.
 - **The tutorial's own `narrate` pushes lines once a frame.**
   Steps 4 to 6 and 8 to 10 of the tutorial read `ItemEvent` in `PresentSet::Narrate` and push "You eat the crust. It helps." straight to the log, which is the pattern the narrator replaced: a frame of several passes says them in buffer order rather than in the order they happened.
   They are not inside a pass, so the rule about `Tell` does not reach them; moving them into `TurnSet::React` as a `Tell` would, and the guide chapters that quote them move with it.
