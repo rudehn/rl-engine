@@ -21,8 +21,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
   The rule reaches the searches through the new `CostSource::lets_diagonal_past(p)`, which A* and `DijkstraMap` ask of both cells a diagonal squeezes between, and which is `is_passable(p)` unless a source says otherwise, so every other source paths as it did.
   To change: a game that wraps `opening_view` in a `CostSource` of its own forwards `lets_diagonal_past` to it, or its wrapper keeps the old disagreement.
 
-- A use a `Reflects` body turns back lands whole on its user: its targets become the user alone and its cells the shape drawn on the user's own cell, the user's cell for a bolt and a burst round them for a ball, where only the targets were swapped and a turned-back bolt still set the reflecting body's cell alight.
-  Everyone else the footprint caught is spared, and one roll in two for each reflecting body it caught, in order, decides it; one `Reflected` is written, naming the body that turned it.
+- A use that a `Reflects` body turns back, and that leaves nobody else caught where it was aimed, lands whole on its user: its cells become the shape drawn on the user's own cell, the user's cell for a bolt and a burst round them for a ball, where only the targets were swapped and a turned-back bolt still set the reflecting body's cell alight.
+  A reflecting body in a burst that caught others still turns back only its own share: the others are hit where it was aimed and the ground stays there, the body is spared, and the user takes its share.
   To change: `Bystanders::reflect(landing)` is `Bystanders::reflect(landing, mode, map)`, taking the shape it was aimed with and the map it bursts on.
 
 - `EffectWorld` says whether a cell is a transition: the new `EffectWorld::is_transition(p)` reads the engine's own `Transition` component at `p`, read by no effect of the engine's own, since `is_free` is silent on the question and a move onto a floor's own way through is the game's to allow or refuse.

@@ -467,20 +467,23 @@ impl Bystanders<'_, '_> {
         Landed { landing: Landing { user, source, origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default(), on: None }, refused }
     }
 
-    /// Turns `landing` back on its own user, whole, one time in two for
-    /// each target but the user that carries [`Reflects`], rolled in the
-    /// order the footprint caught them until one turns it.
+    /// Turns back, one time in two each, every target of `landing` but its
+    /// own user that carries [`Reflects`]: the body that turns it is
+    /// spared, and its share lands on the user instead, never listing the
+    /// user twice.
     ///
-    /// Whole, because a use turned back is the same use landing somewhere
-    /// else: its targets become the user alone, and its cells the shape
-    /// `mode` draws on the user's own cell, as if the user had been aimed
-    /// at, so a bolt that lights its cell lights the user's and a ball
-    /// bursts round them. Swapping only the targets left the ground effects
-    /// at the original aim, a turned-back bolt still setting the reflecting
-    /// body's cell alight. Everyone else the footprint caught is spared:
-    /// what hit them is somewhere else now. Where a projectile stopped is
-    /// kept, since that is where it was turned and where its flight was
-    /// seen to go, and the burst comes back from there.
+    /// Only its own share, because the body turns back what reached it and
+    /// nothing else: the rest of a burst lands where it was aimed, on
+    /// everyone else it caught, and the ground it covers stays there. When
+    /// a use turned back leaves nobody caught where it was aimed, as a bolt
+    /// at one body does, the whole of it lands on its user, its cells the
+    /// shape `mode` draws on the user's own cell, as if the user had been
+    /// aimed at: a bolt that lights its cell lights the user's, and a ball
+    /// bursts round them. Swapping only the targets then left the ground
+    /// effects at the original aim, a turned-back bolt still setting the
+    /// reflecting body's cell alight. Where a projectile stopped is kept,
+    /// since that is where it was turned and where its flight was seen to
+    /// go, and the burst comes back from there.
     ///
     /// The second, explicit step [`Self::land`] itself never takes: called
     /// only once an aim is no longer refused and a resolver is about to
@@ -488,23 +491,34 @@ impl Bystanders<'_, '_> {
     /// aim, so looking at a reflecting body costs nothing and decides
     /// nothing before the use is actually made.
     ///
-    /// Writes one [`Reflected`] when it turns the landing back, naming the
-    /// body that turned it; a landing left where it was aimed writes none.
+    /// Writes a [`Reflected`] for every target it turns back; a target
+    /// left standing where it was aimed writes none.
     pub fn reflect(&mut self, landing: &mut Landing, mode: TargetMode, map: &WorldMap) {
         let user = landing.user;
-        let Some(rng) = self.rng.as_mut() else { return };
-        let reflects = &self.reflects;
-        let Some(by) = landing.targets.iter().copied().find(|t| *t != user && reflects.contains(*t) && rng.0.random_bool(0.5)) else { return };
-        if let Some(writer) = self.reflected.as_mut() {
-            writer.write(Reflected { by, onto: user, source: landing.source });
+        let source = landing.source;
+        let mut landed: Vec<Entity> = Vec::with_capacity(landing.targets.len());
+        let (mut turned, mut stayed) = (false, false);
+        for target in landing.targets.drain(..) {
+            let reflected = target != user && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
+            if reflected && let Some(writer) = self.reflected.as_mut() {
+                writer.write(Reflected { by: target, onto: user, source });
+            }
+            turned |= reflected;
+            stayed |= !reflected && target != user;
+            let onto = if reflected { user } else { target };
+            if !landed.contains(&onto) {
+                landed.push(onto);
+            }
         }
-        let at = landing.origin;
-        landing.cells = match mode {
-            TargetMode::Ball { radius, .. } => burst(at, radius, map.window_tiles(), |p| map.blocks_projectiles(p)),
-            _ => vec![at],
-        };
-        landing.aim = at;
-        landing.targets = vec![user];
+        landing.targets = landed;
+        if turned && !stayed {
+            let at = landing.origin;
+            landing.cells = match mode {
+                TargetMode::Ball { radius, .. } => burst(at, radius, map.window_tiles(), |p| map.blocks_projectiles(p)),
+                _ => vec![at],
+            };
+            landing.aim = at;
+        }
     }
 }
 
@@ -1384,11 +1398,11 @@ mod tests {
         assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
     }
 
-    /// A ball turned back off one body it caught bursts round its caster,
-    /// as if the caster had been aimed at, and spares the others it caught
-    /// where it was aimed: what hit them went back.
+    /// A ball that catches only the body that turns it back lands whole on
+    /// its caster, as a bolt does: it bursts round the caster, as if the
+    /// caster had been aimed at, and the caster is its only target.
     #[test]
-    fn a_reflected_ball_bursts_round_its_caster_and_spares_the_rest() {
+    fn a_ball_turned_back_by_the_only_body_it_caught_bursts_round_its_caster() {
         let mut reflected = 0;
         for seed in 0..40 {
             let (mut app, start) = app();
@@ -1397,7 +1411,6 @@ mod tests {
             let me = caster(&mut app, start, 20, &[ball]);
             let there = start.offset(4, 0);
             let them = foe(&mut app, there);
-            let beside = foe(&mut app, there.offset(0, 1));
             app.world_mut().entity_mut(them).insert(Reflects);
             settle(&mut app);
 
@@ -1413,11 +1426,47 @@ mod tests {
             cells.sort_by_key(|p| (p.y, p.x));
             let mut around: Vec<Point> = rl_core::geometry::disc(start, 1).collect();
             around.sort_by_key(|p| (p.y, p.x));
-            assert_eq!(cells, around, "seed {seed}: a reflected ball bursts round its caster");
+            assert_eq!(cells, around, "seed {seed}: a ball turned back by its only target bursts round its caster");
             assert_eq!(painted.targets, vec![me], "seed {seed}: and lands on its caster alone");
-            assert_eq!(hp(&app, beside), 20, "seed {seed}: sparing the other foe it caught where it was aimed");
+            assert_eq!(hp(&app, them), 20, "seed {seed}: sparing the body that turned it");
         }
         assert!(reflected > 0, "some of forty seeds turn the ball back");
+    }
+
+    /// A body in a burst turns back only its own share: the two others it
+    /// caught are hurt where it was aimed, as is the caster in the
+    /// reflecting body's place, and the reflecting body is spared; the
+    /// ground stays where it was aimed. Over a span of seeds, so both
+    /// outcomes are seen.
+    #[test]
+    fn a_body_in_a_burst_turns_back_only_its_own_share() {
+        let (mut reflected, mut landed) = (0, 0);
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let ball = ability(&app, "flareball");
+            let me = caster(&mut app, start, 20, &[ball]);
+            let there = start.offset(4, 0);
+            let them = foe(&mut app, there);
+            let (above, below) = (foe(&mut app, there.offset(0, -1)), foe(&mut app, there.offset(0, 1)));
+            app.world_mut().entity_mut(them).insert(Reflects);
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));
+            app.update();
+
+            assert!(hp(&app, above) < 20 && hp(&app, below) < 20, "seed {seed}: the two others are hurt where it was aimed either way");
+            let painted = app.world().get_resource::<Painted>().expect("the ball landed").clone();
+            assert!(painted.cells.contains(&there), "seed {seed}: and the ground stays where it was aimed");
+            if hp(&app, me) < 30 {
+                reflected += 1;
+                assert_eq!(hp(&app, them), 20, "seed {seed}: the reflecting body is spared its share");
+            } else {
+                landed += 1;
+                assert!(hp(&app, them) < 20, "seed {seed}: not turned back, the body is hurt with the rest");
+            }
+        }
+        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
     }
 
     /// An unaffordable ability is refused, costs the player no time, keeps
